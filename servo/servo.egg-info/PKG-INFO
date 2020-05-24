@@ -1,0 +1,11 @@
+Metadata-Version: 1.2
+Name: servo
+Version: 0.1.0
+Summary: Continuous Optimization agent for Opsani
+Home-page: UNKNOWN
+Author: Blake Watters
+Author-email: blake@opsani.com
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.6,<4.0
