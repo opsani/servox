@@ -3,14 +3,16 @@ import inspect
 import sys
 from typing import ClassVar
 
-def command(fn):
-    class Command:
-        def __init__(self, fn):
-            self.fn = fn
+def command(*args, **kwargs):
+    def wrapper(fn):
+        class Command:
+            def __init__(self, fn):
+                self.fn = fn
 
-        def __set_name__(self, owner, name):
-            owner._typer.command()(self.fn)
-    return Command(fn)
+            def __set_name__(self, owner, name):
+                owner._typer.command(*args, **kwargs)(self.fn)
+        return Command(fn)
+    return wrapper
 
 class JSONSchemaMixin:
     pass
@@ -19,7 +21,7 @@ class Connector():
     name: ClassVar[str] = "foo" # TODO: Need to figure out the name factoring
     _typer: ClassVar[typer.Typer] = typer.Typer(name=name)
     
-    @command
+    @command()
     def another():
         print("another")
 
