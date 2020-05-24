@@ -5,13 +5,23 @@ from typing import ClassVar
 
 def command(*args, **kwargs):
     def wrapper(fn):
+        print(f"command called on {fn}")
         class Command:
             def __init__(self, fn):
                 self.fn = fn
 
             def __set_name__(self, owner, name):
-                setattr(owner, name, self.fn)
-                owner._typer.command(*args, **kwargs)(self.fn)
+                print(f"self {self} setting {owner} to {name}")
+                # TODO: At this point we are good to go and can hydrate anything that is nil
+                # self.create_typer_if_necessary(owner)
+                owner.name = owner.__name__
+                owner.typer().command(*args, **kwargs)(self.fn)
+            
+            # def create_typer_if_necessary(self, owner) -> None:
+            #     if owner.name is None:
+            #         owner.name = owner.__name__
+            #         owner._typer = typer.Typer(name=owner.name)
+
         return Command(fn)
     return wrapper
 
@@ -22,7 +32,7 @@ def callback(*args, **kwargs):
                 self.fn = fn
 
             def __set_name__(self, owner, name):
-                owner._typer.callback(*args, **kwargs)(self.fn)
+                owner.typer().callback(*args, **kwargs)(self.fn)
         return Callback(fn)
     return wrapper
 
@@ -48,38 +58,61 @@ def jsonschema(cls):
 
 @jsonschema
 class Connector():
-    name: ClassVar[str] = "foo" # TODO: Need to figure out the name factoring
-    _typer: ClassVar[typer.Typer] = typer.Typer(name=name)
-    
+    name: ClassVar[str] = None #"foo" # TODO: Need to figure out the name factoring
+    _typer: ClassVar[typer.Typer] = None #typer.Typer(name=name)
+
+    @classmethod
+    def typer(cls: 'Connector') -> typer.Typer:
+        if cls._typer is None:
+            cls._typer = typer.Typer(name=cls.name)
+        return cls._typer
+
+    # def create_typer_if_necessary(cls: 'Connector') -> None:
+    #     if cls.name is None:
+    #         cls.name = cls.__name__
+    #         cls._typer = typer.Typer(name=cls.name)
+
     @command()
     def another():
         print("another")
+    
+    print("DADASDAS")
+    @command()
+    def testinggggg():
+        print("wtf")
 
 class VegetaConnector(Connector):
-    name = "vegeta"
+    # name = "vegeta"
     # typer = typer.Typer(name=name)
 
-    @command
+    @command()
     def wtf():
         print("wtf")
 
 class PrometheusConnector(Connector):
     pass
 
-class CLI:
-    app = typer.Typer()
+class CLI(Connector):
+    # Since we are the root command, explicitly set the base state
+    __name: ClassVar[str] = None
+    _typer: ClassVar[typer.Typer] = typer.Typer()
 
     def __init__(self) -> None:
         super().__init__()
         self.add_connector(VegetaConnector())
     
     def add_connector(self, connector):
-        self.app.add_typer(connector._typer)
+        print(f"Adding connector {connector.typer()} to typer {self.typer()}")
+        self.typer().add_typer(connector.typer())
     
-    @app.command()
+    @command()
     def test():
         print("test")
+    
+    def run(self):
+        self._typer()
+
 
 if __name__ == "__main__":
     cli = CLI()
-    cli.app()
+    cli.run()
