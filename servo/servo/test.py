@@ -22,14 +22,7 @@ def command(*args, **kwargs):
     return wrapper
 
 class ConnectorMeta(type):
-    # def __new__(self,name,base,ns):
-    #     # print("meta new ", self)
-    #     return type.__new__(self,name,base,ns)
-
     def __init__(self,name,base,ns):
-        # print(f"meta init {self}, {name}, {base}, {ns}")
-        # register_class(self)
-        # self.command = typer.Typer        
         type.__init__(self,name,base,ns)
         conn_name = name.replace('Connector', '').lower()
         # if self._cmd is None:
@@ -37,27 +30,38 @@ class ConnectorMeta(type):
             print(f"Setting new _cmd ref for connector {conn_name}")
             self._cmd = typer.Typer(name=conn_name)
 
-class Connector(metaclass=ConnectorMeta):
-    # _cmd: typer.Typer = None
+def jsonschema(cls):
+    def schema(self):
+        """
+        Display the JSON Schema 
+        """
+        pass
 
+    def validate(file: typer.FileText = typer.Argument(...)):
+        """
+        Validate given file against the JSON Schema
+        """
+        pass
+    
+    # Attach the methods and directly invoke Typer decorator
+    setattr(cls, 'schema', schema)
+    cls._cmd.command()(schema)
+    setattr(cls, 'validate', validate)
+    cls._cmd.command()(validate)
+    return cls
+
+@jsonschema
+class Connector(metaclass=ConnectorMeta):
     def name(self) -> str:
-        return self._cmd.info.name
-        
-    # def set_name(self, name: str) -> None:
-    #     self._cmd.info.name = name
+        return self.__class__.__name__.replace('Connector', '').lower()
     
     def add_connector(self, conn: 'Connector') -> None:
-        self._cmd.add_typer(conn._cmd, name="sdadsa")
+        self._cmd.add_typer(conn._cmd, name=conn.name())
 
 class VegetaConnector(Connector):
     @command()
     def loadgen():
         pass
-
-# def new_connector(name: str) -> Connector:
-#     connector = Connector()
-#     # connector.set_name(name)
-#     return connector
 
 # make a singleton?
 def root_connector() -> Connector:
