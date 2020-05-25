@@ -63,14 +63,23 @@ class VegetaConnector(Connector):
     def loadgen():
         pass
 
+class PrometheusConnector(Connector):
+    @command()
+    def measure():
+        pass
+
 # make a singleton?
 def root_connector() -> Connector:
-    class RootConnector(Connector):
+    class RootConnector(Connector):        
         def run(self) -> None:
             self._cmd()
 
         def __call__(self) -> Any:
             return self.run()
+
+        @command()
+        def listen():
+            pass
 
     root_cmd = RootConnector()
     conn_name = root_cmd.__class__.__name__.replace('Connector', '').lower()
