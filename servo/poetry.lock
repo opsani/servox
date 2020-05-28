@@ -275,6 +275,17 @@ version = "1.8.1"
 
 [[package]]
 category = "main"
+description = "PyYAML-based module to produce pretty and readable YAML-serialized data"
+name = "pyaml"
+optional = false
+python-versions = "*"
+version = "20.4.0"
+
+[package.dependencies]
+PyYAML = "*"
+
+[[package]]
+category = "main"
 description = "Data validation and settings management using python 3.6 type hinting"
 name = "pydantic"
 optional = false
@@ -444,7 +455,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["jaraco.itertools", "func-timeout"]
 
 [metadata]
-content-hash = "771d6bac458bb62d2c061e6a251a20d4263297ee094b962e691ff18753be6797"
+content-hash = "0f9b19f1fe09d6261baacd017ed59f498d36463f0508dbc07de4847fc2befa8f"
 python-versions = "^3.6"
 
 [metadata.files]
@@ -579,6 +590,10 @@ pluggy = [
 py = [
     {file = "py-1.8.1-py2.py3-none-any.whl", hash = "sha256:c20fdd83a5dbc0af9efd622bee9a5564e278f6380fffcacc43ba6f43db2813b0"},
     {file = "py-1.8.1.tar.gz", hash = "sha256:5e27081401262157467ad6e7f851b7aa402c5852dbcb3dae06768434de5752aa"},
+]
+pyaml = [
+    {file = "pyaml-20.4.0-py2.py3-none-any.whl", hash = "sha256:67081749a82b72c45e5f7f812ee3a14a03b3f5c25ff36ec3b290514f8c4c4b99"},
+    {file = "pyaml-20.4.0.tar.gz", hash = "sha256:29a5c2a68660a799103d6949167bd6c7953d031449d08802386372de1db6ad71"},
 ]
 pydantic = [
     {file = "pydantic-1.5.1-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:2a6904e9f18dea58f76f16b95cba6a2f20b72d787abd84ecd67ebc526e61dce6"},
