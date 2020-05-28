@@ -5,7 +5,6 @@ from typing import ClassVar, Any, Optional, ClassVar
 
 def command(*args, **kwargs):
     def wrapper(fn):
-        print(f"command called on {fn}")
         class Command:
             def __init__(self, fn):
                 self.fn = fn
@@ -25,10 +24,15 @@ class ConnectorMeta(type):
     def __init__(self,name,base,ns):
         type.__init__(self,name,base,ns)
         conn_name = name.replace('Connector', '').lower()
-        # if self._cmd is None:
-        if hasattr(self, "_cmd") == False:
-            print(f"Setting new _cmd ref for connector {conn_name}")
-            self._cmd = typer.Typer(name=conn_name)
+        # TODO: Only need to figure this out!
+        # if hasattr(self, "_cmd") == False:# or self._cmd.info.name != conn_name:
+        print(f"Setting new _cmd ref for connector {conn_name}")
+        self._cmd = typer.Typer(name=conn_name)
+        # else:
+        #     if conn_name != "root":
+        #         self._cmd.add_typer(typer.Typer(name=conn_name))
+        #         # self._cmd = typer.Typer()
+        #         print(f"IGNORING _cmd ref for connector {conn_name}")
 
 def jsonschema(cls):
     def schema(self):
@@ -50,8 +54,11 @@ def jsonschema(cls):
     cls._cmd.command()(validate)
     return cls
 
+# TODO: prolly not a  decorator
 @jsonschema
 class Connector(metaclass=ConnectorMeta):
+    _cmd = None
+    
     def name(self) -> str:
         return self.__class__.__name__.replace('Connector', '').lower()
     
@@ -68,6 +75,8 @@ class PrometheusConnector(Connector):
     def measure():
         pass
 
+# def subcommand
+
 # make a singleton?
 def root_connector() -> Connector:
     class RootConnector(Connector):        
@@ -82,16 +91,11 @@ def root_connector() -> Connector:
             pass
 
     root_cmd = RootConnector()
-    conn_name = root_cmd.__class__.__name__.replace('Connector', '').lower()
-        # if self._cmd is None:
-        #     print(f"Setting new _cmd ref for connector {conn_name}")
-        #     self._cmd = typer.Typer(name=conn_name)
-    root_cmd._cmd = typer.Typer(name=conn_name)
     return root_cmd
 
 root = root_connector()
-vegeta = VegetaConnector()
-root.add_connector(vegeta)
+root.add_connector(VegetaConnector())
+root.add_connector(PrometheusConnector())
 
 if __name__ == "__main__":
     root()
