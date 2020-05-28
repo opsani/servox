@@ -3,7 +3,7 @@ servo:
     - kubernetes
     - prometheus
     - vegeta
-    
+
 kubernetes:
   application:
     components:
@@ -41,4 +41,4 @@ vegeta:
   target: GET http://web.default.svc.cluster.local:8080/
   workers: 50
   max-workers: 100
-  sda: dsafd
+  # sda: dsafd

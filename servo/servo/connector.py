@@ -200,7 +200,18 @@ def validate(file: typer.FileText = typer.Argument(...)):
     """
     Validate given file against the JSON Schema
     """
-    typer.echo("Validate" + str(file))
+    ServoModel = create_model(
+    'ServoModel',
+    servo=(ServoConfig, ...),
+    vegeta=(Config, ...))
+    try:
+        config = yaml.load(file, Loader=yaml.FullLoader)
+        config_descriptor = ServoModel.parse_obj(config)
+        typer.echo("√ Valid servo configuration")
+    except ValidationError as e:
+        typer.echo("X Invalid servo configuration")
+        print(e)
+    pyaml.p(config)
 
 # TODO: Needs to take a list of connectors
 # default to using all of them
