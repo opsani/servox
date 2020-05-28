@@ -1,3 +1,9 @@
+servo:
+  connectors:
+    - kubernetes
+    - prometheus
+    - vegeta
+    
 kubernetes:
   application:
     components:
