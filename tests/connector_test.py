@@ -81,25 +81,18 @@ class ConnectorTests:
     # API client, logger
     # default ID behavior
 
-class ServoSettingsTests:
+class TestServoSettings:
     pass
 
-class ServoTests:
-    pass
+class TestServo:
+    def test_init_with_optimizer() -> None:
+        pass
 
 ###
 ### Connector specific
 ###
 
 class TestVegetaSettings:
-    # @pytest.fixture()
-    # def settings(self) -> VegetaSettings:
-    #     return VegetaSettings(rate='50/1s', duration='0')
-
-    # def test_validate_rate(self) -> None:
-    #     # 0 is infinity, otherwise requests/duration
-        
-
     def test_validate_infinite_rate(self) -> None:
         s = VegetaSettings(rate='0', duration='0', target="GET http://example.com")
         assert s.rate == '0'

@@ -23,7 +23,16 @@ class Optimizer(BaseModel):
     token: str
     base_url: HttpUrl = "https://api.opsani.com/"
 
-# will be from connector import settings
+    def __init__(
+        self, 
+        id: str, 
+        token: str,
+        **kwargs
+    ):
+        org_domain, app_name = id.split('/')
+        super().__init__(org_domain=org_domain, app_name=app_name, token=token, **kwargs)
+
+# TODO: will be from connector import settings
 class ConnectorSettings(BaseSettings):
     description: Optional[str]
 
@@ -94,7 +103,11 @@ class Connector(BaseModel, abc.ABC):
     # Instance configuration
     id: str
     settings: ConnectorSettings
-    _logger: logger    
+    _logger: logger
+
+    @classmethod
+    def all(cls) -> List['Connector']:
+        return cls.__subclasses
 
     @root_validator(pre=True)
     @classmethod
@@ -130,10 +143,9 @@ class Connector(BaseModel, abc.ABC):
         super().__init__(id=id, settings=settings, **kwargs)
     
     async def api_client(self) -> httpx.AsyncClient:
-        """Returns an httpx.AsyncClient instance configured to talk to Opsani API""" 
+        """Yields an httpx.AsyncClient instance configured to talk to Opsani API""" 
         async with httpx.AsyncClient() as client:
             yield client
-    #   r = await client.get('https://www.example.org/')
 
     def logger(self) -> logger:
         """Returns the logger"""
@@ -141,22 +153,37 @@ class Connector(BaseModel, abc.ABC):
     
     def cli(self) -> Optional[typer.Typer]:
         '''Returns a Typer CLI for the connector'''
-        pass
+        return None
 
 Connector.update_forward_refs()
 
 # TODO: becomes from servo.connector import Settings (or BaseSettings?)
+# TODO: needs to support env vars, loading from file
+# TODO: The optimizer probably just folds in here
 class ServoSettings(ConnectorSettings):
     connectors: List[str] = []
 
-# TODO: init with an Optimizer
 class Servo(Connector):
     '''The Servo'''
 
-    optimizer: Optimizer
+    optimizer: Optimizer # TODO: Replace with settings
     '''The Opsani optimizer the Servo is attached to'''
 
     connectors: List['Connector'] = []
+
+    def __init__(
+        self, 
+        optimizer: Optimizer, 
+        *,
+        id: Optional[str] = None, 
+        **kwargs
+    ):
+        settings = ServoSettings()
+        super().__init__(settings=settings, optimizer=optimizer, **kwargs)
+        self.optimizer = optimizer
+    
+    ##
+    # Connector management
 
     def add_connector(self, conn: 'Connector') -> None:
         self.connectors.append(conn)
@@ -166,14 +193,27 @@ class Servo(Connector):
         
     def load_connectors(self) -> None:
         pass
+
+    ##
+    # Event processing
     
     def send_event(self, event: str, payload: Dict[str, Any]) -> None:
-        '''Handle an event'''
+        '''Dispatch an event'''
 
     def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
         '''Handle an event'''
     
+    ##
+    # Lifecycle
+
     def run(self) -> None:
+        pass
+    
+    ##
+    # Misc
+
+    def cli(self) -> typer.Typer:
+        # TODO: Get the root CLI and then nest all active connectors
         pass
 
 ###
@@ -317,26 +357,10 @@ def metadata(
     maturity=Maturity.STABLE
 )
 class VegetaConnector(Connector):
-    # TODO: Make this a class method? Probably the same with schema...
-    @classmethod
-    def generate(cls):
-        """
-        Generate a new default configuration
-        """
-        pass
     
-    # TODO: Not sure if I need schema...
-    @classmethod
-    def validate(cls, data) -> bool:
-        """
-        Validate configuration
-        """
-        return True
-    
-    # TODO: This may be a class method?
     def cli(self) -> typer.Typer:
         '''Returns a Typer CLI for interacting with this connector'''
-        cli = typer.Typer(name=self.id, add_completion=False)
+        cli = typer.Typer(name=self.id, help="Vegeta load generator", add_completion=False)
 
         @cli.command()
         def schema():
@@ -356,7 +380,6 @@ class VegetaConnector(Connector):
             output_path.write_text(yaml.dump(schema))
             typer.echo(f"Generated {self.id}.yaml")
 
-        # TODO: file option + key
         @cli.command()
         def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
             """
@@ -372,9 +395,7 @@ class VegetaConnector(Connector):
                 typer.echo("X Invalid connector configuration", err=True)
                 typer.echo(e, err=True)
                 raise typer.Exit(1)
-            # pyaml.p({ key: connector_config})
 
-        # TODO: Does this need to be shared?
         @cli.command()
         def info():
             """
@@ -399,66 +420,9 @@ class VegetaConnector(Connector):
             """
             Run an adhoc load generation
             """
-            # Init connector based on input, fire measure
             pass
 
         return cli
-
-vegeta_app = typer.Typer()
-# TODO: We need the basic flags and options
-
-@vegeta_app.command()
-def schema():
-    """
-    Display the JSON Schema 
-    """
-    print(Config.schema_json(indent=2))
-
-@vegeta_app.command()
-def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
-    """
-    Validate given file against the JSON Schema
-    """
-    config = yaml.load(file, Loader=yaml.FullLoader)
-    connector_config = config[key] if key != "" else config
-    try:
-        config = Config.parse_obj(connector_config)
-        typer.echo("√ Valid connector configuration")
-    except ValidationError as e:
-        typer.echo("X Invalid connector configuration")
-        print(e)
-    pyaml.p({ key: connector_config})
-
-# TODO: Does this need to be shared?
-@vegeta_app.command()
-def info():
-    """
-    Display assembly info
-    """
-    pass
-
-@vegeta_app.command()
-def version():
-    """
-    Display version
-    """
-    pass
-
-@vegeta_app.command()
-def measure():
-    """
-    Run a measure cycle
-    """
-    # Init connector based on input, fire measure
-    pass
-
-# Use callback to define top-level options
-# TODO: Need a way to intelligently opt in or out of this. Maybe a new decorator
-def callback(app: str = typer.Option(..., help="Opsani app (format is example.com/app)"), 
-             token: str = typer.Option(..., help="Opsani API access token"), 
-             base_url: str = typer.Option("http://api.opsani.com/", help="Base URL for connecting to Opsani API")):
-    pass
-    # TODO: Need to figure out how to pack these values onto a context
 
 # TODO: Moves to cli.py
 # app = typer.Typer(callback=callback, add_completion=False)
@@ -508,39 +472,3 @@ def callback(app: str = typer.Option(..., help="Opsani app (format is example.co
 #     pyaml.p(config)
 
 # # TODO: Needs to take a list of connectors
-# # default to using all of them
-# @app.command()
-# def generate():
-#     """
-#     Generate a new config file
-#     """
-#     pass
-
-# # TODO: Does this need to be shared?
-# # Docker image?
-# @app.command()
-# def info():
-#     """
-#     Display assembly info
-#     """
-#     pass
-
-# @app.command()
-# def version():
-#     """
-#     Display version
-#     """
-#     pass
-
-# @app.command()
-# def run():
-#     """
-#     Start the servo
-#     """
-#     pass
-
-# # group = app.get_group()
-# # group.params.append(click_install_param)
-
-# if __name__ == "__main__":
-#     app()
