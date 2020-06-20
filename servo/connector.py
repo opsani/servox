@@ -5,11 +5,14 @@ from pydantic.schema import schema
 import abc
 from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable
 from enum import Enum
+from pathlib import Path
 import yaml
 import pyaml
 import json
 import semver
 import httpx
+from loguru import logger
+from enum import Enum
 
 # TODO: Handles example.com/app
 # Add regex validation
@@ -34,7 +37,6 @@ class ConnectorSettings(BaseSettings):
         env_prefix = 'SERVO_'
         extra = Extra.forbid
 
-from enum import Enum
 class License(Enum):
     """Defined licenses"""
     MIT = "MIT"
@@ -60,8 +62,6 @@ class Maturity(Enum):
     STABLE = "Stable"
     ROBUST = "Robust"
 
-from loguru import logger
-
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -70,22 +70,26 @@ class Connector(BaseModel, abc.ABC):
     __subclasses: ClassVar[List['Connector']] = []
 
     # Generic connector metadata
-    name: ClassVar[str] = __qualname__
-    description: ClassVar[Optional[str]]
+    name: ClassVar[str]
+    description: ClassVar[Optional[str]] = None
     version: ClassVar[semver.VersionInfo]
-    homepage: ClassVar[Optional[HttpUrl]]
-    license: ClassVar[Optional[License]]
-    maturity: ClassVar[Optional[Maturity]]
+    homepage: ClassVar[Optional[HttpUrl]] = None
+    license: ClassVar[Optional[License]] = None
+    maturity: ClassVar[Optional[Maturity]] = None
 
-    # TODO: These move to a subclassable config class for each connector
-    # Parent builds a config and passes it to the child
+    # Instance configuration
     id: str # TODO: constraints should be lowercase, underscores. Infer id by transforming the name
     settings: ConnectorSettings
     _logger: logger
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+        cls.name = cls.__qualname__.replace('Connector', '')
         cls.__subclasses.append(cls)
+    
+    def __init__(self, settings: ConnectorSettings, *, id: Optional[str] = None, **kwargs):
+        id = id if id is not None else type(self).__qualname__.replace('Connector', '').lower()
+        super().__init__(id=id, settings=settings, **kwargs)
     
     async def api_client(self) -> httpx.AsyncClient:
         """Returns an httpx.AsyncClient instance configured to talk to Opsani API""" 
@@ -96,12 +100,10 @@ class Connector(BaseModel, abc.ABC):
     def logger(self) -> logger:
         """Returns the logger"""
         return self._logger
-
-# TODO: Do I even need this??? can probably just use the connector class directly
-class ConnectorDescriptor(BaseModel):
-    key: str # TODO: this will have constraints (lowercase, underscores)
-    connector_class: Callable[Connector] # TODO: Needs to be mappable from a string    
-    # TODO: what other additional config?
+    
+    def cli(self) -> Optional[typer.Typer]:
+        '''Returns a Typer CLI for the connector'''
+        pass
 
 Connector.update_forward_refs()
 
@@ -134,6 +136,7 @@ class Servo(Connector):
         '''Handle an event'''
     
     def run(self) -> None:
+        pass
 
 # TODO: Vegeta specific
 class TargetFormat(str, Enum):
@@ -161,14 +164,45 @@ class VegetaSettings(ConnectorSettings):
     keepalive: bool = Field(True, description="Specifies whether to reuse TCP connections between HTTP requests.")
     insecure: bool = Field(False, description="Specifies whether to ignore invalid server TLS certificates.")
 
-class VegetaConnector(Connector):
-    config: Config = Config(rate="50/s", duration="30s", target="GET http://localhost:8080")
+    class Config:
+        json_encoders = {
+            TargetFormat: lambda t: t.value()
+        }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.config_key = "vegeta"
-    
-    # TODO: Return a default config
+def metadata(
+    name: Optional[str] = None, 
+    description: Optional[str] = None, 
+    version: Optional[semver.VersionInfo] = None,
+    homepage: Optional[HttpUrl] = None,
+    license: Optional[License] = None,
+    maturity: Optional[Maturity] = None,
+):
+    def decorator(cls):
+        if name:
+            cls.name = name
+        if description:
+            cls.description = description
+        if version:
+            cls.version = version
+        if homepage:
+            cls.homepage = homepage
+        if license:
+            cls.license = license
+        if maturity:
+            cls.maturity = maturity
+        return cls
+    return decorator
+
+# TODO: AdjustMixin, MeasureMixin??
+
+@metadata(
+    description='Vegeta load testing connector',
+    version='0.5.0',
+    homepage='https://github.com/opsani/vegeta-connector',
+    license=License.APACHE2,
+    maturity=Maturity.STABLE
+)
+class VegetaConnector(Connector):
     # TODO: Make this a class method? Probably the same with schema...
     @classmethod
     def generate(cls):
@@ -184,13 +218,72 @@ class VegetaConnector(Connector):
         Validate configuration
         """
         return True
+    
+    # TODO: This may be a class method?
+    def cli(self) -> typer.Typer:
+        '''Returns a Typer CLI for interacting with this connector'''
+        cli = typer.Typer(name=self.id, add_completion=False)
 
-    @classmethod
-    def version(cls) -> str:
-        """
-        Return version connector
-        """
-        return "0.0.1"
+        @cli.command()
+        def schema():
+            """
+            Display the schema 
+            """
+            # TODO: Support output formats (dict, json, yaml)...
+            typer.echo(self.settings.schema_json(indent=2))
+
+        @cli.command()
+        def generate():
+            '''Generate a configuration file'''
+            # TODO: support output paths/formats
+            # NOTE: We have to serialize through JSON first
+            schema = json.loads(json.dumps(self.settings.dict(by_alias=True)))
+            output_path = Path.cwd() / f'{self.id}.yaml'
+            output_path.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {self.id}.yaml")
+
+        # TODO: file option + key
+        @cli.command()
+        def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
+            """
+            Validate given file against the JSON Schema
+            """
+            try:
+                config = yaml.load(file, Loader=yaml.FullLoader)
+                connector_config = config[key] if key != "" else config
+                cls = type(self.settings)
+                config = cls.parse_obj(connector_config)
+                typer.echo("√ Valid connector configuration")
+            except (ValidationError, yaml.scanner.ScannerError) as e:
+                typer.echo("X Invalid connector configuration", err=True)
+                typer.echo(e, err=True)
+                raise typer.Exit(1)
+            # pyaml.p({ key: connector_config})
+
+        # TODO: Does this need to be shared?
+        @cli.command()
+        def info():
+            """
+            Display assembly info
+            """
+            pass
+
+        @cli.command()
+        def version():
+            """
+            Display version
+            """
+            pass
+
+        @cli.command()
+        def loadgen():
+            """
+            Run an adhoc load generation
+            """
+            # Init connector based on input, fire measure
+            pass
+
+        return cli
 
 vegeta_app = typer.Typer()
 # TODO: We need the basic flags and options
@@ -250,117 +343,86 @@ def callback(app: str = typer.Option(..., help="Opsani app (format is example.co
     # TODO: Need to figure out how to pack these values onto a context
 
 # TODO: Moves to cli.py
-app = typer.Typer(callback=callback, add_completion=False)
-app.add_typer(vegeta_app, name="vegeta", help="Vegeta load generator")
-app.add_typer(vegeta_app, name="kubernetes", help="Kubernetes orchestrator")
-app.add_typer(vegeta_app, name="prometheus", help="Prometheus metrics")
+# app = typer.Typer(callback=callback, add_completion=False)
+# app.add_typer(vegeta_app, name="vegeta", help="Vegeta load generator")
+# app.add_typer(vegeta_app, name="kubernetes", help="Kubernetes orchestrator")
+# app.add_typer(vegeta_app, name="prometheus", help="Prometheus metrics")
 
-config_descriptor = yaml.load(open("./servo.yaml"), Loader=yaml.FullLoader)
-vegeta = VegetaConnector(config_descriptor=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
-servo = Servo(config=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
-servo.add_connector(vegeta)
+# config_descriptor = yaml.load(open("./servo.yaml"), Loader=yaml.FullLoader)
+# vegeta = VegetaConnector(config_descriptor=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
+# servo = Servo(config=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
+# servo.add_connector(vegeta)
 
-@app.command()
-def schema():
-    """
-    Display the JSON Schema 
-    """
-    # TODO: Read config file, find all loaded connectors, bundle into a schema...
-    # What you probably have to do is 
-    # print(Servo.schema_json(indent=2))
-    from pydantic.schema import schema
-    from pydantic.json import pydantic_encoder
-    ServoModel = create_model(
-    'ServoModel',
-    servo=(ServoConfig, ...),
-    vegeta=(Config, ...))
-    print(ServoModel.schema_json(indent=2))
-    # top_level_schema = schema([ServoConfig, Config], title='Servo Schema')
-    # print(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
+# @app.command()
+# def schema():
+#     """
+#     Display the JSON Schema 
+#     """
+#     # TODO: Read config file, find all loaded connectors, bundle into a schema...
+#     # What you probably have to do is 
+#     # print(Servo.schema_json(indent=2))
+#     from pydantic.schema import schema
+#     from pydantic.json import pydantic_encoder
+#     ServoModel = create_model(
+#     'ServoModel',
+#     servo=(ServoConfig, ...),
+#     vegeta=(Config, ...))
+#     print(ServoModel.schema_json(indent=2))
+#     # top_level_schema = schema([ServoConfig, Config], title='Servo Schema')
+#     # print(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
 
-@app.command()
-def validate(file: typer.FileText = typer.Argument(...)):
-    """
-    Validate given file against the JSON Schema
-    """
-    ServoModel = create_model(
-    'ServoModel',
-    servo=(ServoConfig, ...),
-    vegeta=(Config, ...))
-    try:
-        config = yaml.load(file, Loader=yaml.FullLoader)
-        config_descriptor = ServoModel.parse_obj(config)
-        typer.echo("√ Valid servo configuration")
-    except ValidationError as e:
-        typer.echo("X Invalid servo configuration")
-        print(e)
-    pyaml.p(config)
+# @app.command()
+# def validate(file: typer.FileText = typer.Argument(...)):
+#     """
+#     Validate given file against the JSON Schema
+#     """
+#     ServoModel = create_model(
+#     'ServoModel',
+#     servo=(ServoConfig, ...),
+#     vegeta=(Config, ...))
+#     try:
+#         config = yaml.load(file, Loader=yaml.FullLoader)
+#         config_descriptor = ServoModel.parse_obj(config)
+#         typer.echo("√ Valid servo configuration")
+#     except ValidationError as e:
+#         typer.echo("X Invalid servo configuration")
+#         print(e)
+#     pyaml.p(config)
 
-# TODO: Needs to take a list of connectors
-# default to using all of them
-@app.command()
-def generate():
-    """
-    Generate a new config file
-    """
-    pass
+# # TODO: Needs to take a list of connectors
+# # default to using all of them
+# @app.command()
+# def generate():
+#     """
+#     Generate a new config file
+#     """
+#     pass
 
-# TODO: Does this need to be shared?
-# Docker image?
-@app.command()
-def info():
-    """
-    Display assembly info
-    """
-    pass
+# # TODO: Does this need to be shared?
+# # Docker image?
+# @app.command()
+# def info():
+#     """
+#     Display assembly info
+#     """
+#     pass
 
-@app.command()
-def version():
-    """
-    Display version
-    """
-    pass
+# @app.command()
+# def version():
+#     """
+#     Display version
+#     """
+#     pass
 
-@app.command()
-def run():
-    """
-    Start the servo
-    """
-    pass
+# @app.command()
+# def run():
+#     """
+#     Start the servo
+#     """
+#     pass
 
-# group = app.get_group()
-# group.params.append(click_install_param)
+# # group = app.get_group()
+# # group.params.append(click_install_param)
 
-if __name__ == "__main__":
-    app()
-
-
-# ---------------------------
-
-
-class Metric:
-    # name, unit
-    pass
-
-# Models a collection of metrics
-class Metrics:
-    pass
-
-# Models a su
-class ScalarMetric:
-    pass
-
-# Models a time-series metrics
-class TimeSeriesMetric:
-    pass
-
-class Descriptor:
-    pass
-
-class Component:
-    pass
-
-# {"application": {"components": {"web": {"settings": {"cpu": {"value": 0.25, "min": 0.1, "max": 1.8, "step": 0.1, "type": "range"}, "replicas": {"value": 1, "min": 1, "max": 2, "step": 1, "type": "range"}}}}}, "measurement": {"metrics": {"requests_total": {"unit": "count"}, "throughput": {"unit": "rpm"}, "error_rate": {"unit": "percent"}, "latency_total": {"unit": "milliseconds"}, "latency_mean": {"unit": "milliseconds"}, "latency_50th": {"unit": "milliseconds"}, "latency_90th": {"unit": "milliseconds"}, "latency_95th": {"unit": "milliseconds"}, "latency_99th": {"unit": "milliseconds"}, "latency_max": {"unit": "milliseconds"}, "latency_min": {"unit": "milliseconds"}}}}
-class Setting:
-    # name, step, type, value, min, max
-    pass
+# if __name__ == "__main__":
+#     app()
