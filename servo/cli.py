@@ -24,10 +24,10 @@ def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (fo
 
 app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
 
-# TODO: Move this into Servo settings
 # TODO: Load from env or arguments
 optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
-servo = Servo(optimizer)
+settings = ServoSettings(optimizer=optimizer)
+servo = Servo(settings)
 for cls in Connector.all():
     if cls != Servo:
         # NOTE: Read the type hint to find our settings class
@@ -39,12 +39,13 @@ for cls in Connector.all():
         if cli is not None:
             app.add_typer(cli)
 
-# NOTE: Two modes of operation. In an assembly and out
-# TODO: To load the subclasses we need config and know which ones are active...
+# NOTE: Two modes of operation: In an assembly and out
 
 @app.command()
 def new() -> None:
     """Creates a new servo assembly at [PATH]"""
+    # TODO: Specify a list of connectors (or default to all)
+    # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
     pass
 
 @app.command()
@@ -60,35 +61,31 @@ def console() -> None:
 @app.command()
 def info() -> None:
     '''Display information about the assembly'''
+    # TODO: Refactor this to share the implementation in Vegeta
     pass
 
 @app.command()
 def settings() -> None:
     '''Display the fully resolved settings'''
+    # TODO: Requires a config file, spits out settings
+    # Take optional arg for subkey
     pass
 
 @app.command()
 def check() -> None:
     '''Check the health of the assembly'''
+    # TODO: Requires a config file
+    # TODO: Run checks for all active connectors
     pass
 
 @app.command()
 def version() -> None:
     '''Display version and exit'''
+    # TODO: Refactor this to share the implementation in Vegeta
     pass
-
-### Begin config subcommands
-# TODO: It may make more sense to have these top-level
-config_app = typer.Typer(name='config', help="Manage configuration")
-app.add_typer(config_app)
 
 @app.command()
-def config() -> None:
-    """Display servo configuration"""
-    pass
-
-@config_app.command(name='schema')
-def config_schema() -> None:
+def schema() -> None:
     '''Display configuration schema'''
     # TODO: Read config file, find all loaded connectors, bundle into a schema...
     # ServoModel = pydantic.create_model(
@@ -100,14 +97,16 @@ def config_schema() -> None:
     top_level_schema = schema([ServoSettings, VegetaSettings], title='Servo Schema')
     print(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
 
-@config_app.command(name='validate')
-def config_validate() -> None:
+@app.command(name='validate')
+def validate() -> None:
     """Validate servo configuration file"""
     pass
 
-@config_app.command(name='generate')
-def config_generate() -> None:
+@app.command(name='generate')
+def generate() -> None:
     """Generate servo configuration"""
+    # TODO: Dump the Servo settings, then all connectors by id
+
     pass
 
 ### Begin connector subcommands

@@ -159,28 +159,27 @@ Connector.update_forward_refs()
 
 # TODO: becomes from servo.connector import Settings (or BaseSettings?)
 # TODO: needs to support env vars, loading from file
-# TODO: The optimizer probably just folds in here
 class ServoSettings(ConnectorSettings):
+    optimizer: Optimizer
+    '''The Opsani optimizer the Servo is attached to'''
+
     connectors: List[str] = []
 
 class Servo(Connector):
     '''The Servo'''
-
-    optimizer: Optimizer # TODO: Replace with settings
-    '''The Opsani optimizer the Servo is attached to'''
-
+    settings: ServoSettings
     connectors: List['Connector'] = []
 
-    def __init__(
-        self, 
-        optimizer: Optimizer, 
-        *,
-        id: Optional[str] = None, 
-        **kwargs
-    ):
-        settings = ServoSettings()
-        super().__init__(settings=settings, optimizer=optimizer, **kwargs)
-        self.optimizer = optimizer
+    # def __init__(
+    #     self, 
+    #     optimizer: Optimizer, 
+    #     *,
+    #     id: Optional[str] = None, 
+    #     **kwargs
+    # ):
+    #     settings = ServoSettings()
+    #     super().__init__(settings=settings, optimizer=optimizer, **kwargs)
+    #     self.optimizer = optimizer
     
     ##
     # Connector management

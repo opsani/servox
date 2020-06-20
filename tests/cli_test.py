@@ -26,10 +26,10 @@ def cli_runner() -> CliRunner:
 def cli_app() -> Typer:
     return cli.app
 
-def test_help() -> None:
+def test_help(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "--help")
     assert result.exit_code == 0
-    assert "servox db [OPTIONS] COMMAND [ARGS]" in result.stdout
+    assert "servox [OPTIONS] COMMAND [ARGS]" in result.stdout
 
 def test_new() -> None:
     """Creates a new servo assembly at [PATH]"""
