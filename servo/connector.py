@@ -357,7 +357,8 @@ def metadata(
     maturity=Maturity.STABLE
 )
 class VegetaConnector(Connector):
-    
+    settings: VegetaSettings
+
     def cli(self) -> typer.Typer:
         '''Returns a Typer CLI for interacting with this connector'''
         cli = typer.Typer(name=self.id, help="Vegeta load generator", add_completion=False)

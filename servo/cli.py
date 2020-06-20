@@ -3,6 +3,12 @@ import inspect
 import sys
 from servo.connector import Connector, Servo, Optimizer, ServoSettings, VegetaSettings
 from devtools import debug
+import json
+import pydantic
+from pydantic.schema import schema
+from pydantic.json import pydantic_encoder
+from servo.connector import ServoSettings, VegetaSettings
+from typing import get_type_hints
 
 # OPSANI_OPTIMIZER (--optimizer -o no default)
 # OPSANI_TOKEN (--token -t no default)
@@ -18,11 +24,16 @@ def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (fo
 
 app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
 
+# TODO: Move this into Servo settings
+# TODO: Load from env or arguments
 optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
 servo = Servo(optimizer)
 for cls in Connector.all():
     if cls != Servo:
-        settings = VegetaSettings.construct()
+        # NOTE: Read the type hint to find our settings class
+        hints = get_type_hints(cls)
+        settings_cls = hints['settings']
+        settings = settings_cls.construct()
         connector = cls(settings)
         cli = connector.cli()
         if cli is not None:
@@ -80,11 +91,6 @@ def config() -> None:
 def config_schema() -> None:
     '''Display configuration schema'''
     # TODO: Read config file, find all loaded connectors, bundle into a schema...
-    import json
-    import pydantic
-    from pydantic.schema import schema
-    from pydantic.json import pydantic_encoder
-    from servo.connector import ServoSettings, VegetaSettings
     # ServoModel = pydantic.create_model(
     #     'ServoModel',
     #     servo=(ServoSettings, ...),
