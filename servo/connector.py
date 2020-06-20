@@ -1,15 +1,16 @@
 import typer
 import pydantic
 import re
-from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model, HttpUrl, validator, root_validator
+from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model, HttpUrl, validator, root_validator, FilePath, constr
 from pydantic.validators import str_validator
 from pydantic.schema import schema
 import abc
-from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable
+from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable, Union, Literal
 from enum import Enum
 from pathlib import Path
 import yaml
 import pyaml
+import durationpy
 import json
 import semver
 import httpx
@@ -170,24 +171,25 @@ class Servo(Connector):
     def run(self) -> None:
         pass
 
-# TODO: Vegeta specific
+###
+### Vegeta
+
 class TargetFormat(str, Enum):
     http = 'http'
     json = 'json'
+
+    def __str__(self):
+        return self.value
 
 class VegetaSettings(ConnectorSettings):
     """
     Configuration of the Vegeta connector
     """
-    # TODO: Validate the rate string (define regexp)
     rate: str = Field(description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.")
-    # TODO: Validate the Golang duration string
     duration: str = Field(description="Specifies the amount of time to issue requests to the targets.")
     format: TargetFormat = Field('http', description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.")
-    # TODO: Validate the JSON or HTTP format
-    target: str = Field(description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.")
-    # TODO: Should be a file
-    targets: str = Field("stdin", description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk.")    
+    target: Optional[str] = Field(description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.")
+    targets: Optional[FilePath] = Field(description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk.")
     connections: int = Field(10000, description="Specifies the maximum number of idle open connections per target host.")
     workers: int = Field(10, description="Specifies the initial number of workers used in the attack. The workers will automatically increase to achieve the target request rate, up to max-workers.")
     max_workers: int = Field(18446744073709551615, alias="max-workers", description="The maximum number of workers used to sustain the attack. This can be used to control the concurrency of the attack to simulate a target number of clients.")
@@ -195,6 +197,55 @@ class VegetaSettings(ConnectorSettings):
     http2: bool = Field(True, description="Specifies whether to enable HTTP/2 requests to servers which support it.")
     keepalive: bool = Field(True, description="Specifies whether to reuse TCP connections between HTTP requests.")
     insecure: bool = Field(False, description="Specifies whether to ignore invalid server TLS certificates.")
+
+    @root_validator(pre=True)
+    @classmethod
+    def validate_target(cls, values):
+        target, targets = values.get('target'), values.get('targets')
+        if target is None and targets is None:
+            raise ValueError('target or targets must be configured')
+        return values
+
+    @validator('rate')
+    @classmethod
+    def validate_rate(cls, v):
+        assert isinstance(v, (int, str)), "rate must be an integer or a rate descriptor string"
+
+        # Integer rates
+        if isinstance(v, int) or v.isnumeric():
+            return str(v)
+
+        # Check for hits/interval
+        components = v.split('/')
+        assert len(components) == 2, "rate strings are of the form hits/interval"
+
+        hits = components[0]
+        duration = components[1]
+        assert hits.isnumeric(), "rate must have an integer hits component"
+
+        # Try to parse it from Golang duration string
+        try:
+            durationpy.from_str(duration)
+        except Exception as e:
+            raise ValueError(str(e)) from e
+
+        return v
+    
+    @validator('duration')
+    @classmethod
+    def validate_duration(cls, v):
+        assert isinstance(v, (int, str)), "duration must be an integer or a duration descriptor string"
+
+        if v == '0' or v == 0:
+            return v
+
+        # Try to parse it from Golang duration string
+        try:
+            durationpy.from_str(v)
+        except Exception as e:
+            raise ValueError(str(e)) from e
+
+        return v
 
     class Config:
         json_encoders = {

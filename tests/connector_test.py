@@ -5,15 +5,14 @@ import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from pydantic import ValidationError
-from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version
-from typing import ClassVar
+from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat
+from typing import ClassVar, Union
 
 # test subclass regisration
 # test CLI integration
 # test env var overrides
 # test load from config file
 # test aliasing
-# test
 
 class OptimizerTests:
 
@@ -63,8 +62,102 @@ class ServoTests:
 ### Connector specific
 ###
 
-class VegetaSettingsTests:
-    pass
+class TestVegetaSettings:
+    # @pytest.fixture()
+    # def settings(self) -> VegetaSettings:
+    #     return VegetaSettings(rate='50/1s', duration='0')
+
+    # def test_validate_rate(self) -> None:
+    #     # 0 is infinity, otherwise requests/duration
+        
+
+    def test_validate_infinite_rate(self) -> None:
+        s = VegetaSettings(rate='0', duration='0', target="GET http://example.com")
+        assert s.rate == '0'
+
+    def test_validate_rate_no_time_unit(self) -> None:
+        s = VegetaSettings(rate='500', duration='0', target="GET http://example.com")
+        assert s.rate == '500'
+    
+    def test_validate_rate_integer(self) -> None:
+        s = VegetaSettings(rate=500, duration='0', target="GET http://example.com")
+        assert s.rate == '500'
+    
+    def test_validate_rate_connections_over_time(self) -> None:
+        s = VegetaSettings(rate='500/1s', duration='0', target="GET http://example.com")
+        assert s.rate == '500/1s'
+    
+    def test_validate_rate_raises_when_invalid(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='INVALID', duration='0', target="GET http://example.com")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('rate',)
+        assert e.value.errors()[0]['msg'] == 'rate strings are of the form hits/interval'
+    
+    def test_validate_rate_raises_when_invalid_duration(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='500/1zxzczc', duration='0', target="GET http://example.com")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('rate',)
+        assert e.value.errors()[0]['msg'] == 'Unknown unit zxzczc in duration 1zxzczc'
+
+    def test_validate_duration_infinite_attack(self) -> None:
+        s = VegetaSettings(rate='0', duration='0', target="GET http://example.com")
+        assert s.duration == '0'
+
+    def test_validate_duration_seconds(self) -> None:
+        s = VegetaSettings(rate='0', duration='1s', target="GET http://example.com")
+        assert s.duration == '1s'
+
+    def test_validate_duration_hours_minutes_and_seconds(self) -> None:
+        s = VegetaSettings(rate='0', duration='1h35m20s', target="GET http://example.com")
+        assert s.duration == '1h35m20s'
+
+    def test_validate_duration_invalid(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='0', duration='INVALID', target="GET http://example.com")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('duration',)
+        assert e.value.errors()[0]['msg'] == 'Invalid duration INVALID'
+    
+    def test_validate_target_with_http_format(self) -> None:
+        s = VegetaSettings(rate='0', duration='0', format='http', target="GET http://example.com")
+        assert s.format == TargetFormat.http
+
+    # TODO: this will break once validator is written
+    def test_validate_target_with_json_format(self) -> None:
+        s = VegetaSettings(rate='0', duration='0', format='json', target="GET http://example.com")
+        assert s.format == TargetFormat.json
+    
+    def test_validate_target_with_invalid_format(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='0', duration='0', format='invalid', target="GET http://example.com")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('format',)
+        assert e.value.errors()[0]['msg'] == "value is not a valid enumeration member; permitted: 'http', 'json'"
+    
+    def test_validate_taget_or_targets_must_be_selected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValidationError) as e:
+            s = VegetaSettings(rate='0', duration='0')
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('__root__',)
+        assert e.value.errors()[0]['msg'] == "target or targets must be configured"
+
+    def test_validate_targets_with_path(self, tmp_path: Path) -> None:
+        targets = tmp_path / 'targets'
+        targets.touch()
+        s = VegetaSettings(rate='0', duration='0', targets=targets)
+        assert s.targets == targets
+
+    def test_validate_targets_with_path_doesnt_exist(self, tmp_path: Path) -> None:
+        targets = tmp_path / 'targets'
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='0', duration='0', targets=targets)
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('targets',)
+        assert 'file or directory at path' in e.value.errors()[0]['msg']
+    
+    # TODO: Test the combination of JSON and HTTP targets
 
 class VegetaConnectorTests:
     pass

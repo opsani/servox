@@ -152,6 +152,14 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 version = "0.16"
 
 [[package]]
+category = "main"
+description = "Module for converting between datetime.timedelta and Go's Duration strings."
+name = "durationpy"
+optional = false
+python-versions = "*"
+version = "0.5"
+
+[[package]]
 category = "dev"
 description = "Removes commented-out code."
 name = "eradicate"
@@ -991,7 +999,7 @@ version = "1.0.1"
 dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [metadata]
-content-hash = "657fc1553a4d3e7162e68703d28d731d818b8e81e6f7b4acba4e21cf2849f3e5"
+content-hash = "e75ad1c1e8a6fe1fe4a7bf093374dd4e8010ba95fca0401dffe6eabee69a7262"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1086,6 +1094,9 @@ devtools = [
 docutils = [
     {file = "docutils-0.16-py2.py3-none-any.whl", hash = "sha256:0c5b78adfbf7762415433f5515cd5c9e762339e23369dbe8000d84a4bf4ab3af"},
     {file = "docutils-0.16.tar.gz", hash = "sha256:c2de3a60e9e7d07be26b7f2b00ca0309c207e06c100f9cc2a94931fc75a478fc"},
+]
+durationpy = [
+    {file = "durationpy-0.5.tar.gz", hash = "sha256:5ef9416b527b50d722f34655becfb75e49228eb82f87b855ed1911b3314b5408"},
 ]
 eradicate = [
     {file = "eradicate-1.0.tar.gz", hash = "sha256:4ffda82aae6fd49dfffa777a857cb758d77502a1f2e0f54c9ac5155a39d2d01a"},
