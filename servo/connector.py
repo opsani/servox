@@ -60,6 +60,16 @@ class Maturity(Enum):
     STABLE = "Stable"
     ROBUST = "Robust"
 
+    @classmethod
+    def from_str(cls, identifier: str) -> 'Maturity':
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No maturity level identified by "{identifier}".')
+
     def __str__(self):
         return self.value
 

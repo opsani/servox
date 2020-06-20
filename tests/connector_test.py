@@ -54,19 +54,25 @@ class TestOptimizer:
 class ConnectorSettingsTests:
     pass
 
-class LicenseTests:
+class TestLicense:
     def test_license_from_string(self):
-        pass
+        l = License.from_str('MIT')
+        assert l == License.MIT
 
     def test_license_from_string_invalid_raises(self):
-        pass
+        with pytest.raises(NameError) as e:
+            License.from_str('INVALID')
+        assert 'No license identified by "INVALID"' in str(e)
 
-class MaturityTests:
-    def test_license_from_string(self):
-        pass
+class TestMaturity:
+    def test_maturity_from_string(self):
+        l = Maturity.from_str('Stable')
+        assert l == Maturity.STABLE
 
     def test_license_from_string_invalid_raises(self):
-        pass
+        with pytest.raises(NameError) as e:
+            Maturity.from_str('INVALID')
+        assert 'No maturity level identified by "INVALID"' in str(e)
 
 class ConnectorTests:
     pass
