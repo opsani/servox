@@ -169,17 +169,6 @@ class Servo(Connector):
     '''The Servo'''
     settings: ServoSettings
     connectors: List['Connector'] = []
-
-    # def __init__(
-    #     self, 
-    #     optimizer: Optimizer, 
-    #     *,
-    #     id: Optional[str] = None, 
-    #     **kwargs
-    # ):
-    #     settings = ServoSettings()
-    #     super().__init__(settings=settings, optimizer=optimizer, **kwargs)
-    #     self.optimizer = optimizer
     
     ##
     # Connector management
@@ -201,12 +190,6 @@ class Servo(Connector):
 
     def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
         '''Handle an event'''
-    
-    ##
-    # Lifecycle
-
-    def run(self) -> None:
-        pass
     
     ##
     # Misc
@@ -348,6 +331,77 @@ def metadata(
 
 # TODO: AdjustMixin, MeasureMixin??
 
+class ConnectorCLI(typer.Typer):
+    connector: Connector
+
+    def __init__(self, connector: Connector, **kwargs):
+        self.connector = connector
+        name = kwargs.pop('name', connector.id)
+        help = kwargs.pop('help', connector.description)
+        add_completion = kwargs.pop('add_completion', False)
+        super().__init__(
+            name=name, 
+            help=help, 
+            add_completion=add_completion, 
+            **kwargs
+        )
+        self.add_commands()
+
+    def add_commands(self):
+        @self.command()
+        def schema():
+            """
+            Display the schema 
+            """
+            # TODO: Support output formats (dict, json, yaml)...
+            typer.echo(self.connector.settings.schema_json(indent=2))
+
+        @self.command()
+        def generate():
+            '''Generate a configuration file'''
+            # TODO: support output paths/formats
+            # NOTE: We have to serialize through JSON first
+            schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
+            output_path = Path.cwd() / f'{self.connector.id}.yaml'
+            output_path.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {self.connector.id}.yaml")
+
+        @self.command()
+        def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
+            """
+            Validate given file against the JSON Schema
+            """
+            try:
+                config = yaml.load(file, Loader=yaml.FullLoader)
+                connector_config = config[key] if key != "" else config
+                cls = type(self.connector.settings)
+                config = cls.parse_obj(connector_config)
+                typer.echo("√ Valid connector configuration")
+            except (ValidationError, yaml.scanner.ScannerError) as e:
+                typer.echo("X Invalid connector configuration", err=True)
+                typer.echo(e, err=True)
+                raise typer.Exit(1)
+
+        @self.command()
+        def info():
+            """
+            Display assembly info
+            """
+            typer.echo((
+                f"{self.connector.name} v{self.connector.version} ({self.connector.maturity})\n"
+                f"{self.connector.description}\n"
+                f"{self.connector.homepage}\n"
+                f"Licensed under the terms of {self.connector.license}\n"
+            ))
+
+        @self.command()
+        def version():
+            """
+            Display version
+            """
+            typer.echo(f'{self.connector.name} v{self.connector.version}')
+
+
 @metadata(
     description='Vegeta load testing connector',
     version='0.5.0',
@@ -358,62 +412,9 @@ def metadata(
 class VegetaConnector(Connector):
     settings: VegetaSettings
 
-    def cli(self) -> typer.Typer:
+    def cli(self) -> ConnectorCLI:
         '''Returns a Typer CLI for interacting with this connector'''
-        cli = typer.Typer(name=self.id, help="Vegeta load generator", add_completion=False)
-
-        @cli.command()
-        def schema():
-            """
-            Display the schema 
-            """
-            # TODO: Support output formats (dict, json, yaml)...
-            typer.echo(self.settings.schema_json(indent=2))
-
-        @cli.command()
-        def generate():
-            '''Generate a configuration file'''
-            # TODO: support output paths/formats
-            # NOTE: We have to serialize through JSON first
-            schema = json.loads(json.dumps(self.settings.dict(by_alias=True)))
-            output_path = Path.cwd() / f'{self.id}.yaml'
-            output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.id}.yaml")
-
-        @cli.command()
-        def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
-            """
-            Validate given file against the JSON Schema
-            """
-            try:
-                config = yaml.load(file, Loader=yaml.FullLoader)
-                connector_config = config[key] if key != "" else config
-                cls = type(self.settings)
-                config = cls.parse_obj(connector_config)
-                typer.echo("√ Valid connector configuration")
-            except (ValidationError, yaml.scanner.ScannerError) as e:
-                typer.echo("X Invalid connector configuration", err=True)
-                typer.echo(e, err=True)
-                raise typer.Exit(1)
-
-        @cli.command()
-        def info():
-            """
-            Display assembly info
-            """
-            typer.echo((
-                f"{self.name} v{self.version} ({self.maturity})\n"
-                f"{self.description}\n"
-                f"{self.homepage}\n"
-                f"Licensed under the terms of {self.license}\n"
-            ))
-
-        @cli.command()
-        def version():
-            """
-            Display version
-            """
-            typer.echo(f'{self.name} v{self.version}')
+        cli = ConnectorCLI(self, help="Load generation with Vegeta")
 
         @cli.command()
         def loadgen():
