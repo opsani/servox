@@ -74,7 +74,7 @@ def test_connectors() -> None:
 def test_connectors_add() -> None:
     pass
 
-def test_connectors_remove() -> None():
+def test_connectors_remove() -> None:
     pass
 
 ## TODO: Moves to developer.py
