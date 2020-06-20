@@ -2,6 +2,59 @@ import typer
 import inspect
 import sys
 
+# OPSANI_OPTIMIZER (--optimizer -o no default)
+# OPSANI_TOKEN (--token -t no default)
+# OPSANI_TOKEN_FILE (--token-file -T ./servo.token)
+# OPSANI_CONFIG_FILE (--config-file -c ./servo.yaml)
+def root_callback() -> None:
+    pass
+
+def run() -> None:
+    """Run the servo"""
+    pass
+
+def console() -> None:
+    """Open an interactive console"""
+    pass
+
+def version() -> None:
+    pass
+
+## TODO: moves to config.py
+def config() -> None:
+    """Display servo configuration"""
+    pass
+
+def config_schema() -> None:
+    pass
+
+def config_validate() -> None:
+    """Validate servo configuration file"""
+    pass
+
+def config_generate() -> None:
+    """Generate servo configuration"""
+    pass
+
+def connectors() -> None:
+    pass
+
+def connectors_add() -> None:
+    pass
+
+def connectors_remove() -> None():
+    pass
+
+## TODO: Moves to developer.py
+def developer_test() -> None:
+    pass
+
+def developer_lint() -> None:
+    pass
+
+def developer_format() -> None:
+    pass
+
 # TODO: Token probably needs to come from volume...
 class Config:
     app: str

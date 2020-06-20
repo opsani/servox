@@ -1,63 +1,146 @@
 import typer
 import pydantic
-from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model
+from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model, HttpUrl
 from pydantic.schema import schema
 import abc
-from typing import ClassVar, Any, Optional, ClassVar, List, Dict
+from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable
 from enum import Enum
 import yaml
 import pyaml
 import json
+import semver
+import httpx
 
-# TODO: Base config for hyphenate...
-class ConnectorConfig(BaseSettings):
+# TODO: Handles example.com/app
+# Add regex validation
+class Optimizer(BaseModel):
+    org_domain: str
+    app_name: str
+    token: str
+    base_url: HttpUrl = "https://api.opsani.com/"
+
+    # def as_url(self)
+    # def as_str(self)
+
+# will be from connector import settings
+class ConnectorSettings(BaseSettings):
+    description: Optional[str]
+
+    # Optimizer we are communicating with
+    _optimizer: Optimizer
+
     class Config:
-        # TODO: Can I use reflection?
+        # TODO: Figure out how to uppercase the keys
         env_prefix = 'SERVO_'
+        extra = Extra.forbid
 
-class ServoConfig(ConnectorConfig):
-    connectors: List[str] = []
+from enum import Enum
+class License(Enum):
+    """Defined licenses"""
+    MIT = "MIT"
+    APACHE2 = "Apache 2.0"
+    PROPRIETARY = "Proprietary"
+
+    @classmethod
+    def from_str(cls, identifier: str) -> 'License':
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No license identified by "{identifier}".')
+
+    def __str__(self):
+        return self.value
+
+class Maturity(Enum):
+    """Connector maturity level"""
+    EXPERIMENTAL = "Experimental"
+    STABLE = "Stable"
+    ROBUST = "Robust"
+
+from loguru import logger
 
 class Connector(BaseModel, abc.ABC):
     """
-    Connectors expose functionality to Servo assemblies by connecting 
-    external services and resources.
+    Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
+    # Global registry of all available connectors
+    __subclasses: ClassVar[List['Connector']] = []
 
-    # Keys specify the connector, value is the config
-    config_descriptor: Dict[str, dict] = None
-    config_key: str = None # TODO: Infer from class name
+    # Generic connector metadata
+    name: ClassVar[str] = __qualname__
+    description: ClassVar[Optional[str]]
+    version: ClassVar[semver.VersionInfo]
+    homepage: ClassVar[Optional[HttpUrl]]
+    license: ClassVar[Optional[License]]
+    maturity: ClassVar[Optional[Maturity]]
+
+    # TODO: These move to a subclassable config class for each connector
+    # Parent builds a config and passes it to the child
+    id: str # TODO: constraints should be lowercase, underscores. Infer id by transforming the name
+    settings: ConnectorSettings
+    _logger: logger
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.__subclasses.append(cls)
     
-    # TODO: All these need env var bindings
-    app: str
-    token: str
-    base_url: str = "https://api.opsani.com/"    
-    
-    def handle_event(self, event: str):
-        """
-        Handle an event
-        """
+    async def api_client(self) -> httpx.AsyncClient:
+        """Returns an httpx.AsyncClient instance configured to talk to Opsani API""" 
+        async with httpx.AsyncClient() as client:
+            yield client
+    #   r = await client.get('https://www.example.org/')
+
+    def logger(self) -> logger:
+        """Returns the logger"""
+        return self._logger
+
+# TODO: Do I even need this??? can probably just use the connector class directly
+class ConnectorDescriptor(BaseModel):
+    key: str # TODO: this will have constraints (lowercase, underscores)
+    connector_class: Callable[Connector] # TODO: Needs to be mappable from a string    
+    # TODO: what other additional config?
 
 Connector.update_forward_refs()
 
+# TODO: becomes from servo.connector import Settings (or BaseSettings?)
+class ServoSettings(ConnectorSettings):
+    connectors: List[str] = []
+
+# TODO: init with an Optimizer
 class Servo(Connector):
+    '''The Servo'''
+
+    optimizer: Optimizer
+    '''The Opsani optimizer the Servo is attached to'''
+
     connectors: List['Connector'] = []
 
     def add_connector(self, conn: 'Connector') -> None:
         self.connectors.append(conn)
-        
-    def load_connectors(self):
+
+    def remove_connector(self, conn: 'Connector') -> None:
         pass
+        
+    def load_connectors(self) -> None:
+        pass
+    
+    def send_event(self, event: str, payload: Dict[str, Any]) -> None:
+        '''Handle an event'''
+
+    def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
+        '''Handle an event'''
+    
+    def run(self) -> None:
 
 # TODO: Vegeta specific
-class Format(str, Enum):
+class TargetFormat(str, Enum):
     http = 'http'
     json = 'json'
 
-class Config(ConnectorConfig):
-    class Config:
-        extra = Extra.forbid
-
+class VegetaSettings(ConnectorSettings):
     """
     Configuration of the Vegeta connector
     """
@@ -65,7 +148,7 @@ class Config(ConnectorConfig):
     rate: str = Field(description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.")
     # TODO: Validate the Golang duration string
     duration: str = Field(description="Specifies the amount of time to issue requests to the targets.")
-    format: Format = Field('http', description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.")
+    format: TargetFormat = Field('http', description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.")
     # TODO: Validate the JSON or HTTP format
     target: str = Field(description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.")
     # TODO: Should be a file
