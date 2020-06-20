@@ -204,6 +204,32 @@ class VegetaSettings(ConnectorSettings):
         target, targets = values.get('target'), values.get('targets')
         if target is None and targets is None:
             raise ValueError('target or targets must be configured')
+        
+        if target is not None and targets is not None:
+            raise ValueError('target and targets cannot both be configured')
+
+        return values
+    
+    @root_validator()
+    @classmethod
+    def validate_target_format(cls, values):
+        target, targets = values.get('target'), values.get('targets')
+
+        # Validate JSON target formats
+        if target is not None and values.get('format') == TargetFormat.json:
+            try:
+                json.loads(target)
+            except Exception as e:
+                raise ValueError("the target is not valid JSON") from e
+        
+        if targets is not None and values.get('format') == TargetFormat.json:
+            try:
+                json.load(open(targets))
+            except Exception as e:
+                raise ValueError("the targets file is not valid JSON") from e
+        
+        # TODO: Add validation of JSON with JSON Schema (https://github.com/tsenart/vegeta/blob/master/lib/target.schema.json)
+        # and HTTP format
         return values
 
     @validator('rate')

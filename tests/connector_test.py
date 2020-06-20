@@ -124,9 +124,8 @@ class TestVegetaSettings:
         s = VegetaSettings(rate='0', duration='0', format='http', target="GET http://example.com")
         assert s.format == TargetFormat.http
 
-    # TODO: this will break once validator is written
     def test_validate_target_with_json_format(self) -> None:
-        s = VegetaSettings(rate='0', duration='0', format='json', target="GET http://example.com")
+        s = VegetaSettings(rate='0', duration='0', format='json', target='{ "url": "http://example.com" }')
         assert s.format == TargetFormat.json
     
     def test_validate_target_with_invalid_format(self) -> None:
@@ -142,6 +141,13 @@ class TestVegetaSettings:
         assert '1 validation error for VegetaSettings' in str(e.value)
         assert e.value.errors()[0]['loc'] == ('__root__',)
         assert e.value.errors()[0]['msg'] == "target or targets must be configured"
+    
+    def test_validate_taget_or_targets_cant_both_be_selected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValidationError) as e:
+            s = VegetaSettings(rate='0', duration='0', target="GET http://example.com", targets="targets")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('__root__',)
+        assert e.value.errors()[0]['msg'] == "target and targets cannot both be configured"
 
     def test_validate_targets_with_path(self, tmp_path: Path) -> None:
         targets = tmp_path / 'targets'
@@ -157,6 +163,22 @@ class TestVegetaSettings:
         assert e.value.errors()[0]['loc'] == ('targets',)
         assert 'file or directory at path' in e.value.errors()[0]['msg']
     
+    def test_providing_invalid_target_with_json_format(self, tmp_path: Path) -> None:
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='0', duration='0', format='json', target="INVALID")
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('__root__',)
+        assert 'the target is not valid JSON' in e.value.errors()[0]['msg']
+    
+    def test_providing_invalid_targets_with_json_format(self, tmp_path: Path) -> None:
+        targets = tmp_path / 'targets.json'
+        targets.write_text('<xml>INVALID</xml>')
+        with pytest.raises(ValidationError) as e:
+            VegetaSettings(rate='0', duration='0', format='json', targets=targets)
+        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('__root__',)
+        assert 'the targets file is not valid JSON' in e.value.errors()[0]['msg']
+
     # TODO: Test the combination of JSON and HTTP targets
 
 class VegetaConnectorTests:
@@ -263,7 +285,9 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
 def test_vegeta_cli_schema(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema")
     assert result.exit_code == 0
-    assert result.stdout == ('{\n'
+    debug(result.stdout)
+    assert result.stdout == (
+        '{\n'
         '  "title": "VegetaSettings",\n'
         '  "description": "Configuration of the Vegeta connector",\n'
         '  "type": "object",\n'
@@ -321,11 +345,11 @@ def test_vegeta_cli_schema(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> No
         '      "description": "Specifies the file from which to read targets. See the format option to learn about ava'
         'ilable target formats. This option is exclusive of the target option and will provide targets to via through '
         'a file on disk.",\n'
-        '      "default": "stdin",\n'
         '      "env_names": [\n'
         '        "servo_targets"\n'
         '      ],\n'
-        '      "type": "string"\n'
+        '      "type": "string",\n'
+        '      "format": "file-path"\n'
         '    },\n'
         '    "connections": {\n'
         '      "title": "Connections",\n'
@@ -396,8 +420,7 @@ def test_vegeta_cli_schema(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> No
         '  },\n'
         '  "required": [\n'
         '    "rate",\n'
-        '    "duration",\n'
-        '    "target"\n'
+        '    "duration"\n'
         '  ],\n'
         '  "additionalProperties": false\n'
         '}\n'
@@ -426,7 +449,7 @@ def test_vegeta_cli_generate(tmp_path: Path, vegeta_cli: typer.Typer, cli_runner
         'max-workers: 18446744073709551615\n'
         'rate: 50/1s\n'
         'target: GET http://localhost:8080\n'
-        'targets: stdin\n'
+        'targets: null\n'
         'workers: 10\n'
     )
 
@@ -444,7 +467,7 @@ def test_vegeta_cli_validate(tmp_path: Path, vegeta_cli: typer.Typer, cli_runner
         'max-workers: 18446744073709551615\n'
         'rate: 50/1s\n'
         'target: GET http://localhost:8080\n'
-        'targets: stdin\n'
+        'targets: null\n'
         'workers: 10\n'
     ))
     result = cli_runner.invoke(vegeta_cli, "validate vegeta.yaml")
@@ -470,7 +493,7 @@ def test_vegeta_cli_validate_invalid_config(tmp_path: Path, vegeta_cli: typer.Ty
         'max-workers: 18446744073709551615\n'
         #'rate: 50/1s\n'  # Rate is omitted
         'target: GET http://localhost:8080\n'
-        'targets: stdin\n'
+        'targets: null\n'
         'workers: 10\n'
     ))
     result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml")
