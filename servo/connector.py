@@ -17,16 +17,11 @@ import httpx
 from loguru import logger
 from enum import Enum
 
-# TODO: Handles example.com/app
-# Add regex validation
 class Optimizer(BaseModel):
-    org_domain: str
-    app_name: str
+    org_domain: constr(regex=r'(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))')
+    app_name: constr(regex=r'^[a-z\-]{6,32}$')
     token: str
     base_url: HttpUrl = "https://api.opsani.com/"
-
-    # def as_url(self)
-    # def as_str(self)
 
 # will be from connector import settings
 class ConnectorSettings(BaseSettings):
@@ -204,7 +199,7 @@ class VegetaSettings(ConnectorSettings):
         target, targets = values.get('target'), values.get('targets')
         if target is None and targets is None:
             raise ValueError('target or targets must be configured')
-        
+
         if target is not None and targets is not None:
             raise ValueError('target and targets cannot both be configured')
 

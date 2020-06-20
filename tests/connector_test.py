@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from pydantic import ValidationError
-from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat
+from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat, Optimizer
 from typing import ClassVar, Union
 
 # test subclass regisration
@@ -14,19 +14,42 @@ from typing import ClassVar, Union
 # test load from config file
 # test aliasing
 
-class OptimizerTests:
+class TestOptimizer:
+    def test_org_domain_valid(self) -> None:
+        optimizer = Optimizer(org_domain='example.com', app_name='my-app', token='123456')
+        assert optimizer.org_domain == 'example.com'
+    
+    def test_org_domain_invalid(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            Optimizer(org_domain='invalid', app_name='my-app', token='123456')
+        assert '1 validation error for Optimizer' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('org_domain',)
+        assert e.value.errors()[0]['msg'] == 'string does not match regex "(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"'
 
-    def test_org_domain_validation(self) -> None:
-        pass
+    def test_app_name_valid(self) -> None:
+        optimizer = Optimizer(org_domain='example.com', app_name='my-app', token='123456')
+        assert optimizer.app_name == 'my-app'
 
-    def test_app_name_validation(self) -> None:
-        pass
+    def test_app_name_invalid(self) -> None:
+        with pytest.raises(ValidationError) as e:
+            Optimizer(org_domain='example.com', app_name='$$$invalid$$$', token='123456')
+        assert '1 validation error for Optimizer' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('app_name',)
+        assert e.value.errors()[0]['msg'] == 'string does not match regex "^[a-z\-]{6,32}$"'
 
     def test_token_validation(self) -> None:
-        pass
+        with pytest.raises(ValidationError) as e:
+            Optimizer(org_domain='example.com', app_name='my-app', token=None)
+        assert '1 validation error for Optimizer' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('token',)
+        assert e.value.errors()[0]['msg'] == 'none is not an allowed value'
 
     def test_base_url_validation(self) -> None:
-        pass
+        with pytest.raises(ValidationError) as e:
+            Optimizer(org_domain='example.com', app_name='my-app', token='123456', base_url='INVALID')
+        assert '1 validation error for Optimizer' in str(e.value)
+        assert e.value.errors()[0]['loc'] == ('base_url',)
+        assert e.value.errors()[0]['msg'] == 'invalid or missing URL scheme'
 
 class ConnectorSettingsTests:
     pass
