@@ -62,6 +62,9 @@ class Maturity(Enum):
     STABLE = "Stable"
     ROBUST = "Robust"
 
+    def __str__(self):
+        return self.value
+
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -84,7 +87,7 @@ class Connector(BaseModel, abc.ABC):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls.name = cls.__qualname__.replace('Connector', '')
+        cls.name = cls.__qualname__.replace('Connector', ' Connector')
         cls.__subclasses.append(cls)
     
     def __init__(self, settings: ConnectorSettings, *, id: Optional[str] = None, **kwargs):
@@ -266,14 +269,19 @@ class VegetaConnector(Connector):
             """
             Display assembly info
             """
-            pass
+            typer.echo((
+                f"{self.name} v{self.version} ({self.maturity})\n"
+                f"{self.description}\n"
+                f"{self.homepage}\n"
+                f"Licensed under the terms of {self.license}\n"
+            ))
 
         @cli.command()
         def version():
             """
             Display version
             """
-            pass
+            typer.echo(f'{self.name} v{self.version}')
 
         @cli.command()
         def loadgen():

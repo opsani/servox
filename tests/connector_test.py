@@ -346,10 +346,19 @@ def test_vegeta_cli_validate_invalid_syntax(tmp_path: Path, vegeta_cli: typer.Ty
 # TODO: absolute path
 
 def test_vegeta_cli_info(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    pass
+    result = cli_runner.invoke(vegeta_cli, "info")
+    assert result.exit_code == 0
+    assert (
+        "Vegeta Connector v0.5.0 (Stable)\n"
+        "Vegeta load testing connector\n"
+        "https://github.com/opsani/vegeta-connector\n"
+        "Licensed under the terms of Apache 2.0\n"
+    ) in result.stdout
 
 def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    pass
+    result = cli_runner.invoke(vegeta_cli, "version")
+    assert result.exit_code == 0
+    assert "Vegeta Connector v0.5.0" in result.stdout
 
 def test_vegeta_cli_loadgen(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     pass
