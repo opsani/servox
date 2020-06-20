@@ -1,6 +1,8 @@
 import typer
 import pydantic
-from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model, HttpUrl
+import re
+from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, create_model, HttpUrl, validator, root_validator
+from pydantic.validators import str_validator
 from pydantic.schema import schema
 import abc
 from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable
@@ -65,6 +67,9 @@ class Maturity(Enum):
     def __str__(self):
         return self.value
 
+class Version(semver.VersionInfo):
+    pass
+
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -72,25 +77,49 @@ class Connector(BaseModel, abc.ABC):
     # Global registry of all available connectors
     __subclasses: ClassVar[List['Connector']] = []
 
-    # Generic connector metadata
-    name: ClassVar[str]
-    description: ClassVar[Optional[str]] = None
-    version: ClassVar[semver.VersionInfo]
+    # Connector metadata
+    name: ClassVar[str] = None
+    version: ClassVar[Version] = None
+    description: ClassVar[Optional[str]] = None    
     homepage: ClassVar[Optional[HttpUrl]] = None
     license: ClassVar[Optional[License]] = None
     maturity: ClassVar[Optional[Maturity]] = None
 
     # Instance configuration
-    id: str # TODO: constraints should be lowercase, underscores. Infer id by transforming the name
+    id: str
     settings: ConnectorSettings
-    _logger: logger
+    _logger: logger    
+
+    @root_validator(pre=True)
+    @classmethod
+    def validate_required_metadata(cls, v):
+        assert cls.name is not None, 'name must be provided'
+        assert cls.version is not None, 'version must be provided'
+        if isinstance(cls.version, str):
+            # Attempt to parse
+            cls.version = Version.parse(cls.version)
+        assert isinstance(cls.version, (Version, semver.VersionInfo)), 'version is not a semantic versioning descriptor'
+        return v
+
+    @validator('id')
+    @classmethod
+    def id_format_is_valid(cls, v):        
+        assert bool(re.match("^[0-9a-z_]{4,16}$", v)), 'id may only contain lowercase alphanumeric characters and underscores'
+        return v
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.name = cls.__qualname__.replace('Connector', ' Connector')
+        cls.version = semver.VersionInfo.parse("0.0.0")
         cls.__subclasses.append(cls)
     
-    def __init__(self, settings: ConnectorSettings, *, id: Optional[str] = None, **kwargs):
+    def __init__(
+        self, 
+        settings: ConnectorSettings, 
+        *,
+        id: Optional[str] = None, 
+        **kwargs
+    ):
         id = id if id is not None else type(self).__qualname__.replace('Connector', '').lower()
         super().__init__(id=id, settings=settings, **kwargs)
     
@@ -186,7 +215,7 @@ def metadata(
         if description:
             cls.description = description
         if version:
-            cls.version = version
+            cls.version = version if isinstance(version, semver.VersionInfo) else Version.parse(version)
         if homepage:
             cls.homepage = homepage
         if license:
@@ -303,7 +332,6 @@ def schema():
     """
     print(Config.schema_json(indent=2))
 
-# TODO: file option + key
 @vegeta_app.command()
 def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
     """

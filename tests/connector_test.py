@@ -4,7 +4,9 @@ import os
 import yaml
 from pathlib import Path
 from typer.testing import CliRunner
-from servo.connector import VegetaSettings, VegetaConnector, License, Maturity
+from pydantic import ValidationError
+from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version
+from typing import ClassVar
 
 # test subclass regisration
 # test CLI integration
@@ -67,23 +69,74 @@ class VegetaSettingsTests:
 class VegetaConnectorTests:
     pass
 
-# TODO: This thing needs settings and an optimizer
-# test id
-# test default id
-# test no settings
-# test no version
 def test_init_vegeta_connector() -> None:
     settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
     connector = VegetaConnector(settings)
     assert connector is not None
+
+def test_init_vegeta_connector_no_settings() -> None:
+    with pytest.raises(ValidationError) as e:
+        VegetaConnector(None)
+    assert '1 validation error for VegetaConnector' in str(e.value)
+
+def test_init_connector_no_version_raises() -> None:
+    class FakeConnector(Connector):
+        pass
+    with pytest.raises(ValidationError) as e:
+        FakeConnector.version = None
+        settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")        
+        connector = FakeConnector(settings, id="whatever")
+    assert e.value.errors()[0]['loc'] == ('__root__',)
+    assert e.value.errors()[0]['msg'] == 'version must be provided'
+
+def test_init_connector_invalid_version_raises() -> None:
+    class FakeConnector(Connector):
+        pass
+    with pytest.raises(ValidationError) as e:
+        FakeConnector.version = "invalid"
+        settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
+        connector = FakeConnector(settings, id="whatever", version="b")
+    assert e.value.errors()[0]['loc'] == ('__root__',)
+    assert e.value.errors()[0]['msg'] == 'invalid is not valid SemVer string'
+
+def test_init_connector_parses_version_string() -> None:
+    class FakeConnector(Connector):
+        pass
+    FakeConnector.version = "0.5.0"
+    settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
+    connector = FakeConnector(settings, id="whatever")
+    assert connector.version is not None
+    assert connector.version == Version.parse("0.5.0")
+
+def test_init_connector_no_name_raises() -> None:
+    class FakeConnector(Connector):
+        pass
+    with pytest.raises(ValidationError) as e:
+        FakeConnector.name = None
+        settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
+        connector = FakeConnector(settings, id='test', name=None)
+    assert e.value.errors()[0]['loc'] == ('__root__',)
+    assert e.value.errors()[0]['msg'] == 'name must be provided'
 
 def test_vegeta_default_id() -> None:
     settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
     connector = VegetaConnector(settings)
     assert connector.id == 'vegeta'
 
+def test_vegeta_id_override() -> None:
+    settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
+    connector = VegetaConnector(settings, id="monkey")
+    assert connector.id == 'monkey'
+
+def test_vegeta_id_invalid() -> None:
+    with pytest.raises(ValidationError) as e:
+        settings = VegetaSettings(rate="50/1s", duration="5m", target="GET http://localhost:8080")
+        connector = VegetaConnector(settings, id="THIS IS NOT COOL")
+    assert '1 validation error for VegetaConnector' in str(e.value)
+    assert e.value.errors()[0]['msg'] == 'id may only contain lowercase alphanumeric characters and underscores'
+
 def test_vegeta_name() -> None:
-    assert VegetaConnector.name == 'Vegeta'
+    assert VegetaConnector.name == 'Vegeta Connector'
 
 def test_vegeta_description() -> None:
     assert VegetaConnector.description == 'Vegeta load testing connector'
@@ -342,8 +395,6 @@ def test_vegeta_cli_validate_invalid_syntax(tmp_path: Path, vegeta_cli: typer.Ty
     assert result.exit_code == 1
     assert "X Invalid connector configuration" in result.stderr
     assert "could not find expected ':'" in result.stderr
-
-# TODO: absolute path
 
 def test_vegeta_cli_info(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "info")
