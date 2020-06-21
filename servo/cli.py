@@ -24,54 +24,53 @@ from tabulate import tabulate
 # SERVO_TOKEN_FILE (--token-file -T ./servo.token)
 # SERVO_CONFIG_FILE (--config-file -c ./servo.yaml)
 
+servo: Servo = None
+
 # Use callback to define top-level options
-# TODO: Need a way to intelligently opt in or out of this. Maybe a new decorator
 def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (format is example.com/app)"), 
              token: str = typer.Option(None, help="Opsani API access token"), 
              base_url: str = typer.Option("https://api.opsani.com/", help="Base URL for connecting to Opsani API")):
-    pass
+    global servo
+
+    # TODO: check if there is a servo.yaml (Need to support --config/-c at some point)
+    # TODO: Load from env or arguments
+    settings: ServoSettings = None
+    optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
+    config_file = Path.cwd() / 'servo.yaml'
+
+    if config_file.exists():
+        args = {}
+        for c in Connector.all():
+            if c is not Servo:
+                args[c.default_id()] = (c.settings_class(), ...)
+        ServoModel = pydantic.create_model(
+            'Servo',
+            __base__=ServoSettings,
+            optimizer=optimizer,
+            extra=Extra.forbid,
+            **args,
+        )
+        try:
+            config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+            settings = ServoModel.parse_obj(config)
+        except ValidationError as error:
+            typer.echo(error, err=True)
+            sys.exit(2)
+    else:
+        # If we do not have a project, build a minimal configuration
+        settings = ServoSettings(optimizer=optimizer)
+
+    # Connect the CLIs for all connectors
+    # TODO: This should respect the connectors list when there is a config file present
+    servo = Servo(settings)
+    for cls in servo.available_connectors():
+        settings = cls.settings_class().construct()
+        connector = cls(settings)
+        cli = connector.cli()
+        if cli is not None:
+            app.add_typer(cli)
 
 app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
-
-# TODO: check if there is a servo.yaml (Need to support --config/-c at some point)
-# TODO: Load from env or arguments
-settings: ServoSettings = None
-optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
-config_file = Path.cwd() / 'servo.yaml'
-
-if config_file.exists():
-    args = {}
-    for c in Connector.all():
-        if c is not Servo:
-            args[c.default_id()] = (c.settings_class(), ...)
-    ServoModel = pydantic.create_model(
-        'Servo',
-        __base__=ServoSettings,
-        optimizer=optimizer,
-        extra=Extra.forbid,
-        **args,
-    )
-    try:
-        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        settings = ServoModel.parse_obj(config)
-    except ValidationError as error:
-        typer.echo(error, err=True)
-        sys.exit(2)
-else:
-    # If we do not have a project, build a minimal configuration
-    settings = ServoSettings(optimizer=optimizer)
-
-# Connect the CLIs for all connectors
-# TODO: This should respect the connectors list when there is a config file present
-servo = Servo(settings)
-for cls in servo.available_connectors():
-    settings = cls.settings_class().construct()
-    connector = cls(settings)
-    cli = connector.cli()
-    if cli is not None:
-        app.add_typer(cli)
-
-# NOTE: Two modes of operation: In an assembly and out
 
 @app.command()
 def new() -> None:

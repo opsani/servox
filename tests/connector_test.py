@@ -192,6 +192,8 @@ class TestVegetaSettings:
         assert e.value.errors()[0]['msg'] == "target or targets must be configured"
     
     def test_validate_taget_or_targets_cant_both_be_selected(self, tmp_path: Path) -> None:
+        targets = tmp_path / 'targets'
+        targets.touch()
         with pytest.raises(ValidationError) as e:
             s = VegetaSettings(rate='0', duration='0', target="GET http://example.com", targets="targets")
         assert '1 validation error for VegetaSettings' in str(e.value)
@@ -208,7 +210,7 @@ class TestVegetaSettings:
         targets = tmp_path / 'targets'
         with pytest.raises(ValidationError) as e:
             VegetaSettings(rate='0', duration='0', targets=targets)
-        assert '1 validation error for VegetaSettings' in str(e.value)
+        assert '2 validation errors for VegetaSettings' in str(e.value)
         assert e.value.errors()[0]['loc'] == ('targets',)
         assert 'file or directory at path' in e.value.errors()[0]['msg']
     

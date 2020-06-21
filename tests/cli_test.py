@@ -64,7 +64,11 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert "Servo v0.0.0" in result.stdout
 
 def test_settings(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
-    servo_yaml.write_text("connectors: []")
+    from servo.connector import VegetaSettings
+    import yaml
+    # FIXME: This is a hack due to tight coupling in early development
+    config = { 'connectors': [], 'vegeta': { 'duration': 0, 'rate': 0, 'target': 'https://opsani.com/'} }
+    servo_yaml.write_text(yaml.dump(config))
     result = cli_runner.invoke(cli_app, "settings")
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
