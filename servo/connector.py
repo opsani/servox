@@ -273,8 +273,8 @@ class VegetaSettings(Settings):
     """
     Configuration of the Vegeta connector
     """
-    rate: str = Field(description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.")
-    duration: str = Field(description="Specifies the amount of time to issue requests to the targets.")
+    rate: str = Field(None, description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.")
+    duration: str = Field(None, description="Specifies the amount of time to issue requests to the targets.")
     format: TargetFormat = Field('http', description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.")
     target: Optional[str] = Field(description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin.")
     targets: Optional[FilePath] = Field(description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk.")

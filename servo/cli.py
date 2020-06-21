@@ -12,7 +12,7 @@ from pydantic import ValidationError, Extra
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 from servo.connector import ServoSettings, VegetaSettings
-from typing import get_type_hints, Union, List
+from typing import get_type_hints, Union, List, Type
 from pathlib import Path
 from pygments import highlight
 from pygments.lexers import YamlLexer, JsonLexer
@@ -25,12 +25,13 @@ from tabulate import tabulate
 # SERVO_CONFIG_FILE (--config-file -c ./servo.yaml)
 
 servo: Servo = None
+ServoModel: Type = None
 
 # Use callback to define top-level options
 def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (format is example.com/app)"), 
              token: str = typer.Option(None, help="Opsani API access token"), 
              base_url: str = typer.Option("https://api.opsani.com/", help="Base URL for connecting to Opsani API")):
-    global servo
+    global servo, ServoModel
 
     # TODO: check if there is a servo.yaml (Need to support --config/-c at some point)
     # TODO: Load from env or arguments
@@ -143,21 +144,13 @@ def schema(
     all: bool = typer.Option(False, "--all", "-a", help="Include models from all available connectors"),
     top_level: bool = typer.Option(False, "--top-level", help="Emit a top-level schema (only connector models)")
 ) -> None:
-    '''Display configuration schema'''
-    connectors = servo.available_connectors() if all else servo.active_connectors()
+    '''Display configuration schema'''    
     if top_level:
+        connectors = servo.available_connectors() if all else servo.active_connectors()
         settings_classes = list(map(lambda c: c.settings_class(), connectors))
         top_level_schema = pydantic_schema(settings_classes, title='Servo Schema')
         typer.echo(highlight(json.dumps(top_level_schema, indent=2, default=pydantic_encoder), JsonLexer(), TerminalFormatter()))    
     else:
-        args = {}
-        for c in connectors:
-            # FIXME: this should be id, not default_id but we need instances
-            args[c.default_id()] = (c.settings_class(), ...)
-        ServoModel = pydantic.create_model(
-            'Servo',
-            **args
-        )
         typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))    
 
 @app.command(name='validate')
@@ -166,15 +159,6 @@ def validate(
     all: bool = typer.Option(False, "--all", "-a", help="Include models from all available connectors"),
 ) -> None:
     """Validate servo configuration file"""
-    connectors = servo.available_connectors() if all else servo.active_connectors()
-    args = {}
-    for c in connectors:
-        # FIXME: this should be id, not default_id but we need instances
-        args[c.default_id()] = (c.settings_class(), ...)
-    ServoModel = pydantic.create_model(
-        'Servo',
-        **args
-    )
     try:
         config = yaml.load(file, Loader=yaml.FullLoader)
         config_descriptor = ServoModel.parse_obj(config)
