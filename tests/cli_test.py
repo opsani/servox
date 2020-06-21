@@ -54,8 +54,10 @@ def test_info_verbose() -> None:
 def test_check() -> None:
     pass
 
-def test_version() -> None:
-    pass
+def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "version")
+    assert result.exit_code == 0
+    assert "Servo v0.0.0" in result.stdout
 
 def test_settings() -> None:
     pass

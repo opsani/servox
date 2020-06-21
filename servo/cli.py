@@ -108,7 +108,7 @@ def check() -> None:
 @app.command()
 def version() -> None:
     '''Display version and exit'''
-    # TODO: Refactor this to share the implementation in Vegeta
+    typer.echo(f'{servo.name} v{servo.version}')
     pass
 
 @app.command()
@@ -147,30 +147,25 @@ def validate(file: typer.FileText = typer.Argument('servo.yaml')) -> None:
 def generate() -> None:
     """Generate servo configuration"""
     # TODO: Dump the Servo settings, then all connectors by id
-
     pass
 
-### Begin connector subcommands
-connector_app = typer.Typer(name='connector', help="Manage connectors")
-app.add_typer(connector_app)
-
-@connector_app.command(name='list')
-def connectors_list() -> None:
-    '''List connectors in the assembly'''
-    pass
-
-@connector_app.command(name='add')
+@app.command(name='add')
 def connectors_add() -> None:
     '''Add a connector to the assembly'''
     pass
 
-@connector_app.command(name='remove')
+@app.command(name='remove')
 def connectors_remove() -> None:
     '''Remove a connector from the assembly'''
     pass
 
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
+
+@app.command(name='build')
+def developer_build() -> None:
+    '''Build the assembly'''
+    pass
 
 @app.command(name='test')
 def developer_test() -> None:
