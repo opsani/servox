@@ -25,15 +25,21 @@ class Optimizer(BaseModel):
 
     def __init__(
         self, 
-        id: str, 
-        token: str,
+        id: str = None, 
+        token: str = None,
         **kwargs
     ):
-        org_domain, app_name = id.split('/')
+        org_domain = kwargs.pop('org_domain', None)
+        app_name = kwargs.pop('app_name', None)
+        if id:
+            org_domain, app_name = id.split('/')
         super().__init__(org_domain=org_domain, app_name=app_name, token=token, **kwargs)
+    
+    def id(self) -> str:
+        '''Returns the optimizer identifier'''
+        return f'{self.org_domain}/{self.app_name}'
 
-# TODO: will be from connector import settings
-class ConnectorSettings(BaseSettings):
+class Settings(BaseSettings):
     description: Optional[str]
 
     # Optimizer we are communicating with
@@ -85,6 +91,8 @@ class Maturity(Enum):
 class Version(semver.VersionInfo):
     pass
 
+# TODO: becomes from servo.connector import Settings (or BaseSettings?)
+# TODO: needs to support env vars, loading from file
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -102,7 +110,7 @@ class Connector(BaseModel, abc.ABC):
 
     # Instance configuration
     id: str
-    settings: ConnectorSettings
+    settings: Settings
     _logger: logger
 
     @classmethod
@@ -134,7 +142,7 @@ class Connector(BaseModel, abc.ABC):
     
     def __init__(
         self, 
-        settings: ConnectorSettings, 
+        settings: Settings, 
         *,
         id: Optional[str] = None, 
         **kwargs
@@ -157,9 +165,7 @@ class Connector(BaseModel, abc.ABC):
 
 Connector.update_forward_refs()
 
-# TODO: becomes from servo.connector import Settings (or BaseSettings?)
-# TODO: needs to support env vars, loading from file
-class ServoSettings(ConnectorSettings):
+class ServoSettings(Settings):
     optimizer: Optimizer
     '''The Opsani optimizer the Servo is attached to'''
 
@@ -208,7 +214,7 @@ class TargetFormat(str, Enum):
     def __str__(self):
         return self.value
 
-class VegetaSettings(ConnectorSettings):
+class VegetaSettings(Settings):
     """
     Configuration of the Vegeta connector
     """
@@ -424,52 +430,3 @@ class VegetaConnector(Connector):
             pass
 
         return cli
-
-# TODO: Moves to cli.py
-# app = typer.Typer(callback=callback, add_completion=False)
-# app.add_typer(vegeta_app, name="vegeta", help="Vegeta load generator")
-# app.add_typer(vegeta_app, name="kubernetes", help="Kubernetes orchestrator")
-# app.add_typer(vegeta_app, name="prometheus", help="Prometheus metrics")
-
-# config_descriptor = yaml.load(open("./servo.yaml"), Loader=yaml.FullLoader)
-# vegeta = VegetaConnector(config_descriptor=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
-# servo = Servo(config=config_descriptor, app="dev.opsani.com/blake", token="sadasdsa")
-# servo.add_connector(vegeta)
-
-# @app.command()
-# def schema():
-#     """
-#     Display the JSON Schema 
-#     """
-#     # TODO: Read config file, find all loaded connectors, bundle into a schema...
-#     # What you probably have to do is 
-#     # print(Servo.schema_json(indent=2))
-#     from pydantic.schema import schema
-#     from pydantic.json import pydantic_encoder
-#     ServoModel = create_model(
-#     'ServoModel',
-#     servo=(ServoConfig, ...),
-#     vegeta=(Config, ...))
-#     print(ServoModel.schema_json(indent=2))
-#     # top_level_schema = schema([ServoConfig, Config], title='Servo Schema')
-#     # print(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
-
-# @app.command()
-# def validate(file: typer.FileText = typer.Argument(...)):
-#     """
-#     Validate given file against the JSON Schema
-#     """
-#     ServoModel = create_model(
-#     'ServoModel',
-#     servo=(ServoConfig, ...),
-#     vegeta=(Config, ...))
-#     try:
-#         config = yaml.load(file, Loader=yaml.FullLoader)
-#         config_descriptor = ServoModel.parse_obj(config)
-#         typer.echo("√ Valid servo configuration")
-#     except ValidationError as e:
-#         typer.echo("X Invalid servo configuration")
-#         print(e)
-#     pyaml.p(config)
-
-# # TODO: Needs to take a list of connectors

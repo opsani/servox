@@ -52,19 +52,17 @@ def test_check() -> None:
 def test_version() -> None:
     pass
 
-## TODO: moves to config.py
-def test_config() -> None:
-    """Display servo configuration"""
+def test_settings() -> None:
     pass
 
-def test_config_schema() -> None:
+def test_schema() -> None:
     pass
 
-def test_config_validate() -> None:
+def test_validate() -> None:
     """Validate servo configuration file"""
     pass
 
-def test_config_generate() -> None:
+def test_generate() -> None:
     """Generate servo configuration"""
     pass
 
@@ -86,6 +84,3 @@ def test_developer_lint() -> None:
 
 def test_developer_format() -> None:
     pass
-
-
-## TODO: Dynamic command namespacing and registration
