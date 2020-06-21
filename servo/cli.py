@@ -4,11 +4,13 @@ import sys
 from servo.connector import Connector, Servo, Optimizer, ServoSettings, VegetaSettings
 from devtools import debug
 import json
+import yaml
 import pydantic
 from pydantic.schema import schema
 from pydantic.json import pydantic_encoder
 from servo.connector import ServoSettings, VegetaSettings
 from typing import get_type_hints
+from pathlib import Path
 
 # OPSANI_OPTIMIZER (--optimizer -o no default)
 # OPSANI_TOKEN (--token -t no default)
@@ -67,9 +69,13 @@ def info() -> None:
 @app.command()
 def settings() -> None:
     '''Display the fully resolved settings'''
-    # TODO: Requires a config file, spits out settings
-    # Take optional arg for subkey
-    pass
+    from pygments import highlight
+    from pygments.lexers import YamlLexer
+    from pygments.formatters import TerminalFormatter
+
+    settings = servo.settings.dict(exclude={'optimizer'}, exclude_unset=True)
+    settings_yaml = yaml.dump(settings, indent=4, sort_keys=True)
+    typer.echo(highlight(settings_yaml, YamlLexer(), TerminalFormatter()))
 
 @app.command()
 def check() -> None:
