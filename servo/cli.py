@@ -90,12 +90,6 @@ def info() -> None:
         table.append([connector.name, connector.version, connector.description])
     
     typer.echo(tabulate(table, headers, tablefmt="plain"))
-    # typer.echo((
-    #     f"{servo.name} v{servo.version} ({servo.maturity})\n"
-    #     f"{servo.description}\n"
-    #     f"{servo.homepage}\n"
-    #     f"Licensed under the terms of {servo.license}\n"
-    # ))
 
 @app.command()
 def settings() -> None:
