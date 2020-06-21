@@ -196,8 +196,8 @@ def developer_test() -> None:
 def developer_lint() -> None:
     '''Emit opinionated linter warnings and suggestions'''
     cmds = [
-        'flake8 app --exclude=db',
-        'mypy app',
+        'flake8 servo',
+        'mypy servo',
         'black --check servo --diff',
         'isort --recursive --check-only servo',
     ]
@@ -214,7 +214,7 @@ def developer_format() -> None:
         'isort --recursive app tests'
     ]
     for cmd in cmds:        
-        __run(cmd, check=True)
+        __run(cmd)
 
 def __run(args: Union[str, List[str]], **kwargs) -> None:
     args = shlex.split(args) if isinstance(args, str) else args
