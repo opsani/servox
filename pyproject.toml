@@ -28,6 +28,7 @@ mypy = "^0.780"
 wemake-python-styleguide = "^0.14.0"
 devtools = "^0.5.1"
 ipython = "^7.15.0"
+black = "^19.10b0"
 
 [tool.poetry.scripts]
 servo = "servo.cli:main"
