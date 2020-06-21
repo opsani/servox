@@ -286,7 +286,7 @@ class VegetaSettings(Settings):
     keepalive: bool = Field(True, description="Specifies whether to reuse TCP connections between HTTP requests.")
     insecure: bool = Field(False, description="Specifies whether to ignore invalid server TLS certificates.")
 
-    @root_validator(pre=True)
+    @root_validator()
     @classmethod
     def validate_target(cls, values):
         target, targets = values.get('target'), values.get('targets')
