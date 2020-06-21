@@ -122,8 +122,9 @@ def info(
 @app.command()
 def settings() -> None:
     '''Display the fully resolved settings'''
-    settings = servo.settings.dict(exclude={'optimizer'}, exclude_unset=True)
-    settings_yaml = yaml.dump(settings, indent=4, sort_keys=True)
+    settings = servo.settings.dict(exclude={'optimizer', 'extra'}, exclude_unset=True)
+    settings_obj = json.loads(json.dumps(settings))
+    settings_yaml = yaml.dump(settings_obj, indent=4, sort_keys=True)
     typer.echo(highlight(settings_yaml, YamlLexer(), TerminalFormatter()))
 
 @app.command()

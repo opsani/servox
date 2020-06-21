@@ -63,6 +63,7 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert result.exit_code == 0
     assert "Servo v0.0.0" in result.stdout
 
+# TODO: Need to verify JSON -> YAML round-tripping
 def test_settings(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
     from servo.connector import VegetaSettings
     import yaml
@@ -104,6 +105,7 @@ def test_validate(cli_runner: CliRunner, cli_app: Typer) -> None:
 def test_generate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Generate servo configuration"""
     pass
+    # TODO: Generate this thing in test dir
 
 def test_developer_test(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
