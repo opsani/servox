@@ -136,7 +136,7 @@ class Connector(BaseModel, abc.ABC):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls.name = cls.__qualname__.replace('Connector', ' Connector')
+        cls.name = cls.__name__.replace('Connector', ' Connector')
         cls.version = semver.VersionInfo.parse("0.0.0")
         cls.__subclasses.append(cls)
     
@@ -147,7 +147,7 @@ class Connector(BaseModel, abc.ABC):
         id: Optional[str] = None, 
         **kwargs
     ):
-        id = id if id is not None else type(self).__qualname__.replace('Connector', '').lower()
+        id = id if id is not None else type(self).__name__.replace('Connector', '').lower()
         super().__init__(id=id, settings=settings, **kwargs)
     
     async def api_client(self) -> httpx.AsyncClient:
@@ -163,19 +163,51 @@ class Connector(BaseModel, abc.ABC):
         '''Returns a Typer CLI for the connector'''
         return None
 
-Connector.update_forward_refs()
-
+def metadata(
+    name: Optional[str] = None, 
+    description: Optional[str] = None, 
+    version: Optional[semver.VersionInfo] = None,
+    homepage: Optional[HttpUrl] = None,
+    license: Optional[License] = None,
+    maturity: Optional[Maturity] = None,
+):
+    def decorator(cls):
+        if name:
+            cls.name = name
+        if description:
+            cls.description = description
+        if version:
+            cls.version = version if isinstance(version, semver.VersionInfo) else Version.parse(version)
+        if homepage:
+            cls.homepage = homepage
+        if license:
+            cls.license = license
+        if maturity:
+            cls.maturity = maturity
+        return cls
+    return decorator
+    
 class ServoSettings(Settings):
     optimizer: Optimizer
     '''The Opsani optimizer the Servo is attached to'''
 
     connectors: List[str] = []
 
+@metadata(
+    description="Continuous Optimization Orchestrator"
+)
 class Servo(Connector):
     '''The Servo'''
     settings: ServoSettings
     connectors: List['Connector'] = []
     
+    def available_connectors(self) -> List['Connector']:
+        connectors = []
+        for cls in Connector.all():
+            if cls == self.__class__:
+                continue
+            connectors.append(cls)
+        return connectors
     ##
     # Connector management
 
@@ -311,30 +343,6 @@ class VegetaSettings(Settings):
             TargetFormat: lambda t: t.value()
         }
 
-def metadata(
-    name: Optional[str] = None, 
-    description: Optional[str] = None, 
-    version: Optional[semver.VersionInfo] = None,
-    homepage: Optional[HttpUrl] = None,
-    license: Optional[License] = None,
-    maturity: Optional[Maturity] = None,
-):
-    def decorator(cls):
-        if name:
-            cls.name = name
-        if description:
-            cls.description = description
-        if version:
-            cls.version = version if isinstance(version, semver.VersionInfo) else Version.parse(version)
-        if homepage:
-            cls.homepage = homepage
-        if license:
-            cls.license = license
-        if maturity:
-            cls.maturity = maturity
-        return cls
-    return decorator
-
 # TODO: AdjustMixin, MeasureMixin??
 
 class ConnectorCLI(typer.Typer):
@@ -391,7 +399,7 @@ class ConnectorCLI(typer.Typer):
         @self.command()
         def info():
             """
-            Display assembly info
+            Display connector info
             """
             typer.echo((
                 f"{self.connector.name} v{self.connector.version} ({self.connector.maturity})\n"

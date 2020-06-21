@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from pydantic import ValidationError
-from servo.connector import Connector, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat, Optimizer
+from servo.connector import Connector, Settings, Servo, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat, Optimizer
 from typing import ClassVar, Union
 
 # test subclass regisration
@@ -24,7 +24,7 @@ class TestOptimizer:
             Optimizer('invalid/my-app', token='123456')
         assert '1 validation error for Optimizer' in str(e.value)
         assert e.value.errors()[0]['loc'] == ('org_domain',)
-        assert e.value.errors()[0]['msg'] == 'string does not match regex "(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"'
+        assert e.value.errors()[0]['msg'] == 'string does not match regex "(([\\da-zA-Z])([_\\w-]{,62})\\.){,127}(([\\da-zA-Z])[_\\w-]{,61})?([\\da-zA-Z]\\.((xn\\-\\-[a-zA-Z\\d]+)|([a-zA-Z\\d]{2,})))"'
 
     def test_app_name_valid(self) -> None:
         optimizer = Optimizer('example.com/my-app', token='123456')
@@ -35,7 +35,7 @@ class TestOptimizer:
             Optimizer('example.com/$$$invalid$$$', token='123456')
         assert '1 validation error for Optimizer' in str(e.value)
         assert e.value.errors()[0]['loc'] == ('app_name',)
-        assert e.value.errors()[0]['msg'] == 'string does not match regex "^[a-z\-]{6,32}$"'
+        assert e.value.errors()[0]['msg'] == 'string does not match regex "^[a-z\\-]{6,32}$"'
 
     def test_token_validation(self) -> None:
         with pytest.raises(ValidationError) as e:
@@ -74,12 +74,28 @@ class TestMaturity:
             Maturity.from_str('INVALID')
         assert 'No maturity level identified by "INVALID"' in str(e)
 
-class ConnectorTests:
-    pass
+class TestConnector:    
+    def test_subclass_registration(self) -> None:
+        class RegisterMe(Connector):
+            pass        
+        assert RegisterMe in Connector.all()
 
-    # Register subclass
-    # API client, logger
-    # default ID behavior
+    def test_default_name(self) -> None:
+        class TestConnector(Connector):
+            pass
+        assert TestConnector.name == 'Test Connector'
+    
+    def test_default_version(self) -> None:
+        class TestConnector(Connector):
+            pass
+        assert TestConnector.version == '0.0.0'
+    
+    def test_default_id(self) -> None:
+        class FancyConnector(Connector):
+            pass
+        c = FancyConnector(Settings())
+        debug(c)
+        assert c.id == 'fancy'
 
 class TestServoSettings:
     pass
@@ -87,6 +103,13 @@ class TestServoSettings:
 class TestServo:
     def test_init_with_optimizer(self) -> None:
         pass
+
+    def test_available_connectors(self) -> None:
+        class FooConnector(Connector):
+            pass
+
+        c = Servo.construct().available_connectors()        
+        assert FooConnector in c
 
 ###
 ### Connector specific

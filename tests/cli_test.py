@@ -44,6 +44,11 @@ def test_console() -> None:
     pass
 
 def test_info() -> None:
+    # TODO: mock out the available connectors for consistent results
+    pass
+
+def test_info_verbose() -> None:
+    # TODO: include license, maturity, etc.
     pass
 
 def test_check() -> None:

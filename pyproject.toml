@@ -15,6 +15,7 @@ python-dotenv = "^0.13.0"
 semver = "^2.10.1"
 pyaml = "^20.4.0"
 durationpy = "^0.5"
+tabulate = "^0.8.7"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"
