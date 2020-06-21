@@ -73,13 +73,13 @@ def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "schema")
     assert result.exit_code == 0    
     schema = json.loads(result.stdout)
-    assert schema['title'] == 'ServoModel'
+    assert schema['title'] == 'Servo'
 
 def test_schema_all(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ['schema', '--all'])
     assert result.exit_code == 0    
     schema = json.loads(result.stdout)
-    assert schema['title'] == 'ServoModel'
+    assert schema['title'] == 'Servo'
 
 def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ['schema', '--top-level'])
