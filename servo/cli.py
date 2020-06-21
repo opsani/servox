@@ -6,11 +6,13 @@ from devtools import debug
 import json
 import yaml
 import pydantic
+import subprocess
+import shlex
 from pydantic import ValidationError
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 from servo.connector import ServoSettings, VegetaSettings
-from typing import get_type_hints
+from typing import get_type_hints, Union, List
 from pathlib import Path
 from pygments import highlight
 from pygments.lexers import YamlLexer, JsonLexer
@@ -159,25 +161,40 @@ def generate() -> None:
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
 
-@app.command(name='build')
-def developer_build() -> None:
-    '''Build the assembly'''
-    pass
-
 @app.command(name='test')
 def developer_test() -> None:
     '''Run automated tests'''
-    pass
+    __run('pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests')
 
 @app.command(name='lint')
 def developer_lint() -> None:
     '''Emit opinionated linter warnings and suggestions'''
-    pass
+    cmds = [
+        'flake8 app --exclude=db',
+        'mypy app',
+        'black --check servo --diff',
+        'isort --recursive --check-only servo',
+    ]
+    for cmd in cmds:        
+        __run(cmd)
 
 @app.command(name='format')
 def developer_format() -> None:
     '''Apply automatic formatting to the codebase'''
-    pass
+    cmds = [
+        'isort --recursive  --force-single-line-imports servo tests',
+        'autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests',
+        'black app tests',
+        'isort --recursive app tests'
+    ]
+    for cmd in cmds:        
+        __run(cmd, check=True)
+
+def __run(args: Union[str, List[str]], **kwargs) -> None:
+    args = shlex.split(args) if isinstance(args, str) else args
+    process = subprocess.run(args, **kwargs)
+    if process.returncode != 0:
+        sys.exit(process.returncode)
 
 # Run the Typer CLI
 def main():
