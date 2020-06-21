@@ -204,6 +204,11 @@ class ServoSettings(Settings):
 
     connectors: List[str] = []
 
+    class Config:
+        # We are the base root of pluggable configuration
+        # so we ignore any extra fields so you can turn connectors on and off
+        extra = Extra.ignore
+
 @metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",

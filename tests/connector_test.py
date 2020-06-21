@@ -5,7 +5,7 @@ import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from pydantic import ValidationError
-from servo.connector import Connector, Settings, Servo, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat, Optimizer
+from servo.connector import Connector, Settings, Servo, VegetaSettings, VegetaConnector, License, Maturity, Version, TargetFormat, Optimizer, ServoSettings
 from typing import ClassVar, Union
 
 # test subclass regisration
@@ -97,7 +97,12 @@ class TestConnector:
         assert c.id == 'fancy'
 
 class TestServoSettings:
-    pass
+    def test_ignores_extra_attributes(self) -> None:
+        # Ignored attribute would raise if misconfigured
+        s = ServoSettings(ignored=[], optimizer=Optimizer('example.com/my-app', token='123456'))
+        with pytest.raises(AttributeError) as e:
+            s.ignored
+        assert "'ServoSettings' object has no attribute 'ignored'" in str(e)
 
 class TestServo:
     def test_init_with_optimizer(self) -> None:

@@ -8,7 +8,7 @@ import yaml
 import pydantic
 import subprocess
 import shlex
-from pydantic import ValidationError
+from pydantic import ValidationError, Extra
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 from servo.connector import ServoSettings, VegetaSettings
@@ -38,14 +38,31 @@ app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
 settings: ServoSettings = None
 optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
 config_file = Path.cwd() / 'servo.yaml'
+
 if config_file.exists():
-    config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-    config['optimizer'] = optimizer.dict()
-    settings = ServoSettings.parse_obj(config)
+    args = {}
+    for c in Connector.all():
+        if c is not Servo:
+            args[c.default_id()] = (c.settings_class(), ...)
+    ServoModel = pydantic.create_model(
+        'ServoModel',
+        __base__=ServoSettings,
+        optimizer=optimizer,
+        extra=Extra.forbid,
+        **args,
+    )
+    try:
+        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+        settings = ServoModel.parse_obj(config)
+    except ValidationError as error:
+        typer.echo(error, err=True)
+        sys.exit(2)
 else:
+    # If we do not have a project, build a minimal configuration
     settings = ServoSettings(optimizer=optimizer)
 
-# TODO: What is the behavior here outside of a project?
+# Connect the CLIs for all connectors
+# TODO: This should respect the connectors list when there is a config file present
 servo = Servo(settings)
 for cls in servo.available_connectors():
     settings = cls.settings_class().construct()
@@ -162,7 +179,7 @@ def validate(
 @app.command(name='generate')
 def generate() -> None:
     """Generate servo configuration"""
-    # TODO: Dump the Servo settings, then all connectors by id
+    # TODO: Add force and output path options
     schema = servo.settings.dict(by_alias=True, exclude={'optimizer'})
     connectors = servo.available_connectors()
     for connector in connectors:
@@ -176,9 +193,9 @@ def generate() -> None:
     
     # NOTE: We have to serialize through JSON first
     schema_obj = json.loads(json.dumps(schema))
-    output_path = Path.cwd() / f'servo.yaml'
+    output_path = Path.cwd() / 'servo.yaml'
     output_path.write_text(yaml.dump(schema_obj))
-    typer.echo(f"Generated servo.yaml")
+    typer.echo("Generated servo.yaml")
 
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
