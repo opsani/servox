@@ -186,7 +186,7 @@ def metadata(
             cls.maturity = maturity
         return cls
     return decorator
-    
+
 class ServoSettings(Settings):
     optimizer: Optimizer
     '''The Opsani optimizer the Servo is attached to'''
@@ -194,7 +194,10 @@ class ServoSettings(Settings):
     connectors: List[str] = []
 
 @metadata(
-    description="Continuous Optimization Orchestrator"
+    description="Continuous Optimization Orchestrator",
+    homepage="https://opsani.com/",
+    maturity=Maturity.ROBUST,
+    license=License.APACHE2
 )
 class Servo(Connector):
     '''The Servo'''

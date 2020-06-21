@@ -1,6 +1,7 @@
 import pytest
 import os
 import time
+import json
 from pathlib import Path
 from typer import Typer
 from typer.testing import CliRunner
@@ -31,27 +32,29 @@ def test_help(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert result.exit_code == 0
     assert "servox [OPTIONS] COMMAND [ARGS]" in result.stdout
 
-def test_new() -> None:
+def test_new(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Creates a new servo assembly at [PATH]"""
     pass
 
-def test_run() -> None:
+def test_run(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Run the servo"""
     pass
 
-def test_console() -> None:
+def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Open an interactive console"""
     pass
 
-def test_info() -> None:
-    # TODO: mock out the available connectors for consistent results
-    pass
+def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "info")
+    assert result.exit_code == 0
+    assert "NAME              VERSION    DESCRIPTION\n" in result.stdout
 
-def test_info_verbose() -> None:
-    # TODO: include license, maturity, etc.
-    pass
+def test_info_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "info -v")
+    assert result.exit_code == 0
+    assert "NAME              VERSION    DESCRIPTION                           HOMEPAGE                                    MATURI" in result.stdout
 
-def test_check() -> None:
+def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
 def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
@@ -59,35 +62,40 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert result.exit_code == 0
     assert "Servo v0.0.0" in result.stdout
 
-def test_settings() -> None:
+def test_settings(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    servo_yaml.write_text("connectors: []")
+    result = cli_runner.invoke(cli_app, "settings")
+    assert result.exit_code == 0
+    assert "connectors:" in result.stdout
+
+def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "schema")
+    assert result.exit_code == 0    
+    schema = json.loads(result.stdout)
+    assert schema['title'] == 'ServoModel'
+
+def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, ['schema', '--top-level'])
+    assert result.exit_code == 0
+    schema = json.loads(result.stdout)
+    assert schema['title'] == 'Servo Schema'
+
+def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
-def test_schema() -> None:
-    pass
-
-def test_validate() -> None:
+def test_validate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Validate servo configuration file"""
     pass
 
-def test_generate() -> None:
+def test_generate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Generate servo configuration"""
     pass
 
-def test_connectors() -> None:
+def test_developer_test(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
-def test_connectors_add() -> None:
+def test_developer_lint(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
-def test_connectors_remove() -> None:
-    pass
-
-## TODO: Moves to developer.py
-def test_developer_test() -> None:
-    pass
-
-def test_developer_lint() -> None:
-    pass
-
-def test_developer_format() -> None:
+def test_developer_format(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass

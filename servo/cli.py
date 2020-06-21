@@ -7,7 +7,7 @@ import json
 import yaml
 import pydantic
 from pydantic import ValidationError
-from pydantic.schema import schema
+from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 from servo.connector import ServoSettings, VegetaSettings
 from typing import get_type_hints
@@ -78,16 +78,21 @@ def console() -> None:
     pass
 
 @app.command()
-def info() -> None:
-    '''Display information about the assembly'''
-    # TODO: add verbose output to show more
+def info(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info")
+) -> None:
+    '''Display information about the assembly'''    
     headers = ["NAME", "VERSION", "DESCRIPTION"]
-    table = [
-        [servo.name, servo.version, servo.description]
-    ]
-
+    row = [servo.name, servo.version, servo.description]    
+    if verbose:
+        headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
+        row += [servo.homepage, servo.maturity, servo.license]
+    table = [row]
     for connector in servo.available_connectors():
-        table.append([connector.name, connector.version, connector.description])
+        row = [connector.name, connector.version, connector.description]
+        if verbose:
+            row += [connector.homepage, connector.maturity, connector.license]
+        table.append(row)
     
     typer.echo(tabulate(table, headers, tablefmt="plain"))
 
@@ -112,20 +117,22 @@ def version() -> None:
     pass
 
 @app.command()
-def schema() -> None:
+def schema(
+    top_level: bool = typer.Option(False, "--top-level", help="Emit a top-level schema (only models)")
+) -> None:
     '''Display configuration schema'''
-    # TODO: Read config file, find all loaded connectors, bundle into a schema...
-    ServoModel = pydantic.create_model(
-        'ServoModel',
-        servo=(ServoSettings, ...),
-        vegeta=(VegetaSettings, ...)
-    )
-    typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))
-
-    # TODO: top level only includes definitions and no keys (put under an option)
-    # from pydantic.schema import schema as pydantic_schema
-    # top_level_schema = pydantic_schema([ServoSettings, VegetaSettings], title='Servo Schema')
-    # typer.echo(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
+    if top_level:
+        top_level_schema = pydantic_schema([ServoSettings, VegetaSettings], title='Servo Schema')
+        # typer.echo(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
+        typer.echo(highlight(json.dumps(top_level_schema, indent=2, default=pydantic_encoder), JsonLexer(), TerminalFormatter()))    
+    else:
+        # TODO: Read config file, find all loaded connectors, bundle into a schema...
+        ServoModel = pydantic.create_model(
+            'ServoModel',
+            servo=(ServoSettings, ...),
+            vegeta=(VegetaSettings, ...)
+        )
+        typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))    
 
 @app.command(name='validate')
 def validate(file: typer.FileText = typer.Argument('servo.yaml')) -> None:
@@ -147,16 +154,6 @@ def validate(file: typer.FileText = typer.Argument('servo.yaml')) -> None:
 def generate() -> None:
     """Generate servo configuration"""
     # TODO: Dump the Servo settings, then all connectors by id
-    pass
-
-@app.command(name='add')
-def connectors_add() -> None:
-    '''Add a connector to the assembly'''
-    pass
-
-@app.command(name='remove')
-def connectors_remove() -> None:
-    '''Remove a connector from the assembly'''
     pass
 
 ### Begin developer subcommands

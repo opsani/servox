@@ -94,7 +94,6 @@ class TestConnector:
         class FancyConnector(Connector):
             pass
         c = FancyConnector(Settings())
-        debug(c)
         assert c.id == 'fancy'
 
 class TestServoSettings:
