@@ -38,18 +38,22 @@ def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (fo
     optimizer = Optimizer('dev.opsani.com/fake-app-name', '0000000000000000000000000000000000000000000000000000000')
     config_file = Path.cwd() / 'servo.yaml'
 
-    if config_file.exists():
-        args = {}
-        for c in Connector.all():
-            if c is not Servo:
-                args[c.default_id()] = (c.settings_class(), ...)
-        ServoModel = pydantic.create_model(
-            'Servo',
-            __base__=ServoSettings,
-            optimizer=optimizer,
-            extra=Extra.forbid,
-            **args,
-        )
+    # Build our dynamic model
+    args = {}
+    for c in Connector.all():
+        if c is not Servo:
+            args[c.default_id()] = (c.settings_class(), ...)
+
+    ServoModel = pydantic.create_model(
+        'Servo',
+        __base__=ServoSettings,
+        optimizer=optimizer,
+        extra=Extra.forbid,
+        **args,
+    )
+
+    # Load a file if we have one
+    if config_file.exists():        
         try:
             config = yaml.load(open(config_file), Loader=yaml.FullLoader)
             settings = ServoModel.parse_obj(config)
@@ -57,8 +61,12 @@ def root_callback(optimizer: str = typer.Option(None, help="Opsani optimizer (fo
             typer.echo(error, err=True)
             sys.exit(2)
     else:
-        # If we do not have a project, build a minimal configuration
-        settings = ServoSettings(optimizer=optimizer)
+        # If we do not have a project, build a minimal configuration        
+        args = {}
+        for c in Connector.all():
+            if c is not Servo:
+                args[c.default_id()] = c.settings_class().construct()
+        settings = ServoModel(optimizer=optimizer, **args)
 
     # Connect the CLIs for all connectors
     # TODO: This should respect the connectors list when there is a config file present
@@ -180,17 +188,12 @@ def generate() -> None:
     """Generate servo configuration"""
     # TODO: Add force and output path options
     schema = servo.settings.dict(by_alias=True, exclude={'optimizer'})
-    connectors = servo.available_connectors()
-    for connector in connectors:
-        # NOTE: We generate with a potentially incomplete settings instance
-        # if there is required configuration without reasonable defaults. This
-        # should be fine because the errors at load time will be clear and we cna
-        # embed examples into the schema or put in sentinel values.
-        settings = cls.settings_class().construct()
-        connector = cls(settings)        
-        schema[connector.default_id()] = connector.settings.dict(by_alias=True)
     
-    # NOTE: We have to serialize through JSON first
+    # NOTE: We generate with a potentially incomplete settings instance
+    # if there is required configuration without reasonable defaults. This
+    # should be fine because the errors at load time will be clear and we cna
+    # embed examples into the schema or put in sentinel values.
+    # NOTE: We have to serialize through JSON first 
     schema_obj = json.loads(json.dumps(schema))
     output_path = Path.cwd() / 'servo.yaml'
     output_path.write_text(yaml.dump(schema_obj))
