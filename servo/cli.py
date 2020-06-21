@@ -45,7 +45,7 @@ if config_file.exists():
         if c is not Servo:
             args[c.default_id()] = (c.settings_class(), ...)
     ServoModel = pydantic.create_model(
-        'ServoModel',
+        'Servo',
         __base__=ServoSettings,
         optimizer=optimizer,
         extra=Extra.forbid,
@@ -148,7 +148,7 @@ def schema(
             # FIXME: this should be id, not default_id but we need instances
             args[c.default_id()] = (c.settings_class(), ...)
         ServoModel = pydantic.create_model(
-            'ServoModel',
+            'Servo',
             **args
         )
         typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))    
@@ -165,7 +165,7 @@ def validate(
         # FIXME: this should be id, not default_id but we need instances
         args[c.default_id()] = (c.settings_class(), ...)
     ServoModel = pydantic.create_model(
-        'ServoModel',
+        'Servo',
         **args
     )
     try:
