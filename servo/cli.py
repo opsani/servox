@@ -120,7 +120,7 @@ def schema(
     top_level: bool = typer.Option(False, "--top-level", help="Emit a top-level schema (only connector models)")
 ) -> None:
     '''Display configuration schema'''
-    connectors = servo.available_connectors() if all else servo.active_connectors()    
+    connectors = servo.available_connectors() if all else servo.active_connectors()
     if top_level:
         settings_classes = list(map(lambda c: c.settings_class(), connectors))
         top_level_schema = pydantic_schema(settings_classes, title='Servo Schema')
@@ -137,12 +137,19 @@ def schema(
         typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))    
 
 @app.command(name='validate')
-def validate(file: typer.FileText = typer.Argument('servo.yaml')) -> None:
+def validate(
+    file: typer.FileText = typer.Argument('servo.yaml'),
+    all: bool = typer.Option(False, "--all", "-a", help="Include models from all available connectors"),
+) -> None:
     """Validate servo configuration file"""
+    connectors = servo.available_connectors() if all else servo.active_connectors()
+    args = {}
+    for c in connectors:
+        # FIXME: this should be id, not default_id but we need instances
+        args[c.default_id()] = (c.settings_class(), ...)
     ServoModel = pydantic.create_model(
         'ServoModel',
-        servo=(ServoSettings, ...),
-        vegeta=(VegetaSettings, ...)
+        **args
     )
     try:
         config = yaml.load(file, Loader=yaml.FullLoader)
@@ -156,7 +163,22 @@ def validate(file: typer.FileText = typer.Argument('servo.yaml')) -> None:
 def generate() -> None:
     """Generate servo configuration"""
     # TODO: Dump the Servo settings, then all connectors by id
-    pass
+    schema = servo.settings.dict(by_alias=True, exclude={'optimizer'})
+    connectors = servo.available_connectors()
+    for connector in connectors:
+        # NOTE: We generate with a potentially incomplete settings instance
+        # if there is required configuration without reasonable defaults. This
+        # should be fine because the errors at load time will be clear and we cna
+        # embed examples into the schema or put in sentinel values.
+        settings = cls.settings_class().construct()
+        connector = cls(settings)        
+        schema[connector.default_id()] = connector.settings.dict(by_alias=True)
+    
+    # NOTE: We have to serialize through JSON first
+    schema_obj = json.loads(json.dumps(schema))
+    output_path = Path.cwd() / f'servo.yaml'
+    output_path.write_text(yaml.dump(schema_obj))
+    typer.echo(f"Generated servo.yaml")
 
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
