@@ -7,6 +7,7 @@ from typer import Typer
 from typer.testing import CliRunner
 from servo import cli
 from pydantic import ValidationError
+from servo.connector import Connector, Optimizer, ServoSettings, Servo
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
@@ -74,14 +75,23 @@ def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
     schema = json.loads(result.stdout)
     assert schema['title'] == 'ServoModel'
 
+def test_schema_all(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, ['schema', '--all'])
+    assert result.exit_code == 0    
+    schema = json.loads(result.stdout)
+    assert schema['title'] == 'ServoModel'
+
 def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ['schema', '--top-level'])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema['title'] == 'Servo Schema'
 
-def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
-    pass
+def test_schema_all_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:    
+    result = cli_runner.invoke(cli_app, ['schema', '--top-level', '--all'])
+    assert result.exit_code == 0
+    schema = json.loads(result.stdout)
+    assert schema['title'] == 'Servo Schema'
 
 def test_validate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Validate servo configuration file"""

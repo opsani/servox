@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, ValidationError, Extra, BaseSettings, cre
 from pydantic.validators import str_validator
 from pydantic.schema import schema
 import abc
-from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable, Union, Literal
+from typing import ClassVar, Any, Optional, ClassVar, List, Dict, Callable, Union, Literal, TypeVar, get_type_hints
 from enum import Enum
 from pathlib import Path
 import yaml
@@ -134,6 +134,17 @@ class Connector(BaseModel, abc.ABC):
         assert bool(re.match("^[0-9a-z_]{4,16}$", v)), 'id may only contain lowercase alphanumeric characters and underscores'
         return v
 
+    @classmethod
+    def settings_class(cls) -> TypeVar:
+        hints = get_type_hints(cls)
+        settings_cls = hints['settings']
+        return settings_cls
+    
+    @classmethod
+    def default_id(cls) -> str:
+        name = cls.__name__.replace('Connector', '')
+        return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.name = cls.__name__.replace('Connector', ' Connector')
@@ -147,7 +158,7 @@ class Connector(BaseModel, abc.ABC):
         id: Optional[str] = None, 
         **kwargs
     ):
-        id = id if id is not None else type(self).__name__.replace('Connector', '').lower()
+        id = id if id is not None else self.default_id()
         super().__init__(id=id, settings=settings, **kwargs)
     
     async def api_client(self) -> httpx.AsyncClient:
@@ -204,7 +215,11 @@ class Servo(Connector):
     settings: ServoSettings
     connectors: List['Connector'] = []
     
-    def available_connectors(self) -> List['Connector']:
+    def active_connectors(self) -> List[Connector]:
+        '''Return connectors explicitly activated in the configuration'''
+        return self.connectors
+
+    def available_connectors(self) -> List[Connector]:
         connectors = []
         for cls in Connector.all():
             if cls == self.__class__:

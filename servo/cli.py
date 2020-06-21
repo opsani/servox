@@ -45,16 +45,12 @@ else:
 
 # TODO: What is the behavior here outside of a project?
 servo = Servo(settings)
-for cls in Connector.all():
-    if cls != Servo:
-        # NOTE: Read the type hint to find our settings class
-        hints = get_type_hints(cls)
-        settings_cls = hints['settings']
-        settings = settings_cls.construct()
-        connector = cls(settings)
-        cli = connector.cli()
-        if cli is not None:
-            app.add_typer(cli)
+for cls in servo.available_connectors():
+    settings = cls.settings_class().construct()
+    connector = cls(settings)
+    cli = connector.cli()
+    if cli is not None:
+        app.add_typer(cli)
 
 # NOTE: Two modes of operation: In an assembly and out
 
@@ -118,19 +114,23 @@ def version() -> None:
 
 @app.command()
 def schema(
-    top_level: bool = typer.Option(False, "--top-level", help="Emit a top-level schema (only models)")
+    all: bool = typer.Option(False, "--all", "-a", help="Include models from all available connectors"),
+    top_level: bool = typer.Option(False, "--top-level", help="Emit a top-level schema (only connector models)")
 ) -> None:
     '''Display configuration schema'''
+    connectors = servo.available_connectors() if all else servo.active_connectors()    
     if top_level:
-        top_level_schema = pydantic_schema([ServoSettings, VegetaSettings], title='Servo Schema')
-        # typer.echo(json.dumps(top_level_schema, indent=2, default=pydantic_encoder))
+        settings_classes = list(map(lambda c: c.settings_class(), connectors))
+        top_level_schema = pydantic_schema(settings_classes, title='Servo Schema')
         typer.echo(highlight(json.dumps(top_level_schema, indent=2, default=pydantic_encoder), JsonLexer(), TerminalFormatter()))    
     else:
-        # TODO: Read config file, find all loaded connectors, bundle into a schema...
+        args = {}
+        for c in connectors:
+            # FIXME: this should be id, not default_id but we need instances
+            args[c.default_id()] = (c.settings_class(), ...)
         ServoModel = pydantic.create_model(
             'ServoModel',
-            servo=(ServoSettings, ...),
-            vegeta=(VegetaSettings, ...)
+            **args
         )
         typer.echo(highlight(ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()))    
 
