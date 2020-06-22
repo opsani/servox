@@ -3,17 +3,17 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Type, Union
+from typing import List, Type, Union, Optional
+from enum import Enum
 
 import pydantic
 import typer
 import yaml
+from devtools import pformat
 from pydantic import Extra, ValidationError
-from pydantic.json import pydantic_encoder
-from pydantic.schema import schema as pydantic_schema
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
-from pygments.lexers import JsonLexer, YamlLexer
+from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
 
 from servo.connector import Connector, Optimizer, Servo, ServoSettings
@@ -65,8 +65,7 @@ def root_callback(
     ServoModel = pydantic.create_model(
         "Servo",
         __base__=ServoSettings,
-        optimizer=optimizer,
-        extra=Extra.forbid,
+        optimizer=(Optimizer, ...),        
         **args,
     )
 
@@ -74,6 +73,7 @@ def root_callback(
     if config_file.exists():
         try:
             config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+            config['optimizer'] = optimizer.dict()
             settings = ServoModel.parse_obj(config)
         except ValidationError as error:
             typer.echo(error, err=True)
@@ -138,15 +138,73 @@ def info(
 
     typer.echo(tabulate(table, headers, tablefmt="plain"))
 
+# Common output formats
+YAML_FORMAT = 'yaml'
+JSON_FORMAT = 'json'
+DICT_FORMAT = 'dict'
+HTML_FORMAT = 'html'
+TEXT_FORMAT = 'text'
+
+class AbstractOutputFormat(str, Enum):
+    '''Defines common behaviors for command specific output format enumerations'''
+
+    def lexer(self) -> Optional['pygments.Lexer']:
+        if self.value == YAML_FORMAT:
+            return YamlLexer()
+        elif self.value == JSON_FORMAT:
+            return JsonLexer()
+        elif self.value == DICT_FORMAT:
+            return PythonLexer()
+        elif self.value == SettingsOutputFormat.text:
+            return None
+        else:
+            raise RuntimeError("no lexer configured for output format {self.value}")
+
+class SettingsOutputFormat(AbstractOutputFormat):
+    yaml = YAML_FORMAT
+    json = JSON_FORMAT
+    dict = DICT_FORMAT
+    text = TEXT_FORMAT
 
 @app.command()
-def settings() -> None:
+def settings(
+    format: SettingsOutputFormat = typer.Option(
+        SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
+    ),
+    output: typer.FileTextWrite = typer.Option(
+        None, "--output", "-o", help="Output settings to [FILE]"
+    )
+) -> None:
     """Display the fully resolved settings"""
     settings = servo.settings.dict(exclude={"optimizer", "extra"}, exclude_unset=True)
-    settings_obj = json.loads(json.dumps(settings))
-    settings_yaml = yaml.dump(settings_obj, indent=4, sort_keys=True)
-    typer.echo(highlight(settings_yaml, YamlLexer(), TerminalFormatter()))
+    settings_json = json.dumps(settings, indent=2)
+    settings_dict = json.loads(settings_json)
+    settings_dict_str = pformat(settings_dict)
+    settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
 
+    if format == SettingsOutputFormat.text:
+        pass
+    else:
+        lexer = format.lexer()
+        if format == SettingsOutputFormat.yaml:
+            data = settings_yaml
+        elif format == SettingsOutputFormat.json:
+            data = settings_json
+        elif format == SettingsOutputFormat.dict:
+            data = settings_dict_str
+        else:
+            raise RuntimeError("no handler configured for output format {format}")
+        
+        if output:
+            output.write(data)
+        else:
+            typer.echo(
+                highlight(
+                    data, 
+                    lexer, 
+                    TerminalFormatter()
+                )
+            )
 
 @app.command()
 def check() -> None:
@@ -159,13 +217,13 @@ def check() -> None:
 def version() -> None:
     """Display version and exit"""
     typer.echo(f"{servo.name} v{servo.version}")
+    raise typer.Exit(0)
 
-from enum import Enum
-
-class OutputFormat(str, Enum):
-    text = 'text'
-    json = 'json'
-    html = 'html'
+class SchemaOutputFormat(AbstractOutputFormat):    
+    json = JSON_FORMAT
+    text = TEXT_FORMAT    
+    dict = DICT_FORMAT
+    html = HTML_FORMAT
 
 @app.command()
 def schema(
@@ -175,58 +233,45 @@ def schema(
     top_level: bool = typer.Option(
         False, "--top-level", help="Emit a top-level schema (only connector models)"
     ),
-    format: OutputFormat = typer.Option(
-        OutputFormat.text, "--format", "-f", help="Select output format"
+    format: SchemaOutputFormat = typer.Option(
+        SchemaOutputFormat.json, "--format", "-f", help="Select output format"
     ),
     output: typer.FileTextWrite = typer.Option(
         None, "--output", "-o", help="Output schema to [FILE]"
     )
 ) -> None:
     """Display configuration schema"""
+    if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
+        typer.echo("error: not yet implemented", err=True)
+        raise typer.Exit(1)    
+    
     if top_level:
-        connectors = servo.available_connectors() if all else servo.active_connectors()
-        settings_classes = list(map(lambda c: c.settings_class(), connectors))
-        top_level_schema = pydantic_schema(settings_classes, title="Servo Schema")
-        json_schema = json.dumps(top_level_schema, indent=2, default=pydantic_encoder)
-        if format == OutputFormat.text:
-            typer.echo("error: not yet implemented", err=True)
-            raise typer.Exit(1)
-
-        elif format == OutputFormat.json:
-            if output:
-                output.write(json_schema)
-            else:
-                typer.echo(
-                    highlight(
-                        json_schema,
-                        JsonLexer(),
-                        TerminalFormatter(),
-                    )
-                )
-
-        elif format == OutputFormat.html:
-            typer.echo("error: not yet implemented", err=True)
-            raise typer.Exit(1)
+        if format == SchemaOutputFormat.json:
+            output_data = servo.top_level_schema_json(all=all)
+        
+        elif format == SchemaOutputFormat.dict:            
+            output_data = pformat(servo.top_level_schema(all=all))
 
     else:
-        if format == OutputFormat.text:
-            typer.echo("error: not yet implemented", err=True)
-            raise typer.Exit(1)
+        if format == SettingsOutputFormat.json:
+            output_data = ServoModel.schema_json(indent=2)
+        elif format == SettingsOutputFormat.dict:
+            output_data = pformat(ServoModel.schema())
+        else:
+            raise RuntimeError("no handler configured for output format {format}")
+    
+    assert output_data is not None, "output_data not assigned"
 
-        elif format == OutputFormat.json:
-            schema = ServoModel.schema_json(indent=2)
-            if output:
-                output.write(schema)
-            else:
-                typer.echo(
-                    highlight(
-                        schema, JsonLexer(), TerminalFormatter()
-                    )
-                )
-
-        elif format == OutputFormat.html:
-            typer.echo("error: not yet implemented", err=True)
-            raise typer.Exit(1)
+    if output:
+        output.write(output_data)
+    else:
+        typer.echo(
+            highlight(
+                output_data, 
+                format.lexer(), 
+                TerminalFormatter()
+            )
+        )
 
 @app.command(name="validate")
 def validate(
@@ -253,7 +298,7 @@ def generate() -> None:
 
     # NOTE: We generate with a potentially incomplete settings instance
     # if there is required configuration without reasonable defaults. This
-    # should be fine because the errors at load time will be clear and we cna
+    # should be fine because the errors at load time will be clear and we can
     # embed examples into the schema or put in sentinel values.
     # NOTE: We have to serialize through JSON first
     schema_obj = json.loads(json.dumps(schema))

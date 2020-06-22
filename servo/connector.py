@@ -23,7 +23,8 @@ from pydantic import (
     root_validator,
     validator,
 )
-
+from pydantic.schema import schema as pydantic_schema
+from pydantic.json import pydantic_encoder
 
 class Optimizer(BaseModel):
     org_domain: constr(
@@ -228,7 +229,6 @@ class ServoSettings(Settings):
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.ignore
 
-
 @metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
@@ -252,6 +252,16 @@ class Servo(Connector):
                 continue
             connectors.append(cls)
         return connectors
+
+    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
+        '''Returns a schema that only includes connector model definitions'''
+        connectors = self.available_connectors() if all else self.active_connectors()
+        settings_classes = list(map(lambda c: c.settings_class(), connectors))
+        return pydantic_schema(settings_classes, title="Servo Schema")
+    
+    def top_level_schema_json(self, *, all: bool = False) -> str:
+        '''Return a JSON string representation of the top level schema'''
+        return json.dumps(self.top_level_schema(all=all), indent=2, default=pydantic_encoder)
 
     ##
     # Connector management
@@ -300,11 +310,9 @@ class VegetaSettings(Settings):
     """
 
     rate: str = Field(
-        None,
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
     )
     duration: str = Field(
-        None,
         description="Specifies the amount of time to issue requests to the targets.",
     )
     format: TargetFormat = Field(

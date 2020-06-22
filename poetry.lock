@@ -161,7 +161,7 @@ python-versions = ">=2.6, !=3.0.*, !=3.1.*"
 version = "4.4.2"
 
 [[package]]
-category = "dev"
+category = "main"
 description = "Dev tools for python"
 name = "devtools"
 optional = false
@@ -1062,7 +1062,7 @@ version = "1.0.1"
 dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [metadata]
-content-hash = "603d44f399d4296f59f8a173456d01cb0156fa87488fc3ab7e33a16157676a89"
+content-hash = "8e887314cd4d9ab7e9613a1b1574cb4c1b2d700a152afcca5d08a92c9b2aaf85"
 python-versions = "^3.8"
 
 [metadata.files]
