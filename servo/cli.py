@@ -18,6 +18,15 @@ from tabulate import tabulate
 
 from servo.connector import Connector, Optimizer, Servo, ServoSettings
 
+# Add the devtools debug() function to the CLI if its available
+try:
+    import builtins
+    from devtools import debug
+except ImportError:
+    pass
+else:
+    builtins.debug = debug
+
 # SERVO_OPTIMIZER (--optimizer -o no default)
 # SERVO_TOKEN (--token -t no default)
 # SERVO_TOKEN_FILE (--token-file -T ./servo.token)
@@ -151,6 +160,12 @@ def version() -> None:
     """Display version and exit"""
     typer.echo(f"{servo.name} v{servo.version}")
 
+from enum import Enum
+
+class OutputFormat(str, Enum):
+    text = 'text'
+    json = 'json'
+    html = 'html'
 
 @app.command()
 def schema(
@@ -160,26 +175,58 @@ def schema(
     top_level: bool = typer.Option(
         False, "--top-level", help="Emit a top-level schema (only connector models)"
     ),
+    format: OutputFormat = typer.Option(
+        OutputFormat.text, "--format", "-f", help="Select output format"
+    ),
+    output: typer.FileTextWrite = typer.Option(
+        None, "--output", "-o", help="Output schema to [FILE]"
+    )
 ) -> None:
     """Display configuration schema"""
     if top_level:
         connectors = servo.available_connectors() if all else servo.active_connectors()
         settings_classes = list(map(lambda c: c.settings_class(), connectors))
         top_level_schema = pydantic_schema(settings_classes, title="Servo Schema")
-        typer.echo(
-            highlight(
-                json.dumps(top_level_schema, indent=2, default=pydantic_encoder),
-                JsonLexer(),
-                TerminalFormatter(),
-            )
-        )
-    else:
-        typer.echo(
-            highlight(
-                ServoModel.schema_json(indent=2), JsonLexer(), TerminalFormatter()
-            )
-        )
+        json_schema = json.dumps(top_level_schema, indent=2, default=pydantic_encoder)
+        if format == OutputFormat.text:
+            typer.echo("error: not yet implemented", err=True)
+            raise typer.Exit(1)
 
+        elif format == OutputFormat.json:
+            if output:
+                output.write(json_schema)
+            else:
+                typer.echo(
+                    highlight(
+                        json_schema,
+                        JsonLexer(),
+                        TerminalFormatter(),
+                    )
+                )
+
+        elif format == OutputFormat.html:
+            typer.echo("error: not yet implemented", err=True)
+            raise typer.Exit(1)
+
+    else:
+        if format == OutputFormat.text:
+            typer.echo("error: not yet implemented", err=True)
+            raise typer.Exit(1)
+
+        elif format == OutputFormat.json:
+            schema = ServoModel.schema_json(indent=2)
+            if output:
+                output.write(schema)
+            else:
+                typer.echo(
+                    highlight(
+                        schema, JsonLexer(), TerminalFormatter()
+                    )
+                )
+
+        elif format == OutputFormat.html:
+            typer.echo("error: not yet implemented", err=True)
+            raise typer.Exit(1)
 
 @app.command(name="validate")
 def validate(

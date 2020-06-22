@@ -458,10 +458,9 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
     assert "Usage: vegeta [OPTIONS] COMMAND [ARGS]..." in result.stdout
 
 
-def test_vegeta_cli_schema(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(vegeta_cli, "schema")
+def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(vegeta_cli, "schema -f json")
     assert result.exit_code == 0
-    debug(result.stdout)
     assert result.stdout == (
         "{\n"
         '  "title": "VegetaSettings",\n'
@@ -604,6 +603,15 @@ def test_vegeta_cli_schema(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> No
         "}\n"
     )
 
+def test_vegeta_cli_schema_text(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(vegeta_cli, "schema -f text")
+    assert result.exit_code == 0
+    assert 'not yet implemented' in result.stderr
+
+def test_vegeta_cli_schema_html(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(vegeta_cli, "schema -f html")
+    assert result.exit_code == 0
+    assert 'not yet implemented' in result.stderr
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
