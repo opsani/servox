@@ -116,7 +116,7 @@ class TestConnector:
 
         assert TestConnector.version == "0.0.0"
 
-    def test_default_id(self) -> None:
+    def test_default_key(self) -> None:
         class FancyConnector(Connector):
             pass
 
@@ -526,7 +526,7 @@ def test_init_connector_no_name_raises() -> None:
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
-def test_vegeta_default_id() -> None:
+def test_vegeta_default_key() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )

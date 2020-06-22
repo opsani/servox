@@ -89,19 +89,12 @@ def root_callback(
         args = {}
         for c in Connector.all():
             if c is not Servo:
-                args[c.default_id()] = c.settings_class().construct()
+                args[c.default_key()] = c.settings_class().construct()
         settings = ServoModel(optimizer=optimizer, **args)
 
     # Connect the CLIs for all connectors
     # TODO: This should respect the connectors list when there is a config file present
     servo = Servo(settings)
-    # for cls in servo.all_connectors():
-    #     settings = cls.settings_class().construct()
-    #     connector = cls(settings)
-    #     cli = connector.cli()
-    #     if cli is not None:
-    #         app.add_typer(cli)
-
 
 app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
 

@@ -52,7 +52,6 @@ class Optimizer(BaseModel):
     org_domain: constr(
         regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
     )
-    # TODO: Rename to just name
     app_name: constr(regex=r"^[a-z\-]{6,32}$")
     token: str
     base_url: HttpUrl = "https://api.opsani.com/"
@@ -187,7 +186,7 @@ class Connector(BaseModel, abc.ABC):
         return settings_cls
 
     @classmethod
-    def default_id(cls) -> str:
+    def default_key(cls) -> str:
         name = cls.__name__.replace("Connector", "")
         return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
@@ -198,7 +197,7 @@ class Connector(BaseModel, abc.ABC):
         cls.__subclasses.append(cls)
 
     def __init__(self, settings: Settings, *, id: Optional[str] = None, **kwargs):
-        id = id if id is not None else self.default_id()
+        id = id if id is not None else self.default_key()
         super().__init__(id=id, settings=settings, **kwargs)
 
     async def api_client(self) -> httpx.AsyncClient:
@@ -281,7 +280,7 @@ class ServoSettings(Settings):
 
             # Check if the string is an identifier for a connector
             for connector_class in Servo.all_connectors():
-                if connector == connector_class.default_id():
+                if connector == connector_class.default_key():
                     return connector_class
             
             # Try to load it as a module path
@@ -297,7 +296,6 @@ class ServoSettings(Settings):
         # Process our input appropriately
         if connectors is None:
             # None indicates that all available connectors should be activated
-            # TODO: Return the default mounts
             return None
         elif isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
@@ -316,25 +314,17 @@ class ServoSettings(Settings):
             connector_mounts: Dict[str, str] = {}
             for connector in connectors:
                 if _validate_class(connector):
-                    # descriptors.append(ConnectorDescriptor(key=connector.default_id(), connector=connector))
-                    connector_mounts[connector.default_id()] = _module_path(connector)
+                    connector_mounts[connector.default_key()] = _module_path(connector)
                 elif connector_class := _validate_string(connector):
-                    # connector_mounts[connector_class.default_id()] = Type[connector_class]
-                    # descriptors.append(ConnectorDescriptor(key=connector_class.default_id(), connector=connector_class))
-                    connector_mounts[connector_class.default_id()] = _module_path(connector_class)
+                    connector_mounts[connector_class.default_key()] = _module_path(connector_class)
                 else:
                     raise ValueError(f"Missing validation for value {connector}")
             
             return connector_mounts
 
         elif isinstance(connectors, dict):
-            # TODO: move this
-            connector_map = {}
-            for connector in Servo.all_connectors():
-                connector_map[connector.default_id()] = connector
-
-            reserved_keys = list(connector_map.keys())
-            reserved_keys.append('connectors') # TODO: move to static method
+            connector_map = Servo.default_mounts()
+            reserved_keys = Servo.reserved_keys()            
 
             connector_mounts = {}
             for key, value in connectors.items():
@@ -384,22 +374,32 @@ class Servo(Connector):
 
     settings: ServoSettings    
     connectors: Dict[str, Type[Connector]] = {}
-    '''Maps connector id to connector class'''
-    # TODO: maybe this is connector_registry?
-    # TODO: need method for getting connector + config ready for execution
 
+    @classmethod
+    def default_mounts(cls) -> Dict[str, Type[Connector]]:
+        mounts = {}
+        for connector in Servo.all_connectors():
+            mounts[connector.default_key()] = connector
+        return mounts
+    
+    @classmethod
+    def reserved_keys(cls) -> List[str]:
+        reserved_keys = list(cls.default_mounts().keys())
+        reserved_keys.append('connectors')
+        return reserved_keys
+
+    @classmethod
+    def all_connectors(cls) -> List[Connector]:
+        connectors = []
+        for c in Connector.all():
+            if c == cls:
+                continue
+            connectors.append(c)
+        return connectors
+    
     def active_connectors(self) -> List[Connector]:
         """Return connectors explicitly activated in the configuration"""
         return self.connectors.values()
-
-    @classmethod
-    def all_connectors(self) -> List[Connector]:
-        connectors = []
-        for cls in Connector.all():
-            if cls == self.__class__:
-                continue
-            connectors.append(cls)
-        return connectors
 
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         '''Returns a schema that only includes connector model definitions'''
@@ -587,9 +587,6 @@ class VegetaSettings(Settings):
 
     class Config:
         json_encoders = {TargetFormat: lambda t: t.value()}
-
-
-# TODO: AdjustMixin, MeasureMixin??
 
 
 class ConnectorCLI(typer.Typer):
