@@ -155,8 +155,7 @@ class TestServoSettings:
             s = ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' }
             )
-            debug(s.connectors)
-            assert s.connectors == {'measure'}
+            assert s.connectors == {'measure': 'servo.connector.MeasureConnector'}
 
     def test_connectors_allows_none(self):
         s = ServoSettings(
@@ -174,7 +173,7 @@ class TestServoSettings:
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={FooConnector, BarConnector}
         )
-        assert s.connectors == {FooConnector, BarConnector}
+        assert s.connectors == {'foo': 'tests.connector_test.FooConnector', 'bar': 'tests.connector_test.BarConnector'}
     
     def test_connectors_rejects_invalid_connector_set_elements(self):
         with pytest.raises(ValidationError) as e:
@@ -191,7 +190,7 @@ class TestServoSettings:
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'MeasureConnector', 'AdjustConnector'}
         )
-        assert s.connectors == {'MeasureConnector', 'AdjustConnector'}
+        assert s.connectors == {'measure': 'servo.connector.MeasureConnector', 'adjust': 'servo.connector.AdjustConnector'}
     
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
@@ -204,39 +203,43 @@ class TestServoSettings:
         assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
     
     def test_connectors_allows_set_of_keys(self):
+        from typing import Type
+
+        from pydantic import BaseModel
+        from pydantic import ValidationError
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta'}
         )
-        assert s.connectors == {'vegeta'}
+        assert s.connectors == {'vegeta': 'servo.connector.VegetaConnector'}
     
     def test_connectors_allows_dict_of_keys_to_classes(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'alias': VegetaConnector}
         )
-        assert s.connectors == {'alias': VegetaConnector}
+        assert s.connectors == {'alias': 'servo.connector.VegetaConnector'}
     
     def test_connectors_allows_dict_of_keys_to_class_names(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'alias': 'VegetaConnector'}
         )
-        assert s.connectors == {'alias': 'VegetaConnector'}
+        assert s.connectors == {'alias': 'servo.connector.VegetaConnector'}
 
     def test_connectors_allows_dict_with_explicit_map_to_default_key(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta': 'VegetaConnector'}
         )
-        assert s.connectors == {'vegeta': 'VegetaConnector'}
+        assert s.connectors == {'vegeta': 'servo.connector.VegetaConnector'}
     
     def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta': VegetaConnector}
         )
-        assert s.connectors == {'vegeta': VegetaConnector}    
+        assert s.connectors == {'vegeta': 'servo.connector.VegetaConnector'}    
 
     def test_connectors_forbids_dict_with_existing_key(self):
         with pytest.raises(ValidationError) as e:
@@ -269,20 +272,14 @@ class TestServoSettings:
         assert e.value.errors()[0]["msg"] == 'Key "This Is Not Valid" is not valid: keys may only contain alphanumeric characters, hyphens, slashes, and underscores'
     
     def test_connectors_rejects_invalid_connector_dict_values(self):
-        s = ServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors=None
-        )
-        assert s.connectors is None
-    
-    # TODO: can't use something non-YAML safe
-    def test_connectors_rejects_invalid_connector_dict_keys(self):
-        s = ServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors=None
-        )
-        assert s.connectors is None
-
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={'whatever': 'Not a Real Connector'}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == 'Not a Real Connector does not identify a Connector class'
 
 class TestServo:
     def test_init_with_optimizer(self) -> None:
@@ -601,7 +598,6 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
 
 
 def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    # TODO: Doesn't handle format yet
     result = cli_runner.invoke(vegeta_cli, "schema")
     assert result.exit_code == 0
     assert result.stdout == (
@@ -635,18 +631,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
         '      "type": "string"\n'
         '    },\n'
         '    "format": {\n'
-        '      "title": "Format",\n'
-        '      "description": "Specifies the format of the targets input. Valid values are http and json. Refer to the'
-        ' Vegeta docs for details.",\n'
-        '      "default": "http",\n'
-        '      "env_names": [\n'
-        '        "servo_format"\n'
-        '      ],\n'
-        '      "enum": [\n'
-        '        "http",\n'
-        '        "json"\n'
-        '      ],\n'
-        '      "type": "string"\n'
+        '      "$ref": "#/definitions/TargetFormat"\n'
         '    },\n'
         '    "target": {\n'
         '      "title": "Target",\n'
@@ -666,8 +651,8 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
         '      "env_names": [\n'
         '        "servo_targets"\n'
         '      ],\n'
-        '      "type": "string",\n'
-        '      "format": "file-path"\n'
+        '      "format": "file-path",\n'
+        '      "type": "string"\n'
         '    },\n'
         '    "connections": {\n'
         '      "title": "Connections",\n'
@@ -742,7 +727,18 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
         '    "rate",\n'
         '    "duration"\n'
         '  ],\n'
-        '  "additionalProperties": false\n'
+        '  "additionalProperties": false,\n'
+        '  "definitions": {\n'
+        '    "TargetFormat": {\n'
+        '      "title": "TargetFormat",\n'
+        '      "description": "An enumeration.",\n'
+        '      "enum": [\n'
+        '        "http",\n'
+        '        "json"\n'
+        '      ],\n'
+        '      "type": "string"\n'
+        '    }\n'
+        '  }\n'
         '}\n'
     )
 

@@ -11,6 +11,7 @@ import typer
 import yaml
 from devtools import pformat
 from pydantic import Extra, ValidationError
+from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
@@ -70,7 +71,7 @@ def root_callback(
     ServoModel = pydantic.create_model(
         "Servo",
         __base__=ServoSettings,
-        optimizer=(Optimizer, ...),        
+        optimizer=(Optimizer, ...),
         **args,
     )
 
@@ -197,8 +198,8 @@ def settings(
     )
 ) -> None:
     """Display the fully resolved settings"""
-    settings = servo.settings.dict(exclude={"optimizer", "extra"}, exclude_unset=True)
-    settings_json = json.dumps(settings, indent=2)
+    settings = servo.settings.dict(exclude={"optimizer"}, exclude_unset=True)
+    settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
     settings_dict = json.loads(settings_json)
     settings_dict_str = pformat(settings_dict)
     settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)

@@ -181,7 +181,7 @@ class Connector(BaseModel, abc.ABC):
         return v
 
     @classmethod
-    def settings_class(cls) -> TypeVar:
+    def settings_class(cls) -> Type['Settings']:
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
@@ -244,18 +244,18 @@ def metadata(
 
     return decorator
 
-ConnectorType = Type[Connector]
-ConnectorKeyOrType = Union[str, ConnectorType]
+def _module_path(cls: Type) -> str:
+    return ".".join([cls.__module__, cls.__name__])
 
 class ServoSettings(Settings):
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
-
-    connectors: Union[None, Set[ConnectorKeyOrType], Dict[str, ConnectorKeyOrType]] = None
+    
+    connectors: Optional[Dict[str, str]] = None
 
     @validator('connectors', pre=True)
     @classmethod
-    def validate_connectors(cls, connectors):
+    def validate_connectors(cls, connectors) -> Dict[str, Type[Connector]]:
         def _validate_class(connector: type) -> bool:
             if not isinstance(connector, type):
                 return False
@@ -297,6 +297,7 @@ class ServoSettings(Settings):
         # Process our input appropriately
         if connectors is None:
             # None indicates that all available connectors should be activated
+            # TODO: Return the default mounts
             return None
         elif isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
@@ -312,16 +313,22 @@ class ServoSettings(Settings):
             return cls.validate_connectors(decoded_value)
 
         elif isinstance(connectors, (list, tuple, set)):
+            connector_mounts: Dict[str, str] = {}
             for connector in connectors:
-                if _validate_class(connector) or _validate_string(connector):
-                    continue
+                if _validate_class(connector):
+                    # descriptors.append(ConnectorDescriptor(key=connector.default_id(), connector=connector))
+                    connector_mounts[connector.default_id()] = _module_path(connector)
+                elif connector_class := _validate_string(connector):
+                    # connector_mounts[connector_class.default_id()] = Type[connector_class]
+                    # descriptors.append(ConnectorDescriptor(key=connector_class.default_id(), connector=connector_class))
+                    connector_mounts[connector_class.default_id()] = _module_path(connector_class)
                 else:
                     raise ValueError(f"Missing validation for value {connector}")
             
-            # don't mutate the settings in case they are serialized and written later
-            return connectors
+            return connector_mounts
 
         elif isinstance(connectors, dict):
+            # TODO: move this
             connector_map = {}
             for connector in Servo.all_connectors():
                 connector_map[connector.default_id()] = connector
@@ -329,6 +336,7 @@ class ServoSettings(Settings):
             reserved_keys = list(connector_map.keys())
             reserved_keys.append('connectors') # TODO: move to static method
 
+            connector_mounts = {}
             for key, value in connectors.items():
                 if not isinstance(key, str):
                     raise ValueError(f'Key "{key}" is not a string')                
@@ -338,22 +346,24 @@ class ServoSettings(Settings):
                     Connector.key_format_is_valid(key)
                 except AssertionError as e:
                     raise ValueError(f'Key "{key}" is not valid: {e}') from e
+                
+                # Resolve the connector class
+                if isinstance(value, type):
+                    connector_class = value
+                elif isinstance(value, str):
+                    connector_class = _validate_string(value)
 
                 # Check for key reservations
                 if key in reserved_keys:
                     if c := connector_map.get(key, None):
-                        # Check if the reference agrees
-                        if isinstance(value, type):
-                            check_class = value
-                        elif isinstance(value, str):
-                            check_class = _validate_string(value)
-                        
-                        if check_class != c:
+                        if connector_class != c:
                             raise ValueError(f'Key "{key}" is reserved by `{c.__name__}`')
                     else:
                         raise ValueError(f'Key "{key}" is reserved')
+                
+                connector_mounts[key] = _module_path(connector_class)
             
-            return connectors
+            return connector_mounts
 
         else:
             raise ValueError(f'Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})')
