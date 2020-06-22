@@ -4,6 +4,7 @@ import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set
+import importlib
 
 import durationpy
 import httpx
@@ -173,10 +174,10 @@ class Connector(BaseModel, abc.ABC):
 
     @validator("id")
     @classmethod
-    def id_format_is_valid(cls, v):
+    def key_format_is_valid(cls, v):
         assert bool(
-            re.match("^[0-9a-z_]{4,16}$", v)
-        ), "id may only contain lowercase alphanumeric characters and underscores"
+            re.match("^[0-9a-zA-Z-_/]{4,64}$", v)
+        ), "keys may only contain alphanumeric characters, hyphens, slashes, and underscores"
         return v
 
     @classmethod
@@ -243,56 +244,119 @@ def metadata(
 
     return decorator
 
-# TODO: May need a connector descriptor with module, key...
+ConnectorType = Type[Connector]
+ConnectorKeyOrType = Union[str, ConnectorType]
 
 class ServoSettings(Settings):
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
-    # connectors: List[str] = []
-    #connectors: Dict[str, Type[Connector]] = []
-    connectors: Union[None, Set[Union[str, Type[Connector]]], Dict[str, str]] = None
+
+    connectors: Union[None, Set[ConnectorKeyOrType], Dict[str, ConnectorKeyOrType]] = None
 
     @validator('connectors', pre=True)
     @classmethod
-    def connectors_must_reference_valid_subclasses(cls, connectors):
-        all_connectors = Servo.all_connectors()
+    def validate_connectors(cls, connectors):
+        def _validate_class(connector: type) -> bool:
+            if not isinstance(connector, type):
+                return False
+
+            if not issubclass(connector, Connector):
+                raise TypeError(f'{connector.__name__} is not a Connector subclass')
+
+            return True
+
+        def _validate_string(connector: str) -> Optional[Type[Connector]]:
+            if not isinstance(connector, str):
+                return None
+
+            # Check fo an existing class in the namespace
+            connector_class = globals().get(connector, None)
+            try:
+                connector_class = eval(connector) if connector_class is None else connector_class
+            except Exception:
+                pass
+
+            if _validate_class(connector_class):
+                return connector_class
+
+            # Check if the string is an identifier for a connector
+            for connector_class in Servo.all_connectors():
+                if connector == connector_class.default_id():
+                    return connector_class
+            
+            # Try to load it as a module path
+            if '.' in connector:
+                module_path, class_name = e.split(':', 2)
+                module = importlib.import_module(module_path)
+                connector_class = getattr(module, class_name)
+                if _validate_class(connector_class):
+                    return connector_class
+
+            raise TypeError(f'{connector} does not identify a Connector class')
+        
+        # Process our input appropriately
         if connectors is None:
             # None indicates that all available connectors should be activated
             return None
+        elif isinstance(connectors, str):
+            # NOTE: Special case. When we are invoked with a string it is typically an env var
+            try:
+                decoded_value = cls.__config__.json_loads(connectors)  # type: ignore
+            except ValueError as e:
+                raise ValueError(f'error parsing JSON for "{connectors}"') from e
+
+            # Prevent infinite recursion
+            if isinstance(decoded_value, str):
+                raise ValueError(f'JSON string values for `connectors` cannot parse into strings: "{connectors}"')
+
+            return cls.validate_connectors(decoded_value)
+
         elif isinstance(connectors, (list, tuple, set)):
-            # allow tuples and lists 
-            for e in connectors:
-                debug(type(e))
-                if isinstance(e, type):
-                    if issubclass(e, Connector):
-                        continue
-                    else:
-                        raise TypeError(f'{e.__name__} is not a Connector subclass')
-                elif isinstance(e, str):
-                    # TODO: convert into a class
-                    # TODO: Try to get an existing class from the global namespace
-                    # TODO: Try to load it as module_path:class
-                    # TODO: Look it up by key
-                    # Check fo an existing class in the namespace
-                    cls = globals()[e]
-                    if issubclass(e, cls):
-                        continue
-                    # debug(cls)
-                    # import importlib
-                    # importlib.import_module('accounting.views')
-                    # c = getattr(m, class_name)
-                    # then check subtype
-                    pass
+            for connector in connectors:
+                if _validate_class(connector) or _validate_string(connector):
+                    continue
+                else:
+                    raise ValueError(f"Missing validation for value {connector}")
             
             # don't mutate the settings in case they are serialized and written later
             return connectors
 
         elif isinstance(connectors, dict):
-            pass
-            # TODO: sdasda
+            connector_map = {}
+            for connector in Servo.all_connectors():
+                connector_map[connector.default_id()] = connector
+
+            reserved_keys = list(connector_map.keys())
+            reserved_keys.append('connectors') # TODO: move to static method
+
+            for key, value in connectors.items():
+                if not isinstance(key, str):
+                    raise ValueError(f'Key "{key}" is not a string')                
+                
+                # Validate the key format
+                try:
+                    Connector.key_format_is_valid(key)
+                except AssertionError as e:
+                    raise ValueError(f'Key "{key}" is not valid: {e}') from e
+
+                # Check for key reservations
+                if key in reserved_keys:
+                    if c := connector_map.get(key, None):
+                        # Check if the reference agrees
+                        if isinstance(value, type):
+                            check_class = value
+                        elif isinstance(value, str):
+                            check_class = _validate_string(value)
+                        
+                        if check_class != c:
+                            raise ValueError(f'Key "{key}" is reserved by `{c.__name__}`')
+                    else:
+                        raise ValueError(f'Key "{key}" is reserved')
+            
+            return connectors
 
         else:
-            raise ValueError(f'Unexpected type "{type(connectors)}" encountered')
+            raise ValueError(f'Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})')
 
     class Config:
         # We are the base root of pluggable configuration
@@ -619,3 +683,8 @@ class VegetaConnector(Connector):
     def describe(self):
         pass
 
+class MeasureConnector(Connector):
+    pass
+
+class AdjustConnector(Connector):
+    pass

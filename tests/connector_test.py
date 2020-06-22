@@ -18,7 +18,11 @@ from servo.connector import (
     VegetaConnector,
     VegetaSettings,
     Version,
+    MeasureConnector,
+    AdjustConnector
 )
+
+# from tests.test_helpers import MeasureConnector, AdjustConnector
 
 # test load from config file
 # test aliasing
@@ -119,7 +123,6 @@ class TestConnector:
         c = FancyConnector(Settings())
         assert c.id == "fancy"
 
-
 from tests.conftest import environment_overrides
 class TestSettings:
     def test_configuring_with_environment_variables(self) -> None:
@@ -139,13 +142,21 @@ class TestServoSettings:
         assert "'ServoSettings' object has no attribute 'ignored'" in str(e)
 
     def test_override_optimizer_settings_with_env_vars(self) -> None:
-        with environment_overrides({ "SERVO_OPTIMIZER": '{"token": "abcdefg"}', 'SERVO_CONNECTORS': '["test"]' }):
+        with environment_overrides({ "SERVO_OPTIMIZER": '{"token": "abcdefg"}' }):
             assert os.environ['SERVO_OPTIMIZER'] is not None
             s = ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com' }
             )
-            assert s.connectors == ['test']
             assert s.optimizer.token == "abcdefg"
+    
+    def test_set_connectors_with_env_vars(self) -> None:
+        with environment_overrides({ 'SERVO_CONNECTORS': '["measure"]' }):
+            assert os.environ['SERVO_CONNECTORS'] is not None
+            s = ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' }
+            )
+            debug(s.connectors)
+            assert s.connectors == {'measure'}
 
     def test_connectors_allows_none(self):
         s = ServoSettings(
@@ -176,15 +187,11 @@ class TestServoSettings:
         assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
     
     def test_connectors_allows_set_of_class_names(self):
-        class FooConnector(Connector):
-            pass
-        class BarConnector(Connector):
-            pass
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'FooConnector', 'BarConnector'}
+            connectors={'MeasureConnector', 'AdjustConnector'}
         )
-        assert s.connectors == {'FooConnector', 'BarConnector'}
+        assert s.connectors == {'MeasureConnector', 'AdjustConnector'}
     
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
@@ -199,16 +206,67 @@ class TestServoSettings:
     def test_connectors_allows_set_of_keys(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors=None
+            connectors={'vegeta'}
         )
-        assert s.connectors is None
+        assert s.connectors == {'vegeta'}
     
     def test_connectors_allows_dict_of_keys_to_classes(self):
         s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors=None
+            connectors={'alias': VegetaConnector}
         )
-        assert s.connectors is None    
+        assert s.connectors == {'alias': VegetaConnector}
+    
+    def test_connectors_allows_dict_of_keys_to_class_names(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors={'alias': 'VegetaConnector'}
+        )
+        assert s.connectors == {'alias': 'VegetaConnector'}
+
+    def test_connectors_allows_dict_with_explicit_map_to_default_key(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors={'vegeta': 'VegetaConnector'}
+        )
+        assert s.connectors == {'vegeta': 'VegetaConnector'}
+    
+    def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors={'vegeta': VegetaConnector}
+        )
+        assert s.connectors == {'vegeta': VegetaConnector}    
+
+    def test_connectors_forbids_dict_with_existing_key(self):
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={'vegeta': 'MeasureConnector'}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == 'Key "vegeta" is reserved by `VegetaConnector`'
+    
+    def test_connectors_forbids_dict_with_reserved_key(self):
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={'connectors': 'VegetaConnector'}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == 'Key "connectors" is reserved'
+    
+    def test_connectors_forbids_dict_with_invalid_key(self):
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={'This Is Not Valid': 'VegetaConnector'}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == 'Key "This Is Not Valid" is not valid: keys may only contain alphanumeric characters, hyphens, slashes, and underscores'
     
     def test_connectors_rejects_invalid_connector_dict_values(self):
         s = ServoSettings(
@@ -224,8 +282,6 @@ class TestServoSettings:
             connectors=None
         )
         assert s.connectors is None
-    
-    # TODO: test passing a list or tuple with duplicate values
 
 
 class TestServo:
@@ -238,27 +294,6 @@ class TestServo:
 
         c = Servo.construct().all_connectors()
         assert FooConnector in c
-    
-    def test_connectors_configuration_by_dict(self) -> None:
-        settings = ServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors = {'vegeta': VegetaConnector}
-        )
-        servo = Servo(settings)
-        assert servo.connectors is not None
-        assert servo.connectors['vegeta'] == VegetaConnector
-    
-    def test_connectors_configuration_by_list(self) -> None:
-        pass
-    
-    # TODO: set them by id, set them by alias, set them by default
-    
-    def test_connectors_with_config(self) -> None:
-        # TODO: can accept a config object
-        # let you set the class, description
-        # name to type hash?
-        pass
-
 
 ###
 ### Connector specific
@@ -519,7 +554,7 @@ def test_vegeta_id_invalid() -> None:
     assert "1 validation error for VegetaConnector" in str(e.value)
     assert (
         e.value.errors()[0]["msg"]
-        == "id may only contain lowercase alphanumeric characters and underscores"
+        == "keys may only contain alphanumeric characters, hyphens, slashes, and underscores"
     )
 
 
