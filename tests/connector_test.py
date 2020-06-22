@@ -147,18 +147,117 @@ class TestServoSettings:
             assert s.connectors == ['test']
             assert s.optimizer.token == "abcdefg"
 
+    def test_connectors_allows_none(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors=None
+        )
+        assert s.connectors is None
+    
+    def test_connectors_allows_set_of_classes(self):
+        class FooConnector(Connector):
+            pass
+        class BarConnector(Connector):
+            pass
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors={FooConnector, BarConnector}
+        )
+        assert s.connectors == {FooConnector, BarConnector}
+    
+    def test_connectors_rejects_invalid_connector_set_elements(self):
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={ServoSettings}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
+    
+    def test_connectors_allows_set_of_class_names(self):
+        class FooConnector(Connector):
+            pass
+        class BarConnector(Connector):
+            pass
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors={'FooConnector', 'BarConnector'}
+        )
+        assert s.connectors == {'FooConnector', 'BarConnector'}
+    
+    def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
+        with pytest.raises(ValidationError) as e:
+            ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+                connectors={'ServoSettings'}
+            )
+        assert "1 validation error for ServoSettings" in str(e.value)
+        assert e.value.errors()[0]["loc"] == ("connectors",)
+        assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
+    
+    def test_connectors_allows_set_of_keys(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors=None
+        )
+        assert s.connectors is None
+    
+    def test_connectors_allows_dict_of_keys_to_classes(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors=None
+        )
+        assert s.connectors is None    
+    
+    def test_connectors_rejects_invalid_connector_dict_values(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors=None
+        )
+        assert s.connectors is None
+    
+    # TODO: can't use something non-YAML safe
+    def test_connectors_rejects_invalid_connector_dict_keys(self):
+        s = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors=None
+        )
+        assert s.connectors is None
+    
+    # TODO: test passing a list or tuple with duplicate values
 
 
 class TestServo:
     def test_init_with_optimizer(self) -> None:
         pass
 
-    def test_available_connectors(self) -> None:
+    def test_all_connectors(self) -> None:
         class FooConnector(Connector):
             pass
 
-        c = Servo.construct().available_connectors()
+        c = Servo.construct().all_connectors()
         assert FooConnector in c
+    
+    def test_connectors_configuration_by_dict(self) -> None:
+        settings = ServoSettings(
+            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
+            connectors = {'vegeta': VegetaConnector}
+        )
+        servo = Servo(settings)
+        assert servo.connectors is not None
+        assert servo.connectors['vegeta'] == VegetaConnector
+    
+    def test_connectors_configuration_by_list(self) -> None:
+        pass
+    
+    # TODO: set them by id, set them by alias, set them by default
+    
+    def test_connectors_with_config(self) -> None:
+        # TODO: can accept a config object
+        # let you set the class, description
+        # name to type hash?
+        pass
 
 
 ###

@@ -3,7 +3,7 @@ import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, TypeVar, get_type_hints
+from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set
 
 import durationpy
 import httpx
@@ -26,10 +26,32 @@ from pydantic import (
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 
+
+#####
+
+from pkg_resources import EntryPoint, iter_entry_points
+from typing import Generator
+
+CONNECTORS_GROUP = "servo.connectors"
+
+class ConnectorLoader:
+    def __init__(self, group: str = CONNECTORS_GROUP) -> None:
+        self.group = group
+
+    def iter_entry_points(self) -> Generator[EntryPoint, None, None]:
+        yield from iter_entry_points(group=self.group, name=None)
+
+    def load(self) -> Generator[Any, None, None]:
+        for entry_point in self.iter_entry_points():
+            yield entry_point.resolve()
+
+#####
+
 class Optimizer(BaseModel):
     org_domain: constr(
         regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
     )
+    # TODO: Rename to just name
     app_name: constr(regex=r"^[a-z\-]{6,32}$")
     token: str
     base_url: HttpUrl = "https://api.opsani.com/"
@@ -104,9 +126,7 @@ class Maturity(Enum):
 class Version(semver.VersionInfo):
     pass
 
-
-# TODO: becomes from servo.connector import Settings (or BaseSettings?)
-# TODO: needs to support env vars, loading from file
+CONNECTORS_GROUP = "servo.connectors"
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -127,6 +147,12 @@ class Connector(BaseModel, abc.ABC):
     id: str
     settings: Settings
     _logger: logger
+
+    @staticmethod
+    def discover() -> Generator[Any, None, None]:
+        '''Discover connectors available in the assembl and yield them for configuration'''
+        loader = ConnectorLoader()
+        yield from loader.load()
 
     @classmethod
     def all(cls) -> List["Connector"]:
@@ -217,12 +243,56 @@ def metadata(
 
     return decorator
 
+# TODO: May need a connector descriptor with module, key...
 
 class ServoSettings(Settings):
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
+    # connectors: List[str] = []
+    #connectors: Dict[str, Type[Connector]] = []
+    connectors: Union[None, Set[Union[str, Type[Connector]]], Dict[str, str]] = None
 
-    connectors: List[str] = []
+    @validator('connectors', pre=True)
+    @classmethod
+    def connectors_must_reference_valid_subclasses(cls, connectors):
+        all_connectors = Servo.all_connectors()
+        if connectors is None:
+            # None indicates that all available connectors should be activated
+            return None
+        elif isinstance(connectors, (list, tuple, set)):
+            # allow tuples and lists 
+            for e in connectors:
+                debug(type(e))
+                if isinstance(e, type):
+                    if issubclass(e, Connector):
+                        continue
+                    else:
+                        raise TypeError(f'{e.__name__} is not a Connector subclass')
+                elif isinstance(e, str):
+                    # TODO: convert into a class
+                    # TODO: Try to get an existing class from the global namespace
+                    # TODO: Try to load it as module_path:class
+                    # TODO: Look it up by key
+                    # Check fo an existing class in the namespace
+                    cls = globals()[e]
+                    if issubclass(e, cls):
+                        continue
+                    # debug(cls)
+                    # import importlib
+                    # importlib.import_module('accounting.views')
+                    # c = getattr(m, class_name)
+                    # then check subtype
+                    pass
+            
+            # don't mutate the settings in case they are serialized and written later
+            return connectors
+
+        elif isinstance(connectors, dict):
+            pass
+            # TODO: sdasda
+
+        else:
+            raise ValueError(f'Unexpected type "{type(connectors)}" encountered')
 
     class Config:
         # We are the base root of pluggable configuration
@@ -238,14 +308,18 @@ class ServoSettings(Settings):
 class Servo(Connector):
     """The Servo"""
 
-    settings: ServoSettings
-    connectors: List["Connector"] = []
+    settings: ServoSettings    
+    connectors: Dict[str, Type[Connector]] = {}
+    '''Maps connector id to connector class'''
+    # TODO: maybe this is connector_registry?
+    # TODO: need method for getting connector + config ready for execution
 
     def active_connectors(self) -> List[Connector]:
         """Return connectors explicitly activated in the configuration"""
-        return self.connectors
+        return self.connectors.values()
 
-    def available_connectors(self) -> List[Connector]:
+    @classmethod
+    def all_connectors(self) -> List[Connector]:
         connectors = []
         for cls in Connector.all():
             if cls == self.__class__:
@@ -255,7 +329,7 @@ class Servo(Connector):
 
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         '''Returns a schema that only includes connector model definitions'''
-        connectors = self.available_connectors() if all else self.active_connectors()
+        connectors = self.all_connectors() if all else self.active_connectors()
         settings_classes = list(map(lambda c: c.settings_class(), connectors))
         return pydantic_schema(settings_classes, title="Servo Schema")
     
@@ -288,7 +362,7 @@ class Servo(Connector):
     # Misc
 
     def cli(self) -> typer.Typer:
-        # TODO: Get the root CLI and then nest all active connectors
+        # TODO: Return the root CLI?
         pass
 
 
@@ -522,6 +596,8 @@ class ConnectorCLI(typer.Typer):
 class VegetaConnector(Connector):
     settings: VegetaSettings
 
+    # TODO: Measure
+
     def cli(self) -> ConnectorCLI:
         """Returns a Typer CLI for interacting with this connector"""
         cli = ConnectorCLI(self, help="Load generation with Vegeta")
@@ -533,3 +609,13 @@ class VegetaConnector(Connector):
             """
 
         return cli
+    
+    # TODO: Message handlers...
+    # Model the metrics
+
+    def measure(self):
+        pass
+
+    def describe(self):
+        pass
+

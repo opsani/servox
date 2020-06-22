@@ -16,7 +16,7 @@ from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
 
-from servo.connector import Connector, Optimizer, Servo, ServoSettings
+from servo.connector import Connector, Optimizer, Servo, ServoSettings, ConnectorLoader
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -36,6 +36,7 @@ servo: Servo = None
 ServoModel: Type = None
 
 # Use callback to define top-level options
+# TODO: Make these args required
 def root_callback(
     optimizer: str = typer.Option(
         None, help="Opsani optimizer (format is example.com/app)"
@@ -57,6 +58,10 @@ def root_callback(
     config_file = Path.cwd() / "servo.yaml"
 
     # Build our dynamic model
+    # TODO: This logic moves to servo class
+    # TODO: requirement of fields (...) should depend on how connectors are configured
+    # TODO: when autoloaded, not required. When explicitly configured, is required.
+    # TODO: Generation, info, etc and other commands need to be able to run with invalid config
     args = {}
     for c in Connector.all():
         if c is not Servo:
@@ -89,16 +94,25 @@ def root_callback(
     # Connect the CLIs for all connectors
     # TODO: This should respect the connectors list when there is a config file present
     servo = Servo(settings)
-    for cls in servo.available_connectors():
-        settings = cls.settings_class().construct()
-        connector = cls(settings)
-        cli = connector.cli()
-        if cli is not None:
-            app.add_typer(cli)
+    # for cls in servo.all_connectors():
+    #     settings = cls.settings_class().construct()
+    #     connector = cls(settings)
+    #     cli = connector.cli()
+    #     if cli is not None:
+    #         app.add_typer(cli)
 
 
 app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
 
+# Load all the connector plugins
+loader = ConnectorLoader()
+for connector in loader.load():
+    debug(str(connector))
+    settings = connector.settings_class().construct()
+    connector = connector(settings)
+    cli = connector.cli()
+    if cli is not None:
+        app.add_typer(cli)
 
 @app.command()
 def new() -> None:
@@ -121,16 +135,22 @@ def console() -> None:
 
 @app.command()
 def info(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info")
+    all: bool = typer.Option(
+        False, "--all", "-a", help="Include models from all available connectors"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Display verbose info"
+    )
 ) -> None:
     """Display information about the assembly"""
+    connectors = servo.all_connectors() if all else servo.active_connectors()
     headers = ["NAME", "VERSION", "DESCRIPTION"]
     row = [servo.name, servo.version, servo.description]
     if verbose:
         headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
         row += [servo.homepage, servo.maturity, servo.license]
     table = [row]
-    for connector in servo.available_connectors():
+    for connector in connectors:
         row = [connector.name, connector.version, connector.description]
         if verbose:
             row += [connector.homepage, connector.maturity, connector.license]
@@ -144,6 +164,7 @@ JSON_FORMAT = 'json'
 DICT_FORMAT = 'dict'
 HTML_FORMAT = 'html'
 TEXT_FORMAT = 'text'
+MARKDOWN_FORMAT = 'markdown'
 
 class AbstractOutputFormat(str, Enum):
     '''Defines common behaviors for command specific output format enumerations'''

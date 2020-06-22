@@ -35,6 +35,10 @@ black = "^19.10b0"
 [tool.poetry.scripts]
 servo = "servo.cli:main"
 
+# TODO: Example entry point for testing plugins
+[tool.poetry.plugins."servo.connectors"]
+"connector-test" = "servo.testing:TestConnector"
+
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"

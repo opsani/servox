@@ -30,6 +30,26 @@
 * docs
 * LICENSE
 
+### Connector Discovery
+
+
+
+import pkg_resources
+
+discovered_plugins = {
+    entry_point.name: entry_point.load()
+    for entry_point
+    in pkg_resources.iter_entry_points('myapp.plugins')
+}
+
+https://packaging.python.org/guides/creating-and-discovering-plugins/
+
+In pyproject.toml:
+```
+[tool.poetry.plugins."servo.connectors"]
+".rst" = "some_module:SomeClass"
+```
+
 ### Modules
 
 * config

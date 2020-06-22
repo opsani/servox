@@ -33,6 +33,16 @@ def cli_app() -> Typer:
     return cli.app
 
 
+@pytest.fixture()
+def vegeta_config_file(servo_yaml: Path) -> Path:
+    config = {
+        "connectors": ['vegeta'],
+        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+    }
+    servo_yaml.write_text(yaml.dump(config))
+    return servo_yaml
+
+
 def test_help(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "--help")
     assert result.exit_code == 0
@@ -56,8 +66,13 @@ def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert result.exit_code == 0
     assert "NAME              VERSION    DESCRIPTION\n" in result.stdout
 
+def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "info --all")
+    assert result.exit_code == 0
+    assert "NAME              VERSION    DESCRIPTION\n" in result.stdout
 
-def test_info_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
+
+def test_info_verbose(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "info -v")
     assert result.exit_code == 0
     assert (
@@ -65,6 +80,13 @@ def test_info_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
         in result.stdout
     )
 
+def test_info_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "info --all -v")
+    assert result.exit_code == 0
+    assert (
+        "NAME              VERSION    DESCRIPTION                           HOMEPAGE                                    MATURI"
+        in result.stdout
+    )
 
 def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
@@ -75,83 +97,39 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
     assert result.exit_code == 0
     assert "Servo v0.0.0" in result.stdout
 
-
-# TODO: Need to verify JSON -> YAML round-tripping
-def test_settings(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings")
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
-def test_settings_yaml(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_yaml(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings -f yaml")
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
-def test_settings_yaml_file(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path, tmp_path: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }    
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_yaml_file(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path) -> None:
     path = tmp_path / 'settings.yaml'
     result = cli_runner.invoke(cli_app, f"settings -f yaml -o {path}")
     assert result.exit_code == 0
     assert "connectors:" in path.read_text()
 
-def test_settings_json(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_json(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings -f json")
     assert result.exit_code == 0
     assert '"connectors": []' in result.stdout
 
-def test_settings_json_file(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path, tmp_path: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }    
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_json_file(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path) -> None:
     path = tmp_path / 'settings.json'
     result = cli_runner.invoke(cli_app, f"settings -f json -o {path}")
     assert result.exit_code == 0
     assert '"connectors": []' in path.read_text()
 
-def test_settings_dict(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_dict(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings -f dict")
     assert result.exit_code == 0
     assert "'connectors': []" in result.stdout
 
-def test_settings_dict_file(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path, tmp_path: Path) -> None:
-    # FIXME: This is a hack due to tight coupling in early development
-    config = {
-        "connectors": [],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
-    }    
-    servo_yaml.write_text(yaml.dump(config))
+def test_settings_dict_file(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path) -> None:
     path = tmp_path / 'settings.py'
     result = cli_runner.invoke(cli_app, f"settings -f dict -o {path}")
     assert result.exit_code == 0
