@@ -20,12 +20,8 @@ from servo.connector import (
     Version,
 )
 
-# test subclass regisration
-# test CLI integration
-# test env var overrides
 # test load from config file
 # test aliasing
-
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -124,6 +120,14 @@ class TestConnector:
         assert c.id == "fancy"
 
 
+from tests.conftest import environment_overrides
+class TestSettings:
+    def test_configuring_with_environment_variables(self) -> None:
+        with environment_overrides({ "SERVO_DESCRIPTION": "this description" }):
+            assert os.environ['SERVO_DESCRIPTION'] == 'this description'
+            s = Settings()
+            assert s.description == "this description"
+
 class TestServoSettings:
     def test_ignores_extra_attributes(self) -> None:
         # Ignored attribute would raise if misconfigured
@@ -133,6 +137,16 @@ class TestServoSettings:
         with pytest.raises(AttributeError) as e:
             s.ignored
         assert "'ServoSettings' object has no attribute 'ignored'" in str(e)
+
+    def test_override_optimizer_settings_with_env_vars(self) -> None:
+        with environment_overrides({ "SERVO_OPTIMIZER": '{"token": "abcdefg"}', 'SERVO_CONNECTORS': '["test"]' }):
+            assert os.environ['SERVO_OPTIMIZER'] is not None
+            s = ServoSettings(
+                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com' }
+            )
+            assert s.connectors == ['test']
+            assert s.optimizer.token == "abcdefg"
+
 
 
 class TestServo:

@@ -54,7 +54,6 @@ class Settings(BaseSettings):
     _optimizer: Optimizer
 
     class Config:
-        # TODO: Figure out how to uppercase the keys
         env_prefix = "SERVO_"
         extra = Extra.forbid
 
