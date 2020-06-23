@@ -7,19 +7,17 @@ from typer.testing import CliRunner
 from pydantic import ValidationError
 import json
 
-from servo.config import (
-    License,
-    Maturity,
-    Optimizer,
-    Settings,
-    Version,
-)
 from servo.connector import (
     Connector,
+    ConnectorSettings,
+    Optimizer,
+    License,
+    Maturity,    
+    Version,    
 )
 from servo.servo import (
     Servo,
-    BaseServoSettings,
+    ServoSettings,
     ServoAssembly
 )
 from connectors.vegeta.vegeta import (
@@ -125,31 +123,31 @@ class TestConnector:
         class FancyConnector(Connector):
             pass
 
-        c = FancyConnector(Settings())
-        assert c.path == "fancy"
+        c = FancyConnector(ConnectorSettings())
+        assert c.config_path == "fancy"
 
 from tests.conftest import environment_overrides
 class TestSettings:
     def test_configuring_with_environment_variables(self) -> None:
         with environment_overrides({ "SERVO_DESCRIPTION": "this description" }):
             assert os.environ['SERVO_DESCRIPTION'] == 'this description'
-            s = Settings()
+            s = ConnectorSettings()
             assert s.description == "this description"
 
 class TestServoSettings:
     def test_ignores_extra_attributes(self) -> None:
         # Ignored attribute would raise if misconfigured
-        s = BaseServoSettings(
+        s = ServoSettings(
             ignored=[], optimizer=Optimizer("example.com/my-app", token="123456")
         )
         with pytest.raises(AttributeError) as e:
             s.ignored
-        assert "'BaseServoSettings' object has no attribute 'ignored'" in str(e)
+        assert "'ServoSettings' object has no attribute 'ignored'" in str(e)
 
     def test_override_optimizer_settings_with_env_vars(self) -> None:
         with environment_overrides({ "SERVO_OPTIMIZER": '{"token": "abcdefg"}' }):
             assert os.environ['SERVO_OPTIMIZER'] is not None
-            s = BaseServoSettings(
+            s = ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com' }
             )
             assert s.optimizer.token == "abcdefg"
@@ -157,13 +155,13 @@ class TestServoSettings:
     def test_set_connectors_with_env_vars(self) -> None:
         with environment_overrides({ 'SERVO_CONNECTORS': '["measure"]' }):
             assert os.environ['SERVO_CONNECTORS'] is not None
-            s = BaseServoSettings(
+            s = ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' }
             )
             assert s.connectors == {'measure': 'tests.test_helpers.MeasureConnector'}
 
     def test_connectors_allows_none(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors=None
         )
@@ -174,7 +172,7 @@ class TestServoSettings:
             pass
         class BarConnector(Connector):
             pass
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={FooConnector, BarConnector}
         )
@@ -182,16 +180,16 @@ class TestServoSettings:
     
     def test_connectors_rejects_invalid_connector_set_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={BaseServoSettings}
+                connectors={ServoSettings}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == "BaseServoSettings is not a Connector subclass"
+        assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
     
     def test_connectors_allows_set_of_class_names(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'MeasureConnector', 'AdjustConnector'}
         )
@@ -199,48 +197,48 @@ class TestServoSettings:
     
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'BaseServoSettings'}
+                connectors={'ServoSettings'}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == "BaseServoSettings is not a Connector subclass"
+        assert e.value.errors()[0]["msg"] == "ServoSettings is not a Connector subclass"
     
     def test_connectors_allows_set_of_keys(self):
         from typing import Type
 
         from pydantic import BaseModel
         from pydantic import ValidationError
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta'}
         )
         assert s.connectors == {'vegeta': 'connectors.vegeta.vegeta.VegetaConnector'}
     
     def test_connectors_allows_dict_of_keys_to_classes(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'alias': VegetaConnector}
         )
         assert s.connectors == {'alias': 'connectors.vegeta.vegeta.VegetaConnector'}
     
     def test_connectors_allows_dict_of_keys_to_class_names(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'alias': 'VegetaConnector'}
         )
         assert s.connectors == {'alias': 'connectors.vegeta.vegeta.VegetaConnector'}
 
     def test_connectors_allows_dict_with_explicit_map_to_default_path(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta': 'VegetaConnector'}
         )
         assert s.connectors == {'vegeta': 'connectors.vegeta.vegeta.VegetaConnector'}
     
     def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
-        s = BaseServoSettings(
+        s = ServoSettings(
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'vegeta': VegetaConnector}
         )
@@ -248,11 +246,11 @@ class TestServoSettings:
 
     def test_connectors_forbids_dict_with_existing_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
                 connectors={'vegeta': 'MeasureConnector'}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert e.value.errors()[0]["msg"] == 'Key "vegeta" is reserved by `VegetaConnector`'
 
@@ -266,31 +264,31 @@ class TestServoSettings:
     
     def test_connectors_forbids_dict_with_reserved_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
                 connectors={'connectors': 'VegetaConnector'}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert e.value.errors()[0]["msg"] == 'Key "connectors" is reserved'
     
     def test_connectors_forbids_dict_with_invalid_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
                 connectors={'This Is Not Valid': 'VegetaConnector'}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == 'Key "This Is Not Valid" is not valid: paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+        assert e.value.errors()[0]["msg"] == 'Key "This Is Not Valid" is not valid: config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
     
     def test_connectors_rejects_invalid_connector_dict_values(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            ServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
                 connectors={'whatever': 'Not a Real Connector'}
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for ServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert e.value.errors()[0]["msg"] == 'Not a Real Connector does not identify a Connector class'
 
@@ -544,15 +542,15 @@ def test_vegeta_default_path() -> None:
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
     connector = VegetaConnector(settings)
-    assert connector.path == "vegeta"
+    assert connector.config_path == "vegeta"
 
 
-def test_vegeta_id_override() -> None:
+def test_vegeta_config_override() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings, path="monkey")
-    assert connector.path == "monkey"
+    connector = VegetaConnector(settings, config_path="monkey")
+    assert connector.config_path == "monkey"
 
 
 def test_vegeta_id_invalid() -> None:
@@ -560,11 +558,11 @@ def test_vegeta_id_invalid() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(settings, path="THIS IS NOT COOL")
-    assert "1 validation error for VegetaConnector" in str(e.value)
+        connector = VegetaConnector(settings, config_path="THIS IS NOT COOL")
+    assert "2 validation errors for VegetaConnector" in str(e.value)
     assert (
-        e.value.errors()[0]["msg"]
-        == 'paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+        e.value.errors()[1]["msg"]
+        == 'config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
     )
 
 

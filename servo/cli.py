@@ -18,9 +18,8 @@ from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
 
-from servo.connector import Connector, ConnectorLoader
-from servo.config import Optimizer
-from servo.servo import Servo, BaseServoSettings, ServoAssembly
+from servo.connector import Optimizer, Connector, ConnectorLoader
+from servo.servo import Servo, ServoSettings, ServoAssembly
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -34,7 +33,7 @@ else:
 # Application state available to all commands
 # These objects are constructed in `root_callback`
 assembly: ServoAssembly
-ServoSettings: Type[BaseServoSettings]
+ServoSettings: Type[ServoSettings]
 servo: Servo
 
 # Build the Typer CLI
@@ -102,17 +101,6 @@ def root_callback(
     except Exception as error:
         typer.echo(error, err=True)
         raise typer.Exit(2) from error
-
-# Load all the connector plugins
-# FIXME: This should be handled after parsing the options but Click doesn't make it super easy
-# Only active connectors should be registered as commands (and aliases should be registered as well)
-loader = ConnectorLoader()
-for connector in loader.load():
-    settings = connector.settings_class().construct()
-    connector = connector(settings)
-    cli = connector.cli()
-    if cli is not None:
-        app.add_typer(cli)
 
 @app.command()
 def new() -> None:
@@ -374,4 +362,14 @@ def __run(args: Union[str, List[str]], **kwargs) -> None:
 
 # Run the Typer CLI
 def main():
+    # FIXME: This should be handled after parsing the options but Click doesn't make it super easy
+    # Only active connectors should be registered as commands (and aliases should be registered as well)
+    loader = ConnectorLoader()
+    for connector in loader.load():
+        settings = connector.settings_class().construct()
+        connector = connector(settings)
+        cli = connector.cli()
+        if cli is not None:
+            app.add_typer(cli)
+
     app()

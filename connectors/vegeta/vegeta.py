@@ -27,8 +27,7 @@ from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 import durationpy
 import servo
-from servo.connector import Connector, ConnectorCLI
-from servo.config import Settings, License, Maturity
+from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity
 
 # TODO: This should really come down to `from servo import Connector, ConnectorSettings`
 
@@ -44,7 +43,7 @@ class TargetFormat(str, Enum):
         return self.value
 
 
-class VegetaSettings(Settings):
+class VegetaSettings(ConnectorSettings):
     """
     Configuration of the Vegeta connector
     """

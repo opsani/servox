@@ -25,29 +25,40 @@ from pydantic import (
 )
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
-from servo.config import Settings, Version, License, Maturity
-
-#####
-
 from pkg_resources import EntryPoint, iter_entry_points
 from typing import Generator
 
-ENTRY_POINT_GROUP = "servo.connectors"
+class Optimizer(BaseModel):
+    org_domain: constr(
+        regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
+    )
+    app_name: constr(regex=r"^[a-z\-]{3,64}$")
+    token: str
+    base_url: HttpUrl = "https://api.opsani.com/"
 
-class ConnectorLoader:
-    '''Dynamics discovers and loads connectors via entry points'''
+    def __init__(self, id: str = None, token: str = None, **kwargs):
+        org_domain = kwargs.pop("org_domain", None)
+        app_name = kwargs.pop("app_name", None)
+        if id:
+            org_domain, app_name = id.split("/")
+        super().__init__(
+            org_domain=org_domain, app_name=app_name, token=token, **kwargs
+        )
 
-    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
-        self.group = group
+    def id(self) -> str:
+        """Returns the optimizer identifier"""
+        return f"{self.org_domain}/{self.app_name}"
 
-    def iter_entry_points(self) -> Generator[EntryPoint, None, None]:
-        yield from iter_entry_points(group=self.group, name=None)
+class ConnectorSettings(BaseSettings):
+    description: Optional[str]
 
-    def load(self) -> Generator[Any, None, None]:
-        for entry_point in self.iter_entry_points():
-            yield entry_point.resolve()
+    # Optimizer we are communicating with
+    # TODO: This should be on base class
+    _optimizer: Optimizer
 
-#####
+    class Config:
+        env_prefix = "SERVO_"
+        extra = Extra.forbid
 
 class Connector(BaseModel, abc.ABC):
     """
@@ -59,15 +70,16 @@ class Connector(BaseModel, abc.ABC):
 
     # Connector metadata
     name: ClassVar[str] = None
-    version: ClassVar[Version] = None
+    version: ClassVar['Version'] = None
     description: ClassVar[Optional[str]] = None
     homepage: ClassVar[Optional[HttpUrl]] = None
-    license: ClassVar[Optional[License]] = None
-    maturity: ClassVar[Optional[Maturity]] = None
+    license: ClassVar[Optional['License']] = None
+    maturity: ClassVar[Optional['Maturity']] = None
 
     # Instance configuration
-    path: str
-    settings: Settings
+    command_name: constr(regex=r"^[a-z\-]{4,16}$")
+    config_path: str
+    settings: ConnectorSettings
     _logger: logger
 
     @classmethod
@@ -88,12 +100,12 @@ class Connector(BaseModel, abc.ABC):
         ), "version is not a semantic versioning descriptor"
         return v
 
-    @validator("path")
+    @validator("config_path")
     @classmethod
-    def validate_path(cls, v):
+    def validate_config_path(cls, v):
         assert bool(
-            re.match("^[0-9a-zA-Z-_/\.]{4,128}$", v)
-        ), "paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+            re.match("^[0-9a-zA-Z-_/\\.]{4,128}$", v)
+        ), "config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
 
     @classmethod
@@ -113,9 +125,17 @@ class Connector(BaseModel, abc.ABC):
         cls.version = semver.VersionInfo.parse("0.0.0")
         cls.__subclasses.add(cls)
 
-    def __init__(self, settings: Settings, *, path: Optional[str] = None, **kwargs):
-        path = path if path is not None else self.default_path()
-        super().__init__(path=path, settings=settings, **kwargs)
+    def __init__(
+        self, 
+        settings: ConnectorSettings, 
+        *, 
+        config_path: Optional[str] = None, 
+        command_name: Optional[str] = None,
+        **kwargs,
+    ):
+        config_path = config_path if config_path is not None else self.default_path()        
+        command_name = command_name if command_name is not None else config_path.rsplit('.', 1)[-1]
+        super().__init__(settings=settings, config_path=config_path, command_name=command_name, **kwargs)
 
     ##
     # Subclass services
@@ -133,6 +153,50 @@ class Connector(BaseModel, abc.ABC):
         """Returns a Typer CLI for the connector"""
         return None
 
+class License(Enum):
+    """Defined licenses"""
+
+    MIT = "MIT"
+    APACHE2 = "Apache 2.0"
+    PROPRIETARY = "Proprietary"
+
+    @classmethod
+    def from_str(cls, identifier: str) -> "License":
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No license identified by "{identifier}".')
+
+    def __str__(self):
+        return self.value
+
+
+class Maturity(Enum):
+    """Connector maturity level"""
+
+    EXPERIMENTAL = "Experimental"
+    STABLE = "Stable"
+    ROBUST = "Robust"
+
+    @classmethod
+    def from_str(cls, identifier: str) -> "Maturity":
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No maturity level identified by "{identifier}".')
+
+    def __str__(self):
+        return self.value
+
+
+class Version(semver.VersionInfo):
+    pass
 
 def metadata(
     name: Optional[str] = None,
@@ -142,7 +206,7 @@ def metadata(
     license: Optional[License] = None,
     maturity: Optional[Maturity] = None,
 ):
-    '''Decorate a connector class with metadata'''
+    '''Decorate a Connector class with metadata'''
     def decorator(cls):
         if name:
             cls.name = name
@@ -164,13 +228,14 @@ def metadata(
 
     return decorator
 
+#####
 
 class ConnectorCLI(typer.Typer):
     connector: Connector
 
     def __init__(self, connector: Connector, **kwargs):
         self.connector = connector
-        name = kwargs.pop("name", connector.path) # TODO: Add command_name returning last element of path OR just rename to name
+        name = kwargs.pop("name", connector.command_name)
         help = kwargs.pop("help", connector.description)
         add_completion = kwargs.pop("add_completion", False)
         super().__init__(name=name, help=help, add_completion=add_completion, **kwargs)
@@ -192,9 +257,9 @@ class ConnectorCLI(typer.Typer):
             # TODO: support output paths/formats
             # NOTE: We have to serialize through JSON first
             schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
-            output_path = Path.cwd() / f"{self.connector.path}.yaml"
+            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
             output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.path}.yaml")
+            typer.echo(f"Generated {self.connector.command_name}.yaml")
 
         @self.command()
         def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
@@ -232,3 +297,20 @@ class ConnectorCLI(typer.Typer):
             Display version
             """
             typer.echo(f"{self.connector.name} v{self.connector.version}")
+
+#####
+
+ENTRY_POINT_GROUP = "servo.connectors"
+
+class ConnectorLoader:
+    '''Dynamics discovers and loads connectors via entry points'''
+
+    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
+        self.group = group
+
+    def iter_entry_points(self) -> Generator[EntryPoint, None, None]:
+        yield from iter_entry_points(group=self.group, name=None)
+
+    def load(self) -> Generator[Any, None, None]:
+        for entry_point in self.iter_entry_points():
+            yield entry_point.resolve()
