@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 import typer
-from pydantic import ValidationError
 from typer.testing import CliRunner
+from pydantic import ValidationError
+import json
 
 from servo.config import (
     License,
@@ -14,20 +15,22 @@ from servo.config import (
     Version,
 )
 from servo.connector import (
-    Connector,          
-    MeasureConnector,
-    AdjustConnector
+    Connector,
 )
 from servo.servo import (
     Servo,
     BaseServoSettings,
+    ServoAssembly
 )
 from connectors.vegeta.vegeta import (
     TargetFormat,
     VegetaConnector,
     VegetaSettings
 )
-# test load from config file
+from tests.test_helpers import (
+    MeasureConnector,
+    AdjustConnector
+)
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -157,7 +160,7 @@ class TestServoSettings:
             s = BaseServoSettings(
                 optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' }
             )
-            assert s.connectors == {'measure': 'servo.connector.MeasureConnector'}
+            assert s.connectors == {'measure': 'tests.test_helpers.MeasureConnector'}
 
     def test_connectors_allows_none(self):
         s = BaseServoSettings(
@@ -192,7 +195,7 @@ class TestServoSettings:
             optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
             connectors={'MeasureConnector', 'AdjustConnector'}
         )
-        assert s.connectors == {'measure': 'servo.connector.MeasureConnector', 'adjust': 'servo.connector.AdjustConnector'}
+        assert s.connectors == {'measure': 'tests.test_helpers.MeasureConnector', 'adjust': 'tests.test_helpers.AdjustConnector'}
     
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
@@ -561,7 +564,7 @@ def test_vegeta_id_invalid() -> None:
     assert "1 validation error for VegetaConnector" in str(e.value)
     assert (
         e.value.errors()[0]["msg"]
-        == ('paths may only contain alphanumeric characters, hyphens, slashes, periods, \n and underscores')
+        == 'paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
     )
 
 
@@ -609,148 +612,157 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
 
 def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema")
-    assert result.exit_code == 0
-    assert result.stdout == (
-        '{\n'
-        '  "title": "VegetaSettings",\n'
-        '  "description": "Configuration of the Vegeta connector",\n'
-        '  "type": "object",\n'
-        '  "properties": {\n'
-        '    "description": {\n'
-        '      "title": "Description",\n'
-        '      "env_names": [\n'
-        '        "servo_description"\n'
-        '      ],\n'
-        '      "type": "string"\n'
-        '    },\n'
-        '    "rate": {\n'
-        '      "title": "Rate",\n'
-        '      "description": "Specifies the request rate per time unit to issue against the targets. Given in the for'
-        'mat of request/time unit.",\n'
-        '      "env_names": [\n'
-        '        "servo_rate"\n'
-        '      ],\n'
-        '      "type": "string"\n'
-        '    },\n'
-        '    "duration": {\n'
-        '      "title": "Duration",\n'
-        '      "description": "Specifies the amount of time to issue requests to the targets.",\n'
-        '      "env_names": [\n'
-        '        "servo_duration"\n'
-        '      ],\n'
-        '      "type": "string"\n'
-        '    },\n'
-        '    "format": {\n'
-        '      "$ref": "#/definitions/TargetFormat"\n'
-        '    },\n'
-        '    "target": {\n'
-        '      "title": "Target",\n'
-        '      "description": "Specifies a single formatted Vegeta target to load. See the format option to learn abou'
-        't available target formats. This option is exclusive of the targets option and will provide a target to Veget'
-        'a via stdin.",\n'
-        '      "env_names": [\n'
-        '        "servo_target"\n'
-        '      ],\n'
-        '      "type": "string"\n'
-        '    },\n'
-        '    "targets": {\n'
-        '      "title": "Targets",\n'
-        '      "description": "Specifies the file from which to read targets. See the format option to learn about ava'
-        'ilable target formats. This option is exclusive of the target option and will provide targets to via through '
-        'a file on disk.",\n'
-        '      "env_names": [\n'
-        '        "servo_targets"\n'
-        '      ],\n'
-        '      "format": "file-path",\n'
-        '      "type": "string"\n'
-        '    },\n'
-        '    "connections": {\n'
-        '      "title": "Connections",\n'
-        '      "description": "Specifies the maximum number of idle open connections per target host.",\n'
-        '      "default": 10000,\n'
-        '      "env_names": [\n'
-        '        "servo_connections"\n'
-        '      ],\n'
-        '      "type": "integer"\n'
-        '    },\n'
-        '    "workers": {\n'
-        '      "title": "Workers",\n'
-        '      "description": "Specifies the initial number of workers used in the attack. The workers will automatica'
-        'lly increase to achieve the target request rate, up to max-workers.",\n'
-        '      "default": 10,\n'
-        '      "env_names": [\n'
-        '        "servo_workers"\n'
-        '      ],\n'
-        '      "type": "integer"\n'
-        '    },\n'
-        '    "max-workers": {\n'
-        '      "title": "Max-Workers",\n'
-        '      "description": "The maximum number of workers used to sustain the attack. This can be used to control t'
-        'he concurrency of the attack to simulate a target number of clients.",\n'
-        '      "default": 18446744073709551615,\n'
-        '      "env": "",\n'
-        '      "env_names": [\n'
-        '        ""\n'
-        '      ],\n'
-        '      "type": "integer"\n'
-        '    },\n'
-        '    "max-body": {\n'
-        '      "title": "Max-Body",\n'
-        '      "description": "Specifies the maximum number of bytes to capture from the body of each response. Remain'
-        'ing unread bytes will be fully read but discarded.",\n'
-        '      "default": -1,\n'
-        '      "env": "",\n'
-        '      "env_names": [\n'
-        '        ""\n'
-        '      ],\n'
-        '      "type": "integer"\n'
-        '    },\n'
-        '    "http2": {\n'
-        '      "title": "Http2",\n'
-        '      "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",\n'
-        '      "default": true,\n'
-        '      "env_names": [\n'
-        '        "servo_http2"\n'
-        '      ],\n'
-        '      "type": "boolean"\n'
-        '    },\n'
-        '    "keepalive": {\n'
-        '      "title": "Keepalive",\n'
-        '      "description": "Specifies whether to reuse TCP connections between HTTP requests.",\n'
-        '      "default": true,\n'
-        '      "env_names": [\n'
-        '        "servo_keepalive"\n'
-        '      ],\n'
-        '      "type": "boolean"\n'
-        '    },\n'
-        '    "insecure": {\n'
-        '      "title": "Insecure",\n'
-        '      "description": "Specifies whether to ignore invalid server TLS certificates.",\n'
-        '      "default": false,\n'
-        '      "env_names": [\n'
-        '        "servo_insecure"\n'
-        '      ],\n'
-        '      "type": "boolean"\n'
-        '    }\n'
-        '  },\n'
-        '  "required": [\n'
-        '    "rate",\n'
-        '    "duration"\n'
-        '  ],\n'
-        '  "additionalProperties": false,\n'
-        '  "definitions": {\n'
-        '    "TargetFormat": {\n'
-        '      "title": "TargetFormat",\n'
-        '      "description": "An enumeration.",\n'
-        '      "enum": [\n'
-        '        "http",\n'
-        '        "json"\n'
-        '      ],\n'
-        '      "type": "string"\n'
-        '    }\n'
-        '  }\n'
-        '}\n'
-    )
+    assert result.exit_code == 0    
+    schema = json.loads(result.stdout)
+    assert schema == {
+        'title': 'VegetaSettings',
+        'description': 'Configuration of the Vegeta connector',
+        'type': 'object',
+        'properties': {
+            'description': {
+                'title': 'Description',
+                'env_names': [
+                    'servo_description',
+                ],
+                'type': 'string',
+            },
+            'rate': {
+                'title': 'Rate',
+                'description': (
+                    'Specifies the request rate per time unit to issue against the targets. Given in the format of req'
+                    'uest/time unit.'
+                ),
+                'env_names': [
+                    'servo_rate',
+                ],
+                'type': 'string',
+            },
+            'duration': {
+                'title': 'Duration',
+                'description': 'Specifies the amount of time to issue requests to the targets.',
+                'env_names': [
+                    'servo_duration',
+                ],
+                'type': 'string',
+            },
+            'format': {
+                'title': 'Format',
+                'description': (
+                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
+                    'cs for details.'
+                ),
+                'default': 'http',
+                'env_names': [
+                    'servo_format',
+                ],
+                'enum': [
+                    'http',
+                    'json',
+                ],
+                'type': 'string',
+            },
+            'target': {
+                'title': 'Target',
+                'description': (
+                    'Specifies a single formatted Vegeta target to load. See the format option to learn about availabl'
+                    'e target formats. This option is exclusive of the targets option and will provide a target to Veg'
+                    'eta via stdin.'
+                ),
+                'env_names': [
+                    'servo_target',
+                ],
+                'type': 'string',
+            },
+            'targets': {
+                'title': 'Targets',
+                'description': (
+                    'Specifies the file from which to read targets. See the format option to learn about available tar'
+                    'get formats. This option is exclusive of the target option and will provide targets to via throug'
+                    'h a file on disk.'
+                ),
+                'env_names': [
+                    'servo_targets',
+                ],
+                'type': 'string',
+                'format': 'file-path',
+            },
+            'connections': {
+                'title': 'Connections',
+                'description': 'Specifies the maximum number of idle open connections per target host.',
+                'default': 10000,
+                'env_names': [
+                    'servo_connections',
+                ],
+                'type': 'integer',
+            },
+            'workers': {
+                'title': 'Workers',
+                'description': (
+                    'Specifies the initial number of workers used in the attack. The workers will automatically increa'
+                    'se to achieve the target request rate, up to max-workers.'
+                ),
+                'default': 10,
+                'env_names': [
+                    'servo_workers',
+                ],
+                'type': 'integer',
+            },
+            'max-workers': {
+                'title': 'Max-Workers',
+                'description': (
+                    'The maximum number of workers used to sustain the attack. This can be used to control the concurr'
+                    'ency of the attack to simulate a target number of clients.'
+                ),
+                'default': 18446744073709551615,
+                'env': '',
+                'env_names': [''],
+                'type': 'integer',
+            },
+            'max-body': {
+                'title': 'Max-Body',
+                'description': (
+                    'Specifies the maximum number of bytes to capture from the body of each response. Remaining unread'
+                    ' bytes will be fully read but discarded.'
+                ),
+                'default': -1,
+                'env': '',
+                'env_names': [''],
+                'type': 'integer',
+            },
+            'http2': {
+                'title': 'Http2',
+                'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                'default': True,
+                'env_names': [
+                    'servo_http2',
+                ],
+                'type': 'boolean',
+            },
+            'keepalive': {
+                'title': 'Keepalive',
+                'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                'default': True,
+                'env_names': [
+                    'servo_keepalive',
+                ],
+                'type': 'boolean',
+            },
+            'insecure': {
+                'title': 'Insecure',
+                'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                'default': False,
+                'env_names': [
+                    'servo_insecure',
+                ],
+                'type': 'boolean',
+            },
+        },
+        'required': [
+            'rate',
+            'duration',
+        ],
+        'additionalProperties': False,
+    }
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_text(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:

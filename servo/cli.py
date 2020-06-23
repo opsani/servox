@@ -275,7 +275,7 @@ def schema(
 
     else:
         if format == SettingsOutputFormat.json:
-            output_data = assembly.settings_model.schema_json(indent=2)
+            output_data = ServoSettings.schema_json(indent=2)
         elif format == SettingsOutputFormat.dict:
             output_data = pformat(ServoSettings.schema())
         else:

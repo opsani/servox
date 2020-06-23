@@ -192,9 +192,9 @@ class ConnectorCLI(typer.Typer):
             # TODO: support output paths/formats
             # NOTE: We have to serialize through JSON first
             schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
-            output_path = Path.cwd() / f"{self.connector.id}.yaml"
+            output_path = Path.cwd() / f"{self.connector.path}.yaml"
             output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.id}.yaml")
+            typer.echo(f"Generated {self.connector.path}.yaml")
 
         @self.command()
         def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
@@ -232,9 +232,3 @@ class ConnectorCLI(typer.Typer):
             Display version
             """
             typer.echo(f"{self.connector.name} v{self.connector.version}")
-
-class MeasureConnector(Connector):
-    pass
-
-class AdjustConnector(Connector):
-    pass

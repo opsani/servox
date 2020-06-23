@@ -69,7 +69,6 @@ def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:
 
 def test_info_verbose(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "info -v")
-    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     assert (
         "NAME    VERSION    DESCRIPTION                           HOMEPAGE             MATURITY    LICENSE"
@@ -94,7 +93,6 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
 
 def test_settings(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings")
-    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
