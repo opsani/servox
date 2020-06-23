@@ -2,6 +2,7 @@ import json
 import shlex
 import subprocess
 import sys
+import os
 from pathlib import Path
 from typing import List, Type, Union, Optional
 from enum import Enum
@@ -17,7 +18,9 @@ from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
 
-from servo.connector import Connector, Optimizer, Servo, ServoSettings, ConnectorLoader
+from servo.connector import Connector, ConnectorLoader
+from servo.config import Optimizer
+from servo.servo import Servo, BaseServoSettings, ServoAssembly
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -28,80 +31,83 @@ except ImportError:
 else:
     builtins.debug = debug
 
-# SERVO_OPTIMIZER (--optimizer -o no default)
-# SERVO_TOKEN (--token -t no default)
-# SERVO_TOKEN_FILE (--token-file -T ./servo.token)
-# SERVO_CONFIG_FILE (--config-file -c ./servo.yaml)
+# Application state available to all commands
+# These objects are constructed in `root_callback`
+assembly: ServoAssembly
+ServoSettings: Type[BaseServoSettings]
+servo: Servo
 
-servo: Servo = None
-ServoModel: Type = None
+# Build the Typer CLI
+app = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
 
-# Use callback to define top-level options
-# TODO: Make these args required
+@app.callback()
 def root_callback(
     optimizer: str = typer.Option(
-        None, help="Opsani optimizer (format is example.com/app)"
+        os.environ.get('OPSANI_OPTIMIZER', None), 
+        help="Opsani optimizer to connect to (format is example.com/app) [ENV: OPSANI_OPTIMIZER]"
     ),
-    token: str = typer.Option(None, help="Opsani API access token"),
+    token: str = typer.Option(
+        os.environ.get('OPSANI_TOKEN', None), 
+        help="Opsani API access token [ENV: OPSANI_TOKEN]"
+    ),
+    token_file: typer.FileText = typer.Option(
+        os.environ.get('OPSANI_TOKEN_FILE', None), 
+        help="File to load the access token from [ENV: OPSANI_TOKEN_FILE]"
+    ),
     base_url: str = typer.Option(
-        "https://api.opsani.com/", help="Base URL for connecting to Opsani API"
+        os.environ.get('OPSANI_BASE_URL', "https://api.opsani.com/"),
+        "--base-url",
+        help="Base URL for connecting to Opsani API [Default: https://api.opsani.com/, ENV: OPSANI_BASE_URL]"
     ),
+    config_file: Path = typer.Option(
+        os.environ.get('OPSANI_CONFIG_FILE', "servo.yaml"), 
+        "--file",
+        "-f",
+        exists=False,
+        file_okay=True,
+        dir_okay=False,
+        writable=False,
+        readable=True,
+        resolve_path=True,
+        help="Servo configuration file [default: servo.yaml] [Default: servo.yaml, ENV: OPSANI_CONFIG_FILE]"
+    )
 ):
-    global servo, ServoModel
+    
+    # TODO: Duplicated because of evaluation order. 
+    optimizer = os.environ.get('OPSANI_OPTIMIZER', None) if optimizer is None else optimizer
+    token = os.environ.get('OPSANI_TOKEN', None) if token is None else token
+    token_file = os.environ.get('OPSANI_TOKEN_FILE', None) if token_file is None else token_file
 
-    # TODO: check if there is a servo.yaml (Need to support --config/-c at some point)
-    # TODO: Load from env or arguments
-    settings: ServoSettings = None
+    if optimizer is None:
+        raise typer.BadParameter("An optimizer must be specified")
+
+    if token is None and token_file is None:
+        raise typer.BadParameter("A token must be configured via --token, --token-file, or ENV['OPSANI_TOKEN']")
+
+    if token is not None and token_file is not None:
+        raise typer.BadParameter("Cannot use --token and --token-file at the same time")
+
+    token = token_file.read() if token_file else token    
     optimizer = Optimizer(
-        "dev.opsani.com/fake-app-name",
-        "0000000000000000000000000000000000000000000000000000000",
-    )
-    config_file = Path.cwd() / "servo.yaml"
-
-    # Build our dynamic model
-    # TODO: This logic moves to servo class
-    # TODO: requirement of fields (...) should depend on how connectors are configured
-    # TODO: when autoloaded, not required. When explicitly configured, is required.
-    # TODO: Generation, info, etc and other commands need to be able to run with invalid config
-    args = {}
-    for c in Connector.all():
-        if c is not Servo:
-            args[c.default_id()] = (c.settings_class(), ...)
-
-    ServoModel = pydantic.create_model(
-        "Servo",
-        __base__=ServoSettings,
-        optimizer=(Optimizer, ...),
-        **args,
+        optimizer,
+        token=token,
+        base_url=base_url
     )
 
-    # Load a file if we have one
-    if config_file.exists():
-        try:
-            config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-            config['optimizer'] = optimizer.dict()
-            settings = ServoModel.parse_obj(config)
-        except ValidationError as error:
-            typer.echo(error, err=True)
-            sys.exit(2)
-    else:
-        # If we do not have a project, build a minimal configuration
-        args = {}
-        for c in Connector.all():
-            if c is not Servo:
-                args[c.default_key()] = c.settings_class().construct()
-        settings = ServoModel(optimizer=optimizer, **args)
-
-    # Connect the CLIs for all connectors
-    # TODO: This should respect the connectors list when there is a config file present
-    servo = Servo(settings)
-
-app = typer.Typer(name="servox", add_completion=True, callback=root_callback)
+    # Assemble the Servo
+    global assembly, servo, ServoSettings
+    try:
+        assembly, servo = ServoAssembly.assemble(config_file=config_file, optimizer=optimizer)
+        ServoSettings = assembly.settings_model
+    except Exception as error:
+        typer.echo(error, err=True)
+        raise typer.Exit(2) from error
 
 # Load all the connector plugins
+# FIXME: This should be handled after parsing the options but Click doesn't make it super easy
+# Only active connectors should be registered as commands (and aliases should be registered as well)
 loader = ConnectorLoader()
 for connector in loader.load():
-    debug(str(connector))
     settings = connector.settings_class().construct()
     connector = connector(settings)
     cli = connector.cli()
@@ -137,7 +143,7 @@ def info(
     )
 ) -> None:
     """Display information about the assembly"""
-    connectors = servo.all_connectors() if all else servo.active_connectors()
+    connectors = assembly.all_connectors() if all else servo.connectors()
     headers = ["NAME", "VERSION", "DESCRIPTION"]
     row = [servo.name, servo.version, servo.description]
     if verbose:
@@ -225,7 +231,7 @@ def settings(
 def check() -> None:
     """Check the health of the assembly"""
     # TODO: Requires a config file
-    # TODO: Run checks for all active connectors
+    # TODO: Run checks for all active connectors (or pick them)
 
 
 @app.command()
@@ -262,16 +268,16 @@ def schema(
     
     if top_level:
         if format == SchemaOutputFormat.json:
-            output_data = servo.top_level_schema_json(all=all)
+            output_data = assembly.top_level_schema_json(all=all)
         
         elif format == SchemaOutputFormat.dict:            
-            output_data = pformat(servo.top_level_schema(all=all))
+            output_data = pformat(assembly.top_level_schema(all=all))
 
     else:
         if format == SettingsOutputFormat.json:
-            output_data = ServoModel.schema_json(indent=2)
+            output_data = assembly.settings_model.schema_json(indent=2)
         elif format == SettingsOutputFormat.dict:
-            output_data = pformat(ServoModel.schema())
+            output_data = pformat(ServoSettings.schema())
         else:
             raise RuntimeError("no handler configured for output format {format}")
     
@@ -297,8 +303,7 @@ def validate(
 ) -> None:
     """Validate servo configuration file"""
     try:
-        config = yaml.load(file, Loader=yaml.FullLoader)
-        ServoModel.parse_obj(config)
+        assembly.parse_file(file)
         typer.echo("√ Valid servo configuration")
     except ValidationError as e:
         typer.echo("X Invalid servo configuration")

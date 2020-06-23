@@ -42,24 +42,19 @@ def vegeta_config_file(servo_yaml: Path) -> Path:
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
 
-
 def test_help(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "--help")
     assert result.exit_code == 0
     assert "servox [OPTIONS] COMMAND [ARGS]" in result.stdout
 
-
 def test_new(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Creates a new servo assembly at [PATH]"""
-
-
+    
 def test_run(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Run the servo"""
 
-
 def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Open an interactive console"""
-
 
 def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "info")
@@ -74,6 +69,7 @@ def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:
 
 def test_info_verbose(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "info -v")
+    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     assert (
         "NAME    VERSION    DESCRIPTION                           HOMEPAGE             MATURITY    LICENSE"
@@ -91,7 +87,6 @@ def test_info_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
 def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
-
 def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "version")
     assert result.exit_code == 0
@@ -99,6 +94,7 @@ def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
 
 def test_settings(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "settings")
+    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
@@ -152,13 +148,11 @@ def test_schema_output_to_file(cli_runner: CliRunner, cli_app: Typer, tmp_path: 
     schema = json.loads(output_path.read_text())
     assert schema["title"] == "Servo"
 
-
 def test_schema_all(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo"
-
 
 def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--top-level"])
@@ -184,6 +178,11 @@ def test_schema_top_level_dict_file_output(cli_app: Typer, cli_runner: CliRunner
     assert result.exit_code == 0
     schema = eval(path.read_text())
     assert schema['title'] == 'Servo Schema'
+
+@pytest.fixture(autouse=True)
+def test_set_defaults_via_env() -> None:
+    os.environ['OPSANI_OPTIMIZER'] = 'dev.opsani.com/test-app'
+    os.environ['OPSANI_TOKEN'] = '123456789'
 
 def test_schema_text(cli_app: Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(cli_app, "schema -f text")
@@ -211,19 +210,31 @@ def test_schema_dict_file_output(cli_app: Typer, cli_runner: CliRunner, tmp_path
 def test_validate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Validate servo configuration file"""
 
-
 def test_generate(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Generate servo configuration"""
     # TODO: Generate this thing in test dir
 
-
 def test_developer_test(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
-
 
 def test_developer_lint(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
-
 def test_developer_format(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
+
+## CLI Lifecycle tests
+
+def test_loading_cli_without_specific_connectors_activates_all_optionally(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    # temp config file, no connectors key
+    pass
+
+def test_loading_cli_with_specific_connectors_only_activates_required(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    pass
+
+def test_loading_cli_with_empty_connectors_list_disables_all(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    servo_yaml.write_text(yaml.dump({'connectors': []}))
+    result = cli_runner.invoke(cli_app, "info")
+
+    pass
+
