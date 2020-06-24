@@ -35,6 +35,7 @@ else:
 assembly: ServoAssembly
 ServoSettings: Type[BaseServoSettings]
 servo: Servo
+connectors_to_update = []
 
 # Build the Typer CLI
 app = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
@@ -97,7 +98,7 @@ def root_callback(
     optimizer = Optimizer(optimizer, token=token, base_url=base_url)
 
     # Assemble the Servo
-    global assembly, servo, ServoSettings
+    global assembly, servo, ServoSettings # TODO: This should probably return the instance instead of the model
     try:
         assembly, servo, ServoSettings = ServoAssembly.assemble(
             config_file=config_file, optimizer=optimizer
@@ -105,6 +106,12 @@ def root_callback(
     except ValidationError as error:
         typer.echo(error, err=True)
         raise typer.Exit(2) from error
+    
+    # FIXME: Update the settings of our pre-registered connectors
+    for connector in connectors_to_update:
+        settings = getattr(servo.settings, connector.config_path)
+        connector.settings = settings
+        # servo.routes[]
 
 
 @app.command()
@@ -118,7 +125,7 @@ def new() -> None:
 @app.command()
 def run() -> None:
     """Run the servo"""
-
+    servo.run()
 
 @app.command()
 def console() -> None:
@@ -361,16 +368,17 @@ def __run(args: Union[str, List[str]], **kwargs) -> None:
 
 # Run the Typer CLI
 def main():
+    load_dotenv()
+
     # FIXME: This should be handled after parsing the options but Click doesn't make it super easy
     # Only active connectors should be registered as commands (and aliases should be registered as well)
     loader = ConnectorLoader()
     for connector in loader.load():
         settings = connector.settings_model().construct()
         connector = connector(settings)
+        connectors_to_update.append(connector)
         cli = connector.cli()
         if cli is not None:
             app.add_typer(cli)
-
-    load_dotenv()
 
     app()

@@ -19,7 +19,7 @@ from servo.connector import (
     Optimizer,
     metadata,
 )
-
+import httpx
 
 class BaseServoSettings(ConnectorSettings):
     """
@@ -30,10 +30,11 @@ class BaseServoSettings(ConnectorSettings):
 
     See `ServoAssembly` for details on how the concrete model is built.
     """
-
+    
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
 
+    # TODO: This is null for some reason...
     connectors: Optional[Dict[str, str]] = None
     """A map of connector key-paths to fully qualified class names"""
 
@@ -64,11 +65,7 @@ class Servo(Connector):
     """The Servo"""
 
     settings: BaseServoSettings
-    routes: Dict[str, Type[Connector]] = {}
-
-    def connectors(self) -> List[Connector]:
-        """Return connectors explicitly activated in the configuration"""
-        return self.routes.values()
+    connectors: List[Connector] = []
 
     ##
     # Event processing
@@ -78,6 +75,81 @@ class Servo(Connector):
 
     def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
         """Handle an event"""
+
+
+    def delay():
+        time.sleep(0.1)
+        # if args.interactive:
+        #     print('Press <Enter> to continue...', end='')
+        #     sys.stdout.flush()
+        #     sys.stdin.readline()
+        # elif args.delay:
+        #     time.sleep(args.delay)
+        print()
+
+    def run(self) -> None:
+        EVENTS = { 'HELLO', 'GOODBYE', } # TODO: TURN INTO AN ENUM
+        AGENT = 'github.com/opsani/servox'
+
+        # TODO: Normalize the args
+        url = f'{self.settings.optimizer.base_url}accounts/{self.settings.optimizer.org_domain}/applications/{self.settings.optimizer.app_name}/'
+        debug(self.settings.optimizer)
+        debug(url)
+        headers = { 'Authorization': f'Bearer {self.settings.optimizer.token}' }
+
+        # Factor all this crap up
+        with httpx.Client(base_url=url, headers=headers) as client:
+            #  r = client.get('/headers')
+
+            event = dict(event='HELLO', param=dict(agent=AGENT))
+
+            # announce
+            print('Saying HELLO.', end=' ')
+            # delay()
+            # request('HELLO', dict(agent=args.agent))
+            response = client.post('servo', json=event)
+            response.raise_for_status()
+            debug(response.json())
+
+            # WHATS_NEXT
+            response = client.post('servo', json=dict(event='WHATS_NEXT', param=dict(agent=AGENT)))
+            response.raise_for_status()
+            command = response.json()
+
+            if command['cmd'] == 'DESCRIBE':
+                # TODO: Send back a description via: event=DESCRIPTION, param=dict(descriptor=describe(), status='ok')
+                v = json.loads('{"descriptor": {"application": {"components": {"web": {"settings": {"cpu": {"value": 0.475, "min": 0.1, "max": 0.8, "step": 0.125, "type": "range"}, "mem": {"value": 0.1, "min": 0.1, "max": 0.8, "step": 0.125, "type": "range"}, "replicas": {"value": 1, "min": 1, "max": 2, "step": 1, "type": "range"}}}}}, "measurement": {"metrics": {"throughput": {"unit": "rpm"}, "error_rate": {"unit": "percent"}, "latency_total": {"unit": "milliseconds"}, "latency_mean": {"unit": "milliseconds"}, "latency_50th": {"unit": "milliseconds"}, "latency_90th": {"unit": "milliseconds"}, "latency_95th": {"unit": "milliseconds"}, "latency_99th": {"unit": "milliseconds"}, "latency_max": {"unit": "milliseconds"}, "latency_min": {"unit": "milliseconds"}, "requests_total": {"unit": "count"}}}}, "status": "ok"}')
+                response = client.post('servo', json=dict(event='DESCRIPTION', param=v))
+                response.raise_for_status()
+                debug(response.json())
+            
+            # WHATS_NEXT
+            response = client.post('servo', json=dict(event='WHATS_NEXT', param=dict(agent=AGENT)))
+            response.raise_for_status()
+            
+            # MEASURE
+            command = response.json()
+            debug(command)
+            if command['cmd'] == 'MEASURE':
+                debug("ASKED TO MEASURE!!!")
+
+                # TODO: Search for all active connectors that respond to measure
+                debug(self)
+
+
+            # rsp = session.post(optune_url(args.account, args.app_id), json=ev)
+
+            # run in servo mode
+            # while not stop_flag:
+            #     try:
+            #         exec_command()
+            #     except Exception as e:
+            #         traceback.print_exc()
+
+            # try:
+            #     request('GOODBYE', dict(reason=stop_flag), retries=3, backoff=False)
+            # except Exception as e:
+            #     print('Warning: failed to send GOODBYE: {}. Exiting anyway'.format(str(e)))
 
     ##
     # Misc
@@ -129,7 +201,7 @@ class ServoAssembly(BaseModel):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoSettings = _create_settings_model(config_file=config_file, env=env)
+        ServoSettings, connector_type_routes = _create_settings_model(config_file=config_file, env=env)
 
         # Build our Servo settings instance from the config file + environment
         if config_file.exists():
@@ -145,19 +217,29 @@ class ServoAssembly(BaseModel):
             # If we do not have a config file, build a minimal configuration
             # NOTE: This configuration is likely incomplete/invalid due to required
             # settings on the connectors not being fully configured
-            args = kwargs.copy()
+            args = kwargs.copy()            
             for c in cls.all_connectors():
                 args[c.default_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
+        
+        # Initialize all active connectors
+        connectors: List[Connector] = []
+        for key_path, connector_type in connector_type_routes.items():
+            connector_settings = getattr(settings, key_path)
+            connector = connector_type(connector_settings)
+            debug(connector)
+            connectors.append(connector)
 
         # Build the servo object
-        servo = Servo(settings)
+        servo = Servo(settings, connectors=connectors)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
             settings_model=ServoSettings,
             servo=servo,
         )
+
+        # TODO: The dynamic settings class needs to map key-paths to connector classes
 
         return assembly, servo, ServoSettings
 
@@ -221,9 +303,11 @@ def _discover_connectors() -> Set[Type[Connector]]:
 
 def _create_settings_model(
     *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
-) -> Type[BaseServoSettings]:
+) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
     # map of config key in YAML to settings class for target connector
     setting_fields: Optional[Dict[str, Type[ConnectorSettings]]] = None
+    key_paths_to_settings_type_names: Dict[str, str] = {}
+    key_paths_to_connector_types: Dict[str, Type[Connector]] = {}
 
     # NOTE: If `connectors` key is present in config file, require the keys to be present
     if config_file.exists():
@@ -247,6 +331,9 @@ def _create_settings_model(
                         }
 
                     setting_fields[path] = (settings_model, ...)
+                    # TODO: Bundle this into class...
+                    key_paths_to_settings_type_names[path] = _module_path(settings_model)
+                    key_paths_to_connector_types[path] = connector_class
 
     # If we don't have any target connectors, add all available as optional fields
     if setting_fields is None:
@@ -254,16 +341,19 @@ def _create_settings_model(
         for c in Connector.all():
             if c is not Servo:
                 setting_fields[c.default_path()] = (c.settings_model(), None)
+                key_paths_to_settings_type_names[c.default_path()] = _module_path(c.settings_model()) # RENAME: module types
+                key_paths_to_connector_types[c.default_path()] = c
 
     # Create our model
     servo_settings_model = create_model(
         "ServoSettings",
         __base__=BaseServoSettings,
         optimizer=(Optimizer, ...),
+        # connectors=key_paths_to_settings_type_names,
         **setting_fields,
     )
 
-    return servo_settings_model
+    return servo_settings_model, key_paths_to_connector_types
 
 
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
