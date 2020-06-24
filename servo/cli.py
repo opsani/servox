@@ -19,7 +19,7 @@ from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
 
 from servo.connector import Optimizer, Connector, ConnectorLoader
-from servo.servo import Servo, ServoSettings, ServoAssembly
+from servo.servo import Servo, BaseServoSettings, ServoAssembly
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -33,7 +33,7 @@ else:
 # Application state available to all commands
 # These objects are constructed in `root_callback`
 assembly: ServoAssembly
-ServoSettings: Type[ServoSettings]
+ServoSettings: Type[BaseServoSettings]
 servo: Servo
 
 # Build the Typer CLI
@@ -72,7 +72,7 @@ def root_callback(
     )
 ):
     
-    # TODO: Duplicated because of evaluation order. 
+    # TODO: Duplicated because of evaluation order in tests
     optimizer = os.environ.get('OPSANI_OPTIMIZER', None) if optimizer is None else optimizer
     token = os.environ.get('OPSANI_TOKEN', None) if token is None else token
     token_file = os.environ.get('OPSANI_TOKEN_FILE', None) if token_file is None else token_file
@@ -96,9 +96,11 @@ def root_callback(
     # Assemble the Servo
     global assembly, servo, ServoSettings
     try:
-        assembly, servo = ServoAssembly.assemble(config_file=config_file, optimizer=optimizer)
-        ServoSettings = assembly.settings_model
-    except Exception as error:
+        assembly, servo, ServoSettings = ServoAssembly.assemble(
+            config_file=config_file, 
+            optimizer=optimizer
+        )
+    except ValidationError as error:
         typer.echo(error, err=True)
         raise typer.Exit(2) from error
 
@@ -366,7 +368,7 @@ def main():
     # Only active connectors should be registered as commands (and aliases should be registered as well)
     loader = ConnectorLoader()
     for connector in loader.load():
-        settings = connector.settings_class().construct()
+        settings = connector.settings_model().construct()
         connector = connector(settings)
         cli = connector.cli()
         if cli is not None:

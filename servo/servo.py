@@ -27,13 +27,21 @@ from pydantic import (
 from pydantic.schema import schema as pydantic_schema
 from pydantic.json import pydantic_encoder
 
-from servo.connector import Connector, ConnectorLoader, ConnectorSettings, Optimizer, Maturity, License
+from servo.connector import (
+    Connector, 
+    ConnectorLoader, 
+    ConnectorSettings, 
+    Optimizer, 
+    Maturity, 
+    License,
+    metadata
+)
 
-class ServoSettings(ConnectorSettings):
+class BaseServoSettings(ConnectorSettings):
     """
     Abstract base class for Servo settings
 
-    Note that the concrete ServoSettings class is built dynamically at runtime
+    Note that the concrete BaseServoSettings class is built dynamically at runtime
     based on the avilable connectors and configuration in effect.
 
     See `ServoAssembly` for details on how the concrete model is built.
@@ -61,8 +69,7 @@ class ServoSettings(ConnectorSettings):
 
         title = "Servo"
 
-import servo
-@servo.connector.metadata(
+@metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
     maturity=Maturity.ROBUST,
@@ -71,7 +78,7 @@ import servo
 class Servo(Connector):
     """The Servo"""
 
-    settings: ServoSettings    
+    settings: BaseServoSettings    
     routes: Dict[str, Type[Connector]] = {}
 
     def connectors(self) -> List[Connector]:
@@ -106,7 +113,7 @@ class ServoAssembly(BaseModel):
     in the config file.
 
     The ServoAssembly class is responsible for handling the connector
-    loading and creating a concrete ServoSettings model that supports
+    loading and creating a concrete BaseServoSettings model that supports
     the connectors available and activated in the assembly. An assembly
     is the combination of configuration and associated code artifacts
     in an executable environment (e.g. a Docker image or a Python virtualenv
@@ -121,7 +128,7 @@ class ServoAssembly(BaseModel):
     optimizer: Optimizer
 
     ## Assembled settings & Servo
-    settings_model: Type[ServoSettings]
+    settings_model: Type[BaseServoSettings]
     servo: Servo
     
     @classmethod
@@ -131,15 +138,18 @@ class ServoAssembly(BaseModel):
         config_file: Path,
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ, 
-    ) -> ('ServoAssembly', Servo):
+    ) -> ('ServoAssembly', Servo, Type[BaseServoSettings]):
         '''Assembles a Servo by processing configuration and building a dynamic settings model'''
 
         _discover_connectors()
-        ServoSettings= _create_settings_model(config_file=config_file, env=env)
+        ServoSettings = _create_settings_model(config_file=config_file, env=env)
 
         # Build our Servo settings instance from the config file + environment
         if config_file.exists():
             config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+            if not (config is None or isinstance(config, dict)):
+                raise ValueError(f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"')
+            config = {} if config is None else config
             config['optimizer'] = optimizer.dict()
             settings = ServoSettings.parse_obj(config)
         else:
@@ -148,7 +158,7 @@ class ServoAssembly(BaseModel):
             # settings on the connectors not being fully configured
             args = {}
             for c in cls.all_connectors():
-                args[c.default_path()] = c.settings_class().construct()
+                args[c.default_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
         
         # Build the servo object
@@ -160,17 +170,18 @@ class ServoAssembly(BaseModel):
             servo=servo
         )
 
-        return assembly, servo
+        return assembly, servo, ServoSettings
     
     ##
     # Utility functions
 
-    def parse_file(self, config_file: Path = None) -> ConnectorSettings:
+    def parse_file(self, config_file: Path = None) -> BaseServoSettings:
         config_file = self.config_file if config_file is None else config_file
         config = yaml.load(config_file, Loader=yaml.FullLoader)
         config['optimizer'] = self.optimizer.dict()
         return self.settings_model.parse_obj(config)
 
+    @classmethod
     def default_routes(cls) -> Dict[str, Type[Connector]]:
         routes = {}
         for connector in cls.all_connectors():
@@ -189,8 +200,8 @@ class ServoAssembly(BaseModel):
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         '''Returns a schema that only includes connector model definitions'''
         connectors = self.all_connectors() if all else self.servo.connectors()
-        settings_classes = list(map(lambda c: c.settings_class(), connectors))
-        return pydantic_schema(settings_classes, title="Servo Schema")
+        settings_models = list(map(lambda c: c.settings_model(), connectors))
+        return pydantic_schema(settings_models, title="Servo Schema")
     
     def top_level_schema_json(self, *, all: bool = False) -> str:
         '''Return a JSON string representation of the top level schema'''
@@ -218,33 +229,47 @@ def _create_settings_model(
     *,
     config_file: Path,
     env: Optional[Dict[str, str]] = os.environ
-)-> Type[ServoSettings]:
+)-> Type[BaseServoSettings]:
     # map of config key in YAML to settings class for target connector
     setting_fields: Optional[Dict[str, Type[ConnectorSettings]]] = None
 
     # NOTE: If `connectors` key is present in config file, require the keys to be present    
     if config_file.exists():
         config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        connectors_value = config.get('connectors', None)
-        if connectors_value:
-            routes = _routes_for_connectors_descriptor(connectors_value)
-            setting_fields = {}
-            for path, connector_class in routes.items():
-                setting_fields[path] = (connector_class.settings_class(), ...)
+        if isinstance(config, dict): # Config file could be blank or malformed
+            connectors_value = config.get('connectors', None)
+            if connectors_value:
+                routes = _routes_for_connectors_descriptor(connectors_value)
+                setting_fields = {}
+                for path, connector_class in routes.items():
+                    base_settings_model = connector_class.settings_model()                
+                    settings_model = create_model(
+                        f"{path}_{base_settings_model.__qualname__}",
+                        __base__=base_settings_model,
+                    )
+                    
+                    # Traverse across all the fields and update the env vars
+                    for name, field in settings_model.__fields__.items():
+                        field.field_info.extra['env_names'] = {f'SERVO_{path}_{name}'.upper()}
+
+                    setting_fields[path] = (settings_model, ...)
     
     # If we don't have any target connectors, add all available as optional fields
     if setting_fields is None:
         setting_fields = {}
         for c in Connector.all():
             if c is not Servo:
-                setting_fields[c.default_path()] = (c.settings_class(), None)
+                setting_fields[c.default_path()] = (c.settings_model(), None)
 
-    return create_model(
+    # Create our model
+    servo_settings_model = create_model(
         "ServoSettings",
-        __base__=ServoSettings,
+        __base__=BaseServoSettings,
         optimizer=(Optimizer, ...),
         **setting_fields,
     )
+
+    return servo_settings_model
 
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
     if not isinstance(connector, str):
@@ -291,7 +316,7 @@ def _routes_for_connectors_descriptor(connectors):
     elif isinstance(connectors, str):
         # NOTE: Special case. When we are invoked with a string it is typically an env var
         try:
-            decoded_value = ServoSettings.__config__.json_loads(connectors)  # type: ignore
+            decoded_value = BaseServoSettings.__config__.json_loads(connectors)  # type: ignore
         except ValueError as e:
             raise ValueError(f'error parsing JSON for "{connectors}"') from e
 

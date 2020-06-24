@@ -56,9 +56,24 @@ class ConnectorSettings(BaseSettings):
     # TODO: This should be on base class
     _optimizer: Optimizer
 
+    # Automatically uppercase env names upon subclassing
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        for name, field in cls.__fields__.items():
+            field.field_info.extra['env_names'] = {f'SERVO_{name}'.upper()}
+
     class Config:
         env_prefix = "SERVO_"
+        env_file = '.env'
+        case_sensitive = True
         extra = Extra.forbid
+        fields = {
+            'description': {
+                'env': 'SERVO_DESCRIPTION',
+                'env_names': {'SERVO_DESCRIPTION'},
+            }
+        }
+
 
 class Connector(BaseModel, abc.ABC):
     """
@@ -109,7 +124,7 @@ class Connector(BaseModel, abc.ABC):
         return v
 
     @classmethod
-    def settings_class(cls) -> Type['Settings']:
+    def settings_model(cls) -> Type['Settings']:
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls

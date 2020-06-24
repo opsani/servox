@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-
+import re
 import yaml
 import pytest
 from typer import Typer
@@ -13,14 +13,7 @@ from servo import cli
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
 def run_from_tmp_path(tmp_path: Path) -> None:
-    os.chdir(tmp_path)
-
-
-@pytest.fixture()
-def servo_yaml(tmp_path: Path) -> Path:
-    config_path: Path = tmp_path / "servo.yaml"
-    config_path.touch()
-    return config_path
+    os.chdir(tmp_path)\
 
 
 @pytest.fixture()
@@ -57,30 +50,27 @@ def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Open an interactive console"""
 
 def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
-    result = cli_runner.invoke(cli_app, "info")
+    result = cli_runner.invoke(cli_app, "info", catch_exceptions=False)
     assert result.exit_code == 0
     assert "NAME    VERSION    DESCRIPTION\n" in result.stdout
 
 def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "info --all")
     assert result.exit_code == 0
-    assert "NAME               VERSION    DESCRIPTION\n" in result.stdout
-
+    assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 def test_info_verbose(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
     result = cli_runner.invoke(cli_app, "info -v")
     assert result.exit_code == 0
     assert (
-        "NAME    VERSION    DESCRIPTION                           HOMEPAGE             MATURITY    LICENSE"
-        in result.stdout
+        re.match("NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE", result.stdout)
     )
 
 def test_info_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "info --all -v")
     assert result.exit_code == 0
     assert (
-        "NAME               VERSION    DESCRIPTION                           HOMEPAGE                                    MATUR"
-        in result.stdout
+        re.match("NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout)
     )
 
 def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
@@ -96,8 +86,19 @@ def test_settings(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Pat
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
+def test_run_with_empty_config_file(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    result = cli_runner.invoke(cli_app, "settings", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "{}" in result.stdout
+
+def test_run_with_malformed_config_file(cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path) -> None:
+    servo_yaml.write_text('</\n\n..:989890j\n___*')
+    with pytest.raises(ValueError) as e:
+        cli_runner.invoke(cli_app, "settings", catch_exceptions=False)
+    assert "parsed to an unexpected value of type" in str(e)
+
 def test_settings_yaml(cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path) -> None:
-    result = cli_runner.invoke(cli_app, "settings -f yaml")
+    result = cli_runner.invoke(cli_app, "settings -f yaml", catch_exceptions=False)
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
@@ -188,7 +189,7 @@ def test_schema_text(cli_app: Typer, cli_runner: CliRunner) -> None:
     assert 'not yet implemented' in result.stderr
 
 def test_schema_html(cli_app: Typer, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(cli_app, "schema -f html")
+    result = cli_runner.invoke(cli_app, "schema -f html", catch_exceptions=False)
     assert result.exit_code == 1
     assert 'not yet implemented' in result.stderr
 

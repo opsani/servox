@@ -1,5 +1,6 @@
 import pytest
 import os
+from pathlib import Path
 from typing import Dict
 from contextlib import contextmanager
 from typer.testing import CliRunner
@@ -27,3 +28,9 @@ def environment_overrides(env: Dict[str, str]) -> None:
         yield
     finally:
         os.environ = original_env
+
+@pytest.fixture()
+def servo_yaml(tmp_path: Path) -> Path:
+    config_path: Path = tmp_path / "servo.yaml"
+    config_path.touch()
+    return config_path
