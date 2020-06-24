@@ -368,6 +368,22 @@ def __run(args: Union[str, List[str]], **kwargs) -> None:
 def main():
     load_dotenv()
 
+    from optparse import OptionParser
+    parser = OptionParser()
+    parser.add_option("-f", "--file", dest="file", metavar="FILE", default="servo.yaml")
+
+    (options, args) = parser.parse_args()
+
+    if path := Path(options.file).exists():
+        pass
+        # TODO: if connectors is empty, activate everything
+        # If there are aliases, activate those
+
+
+    debug(options, args)
+    # return
+
+
     # FIXME: This should be handled after parsing the options but Click doesn't make it super easy
     # Only active connectors should be registered as commands (and aliases should be registered as well)
     loader = ConnectorLoader()
