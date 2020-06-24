@@ -7,6 +7,8 @@ Opsani wiki resoures.
 
 This readme kinda sucks at the moment but the code is solid. As the last details of the design solidify this doc will evolve. But in the meantime...
 
+Quick install via `poetry install [GITHUB URL]` and then work with the CLI `servo --help`. 
+
 ## Rundown of cool things...
 
 The way that ServoX works is pretty hot. There are two fundamental models: Settings and Connectors, which are designed and implemented in matching pairs.
