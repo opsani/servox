@@ -19,7 +19,7 @@ from servo.connector import (
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
-
+from tests.test_helpers import MeasureConnector
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:

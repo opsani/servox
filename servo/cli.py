@@ -111,8 +111,6 @@ def root_callback(
     for connector in connectors_to_update:
         settings = getattr(servo.settings, connector.config_path)
         connector.settings = settings
-        # servo.routes[]
-
 
 @app.command()
 def new() -> None:
@@ -141,7 +139,7 @@ def info(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info"),
 ) -> None:
     """Display information about the assembly"""
-    connectors = assembly.all_connectors() if all else servo.connectors()
+    connectors = assembly.all_connectors() if all else servo.connectors
     headers = ["NAME", "VERSION", "DESCRIPTION"]
     row = [servo.name, servo.version, servo.description]
     if verbose:

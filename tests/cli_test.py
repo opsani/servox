@@ -58,7 +58,7 @@ def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
 def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "info", catch_exceptions=False)
     assert result.exit_code == 0
-    assert "NAME    VERSION    DESCRIPTION\n" in result.stdout
+    assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:

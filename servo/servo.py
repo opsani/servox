@@ -133,8 +133,20 @@ class Servo(Connector):
             if command['cmd'] == 'MEASURE':
                 debug("ASKED TO MEASURE!!!")
 
-                # TODO: Search for all active connectors that respond to measure
-                debug(self)
+                # TODO: This is quick and dirty...
+                # Dispatch measurements
+                for connector in self.connectors:
+                    measure_func = getattr(connector, "measure", None)
+                    if callable(measure_func): # TODO: This should have a tighter contract (arity, etc)
+                        metrics, annotations = measure_func()
+                        # Send MEASUREMENT event, param is dict of (metrics, annotations)
+                        # TODO: Make this shit async...
+                        response = client.post('servo', json=dict(event='MEASUREMENT', param=dict(metrics=metrics, annotations=annotations)))
+                        response.raise_for_status()
+                        
+                        command = response.json()
+                        debug(command)
+
 
 
             # rsp = session.post(optune_url(args.account, args.app_id), json=ev)
@@ -226,9 +238,10 @@ class ServoAssembly(BaseModel):
         connectors: List[Connector] = []
         for key_path, connector_type in connector_type_routes.items():
             connector_settings = getattr(settings, key_path)
-            connector = connector_type(connector_settings)
-            debug(connector)
-            connectors.append(connector)
+            if connector_settings:
+                # NOTE: If the command is routed but doesn't define a settings class this will raise
+                connector = connector_type(connector_settings)
+                connectors.append(connector)
 
         # Build the servo object
         servo = Servo(settings, connectors=connectors)
@@ -270,7 +283,7 @@ class ServoAssembly(BaseModel):
 
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         """Returns a schema that only includes connector model definitions"""
-        connectors = self.all_connectors() if all else self.servo.connectors()
+        connectors = self.all_connectors() if all else self.servo.connectors
         settings_models = list(map(lambda c: c.settings_model(), connectors))
         return pydantic_schema(settings_models, title="Servo Schema")
 
@@ -284,7 +297,10 @@ class ServoAssembly(BaseModel):
 
 
 def _module_path(cls: Type) -> str:
-    return ".".join([cls.__module__, cls.__name__])
+    if cls.__module__:
+        return ".".join([cls.__module__, cls.__name__])
+    else:
+        return cls.__name__
 
 
 def _discover_connectors() -> Set[Type[Connector]]:
