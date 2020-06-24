@@ -3,30 +3,25 @@ import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set
-import importlib
+from typing import Any, ClassVar, Generator, Optional, Set, Type, get_type_hints
 
 import httpx
 import semver
 import typer
 import yaml
 from loguru import logger
+from pkg_resources import EntryPoint, iter_entry_points
 from pydantic import (
     BaseModel,
     BaseSettings,
     Extra,
-    Field,
-    FilePath,
     HttpUrl,
     ValidationError,
     constr,
     root_validator,
     validator,
 )
-from pydantic.schema import schema as pydantic_schema
-from pydantic.json import pydantic_encoder
-from pkg_resources import EntryPoint, iter_entry_points
-from typing import Generator
+
 
 class Optimizer(BaseModel):
     org_domain: constr(
@@ -49,6 +44,7 @@ class Optimizer(BaseModel):
         """Returns the optimizer identifier"""
         return f"{self.org_domain}/{self.app_name}"
 
+
 class ConnectorSettings(BaseSettings):
     description: Optional[str]
 
@@ -60,17 +56,17 @@ class ConnectorSettings(BaseSettings):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         for name, field in cls.__fields__.items():
-            field.field_info.extra['env_names'] = {f'SERVO_{name}'.upper()}
+            field.field_info.extra["env_names"] = {f"SERVO_{name}".upper()}
 
     class Config:
         env_prefix = "SERVO_"
-        env_file = '.env'
+        env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
         fields = {
-            'description': {
-                'env': 'SERVO_DESCRIPTION',
-                'env_names': {'SERVO_DESCRIPTION'},
+            "description": {
+                "env": "SERVO_DESCRIPTION",
+                "env_names": {"SERVO_DESCRIPTION"},
             }
         }
 
@@ -85,11 +81,11 @@ class Connector(BaseModel, abc.ABC):
 
     # Connector metadata
     name: ClassVar[str] = None
-    version: ClassVar['Version'] = None
+    version: ClassVar["Version"] = None
     description: ClassVar[Optional[str]] = None
     homepage: ClassVar[Optional[HttpUrl]] = None
-    license: ClassVar[Optional['License']] = None
-    maturity: ClassVar[Optional['Maturity']] = None
+    license: ClassVar[Optional["License"]] = None
+    maturity: ClassVar[Optional["Maturity"]] = None
 
     # Instance configuration
     command_name: constr(regex=r"^[a-z\-]{4,16}$")
@@ -99,7 +95,7 @@ class Connector(BaseModel, abc.ABC):
 
     @classmethod
     def all(cls) -> Set[Type["Connector"]]:
-        '''Return a set of all Connector subclasses'''
+        """Return a set of all Connector subclasses"""
         return cls.__subclasses
 
     @root_validator(pre=True)
@@ -124,7 +120,7 @@ class Connector(BaseModel, abc.ABC):
         return v
 
     @classmethod
-    def settings_model(cls) -> Type['Settings']:
+    def settings_model(cls) -> Type["Settings"]:
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
@@ -141,16 +137,23 @@ class Connector(BaseModel, abc.ABC):
         cls.__subclasses.add(cls)
 
     def __init__(
-        self, 
-        settings: ConnectorSettings, 
-        *, 
-        config_path: Optional[str] = None, 
+        self,
+        settings: ConnectorSettings,
+        *,
+        config_path: Optional[str] = None,
         command_name: Optional[str] = None,
         **kwargs,
     ):
-        config_path = config_path if config_path is not None else self.default_path()        
-        command_name = command_name if command_name is not None else config_path.rsplit('.', 1)[-1]
-        super().__init__(settings=settings, config_path=config_path, command_name=command_name, **kwargs)
+        config_path = config_path if config_path is not None else self.default_path()
+        command_name = (
+            command_name if command_name is not None else config_path.rsplit(".", 1)[-1]
+        )
+        super().__init__(
+            settings=settings,
+            config_path=config_path,
+            command_name=command_name,
+            **kwargs,
+        )
 
     ##
     # Subclass services
@@ -167,6 +170,7 @@ class Connector(BaseModel, abc.ABC):
     def cli(self) -> Optional[typer.Typer]:
         """Returns a Typer CLI for the connector"""
         return None
+
 
 class License(Enum):
     """Defined licenses"""
@@ -213,6 +217,7 @@ class Maturity(Enum):
 class Version(semver.VersionInfo):
     pass
 
+
 def metadata(
     name: Optional[str] = None,
     description: Optional[str] = None,
@@ -221,7 +226,8 @@ def metadata(
     license: Optional[License] = None,
     maturity: Optional[Maturity] = None,
 ):
-    '''Decorate a Connector class with metadata'''
+    """Decorate a Connector class with metadata"""
+
     def decorator(cls):
         if name:
             cls.name = name
@@ -243,7 +249,9 @@ def metadata(
 
     return decorator
 
+
 #####
+
 
 class ConnectorCLI(typer.Typer):
     connector: Connector
@@ -313,12 +321,14 @@ class ConnectorCLI(typer.Typer):
             """
             typer.echo(f"{self.connector.name} v{self.connector.version}")
 
+
 #####
 
 ENTRY_POINT_GROUP = "servo.connectors"
 
+
 class ConnectorLoader:
-    '''Dynamics discovers and loads connectors via entry points'''
+    """Dynamics discovers and loads connectors via entry points"""
 
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
         self.group = group

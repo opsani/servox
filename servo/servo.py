@@ -1,41 +1,25 @@
-import abc
-import json
-import re
-import os
-from enum import Enum
-from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set
 import importlib
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Type
 
-import httpx
-import semver
 import typer
 import yaml
-from loguru import logger
-from pydantic import (
-    BaseModel,
-    Extra,
-    Field,
-    FilePath,
-    HttpUrl,
-    ValidationError,
-    constr,
-    root_validator,
-    validator,
-    create_model
-)
-from pydantic.schema import schema as pydantic_schema
+from pydantic import BaseModel, Extra, create_model, validator
 from pydantic.json import pydantic_encoder
+from pydantic.schema import schema as pydantic_schema
 
 from servo.connector import (
-    Connector, 
-    ConnectorLoader, 
-    ConnectorSettings, 
-    Optimizer, 
-    Maturity, 
+    Connector,
+    ConnectorLoader,
+    ConnectorSettings,
     License,
-    metadata
+    Maturity,
+    Optimizer,
+    metadata,
 )
+
 
 class BaseServoSettings(ConnectorSettings):
     """
@@ -49,13 +33,13 @@ class BaseServoSettings(ConnectorSettings):
 
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
-    
+
     connectors: Optional[Dict[str, str]] = None
     """A map of connector key-paths to fully qualified class names"""
 
-    @validator('connectors', pre=True)
+    @validator("connectors", pre=True)
     @classmethod
-    def validate_connectors(cls, connectors) -> Optional[Dict[str, str]]:        
+    def validate_connectors(cls, connectors) -> Optional[Dict[str, str]]:
         if routes := _routes_for_connectors_descriptor(connectors):
             path_to_modules = {}
             for path, connector_class in routes.items():
@@ -69,6 +53,7 @@ class BaseServoSettings(ConnectorSettings):
 
         title = "Servo"
 
+
 @metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
@@ -78,7 +63,7 @@ class BaseServoSettings(ConnectorSettings):
 class Servo(Connector):
     """The Servo"""
 
-    settings: BaseServoSettings    
+    settings: BaseServoSettings
     routes: Dict[str, Type[Connector]] = {}
 
     def connectors(self) -> List[Connector]:
@@ -100,6 +85,7 @@ class Servo(Connector):
     def cli(self) -> typer.Typer:
         # TODO: Return the root CLI?
         pass
+
 
 class ServoAssembly(BaseModel):
     """
@@ -130,17 +116,17 @@ class ServoAssembly(BaseModel):
     ## Assembled settings & Servo
     settings_model: Type[BaseServoSettings]
     servo: Servo
-    
+
     @classmethod
     def assemble(
         cls,
-        *, 
+        *,
         config_file: Path,
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
-        **kwargs
-    ) -> ('ServoAssembly', Servo, Type[BaseServoSettings]):
-        '''Assembles a Servo by processing configuration and building a dynamic settings model'''
+        **kwargs,
+    ) -> ("ServoAssembly", Servo, Type[BaseServoSettings]):
+        """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
         ServoSettings = _create_settings_model(config_file=config_file, env=env)
@@ -149,9 +135,11 @@ class ServoAssembly(BaseModel):
         if config_file.exists():
             config = yaml.load(open(config_file), Loader=yaml.FullLoader)
             if not (config is None or isinstance(config, dict)):
-                raise ValueError(f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"')
+                raise ValueError(
+                    f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
+                )
             config = {} if config is None else config
-            config['optimizer'] = optimizer.dict()
+            config["optimizer"] = optimizer.dict()
             settings = ServoSettings.parse_obj(config)
         else:
             # If we do not have a config file, build a minimal configuration
@@ -161,25 +149,25 @@ class ServoAssembly(BaseModel):
             for c in cls.all_connectors():
                 args[c.default_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
-        
+
         # Build the servo object
         servo = Servo(settings)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
             settings_model=ServoSettings,
-            servo=servo
+            servo=servo,
         )
 
         return assembly, servo, ServoSettings
-    
+
     ##
     # Utility functions
 
     def parse_file(self, config_file: Path = None) -> BaseServoSettings:
         config_file = self.config_file if config_file is None else config_file
         config = yaml.load(config_file, Loader=yaml.FullLoader)
-        config['optimizer'] = self.optimizer.dict()
+        config["optimizer"] = self.optimizer.dict()
         return self.settings_model.parse_obj(config)
 
     @classmethod
@@ -191,7 +179,7 @@ class ServoAssembly(BaseModel):
 
     @classmethod
     def all_connectors(cls) -> Set[Type[Connector]]:
-        '''Return a set of all connectors in the assembly excluding the Servo'''
+        """Return a set of all connectors in the assembly excluding the Servo"""
         connectors = set()
         for c in Connector.all():
             if c != Servo:
@@ -199,19 +187,23 @@ class ServoAssembly(BaseModel):
         return connectors
 
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
-        '''Returns a schema that only includes connector model definitions'''
+        """Returns a schema that only includes connector model definitions"""
         connectors = self.all_connectors() if all else self.servo.connectors()
         settings_models = list(map(lambda c: c.settings_model(), connectors))
         return pydantic_schema(settings_models, title="Servo Schema")
-    
+
     def top_level_schema_json(self, *, all: bool = False) -> str:
-        '''Return a JSON string representation of the top level schema'''
-        return json.dumps(self.top_level_schema(all=all), indent=2, default=pydantic_encoder)
+        """Return a JSON string representation of the top level schema"""
+        return json.dumps(
+            self.top_level_schema(all=all), indent=2, default=pydantic_encoder
+        )
 
     # # TODO: Override the schema functions to decouple CLI from settings model
 
+
 def _module_path(cls: Type) -> str:
     return ".".join([cls.__module__, cls.__name__])
+
 
 def _discover_connectors() -> Set[Type[Connector]]:
     """
@@ -226,35 +218,36 @@ def _discover_connectors() -> Set[Type[Connector]]:
         connectors.add(connector)
     return connectors
 
+
 def _create_settings_model(
-    *,
-    config_file: Path,
-    env: Optional[Dict[str, str]] = os.environ
-)-> Type[BaseServoSettings]:
+    *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
+) -> Type[BaseServoSettings]:
     # map of config key in YAML to settings class for target connector
     setting_fields: Optional[Dict[str, Type[ConnectorSettings]]] = None
 
-    # NOTE: If `connectors` key is present in config file, require the keys to be present    
+    # NOTE: If `connectors` key is present in config file, require the keys to be present
     if config_file.exists():
         config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        if isinstance(config, dict): # Config file could be blank or malformed
-            connectors_value = config.get('connectors', None)
+        if isinstance(config, dict):  # Config file could be blank or malformed
+            connectors_value = config.get("connectors", None)
             if connectors_value:
                 routes = _routes_for_connectors_descriptor(connectors_value)
                 setting_fields = {}
                 for path, connector_class in routes.items():
-                    base_settings_model = connector_class.settings_model()                
+                    base_settings_model = connector_class.settings_model()
                     settings_model = create_model(
                         f"{path}_{base_settings_model.__qualname__}",
                         __base__=base_settings_model,
                     )
-                    
+
                     # Traverse across all the fields and update the env vars
                     for name, field in settings_model.__fields__.items():
-                        field.field_info.extra['env_names'] = {f'SERVO_{path}_{name}'.upper()}
+                        field.field_info.extra["env_names"] = {
+                            f"SERVO_{path}_{name}".upper()
+                        }
 
                     setting_fields[path] = (settings_model, ...)
-    
+
     # If we don't have any target connectors, add all available as optional fields
     if setting_fields is None:
         setting_fields = {}
@@ -272,6 +265,7 @@ def _create_settings_model(
 
     return servo_settings_model
 
+
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
     if not isinstance(connector, str):
         return None
@@ -279,8 +273,10 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
     # Check fo an existing class in the namespace
     connector_class = globals().get(connector, None)
     try:
-        connector_class = eval(connector) if connector_class is None else connector_class
-    except Exception as e:
+        connector_class = (
+            eval(connector) if connector_class is None else connector_class
+        )
+    except Exception:
         pass
 
     if _validate_class(connector_class):
@@ -288,27 +284,32 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Check if the string is an identifier for a connector
     for connector_class in ServoAssembly.all_connectors():
-        if connector == connector_class.default_path() or connector in [connector_class.__name__, connector_class.__qualname__]:
+        if connector == connector_class.default_path() or connector in [
+            connector_class.__name__,
+            connector_class.__qualname__,
+        ]:
             return connector_class
 
     # Try to load it as a module path
-    if '.' in connector:
-        module_path, class_name = e.split(':', 2)
+    if "." in connector:
+        module_path, class_name = e.split(":", 2)
         module = importlib.import_module(module_path)
         connector_class = getattr(module, class_name)
         if _validate_class(connector_class):
             return connector_class
 
-    raise TypeError(f'{connector} does not identify a Connector class')
+    raise TypeError(f"{connector} does not identify a Connector class")
+
 
 def _validate_class(connector: type) -> bool:
     if not isinstance(connector, type):
         return False
 
     if not issubclass(connector, Connector):
-        raise TypeError(f'{connector.__name__} is not a Connector subclass')
+        raise TypeError(f"{connector.__name__} is not a Connector subclass")
 
     return True
+
 
 def _routes_for_connectors_descriptor(connectors):
     if connectors is None:
@@ -323,7 +324,9 @@ def _routes_for_connectors_descriptor(connectors):
 
         # Prevent infinite recursion
         if isinstance(decoded_value, str):
-            raise ValueError(f'JSON string values for `connectors` cannot parse into strings: "{connectors}"')
+            raise ValueError(
+                f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
+            )
 
         return _routes_for_connectors_descriptor(decoded_value)
 
@@ -336,24 +339,24 @@ def _routes_for_connectors_descriptor(connectors):
                 connector_routes[connector_class.default_path()] = connector_class
             else:
                 raise ValueError(f"Missing validation for value {connector}")
-        
+
         return connector_routes
 
     elif isinstance(connectors, dict):
         connector_map = _default_routes()
-        reserved_keys = _reserved_keys()            
+        reserved_keys = _reserved_keys()
 
         connector_routes = {}
         for config_path, value in connectors.items():
             if not isinstance(config_path, str):
                 raise ValueError(f'Key "{config_path}" is not a string')
-            
+
             # Validate the key format
             try:
                 Connector.validate_config_path(config_path)
             except AssertionError as e:
                 raise ValueError(f'Key "{config_path}" is not valid: {e}') from e
-            
+
             # Resolve the connector class
             if isinstance(value, type):
                 connector_class = value
@@ -364,21 +367,29 @@ def _routes_for_connectors_descriptor(connectors):
             if config_path in reserved_keys:
                 if c := connector_map.get(config_path, None):
                     if connector_class != c:
-                        raise ValueError(f'Key "{config_path}" is reserved by `{c.__name__}`')
+                        raise ValueError(
+                            f'Key "{config_path}" is reserved by `{c.__name__}`'
+                        )
                 else:
                     raise ValueError(f'Key "{config_path}" is reserved')
-            
+
             connector_routes[config_path] = connector_class
-        
+
         return connector_routes
 
     else:
-        raise ValueError(f'Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})')
+        raise ValueError(
+            f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
+        )
+
 
 def _reserved_keys() -> List[str]:
     reserved_keys = list(_default_routes().keys())
-    reserved_keys.extend(['connectors', 'control', 'measure', 'adjust']) # TODO: make this a constant...
+    reserved_keys.extend(
+        ["connectors", "control", "measure", "adjust"]
+    )  # TODO: make this a constant...
     return reserved_keys
+
 
 def _default_routes() -> Dict[str, Type[Connector]]:
     routes = {}

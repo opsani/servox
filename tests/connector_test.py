@@ -1,35 +1,25 @@
+import json
 import os
 from pathlib import Path
 
 import pytest
 import typer
-from typer.testing import CliRunner
-from pydantic import ValidationError
-import json
 import yaml
+from pydantic import ValidationError
+from typer.testing import CliRunner
 
+from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaSettings
 from servo.connector import (
     Connector,
     ConnectorSettings,
-    Optimizer,
     License,
-    Maturity,    
-    Version,    
+    Maturity,
+    Optimizer,
+    Version,
 )
-from servo.servo import (
-    Servo,
-    BaseServoSettings,
-    ServoAssembly
-)
-from connectors.vegeta.vegeta import (
-    TargetFormat,
-    VegetaConnector,
-    VegetaSettings
-)
-from tests.test_helpers import (
-    MeasureConnector,
-    AdjustConnector
-)
+from servo.servo import BaseServoSettings, ServoAssembly
+from tests.conftest import environment_overrides
+
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -127,13 +117,14 @@ class TestConnector:
         c = FancyConnector(ConnectorSettings())
         assert c.config_path == "fancy"
 
-from tests.conftest import environment_overrides
+
 class TestSettings:
     def test_configuring_with_environment_variables(self) -> None:
-        with environment_overrides({ "SERVO_DESCRIPTION": "this description" }):
-            assert os.environ['SERVO_DESCRIPTION'] == 'this description'
+        with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
+            assert os.environ["SERVO_DESCRIPTION"] == "this description"
             s = ConnectorSettings()
             assert s.description == "this description"
+
 
 class TestServoSettings:
     def test_ignores_extra_attributes(self) -> None:
@@ -146,152 +137,234 @@ class TestServoSettings:
         assert "'BaseServoSettings' object has no attribute 'ignored'" in str(e)
 
     def test_override_optimizer_settings_with_env_vars(self) -> None:
-        with environment_overrides({ "SERVO_OPTIMIZER": '{"token": "abcdefg"}' }):
-            assert os.environ['SERVO_OPTIMIZER'] is not None
+        with environment_overrides({"SERVO_OPTIMIZER": '{"token": "abcdefg"}'}):
+            assert os.environ["SERVO_OPTIMIZER"] is not None
             s = BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com' }
+                optimizer={"app_name": "my-app", "org_domain": "example.com"}
             )
             assert s.optimizer.token == "abcdefg"
-    
+
     def test_set_connectors_with_env_vars(self) -> None:
-        with environment_overrides({ 'SERVO_CONNECTORS': '["measure"]' }):
-            assert os.environ['SERVO_CONNECTORS'] is not None
+        with environment_overrides({"SERVO_CONNECTORS": '["measure"]'}):
+            assert os.environ["SERVO_CONNECTORS"] is not None
             s = BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' }
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                }
             )
-            assert s.connectors == {'measure': 'tests.test_helpers.MeasureConnector'}
+            assert s.connectors == {"measure": "tests.test_helpers.MeasureConnector"}
 
     def test_connectors_allows_none(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors=None
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors=None,
         )
         assert s.connectors is None
-    
+
     def test_connectors_allows_set_of_classes(self):
         class FooConnector(Connector):
             pass
+
         class BarConnector(Connector):
             pass
+
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={FooConnector, BarConnector}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={FooConnector, BarConnector},
         )
-        assert s.connectors == {'foo': 'tests.connector_test.FooConnector', 'bar': 'tests.connector_test.BarConnector'}
-    
+        assert s.connectors == {
+            "foo": "tests.connector_test.FooConnector",
+            "bar": "tests.connector_test.BarConnector",
+        }
+
     def test_connectors_rejects_invalid_connector_set_elements(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={BaseServoSettings}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={BaseServoSettings},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == "BaseServoSettings is not a Connector subclass"
-    
+        assert (
+            e.value.errors()[0]["msg"]
+            == "BaseServoSettings is not a Connector subclass"
+        )
+
     def test_connectors_allows_set_of_class_names(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'MeasureConnector', 'AdjustConnector'}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"MeasureConnector", "AdjustConnector"},
         )
-        assert s.connectors == {'measure': 'tests.test_helpers.MeasureConnector', 'adjust': 'tests.test_helpers.AdjustConnector'}
-    
+        assert s.connectors == {
+            "measure": "tests.test_helpers.MeasureConnector",
+            "adjust": "tests.test_helpers.AdjustConnector",
+        }
+
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'BaseServoSettings'}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={"BaseServoSettings"},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == "BaseServoSettings is not a Connector subclass"
-    
-    def test_connectors_allows_set_of_keys(self):
-        from typing import Type
-
-        from pydantic import BaseModel
-        from pydantic import ValidationError
-        s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'vegeta'}
+        assert (
+            e.value.errors()[0]["msg"]
+            == "BaseServoSettings is not a Connector subclass"
         )
-        assert s.connectors == {'vegeta': 'connectors.vegeta.vegeta.VegetaConnector'}
-    
+
+    def test_connectors_allows_set_of_keys(self):
+        pass
+
+        s = BaseServoSettings(
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"vegeta"},
+        )
+        assert s.connectors == {"vegeta": "connectors.vegeta.vegeta.VegetaConnector"}
+
     def test_connectors_allows_dict_of_keys_to_classes(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'alias': VegetaConnector}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"alias": VegetaConnector},
         )
-        assert s.connectors == {'alias': 'connectors.vegeta.vegeta.VegetaConnector'}
-    
+        assert s.connectors == {"alias": "connectors.vegeta.vegeta.VegetaConnector"}
+
     def test_connectors_allows_dict_of_keys_to_class_names(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'alias': 'VegetaConnector'}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"alias": "VegetaConnector"},
         )
-        assert s.connectors == {'alias': 'connectors.vegeta.vegeta.VegetaConnector'}
+        assert s.connectors == {"alias": "connectors.vegeta.vegeta.VegetaConnector"}
 
     def test_connectors_allows_dict_with_explicit_map_to_default_path(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'vegeta': 'VegetaConnector'}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"vegeta": "VegetaConnector"},
         )
-        assert s.connectors == {'vegeta': 'connectors.vegeta.vegeta.VegetaConnector'}
-    
+        assert s.connectors == {"vegeta": "connectors.vegeta.vegeta.VegetaConnector"}
+
     def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
         s = BaseServoSettings(
-            optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-            connectors={'vegeta': VegetaConnector}
+            optimizer={
+                "app_name": "my-app",
+                "org_domain": "example.com",
+                "token": "123456789",
+            },
+            connectors={"vegeta": VegetaConnector},
         )
-        assert s.connectors == {'vegeta': 'connectors.vegeta.vegeta.VegetaConnector'}    
+        assert s.connectors == {"vegeta": "connectors.vegeta.vegeta.VegetaConnector"}
 
     def test_connectors_forbids_dict_with_existing_key(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'vegeta': 'MeasureConnector'}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={"vegeta": "MeasureConnector"},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == 'Key "vegeta" is reserved by `VegetaConnector`'
+        assert (
+            e.value.errors()[0]["msg"]
+            == 'Key "vegeta" is reserved by `VegetaConnector`'
+        )
 
-    @pytest.fixture(autouse=True, scope='session')
+    @pytest.fixture(autouse=True, scope="session")
     def discover_connectors(self) -> None:
         from servo.connector import ConnectorLoader
+
         loader = ConnectorLoader()
         for connector in loader.load():
             print("Loaded ", connector)
 
-    
     def test_connectors_forbids_dict_with_reserved_key(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'connectors': 'VegetaConnector'}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={"connectors": "VegetaConnector"},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert e.value.errors()[0]["msg"] == 'Key "connectors" is reserved'
-    
+
     def test_connectors_forbids_dict_with_invalid_key(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'This Is Not Valid': 'VegetaConnector'}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={"This Is Not Valid": "VegetaConnector"},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == 'Key "This Is Not Valid" is not valid: config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
-    
+        assert (
+            e.value.errors()[0]["msg"]
+            == 'Key "This Is Not Valid" is not valid: config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+        )
+
     def test_connectors_rejects_invalid_connector_dict_values(self):
         with pytest.raises(ValidationError) as e:
             BaseServoSettings(
-                optimizer = { 'app_name': 'my-app', 'org_domain': 'example.com', 'token': '123456789' },
-                connectors={'whatever': 'Not a Real Connector'}
+                optimizer={
+                    "app_name": "my-app",
+                    "org_domain": "example.com",
+                    "token": "123456789",
+                },
+                connectors={"whatever": "Not a Real Connector"},
             )
         assert "1 validation error for BaseServoSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == 'Not a Real Connector does not identify a Connector class'
+        assert (
+            e.value.errors()[0]["msg"]
+            == "Not a Real Connector does not identify a Connector class"
+        )
+
 
 class TestServo:
     def test_init_with_optimizer(self) -> None:
@@ -304,60 +377,72 @@ class TestServo:
         c = ServoAssembly.construct().all_connectors()
         assert FooConnector in c
 
+
 class TestServoAssembly:
-    def test_aliased_connectors_get_distinct_env_configuration(self, servo_yaml: Path) -> None:
+    def test_aliased_connectors_get_distinct_env_configuration(
+        self, servo_yaml: Path
+    ) -> None:
         config = {
-            "connectors": { 'vegeta': 'vegeta', 'other': 'vegeta'},
+            "connectors": {"vegeta": "vegeta", "other": "vegeta"},
             "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
             "other": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
         }
         servo_yaml.write_text(yaml.dump(config))
-        
-        optimizer = Optimizer(
-            'dev.opsani.com/servox',
-            token='1234556789'
-        )
+
+        optimizer = Optimizer("dev.opsani.com/servox", token="1234556789")
 
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
-            config_file=servo_yaml, 
-            optimizer=optimizer
+            config_file=servo_yaml, optimizer=optimizer
         )
 
         # Grab the vegeta field and check it
-        vegeta_field = DynamicServoSettings.__fields__['vegeta']
+        vegeta_field = DynamicServoSettings.__fields__["vegeta"]
         vegeta_settings_type = vegeta_field.type_
-        assert vegeta_settings_type.__name__ == 'vegeta_VegetaSettings'
-        assert vegeta_field.field_info.extra['env_names'] == { 'SERVO_VEGETA' }
+        assert vegeta_settings_type.__name__ == "vegeta_VegetaSettings"
+        assert vegeta_field.field_info.extra["env_names"] == {"SERVO_VEGETA"}
 
         # Grab the other field and check it
-        other_field = DynamicServoSettings.__fields__['other']
+        other_field = DynamicServoSettings.__fields__["other"]
         other_settings_type = other_field.type_
-        assert other_settings_type.__name__ == 'other_VegetaSettings'
-        assert other_field.field_info.extra['env_names'] == { 'SERVO_OTHER' }
+        assert other_settings_type.__name__ == "other_VegetaSettings"
+        assert other_field.field_info.extra["env_names"] == {"SERVO_OTHER"}
 
-        with environment_overrides({ "SERVO_DESCRIPTION": "this description" }):
-            assert os.environ['SERVO_DESCRIPTION'] == 'this description'
+        with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
+            assert os.environ["SERVO_DESCRIPTION"] == "this description"
             s = ConnectorSettings()
             assert s.description == "this description"
 
         # Make sure the incorrect case does pass
-        with environment_overrides({'SERVO_DURATION': '5m' }):
+        with environment_overrides({"SERVO_DURATION": "5m"}):
             with pytest.raises(ValidationError) as e:
-                vegeta_settings_type(rate=0, target='https://foo.com/')
+                vegeta_settings_type(rate=0, target="https://foo.com/")
             assert e is not None
 
         # Try setting values via env
-        with environment_overrides({'SERVO_VEGETA_DURATION': '5m', 'SERVO_VEGETA_RATE': '0', 'SERVO_VEGETA_TARGET': 'https://opsani.com/' }):
+        with environment_overrides(
+            {
+                "SERVO_VEGETA_DURATION": "5m",
+                "SERVO_VEGETA_RATE": "0",
+                "SERVO_VEGETA_TARGET": "https://opsani.com/",
+            }
+        ):
             s = vegeta_settings_type()
-            assert s.duration == '5m'
-            assert s.rate == '0'
-            assert s.target == 'https://opsani.com/'
-        
-        with environment_overrides({'SERVO_OTHER_DURATION': '15m', 'SERVO_OTHER_RATE': '100/1s', 'SERVO_OTHER_TARGET': 'https://opsani.com/servox' }):
+            assert s.duration == "5m"
+            assert s.rate == "0"
+            assert s.target == "https://opsani.com/"
+
+        with environment_overrides(
+            {
+                "SERVO_OTHER_DURATION": "15m",
+                "SERVO_OTHER_RATE": "100/1s",
+                "SERVO_OTHER_TARGET": "https://opsani.com/servox",
+            }
+        ):
             s = other_settings_type()
-            assert s.duration == '15m'
-            assert s.rate == '100/1s'
-            assert s.target == 'https://opsani.com/servox'
+            assert s.duration == "15m"
+            assert s.rate == "100/1s"
+            assert s.target == "https://opsani.com/servox"
+
 
 ###
 ### Connector specific
@@ -367,11 +452,11 @@ class TestServoAssembly:
 class TestVegetaSettings:
     def test_rate_is_required(self) -> None:
         schema = VegetaSettings.schema()
-        assert 'rate' in schema['required']
+        assert "rate" in schema["required"]
 
     def test_duration_is_required(self) -> None:
         schema = VegetaSettings.schema()
-        assert 'duration' in schema['required']
+        assert "duration" in schema["required"]
 
     def test_validate_infinite_rate(self) -> None:
         s = VegetaSettings(rate="0", duration="0", target="GET http://example.com")
@@ -618,7 +703,7 @@ def test_vegeta_id_invalid() -> None:
     assert "2 validation errors for VegetaConnector" in str(e.value)
     assert (
         e.value.errors()[1]["msg"]
-        == 'config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+        == "config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
     )
 
 
@@ -666,174 +751,145 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
 
 def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema")
-    assert result.exit_code == 0    
+    assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema == {
-        'title': 'VegetaSettings',
-        'description': 'Configuration of the Vegeta connector',
-        'type': 'object',
-        'properties': {
-            'description': {
-                'title': 'Description',
-                'env': 'SERVO_DESCRIPTION',
-                'env_names': [
-                    'SERVO_DESCRIPTION',
-                ],
-                'type': 'string',
+        "title": "VegetaSettings",
+        "description": "Configuration of the Vegeta connector",
+        "type": "object",
+        "properties": {
+            "description": {
+                "title": "Description",
+                "env": "SERVO_DESCRIPTION",
+                "env_names": ["SERVO_DESCRIPTION",],
+                "type": "string",
             },
-            'rate': {
-                'title': 'Rate',
-                'description': (
-                    'Specifies the request rate per time unit to issue against the targets. Given in the format of req'
-                    'uest/time unit.'
+            "rate": {
+                "title": "Rate",
+                "description": (
+                    "Specifies the request rate per time unit to issue against the targets. Given in the format of req"
+                    "uest/time unit."
                 ),
-                'env_names': [
-                    'SERVO_RATE',
-                ],
-                'type': 'string',
+                "env_names": ["SERVO_RATE",],
+                "type": "string",
             },
-            'duration': {
-                'title': 'Duration',
-                'description': 'Specifies the amount of time to issue requests to the targets.',
-                'env_names': [
-                    'SERVO_DURATION',
-                ],
-                'type': 'string',
+            "duration": {
+                "title": "Duration",
+                "description": "Specifies the amount of time to issue requests to the targets.",
+                "env_names": ["SERVO_DURATION",],
+                "type": "string",
             },
-            'format': {
-                'title': 'Format',
-                'description': (
-                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
-                    'cs for details.'
+            "format": {
+                "title": "Format",
+                "description": (
+                    "Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do"
+                    "cs for details."
                 ),
-                'default': 'http',
-                'env_names': [
-                    'SERVO_FORMAT',
-                ],
-                'enum': [
-                    'http',
-                    'json',
-                ],
-                'type': 'string',
+                "default": "http",
+                "env_names": ["SERVO_FORMAT",],
+                "enum": ["http", "json",],
+                "type": "string",
             },
-            'target': {
-                'title': 'Target',
-                'description': (
-                    'Specifies a single formatted Vegeta target to load. See the format option to learn about availabl'
-                    'e target formats. This option is exclusive of the targets option and will provide a target to Veg'
-                    'eta via stdin.'
+            "target": {
+                "title": "Target",
+                "description": (
+                    "Specifies a single formatted Vegeta target to load. See the format option to learn about availabl"
+                    "e target formats. This option is exclusive of the targets option and will provide a target to Veg"
+                    "eta via stdin."
                 ),
-                'env_names': [
-                    'SERVO_TARGET',
-                ],
-                'type': 'string',
+                "env_names": ["SERVO_TARGET",],
+                "type": "string",
             },
-            'targets': {
-                'title': 'Targets',
-                'description': (
-                    'Specifies the file from which to read targets. See the format option to learn about available tar'
-                    'get formats. This option is exclusive of the target option and will provide targets to via throug'
-                    'h a file on disk.'
+            "targets": {
+                "title": "Targets",
+                "description": (
+                    "Specifies the file from which to read targets. See the format option to learn about available tar"
+                    "get formats. This option is exclusive of the target option and will provide targets to via throug"
+                    "h a file on disk."
                 ),
-                'env_names': [
-                    'SERVO_TARGETS',
-                ],
-                'type': 'string',
-                'format': 'file-path',
+                "env_names": ["SERVO_TARGETS",],
+                "type": "string",
+                "format": "file-path",
             },
-            'connections': {
-                'title': 'Connections',
-                'description': 'Specifies the maximum number of idle open connections per target host.',
-                'default': 10000,
-                'env_names': [
-                    'SERVO_CONNECTIONS',
-                ],
-                'type': 'integer',
+            "connections": {
+                "title": "Connections",
+                "description": "Specifies the maximum number of idle open connections per target host.",
+                "default": 10000,
+                "env_names": ["SERVO_CONNECTIONS",],
+                "type": "integer",
             },
-            'workers': {
-                'title': 'Workers',
-                'description': (
-                    'Specifies the initial number of workers used in the attack. The workers will automatically increa'
-                    'se to achieve the target request rate, up to max-workers.'
+            "workers": {
+                "title": "Workers",
+                "description": (
+                    "Specifies the initial number of workers used in the attack. The workers will automatically increa"
+                    "se to achieve the target request rate, up to max-workers."
                 ),
-                'default': 10,
-                'env_names': [
-                    'SERVO_WORKERS',
-                ],
-                'type': 'integer',
+                "default": 10,
+                "env_names": ["SERVO_WORKERS",],
+                "type": "integer",
             },
-            'max-workers': {
-                'title': 'Max-Workers',
-                'description': (
-                    'The maximum number of workers used to sustain the attack. This can be used to control the concurr'
-                    'ency of the attack to simulate a target number of clients.'
+            "max-workers": {
+                "title": "Max-Workers",
+                "description": (
+                    "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
+                    "ency of the attack to simulate a target number of clients."
                 ),
-                'default': 18446744073709551615,
-                'env': '',
-                'env_names': [
-                    'SERVO_MAX_WORKERS',
-                ],
-                'type': 'integer',
+                "default": 18446744073709551615,
+                "env": "",
+                "env_names": ["SERVO_MAX_WORKERS",],
+                "type": "integer",
             },
-            'max-body': {
-                'title': 'Max-Body',
-                'description': (
-                    'Specifies the maximum number of bytes to capture from the body of each response. Remaining unread'
-                    ' bytes will be fully read but discarded.'
+            "max-body": {
+                "title": "Max-Body",
+                "description": (
+                    "Specifies the maximum number of bytes to capture from the body of each response. Remaining unread"
+                    " bytes will be fully read but discarded."
                 ),
-                'default': -1,
-                'env': '',
-                'env_names': [
-                    'SERVO_MAX_BODY',
-                ],
-                'type': 'integer',
+                "default": -1,
+                "env": "",
+                "env_names": ["SERVO_MAX_BODY",],
+                "type": "integer",
             },
-            'http2': {
-                'title': 'Http2',
-                'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
-                'default': True,
-                'env_names': [
-                    'SERVO_HTTP2',
-                ],
-                'type': 'boolean',
+            "http2": {
+                "title": "Http2",
+                "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
+                "default": True,
+                "env_names": ["SERVO_HTTP2",],
+                "type": "boolean",
             },
-            'keepalive': {
-                'title': 'Keepalive',
-                'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
-                'default': True,
-                'env_names': [
-                    'SERVO_KEEPALIVE',
-                ],
-                'type': 'boolean',
+            "keepalive": {
+                "title": "Keepalive",
+                "description": "Specifies whether to reuse TCP connections between HTTP requests.",
+                "default": True,
+                "env_names": ["SERVO_KEEPALIVE",],
+                "type": "boolean",
             },
-            'insecure': {
-                'title': 'Insecure',
-                'description': 'Specifies whether to ignore invalid server TLS certificates.',
-                'default': False,
-                'env_names': [
-                    'SERVO_INSECURE',
-                ],
-                'type': 'boolean',
+            "insecure": {
+                "title": "Insecure",
+                "description": "Specifies whether to ignore invalid server TLS certificates.",
+                "default": False,
+                "env_names": ["SERVO_INSECURE",],
+                "type": "boolean",
             },
         },
-        'required': [
-            'rate',
-            'duration',
-        ],
-        'additionalProperties': False,
+        "required": ["rate", "duration",],
+        "additionalProperties": False,
     }
+
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_text(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema -f text")
     assert result.exit_code == 2
-    assert 'not yet implemented' in result.stderr
+    assert "not yet implemented" in result.stderr
+
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_html(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema -f html")
     assert result.exit_code == 2
-    assert 'not yet implemented' in result.stderr
+    assert "not yet implemented" in result.stderr
+
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
@@ -959,9 +1015,10 @@ def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> N
 def test_vegeta_cli_loadgen(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     pass
 
+
 # def test_loading_optimizer_from_environment() -> None:
-#     with environment_overrides({ 
-#         'SERVO_OPTIMIZER': 'dev.opsani.com/servox',  
+#     with environment_overrides({
+#         'SERVO_OPTIMIZER': 'dev.opsani.com/servox',
 #         'SERVO_TOKEN': '123456789',
 #     }):
 #         # assert os.environ['SERVO_OPTIMIZER'] is not None

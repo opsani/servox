@@ -1,8 +1,9 @@
-import pytest
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict
-from contextlib import contextmanager
+
+import pytest
 from typer.testing import CliRunner
 
 # Add the devtools debug() function globally in tests
@@ -28,6 +29,7 @@ def environment_overrides(env: Dict[str, str]) -> None:
         yield
     finally:
         os.environ = original_env
+
 
 @pytest.fixture()
 def servo_yaml(tmp_path: Path) -> Path:

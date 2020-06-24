@@ -1,26 +1,25 @@
 import json
+import os
 import shlex
 import subprocess
 import sys
-import os
-from pathlib import Path
-from typing import List, Type, Union, Optional
 from enum import Enum
+from pathlib import Path
+from typing import List, Optional, Type, Union
 
-import pydantic
 import typer
 import yaml
 from devtools import pformat
-from pydantic import Extra, ValidationError
+from dotenv import load_dotenv
+from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
-from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
+from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 from tabulate import tabulate
-from dotenv import load_dotenv
 
-from servo.connector import Optimizer, Connector, ConnectorLoader
-from servo.servo import Servo, BaseServoSettings, ServoAssembly
+from servo.connector import ConnectorLoader, Optimizer
+from servo.servo import BaseServoSettings, Servo, ServoAssembly
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -40,27 +39,28 @@ servo: Servo
 # Build the Typer CLI
 app = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
 
+
 @app.callback()
 def root_callback(
     optimizer: str = typer.Option(
-        os.environ.get('OPSANI_OPTIMIZER', None), 
-        help="Opsani optimizer to connect to (format is example.com/app) [ENV: OPSANI_OPTIMIZER]"
+        os.environ.get("OPSANI_OPTIMIZER", None),
+        help="Opsani optimizer to connect to (format is example.com/app) [ENV: OPSANI_OPTIMIZER]",
     ),
     token: str = typer.Option(
-        os.environ.get('OPSANI_TOKEN', None), 
-        help="Opsani API access token [ENV: OPSANI_TOKEN]"
+        os.environ.get("OPSANI_TOKEN", None),
+        help="Opsani API access token [ENV: OPSANI_TOKEN]",
     ),
     token_file: typer.FileText = typer.Option(
-        os.environ.get('OPSANI_TOKEN_FILE', None), 
-        help="File to load the access token from [ENV: OPSANI_TOKEN_FILE]"
+        os.environ.get("OPSANI_TOKEN_FILE", None),
+        help="File to load the access token from [ENV: OPSANI_TOKEN_FILE]",
     ),
     base_url: str = typer.Option(
-        os.environ.get('OPSANI_BASE_URL', "https://api.opsani.com/"),
+        os.environ.get("OPSANI_BASE_URL", "https://api.opsani.com/"),
         "--base-url",
-        help="Base URL for connecting to Opsani API [Default: https://api.opsani.com/, ENV: OPSANI_BASE_URL]"
+        help="Base URL for connecting to Opsani API [Default: https://api.opsani.com/, ENV: OPSANI_BASE_URL]",
     ),
     config_file: Path = typer.Option(
-        os.environ.get('OPSANI_CONFIG_FILE', "servo.yaml"), 
+        os.environ.get("OPSANI_CONFIG_FILE", "servo.yaml"),
         "--file",
         "-f",
         exists=False,
@@ -69,41 +69,43 @@ def root_callback(
         writable=False,
         readable=True,
         resolve_path=True,
-        help="Servo configuration file [default: servo.yaml] [Default: servo.yaml, ENV: OPSANI_CONFIG_FILE]"
-    )
+        help="Servo configuration file [default: servo.yaml] [Default: servo.yaml, ENV: OPSANI_CONFIG_FILE]",
+    ),
 ):
-    
+
     # TODO: Duplicated because of evaluation order in tests
-    optimizer = os.environ.get('OPSANI_OPTIMIZER', None) if optimizer is None else optimizer
-    token = os.environ.get('OPSANI_TOKEN', None) if token is None else token
-    token_file = os.environ.get('OPSANI_TOKEN_FILE', None) if token_file is None else token_file
+    optimizer = (
+        os.environ.get("OPSANI_OPTIMIZER", None) if optimizer is None else optimizer
+    )
+    token = os.environ.get("OPSANI_TOKEN", None) if token is None else token
+    token_file = (
+        os.environ.get("OPSANI_TOKEN_FILE", None) if token_file is None else token_file
+    )
 
     if optimizer is None:
         raise typer.BadParameter("An optimizer must be specified")
 
     if token is None and token_file is None:
-        raise typer.BadParameter("A token must be configured via --token, --token-file, or ENV['OPSANI_TOKEN']")
+        raise typer.BadParameter(
+            "A token must be configured via --token, --token-file, or ENV['OPSANI_TOKEN']"
+        )
 
     if token is not None and token_file is not None:
         raise typer.BadParameter("Cannot use --token and --token-file at the same time")
 
-    token = token_file.read() if token_file else token    
-    optimizer = Optimizer(
-        optimizer,
-        token=token,
-        base_url=base_url
-    )
+    token = token_file.read() if token_file else token
+    optimizer = Optimizer(optimizer, token=token, base_url=base_url)
 
     # Assemble the Servo
     global assembly, servo, ServoSettings
     try:
         assembly, servo, ServoSettings = ServoAssembly.assemble(
-            config_file=config_file, 
-            optimizer=optimizer
+            config_file=config_file, optimizer=optimizer
         )
     except ValidationError as error:
         typer.echo(error, err=True)
         raise typer.Exit(2) from error
+
 
 @app.command()
 def new() -> None:
@@ -129,9 +131,7 @@ def info(
     all: bool = typer.Option(
         False, "--all", "-a", help="Include models from all available connectors"
     ),
-    verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Display verbose info"
-    )
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info"),
 ) -> None:
     """Display information about the assembly"""
     connectors = assembly.all_connectors() if all else servo.connectors()
@@ -149,18 +149,20 @@ def info(
 
     typer.echo(tabulate(table, headers, tablefmt="plain"))
 
+
 # Common output formats
-YAML_FORMAT = 'yaml'
-JSON_FORMAT = 'json'
-DICT_FORMAT = 'dict'
-HTML_FORMAT = 'html'
-TEXT_FORMAT = 'text'
-MARKDOWN_FORMAT = 'markdown'
+YAML_FORMAT = "yaml"
+JSON_FORMAT = "json"
+DICT_FORMAT = "dict"
+HTML_FORMAT = "html"
+TEXT_FORMAT = "text"
+MARKDOWN_FORMAT = "markdown"
+
 
 class AbstractOutputFormat(str, Enum):
-    '''Defines common behaviors for command specific output format enumerations'''
+    """Defines common behaviors for command specific output format enumerations"""
 
-    def lexer(self) -> Optional['pygments.Lexer']:
+    def lexer(self) -> Optional["pygments.Lexer"]:
         if self.value == YAML_FORMAT:
             return YamlLexer()
         elif self.value == JSON_FORMAT:
@@ -172,11 +174,13 @@ class AbstractOutputFormat(str, Enum):
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
 
+
 class SettingsOutputFormat(AbstractOutputFormat):
     yaml = YAML_FORMAT
     json = JSON_FORMAT
     dict = DICT_FORMAT
     text = TEXT_FORMAT
+
 
 @app.command()
 def settings(
@@ -185,7 +189,7 @@ def settings(
     ),
     output: typer.FileTextWrite = typer.Option(
         None, "--output", "-o", help="Output settings to [FILE]"
-    )
+    ),
 ) -> None:
     """Display the fully resolved settings"""
     settings = servo.settings.dict(exclude={"optimizer"}, exclude_unset=True)
@@ -206,17 +210,12 @@ def settings(
             data = settings_dict_str
         else:
             raise RuntimeError("no handler configured for output format {format}")
-        
+
         if output:
             output.write(data)
         else:
-            typer.echo(
-                highlight(
-                    data, 
-                    lexer, 
-                    TerminalFormatter()
-                )
-            )
+            typer.echo(highlight(data, lexer, TerminalFormatter()))
+
 
 @app.command()
 def check() -> None:
@@ -231,11 +230,13 @@ def version() -> None:
     typer.echo(f"{servo.name} v{servo.version}")
     raise typer.Exit(0)
 
-class SchemaOutputFormat(AbstractOutputFormat):    
+
+class SchemaOutputFormat(AbstractOutputFormat):
     json = JSON_FORMAT
-    text = TEXT_FORMAT    
+    text = TEXT_FORMAT
     dict = DICT_FORMAT
     html = HTML_FORMAT
+
 
 @app.command()
 def schema(
@@ -250,18 +251,18 @@ def schema(
     ),
     output: typer.FileTextWrite = typer.Option(
         None, "--output", "-o", help="Output schema to [FILE]"
-    )
+    ),
 ) -> None:
     """Display configuration schema"""
     if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
         typer.echo("error: not yet implemented", err=True)
-        raise typer.Exit(1)    
-    
+        raise typer.Exit(1)
+
     if top_level:
         if format == SchemaOutputFormat.json:
             output_data = assembly.top_level_schema_json(all=all)
-        
-        elif format == SchemaOutputFormat.dict:            
+
+        elif format == SchemaOutputFormat.dict:
             output_data = pformat(assembly.top_level_schema(all=all))
 
     else:
@@ -271,19 +272,14 @@ def schema(
             output_data = pformat(ServoSettings.schema())
         else:
             raise RuntimeError("no handler configured for output format {format}")
-    
+
     assert output_data is not None, "output_data not assigned"
 
     if output:
         output.write(output_data)
     else:
-        typer.echo(
-            highlight(
-                output_data, 
-                format.lexer(), 
-                TerminalFormatter()
-            )
-        )
+        typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
+
 
 @app.command(name="validate")
 def validate(
@@ -376,5 +372,5 @@ def main():
             app.add_typer(cli)
 
     load_dotenv()
-    
+
     app()
