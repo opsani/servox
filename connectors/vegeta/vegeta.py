@@ -37,6 +37,7 @@ import logging
 from loguru import logger
 import sys
 from devtools import pformat
+from servo.metrics import Metric, Unit
 
 # logger.add({ "sink": sys.stdout, "colorize": True, "level": logging.DEBUG })
 
@@ -45,6 +46,18 @@ from devtools import pformat
 ###
 ### Vegeta
 
+METRICS = [
+    Metric('throughput', Unit.REQUESTS_PER_MINUTE),
+    Metric('error_rate', Unit.PERCENTAGE),
+    Metric('latency_total', Unit.MILLISECONDS),
+    Metric('latency_mean', Unit.MILLISECONDS),
+    Metric('latency_50th', Unit.MILLISECONDS),
+    Metric('latency_90th', Unit.MILLISECONDS),
+    Metric('latency_95th', Unit.MILLISECONDS),
+    Metric('latency_99th', Unit.MILLISECONDS),
+    Metric('latency_max', Unit.MILLISECONDS),
+    Metric('latency_min', Unit.MILLISECONDS),
+]
 
 class TargetFormat(str, Enum):
     http = "http"
@@ -53,6 +66,14 @@ class TargetFormat(str, Enum):
     def __str__(self):
         return self.value
 
+class VegetaReport(BaseModel):
+    pass
+    # TODO: Model the JSON coming from vegeta
+
+# TODO: Probably need a superclass here
+class MeasurementResponse(BaseModel):
+    pass
+# TODO: This is the response coming back from the connector
 
 class VegetaSettings(ConnectorSettings):
     """
@@ -196,38 +217,38 @@ DEFAULT_WARMUP = 0
 DEFAULT_DELAY = 0
 REPORTING_INTERVAL = 2
 
-METRICS = {
-    'throughput': {
-        'unit': 'rpm'
-    },
-    'error_rate': {
-        'unit': '%'
-    },
-    'latency_total': {
-        'unit': 'ms'
-    },
-    'latency_mean': {
-        'unit': 'ms'
-    },
-    'latency_50th': {
-        'unit': 'ms'
-    },
-    'latency_90th': {
-        'unit': 'ms'
-    },
-    'latency_95th': {
-        'unit': 'ms'
-    },
-    'latency_99th': {
-        'unit': 'ms'
-    },
-    'latency_max': {
-        'unit': 'ms'
-    },
-    'latency_min': {
-        'unit': 'ms'
-    },
-}
+# METRICS = {
+#     'throughput': {
+#         'unit': 'rpm'
+#     },
+#     'error_rate': {
+#         'unit': '%'
+#     },
+#     'latency_total': {
+#         'unit': 'ms'
+#     },
+#     'latency_mean': {
+#         'unit': 'ms'
+#     },
+#     'latency_50th': {
+#         'unit': 'ms'
+#     },
+#     'latency_90th': {
+#         'unit': 'ms'
+#     },
+#     'latency_95th': {
+#         'unit': 'ms'
+#     },
+#     'latency_99th': {
+#         'unit': 'ms'
+#     },
+#     'latency_max': {
+#         'unit': 'ms'
+#     },
+#     'latency_min': {
+#         'unit': 'ms'
+#     },
+# }
 LATENCY_KEYS = ['total', 'mean', '50th', '90th', '95th', '99th', 'max', 'min']
 
 @servo.connector.metadata(
@@ -256,6 +277,10 @@ class VegetaConnector(Connector):
             self.measure()
 
         return cli
+    
+    # TODO: Add a decorator of some kind
+    def describe(self) -> List[Metric]:
+        return METRICS
     
     def print_progress(self, str, *args, **kwargs):
         # debug(str)
@@ -392,6 +417,8 @@ class VegetaConnector(Connector):
         return exit_code, vegeta_cmd
 
     # Parses a Golang duration string into seconds
+    # TODO: This may be replacable with the library
+    # TODO: Factor into parent class/utility library
     def _seconds_from_duration_str(self, duration_value):
         if isinstance(duration_value, (int, float)):
             return int(duration_value)
@@ -413,6 +440,7 @@ class VegetaConnector(Connector):
         metrics = copy.deepcopy(METRICS)
 
         # Capture latency values
+        # TODO: Iterate over metrics and look for key prefix
         for latency_key in LATENCY_KEYS:
             latency_value = report['latencies'].get(latency_key, None)
             # Convert Nanonsecond -> Millisecond
@@ -428,6 +456,7 @@ class VegetaConnector(Connector):
         return metrics
 
     # helper:  take the time series metrics gathered during the attack and map them into OCO format
+    # TODO: Model this
     def _time_series_metrics_from_vegeta_reports(self):
         metrics = copy.deepcopy(METRICS)
 
@@ -444,6 +473,7 @@ class VegetaConnector(Connector):
         return metrics
 
     # helper:  update timer based progress
+    # TODO: Moves into superclass
     def _update_timed_progress(self, t_start, t_limit, prog_start, prog_coefficient):
         # When duration is 0, Vegeta is attacking forever
         if t_limit:

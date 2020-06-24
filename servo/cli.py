@@ -18,6 +18,7 @@ from tabulate import tabulate
 
 from servo.connector import ConnectorLoader, Optimizer
 from servo.servo import BaseServoSettings, Servo, ServoAssembly
+from servo.servo_runner import ServoRunner
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -138,7 +139,7 @@ def new() -> None:
 @cli.command()
 def run() -> None:
     """Run the servo"""
-    servo.run()
+    ServoRunner(servo).run()
 
 @cli.command()
 def console() -> None:

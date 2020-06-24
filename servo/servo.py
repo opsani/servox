@@ -19,7 +19,6 @@ from servo.connector import (
     Optimizer,
     metadata,
 )
-import httpx
 
 class BaseServoSettings(ConnectorSettings):
     """
@@ -53,6 +52,10 @@ class BaseServoSettings(ConnectorSettings):
 
         title = "Servo"
 
+# class ConnectorResponse(BaseModel):
+#     event: str
+#     connector: Connector
+#     data: Any
 
 @metadata(
     description="Continuous Optimization Orchestrator",
@@ -74,93 +77,6 @@ class Servo(Connector):
 
     def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
         """Handle an event"""
-
-
-    def delay():
-        time.sleep(0.1)
-        # if args.interactive:
-        #     print('Press <Enter> to continue...', end='')
-        #     sys.stdout.flush()
-        #     sys.stdin.readline()
-        # elif args.delay:
-        #     time.sleep(args.delay)
-        print()
-
-    def run(self) -> None:
-        EVENTS = { 'HELLO', 'GOODBYE', } # TODO: TURN INTO AN ENUM
-        AGENT = 'github.com/opsani/servox'
-
-        # TODO: Normalize the args
-        url = f'{self.settings.optimizer.base_url}accounts/{self.settings.optimizer.org_domain}/applications/{self.settings.optimizer.app_name}/'
-        debug(self.settings.optimizer)
-        debug(url)
-        headers = { 'Authorization': f'Bearer {self.settings.optimizer.token}' }
-
-        # Factor all this crap up
-        with httpx.Client(base_url=url, headers=headers) as client:
-            #  r = client.get('/headers')
-
-            event = dict(event='HELLO', param=dict(agent=AGENT))
-
-            # announce
-            print('Saying HELLO.', end=' ')
-            # delay()
-            # request('HELLO', dict(agent=args.agent))
-            response = client.post('servo', json=event)
-            response.raise_for_status()
-            debug(response.json())
-
-            # WHATS_NEXT
-            response = client.post('servo', json=dict(event='WHATS_NEXT', param=dict(agent=AGENT)))
-            response.raise_for_status()
-            command = response.json()
-
-            if command['cmd'] == 'DESCRIBE':
-                # TODO: Send back a description via: event=DESCRIPTION, param=dict(descriptor=describe(), status='ok')
-                v = json.loads('{"descriptor": {"application": {"components": {"web": {"settings": {"cpu": {"value": 0.475, "min": 0.1, "max": 0.8, "step": 0.125, "type": "range"}, "mem": {"value": 0.1, "min": 0.1, "max": 0.8, "step": 0.125, "type": "range"}, "replicas": {"value": 1, "min": 1, "max": 2, "step": 1, "type": "range"}}}}}, "measurement": {"metrics": {"throughput": {"unit": "rpm"}, "error_rate": {"unit": "percent"}, "latency_total": {"unit": "milliseconds"}, "latency_mean": {"unit": "milliseconds"}, "latency_50th": {"unit": "milliseconds"}, "latency_90th": {"unit": "milliseconds"}, "latency_95th": {"unit": "milliseconds"}, "latency_99th": {"unit": "milliseconds"}, "latency_max": {"unit": "milliseconds"}, "latency_min": {"unit": "milliseconds"}, "requests_total": {"unit": "count"}}}}, "status": "ok"}')
-                response = client.post('servo', json=dict(event='DESCRIPTION', param=v))
-                response.raise_for_status()
-                debug(response.json())
-            
-            # WHATS_NEXT
-            response = client.post('servo', json=dict(event='WHATS_NEXT', param=dict(agent=AGENT)))
-            response.raise_for_status()
-            
-            # MEASURE
-            command = response.json()
-            debug(command)
-            if command['cmd'] == 'MEASURE':
-                debug("ASKED TO MEASURE!!!")
-
-                # TODO: This is quick and dirty...
-                # Dispatch measurements
-                for connector in self.connectors:
-                    measure_func = getattr(connector, "measure", None)
-                    if callable(measure_func): # TODO: This should have a tighter contract (arity, etc)
-                        metrics, annotations = measure_func()
-                        # Send MEASUREMENT event, param is dict of (metrics, annotations)
-                        # TODO: Make this shit async...
-                        response = client.post('servo', json=dict(event='MEASUREMENT', param=dict(metrics=metrics, annotations=annotations)))
-                        response.raise_for_status()
-                        
-                        command = response.json()
-                        debug(command)
-
-
-
-            # rsp = session.post(optune_url(args.account, args.app_id), json=ev)
-
-            # run in servo mode
-            # while not stop_flag:
-            #     try:
-            #         exec_command()
-            #     except Exception as e:
-            #         traceback.print_exc()
-
-            # try:
-            #     request('GOODBYE', dict(reason=stop_flag), retries=3, backoff=False)
-            # except Exception as e:
-            #     print('Warning: failed to send GOODBYE: {}. Exiting anyway'.format(str(e)))
 
     ##
     # Misc
