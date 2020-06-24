@@ -17,6 +17,7 @@ from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, YamlLexer, PythonLexer
 from tabulate import tabulate
+from dotenv import load_dotenv
 
 from servo.connector import Optimizer, Connector, ConnectorLoader
 from servo.servo import Servo, BaseServoSettings, ServoAssembly
@@ -374,4 +375,6 @@ def main():
         if cli is not None:
             app.add_typer(cli)
 
+    load_dotenv()
+    
     app()

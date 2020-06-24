@@ -137,7 +137,8 @@ class ServoAssembly(BaseModel):
         *, 
         config_file: Path,
         optimizer: Optimizer,
-        env: Optional[Dict[str, str]] = os.environ, 
+        env: Optional[Dict[str, str]] = os.environ,
+        **kwargs
     ) -> ('ServoAssembly', Servo, Type[BaseServoSettings]):
         '''Assembles a Servo by processing configuration and building a dynamic settings model'''
 
@@ -156,7 +157,7 @@ class ServoAssembly(BaseModel):
             # If we do not have a config file, build a minimal configuration
             # NOTE: This configuration is likely incomplete/invalid due to required
             # settings on the connectors not being fully configured
-            args = {}
+            args = kwargs.copy()
             for c in cls.all_connectors():
                 args[c.default_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
