@@ -165,7 +165,7 @@ class VegetaSettings(ConnectorSettings):
         try:
             durationpy.from_str(duration)
         except Exception as e:
-            raise ValueError(str(e)) from e
+            raise ValueError(f"Invalid duration '{duration}' in rate '{v}'") from e
 
         return v
 
