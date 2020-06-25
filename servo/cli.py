@@ -6,11 +6,9 @@ import sys
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Type, Union
-
 import typer
 import yaml
 from devtools import pformat
-from dotenv import load_dotenv
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from pygments import highlight
@@ -38,63 +36,79 @@ servo: Servo
 connectors_to_update = []
 
 # Build the Typer CLI
-app = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
+cli = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
 
-
-@app.callback()
+@cli.callback()
 def root_callback(
     optimizer: str = typer.Option(
-        os.environ.get("OPSANI_OPTIMIZER", None),
-        help="Opsani optimizer to connect to (format is example.com/app) [ENV: OPSANI_OPTIMIZER]",
+        None,
+        envvar="OPSANI_OPTIMIZER",
+        show_envvar=True,
+        metavar="OPTIMIZER",
+        help="Opsani optimizer to connect to (format is example.com/app)",        
     ),
     token: str = typer.Option(
-        os.environ.get("OPSANI_TOKEN", None),
-        help="Opsani API access token [ENV: OPSANI_TOKEN]",
+        None,
+        envvar="OPSANI_TOKEN",
+        show_envvar=True,
+        metavar="TOKEN",
+        help="Opsani API access token",
     ),
-    token_file: typer.FileText = typer.Option(
-        os.environ.get("OPSANI_TOKEN_FILE", None),
-        help="File to load the access token from [ENV: OPSANI_TOKEN_FILE]",
+    token_file: Path = typer.Option(
+        None,
+        envvar="OPSANI_TOKEN_FILE",
+        show_envvar=True,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        writable=False,
+        readable=True,
+        resolve_path=True,
+        help="File to load the access token from",
     ),
     base_url: str = typer.Option(
-        os.environ.get("OPSANI_BASE_URL", "https://api.opsani.com/"),
+        "https://api.opsani.com/",
         "--base-url",
-        help="Base URL for connecting to Opsani API [Default: https://api.opsani.com/, ENV: OPSANI_BASE_URL]",
+        envvar="OPSANI_BASE_URL",
+        show_envvar=True,
+        show_default=True,
+        metavar="URL",
+        help="Base URL for connecting to Opsani API",
     ),
     config_file: Path = typer.Option(
-        os.environ.get("OPSANI_CONFIG_FILE", "servo.yaml"),
-        "--file",
-        "-f",
+        "servo.yaml",
+        "--config-file",
+        "-c",
+        envvar="OPSANI_CONFIG_FILE",
+        show_envvar=True,
         exists=False,
         file_okay=True,
         dir_okay=False,
         writable=False,
         readable=True,
         resolve_path=True,
-        help="Servo configuration file [default: servo.yaml] [Default: servo.yaml, ENV: OPSANI_CONFIG_FILE]",
+        help="Servo configuration file",
     ),
 ):
-
-    # TODO: Duplicated because of evaluation order in tests
-    optimizer = (
-        os.environ.get("OPSANI_OPTIMIZER", None) if optimizer is None else optimizer
-    )
-    token = os.environ.get("OPSANI_TOKEN", None) if token is None else token
-    token_file = (
-        os.environ.get("OPSANI_TOKEN_FILE", None) if token_file is None else token_file
-    )
-
     if optimizer is None:
         raise typer.BadParameter("An optimizer must be specified")
-
+    
+    # Resolve token
     if token is None and token_file is None:
         raise typer.BadParameter(
-            "A token must be configured via --token, --token-file, or ENV['OPSANI_TOKEN']"
+            "API token must be provided via --token, --token-file, or ENV['OPSANI_TOKEN']"
         )
 
     if token is not None and token_file is not None:
-        raise typer.BadParameter("Cannot use --token and --token-file at the same time")
+        raise typer.BadParameter("--token and --token-file cannot both be given")
 
-    token = token_file.read() if token_file else token
+    if token_file is not None and token_file.exists():
+        token = token_file.read_text()
+    
+    # TODO: this can be pushed to the optimizer model
+    if len(token) == 0 or token.isspace():
+        raise typer.BadParameter("token cannot be blank")
+
     optimizer = Optimizer(optimizer, token=token, base_url=base_url)
 
     # Assemble the Servo
@@ -112,7 +126,7 @@ def root_callback(
         settings = getattr(servo.settings, connector.config_path)
         connector.settings = settings
 
-@app.command()
+@cli.command()
 def new() -> None:
     """Creates a new servo assembly at [PATH]"""
     # TODO: Specify a list of connectors (or default to all)
@@ -120,18 +134,18 @@ def new() -> None:
     # TODO: Options for Docker Compose and Kubernetes?
 
 
-@app.command()
+@cli.command()
 def run() -> None:
     """Run the servo"""
     servo.run()
 
-@app.command()
+@cli.command()
 def console() -> None:
     """Open an interactive console"""
     # TODO: Load up the environment and trigger IPython
 
 
-@app.command()
+@cli.command()
 def info(
     all: bool = typer.Option(
         False, "--all", "-a", help="Include models from all available connectors"
@@ -187,7 +201,7 @@ class SettingsOutputFormat(AbstractOutputFormat):
     text = TEXT_FORMAT
 
 
-@app.command()
+@cli.command()
 def settings(
     format: SettingsOutputFormat = typer.Option(
         SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
@@ -222,14 +236,14 @@ def settings(
             typer.echo(highlight(data, lexer, TerminalFormatter()))
 
 
-@app.command()
+@cli.command()
 def check() -> None:
     """Check the health of the assembly"""
     # TODO: Requires a config file
     # TODO: Run checks for all active connectors (or pick them)
 
 
-@app.command()
+@cli.command()
 def version() -> None:
     """Display version and exit"""
     typer.echo(f"{servo.name} v{servo.version}")
@@ -243,7 +257,7 @@ class SchemaOutputFormat(AbstractOutputFormat):
     html = HTML_FORMAT
 
 
-@app.command()
+@cli.command()
 def schema(
     all: bool = typer.Option(
         False, "--all", "-a", help="Include models from all available connectors"
@@ -286,7 +300,7 @@ def schema(
         typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
 
 
-@app.command(name="validate")
+@cli.command(name="validate")
 def validate(
     file: typer.FileText = typer.Argument("servo.yaml"),
     all: bool = typer.Option(
@@ -302,7 +316,7 @@ def validate(
         typer.echo(e, err=True)
 
 
-@app.command(name="generate")
+@cli.command(name="generate")
 def generate() -> None:
     """Generate servo configuration"""
     # TODO: Add force and output path options
@@ -323,7 +337,7 @@ def generate() -> None:
 # NOTE: registered as top level commands for convenience in dev
 
 
-@app.command(name="test")
+@cli.command(name="test")
 def developer_test() -> None:
     """Run automated tests"""
     __run(
@@ -331,7 +345,7 @@ def developer_test() -> None:
     )
 
 
-@app.command(name="lint")
+@cli.command(name="lint")
 def developer_lint() -> None:
     """Emit opinionated linter warnings and suggestions"""
     cmds = [
@@ -344,7 +358,7 @@ def developer_lint() -> None:
         __run(cmd)
 
 
-@app.command(name="format")
+@cli.command(name="format")
 def developer_format() -> None:
     """Apply automatic formatting to the codebase"""
     cmds = [
@@ -362,37 +376,3 @@ def __run(args: Union[str, List[str]], **kwargs) -> None:
     process = subprocess.run(args, **kwargs)
     if process.returncode != 0:
         sys.exit(process.returncode)
-
-
-# Run the Typer CLI
-def main():
-    load_dotenv()
-
-    from optparse import OptionParser
-    parser = OptionParser()
-    parser.add_option("-f", "--file", dest="file", metavar="FILE", default="servo.yaml")
-
-    (options, args) = parser.parse_args()
-
-    if path := Path(options.file).exists():
-        pass
-        # TODO: if connectors is empty, activate everything
-        # If there are aliases, activate those
-
-
-    debug(options, args)
-    # return
-
-
-    # FIXME: This should be handled after parsing the options but Click doesn't make it super easy
-    # Only active connectors should be registered as commands (and aliases should be registered as well)
-    loader = ConnectorLoader()
-    for connector in loader.load():
-        settings = connector.settings_model().construct()
-        connector = connector(settings)
-        connectors_to_update.append(connector)
-        cli = connector.cli()
-        if cli is not None:
-            app.add_typer(cli)
-
-    app()

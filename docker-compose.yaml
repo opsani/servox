@@ -1,20 +1,26 @@
-version: '3.7'
+version: '3.8'
 
 services:
   servo:
     build:
       context: .
     restart: always
+    tty: true
     logging:
       driver: json-file
       options:
         max-size: 200k
         max-file: "10"
     environment:
+      - SERVO_ENV=${SERVO_ENV:-development}
       - OPSANI_OPTIMIZER=${OPSANI_OPTIMIZER:?Opsani Optimizer must be configured}
-      - OPSANI_TOKEN_FILE=${OPSANI_TOKEN_FILE:-/var/run/secrets/opsani.com/optimizer.token}
-      - OPSANI_CONFIG_FILE=${OPSANI_CONFIG_FILE:-/servo/servo.yaml}
+      - OPSANI_TOKEN=${OPSANI_TOKEN}      
     volumes:
-      - ./secrets:${OPSANI_TOKEN_FILE}
-      - ./servo.yaml:${OPSANI_CONFIG_FILE}      
-    command: --auth-token /run/secrets/optune_auth_token --account ${OPTUNE_ACCOUNT:?The Optune Account Name must be configured.} ${OPTUNE_APP_ID:?The Optune App ID must be configured.}
+      - type: bind
+        source: ./servo.yaml
+        target: /servo/servo.yaml
+        read_only: true
+      - type: bind
+        source: ${OPSANI_TOKEN_FILE:-/dev/null}
+        target: /var/run/secrets/opsani.com/optimizer.token
+        read_only: true

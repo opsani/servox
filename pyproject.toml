@@ -33,7 +33,7 @@ ipython = "^7.15.0"
 black = "^19.10b0"
 
 [tool.poetry.scripts]
-servo = "servo.cli:main"
+servo = "servo.entry_points:run_cli"
 
 # TODO: Example entry point for testing plugins
 [tool.poetry.plugins."servo.connectors"]
