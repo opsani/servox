@@ -32,7 +32,7 @@ import logging
 from loguru import logger
 import sys
 from devtools import pformat
-from servo.metrics import Metric, Unit, MeasureRequest, MeasureResponse, Numeric, TimeSeriesMeasurement, Description
+from servo.metrics import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
 
 # logger.add({ "sink": sys.stdout, "colorize": True, "level": logging.DEBUG })
 
@@ -288,10 +288,6 @@ class VegetaConnector(Connector):
 
         return cli
     
-    # TODO: Add a decorator of some kind
-    def describe(self) -> Description:
-        return Description(metrics=METRICS, components=[])
-    
     def print_progress(self, str, *args, **kwargs):
         # debug(str)
         logger.debug(str)
@@ -312,24 +308,29 @@ class VegetaConnector(Connector):
         latency_95th = self.format_metric(metrics['latency_95th'])
         latency_99th = self.format_metric(metrics['latency_99th'])
         return f'Vegeta attacking "{self.settings.target}" @ {self.settings.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
+
+
+    # TODO: Add a decorator of some kind
+    def describe(self) -> Description:
+        return Description(metrics=METRICS, components=[])
     
-    def measure(self, params: MeasureRequest) -> MeasureResponse:
+    def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable...
-        if params.control.delay > 0:
+        if control.delay > 0:
             self.progress = 0
-            self.print_progress(f'DELAY: sleeping {params.control.delay} seconds')
-            time.sleep(params.control.delay)
-        self.warmup_until_timestamp = datetime.now() + timedelta(seconds=params.control.warmup)
+            self.print_progress(f'DELAY: sleeping {control.delay} seconds')
+            time.sleep(control.delay)
+        self.warmup_until_timestamp = datetime.now() + timedelta(seconds=control.warmup)
 
         # Run the load test
         number_of_urls = 1 if self.settings.target else _number_of_lines_in_file(self.settings.targets)
-        summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {params.control.delay}, warmup of {params.control.warmup}) at a rate of {self.settings.rate}"
+        summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.settings.rate}"
         self.print_progress(summary)
         exit_code, command = self._run_vegeta()
         self.print_progress(f"Producing time series metrics from {len(self._vegeta_reports)} measurements")
         measurements = self._time_series_measurements_from_vegeta_reports() if self._vegeta_reports else {}        
-        response = MeasureResponse(measurements=measurements, annotations={
+        response = Measurement(readings=measurements, annotations={
             'load_profile': summary,
         })
         self.print_progress(f"Reporting time series metrics {pformat(measurements)} and annotations {pformat(response.annotations)}")
@@ -434,7 +435,7 @@ class VegetaConnector(Connector):
             for report in self._vegeta_reports:
                 values.append((report.end, report.get(key),))
             
-            time_series_measurements.append(TimeSeriesMeasurement(metric=metric, values=values))
+            time_series_measurements.append(TimeSeries(metric=metric, values=values))
         
         debug(time_series_measurements)
         sys.exit(2)

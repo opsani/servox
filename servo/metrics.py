@@ -18,13 +18,12 @@ class Metric(BaseModel):
     def __init__(self, name: str, unit: Unit, **kwargs) -> None:
         super().__init__(name=name, unit=unit, **kwargs)
 
-class AbstractMeasurement(BaseModel, abc.ABC):  # TODO: Could be DataPoint, TimeSeries
+class DataPoint(BaseModel):
     metric: Metric
-
-class ScalarMeasurement(AbstractMeasurement):
     value: Numeric
 
-class TimeSeriesMeasurement(AbstractMeasurement):    
+class TimeSeries(BaseModel):
+    metric: Metric
     values: List[Tuple[datetime, Numeric]]
 
 class SettingType(str, Enum):
@@ -68,12 +67,6 @@ class Description(BaseModel):
             dict['measurement']['metrics'][metric.name] = { "unit": metric.unit.value }
         return dict
 
-# TODO: Are Params + Result better?
-# Instructions from servo on what to measure 
-class MeasureRequest(BaseModel):
-    metrics: List[str]
-    control: Control
-
-class MeasureResponse(BaseModel):
-    measurements: List[AbstractMeasurement]
+class Measurement(BaseModel):
+    readings: List[Union[DataPoint, TimeSeries]]
     annotations: Dict[str, str] = []

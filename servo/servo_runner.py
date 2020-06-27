@@ -10,7 +10,7 @@ import time
 import typing
 import traceback
 from pydantic import BaseModel, Field
-from servo.metrics import Metric, Component, Setting, Description, MeasureRequest, MeasureResponse
+from servo.metrics import Metric, Component, Setting, Description, Measurement
 
 USER_AGENT = 'github.com/opsani/servox'
 
@@ -20,9 +20,6 @@ class Command(str, Enum):
     MEASURE = 'MEASURE'
     ADJUST = 'ADJUST'    
     SLEEP = 'SLEEP'
-
-    # def __str__(self):
-    #     return self.value
 
 class Event(str, Enum):
     HELLO = 'HELLO'
@@ -40,6 +37,11 @@ class SleepResponse(BaseModel):
     pass
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
+# Instructions from servo on what to measure 
+class MeasureParams(BaseModel):
+    metrics: List[str]
+    control: Control
+
 class EventRequest(BaseModel):
     event: Event
     param: typing.Optional[typing.Dict[str, typing.Any]]      # TODO: Switch to a union of supported types
@@ -53,7 +55,7 @@ class CommandResponse(BaseModel):
     command: Command = Field(
         alias="cmd",
     )
-    param: typing.Optional[typing.Union[MeasureRequest, typing.Dict[str, typing.Any]]]      # TODO: Switch to a union of supported types
+    param: typing.Optional[typing.Union[MeasureParams, typing.Dict[str, typing.Any]]]      # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
@@ -111,15 +113,15 @@ class ServoRunner:
         return response
 
 
-    def measure(self, param: MeasureRequest):
+    def measure(self, param: MeasureParams):
 
         print('measuring', param)
 
         for connector in self.servo.connectors:
             measure_func = getattr(connector, "measure", None)
             if callable(measure_func): # TODO: This should have a tighter contract (arity, etc)
-                metrics, annotations = measure_func(param)
-                debug(metrics, annotations)
+                measurement = measure_func(metrics=param.metrics, control=param.control)
+                debug(measurement)
                 # Send MEASUREMENT event, param is dict of (metrics, annotations)
                 # # TODO: Make this shit async...
                 # response = client.post('servo', json=dict(event='MEASUREMENT', param=dict(metrics=metrics, annotations=annotations)))
