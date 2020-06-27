@@ -1,13 +1,10 @@
-import abc
 import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set
-import importlib
+from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set, Tuple
 
 import httpx
-import semver
 import typer
 import yaml
 from loguru import logger
@@ -23,8 +20,6 @@ from pydantic import (
     root_validator,
     validator,
 )
-from pydantic.schema import schema as pydantic_schema
-from pydantic.json import pydantic_encoder
 import durationpy
 import servo
 from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity
@@ -37,14 +32,14 @@ import logging
 from loguru import logger
 import sys
 from devtools import pformat
-from servo.metrics import Metric, Unit
+from servo.metrics import Metric, Unit, MeasureRequest, MeasureResponse, Numeric, TimeSeriesMeasurement, Description
 
 # logger.add({ "sink": sys.stdout, "colorize": True, "level": logging.DEBUG })
 
 # TODO: This should really come down to `from servo import Connector, ConnectorSettings`
 
 ###
-### Vegeta
+### Vegeta 
 
 METRICS = [
     Metric('throughput', Unit.REQUESTS_PER_MINUTE),
@@ -66,14 +61,60 @@ class TargetFormat(str, Enum):
     def __str__(self):
         return self.value
 
-class VegetaReport(BaseModel):
-    pass
-    # TODO: Model the JSON coming from vegeta
+class Latencies(BaseModel):
+    total: int
+    mean: int
+    p50: int = Field(alias='50th')
+    p90: int = Field(alias='90th')
+    p95: int = Field(alias='95th')
+    p99: int = Field(alias='99th')
+    max: int
+    min: int
 
-# TODO: Probably need a superclass here
-class MeasurementResponse(BaseModel):
-    pass
-# TODO: This is the response coming back from the connector
+    @validator('*')
+    def convert_nanoseconds_to_milliseconds(cls, latency):
+        # Convert Nanonsecond -> Millisecond
+        return (latency * 0.000001) if latency is not None else -1
+
+class Bytes(BaseModel):
+    total: int
+    mean: float
+
+class VegetaReport(BaseModel):
+    latencies: Latencies
+    bytes_in: Bytes
+    bytes_out: Bytes
+    earliest: datetime
+    latest: datetime
+    end: datetime
+    duration: timedelta
+    wait: timedelta
+    requests: int
+    rate: float
+    throughput: float
+    success: float
+    error_rate: float = None
+    status_codes: Dict[str, int]
+    errors: List[str]
+
+    @validator('throughput')
+    def convert_throughput_to_rpm(cls, throughput):
+        return throughput * 60
+    
+    @validator('error_rate', always=True, pre=True)
+    def calculate_error_rate_from_success(cls, v, values):
+        success_rate = values['success']
+        return 100 - (success_rate * 100) # Fraction of success inverted into % of error
+
+    def get(self, key: str):
+        if hasattr(self, key):
+            return getattr(self, key)
+        elif '.' in key:
+            parent_key, child_key = key.split('.', 2)
+            child = self.get(parent_key).dict(by_alias=True)
+            return child[child_key]
+        else:
+            raise ValueError(f"unknown key '{key}'")
 
 class VegetaSettings(ConnectorSettings):
     """
@@ -212,44 +253,12 @@ class VegetaSettings(ConnectorSettings):
         json_encoders = {TargetFormat: lambda t: t.value()}
 
 ## TODO: Model all this crap
-DEFAULT_DURATION = 120
-DEFAULT_WARMUP = 0
-DEFAULT_DELAY = 0
+# DEFAULT_DURATION = 120
+# DEFAULT_WARMUP = 0
+# DEFAULT_DELAY = 0
 REPORTING_INTERVAL = 2
 
-# METRICS = {
-#     'throughput': {
-#         'unit': 'rpm'
-#     },
-#     'error_rate': {
-#         'unit': '%'
-#     },
-#     'latency_total': {
-#         'unit': 'ms'
-#     },
-#     'latency_mean': {
-#         'unit': 'ms'
-#     },
-#     'latency_50th': {
-#         'unit': 'ms'
-#     },
-#     'latency_90th': {
-#         'unit': 'ms'
-#     },
-#     'latency_95th': {
-#         'unit': 'ms'
-#     },
-#     'latency_99th': {
-#         'unit': 'ms'
-#     },
-#     'latency_max': {
-#         'unit': 'ms'
-#     },
-#     'latency_min': {
-#         'unit': 'ms'
-#     },
-# }
-LATENCY_KEYS = ['total', 'mean', '50th', '90th', '95th', '99th', 'max', 'min']
+
 
 @servo.connector.metadata(
     description="Vegeta load testing connector",
@@ -262,6 +271,7 @@ class VegetaConnector(Connector):
     settings: VegetaSettings
 
     time_series_metrics = {}
+    _vegeta_reports: List[VegetaReport] = []
     warmup_until_timestamp: datetime = None
     proc: Any
 
@@ -279,8 +289,8 @@ class VegetaConnector(Connector):
         return cli
     
     # TODO: Add a decorator of some kind
-    def describe(self) -> List[Metric]:
-        return METRICS
+    def describe(self) -> Description:
+        return Description(metrics=METRICS, components=[])
     
     def print_progress(self, str, *args, **kwargs):
         # debug(str)
@@ -303,38 +313,27 @@ class VegetaConnector(Connector):
         latency_99th = self.format_metric(metrics['latency_99th'])
         return f'Vegeta attacking "{self.settings.target}" @ {self.settings.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
     
-    def measure(self) -> (Dict[str, str], Dict[str, str]):
-        control = {}# self.input_data.get('control', {})
-        duration = int(control.get('duration', DEFAULT_DURATION))
-        warmup = int(control.get('warmup', DEFAULT_WARMUP))
-        delay = int(control.get('delay', DEFAULT_DELAY))
-
+    def measure(self, params: MeasureRequest) -> MeasureResponse:
         # Handle delay (if any)
-        if delay > 0:            
+        # TODO: Make the delay/warm-up reusable...
+        if params.control.delay > 0:
             self.progress = 0
-            self.print_progress(f'DELAY: sleeping {delay} seconds')
-            time.sleep(delay)
-        self.warmup_until_timestamp = datetime.now() + timedelta(seconds=warmup)
+            self.print_progress(f'DELAY: sleeping {params.control.delay} seconds')
+            time.sleep(params.control.delay)
+        self.warmup_until_timestamp = datetime.now() + timedelta(seconds=params.control.warmup)
 
         # Run the load test
-        number_of_urls = 1 if self.settings.target else self._number_of_lines_in_file(self.settings.targets)
-        summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {delay}, warmup of {warmup}) at a rate of {self.settings.rate}"
+        number_of_urls = 1 if self.settings.target else _number_of_lines_in_file(self.settings.targets)
+        summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {params.control.delay}, warmup of {params.control.warmup}) at a rate of {self.settings.rate}"
         self.print_progress(summary)
         exit_code, command = self._run_vegeta()
-        self.print_progress(f"Producing time series metrics from {len(self.time_series_metrics)} measurements")
-        metrics = self._time_series_metrics_from_vegeta_reports() if self.time_series_metrics else {}        
-        annotations = {
+        self.print_progress(f"Producing time series metrics from {len(self._vegeta_reports)} measurements")
+        measurements = self._time_series_measurements_from_vegeta_reports() if self._vegeta_reports else {}        
+        response = MeasureResponse(measurements=measurements, annotations={
             'load_profile': summary,
-        }
-        self.print_progress(f"Reporting time series metrics {pformat(metrics)} and annotations {pformat(annotations)}")
-        return metrics, annotations
-
-    def _number_of_lines_in_file(self, filename):
-        count = 0
-        with open(filename, 'r') as f:
-            for line in f:
-                count += 1
-        return count
+        })
+        self.print_progress(f"Reporting time series metrics {pformat(measurements)} and annotations {pformat(response.annotations)}")
+        return response
 
     def _run_vegeta(self):
         prog_coefficient = 1.0
@@ -379,7 +378,7 @@ class VegetaConnector(Connector):
 
         # start progress for time limited vegeta command: update every 5 seconds -
         # it is printed by default every 30 seconds
-        duration_in_seconds = self._seconds_from_duration_str(self.settings.duration) # TODO: Replace with library, move to stdlib
+        duration_in_seconds = _seconds_from_duration_str(self.settings.duration) # TODO: Replace with library, move to stdlib
         started_at = time.time()
         # timer = repeatingTimer(REPORTING_INTERVAL, self._update_timed_progress, started_at, duration_in_seconds,
         #                     prog_start, prog_coefficient)
@@ -393,13 +392,16 @@ class VegetaConnector(Connector):
                 output = self.proc.stdout.readline()
                 if output:                    
                     json_report = ansi_escape.sub('', output)
-                    vegeta_report = json.loads(json_report)
-                    metrics = self._metrics_from_vegeta_report(vegeta_report)
+                    debug(json.loads(json_report))
+                    vegeta_report = VegetaReport(**json.loads(json_report))
+                    debug(vegeta_report)                    
+                    # metrics = self._metrics_from_vegeta_report(vegeta_report)
                     if datetime.now() > self.warmup_until_timestamp:
-                        timestamp = int(time.time())
-                        self.time_series_metrics[timestamp] = metrics
+                        # timestamp = int(time.time())
+                        # self.time_series_metrics[timestamp] = metrics
+                        self._vegeta_reports.append(vegeta_report)
                         # self.print_progress(f"Vegeta metrics aggregated: {metrics}")
-                        debug(self.format_matrics(metrics))
+                        # debug(self.format_matrics(metrics))
                     else:
                         self.print_progress(f"Vegeta metrics excluded (warmup in effect): {metrics}")
                 if self.proc.poll() is not None:
@@ -416,59 +418,36 @@ class VegetaConnector(Connector):
             # timer.cancel()
         return exit_code, vegeta_cmd
 
-    # Parses a Golang duration string into seconds
-    # TODO: This may be replacable with the library
-    # TODO: Factor into parent class/utility library
-    def _seconds_from_duration_str(self, duration_value):
-        if isinstance(duration_value, (int, float)):
-            return int(duration_value)
-        elif duration_value.strip() == '0':
-            return 0
-        hours, minutes, seconds = 0, 0, 0
-        for component in re.findall('\d+[hms]', duration_value):
-            time = component[:-1]
-            unit = component[-1]
-            if unit == 'h': hours = int(time)
-            if unit == 'm': minutes = int(time)
-            if unit == 's': seconds = int(time)
-        total_seconds = (hours * 60 * 60) + (minutes * 60) + seconds
-        return total_seconds
-
-    def _metrics_from_vegeta_report(self, report):
-        if report is None:
-            return None                    
-        metrics = copy.deepcopy(METRICS)
-
-        # Capture latency values
-        # TODO: Iterate over metrics and look for key prefix
-        for latency_key in LATENCY_KEYS:
-            latency_value = report['latencies'].get(latency_key, None)
-            # Convert Nanonsecond -> Millisecond
-            value = (latency_value * 0.000001) if latency_value is not None else -1
-            metrics['latency_' + latency_key]['value'] = value
-
-        # Capture throughput
-        metrics['throughput']['value'] = report['throughput'] * 60
-        
-        # Calculate error rate
-        error_rate = 100 - (report['success'] * 100) # Fraction of success inverted into % of error
-        metrics['error_rate']['value'] = error_rate
-        return metrics
-
     # helper:  take the time series metrics gathered during the attack and map them into OCO format
-    # TODO: Model this
-    def _time_series_metrics_from_vegeta_reports(self):
-        metrics = copy.deepcopy(METRICS)
+    def _time_series_measurements_from_vegeta_reports(self):
+        time_series_measurements = []
+
+        for metric in METRICS:
+            if metric.name in ('throughput', 'error_rate',):
+                key = metric.name
+            elif metric.name.startswith('latency_'):
+                key = 'latencies' + '.' + metric.name.replace('latency_', '')
+            else:
+                raise NameError(f'Unexpected metric name "{metric.name}"')
+            
+            values: List[Tuple(datetime, Numeric)] = []
+            for report in self._vegeta_reports:
+                values.append((report.end, report.get(key),))
+            
+            time_series_measurements.append(TimeSeriesMeasurement(metric=metric, values=values))
+        
+        debug(time_series_measurements)
+        sys.exit(2)
 
         # Initialize values storage
-        for metric_name, data in metrics.items():
-            data['values'] = [ { 'id': str(int(time.time())), 'data': [] } ]
+        # for metric_name, data in metrics.items():
+        #     data['values'] = [ { 'id': str(int(time.time())), 'data': [] } ]
 
-        # Fill the values with arrays of [timestamp, value] sampled from the reports
-        for timestamp, report in self.time_series_metrics.items():
-            for metric_name, data in report.items():
-                value = data['value']
-                metrics[metric_name]['values'][0]['data'].append([timestamp, value])
+        # # Fill the values with arrays of [timestamp, value] sampled from the reports
+        # for timestamp, report in self.time_series_metrics.items():
+        #     for metric_name, data in report.items():
+        #         value = data['value']
+        #         metrics[metric_name]['values'][0]['data'].append([timestamp, value])
         
         return metrics
 
@@ -479,3 +458,29 @@ class VegetaConnector(Connector):
         if t_limit:
             prog = min(100.0, 100.0 * (time.time() - t_start) / t_limit)
             self.progress = min(100, int((prog_coefficient * prog) + prog_start))
+
+
+def _number_of_lines_in_file(filename):
+    count = 0
+    with open(filename, 'r') as f:
+        for line in f:
+            count += 1
+    return count
+
+# Parses a Golang duration string into seconds
+# TODO: This may be replacable with the library
+# TODO: Factor into parent class/utility library
+def _seconds_from_duration_str(duration_value):
+    if isinstance(duration_value, (int, float)):
+        return int(duration_value)
+    elif duration_value.strip() == '0':
+        return 0
+    hours, minutes, seconds = 0, 0, 0
+    for component in re.findall('\d+[hms]', duration_value):
+        time = component[:-1]
+        unit = component[-1]
+        if unit == 'h': hours = int(time)
+        if unit == 'm': minutes = int(time)
+        if unit == 's': seconds = int(time)
+    total_seconds = (hours * 60 * 60) + (minutes * 60) + seconds
+    return total_seconds

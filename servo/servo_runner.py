@@ -10,7 +10,7 @@ import time
 import typing
 import traceback
 from pydantic import BaseModel, Field
-from servo.metrics import Metric, Component, Setting
+from servo.metrics import Metric, Component, Setting, Description, MeasureRequest, MeasureResponse
 
 USER_AGENT = 'github.com/opsani/servox'
 
@@ -49,39 +49,16 @@ class EventRequest(BaseModel):
             Event: lambda v: str(v),
         }
 
-class Control(BaseModel):
-    duration: int
-    past: int
-    warmup: int
-    load: typing.Optional[dict]    
-
-# Instructions from servo on what to measure 
-class MeasureParams(BaseModel):
-    metrics: typing.List[str]
-    control: Control
-
 class CommandResponse(BaseModel):
     command: Command = Field(
         alias="cmd",
     )
-    param: typing.Optional[typing.Union[MeasureParams, typing.Dict[str, typing.Any]]]      # TODO: Switch to a union of supported types
+    param: typing.Optional[typing.Union[MeasureRequest, typing.Dict[str, typing.Any]]]      # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
             Command: lambda v: str(v),
         }
-
-class Description(BaseModel):
-    components: typing.List[Component]
-    metrics: typing.List[Metric]
-
-    def opsani_dict(self) -> dict:
-        dict = { 'application': { 'components': {} }, 'measurement': { 'metrics': {} } }
-        for component in self.components:
-            dict['application']['components'].update(component.opsani_dict())
-        for metric in self.metrics:
-            dict['measurement']['metrics'][metric.name] = { "unit": metric.unit.value }
-        return dict
 
 class ServoRunner:
     servo: Servo
@@ -101,24 +78,47 @@ class ServoRunner:
         self.headers = { 'Authorization': f'Bearer {self._optimizer.token}', 'User-Agent': USER_AGENT, 'Content-Type': 'application/json' }
         super().__init__()
 
-    # TODO: Make private...
-    def delay(self):
-        if self.interactive:
-            print('Press <Enter> to continue...', end='')
-            sys.stdout.flush()
-            sys.stdin.readline()
-        # elif self.delay:
-        #     time.sleep(args.delay)
-        print()
 
-    def measure(self, param: MeasureParams):
+    def describe(self):
+        print('describing')
+
+        # Gather all the metrics returned and build a payload
+        # TODO: This message dispatch should go through a driver for in-process vs. subprocess
+        # Aggregate a set of metrics and components across all responsive connectors
+        metrics = []
+        components = [
+            Component(name="web", settings=[
+                Setting(
+                    name="cpu",
+                    type="range",
+                    min="0.1",
+                    max="10.0",
+                    step="0.125",
+                    value=3.0
+                ),
+            ]),
+        ]
+        for connector in self.servo.connectors:
+            # TODO: This should probably be driven off a decorator (Servo defines it, connectors opt-in)
+            describe_func = getattr(connector, "describe", None)
+            if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
+                description: Description = describe_func()
+                metrics.extend(description.components)
+                metrics.extend(description.metrics)
+
+        response = Description(components=components, metrics=metrics)
+        debug(response)
+        return response
+
+
+    def measure(self, param: MeasureRequest):
 
         print('measuring', param)
 
         for connector in self.servo.connectors:
             measure_func = getattr(connector, "measure", None)
             if callable(measure_func): # TODO: This should have a tighter contract (arity, etc)
-                metrics, annotations = measure_func()
+                metrics, annotations = measure_func(param)
                 debug(metrics, annotations)
                 # Send MEASUREMENT event, param is dict of (metrics, annotations)
                 # # TODO: Make this shit async...
@@ -165,44 +165,21 @@ class ServoRunner:
 
         return {}
 
-    def describe(self):
-        print('describing')
-
-        # Gather all the metrics returned and build a payload
-        # TODO: This message dispatch should go through a driver for in-process vs. subprocess
-        # TODO: Maybe each connector should return a Description and then we aggregate them?
-        metrics = []
-        components = [
-            Component(name="web", settings=[
-                Setting(
-                    name="cpu",
-                    type="range",
-                    min="0.1",
-                    max="10.0",
-                    step="0.125",
-                    value=3.0
-                ),
-            ]),
-        ]
-        for connector in self.servo.connectors:
-            # TODO: This should probably be driven off a decorator
-            describe_func = getattr(connector, "describe", None)
-            if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
-                response = describe_func()
-            # if hasattr(connector, 'describe'):
-                # response = connector.describe()
-                debug(response)
-                if isinstance(response, list): # do I need to use cast? typing.List[Metric]
-                    metrics.extend(response)
-
-        response = Description(components=components, metrics=metrics)
-        debug(response)
-        return response
 
     # --- Helpers -----------------------------------------------------------------
     
     def http_client(self) -> httpx.Client:
         return httpx.Client(base_url=self.base_url, headers=self.headers)
+    
+    # TODO: Make private...
+    def delay(self):
+        if self.interactive:
+            print('Press <Enter> to continue...', end='')
+            sys.stdout.flush()
+            sys.stdin.readline()
+        # elif self.delay:
+        #     time.sleep(args.delay)
+        print()
 
     def request(self, event: Event, param, *, retries=None, backoff=True):
         # TODO: add retries/timeout
