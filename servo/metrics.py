@@ -56,8 +56,8 @@ class Control(BaseModel):
     load: Optional[dict]    
 
 class Description(BaseModel):
-    components: List[Component]
-    metrics: List[Metric]
+    components: List[Component] = []
+    metrics: List[Metric] = []
 
     def opsani_dict(self) -> dict:
         dict = { 'application': { 'components': {} }, 'measurement': { 'metrics': {} } }
@@ -68,5 +68,5 @@ class Description(BaseModel):
         return dict
 
 class Measurement(BaseModel):
-    readings: List[Union[DataPoint, TimeSeries]]
-    annotations: Dict[str, str] = []
+    readings: List[Union[DataPoint, TimeSeries]] = []
+    annotations: Dict[str, str] = {}

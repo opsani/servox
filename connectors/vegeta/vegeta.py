@@ -270,10 +270,8 @@ REPORTING_INTERVAL = 2
 class VegetaConnector(Connector):
     settings: VegetaSettings
 
-    time_series_metrics = {}
     _vegeta_reports: List[VegetaReport] = []
     warmup_until_timestamp: datetime = None
-    proc: Any
 
     def cli(self) -> ConnectorCLI:
         """Returns a Typer CLI for interacting with this connector"""
@@ -329,12 +327,12 @@ class VegetaConnector(Connector):
         self.print_progress(summary)
         exit_code, command = self._run_vegeta()
         self.print_progress(f"Producing time series metrics from {len(self._vegeta_reports)} measurements")
-        measurements = self._time_series_measurements_from_vegeta_reports() if self._vegeta_reports else {}        
-        response = Measurement(readings=measurements, annotations={
+        readings = self._time_series_readings_vegeta_reports() if self._vegeta_reports else []
+        measurement = Measurement(readings=readings, annotations={
             'load_profile': summary,
         })
-        self.print_progress(f"Reporting time series metrics {pformat(measurements)} and annotations {pformat(response.annotations)}")
-        return response
+        self.print_progress(f"Reporting time series metrics {pformat(measurement)} and annotations {pformat(measurement.annotations)}")
+        return measurement
 
     def _run_vegeta(self):
         prog_coefficient = 1.0
@@ -375,7 +373,7 @@ class VegetaConnector(Connector):
         vegeta_attack_proc = subprocess.Popen(vegeta_attack_args, stdin=echo_proc_stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # Pipe the output from the attack process into the reporting process
-        self.proc = subprocess.Popen(vegeta_report_args, stdin=vegeta_attack_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
+        report_proc = subprocess.Popen(vegeta_report_args, stdin=vegeta_attack_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # start progress for time limited vegeta command: update every 5 seconds -
         # it is printed by default every 30 seconds
@@ -390,7 +388,7 @@ class VegetaConnector(Connector):
             # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
             ansi_escape = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]')
             while True:
-                output = self.proc.stdout.readline()
+                output = report_proc.stdout.readline()
                 if output:                    
                     json_report = ansi_escape.sub('', output)
                     debug(json.loads(json_report))
@@ -405,12 +403,12 @@ class VegetaConnector(Connector):
                         # debug(self.format_matrics(metrics))
                     else:
                         self.print_progress(f"Vegeta metrics excluded (warmup in effect): {metrics}")
-                if self.proc.poll() is not None:
+                if report_proc.poll() is not None:
                     # Child process has exited, stop polling
                     break
-            exit_code = self.proc.returncode
+            exit_code = report_proc.returncode
             if exit_code != 0:
-                error = self.proc.stderr.readline()
+                error = report_proc.stderr.readline()
                 self.debug("Vegeta error:", error)
             self.debug("Vegeta exited with exit code:", exit_code)
             self.print_progress(f"Vegeta exited with exit code: {exit_code}")
@@ -420,8 +418,8 @@ class VegetaConnector(Connector):
         return exit_code, vegeta_cmd
 
     # helper:  take the time series metrics gathered during the attack and map them into OCO format
-    def _time_series_measurements_from_vegeta_reports(self):
-        time_series_measurements = []
+    def _time_series_readings_vegeta_reports(self):
+        readings = []
 
         for metric in METRICS:
             if metric.name in ('throughput', 'error_rate',):
@@ -435,22 +433,9 @@ class VegetaConnector(Connector):
             for report in self._vegeta_reports:
                 values.append((report.end, report.get(key),))
             
-            time_series_measurements.append(TimeSeries(metric=metric, values=values))
+            readings.append(TimeSeries(metric=metric, values=values))
         
-        debug(time_series_measurements)
-        sys.exit(2)
-
-        # Initialize values storage
-        # for metric_name, data in metrics.items():
-        #     data['values'] = [ { 'id': str(int(time.time())), 'data': [] } ]
-
-        # # Fill the values with arrays of [timestamp, value] sampled from the reports
-        # for timestamp, report in self.time_series_metrics.items():
-        #     for metric_name, data in report.items():
-        #         value = data['value']
-        #         metrics[metric_name]['values'][0]['data'].append([timestamp, value])
-        
-        return metrics
+        return readings
 
     # helper:  update timer based progress
     # TODO: Moves into superclass

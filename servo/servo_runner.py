@@ -10,7 +10,8 @@ import time
 import typing
 import traceback
 from pydantic import BaseModel, Field
-from servo.metrics import Metric, Component, Setting, Description, Measurement
+from servo.metrics import Metric, Component, Setting, Description, Measurement, Control
+from typing import List, Optional, Any, Dict, Callable, Union
 
 USER_AGENT = 'github.com/opsani/servox'
 
@@ -44,7 +45,7 @@ class MeasureParams(BaseModel):
 
 class EventRequest(BaseModel):
     event: Event
-    param: typing.Optional[typing.Dict[str, typing.Any]]      # TODO: Switch to a union of supported types
+    param: Optional[Dict[str, Any]]      # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
@@ -55,7 +56,7 @@ class CommandResponse(BaseModel):
     command: Command = Field(
         alias="cmd",
     )
-    param: typing.Optional[typing.Union[MeasureParams, typing.Dict[str, typing.Any]]]      # TODO: Switch to a union of supported types
+    param: Optional[Union[MeasureParams, Dict[str, Any]]]      # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
@@ -68,7 +69,7 @@ class ServoRunner:
     _settings: BaseServoSettings
     _optimizer: Optimizer
     base_url: str
-    headers: typing.Dict[str, str]
+    headers: Dict[str, str]
     _stop_flag: bool
 
     def __init__(self, servo: Servo, **kwargs) -> None:
@@ -81,14 +82,12 @@ class ServoRunner:
         super().__init__()
 
 
-    def describe(self):
+    def describe(self) -> Description:
         print('describing')
 
-        # Gather all the metrics returned and build a payload
         # TODO: This message dispatch should go through a driver for in-process vs. subprocess
         # Aggregate a set of metrics and components across all responsive connectors
-        metrics = []
-        components = [
+        aggregate_description = Description.construct(components=[
             Component(name="web", settings=[
                 Setting(
                     name="cpu",
@@ -99,58 +98,33 @@ class ServoRunner:
                     value=3.0
                 ),
             ]),
-        ]
+        ])
         for connector in self.servo.connectors:
-            # TODO: This should probably be driven off a decorator (Servo defines it, connectors opt-in)
             describe_func = getattr(connector, "describe", None)
             if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
                 description: Description = describe_func()
-                metrics.extend(description.components)
-                metrics.extend(description.metrics)
+                aggregate_description.components.extend(description.components)
+                aggregate_description.metrics.extend(description.metrics)
 
-        response = Description(components=components, metrics=metrics)
-        debug(response)
-        return response
+        debug(aggregate_description)
+        return aggregate_description
 
 
-    def measure(self, param: MeasureParams):
-
+    def measure(self, param: MeasureParams) -> Measurement:
         print('measuring', param)
 
+        aggregate_measurement = Measurement.construct()
+        debug(aggregate_measurement)
         for connector in self.servo.connectors:
             measure_func = getattr(connector, "measure", None)
             if callable(measure_func): # TODO: This should have a tighter contract (arity, etc)
                 measurement = measure_func(metrics=param.metrics, control=param.control)
-                debug(measurement)
-                # Send MEASUREMENT event, param is dict of (metrics, annotations)
-                # # TODO: Make this shit async...
-                # response = client.post('servo', json=dict(event='MEASUREMENT', param=dict(metrics=metrics, annotations=annotations)))
-                # response.raise_for_status()
-                
-                # command = response.json()
-                # debug(command)
+                aggregate_measurement.readings.extend(measurement.readings)
+                aggregate_measurement.annotations.update(measurement.annotations)
 
-        sys.exit(2)
+        debug("aggregate ", aggregate_measurement)
 
-        # execute measurement driver and return result
-        # rsp = run_driver(DFLT_MEASURE_DRIVER, args.app_id, req=param, progress_cb=partial(report_progress, 'MEASUREMENT', time.time()))
-        # status = rsp.get('status', 'undefined')
-        # if status != 'ok':
-        #     raise Exception('Measurement driver failed with status "{}" and message "{}"'.format(
-        #         status, rsp.get('message', 'undefined')))
-        # metrics = rsp.get('metrics', {})
-        # annotations = rsp.get('annotations', {})
-
-        # if not metrics:
-        #     raise Exception('Measurement driver returned no metrics')
-
-        # print('measured ', metrics)
-
-        # ret = dict(metrics=metrics)
-        # if annotations:
-        #     ret["annotations"] = annotations
-
-        return ret
+        return aggregate_measurement
 
     def adjust(self, param):
 
@@ -469,7 +443,7 @@ class ServoRunner:
         """handle signal for restart - simply set a flag to have the main loop exit and restart the process after the current operation is completed"""
         self._stop_flag = "restart"
     
-    def run_driver(self, driver, app, req=None, describe=False, progress_cb: typing.Callable[..., None]=None):
+    def run_driver(self, driver, app, req=None, describe=False, progress_cb: Callable[..., None]=None):
         '''
         Execute external driver to perform adjustment or measurement - or just get a descriptor
         Parameters:
