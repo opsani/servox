@@ -79,7 +79,7 @@ def root_callback(
         "servo.yaml",
         "--config-file",
         "-c",
-        envvar="OPSANI_CONFIG_FILE",
+        envvar="SERVO_CONFIG_FILE",
         show_envvar=True,
         exists=False,
         file_okay=True,
@@ -115,7 +115,8 @@ def root_callback(
     global assembly, servo, ServoSettings # TODO: This should probably return the instance instead of the model
     try:
         assembly, servo, ServoSettings = ServoAssembly.assemble(
-            config_file=config_file, optimizer=optimizer
+            config_file=config_file, 
+            optimizer=optimizer
         )
     except ValidationError as error:
         typer.echo(error, err=True)

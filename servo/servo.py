@@ -34,7 +34,6 @@ class BaseServoSettings(ConnectorSettings):
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
 
-    # TODO: This is null for some reason...
     connectors: Optional[Dict[str, str]] = None
     """A map of connector key-paths to fully qualified class names"""
 
@@ -404,7 +403,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
         if _validate_class(connector_class):
             return connector_class
 
-    raise TypeError(f"{connector} does not identify a Connector class")
+    raise ValueError(f"{connector} does not identify a Connector class")
 
 
 def _validate_class(connector: type) -> bool:

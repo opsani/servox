@@ -24,7 +24,7 @@ def cli_runner() -> CliRunner:
 
 @pytest.fixture()
 def cli_app() -> Typer:
-    return cli.app
+    return cli.cli
 
 
 @pytest.fixture()

@@ -6,36 +6,49 @@
 # reinstalls of all package dependencies.
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
-from optparse import OptionParser
+import os
+import sys
+import argparse
+from pathlib import Path
 from dotenv import load_dotenv
 from servo.connector import ConnectorLoader
 from servo.cli import cli, connectors_to_update
+from servo.servo import ServoAssembly, _default_routes, _routes_for_connectors_descriptor
+import yaml
 
 def run_cli():
-    # parser.add_option("-f", "--file", dest="file", metavar="FILE", default="servo.yaml")
+    load_dotenv()
 
-    # (options, args) = parser.parse_args()
+    for connector in ConnectorLoader().load():
+        # TODO: Log instead of print
+        print(f"Loaded {connector}")
 
-    # if path := Path(options.file).exists():
-    #     pass
-    #     # TODO: if connectors is empty, activate everything
-    #     # If there are aliases, activate those
-
-
-    # debug(options, args)
-    # # return
-
-
-    # FIXME: This should be handled after parsing the options but Click doesn't make it super easy
-    # Only active connectors should be registered as commands (and aliases should be registered as well)
-    loader = ConnectorLoader()
-    for connector in loader.load():
-        settings = connector.settings_model().construct()
-        connector = connector(settings)
+    routes = _default_routes()    
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-c', '--config-file')
+    namespace, r = parser.parse_known_args()
+    if namespace.config_file:
+        config_file = namespace.config_file
+    else:
+        config_file = os.getenv("SERVO_CONFIG_FILE", "servo.yaml")
+    if Path(config_file).exists():
+        try:
+            config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+            if isinstance(config, dict):  # Config file could be blank or malformed
+                connectors_value = config.get("connectors", None)
+                if connectors_value:
+                    routes = _routes_for_connectors_descriptor(connectors_value)
+        except (ValueError, TypeError) as error:
+            # TODO: Log instead of print
+            print(f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})', file=sys.stderr)
+            routes = {}
+    
+    for path, connector_class in routes.items():
+        settings = connector_class.settings_model().construct()
+        connector = connector_class(settings)
         connectors_to_update.append(connector)
         connector_cli = connector.cli()
         if connector_cli is not None:
             cli.add_typer(connector_cli)
 
-    load_dotenv()
     cli()

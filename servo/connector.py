@@ -328,7 +328,7 @@ ENTRY_POINT_GROUP = "servo.connectors"
 
 
 class ConnectorLoader:
-    """Dynamics discovers and loads connectors via entry points"""
+    """Dynamically discover and load connectors via entry points"""
 
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
         self.group = group
