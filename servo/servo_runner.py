@@ -7,8 +7,8 @@ import signal
 import sys
 import time
 import typing
-import traceback
-from pydantic import BaseModel, Field
+import backoff
+from pydantic import BaseModel, Field, parse_obj_as
 from servo.metrics import Metric, Component, Setting, Description, Measurement, Control
 from typing import List, Optional, Any, Dict, Callable, Union
 from devtools import pformat
@@ -31,7 +31,7 @@ class Event(str, Enum):
 
 class Status(BaseModel):
     status: str
-    message: str
+    message: Optional[str]
 
 class SleepResponse(BaseModel):
     pass
@@ -62,6 +62,10 @@ class CommandResponse(BaseModel):
             Command: lambda v: str(v),
         }
 
+class StatusMessage(BaseModel):
+    status: str
+    message: Optional[str]
+
 class ServoRunner:
     servo: Servo
     interactive: bool
@@ -81,7 +85,7 @@ class ServoRunner:
         super().__init__()
 
     def describe(self) -> Description:
-        logger.info('describing')
+        logger.info('Describing...')
 
         # TODO: This message dispatch should go through a driver for in-process vs. subprocess
         # Aggregate a set of metrics and components across all responsive connectors
@@ -108,8 +112,8 @@ class ServoRunner:
 
 
     def measure(self, param: MeasureParams) -> Measurement:
-        logger.info('measuring', param)
-        logger.debug(param)
+        logger.info(f"Measuring... {', '.join(param.metrics)}")
+        logger.trace(pformat(param))
 
         aggregate_measurement = Measurement.construct()
         for connector in self.servo.connectors:
@@ -123,7 +127,8 @@ class ServoRunner:
 
     def adjust(self, param):
 
-        logger.info('adjusting', param)
+        logger.info('Adjusting...')
+        logger.trace(pformat(param))
 
         # execute adjustment driver and return result
         # rsp = run_driver(DFLT_ADJUST_DRIVER, args.app_id, req=param, progress_cb=partial(report_progress, 'ADJUSTMENT', time.time()))
@@ -151,76 +156,29 @@ class ServoRunner:
             time.sleep(1.0)
         print()
 
-    def post_event(self, event: Event, param, *, retries=None, backoff=True):
-        # TODO: add retries/timeout
-        # TODO: Factor retries into helper function
-
-        # response = client.post('servo', json=event)
-        # response.raise_for_status()
-        # debug(response.json())
-
+    @backoff.on_exception(backoff.expo,
+                      (httpx.HTTPError),
+                      max_time=180,
+                      max_tries=12)
+    def post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         '''
         Send request to cloud service. Retry if it fails to connect.
-        Setting retries to None means retry forever; 0 means no retries, other
-        integer value defines the number of retries
-        TODO: implement backoff - currently ignored
         '''
 
-        retry_delay = 20 # seconds
-        if event == Event.WHATS_NEXT:
-            retry_delay = 1 # quick first-time retry - workaround
-        ev = EventRequest(event=event, param=param)
-        while True:
+        event_request = EventRequest(event=event, param=param)
+        with self.http_client() as client:
             try:
-                with self.http_client() as client:
-                    response = client.post('servo', data=ev.json())
-            except httpx.NetworkError as e:
-                exc = Exception('Server unavailable for event {} ({}: {}).'.format(event, type(e).__name__, str(e)))
-            else:
-                # check if server failed with 5xx response: display and set exc
-                if response.is_error:
-                    try:
-                        rsp_msg = response.text
-                    except Exception as e:
-                        rsp_msg = "(unknown: failed to parse: {}: {})".format(type(e).__name__, str(e))
-                    try:
-                        rsp_msg = json.loads(rsp_msg)['message'] # extract salient message if json formatted
-                    except Exception:
-                        pass # leave raw text
-                    exc = Exception('Server rejected request {} with status {}: {}.'.format(ev, response.status_code, rsp_msg))
-                else:
-                    try:
-                        rsp_json = response.json()
-                    except Exception as e:
-                        try:
-                            rsp_msg = rsp.text
-                        except Exception as e:
-                            rsp_msg = "(unknown: failed to parse: {}: {})".format(type(e).__name__, str(e))
-                        exc = Exception('Server response is not valid json: {}.'.format(rsp_msg))
-                    else:
-                        exc = None
-
-            if exc is None:
-                break # success, return response
-
-            # retry or fail
-            if retries is not None:
-                if retries > 0:
-                    retries -= 1
-                else:
-                    exc = Exception('No more retries left, failed to send {}.'.format(event))
-                    raise exc
-
-            print(str(exc), 'Waiting {} seconds to retry...\n'.format(retry_delay))
-            time.sleep(retry_delay)   # wait for cloud service to recover; TODO add progressive backoff to ~1 minute
-            retry_delay = 20 # seconds
-            continue
+                response = client.post('servo', data=event_request.json())
+                response.raise_for_status()
+            except httpx.HTTPError as error:
+                logger.exception(f"HTTP error encountered while posting {event.value} event")
+                logger.trace(pformat(event_request))
+                raise error
         
-        return rsp_json
+        return parse_obj_as(Union[CommandResponse, Status], response.json())
 
     def exec_command(self):
-        cmd_json = self.post_event(Event.WHATS_NEXT, None)        
-        cmd_response = CommandResponse(**cmd_json)
+        cmd_response = self.post_event(Event.WHATS_NEXT, None)
         logger.debug(f"What's Next? => {cmd_response.command}")
         logger.trace(pformat(cmd_response))
 
@@ -269,7 +227,9 @@ class ServoRunner:
 
     def run(self) -> None:        
         self._stop_flag = False
-        self._init_signal_handlers()   
+        self._init_signal_handlers()
+
+        logger.info(f"Servo starting with {len(self.servo.connectors)} active connectors [{self._optimizer.id} @ {self._optimizer.base_url}]")
 
         # announce
         logger.info('Saying HELLO.', end=' ')
@@ -280,7 +240,7 @@ class ServoRunner:
             try:
                 self.exec_command()
             except Exception as e:
-                traceback.print_exc()
+                logger.exception("Exception encountered while executing command")
 
         try:
             self.post_event(Event.GOODBYE, dict(reason=self.stop_flag), retries=3, backoff=False)

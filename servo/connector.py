@@ -41,6 +41,7 @@ class Optimizer(BaseModel):
             org_domain=org_domain, app_name=app_name, token=token, **kwargs
         )
 
+    @property
     def id(self) -> str:
         """Returns the optimizer identifier"""
         return f"{self.org_domain}/{self.app_name}"

@@ -18,6 +18,7 @@ durationpy = "^0.5"
 tabulate = "^0.8.7"
 pygments = "^2.6.1"
 devtools = "^0.5.1"
+backoff = "^1.10.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"
