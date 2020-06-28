@@ -9,7 +9,7 @@ import time
 import typing
 import backoff
 from pydantic import BaseModel, Field, parse_obj_as
-from servo.metrics import Metric, Component, Setting, Description, Measurement, Control
+from servo.types import Metric, Component, Setting, Description, Measurement, Control
 from typing import List, Optional, Any, Dict, Callable, Union, Tuple
 from devtools import pformat
 
@@ -216,7 +216,7 @@ class ServoRunner:
                 components_dict = adjustment['state']['application']['components']
                 components_count = len(components_dict)                
                 settings_count = sum(len(components_dict[component]['settings']) for component in components_dict)
-                logger.info(f"Adjusted: {components_count} components, {settings_count} settings_count")
+                logger.info(f"Adjusted: {components_count} components, {settings_count} settings")
 
                 self.post_event(Event.ADJUSTMENT, adjustment)
 

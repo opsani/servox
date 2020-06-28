@@ -22,7 +22,7 @@ from pydantic import (
 import durationpy
 import servo
 from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity, logger
-from servo.metrics import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
+from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
 from servo.utilities import DurationProgress
 import subprocess
 import time

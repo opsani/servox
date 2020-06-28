@@ -17,7 +17,7 @@ import yaml
 # from adjust import Adjust, AdjustError
 import servo
 from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity, logger
-from servo.metrics import Component, Setting, Description
+from servo.types import Component, Setting, Description
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple
 
