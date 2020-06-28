@@ -31,9 +31,6 @@ class BaseServoSettings(ConnectorSettings):
     See `ServoAssembly` for details on how the concrete model is built.
     """
 
-    optimizer: Optimizer
-    """The Opsani optimizer the Servo is attached to"""
-
     connectors: Optional[Dict[str, str]] = None
     """A map of connector key-paths to fully qualified class names"""
 
@@ -52,12 +49,6 @@ class BaseServoSettings(ConnectorSettings):
         extra = Extra.ignore
 
         title = "Servo"
-
-
-# class ConnectorResponse(BaseModel):
-#     event: str
-#     connector: Connector
-#     data: Any
 
 
 @metadata(
@@ -172,8 +163,6 @@ class ServoAssembly(BaseModel):
             servo=servo,
         )
 
-        # TODO: The dynamic settings class needs to map key-paths to connector classes
-
         return assembly, servo, ServoSettings
 
     ##
@@ -281,7 +270,7 @@ def _create_settings_model(
                 setting_fields[c.default_key_path()] = (c.settings_model(), None)
                 key_paths_to_settings_type_names[c.default_key_path()] = _module_path(
                     c.settings_model()
-                )  # RENAME: module types
+                )
                 key_paths_to_connector_types[c.default_key_path()] = c
 
     # Create our model
@@ -290,6 +279,7 @@ def _create_settings_model(
         __base__=BaseServoSettings,
         optimizer=(Optimizer, ...),
         # connectors=key_paths_to_settings_type_names,
+        # connectors=key_paths_to_connector_types,
         **setting_fields,
     )
 

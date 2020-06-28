@@ -92,6 +92,10 @@ class Connector(BaseModel, abc.ABC):
 
     optimizer: Optional[Optimizer]
     """Name of the command for interacting with the connector instance via the CLI.
+
+    Note that optimizers are attached as configuration to Connector instance because
+    the settings are not managed as part of the assembly config files and are always
+    provided via environment variablesm, commandline arguments, or secrets management.
     """
 
     config_key_path: str
