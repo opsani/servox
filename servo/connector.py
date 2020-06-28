@@ -9,7 +9,6 @@ import httpx
 import semver
 import typer
 import yaml
-import logging
 from loguru import logger
 from pkg_resources import EntryPoint, iter_entry_points
 from pydantic import (

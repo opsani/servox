@@ -19,7 +19,7 @@ from servo.connector import (
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
-from tests.test_helpers import MeasureConnector
+
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -492,7 +492,10 @@ class TestVegetaSettings:
             )
         assert "1 validation error for VegetaSettings" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("rate",)
-        assert e.value.errors()[0]["msg"] == "Invalid duration '1zxzczc' in rate '500/1zxzczc'"
+        assert (
+            e.value.errors()[0]["msg"]
+            == "Invalid duration '1zxzczc' in rate '500/1zxzczc'"
+        )
 
     def test_validate_duration_infinite_attack(self) -> None:
         s = VegetaSettings(rate="0", duration="0", target="GET http://example.com")

@@ -20,6 +20,7 @@ from servo.connector import (
     metadata,
 )
 
+
 class BaseServoSettings(ConnectorSettings):
     """
     Abstract base class for Servo settings
@@ -29,7 +30,7 @@ class BaseServoSettings(ConnectorSettings):
 
     See `ServoAssembly` for details on how the concrete model is built.
     """
-    
+
     optimizer: Optimizer
     """The Opsani optimizer the Servo is attached to"""
 
@@ -52,10 +53,12 @@ class BaseServoSettings(ConnectorSettings):
 
         title = "Servo"
 
+
 # class ConnectorResponse(BaseModel):
 #     event: str
 #     connector: Connector
 #     data: Any
+
 
 @metadata(
     description="Continuous Optimization Orchestrator",
@@ -128,7 +131,9 @@ class ServoAssembly(BaseModel):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoSettings, connector_type_routes = _create_settings_model(config_file=config_file, env=env)
+        ServoSettings, connector_type_routes = _create_settings_model(
+            config_file=config_file, env=env
+        )
 
         # Build our Servo settings instance from the config file + environment
         if config_file.exists():
@@ -144,11 +149,11 @@ class ServoAssembly(BaseModel):
             # If we do not have a config file, build a minimal configuration
             # NOTE: This configuration is likely incomplete/invalid due to required
             # settings on the connectors not being fully configured
-            args = kwargs.copy()            
+            args = kwargs.copy()
             for c in cls.all_connectors():
                 args[c.default_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
-        
+
         # Initialize all active connectors
         connectors: List[Connector] = []
         for key_path, connector_type in connector_type_routes.items():
@@ -263,7 +268,9 @@ def _create_settings_model(
 
                     setting_fields[path] = (settings_model, ...)
                     # TODO: Bundle this into class...
-                    key_paths_to_settings_type_names[path] = _module_path(settings_model)
+                    key_paths_to_settings_type_names[path] = _module_path(
+                        settings_model
+                    )
                     key_paths_to_connector_types[path] = connector_class
 
     # If we don't have any target connectors, add all available as optional fields
@@ -272,7 +279,9 @@ def _create_settings_model(
         for c in Connector.all():
             if c is not Servo:
                 setting_fields[c.default_path()] = (c.settings_model(), None)
-                key_paths_to_settings_type_names[c.default_path()] = _module_path(c.settings_model()) # RENAME: module types
+                key_paths_to_settings_type_names[c.default_path()] = _module_path(
+                    c.settings_model()
+                )  # RENAME: module types
                 key_paths_to_connector_types[c.default_path()] = c
 
     # Create our model

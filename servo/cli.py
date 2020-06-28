@@ -1,11 +1,11 @@
 import json
-import os
 import shlex
 import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Type, Union
+
 import typer
 import yaml
 from devtools import pformat
@@ -16,7 +16,7 @@ from pygments.formatters import TerminalFormatter
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 from tabulate import tabulate
 
-from servo.connector import ConnectorLoader, Optimizer
+from servo.connector import Optimizer
 from servo.servo import BaseServoSettings, Servo, ServoAssembly
 from servo.servo_runner import ServoRunner
 
@@ -39,6 +39,7 @@ connectors_to_update = []
 # Build the Typer CLI
 cli = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
 
+
 @cli.callback()
 def root_callback(
     optimizer: str = typer.Option(
@@ -46,7 +47,7 @@ def root_callback(
         envvar="OPSANI_OPTIMIZER",
         show_envvar=True,
         metavar="OPTIMIZER",
-        help="Opsani optimizer to connect to (format is example.com/app)",        
+        help="Opsani optimizer to connect to (format is example.com/app)",
     ),
     token: str = typer.Option(
         None,
@@ -93,7 +94,7 @@ def root_callback(
 ):
     if optimizer is None:
         raise typer.BadParameter("An optimizer must be specified")
-    
+
     # Resolve token
     if token is None and token_file is None:
         raise typer.BadParameter(
@@ -105,7 +106,7 @@ def root_callback(
 
     if token_file is not None and token_file.exists():
         token = token_file.read_text()
-    
+
     # TODO: this can be pushed to the optimizer model
     if len(token) == 0 or token.isspace():
         raise typer.BadParameter("token cannot be blank")
@@ -113,20 +114,20 @@ def root_callback(
     optimizer = Optimizer(optimizer, token=token, base_url=base_url)
 
     # Assemble the Servo
-    global assembly, servo, ServoSettings # TODO: This should probably return the instance instead of the model
+    global assembly, servo, ServoSettings  # TODO: This should probably return the instance instead of the model
     try:
         assembly, servo, ServoSettings = ServoAssembly.assemble(
-            config_file=config_file, 
-            optimizer=optimizer
+            config_file=config_file, optimizer=optimizer
         )
     except ValidationError as error:
         typer.echo(error, err=True)
         raise typer.Exit(2) from error
-    
+
     # FIXME: Update the settings of our pre-registered connectors
     for connector in connectors_to_update:
         settings = getattr(servo.settings, connector.config_path)
         connector.settings = settings
+
 
 @cli.command()
 def new() -> None:
@@ -140,6 +141,7 @@ def new() -> None:
 def run() -> None:
     """Run the servo"""
     ServoRunner(servo).run()
+
 
 @cli.command()
 def console() -> None:
@@ -251,6 +253,7 @@ def version() -> None:
     typer.echo(f"{servo.name} v{servo.version}")
     raise typer.Exit(0)
 
+
 @cli.command()
 def describe() -> None:
     """
@@ -258,10 +261,11 @@ def describe() -> None:
     """
     for connector in servo.connectors:
         describe_func = getattr(connector, "describe", None)
-        if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
+        if callable(
+            describe_func
+        ):  # TODO: This should have a tighter contract (arity, etc)
             description: Description = describe_func()
             debug(connector.name, description)
-
 
 
 class SchemaOutputFormat(AbstractOutputFormat):

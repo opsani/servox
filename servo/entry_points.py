@@ -6,15 +6,18 @@
 # reinstalls of all package dependencies.
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
+import argparse
 import os
 import sys
-import argparse
 from pathlib import Path
-from dotenv import load_dotenv
-from servo.connector import ConnectorLoader, logger
-from servo.cli import cli, connectors_to_update
-from servo.servo import ServoAssembly, _default_routes, _routes_for_connectors_descriptor
+
 import yaml
+from dotenv import load_dotenv
+
+from servo.cli import cli, connectors_to_update
+from servo.connector import ConnectorLoader, logger
+from servo.servo import _default_routes, _routes_for_connectors_descriptor
+
 
 def run_cli():
     load_dotenv()
@@ -22,9 +25,9 @@ def run_cli():
     for connector in ConnectorLoader().load():
         logger.info(f"Loaded {connector}")
 
-    routes = _default_routes()    
+    routes = _default_routes()
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('-c', '--config-file')
+    parser.add_argument("-c", "--config-file")
     namespace, r = parser.parse_known_args()
     if namespace.config_file:
         config_file = namespace.config_file
@@ -38,9 +41,12 @@ def run_cli():
                 if connectors_value:
                     routes = _routes_for_connectors_descriptor(connectors_value)
         except (ValueError, TypeError) as error:
-            logger.warning(f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})', file=sys.stderr)
+            logger.warning(
+                f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})',
+                file=sys.stderr,
+            )
             routes = {}
-    
+
     for path, connector_class in routes.items():
         settings = connector_class.settings_model().construct()
         connector = connector_class(settings)
