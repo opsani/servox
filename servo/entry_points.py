@@ -11,7 +11,7 @@ import sys
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from servo.connector import ConnectorLoader
+from servo.connector import ConnectorLoader, logger
 from servo.cli import cli, connectors_to_update
 from servo.servo import ServoAssembly, _default_routes, _routes_for_connectors_descriptor
 import yaml
@@ -20,8 +20,7 @@ def run_cli():
     load_dotenv()
 
     for connector in ConnectorLoader().load():
-        # TODO: Log instead of print
-        print(f"Loaded {connector}")
+        logger.info(f"Loaded {connector}")
 
     routes = _default_routes()    
     parser = argparse.ArgumentParser(add_help=False)
@@ -39,8 +38,7 @@ def run_cli():
                 if connectors_value:
                     routes = _routes_for_connectors_descriptor(connectors_value)
         except (ValueError, TypeError) as error:
-            # TODO: Log instead of print
-            print(f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})', file=sys.stderr)
+            logger.warning(f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})', file=sys.stderr)
             routes = {}
     
     for path, connector_class in routes.items():

@@ -1,10 +1,10 @@
 from enum import Enum
 from datetime import datetime, timedelta
-import abc
+import time
 from pydantic import BaseModel
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set, Tuple
 
-Numeric = Union[int, float]
+Numeric = Union[float, int]
 
 class Unit(str, Enum):
     REQUESTS_PER_MINUTE = 'rpm'
@@ -71,3 +71,23 @@ class Description(BaseModel):
 class Measurement(BaseModel):
     readings: List[Union[DataPoint, TimeSeries]] = []
     annotations: Dict[str, str] = {}
+
+    def opsani_dict(self) -> dict:
+        readings = {}
+
+        for reading in self.readings:            
+            if isinstance(reading, TimeSeries):
+                data = {
+                    'unit': reading.metric.unit.value,
+                    'values': [ { 'id': str(int(time.time())), 'data': [] } ]
+                }                
+
+                # Fill the values with arrays of [timestamp, value] sampled from the reports
+                for date, value in reading.values:
+                    data['values'][0]['data'].append([int(date.timestamp()), value])
+                
+                readings[reading.metric.name] = data
+            else:
+                raise NotImplementedError("Not done yet")
+        
+        return dict(metrics=readings, annotations=self.annotations)
