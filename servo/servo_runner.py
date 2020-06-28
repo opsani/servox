@@ -10,7 +10,7 @@ import typing
 import backoff
 from pydantic import BaseModel, Field, parse_obj_as
 from servo.metrics import Metric, Component, Setting, Description, Measurement, Control
-from typing import List, Optional, Any, Dict, Callable, Union
+from typing import List, Optional, Any, Dict, Callable, Union, Tuple
 from devtools import pformat
 
 USER_AGENT = 'github.com/opsani/servox'
@@ -23,7 +23,7 @@ class Command(str, Enum):
 
 class Event(str, Enum):
     HELLO = 'HELLO'
-    GOODBY = 'GOODBYE'
+    GOODBYE = 'GOODBYE'
     DESCRIPTION = 'DESCRIPTION'
     WHATS_NEXT = 'WHATS_NEXT'
     ADJUSTMENT = 'ADJUSTMENT'
@@ -66,6 +66,17 @@ class StatusMessage(BaseModel):
     status: str
     message: Optional[str]
 
+# TODO: Review and expand all the error classes
+class ConnectorError(Exception):
+    """E
+    xception indicating that a connector failed
+    """
+
+    def __init__(self, *args, status="failed", reason="unknown"):
+        self.status = status
+        self.reason = reason
+        super().__init__(*args)
+
 class ServoRunner:
     servo: Servo
     interactive: bool
@@ -88,19 +99,7 @@ class ServoRunner:
         logger.info('Describing...')
 
         # TODO: This message dispatch should go through a driver for in-process vs. subprocess
-        # Aggregate a set of metrics and components across all responsive connectors
-        aggregate_description = Description.construct(components=[
-            Component(name="web", settings=[
-                Setting(
-                    name="cpu",
-                    type="range",
-                    min="0.1",
-                    max="10.0",
-                    step="0.125",
-                    value=3.0
-                ),
-            ]),
-        ])
+        aggregate_description = Description.construct()
         for connector in self.servo.connectors:
             describe_func = getattr(connector, "describe", None)
             if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
@@ -112,7 +111,7 @@ class ServoRunner:
 
 
     def measure(self, param: MeasureParams) -> Measurement:
-        logger.info(f"Measuring... {', '.join(param.metrics)}")
+        logger.info(f"Measuring... [merics={', '.join(param.metrics)}]")
         logger.trace(pformat(param))
 
         aggregate_measurement = Measurement.construct()
@@ -125,22 +124,24 @@ class ServoRunner:
 
         return aggregate_measurement
 
-    def adjust(self, param):
-
+    def adjust(self, param) -> dict:
         logger.info('Adjusting...')
         logger.trace(pformat(param))
 
-        # execute adjustment driver and return result
-        # rsp = run_driver(DFLT_ADJUST_DRIVER, args.app_id, req=param, progress_cb=partial(report_progress, 'ADJUSTMENT', time.time()))
-        # status = rsp.get('status', 'undefined')
-        # if status == 'ok':
-        #     print('adjusted ok')
-        # else:
-        #     raise DriverError('Adjustment driver failed with status "{}" and message:\n{}'.format(
-        #         status, str(rsp.get('message', 'undefined'))), status=status, reason=rsp.get('reason', 'undefined'))
+        for connector in self.servo.connectors:
+            adjust_func = getattr(connector, "adjust", None)
+            if callable(adjust_func): # TODO: This should have a tighter contract (arity, etc)
+                adjustment = adjust_func(param) # TODO: Should be modeled
+                result = adjustment.get('status', 'undefined')
+                if result == 'ok':
+                    logger.info(f'{connector.name} - Adjustment completed')
+                    return adjustment
+                else:
+                    raise ConnectorError('Adjustment driver failed with status "{}" and message:\n{}'.format(
+                        status, str(rsp.get('message', 'undefined'))), status=status, reason=adjustment.get('reason', 'undefined'))
 
+        # TODO: Model a response class
         return {}
-
 
     # --- Helpers -----------------------------------------------------------------
     
@@ -154,7 +155,6 @@ class ServoRunner:
             sys.stdin.readline()
         elif self.delay:
             time.sleep(1.0)
-        print()
 
     @backoff.on_exception(backoff.expo,
                       (httpx.HTTPError),
@@ -192,22 +192,33 @@ class ServoRunner:
 
             elif cmd_response.command == Command.MEASURE:                
                 measurement = self.measure(cmd_response.param)
-                logger.info(f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations ")
+                logger.info(f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations")
                 logger.trace(pformat(measurement))
                 param = measurement.opsani_dict()
                 self.post_event(Event.MEASUREMENT, param)
 
-            elif cmd_response.command == Command.ADJUST:
+            elif cmd_response.command == Command.ADJUST:                
+                # # TODO: This needs to be modeled
+                #oc"{'cmd': 'ADJUST', 'param': {'state': {'application': {'components': {'web': {'settings': {'cpu': {'value': 0.225}, 'mem': {'value': 0.1}}}}}}, 'control': {}}}"                
+
+                # TODO: Why do we do this nonsense??
                 # create a new dict based on p['state'] (with its top level key
                 # 'application') which also includes a top-level 'control' key, and
                 # pass this to adjust()
-                # # TODO: This needs to be modeled
-                # new_dict = cmd_response.param['state'].copy()
-                # new_dict['control'] = cmd_response.param.get('control', {})
-                # v = adjust(new_dict)
-                # if 'state' not in v: # if driver didn't return state, assume it is what was requested
-                #     v['state'] = cmd_response.param['state']
-                raise RuntimeError("Not yet implemented")
+                new_dict = cmd_response.param['state'].copy()
+                new_dict['control'] = cmd_response.param.get('control', {})
+                adjustment = self.adjust(new_dict)
+                
+                # TODO: What works like this and why?
+                if 'state' not in adjustment: # if driver didn't return state, assume it is what was requested
+                    adjustment['state'] = cmd_response.param['state']
+
+                components_dict = adjustment['state']['application']['components']
+                components_count = len(components_dict)                
+                settings_count = sum(len(components_dict[component]['settings']) for component in components_dict)
+                logger.info(f"Adjusted: {components_count} components, {settings_count} settings_count")
+
+                self.post_event(Event.ADJUSTMENT, adjustment)
 
             elif cmd_response.command == Command.SLEEP:
                 if not self.interactive: # ignore sleep request when interactive - let user decide
@@ -243,7 +254,7 @@ class ServoRunner:
                 logger.exception("Exception encountered while executing command")
 
         try:
-            self.post_event(Event.GOODBYE, dict(reason=self.stop_flag), retries=3, backoff=False)
+            self.post_event(Event.GOODBYE, dict(reason=self.stop_flag))
         except Exception as e:
             logger.exception('Warning: failed to send GOODBYE: {}. Exiting anyway'.format(str(e)))
 
@@ -268,11 +279,11 @@ class ServoRunner:
             sig_name = 'signal #{}'.format(sig_num)
 
         # log signal
-        logger.info('\n*** Servo stop requested by signal "{}". Sending GOODBYE to Optune cloud service (may retry 3 times)'.format(sig_name))
+        logger.info(f'*** Servo stop requested by signal "{format(sig_name)}". Sending GOODBYE')
 
         # send GOODBYE event (best effort)
         try:
-            self.post_event(Event.GOODBYE, dict(reason=sig_name), retries=3, backoff=False)
+            self.post_event(Event.GOODBYE, dict(reason=sig_name))
         except Exception as e:
             logger.exception('Warning: failed to send GOODBYE: {}. Exiting anyway'.format(str(e)))
 

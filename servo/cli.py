@@ -251,6 +251,18 @@ def version() -> None:
     typer.echo(f"{servo.name} v{servo.version}")
     raise typer.Exit(0)
 
+@cli.command()
+def describe() -> None:
+    """
+    Describe connectors and settings for all connectors.
+    """
+    for connector in servo.connectors:
+        describe_func = getattr(connector, "describe", None)
+        if callable(describe_func): # TODO: This should have a tighter contract (arity, etc)
+            description: Description = describe_func()
+            debug(connector.name, description)
+
+
 
 class SchemaOutputFormat(AbstractOutputFormat):
     json = JSON_FORMAT

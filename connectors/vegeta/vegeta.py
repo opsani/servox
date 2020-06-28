@@ -379,7 +379,7 @@ class VegetaConnector(Connector):
             error = report_proc.stderr.readline()
             logger.error(f"Vegeta exited with exit code {exit_code}: error: {error}")
 
-        logger.debug("Vegeta exited with exit code:", exit_code)
+        logger.debug(f"Vegeta exited with exit code: {exit_code}")
 
         return exit_code, vegeta_cmd
 
