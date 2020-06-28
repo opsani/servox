@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel
+from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 Numeric = Union[float, int]
 
@@ -107,3 +108,28 @@ class Measurement(BaseModel):
                 raise NotImplementedError("Not done yet")
 
         return dict(metrics=readings, annotations=self.annotations)
+
+
+# Common output formats
+YAML_FORMAT = "yaml"
+JSON_FORMAT = "json"
+DICT_FORMAT = "dict"
+HTML_FORMAT = "html"
+TEXT_FORMAT = "text"
+MARKDOWN_FORMAT = "markdown"
+
+
+class AbstractOutputFormat(str, Enum):
+    """Defines common behaviors for command specific output format enumerations"""
+
+    def lexer(self) -> Optional["pygments.Lexer"]:
+        if self.value == YAML_FORMAT:
+            return YamlLexer()
+        elif self.value == JSON_FORMAT:
+            return JsonLexer()
+        elif self.value == DICT_FORMAT:
+            return PythonLexer()
+        elif self.value == TEXT_FORMAT:
+            return None
+        else:
+            raise RuntimeError("no lexer configured for output format {self.value}")

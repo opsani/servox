@@ -23,13 +23,39 @@ from pydantic import (
 )
 
 
-class Optimizer(BaseModel):
+class Optimizer(BaseSettings):
+    """
+    An Optimizer models an Opsani optimization engines that the Servo can connect to
+    in order to access the Opsani machine learning technology for optimizing system infrastructure
+    and application workloads.
+    """
+
     org_domain: constr(
         regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
     )
+    """
+    The domain name of the Organization tha the optimizer belongs to.
+
+    For example, a domain name of `awesome.com` might belong to Awesome, Inc and all optimizers would be
+    deployed under this domain name umbrella for easy access and autocompletion ergonomics.
+    """
+
     app_name: constr(regex=r"^[a-z\-]{3,64}$")
+    """
+    The symbolic name of the application or servoce under optimization in a string of URL-safe characters between 3 and 64
+    characters in length 
+    """
+
     token: str
+    """
+    An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
+    """
+
     base_url: HttpUrl = "https://api.opsani.com/"
+    """
+    The base URL for accessing the Opsani API. This optiion is typically only useful for Opsani developers or in the context
+    of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
+    """
 
     def __init__(self, id: str = None, token: str = None, **kwargs):
         org_domain = kwargs.pop("org_domain", None)
@@ -42,8 +68,25 @@ class Optimizer(BaseModel):
 
     @property
     def id(self) -> str:
-        """Returns the optimizer identifier"""
+        """
+        Returns the primary identifier of the optimizer. 
+
+        A friendly identifier formed by joining the `org_domain` and the `app_name` with a slash character
+        of the form `example.com/my-app` or `another.com/app-2`.
+        """
         return f"{self.org_domain}/{self.app_name}"
+
+    class Config:
+        env_prefix = "SERVO_OPTIMIZER_"
+        env_file = ".env"
+        case_sensitive = False  # TODO: Normalize the env vars
+        extra = Extra.forbid
+        fields = {
+            "token": {
+                "env": "SERVO_OPTIMIZER_TOKEN",
+                "env_names": {"SERVO_OPTIMIZER_TOKEN"},
+            }
+        }
 
 
 class ConnectorSettings(BaseSettings):
@@ -84,7 +127,7 @@ class Connector(BaseModel, abc.ABC):
     license: ClassVar[Optional["License"]] = None
     maturity: ClassVar[Optional["Maturity"]] = None
 
-    # Instance configuration 
+    # Instance configuration
 
     settings: ConnectorSettings
     """Settings for the connector set explicitly or loaded from a config file.
@@ -134,12 +177,25 @@ class Connector(BaseModel, abc.ABC):
 
     @classmethod
     def settings_model(cls) -> Type["Settings"]:
+        """Return the settings model backing the connector. 
+        
+        The effective type of the setting instance is defined by the type hint definitions of the 
+        `settings_model` and `settings` level attributes closest in definition to the target class.
+        """
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
 
     @classmethod
     def default_key_path(cls) -> str:
+        """
+        Returns the default key-path to the root of the configuration structure for the connector within
+        the namespace of the servo assembly.
+        
+        Key-paths are string identifiers that address nodes at arbitrary depth within the structure where
+        each component of the path is a valid Python symbol identifier and components are delimited by a
+        perioid (`.`) character, denoting that the subpath is a directly addressable child node the the parent.
+        """
         name = cls.__name__.replace("Connector", "")
         return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
@@ -157,9 +213,13 @@ class Connector(BaseModel, abc.ABC):
         command_name: Optional[str] = None,
         **kwargs,
     ):
-        config_key_path = config_key_path if config_key_path is not None else self.default_key_path()
+        config_key_path = (
+            config_key_path if config_key_path is not None else self.default_key_path()
+        )
         command_name = (
-            command_name if command_name is not None else config_key_path.rsplit(".", 1)[-1]
+            command_name
+            if command_name is not None
+            else config_key_path.rsplit(".", 1)[-1]
         )
         super().__init__(
             settings=settings,

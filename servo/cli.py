@@ -2,9 +2,8 @@ import json
 import shlex
 import subprocess
 import sys
-from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Type, Union
+from typing import List, Type, Union
 
 import typer
 import yaml
@@ -13,12 +12,12 @@ from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
-from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 from tabulate import tabulate
 
 from servo.connector import Optimizer
 from servo.servo import BaseServoSettings, Servo, ServoAssembly
 from servo.servo_runner import ServoRunner
+from servo.types import *
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -107,7 +106,6 @@ def root_callback(
     if token_file is not None and token_file.exists():
         token = token_file.read_text()
 
-    # TODO: this can be pushed to the optimizer model
     if len(token) == 0 or token.isspace():
         raise typer.BadParameter("token cannot be blank")
 
@@ -125,7 +123,7 @@ def root_callback(
 
     # FIXME: Update the settings of our pre-registered connectors
     for connector in connectors_to_update:
-        settings = getattr(servo.settings, connector.config_path)
+        settings = getattr(servo.settings, connector.config_key_path)
         connector.settings = settings
 
 
@@ -171,31 +169,6 @@ def info(
         table.append(row)
 
     typer.echo(tabulate(table, headers, tablefmt="plain"))
-
-
-# Common output formats
-YAML_FORMAT = "yaml"
-JSON_FORMAT = "json"
-DICT_FORMAT = "dict"
-HTML_FORMAT = "html"
-TEXT_FORMAT = "text"
-MARKDOWN_FORMAT = "markdown"
-
-
-class AbstractOutputFormat(str, Enum):
-    """Defines common behaviors for command specific output format enumerations"""
-
-    def lexer(self) -> Optional["pygments.Lexer"]:
-        if self.value == YAML_FORMAT:
-            return YamlLexer()
-        elif self.value == JSON_FORMAT:
-            return JsonLexer()
-        elif self.value == DICT_FORMAT:
-            return PythonLexer()
-        elif self.value == SettingsOutputFormat.text:
-            return None
-        else:
-            raise RuntimeError("no lexer configured for output format {self.value}")
 
 
 class SettingsOutputFormat(AbstractOutputFormat):

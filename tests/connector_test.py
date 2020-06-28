@@ -17,7 +17,7 @@ from servo.connector import (
     Optimizer,
     Version,
 )
-from servo.servo import BaseServoSettings, ServoAssembly, Servo
+from servo.servo import BaseServoSettings, Servo, ServoAssembly
 from tests.conftest import environment_overrides
 
 
