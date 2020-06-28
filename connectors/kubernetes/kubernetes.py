@@ -874,7 +874,7 @@ class KuberneteSettings(ConnectorSettings):
    class Config:
         # We are the base root of pluggable configuration
         # so we ignore any extra fields so you can turn connectors on and off
-        extra = Extra.ignore
+        extra = Extra.allow
 
 VERSION = '1.2'
 
