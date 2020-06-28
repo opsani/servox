@@ -2,6 +2,14 @@
 
 This repository contains the source code of the next generation Opsani Servo architecture.
 
+A servo is a software assembly deployed for the purposes of connecting an application to the
+Opsani cloud optimization engine in order to identify costs savings and performance optimizations
+by applying machine learning technology to its deployment and configuration. 
+
+
+
+This repository contains the source code of the next generation Opsani Servo architecture.
+
 Details about the design parameters of the implementation are detailed on the ServoX document available within the
 Opsani wiki resoures.
 

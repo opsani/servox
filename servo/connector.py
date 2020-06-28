@@ -57,15 +57,13 @@ class Optimizer(BaseSettings):
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
     """
 
-    def __init__(self, id: str = None, **kwargs):        
+    def __init__(self, id: str = None, **kwargs):
         if isinstance(id, str):
             org_domain, app_name = id.split("/")
         else:
             org_domain = kwargs.pop("org_domain", None)
             app_name = kwargs.pop("app_name", None)
-        super().__init__(
-            org_domain=org_domain, app_name=app_name, **kwargs
-        )
+        super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
 
     @property
     def id(self) -> str:
@@ -91,7 +89,21 @@ class Optimizer(BaseSettings):
 
 
 class ConnectorSettings(BaseSettings):
+    """
+    ConnectorSettings is the base configuration class for Opsani Servo Connectors.
+
+    ConnectorSettings instances are typically paired 1:1 with a Connector class
+    that inherits from `servo.connector.Connector` and provides the business logic
+    of the connector. Settings classes are configuration specific specific and designed
+    to be initialized from commandline arguments, environment variables, and defaults.
+    Connectors are initialized with a valid settings instance capable of providing necessary
+    configuration for the connector to function.
+    """
+
     description: Optional[str]
+    """An optional textual description of the configyuration stanza useful for differentiating
+    between configurations within assemblies.
+    """
 
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
@@ -122,11 +134,29 @@ class Connector(BaseModel, abc.ABC):
 
     # Connector metadata
     name: ClassVar[str] = None
+    """Name of the connector, by default derived from the class name.
+    """
+
     version: ClassVar["Version"] = None
+    """Semantic Versioning string of the connector.
+    """
+
     description: ClassVar[Optional[str]] = None
+    """Optional textual description of the connector.
+    """
+
     homepage: ClassVar[Optional[HttpUrl]] = None
+    """Link to the homepage of the connector.
+    """
+
     license: ClassVar[Optional["License"]] = None
+    """An enumerated value that identifies the license that the connector is distributed under.
+    """
+
     maturity: ClassVar[Optional["Maturity"]] = None
+    """An enumerated value that identifies the self-selected maturity level of the connector, provided for
+    advisory purposes.
+    """
 
     # Instance configuration
 
@@ -402,7 +432,9 @@ ENTRY_POINT_GROUP = "servo.connectors"
 
 
 class ConnectorLoader:
-    """Dynamically discover and load connectors via entry points"""
+    """
+    Dynamically discovers and loads connectors via Python setuptools entry points
+    """
 
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
         self.group = group

@@ -17,9 +17,8 @@ from servo.connector import (
     Optimizer,
     Version,
 )
-from servo.servo import BaseServoSettings, Servo, ServoAssembly
+from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
-from tests.test_helpers import MeasureConnector
 
 
 class TestOptimizer:
@@ -140,7 +139,7 @@ class TestServoSettings:
     def test_override_optimizer_settings_with_env_vars(self) -> None:
         with environment_overrides({"SERVO_OPTIMIZER_TOKEN": "abcdefg"}):
             assert os.environ["SERVO_OPTIMIZER_TOKEN"] is not None
-            optimizer = Optimizer(app_name='foo', org_domain='dsada.com')
+            optimizer = Optimizer(app_name="foo", org_domain="dsada.com")
             assert optimizer.token == "abcdefg"
 
     def test_set_connectors_with_env_vars(self) -> None:
