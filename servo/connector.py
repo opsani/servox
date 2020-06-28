@@ -57,13 +57,14 @@ class Optimizer(BaseSettings):
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
     """
 
-    def __init__(self, id: str = None, token: str = None, **kwargs):
-        org_domain = kwargs.pop("org_domain", None)
-        app_name = kwargs.pop("app_name", None)
-        if id:
+    def __init__(self, id: str = None, **kwargs):        
+        if isinstance(id, str):
             org_domain, app_name = id.split("/")
+        else:
+            org_domain = kwargs.pop("org_domain", None)
+            app_name = kwargs.pop("app_name", None)
         super().__init__(
-            org_domain=org_domain, app_name=app_name, token=token, **kwargs
+            org_domain=org_domain, app_name=app_name, **kwargs
         )
 
     @property

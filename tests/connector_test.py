@@ -19,16 +19,17 @@ from servo.connector import (
 )
 from servo.servo import BaseServoSettings, Servo, ServoAssembly
 from tests.conftest import environment_overrides
+from tests.test_helpers import MeasureConnector
 
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
-        optimizer = Optimizer("example.com/my-app", token="123456")
+        optimizer = Optimizer(id="example.com/my-app", token="123456")
         assert optimizer.org_domain == "example.com"
 
     def test_org_domain_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer("invalid/my-app", token="123456")
+            Optimizer(id="invalid/my-app", token="123456")
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("org_domain",)
         assert (
@@ -37,12 +38,12 @@ class TestOptimizer:
         )
 
     def test_app_name_valid(self) -> None:
-        optimizer = Optimizer("example.com/my-app", token="123456")
+        optimizer = Optimizer(id="example.com/my-app", token="123456")
         assert optimizer.app_name == "my-app"
 
     def test_app_name_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer("example.com/$$$invalid$$$", token="123456")
+            Optimizer(id="example.com/$$$invalid$$$", token="123456")
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("app_name",)
         assert (
@@ -52,14 +53,14 @@ class TestOptimizer:
 
     def test_token_validation(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer("example.com/my-app", token=None)
+            Optimizer(id="example.com/my-app", token=None)
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("token",)
         assert e.value.errors()[0]["msg"] == "none is not an allowed value"
 
     def test_base_url_validation(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer("example.com/my-app", token="123456", base_url="INVALID")
+            Optimizer(id="example.com/my-app", token="123456", base_url="INVALID")
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("base_url",)
         assert e.value.errors()[0]["msg"] == "invalid or missing URL scheme"
@@ -130,18 +131,17 @@ class TestServoSettings:
     def test_ignores_extra_attributes(self) -> None:
         # Ignored attribute would raise if misconfigured
         s = BaseServoSettings(
-            ignored=[], optimizer=Optimizer("example.com/my-app", token="123456")
+            ignored=[], optimizer=Optimizer(id="example.com/my-app", token="123456")
         )
         with pytest.raises(AttributeError) as e:
             s.ignored
         assert "'BaseServoSettings' object has no attribute 'ignored'" in str(e)
 
     def test_override_optimizer_settings_with_env_vars(self) -> None:
-        with environment_overrides({"SERVO_OPTIMIZER": '{"token": "abcdefg"}'}):
-            assert os.environ["SERVO_OPTIMIZER"] is not None
-            s = BaseServoSettings()
-            servo = Servo(settings=s, optimizer={"app_name": "my-app", "org_domain": "example.com"})
-            assert s.optimizer.token == "abcdefg"
+        with environment_overrides({"SERVO_OPTIMIZER_TOKEN": "abcdefg"}):
+            assert os.environ["SERVO_OPTIMIZER_TOKEN"] is not None
+            optimizer = Optimizer(app_name='foo', org_domain='dsada.com')
+            assert optimizer.token == "abcdefg"
 
     def test_set_connectors_with_env_vars(self) -> None:
         with environment_overrides({"SERVO_CONNECTORS": '["measure"]'}):
@@ -388,7 +388,7 @@ class TestServoAssembly:
         }
         servo_yaml.write_text(yaml.dump(config))
 
-        optimizer = Optimizer("dev.opsani.com/servox", token="1234556789")
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
