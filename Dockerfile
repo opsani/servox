@@ -13,6 +13,13 @@ ENV SERVO_ENV=${SERVO_ENV:-development} \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_CACHE_DIR='/var/cache/pypoetry'    
 
+RUN apt-get update \
+  && apt-get install -y apt-utils apt-transport-https gnupg2 \
+  && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
+  && echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list \
+  && apt-get update \
+  && apt-get install -y kubectl
+
 WORKDIR /servo
 
 COPY poetry.lock pyproject.toml ./
