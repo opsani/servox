@@ -8,6 +8,7 @@ Numeric = Union[int, float]
 
 class Unit(str, Enum):
     REQUESTS_PER_MINUTE = 'rpm'
+    REQUESTS_PER_SECOND = 'rps'
     PERCENTAGE = '%'
     MILLISECONDS = 'ms'
 
