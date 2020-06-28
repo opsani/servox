@@ -49,10 +49,6 @@ class Optimizer(BaseModel):
 class ConnectorSettings(BaseSettings):
     description: Optional[str]
 
-    # Optimizer we are communicating with
-    # TODO: This should be on base class
-    _optimizer: Optimizer
-
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -88,11 +84,23 @@ class Connector(BaseModel, abc.ABC):
     license: ClassVar[Optional["License"]] = None
     maturity: ClassVar[Optional["Maturity"]] = None
 
-    # Instance configuration
-    command_name: constr(regex=r"^[a-z\-]{4,16}$")
-    config_path: str
+    # Instance configuration 
+
     settings: ConnectorSettings
-    _logger: logger
+    """Settings for the connector set explicitly or loaded from a config file.
+    """
+
+    optimizer: Optional[Optimizer]
+    """Name of the command for interacting with the connector instance via the CLI.
+    """
+
+    config_key_path: str
+    """Key-path to the root of the connector's configuration.
+    """
+
+    command_name: constr(regex=r"^[a-z\-]{4,16}$")
+    """Name of the command for interacting with the connector instance via the CLI.
+    """
 
     @classmethod
     def all(cls) -> Set[Type["Connector"]]:
@@ -112,12 +120,12 @@ class Connector(BaseModel, abc.ABC):
         ), "version is not a semantic versioning descriptor"
         return v
 
-    @validator("config_path")
+    @validator("config_key_path")
     @classmethod
-    def validate_config_path(cls, v):
+    def validate_config_key_path(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{4,128}$", v)
-        ), "config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
 
     @classmethod
@@ -127,7 +135,7 @@ class Connector(BaseModel, abc.ABC):
         return settings_cls
 
     @classmethod
-    def default_path(cls) -> str:
+    def default_key_path(cls) -> str:
         name = cls.__name__.replace("Connector", "")
         return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
@@ -141,17 +149,17 @@ class Connector(BaseModel, abc.ABC):
         self,
         settings: ConnectorSettings,
         *,
-        config_path: Optional[str] = None,
+        config_key_path: Optional[str] = None,
         command_name: Optional[str] = None,
         **kwargs,
     ):
-        config_path = config_path if config_path is not None else self.default_path()
+        config_key_path = config_key_path if config_key_path is not None else self.default_key_path()
         command_name = (
-            command_name if command_name is not None else config_path.rsplit(".", 1)[-1]
+            command_name if command_name is not None else config_key_path.rsplit(".", 1)[-1]
         )
         super().__init__(
             settings=settings,
-            config_path=config_path,
+            config_key_path=config_key_path,
             command_name=command_name,
             **kwargs,
         )

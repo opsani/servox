@@ -110,12 +110,12 @@ class TestConnector:
 
         assert TestConnector.version == "0.0.0"
 
-    def test_default_path(self) -> None:
+    def test_default_key_path(self) -> None:
         class FancyConnector(Connector):
             pass
 
         c = FancyConnector(ConnectorSettings())
-        assert c.config_path == "fancy"
+        assert c.config_key_path == "fancy"
 
 
 class TestSettings:
@@ -270,7 +270,7 @@ class TestServoSettings:
         )
         assert s.connectors == {"alias": "connectors.vegeta.vegeta.VegetaConnector"}
 
-    def test_connectors_allows_dict_with_explicit_map_to_default_path(self):
+    def test_connectors_allows_dict_with_explicit_map_to_default_key_path(self):
         s = BaseServoSettings(
             optimizer={
                 "app_name": "my-app",
@@ -345,7 +345,7 @@ class TestServoSettings:
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'Key "This Is Not Valid" is not valid: config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+            == 'Key "This Is Not Valid" is not valid: key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
         )
 
     def test_connectors_rejects_invalid_connector_dict_values(self):
@@ -681,20 +681,20 @@ def test_init_connector_no_name_raises() -> None:
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
-def test_vegeta_default_path() -> None:
+def test_vegeta_default_key_path() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
     connector = VegetaConnector(settings)
-    assert connector.config_path == "vegeta"
+    assert connector.config_key_path == "vegeta"
 
 
 def test_vegeta_config_override() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings, config_path="monkey")
-    assert connector.config_path == "monkey"
+    connector = VegetaConnector(settings, config_key_path="monkey")
+    assert connector.config_key_path == "monkey"
 
 
 def test_vegeta_id_invalid() -> None:
@@ -702,11 +702,11 @@ def test_vegeta_id_invalid() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(settings, config_path="THIS IS NOT COOL")
+        connector = VegetaConnector(settings, config_key_path="THIS IS NOT COOL")
     assert "2 validation errors for VegetaConnector" in str(e.value)
     assert (
-        e.value.errors()[1]["msg"]
-        == "config_path may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        e.value.errors()[0]["msg"]
+        == "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
     )
 
 

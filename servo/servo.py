@@ -151,7 +151,7 @@ class ServoAssembly(BaseModel):
             # settings on the connectors not being fully configured
             args = kwargs.copy()
             for c in cls.all_connectors():
-                args[c.default_path()] = c.settings_model().construct()
+                args[c.default_key_path()] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
 
         # Initialize all active connectors
@@ -189,7 +189,7 @@ class ServoAssembly(BaseModel):
     def default_routes(cls) -> Dict[str, Type[Connector]]:
         routes = {}
         for connector in cls.all_connectors():
-            mounts[connector.default_path()] = connector
+            mounts[connector.default_key_path()] = connector
         return routes
 
     @classmethod
@@ -278,11 +278,11 @@ def _create_settings_model(
         setting_fields = {}
         for c in Connector.all():
             if c is not Servo:
-                setting_fields[c.default_path()] = (c.settings_model(), None)
-                key_paths_to_settings_type_names[c.default_path()] = _module_path(
+                setting_fields[c.default_key_path()] = (c.settings_model(), None)
+                key_paths_to_settings_type_names[c.default_key_path()] = _module_path(
                     c.settings_model()
                 )  # RENAME: module types
-                key_paths_to_connector_types[c.default_path()] = c
+                key_paths_to_connector_types[c.default_key_path()] = c
 
     # Create our model
     servo_settings_model = create_model(
@@ -314,7 +314,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Check if the string is an identifier for a connector
     for connector_class in ServoAssembly.all_connectors():
-        if connector == connector_class.default_path() or connector in [
+        if connector == connector_class.default_key_path() or connector in [
             connector_class.__name__,
             connector_class.__qualname__,
         ]:
@@ -364,9 +364,9 @@ def _routes_for_connectors_descriptor(connectors):
         connector_routes: Dict[str, str] = {}
         for connector in connectors:
             if _validate_class(connector):
-                connector_routes[connector.default_path()] = connector
+                connector_routes[connector.default_key_path()] = connector
             elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.default_path()] = connector_class
+                connector_routes[connector_class.default_key_path()] = connector_class
             else:
                 raise ValueError(f"Missing validation for value {connector}")
 
@@ -383,7 +383,7 @@ def _routes_for_connectors_descriptor(connectors):
 
             # Validate the key format
             try:
-                Connector.validate_config_path(config_path)
+                Connector.validate_config_key_path(config_path)
             except AssertionError as e:
                 raise ValueError(f'Key "{config_path}" is not valid: {e}') from e
 
@@ -425,5 +425,5 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     routes = {}
     for connector in Connector.all():
         if connector is not Servo:
-            routes[connector.default_path()] = connector
+            routes[connector.default_key_path()] = connector
     return routes
