@@ -21,7 +21,7 @@ from pydantic import (
 )
 import durationpy
 import servo
-from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity, logger
+from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity
 from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
 from servo.utilities import DurationProgress
 import subprocess
@@ -292,24 +292,24 @@ class VegetaConnector(Connector):
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?
         if control.delay > 0:
-            logger.info(f'DELAY: sleeping {control.delay} seconds')
+            self.logger.info(f'DELAY: sleeping {control.delay} seconds')
             time.sleep(control.delay)
 
         self.warmup_until = datetime.now() + timedelta(seconds=control.warmup)
         
         number_of_urls = 1 if self.settings.target else _number_of_lines_in_file(self.settings.targets)
         summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.settings.rate}"
-        logger.info(summary)
+        self.logger.info(summary)
 
         # Run the load generation
         exit_code, command = self._run_vegeta()
         
-        logger.info(f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports")
+        self.logger.info(f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports")
         readings = self._time_series_readings_from_vegeta_reports() if self.vegeta_reports else []
         measurement = Measurement(readings=readings, annotations={
             'load_profile': summary,
         })
-        logger.trace(f"Reporting time series metrics {pformat(measurement)}")
+        self.logger.trace(f"Reporting time series metrics {pformat(measurement)}")
 
         return measurement
 
@@ -339,7 +339,7 @@ class VegetaConnector(Connector):
         echo_args = ['echo', f"{self.settings.target}"]
         echo_cmd = f'echo "{self.settings.target}" | ' if self.settings.target else ''
         vegeta_cmd = echo_cmd + ' '.join(vegeta_attack_args) + ' | ' + ' '.join(vegeta_report_args)
-        logger.debug("Vegeta started: ", vegeta_cmd)
+        self.logger.debug("Vegeta started: ", vegeta_cmd)
 
         # If we are loading a single target, we need to connect an echo proc into Vegeta stdin
         echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if self.settings.target else None
@@ -366,9 +366,9 @@ class VegetaConnector(Connector):
 
                     self.vegeta_reports.append(vegeta_report)
                     summary = self._summarize_report(vegeta_report)
-                    logger.info(progress.annotate(summary))
+                    self.logger.info(progress.annotate(summary))
                 else:
-                    logger.debug(f"Vegeta metrics excluded (warmup in effect): {metrics}")
+                    self.logger.debug(f"Vegeta metrics excluded (warmup in effect): {metrics}")
             
             if report_proc.poll() is not None:
                 # Child process has exited, stop polling
@@ -379,7 +379,7 @@ class VegetaConnector(Connector):
             error = report_proc.stderr.readline()
             logger.error(f"Vegeta exited with exit code {exit_code}: error: {error}")
 
-        logger.debug(f"Vegeta exited with exit code: {exit_code}")
+        self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
 
         return exit_code, vegeta_cmd
 

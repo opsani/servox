@@ -9,7 +9,7 @@ import httpx
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
-from servo.connector import Optimizer, logger
+from servo.connector import Optimizer
 from servo.servo import BaseServoSettings, Servo
 from servo.types import Control, Description, Measurement
 

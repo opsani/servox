@@ -15,7 +15,7 @@ import yaml
 from dotenv import load_dotenv
 
 from servo.cli import cli, connectors_to_update
-from servo.connector import ConnectorLoader, logger
+from servo.connector import ConnectorLoader
 from servo.servo import _default_routes, _routes_for_connectors_descriptor
 
 

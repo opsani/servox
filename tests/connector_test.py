@@ -16,6 +16,7 @@ from servo.connector import (
     Maturity,
     Optimizer,
     Version,
+    event
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
@@ -1016,6 +1017,40 @@ def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> N
 def test_vegeta_cli_loadgen(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     pass
 
+class TestConnectorEvents:
+    class FakeConnector(Connector):
+        @event()
+        def example_event(self) -> None:
+            pass
+    
+    class AnotherFakeConnector(FakeConnector):
+        @event()
+        def another_example_event(self) -> None:
+            pass
+    
+    def test_event_registration(self) -> None:
+        events = TestConnectorEvents.FakeConnector.__events__
+        assert events is not None
+        event = events['example_event']
+        assert event is not None
+    
+    def test_event_inheritance(self) -> None:
+        events = TestConnectorEvents.AnotherFakeConnector.__events__
+        assert events is not None
+        event = events['example_event']
+        assert event is not None
+    
+    def test_responds_to_event(self) -> None:
+        assert TestConnectorEvents.FakeConnector.responds_to_event('example_event')
+        assert not TestConnectorEvents.FakeConnector.responds_to_event('another_example_event')
+    
+    def test_responds_to_event_subclassing(self) -> None:
+        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('example_event')
+        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('another_example_event')
+    
+    # TODO: test event signature matches
+    def test_event_dispatch(self) -> None:
+        pass
 
 # def test_loading_optimizer_from_environment() -> None:
 #     with environment_overrides({

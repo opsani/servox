@@ -3,13 +3,25 @@ import json
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Generator, Optional, Set, Type, get_type_hints
+from typing import (
+    Any, 
+    ClassVar, 
+    Generator, 
+    Optional, 
+    Set, 
+    Type, 
+    get_type_hints, 
+    TypeVar, 
+    Callable,
+    Dict
+)
 
 import httpx
 import semver
 import typer
 import yaml
-from loguru import logger
+import logging
+import loguru
 from pkg_resources import EntryPoint, iter_entry_points
 from pydantic import (
     BaseModel,
@@ -21,6 +33,7 @@ from pydantic import (
     root_validator,
     validator,
 )
+from pydantic.fields import ModelField
 
 
 class Optimizer(BaseSettings):
@@ -108,8 +121,12 @@ class ConnectorSettings(BaseSettings):
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+
+        # Set default environment variable names
+        # TODO: we can probably just use env_name
         for name, field in cls.__fields__.items():
             field.field_info.extra["env_names"] = {f"SERVO_{name}".upper()}
+        
 
     class Config:
         env_prefix = "SERVO_"
@@ -124,12 +141,16 @@ class ConnectorSettings(BaseSettings):
         }
 
 
+EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
+
+
 class Connector(BaseModel, abc.ABC):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
 
     # Global registry of all available connectors
+    # TODO: implementation detail, scrub from public API
     __subclasses: ClassVar[Set[Type["Connector"]]] = set()
 
     # Connector metadata
@@ -229,6 +250,13 @@ class Connector(BaseModel, abc.ABC):
         """
         name = cls.__name__.replace("Connector", "")
         return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    
+    @classmethod
+    def responds_to_event(cls, name: str) -> bool:
+        """
+        Returns True if the Connector responds to the given event name
+        """
+        return cls.__events__.get(name, False)
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -236,6 +264,20 @@ class Connector(BaseModel, abc.ABC):
         cls.version = semver.VersionInfo.parse("0.0.0")
         cls.__subclasses.add(cls)
 
+        # Create the event registry if it doesn't exist
+        # if not hasattr(cls, '__events__'):
+        #     cls.__events__ = {}
+        cls.__events__ = getattr(cls, '__events__', {}).copy()
+        
+        # Register events for all annotated methods (see `event` decorator)
+        for key, value in cls.__dict__.items():                
+            if v := getattr(value, '__connector_event__', None):
+                if not isinstance(v, EventDescriptor):
+                    raise TypeError(f"Unexpected event descriptor of type '{f.__class__}'")
+
+                cls.__events__[key] = v
+                
+        
     def __init__(
         self,
         settings: ConnectorSettings,
@@ -260,17 +302,31 @@ class Connector(BaseModel, abc.ABC):
         )
 
     ##
+    # Events
+
+    # TODO: Gather all responses into a collection
+    def dispatch_event(self, name: str, *args, **kwargs):
+        pass
+    
+    def invoke_event(self, name: str, target: 'Connector', *args, **kwargs):
+        pass
+
+    ##
     # Subclass services
 
+    # TODO: ServoRunner should use this?
     async def api_client(self) -> httpx.AsyncClient:
         """Yields an httpx.AsyncClient instance configured to talk to Opsani API"""
         async with httpx.AsyncClient() as client:
             yield client
 
-    def logger(self) -> logger:
+    @property
+    def logger(self) -> logging.Logger:
         """Returns the logger"""
-        return self._logger
+        return loguru.logger
 
+    # TODO: Do we need this?
+    @property
     def cli(self) -> Optional[typer.Typer]:
         """Returns a Typer CLI for the connector"""
         return None
@@ -333,6 +389,9 @@ def metadata(
     """Decorate a Connector class with metadata"""
 
     def decorator(cls):
+        if not issubclass(cls, Connector):
+            raise TypeError("Metadata can only be attached to Connector subclasses")
+
         if name:
             cls.name = name
         if description:
@@ -353,9 +412,25 @@ def metadata(
 
     return decorator
 
+class EventDescriptor(BaseModel):
+    name: str
+    kwargs: Dict[str, Any]
+        
+def event(**kwargs):
+    """
+    Registers an event on the Connector
+    """
+    def decorator(fn: EventFunctionType) -> EventFunctionType:
+        # Annotate the function for processing later, see Connector.__init_subclass__
+        fn.__connector_event__ = EventDescriptor(
+            name=fn.__name__,
+            kwargs=kwargs
+        )
+        return fn
+
+    return decorator
 
 #####
-
 
 class ConnectorCLI(typer.Typer):
     connector: Connector
@@ -378,6 +453,7 @@ class ConnectorCLI(typer.Typer):
             # TODO: Support output formats (dict, json, yaml)...
             typer.echo(self.connector.settings.schema_json(indent=2))
 
+        # TODO: Test on servo and on connector
         @self.command()
         def generate():
             """Generate a configuration file"""
