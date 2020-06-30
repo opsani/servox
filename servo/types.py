@@ -109,6 +109,11 @@ class Measurement(BaseModel):
         return dict(metrics=readings, annotations=self.annotations)
 
 
+class CheckResult(BaseModel):
+    name: str
+    success: bool
+    comment: Optional[str]
+
 # Common output formats
 YAML_FORMAT = "yaml"
 JSON_FORMAT = "json"

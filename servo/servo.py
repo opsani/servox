@@ -28,6 +28,7 @@ class Events(str, Enum):
     Defines the standard Servo events.
     """
 
+    CHECK = "check"
     DESCRIBE = "describe"
     MEASURE = "measure"
     ADJUST = "adjust"

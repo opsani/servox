@@ -18,7 +18,7 @@ import yaml
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
 from servo.cli import ConnectorCLI
-from servo.types import Component, Setting, Description
+from servo.types import Component, Setting, Description, CheckResult
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
 
@@ -949,7 +949,6 @@ class KubernetesConnector(Connector):
         namespace = 'default'
         result = query(namespace, desc)        
         components = descriptor_to_components(result['application']['components'])
-        
         return Description(components=components)
 
     @event()
@@ -964,6 +963,16 @@ class KubernetesConnector(Connector):
         namespace = 'default'
         r = update(namespace, desc, data, self._progress)
         return r
+    
+    @event()
+    def check(self) -> CheckResult:
+        try:
+            self.describe()
+        except Exception as e:
+            return CheckResult(name="Connect to Kubernetes", success=False, comment=str(e))
+        
+        return CheckResult(name="Connect to Kubernetes", success=True, comment="")
+
 
 def descriptor_to_components(descriptor: dict) -> List[Component]:
     components = []

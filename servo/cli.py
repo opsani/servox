@@ -90,8 +90,18 @@ class SharedCommandsMixin:
             """Check the health of the assembly"""
             # TODO: Requires a config file
             # TODO: Run checks for all active connectors (or pick them)
-            typer.echo("Not yet implemented.", err=True)
-            raise typer.Exit(2)
+            results: List[EventResult] = self.servo.dispatch_event(
+                Events.CHECK, include=self.connectors
+            )
+            headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
+            table = []
+            for result in results:
+                check: CheckResult = result.value
+                status = "√ PASSED" if check.success else "X FAILED"
+                row = [result.connector.name, check.name, status, check.comment]
+                table.append(row)
+            
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         @self.command()
         def describe() -> None:
