@@ -143,15 +143,39 @@ class ConnectorSettings(BaseSettings):
 
 EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
 
+class EventResult(BaseModel):
+    """
+    Encapsulates the result of a dispatched Connector event
+    """
+    connector: 'Connector'
+    event: str
+    value: Any
 
-class Connector(BaseModel, abc.ABC):
+from pydantic.main import ModelMetaclass
+
+# NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
+_is_base_connector_class_defined = False
+
+class ConnectorMetaclass(ModelMetaclass):
+    def __new__(mcs, name, bases, namespace, **kwargs):
+        # Decorate the class with an event registry, inheriting from our parent connectors
+        events: Dict[str, 'EventDescriptor'] = {}
+
+        for base in reversed(bases):
+            if _is_base_connector_class_defined and issubclass(base, Connector) and base is not Connector:
+                events.update(base.__events__)
+
+        new_namespace = {
+            '__events__': events,
+            **{n: v for n, v in namespace.items()},
+        }
+        cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
+        return cls
+
+class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
-
-    # Global registry of all available connectors
-    # TODO: implementation detail, scrub from public API
-    __subclasses: ClassVar[Set[Type["Connector"]]] = set()
 
     # Connector metadata
     name: ClassVar[str] = None
@@ -197,14 +221,17 @@ class Connector(BaseModel, abc.ABC):
     """Key-path to the root of the connector's configuration.
     """
 
-    command_name: constr(regex=r"^[a-z\-]{4,16}$")
+    command_name: constr(regex=r"^[a-z\-\_]{3,32}$")
     """Name of the command for interacting with the connector instance via the CLI.
     """
 
     @classmethod
     def all(cls) -> Set[Type["Connector"]]:
         """Return a set of all Connector subclasses"""
-        return cls.__subclasses
+        return cls.__connectors__
+    
+    ##
+    # Configuration
 
     @root_validator(pre=True)
     @classmethod
@@ -223,7 +250,7 @@ class Connector(BaseModel, abc.ABC):
     @classmethod
     def validate_config_key_path(cls, v):
         assert bool(
-            re.match("^[0-9a-zA-Z-_/\\.]{4,128}$", v)
+            re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
         ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
 
@@ -237,46 +264,59 @@ class Connector(BaseModel, abc.ABC):
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
+    
+    ##
+    # Events
 
     @classmethod
-    def default_key_path(cls) -> str:
+    def responds_to_event(cls, event: str) -> bool:
         """
-        Returns the default key-path to the root of the configuration structure for the connector within
-        the namespace of the servo assembly.
+        Returns True if the Connector processes the specified event.
+        """
+        return bool(cls.__events__.get(event, False))
+
+    def process_event(self, event: str, *args, **kwargs) -> Optional[EventResult]:
+        """
+        Process an event and return the result.
+        Return None if the connector does not respond to the event.
+        """
+        if not self.responds_to_event(event):
+            return None
         
-        Key-paths are string identifiers that address nodes at arbitrary depth within the structure where
-        each component of the path is a valid Python symbol identifier and components are delimited by a
-        perioid (`.`) character, denoting that the subpath is a directly addressable child node the the parent.
-        """
-        name = cls.__name__.replace("Connector", "")
-        return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        event_fn = getattr(self, event, None)
+        if not callable(event_fn):
+            raise ValueError("Encountered a non-callable handler for event '{event}'")
+        
+        value = event_fn(*args, **kwargs)
+        return EventResult(
+            connector=self,
+            event=event,
+            value=value
+        )
     
-    @classmethod
-    def responds_to_event(cls, name: str) -> bool:
-        """
-        Returns True if the Connector responds to the given event name
-        """
-        return cls.__events__.get(name, False)
+
+    # subclass registry of connectors
+    __connectors__: Set[Type["Connector"]] = set()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls.name = cls.__name__.replace("Connector", " Connector")
-        cls.version = semver.VersionInfo.parse("0.0.0")
-        cls.__subclasses.add(cls)
 
-        # Create the event registry if it doesn't exist
-        # if not hasattr(cls, '__events__'):
-        #     cls.__events__ = {}
-        cls.__events__ = getattr(cls, '__events__', {}).copy()
+        cls.__connectors__.add(cls)
+        cls.__key_path__ = _key_path_for_connector_class(cls)
+        
+        cls.name = cls.__name__.replace("Connector", " Connector")
+        cls.version = semver.VersionInfo.parse("0.0.0")                
         
         # Register events for all annotated methods (see `event` decorator)
         for key, value in cls.__dict__.items():                
             if v := getattr(value, '__connector_event__', None):
                 if not isinstance(v, EventDescriptor):
-                    raise TypeError(f"Unexpected event descriptor of type '{f.__class__}'")
+                    raise TypeError(f"Unexpected event descriptor of type '{v.__class__}'")
+
+                if cls.__events__.get(key, None):
+                    raise ValueError(f"Duplicate event handler registered for event '{key}'")
 
                 cls.__events__[key] = v
-                
         
     def __init__(
         self,
@@ -287,12 +327,12 @@ class Connector(BaseModel, abc.ABC):
         **kwargs,
     ):
         config_key_path = (
-            config_key_path if config_key_path is not None else self.default_key_path()
+            config_key_path if config_key_path is not None else self.__class__.__key_path__
         )
         command_name = (
             command_name
             if command_name is not None
-            else config_key_path.rsplit(".", 1)[-1]
+            else _command_name_from_config_key_path(config_key_path)
         )
         super().__init__(
             settings=settings,
@@ -300,16 +340,6 @@ class Connector(BaseModel, abc.ABC):
             command_name=command_name,
             **kwargs,
         )
-
-    ##
-    # Events
-
-    # TODO: Gather all responses into a collection
-    def dispatch_event(self, name: str, *args, **kwargs):
-        pass
-    
-    def invoke_event(self, name: str, target: 'Connector', *args, **kwargs):
-        pass
 
     ##
     # Subclass services
@@ -331,6 +361,16 @@ class Connector(BaseModel, abc.ABC):
         """Returns a Typer CLI for the connector"""
         return None
 
+_is_base_connector_class_defined = True
+EventResult.update_forward_refs()
+
+def _key_path_for_connector_class(cls: Type[Connector]) -> str:
+    name = re.sub(r"Connector$", "", cls.__name__)
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+def _command_name_from_config_key_path(key_path: str) -> str:
+    # foo.bar.this_key => this-key
+    return key_path.split('.', 1)[-1].replace('_', '-').lower()
 
 class License(Enum):
     """Defined licenses"""

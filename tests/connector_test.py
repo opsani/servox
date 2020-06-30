@@ -16,11 +16,12 @@ from servo.connector import (
     Maturity,
     Optimizer,
     Version,
-    event
+    event,
+    EventResult
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
-
+from tests.test_helpers import MeasureConnector
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -314,7 +315,7 @@ class TestServoSettings:
 
         loader = ConnectorLoader()
         for connector in loader.load():
-            print("Loaded ", connector)
+            pass
 
     def test_connectors_forbids_dict_with_reserved_key(self):
         with pytest.raises(ValidationError) as e:
@@ -366,18 +367,126 @@ class TestServoSettings:
 
 
 class TestServo:
+    class FirstTestServoConnector(Connector):
+        @event()
+        def this_is_an_event(self) -> str:
+            return 'this is the result'
+    
+    class SecondTestServoConnector(Connector):
+        @event()
+        def this_is_an_event(self) -> str:
+            return 'this is a different result'
+        
+        @event()
+        def another_event(self) -> None:
+            pass
+
     def test_init_with_optimizer(self) -> None:
         pass
 
     def test_all_connectors(self) -> None:
-        class FooConnector(Connector):
-            pass
-
         c = ServoAssembly.construct().all_connectors()
-        assert FooConnector in c
+        assert TestServo.FirstTestServoConnector in c
+    
+    def test_dispatch_event(self, servo_yaml: Path) -> None:
+        config = {
+            "connectors": ['first_test_servo', 'second_test_servo'],
+            "first_test_servo": {},
+            "second_test_servo": {}
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        results = servo.dispatch_event('this_is_an_event')
+        assert len(results) == 2
+        assert results[0].value == 'this is the result'
+    
+    def test_dispatch_event_first(self, servo_yaml: Path) -> None:
+        config = {
+            "connectors": ['first_test_servo', 'second_test_servo'],
+            "first_test_servo": {},
+            "second_test_servo": {}
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        result = servo.dispatch_event('this_is_an_event', first=True)
+        assert isinstance(result, EventResult)
+        assert result.value == 'this is the result'
+    
+    def test_dispatch_event_include(self, servo_yaml: Path) -> None:
+        config = {
+            "connectors": ['first_test_servo', 'second_test_servo'],
+            "first_test_servo": {},
+            "second_test_servo": {}
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        first_connector = servo.connectors[0]
+        assert first_connector.name == 'FirstTestServo Connector'
+        results = servo.dispatch_event('this_is_an_event', include=[first_connector])
+        assert len(results) == 1
+        assert results[0].value == 'this is the result'
+    
+    def test_dispatch_event_exclude(self, servo_yaml: Path) -> None:
+        config = {
+            "connectors": ['first_test_servo', 'second_test_servo'],
+            "first_test_servo": {},
+            "second_test_servo": {}
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        assert len(servo.connectors) == 2
+        first_connector = servo.connectors[0]
+        assert first_connector.name == 'FirstTestServo Connector'
+        second_connector = servo.connectors[1]
+        assert second_connector.name == 'SecondTestServo Connector'
+        debug(first_connector.__events__, second_connector.__events__)
+        assert second_connector.__events__['this_is_an_event'], "Expected event is not registered"
+        results = servo.dispatch_event('this_is_an_event', exclude=[first_connector])
+        assert len(results) == 1
+        assert results[0].value == 'this is a different result'
+        assert results[0].connector == second_connector
 
 
 class TestServoAssembly:
+    def test_warning_ambiguous_connectors(self) -> None:
+        # TODO: This can be very hard to debug
+        pass
+
+    def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
+        config = {
+            "connectors": {"vegeta": "vegeta"},
+            "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        connector = servo.connectors[0]
+        assert connector.optimizer == optimizer
+
     def test_aliased_connectors_get_distinct_env_configuration(
         self, servo_yaml: Path
     ) -> None:
@@ -1021,12 +1130,20 @@ class TestConnectorEvents:
     class FakeConnector(Connector):
         @event()
         def example_event(self) -> None:
-            pass
+            return 12345
     
     class AnotherFakeConnector(FakeConnector):
         @event()
-        def another_example_event(self) -> None:
-            pass
+        def another_example_event(self) -> str:
+            return 'example_event'
+    
+    def test_command_name_for_nested_connectors(self) -> None:
+        settings = ConnectorSettings.construct()
+        connector = TestConnectorEvents.FakeConnector(settings=settings)
+        assert connector.command_name == "fake"
+
+        connector = TestConnectorEvents.AnotherFakeConnector(settings=settings)
+        assert connector.command_name == "another-fake"
     
     def test_event_registration(self) -> None:
         events = TestConnectorEvents.FakeConnector.__events__
@@ -1048,9 +1165,20 @@ class TestConnectorEvents:
         assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('example_event')
         assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('another_example_event')
     
-    # TODO: test event signature matches
-    def test_event_dispatch(self) -> None:
-        pass
+    def test_event_invoke(self) -> None:
+        settings = ConnectorSettings.construct()
+        connector = TestConnectorEvents.FakeConnector(settings=settings)
+        result = connector.process_event('example_event')
+        assert result is not None
+        assert result.event == 'example_event'
+        assert result.connector == connector
+        assert result.value == 12345
+    
+    def test_event_invoke_not_supported(self) -> None:
+        settings = ConnectorSettings.construct()
+        connector = TestConnectorEvents.FakeConnector(settings=settings)
+        result = connector.process_event('unknown_event')
+        assert result is None
 
 # def test_loading_optimizer_from_environment() -> None:
 #     with environment_overrides({

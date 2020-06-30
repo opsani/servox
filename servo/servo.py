@@ -2,7 +2,7 @@ import importlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Type
+from typing import Any, Dict, List, Optional, Set, Type, Union
 
 import typer
 import yaml
@@ -18,6 +18,8 @@ from servo.connector import (
     Maturity,
     Optimizer,
     metadata,
+    event,
+    EventResult
 )
 
 
@@ -58,19 +60,55 @@ class BaseServoSettings(ConnectorSettings):
     license=License.APACHE2,
 )
 class Servo(Connector):
-    """The Servo"""
+    """
+    The Servo
+    """
 
     settings: BaseServoSettings
+    """Settings for the Servo.
+
+    Note that the Servo settings are dynamically built at Servo assembly time.
+    The concrete 
+    """
+
     connectors: List[Connector] = []
+    """The active connectors within the Servo.
+    """
 
     ##
     # Event processing
 
-    def send_event(self, event: str, payload: Dict[str, Any]) -> None:
-        """Dispatch an event"""
+    def dispatch_event(self, 
+        event: str, 
+        *args, 
+        first:bool = False,
+        all:bool = False,
+        include:Optional[List[Connector]] = None,
+        exclude:Optional[List[Connector]] = None,
+        **kwargs
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Dispatches an event to active connectors for processing and returns the results.
 
-    def handle_event(self, event: str, payload: Dict[str, Any]) -> None:
-        """Handle an event"""
+        :param first: When True, halt dispatch and return the result from the first connector that responds.
+        :param all: When True, the event is dispatched to all connectors available rather than the active ones.
+        :param include: A list of specific connectors to dispatch the event to.
+        :param exclude: A list of specific connectors to exclude from event dispatch.
+        """
+        if all:
+            raise RuntimeError("Not yet implemented.")
+        results: List[EventResult] = []
+        connectors = include if include is not None else self.connectors
+        if exclude:
+            connectors = list(filter(lambda c: c not in exclude, connectors))
+        for connector in connectors:
+            result = connector.process_event(event, *args, **kwargs)
+            if result is not None:
+                if first:
+                    return result
+                results.append(result)
+        
+        return results
 
     ##
     # Misc
@@ -123,7 +161,8 @@ class ServoAssembly(BaseModel):
 
         _discover_connectors()
         ServoSettings, connector_type_routes = _create_settings_model(
-            config_file=config_file, env=env
+            config_file=config_file,
+            env=env
         )
 
         # Build our Servo settings instance from the config file + environment
@@ -142,7 +181,7 @@ class ServoAssembly(BaseModel):
             # settings on the connectors not being fully configured
             args = kwargs.copy()
             for c in cls.all_connectors():
-                args[c.default_key_path()] = c.settings_model().construct()
+                args[c.__key_path__] = c.settings_model().construct()
             settings = ServoSettings(optimizer=optimizer, **args)
 
         # Initialize all active connectors
@@ -151,7 +190,7 @@ class ServoAssembly(BaseModel):
             connector_settings = getattr(settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
-                connector = connector_type(connector_settings)
+                connector = connector_type(connector_settings, optimizer=optimizer)
                 connectors.append(connector)
 
         # Build the servo object
@@ -178,7 +217,7 @@ class ServoAssembly(BaseModel):
     def default_routes(cls) -> Dict[str, Type[Connector]]:
         routes = {}
         for connector in cls.all_connectors():
-            mounts[connector.default_key_path()] = connector
+            mounts[connector.__key_path__] = connector
         return routes
 
     @classmethod
@@ -267,11 +306,11 @@ def _create_settings_model(
         setting_fields = {}
         for c in Connector.all():
             if c is not Servo:
-                setting_fields[c.default_key_path()] = (c.settings_model(), None)
-                key_paths_to_settings_type_names[c.default_key_path()] = _module_path(
+                setting_fields[c.__key_path__] = (c.settings_model(), None)
+                key_paths_to_settings_type_names[c.__key_path__] = _module_path(
                     c.settings_model()
                 )
-                key_paths_to_connector_types[c.default_key_path()] = c
+                key_paths_to_connector_types[c.__key_path__] = c
 
     # Create our model
     servo_settings_model = create_model(
@@ -304,7 +343,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Check if the string is an identifier for a connector
     for connector_class in ServoAssembly.all_connectors():
-        if connector == connector_class.default_key_path() or connector in [
+        if connector == connector_class.__key_path__ or connector in [
             connector_class.__name__,
             connector_class.__qualname__,
         ]:
@@ -354,9 +393,9 @@ def _routes_for_connectors_descriptor(connectors):
         connector_routes: Dict[str, str] = {}
         for connector in connectors:
             if _validate_class(connector):
-                connector_routes[connector.default_key_path()] = connector
+                connector_routes[connector.__key_path__] = connector
             elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.default_key_path()] = connector_class
+                connector_routes[connector_class.__key_path__] = connector_class
             else:
                 raise ValueError(f"Missing validation for value {connector}")
 
@@ -402,12 +441,13 @@ def _routes_for_connectors_descriptor(connectors):
             f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
         )
 
+RESERVED_KEYS = ["connectors", "control", "measure", "adjust"]
 
 def _reserved_keys() -> List[str]:
     reserved_keys = list(_default_routes().keys())
     reserved_keys.extend(
-        ["connectors", "control", "measure", "adjust"]
-    )  # TODO: make this a constant...
+        RESERVED_KEYS
+    )
     return reserved_keys
 
 
@@ -415,5 +455,5 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     routes = {}
     for connector in Connector.all():
         if connector is not Servo:
-            routes[connector.default_key_path()] = connector
+            routes[connector.__key_path__] = connector
     return routes

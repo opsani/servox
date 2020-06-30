@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
+from loguru import logger
 
 from servo.cli import cli, connectors_to_update
 from servo.connector import ConnectorLoader
