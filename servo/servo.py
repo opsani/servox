@@ -1,9 +1,9 @@
 import importlib
 import json
 import os
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type, Union
-from enum import Enum
 
 import typer
 import yaml
@@ -15,12 +15,11 @@ from servo.connector import (
     Connector,
     ConnectorLoader,
     ConnectorSettings,
+    EventResult,
     License,
     Maturity,
     Optimizer,
     metadata,
-    event,
-    EventResult
 )
 
 
@@ -28,10 +27,11 @@ class Events(str, Enum):
     """
     Defines the standard Servo events.
     """
-    DESCRIBE = 'describe'
-    MEASURE = 'measure'
-    ADJUST = 'adjust'
-    PROMOTE = 'promote'
+
+    DESCRIBE = "describe"
+    MEASURE = "measure"
+    ADJUST = "adjust"
+    PROMOTE = "promote"
 
 
 class BaseServoSettings(ConnectorSettings):
@@ -48,7 +48,7 @@ class BaseServoSettings(ConnectorSettings):
     """A map of connector key-paths to fully qualified class names"""
 
     @classmethod
-    def generate(cls) -> 'ConnectorSettings':
+    def generate(cls) -> "ConnectorSettings":
         return cls()
 
     @validator("connectors", pre=True)
@@ -93,14 +93,15 @@ class Servo(Connector):
     ##
     # Event processing
 
-    def dispatch_event(self, 
-        event: str, 
-        *args, 
-        first:bool = False,
-        all:bool = False,
-        include:Optional[List[Connector]] = None,
-        exclude:Optional[List[Connector]] = None,
-        **kwargs
+    def dispatch_event(
+        self,
+        event: str,
+        *args,
+        first: bool = False,
+        all: bool = False,
+        include: Optional[List[Connector]] = None,
+        exclude: Optional[List[Connector]] = None,
+        **kwargs,
     ) -> Union[EventResult, List[EventResult]]:
         """
         Dispatches an event to active connectors for processing and returns the results.
@@ -122,7 +123,7 @@ class Servo(Connector):
                 if first:
                     return result
                 results.append(result)
-        
+
         return results
 
     ##
@@ -176,8 +177,7 @@ class ServoAssembly(BaseModel):
 
         _discover_connectors()
         ServoSettings, connector_type_routes = _create_settings_model(
-            config_file=config_file,
-            env=env
+            config_file=config_file, env=env
         )
 
         # Build our Servo settings instance from the config file + environment
@@ -455,13 +455,13 @@ def _routes_for_connectors_descriptor(connectors):
             f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
         )
 
+
 RESERVED_KEYS = ["connectors", "control", "measure", "adjust"]
+
 
 def _reserved_keys() -> List[str]:
     reserved_keys = list(_default_routes().keys())
-    reserved_keys.extend(
-        RESERVED_KEYS
-    )
+    reserved_keys.extend(RESERVED_KEYS)
     return reserved_keys
 
 

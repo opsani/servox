@@ -52,7 +52,7 @@ def run_cli():
         settings = connector_class.settings_model().construct()
         connector = connector_class(settings)
         connector_cli = connector.cli()
-        connectors_to_update.append((connector, connector_cli, ))
+        connectors_to_update.append((connector, connector_cli,))
         if connector_cli is not None:
             cli.add_typer(connector_cli)
 

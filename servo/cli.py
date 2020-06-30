@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Type, Union
+from typing import List, Union
 
 import typer
 import yaml
@@ -14,8 +14,8 @@ from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 
-from servo.connector import Optimizer, Connector, ConnectorSettings
-from servo.servo import BaseServoSettings, Servo, ServoAssembly
+from servo.connector import Connector, ConnectorSettings, Optimizer
+from servo.servo import Servo, ServoAssembly
 from servo.servo_runner import ServoRunner
 from servo.types import *
 
@@ -34,6 +34,7 @@ else:
 # after the servo is assembled to carry the right state. See entry_points.py
 # and the callback on ServoCLI for details.
 connectors_to_update = []
+
 
 class SharedCommandsMixin:
     servo: Servo
@@ -75,13 +76,15 @@ class SharedCommandsMixin:
                 elif format == SettingsOutputFormat.dict:
                     data = settings_dict_str
                 else:
-                    raise RuntimeError("no handler configured for output format {format}")
+                    raise RuntimeError(
+                        "no handler configured for output format {format}"
+                    )
 
                 if output:
                     output.write(data)
                 else:
                     typer.echo(highlight(data, lexer, TerminalFormatter()))
-            
+
         @self.command()
         def check() -> None:
             """Check the health of the assembly"""
@@ -89,16 +92,18 @@ class SharedCommandsMixin:
             # TODO: Run checks for all active connectors (or pick them)
             typer.echo("Not yet implemented.", err=True)
             raise typer.Exit(2)
-        
+
         @self.command()
         def describe() -> None:
             """
             Describe metrics and settings
             """
-            results: List[EventResult] = self.servo.dispatch_event('describe', include=self.connectors)
+            results: List[EventResult] = self.servo.dispatch_event(
+                "describe", include=self.connectors
+            )
             for result in results:
                 debug(result.connector.name, result.value)
-        
+
         class SchemaOutputFormat(AbstractOutputFormat):
             json = JSON_FORMAT
             text = TEXT_FORMAT
@@ -108,10 +113,17 @@ class SharedCommandsMixin:
         @self.command()
         def schema(
             all: bool = typer.Option(
-                False, "--all", "-a", help="Include models from all available connectors", hidden=self.hide_servo_options
+                False,
+                "--all",
+                "-a",
+                help="Include models from all available connectors",
+                hidden=self.hide_servo_options,
             ),
             top_level: bool = typer.Option(
-                False, "--top-level", help="Emit a top-level schema (only connector models)", hidden=self.hide_servo_options
+                False,
+                "--top-level",
+                help="Emit a top-level schema (only connector models)",
+                hidden=self.hide_servo_options,
             ),
             format: SchemaOutputFormat = typer.Option(
                 SchemaOutputFormat.json, "--format", "-f", help="Select output format"
@@ -139,7 +151,9 @@ class SharedCommandsMixin:
                 elif format == SchemaOutputFormat.dict:
                     output_data = pformat(settings_class.schema())
                 else:
-                    raise RuntimeError("no handler configured for output format {format}")
+                    raise RuntimeError(
+                        "no handler configured for output format {format}"
+                    )
 
             assert output_data is not None, "output_data not assigned"
 
@@ -147,7 +161,6 @@ class SharedCommandsMixin:
                 output.write(output_data)
             else:
                 typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
-
 
         @self.command(name="validate")
         def validate(
@@ -160,7 +173,11 @@ class SharedCommandsMixin:
                 readable=True,
             ),
             all: bool = typer.Option(
-                False, "--all", "-a", help="Include models from all available connectors", hidden=self.hide_servo_options
+                False,
+                "--all",
+                "-a",
+                help="Include models from all available connectors",
+                hidden=self.hide_servo_options,
             ),
         ) -> None:
             """Validate servo configuration file"""
@@ -171,8 +188,8 @@ class SharedCommandsMixin:
             except (ValidationError, yaml.scanner.ScannerError) as e:
                 typer.echo(f"X Invalid {self.connector.name} configuration in {file}")
                 typer.echo(e, err=True)
-                raise typer.Exit(1)        
-        
+                raise typer.Exit(1)
+
         @self.command()
         def events():
             """
@@ -181,7 +198,7 @@ class SharedCommandsMixin:
             # TODO: Format this output
             for connector in self.connectors:
                 debug(connector.name, connector.__events__)
-        
+
         class VersionOutputFormat(AbstractOutputFormat):
             text = TEXT_FORMAT
             json = JSON_FORMAT
@@ -189,20 +206,27 @@ class SharedCommandsMixin:
         @self.command()
         def version(
             short: bool = typer.Option(
-                False, "--short", "-s", help="Display short version details", hidden=self.hide_servo_options
+                False,
+                "--short",
+                "-s",
+                help="Display short version details",
+                hidden=self.hide_servo_options,
             ),
             format: VersionOutputFormat = typer.Option(
                 VersionOutputFormat.text, "--format", "-f", help="Select output format"
-            )
+            ),
         ):
             """
             Display version
             """
-            if short:                
+            if short:
                 if format == VersionOutputFormat.text:
                     typer.echo(f"{self.connector.name} v{self.connector.version}")
                 elif format == VersionOutputFormat.json:
-                    version_info = { "name": self.connector.name, "version": str(self.connector.version) }
+                    version_info = {
+                        "name": self.connector.name,
+                        "version": str(self.connector.version),
+                    }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
                     raise typer.BadParameter(f"Unknown format '{format}'")
@@ -217,8 +241,8 @@ class SharedCommandsMixin:
                         )
                     )
                 elif format == VersionOutputFormat.json:
-                    version_info = { 
-                        "name": self.connector.name, 
+                    version_info = {
+                        "name": self.connector.name,
                         "version": str(self.connector.version),
                         "maturity": str(self.connector.maturity),
                         "description": self.connector.description,
@@ -228,8 +252,9 @@ class SharedCommandsMixin:
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
                     raise typer.BadParameter(f"Unknown format '{format}'")
-                
+
             raise typer.Exit(0)
+
 
 class ConnectorCLI(typer.Typer, SharedCommandsMixin):
     """
@@ -239,10 +264,11 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
     Actions common to all connectors are implemented directly on the class.
     Connectors can define their own actions within the Connector subclass.
     """
+
     connector: Connector
-    
+
     @property
-    def connectors(self) -> List['Connector']:
+    def connectors(self) -> List["Connector"]:
         return [self.connector]
 
     def __init__(self, connector: Connector, **kwargs):
@@ -253,37 +279,46 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
         super().__init__(name=name, help=help, add_completion=add_completion, **kwargs)
         self.add_shared_commands()
         self.add_commands()
-    
+
     ##
     # Convenience accessors
 
     @property
     def settings(self) -> ConnectorSettings:
         return self.connector.settings
-    
+
     @property
     def optimizer(self) -> Optimizer:
         return self.connector.optimizer
 
     # Register connector specific commands
     def add_commands(self):
-
         @self.command(name="generate")
         def generate(
             defaults: bool = typer.Option(
-                False, "--defaults", "-d", help="Include default values in the generated output"
+                False,
+                "--defaults",
+                "-d",
+                help="Include default values in the generated output",
             )
         ) -> None:
             """Generate a configuration file"""
             # TODO: Add force, output path, and format options
             exclude_unset = not defaults
             settings = self.connector.settings_model().generate()
-            schema = json.loads(json.dumps({ self.connector.config_key_path: settings.dict(by_alias=True, exclude_unset=exclude_unset) }))
+            schema = json.loads(
+                json.dumps(
+                    {
+                        self.connector.config_key_path: settings.dict(
+                            by_alias=True, exclude_unset=exclude_unset
+                        )
+                    }
+                )
+            )
             output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
             output_path.write_text(yaml.dump(schema))
             typer.echo(f"Generated {self.connector.command_name}.yaml")
-        
-        
+
 
 class ServoCLI(typer.Typer, SharedCommandsMixin):
     assembly: ServoAssembly
@@ -291,11 +326,11 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
     @property
     def optimizer(self) -> Optimizer:
         return self.servo.optimizer
-    
+
     @property
     def connector(self) -> Servo:
         return self.servo
-    
+
     @property
     def connectors(self) -> List[Connector]:
         return self.servo.connectors
@@ -305,7 +340,7 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
         self.hide_servo_options = False
         self.add_shared_commands()
         self.add_commands()
-    
+
     def add_commands(self):
         @self.command()
         def console() -> None:
@@ -313,7 +348,7 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
             # TODO: Load up the environment and trigger IPython
             typer.echo("Not yet implemented.", err=True)
             raise typer.Exit(2)
-        
+
         @self.command()
         def new() -> None:
             """Creates a new servo assembly at [PATH]"""
@@ -327,16 +362,23 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
         def run() -> None:
             """Run the servo"""
             ServoRunner(self.servo).run()
-        
+
         @self.command()
         def connectors(
             all: bool = typer.Option(
-                False, "--all", "-a", help="Include models from all available connectors"
+                False,
+                "--all",
+                "-a",
+                help="Include models from all available connectors",
             ),
-            verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info"),
+            verbose: bool = typer.Option(
+                False, "--verbose", "-v", help="Display verbose info"
+            ),
         ) -> None:
             """Display information about the assembly"""
-            connectors = self.assembly.all_connectors() if all else self.servo.connectors
+            connectors = (
+                self.assembly.all_connectors() if all else self.servo.connectors
+            )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
             row = [self.servo.name, self.servo.version, self.servo.description]
             if verbose:
@@ -350,16 +392,19 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
-        
+
         @self.command(name="generate")
         def generate(
             defaults: bool = typer.Option(
-                False, "--defaults", "-d", help="Include default values in the generated output"
+                False,
+                "--defaults",
+                "-d",
+                help="Include default values in the generated output",
             )
         ) -> None:
             """Generate a configuration file"""
             # TODO: Add force, output path, and format options
-            
+
             exclude_unset = not defaults
             args = {}
             for c in self.assembly.all_connectors():
@@ -367,11 +412,13 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
             settings = self.assembly.settings_model(**args)
 
             # NOTE: We have to serialize through JSON first (not all fields serialize directly)
-            schema = json.loads(json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset)))
+            schema = json.loads(
+                json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset))
+            )
             output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
             output_path.write_text(yaml.dump(schema))
             typer.echo(f"Generated {self.connector.command_name}.yaml")
-        
+
         @self.callback()
         def root_callback(
             optimizer: str = typer.Option(
@@ -434,7 +481,9 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
                 )
 
             if token is not None and token_file is not None:
-                raise typer.BadParameter("--token and --token-file cannot both be given")
+                raise typer.BadParameter(
+                    "--token and --token-file cannot both be given"
+                )
 
             if token_file is not None and token_file.exists():
                 token = token_file.read_text()
@@ -447,17 +496,16 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
             # Assemble the Servo
             try:
                 assembly, servo, ServoSettings = ServoAssembly.assemble(
-                    config_file=config_file,
-                    optimizer=optimizer
+                    config_file=config_file, optimizer=optimizer
                 )
             except ValidationError as error:
                 typer.echo(error, err=True)
                 raise typer.Exit(2) from error
-            
+
             # Hydrate our state
             self.assembly = assembly
             self.servo = servo
-            self.settings = servo.settings    
+            self.settings = servo.settings
 
             # FIXME: Update the settings of our pre-registered connectors
             for connector, connector_cli in connectors_to_update:
@@ -465,13 +513,15 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
                 connector.settings = settings
                 connector_cli.servo = servo
 
+
 # Build the Typer CLI
 cli = ServoCLI(name="servox", add_completion=True, no_args_is_help=True)
 
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
 
-dev_typer = typer.Typer(name='dev', help="Developer utilities")
+dev_typer = typer.Typer(name="dev", help="Developer utilities")
+
 
 @dev_typer.command(name="test")
 def developer_test() -> None:
@@ -506,7 +556,9 @@ def developer_format() -> None:
     for cmd in cmds:
         __run(cmd)
 
+
 cli.add_typer(dev_typer)
+
 
 def __run(args: Union[str, List[str]], **kwargs) -> None:
     args = shlex.split(args) if isinstance(args, str) else args

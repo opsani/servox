@@ -12,16 +12,16 @@ from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaSettin
 from servo.connector import (
     Connector,
     ConnectorSettings,
+    EventResult,
     License,
     Maturity,
     Optimizer,
     Version,
     event,
-    EventResult
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from tests.conftest import environment_overrides
-from tests.test_helpers import MeasureConnector
+
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -370,13 +370,13 @@ class TestServo:
     class FirstTestServoConnector(Connector):
         @event()
         def this_is_an_event(self) -> str:
-            return 'this is the result'
-    
+            return "this is the result"
+
     class SecondTestServoConnector(Connector):
         @event()
         def this_is_an_event(self) -> str:
-            return 'this is a different result'
-        
+            return "this is a different result"
+
         @event()
         def another_event(self) -> None:
             pass
@@ -387,12 +387,12 @@ class TestServo:
     def test_all_connectors(self) -> None:
         c = ServoAssembly.construct().all_connectors()
         assert TestServo.FirstTestServoConnector in c
-    
+
     def test_dispatch_event(self, servo_yaml: Path) -> None:
         config = {
-            "connectors": ['first_test_servo', 'second_test_servo'],
+            "connectors": ["first_test_servo", "second_test_servo"],
             "first_test_servo": {},
-            "second_test_servo": {}
+            "second_test_servo": {},
         }
         servo_yaml.write_text(yaml.dump(config))
 
@@ -401,15 +401,15 @@ class TestServo:
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
-        results = servo.dispatch_event('this_is_an_event')
+        results = servo.dispatch_event("this_is_an_event")
         assert len(results) == 2
-        assert results[0].value == 'this is the result'
-    
+        assert results[0].value == "this is the result"
+
     def test_dispatch_event_first(self, servo_yaml: Path) -> None:
         config = {
-            "connectors": ['first_test_servo', 'second_test_servo'],
+            "connectors": ["first_test_servo", "second_test_servo"],
             "first_test_servo": {},
-            "second_test_servo": {}
+            "second_test_servo": {},
         }
         servo_yaml.write_text(yaml.dump(config))
 
@@ -418,15 +418,15 @@ class TestServo:
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
-        result = servo.dispatch_event('this_is_an_event', first=True)
+        result = servo.dispatch_event("this_is_an_event", first=True)
         assert isinstance(result, EventResult)
-        assert result.value == 'this is the result'
-    
+        assert result.value == "this is the result"
+
     def test_dispatch_event_include(self, servo_yaml: Path) -> None:
         config = {
-            "connectors": ['first_test_servo', 'second_test_servo'],
+            "connectors": ["first_test_servo", "second_test_servo"],
             "first_test_servo": {},
-            "second_test_servo": {}
+            "second_test_servo": {},
         }
         servo_yaml.write_text(yaml.dump(config))
 
@@ -436,16 +436,16 @@ class TestServo:
             config_file=servo_yaml, optimizer=optimizer
         )
         first_connector = servo.connectors[0]
-        assert first_connector.name == 'FirstTestServo Connector'
-        results = servo.dispatch_event('this_is_an_event', include=[first_connector])
+        assert first_connector.name == "FirstTestServo Connector"
+        results = servo.dispatch_event("this_is_an_event", include=[first_connector])
         assert len(results) == 1
-        assert results[0].value == 'this is the result'
-    
+        assert results[0].value == "this is the result"
+
     def test_dispatch_event_exclude(self, servo_yaml: Path) -> None:
         config = {
-            "connectors": ['first_test_servo', 'second_test_servo'],
+            "connectors": ["first_test_servo", "second_test_servo"],
             "first_test_servo": {},
-            "second_test_servo": {}
+            "second_test_servo": {},
         }
         servo_yaml.write_text(yaml.dump(config))
 
@@ -456,13 +456,15 @@ class TestServo:
         )
         assert len(servo.connectors) == 2
         first_connector = servo.connectors[0]
-        assert first_connector.name == 'FirstTestServo Connector'
+        assert first_connector.name == "FirstTestServo Connector"
         second_connector = servo.connectors[1]
-        assert second_connector.name == 'SecondTestServo Connector'
-        assert second_connector.__events__['this_is_an_event'], "Expected event is not registered"
-        results = servo.dispatch_event('this_is_an_event', exclude=[first_connector])
+        assert second_connector.name == "SecondTestServo Connector"
+        assert second_connector.__events__[
+            "this_is_an_event"
+        ], "Expected event is not registered"
+        results = servo.dispatch_event("this_is_an_event", exclude=[first_connector])
         assert len(results) == 1
-        assert results[0].value == 'this is a different result'
+        assert results[0].value == "this is a different result"
         assert results[0].connector == second_connector
 
 
@@ -1016,12 +1018,13 @@ def test_vegeta_cli_generate(
     config_file = tmp_path / "vegeta.yaml"
     config = config_file.read_text()
     assert config == (
-        'vegeta:\n'
-        '  description: Update the rate, duration, and target/targets to match your load profile\n'
-        '  duration: 5m\n'
-        '  rate: 50/1s\n'
-        '  target: https://example.com/\n'
+        "vegeta:\n"
+        "  description: Update the rate, duration, and target/targets to match your load profile\n"
+        "  duration: 5m\n"
+        "  rate: 50/1s\n"
+        "  target: https://example.com/\n"
     )
+
 
 def test_vegeta_cli_generate_with_defaults(
     tmp_path: Path, vegeta_cli: typer.Typer, cli_runner: CliRunner
@@ -1032,20 +1035,20 @@ def test_vegeta_cli_generate_with_defaults(
     config_file = tmp_path / "vegeta.yaml"
     config = config_file.read_text()
     assert config == (
-        'vegeta:\n'
-        '  connections: 10000\n'
-        '  description: Update the rate, duration, and target/targets to match your load profile\n'
-        '  duration: 5m\n'
-        '  format: http\n'
-        '  http2: true\n'
-        '  insecure: false\n'
-        '  keepalive: true\n'
-        '  max-body: -1\n'
-        '  max-workers: 18446744073709551615\n'
-        '  rate: 50/1s\n'
-        '  target: https://example.com/\n'
-        '  targets: null\n'
-        '  workers: 10\n'
+        "vegeta:\n"
+        "  connections: 10000\n"
+        "  description: Update the rate, duration, and target/targets to match your load profile\n"
+        "  duration: 5m\n"
+        "  format: http\n"
+        "  http2: true\n"
+        "  insecure: false\n"
+        "  keepalive: true\n"
+        "  max-body: -1\n"
+        "  max-workers: 18446744073709551615\n"
+        "  rate: 50/1s\n"
+        "  target: https://example.com/\n"
+        "  targets: null\n"
+        "  workers: 10\n"
     )
 
 
@@ -1080,7 +1083,10 @@ def test_vegeta_cli_validate_no_such_file(
 ) -> None:
     result = cli_runner.invoke(vegeta_cli, "validate doesntexist.yaml")
     assert result.exit_code == 2
-    assert "Error: Invalid value for '[FILE]': File 'doesntexist.yaml' does not exist.\n" in result.stderr
+    assert (
+        "Error: Invalid value for '[FILE]': File 'doesntexist.yaml' does not exist.\n"
+        in result.stderr
+    )
 
 
 def test_vegeta_cli_validate_invalid_config(
@@ -1104,7 +1110,9 @@ def test_vegeta_cli_validate_invalid_config(
             "workers: 10\n"
         )
     )
-    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml", catch_exceptions=False)
+    result = cli_runner.invoke(
+        vegeta_cli, "validate invalid.yaml", catch_exceptions=False
+    )
     assert result.exit_code == 1
     assert "2 validation errors for VegetaSettings" in result.stderr
 
@@ -1116,7 +1124,9 @@ def test_vegeta_cli_validate_invalid_syntax(
     config_file.write_text(
         ("connections: 10000\n" "descriptions\n\n null\n" "duratio\n\n_   n: 5m\n")
     )
-    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml", catch_exceptions=False)
+    result = cli_runner.invoke(
+        vegeta_cli, "validate invalid.yaml", catch_exceptions=False
+    )
     assert result.exit_code == 1
     assert "X Invalid Vegeta Connector configuration in invalid.yaml\n" in result.stdout
     assert "could not find expected ':'" in result.stderr
@@ -1133,7 +1143,9 @@ def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> N
     ) in result.stdout
 
 
-def test_vegeta_cli_version_short(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+def test_vegeta_cli_version_short(
+    vegeta_cli: typer.Typer, cli_runner: CliRunner
+) -> None:
     result = cli_runner.invoke(vegeta_cli, "version -s")
     assert result.exit_code == 0
     assert "Vegeta Connector v0.5.0" in result.stdout
@@ -1142,17 +1154,18 @@ def test_vegeta_cli_version_short(vegeta_cli: typer.Typer, cli_runner: CliRunner
 def test_vegeta_cli_loadgen(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     pass
 
+
 class TestConnectorEvents:
     class FakeConnector(Connector):
         @event()
         def example_event(self) -> None:
             return 12345
-    
+
     class AnotherFakeConnector(FakeConnector):
         @event()
         def another_example_event(self) -> str:
-            return 'example_event'
-    
+            return "example_event"
+
     def test_command_name_for_nested_connectors(self) -> None:
         settings = ConnectorSettings.construct()
         connector = TestConnectorEvents.FakeConnector(settings=settings)
@@ -1160,41 +1173,48 @@ class TestConnectorEvents:
 
         connector = TestConnectorEvents.AnotherFakeConnector(settings=settings)
         assert connector.command_name == "another-fake"
-    
+
     def test_event_registration(self) -> None:
         events = TestConnectorEvents.FakeConnector.__events__
         assert events is not None
-        event = events['example_event']
+        event = events["example_event"]
         assert event is not None
-    
+
     def test_event_inheritance(self) -> None:
         events = TestConnectorEvents.AnotherFakeConnector.__events__
         assert events is not None
-        event = events['example_event']
+        event = events["example_event"]
         assert event is not None
-    
+
     def test_responds_to_event(self) -> None:
-        assert TestConnectorEvents.FakeConnector.responds_to_event('example_event')
-        assert not TestConnectorEvents.FakeConnector.responds_to_event('another_example_event')
-    
+        assert TestConnectorEvents.FakeConnector.responds_to_event("example_event")
+        assert not TestConnectorEvents.FakeConnector.responds_to_event(
+            "another_example_event"
+        )
+
     def test_responds_to_event_subclassing(self) -> None:
-        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('example_event')
-        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event('another_example_event')
-    
+        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event(
+            "example_event"
+        )
+        assert TestConnectorEvents.AnotherFakeConnector.responds_to_event(
+            "another_example_event"
+        )
+
     def test_event_invoke(self) -> None:
         settings = ConnectorSettings.construct()
         connector = TestConnectorEvents.FakeConnector(settings=settings)
-        result = connector.process_event('example_event')
+        result = connector.process_event("example_event")
         assert result is not None
-        assert result.event == 'example_event'
+        assert result.event == "example_event"
         assert result.connector == connector
         assert result.value == 12345
-    
+
     def test_event_invoke_not_supported(self) -> None:
         settings = ConnectorSettings.construct()
         connector = TestConnectorEvents.FakeConnector(settings=settings)
-        result = connector.process_event('unknown_event')
+        result = connector.process_event("unknown_event")
         assert result is None
+
 
 # def test_loading_optimizer_from_environment() -> None:
 #     with environment_overrides({

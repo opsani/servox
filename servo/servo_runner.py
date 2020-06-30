@@ -2,6 +2,7 @@ import signal
 import sys
 import time
 from enum import Enum
+from logging import Logger
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
@@ -9,10 +10,10 @@ import httpx
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
-from servo.connector import Optimizer, USER_AGENT
-from servo.servo import BaseServoSettings, Servo, Events
+from servo.connector import USER_AGENT, Optimizer
+from servo.servo import BaseServoSettings, Events, Servo
 from servo.types import Control, Description, Measurement
-from logging import Logger
+
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -93,11 +94,11 @@ class ServoRunner:
     headers: Dict[str, str]
     _stop_flag: bool
 
-    def __init__(self, servo: Servo, *, interactive: bool = False,  **kwargs) -> None:
+    def __init__(self, servo: Servo, *, interactive: bool = False, **kwargs) -> None:
         self.servo = servo
         self.interactive = interactive
         super().__init__()
-    
+
     @property
     def optimizer(self) -> Optimizer:
         return self.servo.optimizer
@@ -105,7 +106,7 @@ class ServoRunner:
     @property
     def settings(self) -> BaseServoSettings:
         return self.servo.settings
-    
+
     @property
     def logger(self) -> Logger:
         return self.servo.logger
@@ -128,7 +129,9 @@ class ServoRunner:
         self.logger.trace(pformat(param))
 
         aggregate_measurement = Measurement.construct()
-        results: List[EventResult] = self.servo.dispatch_event(Events.MEASURE, metrics=param.metrics, control=param.control)
+        results: List[EventResult] = self.servo.dispatch_event(
+            Events.MEASURE, metrics=param.metrics, control=param.control
+        )
         for result in results:
             measurement = result.value
             aggregate_measurement.readings.extend(measurement.readings)

@@ -1,40 +1,37 @@
 import abc
-import json
+import logging
 import re
 from enum import Enum
 from pathlib import Path
 from typing import (
-    Any, 
-    ClassVar, 
-    Generator, 
-    Optional, 
-    Set, 
-    Type, 
-    get_type_hints, 
-    TypeVar, 
+    Any,
     Callable,
-    Dict
+    ClassVar,
+    Dict,
+    Generator,
+    Optional,
+    Set,
+    Type,
+    TypeVar,
+    get_type_hints,
 )
 
 import httpx
+import loguru
 import semver
 import typer
 import yaml
-import logging
-import loguru
 from pkg_resources import EntryPoint, iter_entry_points
 from pydantic import (
     BaseModel,
     BaseSettings,
     Extra,
     HttpUrl,
-    ValidationError,
     constr,
     root_validator,
     validator,
 )
-from pydantic.fields import ModelField
-
+from pydantic.main import ModelMetaclass
 
 USER_AGENT = "github.com/opsani/servox"
 
@@ -122,12 +119,12 @@ class ConnectorSettings(BaseSettings):
     """
 
     @classmethod
-    def parse_file(cls, file: Path) -> 'ConnectorSettings':
+    def parse_file(cls, file: Path) -> "ConnectorSettings":
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
         return cls.parse_obj(config)
 
     @classmethod
-    def generate(cls) -> 'ConnectorSettings':
+    def generate(cls) -> "ConnectorSettings":
         """
         Return a set of default settings for a new configuration.
 
@@ -135,7 +132,9 @@ class ConnectorSettings(BaseSettings):
 
         This is an abstract method that needs to be implemented in subclasses.
         """
-        raise NotImplementedError(f"Generated settings must be implemented in the ConnectorSettings subclass '{cls.__qualname__}'")
+        raise NotImplementedError(
+            f"Generated settings must be implemented in the ConnectorSettings subclass '{cls.__qualname__}'"
+        )
 
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
@@ -145,7 +144,6 @@ class ConnectorSettings(BaseSettings):
         # TODO: we can probably just use env_name
         for name, field in cls.__fields__.items():
             field.field_info.extra["env_names"] = {f"SERVO_{name}".upper()}
-        
 
     class Config:
         env_prefix = "SERVO_"
@@ -162,34 +160,41 @@ class ConnectorSettings(BaseSettings):
 
 EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
 
+
 class EventResult(BaseModel):
     """
     Encapsulates the result of a dispatched Connector event
     """
-    connector: 'Connector'
+
+    connector: "Connector"
     event: str
     value: Any
 
-from pydantic.main import ModelMetaclass
 
 # NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
 _is_base_connector_class_defined = False
 
+
 class ConnectorMetaclass(ModelMetaclass):
     def __new__(mcs, name, bases, namespace, **kwargs):
         # Decorate the class with an event registry, inheriting from our parent connectors
-        events: Dict[str, 'EventDescriptor'] = {}
+        events: Dict[str, "EventDescriptor"] = {}
 
         for base in reversed(bases):
-            if _is_base_connector_class_defined and issubclass(base, Connector) and base is not Connector:
+            if (
+                _is_base_connector_class_defined
+                and issubclass(base, Connector)
+                and base is not Connector
+            ):
                 events.update(base.__events__)
 
         new_namespace = {
-            '__events__': events,
+            "__events__": events,
             **{n: v for n, v in namespace.items()},
         }
         cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
         return cls
+
 
 class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """
@@ -248,7 +253,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     def all(cls) -> Set[Type["Connector"]]:
         """Return a set of all Connector subclasses"""
         return cls.__connectors__
-    
+
     ##
     # Configuration
 
@@ -283,7 +288,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
-    
+
     ##
     # Events
 
@@ -301,18 +306,13 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """
         if not self.responds_to_event(event):
             return None
-        
+
         event_fn = getattr(self, event, None)
         if not callable(event_fn):
             raise ValueError("Encountered a non-callable handler for event '{event}'")
-        
+
         value = event_fn(*args, **kwargs)
-        return EventResult(
-            connector=self,
-            event=event,
-            value=value
-        )
-    
+        return EventResult(connector=self, event=event, value=value)
 
     # subclass registry of connectors
     __connectors__: Set[Type["Connector"]] = set()
@@ -322,21 +322,25 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
         cls.__connectors__.add(cls)
         cls.__key_path__ = _key_path_for_connector_class(cls)
-        
+
         cls.name = cls.__name__.replace("Connector", " Connector")
-        cls.version = semver.VersionInfo.parse("0.0.0")                
-        
+        cls.version = semver.VersionInfo.parse("0.0.0")
+
         # Register events for all annotated methods (see `event` decorator)
-        for key, value in cls.__dict__.items():                
-            if v := getattr(value, '__connector_event__', None):
+        for key, value in cls.__dict__.items():
+            if v := getattr(value, "__connector_event__", None):
                 if not isinstance(v, EventDescriptor):
-                    raise TypeError(f"Unexpected event descriptor of type '{v.__class__}'")
+                    raise TypeError(
+                        f"Unexpected event descriptor of type '{v.__class__}'"
+                    )
 
                 if cls.__events__.get(key, None):
-                    raise ValueError(f"Duplicate event handler registered for event '{key}'")
+                    raise ValueError(
+                        f"Duplicate event handler registered for event '{key}'"
+                    )
 
                 cls.__events__[key] = v
-        
+
     def __init__(
         self,
         settings: ConnectorSettings,
@@ -346,7 +350,9 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         **kwargs,
     ):
         config_key_path = (
-            config_key_path if config_key_path is not None else self.__class__.__key_path__
+            config_key_path
+            if config_key_path is not None
+            else self.__class__.__key_path__
         )
         command_name = (
             command_name
@@ -361,7 +367,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         )
 
     ##
-    # Subclass services    
+    # Subclass services
 
     def api_client(self) -> httpx.Client:
         """Yields an httpx.AsyncClient instance configured to talk to Opsani API"""
@@ -384,16 +390,20 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """Returns a Typer CLI for the connector"""
         return None
 
+
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs()
+
 
 def _key_path_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
+
 def _command_name_from_config_key_path(key_path: str) -> str:
     # foo.bar.this_key => this-key
-    return key_path.split('.', 1)[-1].replace('_', '-').lower()
+    return key_path.split(".", 1)[-1].replace("_", "-").lower()
+
 
 class License(Enum):
     """Defined licenses"""
@@ -475,23 +485,24 @@ def metadata(
 
     return decorator
 
+
 class EventDescriptor(BaseModel):
     name: str
     kwargs: Dict[str, Any]
-        
+
+
 def event(**kwargs):
     """
     Registers an event on the Connector
     """
+
     def decorator(fn: EventFunctionType) -> EventFunctionType:
         # Annotate the function for processing later, see Connector.__init_subclass__
-        fn.__connector_event__ = EventDescriptor(
-            name=fn.__name__,
-            kwargs=kwargs
-        )
+        fn.__connector_event__ = EventDescriptor(name=fn.__name__, kwargs=kwargs)
         return fn
 
     return decorator
+
 
 #####
 
