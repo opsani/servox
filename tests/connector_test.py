@@ -459,7 +459,6 @@ class TestServo:
         assert first_connector.name == 'FirstTestServo Connector'
         second_connector = servo.connectors[1]
         assert second_connector.name == 'SecondTestServo Connector'
-        debug(first_connector.__events__, second_connector.__events__)
         assert second_connector.__events__['this_is_an_event'], "Expected event is not registered"
         results = servo.dispatch_event('this_is_an_event', exclude=[first_connector])
         assert len(results) == 1
@@ -1056,7 +1055,7 @@ def test_vegeta_cli_validate(
     )
     result = cli_runner.invoke(vegeta_cli, "validate vegeta.yaml")
     assert result.exit_code == 0
-    assert "√ Valid connector configuration" in result.stdout
+    assert "√ Valid Vegeta Connector configuration in vegeta.yaml" in result.stdout
 
 
 def test_vegeta_cli_validate_no_such_file(
@@ -1064,7 +1063,7 @@ def test_vegeta_cli_validate_no_such_file(
 ) -> None:
     result = cli_runner.invoke(vegeta_cli, "validate doesntexist.yaml")
     assert result.exit_code == 2
-    assert "Could not open file: doesntexist.yaml" in result.stderr
+    assert "Error: Invalid value for '[FILE]': File 'doesntexist.yaml' does not exist.\n" in result.stderr
 
 
 def test_vegeta_cli_validate_invalid_config(
@@ -1088,7 +1087,7 @@ def test_vegeta_cli_validate_invalid_config(
             "workers: 10\n"
         )
     )
-    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml")
+    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml", catch_exceptions=False)
     assert result.exit_code == 1
     assert "2 validation errors for VegetaSettings" in result.stderr
 
@@ -1100,14 +1099,14 @@ def test_vegeta_cli_validate_invalid_syntax(
     config_file.write_text(
         ("connections: 10000\n" "descriptions\n\n null\n" "duratio\n\n_   n: 5m\n")
     )
-    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml")
+    result = cli_runner.invoke(vegeta_cli, "validate invalid.yaml", catch_exceptions=False)
     assert result.exit_code == 1
-    assert "X Invalid connector configuration" in result.stderr
+    assert "X Invalid Vegeta Connector configuration in invalid.yaml\n" in result.stdout
     assert "could not find expected ':'" in result.stderr
 
 
-def test_vegeta_cli_info(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(vegeta_cli, "info")
+def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(vegeta_cli, "version")
     assert result.exit_code == 0
     assert (
         "Vegeta Connector v0.5.0 (Stable)\n"
@@ -1117,8 +1116,8 @@ def test_vegeta_cli_info(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
     ) in result.stdout
 
 
-def test_vegeta_cli_version(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(vegeta_cli, "version")
+def test_vegeta_cli_version_short(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(vegeta_cli, "version -s")
     assert result.exit_code == 0
     assert "Vegeta Connector v0.5.0" in result.stdout
 

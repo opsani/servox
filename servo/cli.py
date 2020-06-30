@@ -14,7 +14,7 @@ from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 
-from servo.connector import Optimizer
+from servo.connector import Optimizer, Connector, ConnectorSettings
 from servo.servo import BaseServoSettings, Servo, ServoAssembly
 from servo.servo_runner import ServoRunner
 from servo.types import *
@@ -28,307 +28,433 @@ except ImportError:
 else:
     builtins.debug = debug
 
-# Application state available to all commands
-# These objects are constructed in `root_callback`
-assembly: ServoAssembly
-ServoSettings: Type[BaseServoSettings]
-servo: Servo
+# NOTE: There is a life-cycle dependency issue where we want to have commands
+# available only for active connectors but this requires the config file to be
+# parsed and the commands to be registered. The connectors have to be updated
+# after the servo is assembled to carry the right state. See entry_points.py
+# and the callback on ServoCLI for details.
 connectors_to_update = []
 
-# Build the Typer CLI
-cli = typer.Typer(name="servox", add_completion=True, no_args_is_help=True)
+class SharedCommandsMixin:
+    servo: Servo
+    settings: BaseServoSettings
+    connectors: List[Connector]
+    hide_servo_options: bool = True
+
+    def add_shared_commands(self):
+        class SettingsOutputFormat(AbstractOutputFormat):
+            yaml = YAML_FORMAT
+            json = JSON_FORMAT
+            dict = DICT_FORMAT
+            text = TEXT_FORMAT
+
+        @self.command()
+        def settings(
+            format: SettingsOutputFormat = typer.Option(
+                SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
+            ),
+            output: typer.FileTextWrite = typer.Option(
+                None, "--output", "-o", help="Output settings to [FILE]"
+            ),
+        ) -> None:
+            """Display the fully resolved settings"""
+            settings = self.settings.dict(exclude_unset=True)
+            settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
+            settings_dict = json.loads(settings_json)
+            settings_dict_str = pformat(settings_dict)
+            settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
+
+            if format == SettingsOutputFormat.text:
+                pass
+            else:
+                lexer = format.lexer()
+                if format == SettingsOutputFormat.yaml:
+                    data = settings_yaml
+                elif format == SettingsOutputFormat.json:
+                    data = settings_json
+                elif format == SettingsOutputFormat.dict:
+                    data = settings_dict_str
+                else:
+                    raise RuntimeError("no handler configured for output format {format}")
+
+                if output:
+                    output.write(data)
+                else:
+                    typer.echo(highlight(data, lexer, TerminalFormatter()))
+            
+        @self.command()
+        def check() -> None:
+            """Check the health of the assembly"""
+            # TODO: Requires a config file
+            # TODO: Run checks for all active connectors (or pick them)
+            typer.echo("Not yet implemented.", err=True)
+            raise typer.Exit(2)
+        
+        @self.command()
+        def describe() -> None:
+            """
+            Describe metrics and settings
+            """
+            results: List[EventResult] = self.servo.dispatch_event('describe', include=self.connectors)
+            for result in results:
+                debug(result.connector.name, result.value)
+        
+        class SchemaOutputFormat(AbstractOutputFormat):
+            json = JSON_FORMAT
+            text = TEXT_FORMAT
+            dict = DICT_FORMAT
+            html = HTML_FORMAT
+
+        @self.command()
+        def schema(
+            all: bool = typer.Option(
+                False, "--all", "-a", help="Include models from all available connectors", hidden=self.hide_servo_options
+            ),
+            top_level: bool = typer.Option(
+                False, "--top-level", help="Emit a top-level schema (only connector models)", hidden=self.hide_servo_options
+            ),
+            format: SchemaOutputFormat = typer.Option(
+                SchemaOutputFormat.json, "--format", "-f", help="Select output format"
+            ),
+            output: typer.FileTextWrite = typer.Option(
+                None, "--output", "-o", help="Output schema to [FILE]"
+            ),
+        ) -> None:
+            """Display configuration schema"""
+            if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
+                typer.echo("error: not yet implemented", err=True)
+                raise typer.Exit(1)
+
+            if top_level:
+                if format == SchemaOutputFormat.json:
+                    output_data = self.assembly.top_level_schema_json(all=all)
+
+                elif format == SchemaOutputFormat.dict:
+                    output_data = pformat(self.assembly.top_level_schema(all=all))
+
+            else:
+                settings_class = self.settings.__class__
+                if format == SchemaOutputFormat.json:
+                    output_data = settings_class.schema_json(indent=2)
+                elif format == SchemaOutputFormat.dict:
+                    output_data = pformat(settings_class.schema())
+                else:
+                    raise RuntimeError("no handler configured for output format {format}")
+
+            assert output_data is not None, "output_data not assigned"
+
+            if output:
+                output.write(output_data)
+            else:
+                typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
 
 
-@cli.callback()
-def root_callback(
-    optimizer: str = typer.Option(
-        None,
-        envvar="OPSANI_OPTIMIZER",
-        show_envvar=True,
-        metavar="OPTIMIZER",
-        help="Opsani optimizer to connect to (format is example.com/app)",
-    ),
-    token: str = typer.Option(
-        None,
-        envvar="OPSANI_TOKEN",
-        show_envvar=True,
-        metavar="TOKEN",
-        help="Opsani API access token",
-    ),
-    token_file: Path = typer.Option(
-        None,
-        envvar="OPSANI_TOKEN_FILE",
-        show_envvar=True,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        writable=False,
-        readable=True,
-        resolve_path=True,
-        help="File to load the access token from",
-    ),
-    base_url: str = typer.Option(
-        "https://api.opsani.com/",
-        "--base-url",
-        envvar="OPSANI_BASE_URL",
-        show_envvar=True,
-        show_default=True,
-        metavar="URL",
-        help="Base URL for connecting to Opsani API",
-    ),
-    config_file: Path = typer.Option(
-        "servo.yaml",
-        "--config-file",
-        "-c",
-        envvar="SERVO_CONFIG_FILE",
-        show_envvar=True,
-        exists=False,
-        file_okay=True,
-        dir_okay=False,
-        writable=False,
-        readable=True,
-        resolve_path=True,
-        help="Servo configuration file",
-    ),
-):
-    if optimizer is None:
-        raise typer.BadParameter("An optimizer must be specified")
-
-    # Resolve token
-    if token is None and token_file is None:
-        raise typer.BadParameter(
-            "API token must be provided via --token, --token-file, or ENV['OPSANI_TOKEN']"
-        )
-
-    if token is not None and token_file is not None:
-        raise typer.BadParameter("--token and --token-file cannot both be given")
-
-    if token_file is not None and token_file.exists():
-        token = token_file.read_text()
-
-    if len(token) == 0 or token.isspace():
-        raise typer.BadParameter("token cannot be blank")
-
-    optimizer = Optimizer(optimizer, token=token, base_url=base_url)
-
-    # Assemble the Servo
-    global assembly, servo, ServoSettings  # TODO: This should probably return the instance instead of the model
-    try:
-        assembly, servo, ServoSettings = ServoAssembly.assemble(
-            config_file=config_file, optimizer=optimizer
-        )
-    except ValidationError as error:
-        typer.echo(error, err=True)
-        raise typer.Exit(2) from error
-
-    # FIXME: Update the settings of our pre-registered connectors
-    for connector in connectors_to_update:
-        settings = getattr(servo.settings, connector.config_key_path)
-        connector.settings = settings
+        @self.command(name="validate")
+        def validate(
+            file: Path = typer.Argument(
+                "servo.yaml",
+                exists=True,
+                file_okay=True,
+                dir_okay=False,
+                writable=False,
+                readable=True,
+            ),
+            all: bool = typer.Option(
+                False, "--all", "-a", help="Include models from all available connectors", hidden=self.hide_servo_options
+            ),
+        ) -> None:
+            """Validate servo configuration file"""
+            try:
+                # self.assembly.parse_file(file)
+                self.connector.settings_model().parse_file(file)
+                typer.echo(f"√ Valid {self.connector.name} configuration in {file}")
+            except (ValidationError, yaml.scanner.ScannerError) as e:
+                typer.echo(f"X Invalid {self.connector.name} configuration in {file}")
+                typer.echo(e, err=True)
+                raise typer.Exit(1)
 
 
-@cli.command()
-def new() -> None:
-    """Creates a new servo assembly at [PATH]"""
-    # TODO: Specify a list of connectors (or default to all)
-    # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
-    # TODO: Options for Docker Compose and Kubernetes?
+        @self.command(name="generate")
+        def generate() -> None:
+            """Generate a configuration file"""
+            # TODO: Add force, output path, and format options
 
+            # NOTE: We generate with a potentially incomplete settings instance
+            # if there is required configuration without reasonable defaults. This
+            # should be fine because the errors at load time will be clear and we can
+            # embed examples into the schema or put in sentinel values.
+            # NOTE: We have to serialize through JSON first
+            schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
+            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
+            output_path.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {self.connector.command_name}.yaml")
+        
+        @self.command()
+        def events():
+            """
+            Display registered events
+            """
+            # TODO: Format this output
+            for connector in self.connectors:
+                debug(connector.name, connector.__events__)
+        
+        class VersionOutputFormat(AbstractOutputFormat):
+            text = TEXT_FORMAT
+            json = JSON_FORMAT
 
-@cli.command()
-def run() -> None:
-    """Run the servo"""
-    ServoRunner(servo).run()
+        @self.command()
+        def version(
+            short: bool = typer.Option(
+                False, "--short", "-s", help="Display short version details", hidden=self.hide_servo_options
+            ),
+            format: VersionOutputFormat = typer.Option(
+                VersionOutputFormat.text, "--format", "-f", help="Select output format"
+            )
+        ):
+            """
+            Display version
+            """
+            if short:                
+                if format == VersionOutputFormat.text:
+                    typer.echo(f"{self.connector.name} v{self.connector.version}")
+                elif format == VersionOutputFormat.json:
+                    version_info = { "name": self.connector.name, "version": str(self.connector.version) }
+                    typer.echo(json.dumps(version_info, indent=2))
+                else:
+                    raise typer.BadParameter(f"Unknown format '{format}'")
+            else:
+                if format == VersionOutputFormat.text:
+                    typer.echo(
+                        (
+                            f"{self.connector.name} v{self.connector.version} ({self.connector.maturity})\n"
+                            f"{self.connector.description}\n"
+                            f"{self.connector.homepage}\n"
+                            f"Licensed under the terms of {self.connector.license}"
+                        )
+                    )
+                elif format == VersionOutputFormat.json:
+                    version_info = { 
+                        "name": self.connector.name, 
+                        "version": str(self.connector.version),
+                        "maturity": str(self.connector.maturity),
+                        "description": self.connector.description,
+                        "homepage": self.connector.homepage,
+                        "license": str(self.connector.license),
+                    }
+                    typer.echo(json.dumps(version_info, indent=2))
+                else:
+                    raise typer.BadParameter(f"Unknown format '{format}'")
+                
+            raise typer.Exit(0)
 
+class ConnectorCLI(typer.Typer, SharedCommandsMixin):
+    """
+    ConnectorCLI is a subclass of typer.Typer that provides a CLI interface for
+    connectors within the Servo assembly. 
 
-@cli.command()
-def console() -> None:
-    """Open an interactive console"""
-    # TODO: Load up the environment and trigger IPython
+    Actions common to all connectors are implemented directly on the class.
+    Connectors can define their own actions within the Connector subclass.
+    """
+    connector: Connector
+    
+    @property
+    def connectors(self) -> List['Connector']:
+        return [self.connector]
 
+    def __init__(self, connector: Connector, **kwargs):
+        self.connector = connector
+        name = kwargs.pop("name", connector.command_name)
+        help = kwargs.pop("help", connector.description)
+        add_completion = kwargs.pop("add_completion", False)
+        super().__init__(name=name, help=help, add_completion=add_completion, **kwargs)
+        self.add_shared_commands()
+        self.add_commands()
+    
+    ##
+    # Convenience accessors
 
-@cli.command()
-def info(
-    all: bool = typer.Option(
-        False, "--all", "-a", help="Include models from all available connectors"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info"),
-) -> None:
-    """Display information about the assembly"""
-    connectors = assembly.all_connectors() if all else servo.connectors
-    headers = ["NAME", "VERSION", "DESCRIPTION"]
-    row = [servo.name, servo.version, servo.description]
-    if verbose:
-        headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
-        row += [servo.homepage, servo.maturity, servo.license]
-    table = [row]
-    for connector in connectors:
-        row = [connector.name, connector.version, connector.description]
-        if verbose:
-            row += [connector.homepage, connector.maturity, connector.license]
-        table.append(row)
+    @property
+    def settings(self) -> ConnectorSettings:
+        return self.connector.settings
+    
+    @property
+    def optimizer(self) -> Optimizer:
+        return self.connector.optimizer
 
-    typer.echo(tabulate(table, headers, tablefmt="plain"))
-
-
-class SettingsOutputFormat(AbstractOutputFormat):
-    yaml = YAML_FORMAT
-    json = JSON_FORMAT
-    dict = DICT_FORMAT
-    text = TEXT_FORMAT
-
-
-@cli.command()
-def settings(
-    format: SettingsOutputFormat = typer.Option(
-        SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
-    ),
-    output: typer.FileTextWrite = typer.Option(
-        None, "--output", "-o", help="Output settings to [FILE]"
-    ),
-) -> None:
-    """Display the fully resolved settings"""
-    settings = servo.settings.dict(exclude={"optimizer"}, exclude_unset=True)
-    settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
-    settings_dict = json.loads(settings_json)
-    settings_dict_str = pformat(settings_dict)
-    settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
-
-    if format == SettingsOutputFormat.text:
+    # Register connector specific commands
+    def add_commands(self):
         pass
-    else:
-        lexer = format.lexer()
-        if format == SettingsOutputFormat.yaml:
-            data = settings_yaml
-        elif format == SettingsOutputFormat.json:
-            data = settings_json
-        elif format == SettingsOutputFormat.dict:
-            data = settings_dict_str
-        else:
-            raise RuntimeError("no handler configured for output format {format}")
+        
+        
 
-        if output:
-            output.write(data)
-        else:
-            typer.echo(highlight(data, lexer, TerminalFormatter()))
+class ServoCLI(typer.Typer, SharedCommandsMixin):
+    assembly: ServoAssembly
 
+    @property
+    def optimizer(self) -> Optimizer:
+        return self.servo.optimizer
+    
+    @property
+    def connector(self) -> Servo:
+        return self.servo
+    
+    @property
+    def connectors(self) -> List[Connector]:
+        return self.servo.connectors
 
-@cli.command()
-def check() -> None:
-    """Check the health of the assembly"""
-    # TODO: Requires a config file
-    # TODO: Run checks for all active connectors (or pick them)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hide_servo_options = False
+        self.add_shared_commands()
+        self.add_commands()
+    
+    def add_commands(self):
+        @self.command()
+        def console() -> None:
+            """Open an interactive console"""
+            # TODO: Load up the environment and trigger IPython
+            typer.echo("Not yet implemented.", err=True)
+            raise typer.Exit(2)
+        
+        @self.command()
+        def new() -> None:
+            """Creates a new servo assembly at [PATH]"""
+            # TODO: Specify a list of connectors (or default to all)
+            # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
+            # TODO: Options for Docker Compose and Kubernetes?
+            typer.echo("Not yet implemented.", err=True)
+            raise typer.Exit(2)
 
+        @self.command()
+        def run() -> None:
+            """Run the servo"""
+            ServoRunner(servo).run()
+        
+        @self.command()
+        def connectors(
+            all: bool = typer.Option(
+                False, "--all", "-a", help="Include models from all available connectors"
+            ),
+            verbose: bool = typer.Option(False, "--verbose", "-v", help="Display verbose info"),
+        ) -> None:
+            """Display information about the assembly"""
+            connectors = self.assembly.all_connectors() if all else self.servo.connectors
+            headers = ["NAME", "VERSION", "DESCRIPTION"]
+            row = [self.servo.name, self.servo.version, self.servo.description]
+            if verbose:
+                headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
+                row += [self.servo.homepage, self.servo.maturity, self.servo.license]
+            table = [row]
+            for connector in connectors:
+                row = [connector.name, connector.version, connector.description]
+                if verbose:
+                    row += [connector.homepage, connector.maturity, connector.license]
+                table.append(row)
 
-@cli.command()
-def version() -> None:
-    """Display version and exit"""
-    typer.echo(f"{servo.name} v{servo.version}")
-    raise typer.Exit(0)
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
+        
+        @self.callback()
+        def root_callback(
+            optimizer: str = typer.Option(
+                None,
+                envvar="OPSANI_OPTIMIZER",
+                show_envvar=True,
+                metavar="OPTIMIZER",
+                help="Opsani optimizer to connect to (format is example.com/app)",
+            ),
+            token: str = typer.Option(
+                None,
+                envvar="OPSANI_TOKEN",
+                show_envvar=True,
+                metavar="TOKEN",
+                help="Opsani API access token",
+            ),
+            token_file: Path = typer.Option(
+                None,
+                envvar="OPSANI_TOKEN_FILE",
+                show_envvar=True,
+                exists=True,
+                file_okay=True,
+                dir_okay=False,
+                writable=False,
+                readable=True,
+                resolve_path=True,
+                help="File to load the access token from",
+            ),
+            base_url: str = typer.Option(
+                "https://api.opsani.com/",
+                "--base-url",
+                envvar="OPSANI_BASE_URL",
+                show_envvar=True,
+                show_default=True,
+                metavar="URL",
+                help="Base URL for connecting to Opsani API",
+            ),
+            config_file: Path = typer.Option(
+                "servo.yaml",
+                "--config-file",
+                "-c",
+                envvar="SERVO_CONFIG_FILE",
+                show_envvar=True,
+                exists=False,
+                file_okay=True,
+                dir_okay=False,
+                writable=False,
+                readable=True,
+                resolve_path=True,
+                help="Servo configuration file",
+            ),
+        ):
+            if optimizer is None:
+                raise typer.BadParameter("An optimizer must be specified")
 
+            # Resolve token
+            if token is None and token_file is None:
+                raise typer.BadParameter(
+                    "API token must be provided via --token, --token-file, or ENV['OPSANI_TOKEN']"
+                )
 
-@cli.command()
-def describe() -> None:
-    """
-    Describe connectors and settings for all connectors.
-    """
-    for connector in servo.connectors:
-        describe_func = getattr(connector, "describe", None)
-        if callable(
-            describe_func
-        ):  # TODO: This should have a tighter contract (arity, etc)
-            description: Description = describe_func()
-            debug(connector.name, description)
+            if token is not None and token_file is not None:
+                raise typer.BadParameter("--token and --token-file cannot both be given")
 
+            if token_file is not None and token_file.exists():
+                token = token_file.read_text()
 
-class SchemaOutputFormat(AbstractOutputFormat):
-    json = JSON_FORMAT
-    text = TEXT_FORMAT
-    dict = DICT_FORMAT
-    html = HTML_FORMAT
+            if len(token) == 0 or token.isspace():
+                raise typer.BadParameter("token cannot be blank")
 
+            optimizer = Optimizer(optimizer, token=token, base_url=base_url)
 
-@cli.command()
-def schema(
-    all: bool = typer.Option(
-        False, "--all", "-a", help="Include models from all available connectors"
-    ),
-    top_level: bool = typer.Option(
-        False, "--top-level", help="Emit a top-level schema (only connector models)"
-    ),
-    format: SchemaOutputFormat = typer.Option(
-        SchemaOutputFormat.json, "--format", "-f", help="Select output format"
-    ),
-    output: typer.FileTextWrite = typer.Option(
-        None, "--output", "-o", help="Output schema to [FILE]"
-    ),
-) -> None:
-    """Display configuration schema"""
-    if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
-        typer.echo("error: not yet implemented", err=True)
-        raise typer.Exit(1)
+            # Assemble the Servo
+            try:
+                assembly, servo, ServoSettings = ServoAssembly.assemble(
+                    config_file=config_file,
+                    optimizer=optimizer
+                )
+            except ValidationError as error:
+                typer.echo(error, err=True)
+                raise typer.Exit(2) from error
+            
+            # Hydrate our state
+            self.assembly = assembly
+            self.servo = servo
+            self.settings = servo.settings    
 
-    if top_level:
-        if format == SchemaOutputFormat.json:
-            output_data = assembly.top_level_schema_json(all=all)
+            # FIXME: Update the settings of our pre-registered connectors
+            for connector, connector_cli in connectors_to_update:
+                settings = getattr(servo.settings, connector.config_key_path)
+                connector.settings = settings
+                connector_cli.servo = servo
 
-        elif format == SchemaOutputFormat.dict:
-            output_data = pformat(assembly.top_level_schema(all=all))
-
-    else:
-        if format == SettingsOutputFormat.json:
-            output_data = ServoSettings.schema_json(indent=2)
-        elif format == SettingsOutputFormat.dict:
-            output_data = pformat(ServoSettings.schema())
-        else:
-            raise RuntimeError("no handler configured for output format {format}")
-
-    assert output_data is not None, "output_data not assigned"
-
-    if output:
-        output.write(output_data)
-    else:
-        typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
-
-
-@cli.command(name="validate")
-def validate(
-    file: typer.FileText = typer.Argument("servo.yaml"),
-    all: bool = typer.Option(
-        False, "--all", "-a", help="Include models from all available connectors"
-    ),
-) -> None:
-    """Validate servo configuration file"""
-    try:
-        assembly.parse_file(file)
-        typer.echo("√ Valid servo configuration")
-    except ValidationError as e:
-        typer.echo("X Invalid servo configuration")
-        typer.echo(e, err=True)
-
-
-@cli.command(name="generate")
-def generate() -> None:
-    """Generate servo configuration"""
-    # TODO: Add force and output path options
-    schema = servo.settings.dict(by_alias=True, exclude={"optimizer"})
-
-    # NOTE: We generate with a potentially incomplete settings instance
-    # if there is required configuration without reasonable defaults. This
-    # should be fine because the errors at load time will be clear and we can
-    # embed examples into the schema or put in sentinel values.
-    # NOTE: We have to serialize through JSON first
-    schema_obj = json.loads(json.dumps(schema))
-    output_path = Path.cwd() / "servo.yaml"
-    output_path.write_text(yaml.dump(schema_obj))
-    typer.echo("Generated servo.yaml")
-
+# Build the Typer CLI
+cli = ServoCLI(name="servox", add_completion=True, no_args_is_help=True)
 
 ### Begin developer subcommands
 # NOTE: registered as top level commands for convenience in dev
 
+dev_typer = typer.Typer(name='dev', help="Developer utilities")
 
-@cli.command(name="test")
+@dev_typer.command(name="test")
 def developer_test() -> None:
     """Run automated tests"""
     __run(
@@ -336,7 +462,7 @@ def developer_test() -> None:
     )
 
 
-@cli.command(name="lint")
+@dev_typer.command(name="lint")
 def developer_lint() -> None:
     """Emit opinionated linter warnings and suggestions"""
     cmds = [
@@ -349,7 +475,7 @@ def developer_lint() -> None:
         __run(cmd)
 
 
-@cli.command(name="format")
+@dev_typer.command(name="format")
 def developer_format() -> None:
     """Apply automatic formatting to the codebase"""
     cmds = [
@@ -361,6 +487,7 @@ def developer_format() -> None:
     for cmd in cmds:
         __run(cmd)
 
+cli.add_typer(dev_typer)
 
 def __run(args: Union[str, List[str]], **kwargs) -> None:
     args = shlex.split(args) if isinstance(args, str) else args

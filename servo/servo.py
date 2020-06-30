@@ -207,12 +207,6 @@ class ServoAssembly(BaseModel):
     ##
     # Utility functions
 
-    def parse_file(self, config_file: Path = None) -> BaseServoSettings:
-        config_file = self.config_file if config_file is None else config_file
-        config = yaml.load(config_file, Loader=yaml.FullLoader)
-        config["optimizer"] = self.optimizer.dict()
-        return self.settings_model.parse_obj(config)
-
     @classmethod
     def default_routes(cls) -> Dict[str, Type[Connector]]:
         routes = {}
@@ -316,7 +310,6 @@ def _create_settings_model(
     servo_settings_model = create_model(
         "ServoSettings",
         __base__=BaseServoSettings,
-        optimizer=(Optimizer, ...),
         # connectors=key_paths_to_settings_type_names,
         # connectors=key_paths_to_connector_types,
         **setting_fields,

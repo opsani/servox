@@ -55,22 +55,22 @@ def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Open an interactive console"""
 
 
-def test_info(cli_runner: CliRunner, cli_app: Typer) -> None:
-    result = cli_runner.invoke(cli_app, "info", catch_exceptions=False)
+def test_connectors(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "connectors", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
-def test_info_all(cli_runner: CliRunner, cli_app: Typer) -> None:
-    result = cli_runner.invoke(cli_app, "info --all")
+def test_connectors_all(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "connectors --all")
     assert result.exit_code == 0
     assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
-def test_info_verbose(
+def test_connectors_verbose(
     cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
 ) -> None:
-    result = cli_runner.invoke(cli_app, "info -v")
+    result = cli_runner.invoke(cli_app, "connectors -v")
     assert result.exit_code == 0
     assert re.match(
         "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
@@ -78,8 +78,8 @@ def test_info_verbose(
     )
 
 
-def test_info_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
-    result = cli_runner.invoke(cli_app, "info --all -v")
+def test_connectors_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
         "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout

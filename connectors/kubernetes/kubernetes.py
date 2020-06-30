@@ -16,7 +16,8 @@ import yaml
 
 # from adjust import Adjust, AdjustError
 import servo
-from servo.connector import Connector, ConnectorCLI, ConnectorSettings, License, Maturity
+from servo.connector import Connector, ConnectorSettings, License, Maturity, event
+from servo.cli import ConnectorCLI
 from servo.types import Component, Setting, Description
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple
@@ -510,6 +511,7 @@ def ydump(fn, data):
 
 
 def dbg_log(*args):
+    from loguru import logger
     logger.debug(args)
     # if os.getenv("TDR_DEBUG_LOG"):
     #     print(*args, file=sys.stderr)
@@ -931,6 +933,7 @@ class KubernetesConnector(Connector):
         self.progress = progress
         self.print_progress(message=message)
 
+    @event()
     def describe(self) -> Description:
         try:
             desc = read_desc()

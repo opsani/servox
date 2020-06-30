@@ -1,4 +1,5 @@
-from servo.connector import Connector, ConnectorCLI
+from servo.connector import Connector
+from servo.cli import ConnectorCLI
 
 
 class TestConnector(Connector):

@@ -118,6 +118,11 @@ class ConnectorSettings(BaseSettings):
     between configurations within assemblies.
     """
 
+    @classmethod
+    def parse_file(cls, file: Path) -> 'ConnectorSettings':
+        config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
+        return cls.parse_obj(config)
+
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -469,78 +474,6 @@ def event(**kwargs):
         return fn
 
     return decorator
-
-#####
-
-class ConnectorCLI(typer.Typer):
-    connector: Connector
-
-    def __init__(self, connector: Connector, **kwargs):
-        self.connector = connector
-        name = kwargs.pop("name", connector.command_name)
-        help = kwargs.pop("help", connector.description)
-        add_completion = kwargs.pop("add_completion", False)
-        super().__init__(name=name, help=help, add_completion=add_completion, **kwargs)
-        self.add_commands()
-
-    # TODO: Converge the commands
-    def add_commands(self):
-        @self.command()
-        def schema():
-            """
-            Display the schema 
-            """
-            # TODO: Support output formats (dict, json, yaml)...
-            typer.echo(self.connector.settings.schema_json(indent=2))
-
-        # TODO: Test on servo and on connector
-        @self.command()
-        def generate():
-            """Generate a configuration file"""
-            # TODO: support output paths/formats
-            # NOTE: We have to serialize through JSON first
-            schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
-            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
-            output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.command_name}.yaml")
-
-        @self.command()
-        def validate(file: typer.FileText = typer.Argument(...), key: str = ""):
-            """
-            Validate given file against the JSON Schema
-            """
-            try:
-                config = yaml.load(file, Loader=yaml.FullLoader)
-                connector_config = config[key] if key != "" else config
-                cls = type(self.connector.settings)
-                config = cls.parse_obj(connector_config)
-                typer.echo("√ Valid connector configuration")
-            except (ValidationError, yaml.scanner.ScannerError) as e:
-                typer.echo("X Invalid connector configuration", err=True)
-                typer.echo(e, err=True)
-                raise typer.Exit(1)
-
-        @self.command()
-        def info():
-            """
-            Display connector info
-            """
-            typer.echo(
-                (
-                    f"{self.connector.name} v{self.connector.version} ({self.connector.maturity})\n"
-                    f"{self.connector.description}\n"
-                    f"{self.connector.homepage}\n"
-                    f"Licensed under the terms of {self.connector.license}\n"
-                )
-            )
-
-        @self.command()
-        def version():
-            """
-            Display version
-            """
-            typer.echo(f"{self.connector.name} v{self.connector.version}")
-
 
 #####
 
