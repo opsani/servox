@@ -5,14 +5,14 @@
 [![GitHub release date](https://img.shields.io/github/release-date/opsani/servox.svg)](https://github.com/opsani/servox/releases)
 [![Dependabot Status](https://api.dependabot.com/badges/status?host=github&repo=opsani/servox)](https://dependabot.com)
 
-This repository contains the source code of the next generation Opsani Servo technlogy.
+This repository contains the source code of the next generation Opsani Servo technology.
 
 A servo is a deployable unit of software that connects an application or service to the
 Opsani cloud optimization engine in order to identify cost savings and performance enhancements
 by applying machine learning technology. Servos are lightweight Python applications and are 
-typically deployed as stanadlone containers or on a Kubernetes cluster.
+typically deployed as standalone containers or on a Kubernetes cluster.
 
-Servos are composed of connectors, which prvode the core functionality for integrating with metrics,
+Servos are composed of connectors, which provide the core functionality for integrating with metrics,
 orchestration, and load generation systems/utilities. The ServoX codebase provides core functionality
 shared by all servos and a rich library supporting the development of connectors.
 
@@ -46,8 +46,8 @@ ServoX will be released as Servo 2.0.0 during the summer of 2020.
 
 ### Getting Started with Opsani
 
-Access to an Opsani optimizer in required to deploy the servo and run the end to end integration tests. If you do not currently
-have access to an Opsani environemnt but are otherwise interested in working with the CO engine and Servo, please reach out to us
+Access to an Opsani optimizer is required to deploy the servo and run the end to end integration tests. If you do not currently
+have access to an Opsani environment but are otherwise interested in working with the CO engine and Servo, please reach out to us
 at info@opsani.com and we will get back with you,
 
 ## Architecture
@@ -62,7 +62,7 @@ There are a few key components that form the foundation of the architecture:
 
 * **Connectors** - Connectors are pluggable components that enable the servo to interact with external systems such as metrics providers
 (Prometheus, Datadog, New Relic, etc), orchestration technologies (Kubernetes, cloud provider APIs, etc), or load generators. Every major 
-funtional component (including the servo itself) is a connector that inherits from the `Connector` base class. Connectors can process events
+functional component (including the servo itself) is a connector that inherits from the `Connector` base class. Connectors can process events
 dispatched from the servo (see Events below), provide services to the user (see CLI below), and interact with other connectors.
 * **Servo** - The Servo class models the active set of connectors and configuration that is executing. The servo handles connectivity with
 the Opsani Optimizer API (see Optimizer below) and is responsible for the primary concerns of connectivity management and event handling.
@@ -91,7 +91,7 @@ had the Prometheus connectors active, then `servo prometheus schema` would displ
 ### Environment Variables & Dotenv
 
 Pay attention to the output of `servo --help` and `servo schema` to identify environment variables that can be used for configuration.
-The servo handles configuration of deeply nested attibutes by building the environment variable mapping on the fly at assembly time.
+The servo handles configuration of deeply nested attributes by building the environment variable mapping on the fly at assembly time.
 
 For convenience, the `servo` CLI utility automatically supports `.env` files for loading configuration and is already in the `.gitignore`.
 Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid having to deal with the options to configure the optimizer.
@@ -128,7 +128,7 @@ This mode supports the general case of utilizing a small number of connectors in
 From time to time, it may become necessary to connect to multiple instances of a given service -- we have seen this a few times with
 Prometheus in canary mode deployments where metrics are scattered across a few instances. In these cases, it can become necessary to
 explicitly alias a connector and utilize it under two or more configurations. In such cases, the `connectors` key becomes required in
-order to disambiguate aliases from configuation errors. In such cases, the `connectors` key can be configured as a dictionary where the
+order to disambiguate aliases from configuration errors. In such cases, the `connectors` key can be configured as a dictionary where the
 key identifies the alias and the value identifies the connector:
 
 ```yaml
