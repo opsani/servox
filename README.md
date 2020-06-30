@@ -106,6 +106,63 @@ The specific of how this mechanism works is discussed in detail on the [Python P
 The bundled connectors are registered and discovered using this mechanism via entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
+### Advanced Connector Configuration
+
+ServoX is designed to support assemblies that contain an arbitrary number of connectors that may or may not be active and enable
+the use of multiple instances of a connector with different settings. This introduces a few modes of configuration.
+
+The servo looks to a `connectors` configuration key that explicitly declares which connectors are active within the assembly. If
+a `connectors` key is not present in the config file, then all available connectors become optionally available based on the presence
+or absence of their default configuration key. For example, an assembly that includes New Relic, Datadog, and SignalFX connectors
+installed as Python packages with the following configuration would only activate Datadog due to the presence of its configuration
+stanza:
+
+```yaml
+datadog:
+  setting_1: some value
+  setting_2: another value
+```
+
+This mode supports the general case of utilizing a small number of connectors in "off the shelf" configurations.
+
+From time to time, it may become necessary to connect to multiple instances of a given service -- we have seen this a few times with
+Prometheus in canary mode deployments where metrics are scattered across a few instances. In these cases, it can become necessary to
+explicitly alias a connector and utilize it under two or more configurations. In such cases, the `connectors` key becomes required in
+order to disambiguate aliases from configuation errors. In such cases, the `connectors` key can be configured as a dictionary where the
+key identifies the alias and the value identifies the connector:
+
+```yaml
+connectors:
+  prom1: prometheus
+  prom2: prometheus
+
+prom1:
+  setting_1: some value
+  setting_2: another value
+
+prom2:
+  setting_1: some value
+  setting_2: another value
+```
+
+It is also possible to utilize the `connectors` key in order to exclude connectors from the active set. This can be done with the
+dictionary syntax referenced above or using an array syntax if aliasing is not being utilized. For example, given a configuration
+with New Relic and Prometheus active but some sort of issue warranting the isolation of Prometheus from the active set, the config
+file might be configured like:
+
+```yaml
+connectors:
+  - new_relic
+
+prometheus:
+  setting_1: some value
+  setting_2: another value
+
+new_relic:
+  setting_1: some value
+  setting_2: another value
+```
+
 ### Requirements & Dependencies
 
 ServoX is implemented in Python and supported by a handful of excellent libraries from the Python Open Source community. Additional
