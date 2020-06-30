@@ -38,7 +38,6 @@ servo = "servo.entry_points:run_cli"
 
 # TODO: Example entry point for testing plugins
 [tool.poetry.plugins."servo.connectors"]
-"connector-test" = "servo.testing:TestConnector"
 "vegeta" = "connectors.vegeta.vegeta:VegetaConnector"
 "kubernetes" = "connectors.kubernetes.kubernetes:KubernetesConnector"
 
