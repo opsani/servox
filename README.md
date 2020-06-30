@@ -5,145 +5,156 @@
 [![GitHub release date](https://img.shields.io/github/release-date/opsani/servox.svg)](https://github.com/opsani/servox/releases)
 [![Dependabot Status](https://api.dependabot.com/badges/status?host=github&repo=opsani/servox)](https://dependabot.com)
 
+This repository contains the source code of the next generation Opsani Servo technlogy.
 
-This repository contains the source code of the next generation Opsani Servo architecture.
+A servo is a deployable unit of software that connects an application or service to the
+Opsani cloud optimization engine in order to identify cost savings and performance enhancements
+by applying machine learning technology. Servos are lightweight Python applications and are 
+typically deployed as stanadlone containers or on a Kubernetes cluster.
 
-A servo is a software assembly deployed for the purposes of connecting an application to the
-Opsani cloud optimization engine in order to identify costs savings and performance optimizations
-by applying machine learning technology to its deployment and configuration. 
+Servos are composed of connectors, which prvode the core functionality for integrating with metrics,
+orchestration, and load generation systems/utilities. The ServoX codebase provides core functionality
+shared by all servos and a rich library supporting the development of connectors.
 
+## Quick Start
 
+ServoX is a modern Python application distributed as an installable Python package. Development is done
+in a Python install managed with [Pyenv](https://github.com/pyenv/pyenv) and a virtual environment managed by [Poetry](https://python-poetry.org/). 
+This is the path of least resistance but any Python package management system should work.
 
-This repository contains the source code of the next generation Opsani Servo architecture.
-
-Details about the design parameters of the implementation are detailed on the ServoX document available within the
-Opsani wiki resoures.
-
-This readme kinda sucks at the moment but the code is solid. As the last details of the design solidify this doc will evolve. But in the meantime...
-
-Quick install via `poetry install [GITHUB URL]` and then work with the CLI `servo --help`. 
-
-## Rundown of cool things...
-
-The way that ServoX works is pretty hot. There are two fundamental models: Settings and Connectors, which are designed and implemented in matching pairs.
-Settings classes are [Pydantic models](https://pydantic-docs.helpmanual.io/usage/models/) that describe the configuration of the connector class that they are paired with. 
-
-The settings classes strongly specify the configuration surface area of a connector in a declarative, data driven fashion. Connectors are initialized with their
-declared settings class as a required input. This has the effect of making it annoying and difficult to shoot yourself in the foot unless you really, really want to.
-
-Connectors are auto-discovered via Python setuptools entry-points and magically become available once you install with Poetry (or Pip if you are a hoodlum). Each Connector (including the Servo) has a namesake settings class that models its configuration within the YAML file (or any other source in principle).
-
-Connectors are pulled together into a routing table where in each root level key is either "owned" by a particular connector and subject to validation against its schema or are treated as foreign data to either be ignored (in the case of third party development) or rejected (if ypu are not lookibg for model extensibility and prioritize stability
-and control).
-
-You can either have implicit or explicit activation of connectrs. In the simple case where you don't have a `connectors` key in your YAML, all discovered connectors get optionally mounted at their default routes (that is to say, it will leave you alone until you begin coniguring a tkey that it lives at).
-
-So if in your container/virtual env you have VegetaConnector, KubernetesConnector, PrometheusConnector, and DatadogConnector you can now activate them by adding the `vegeta`, `kubernetes`, `prometheus`, and `datadog` keys respectively at the root level of the config YAML..
-
-But you can also manage them explicity via the `connectors` key like so:
-
-```
-connectors:
- - vegeta
- - datadog
-```
-
-if you only want to enable a subset of connectors or are debugging something and want to tag some in and out while working on something. In the explicit configuration form, you must have a properly configured stanza for the connector or it won't boot up.
-
-But then it gets really fun because you can mount the same connector multiple times by using a key/value synatax:
-
-```
-connectors:
- vegeta: VegetaConnector
- staging_datadog: DatadogConnector
- production_datadog: DatadogConnector
- prom1: prometheus
- prom2: prometheus
-```
-
-In this form,when the Servo is assembled, it resolves the `connectors` key into a canonical map of paths to connector classes and then dynamically builds a Pydantic model by  creating a copy of the base settings model for each connector and attaching it to the dynamic model.
-
-Connectors are initialized with a Settings instance of the type they declare and literally cannot tell the difference between running standalone or in a herd. They don't even know where the settings came from -- they just know that the model is valid and they were initialized with it.
-
-When I assemble the dynamic servo settings model, I use the config paths to build environment variable names of the form `SERVO_[CONNECTOR]_[ATTRIBUTE]` so you get environment variables controls for every modeled setting, for free, with type safety and validation (you can trivially implement handlers for arbitrary types). You can also override multiple properties at once by doing `SERVO_VEGETA='{ "rate": "50/1s", "duration": "20m" }' and as long as the env var parses as clean JSON into a dictionary it will be merged onto the model before validation
-
-## TODO:
-
-* Create connectors for vegeta, k8s, and prometheus
-* Build config classes for all connectors
-* Support validation, generation
-* Get servo going connecting to test server (local)
-* Produce config fixtures from existing repos
-* Include servo-exec in core library
-* Dockerize
-* Logging
-* Event bus (broadcast measure/adjust)
-* Metrics
-* Encoders
+* Clone the repo: `git clone git@github.com:opsani/servox`
+* Install required Python: `cd servox && pyenv install`
+* Install Poetry: `curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python`
+* Install dependencies: `poetry install`
+* Activate the venv: `poetry shell`
+* Start interacting with the servo: `servo --help`
+* Generate a config file: `servo generate`
 
 ## Overview
 
-### ServoX Layout
+### Project Status
 
-* README.md
-* pyproject.toml
-* connector.py
-* connector_test.py
-* docs
-* LICENSE
+ServoX is currently in beta. Not all Opsani connectors are currently supported. The current focus is on Kubernetes, Prometheus, and
+Vegeta. The connectors are bundled within the repository in the `connectors` directory. These packages will be migrated out to 
+standalone modules as development progresses.
 
-dotenv support
+Putting these caveats aside, ServoX is fairly mature and provides some significant advantages and new capabilities above the 
+production Servo module. If your target system is supported by the available connectors you may want to explore a ServoX 
+deployment.
 
-### Configuration
+ServoX will be released as Servo 2.0.0 during the summer of 2020.
 
-immutable
+### Getting Started with Opsani
 
+Access to an Opsani optimizer in required to deploy the servo and run the end to end integration tests. If you do not currently
+have access to an Opsani environemnt but are otherwise interested in working with the CO engine and Servo, please reach out to us
+at info@opsani.com and we will get back with you,
 
-### Architecture
+## Architecture
 
-1. Components: settings, connector, cli
-2. Connector routes (id => class)
-3. Assembly
-4. ENV vars overrides and aliased configs
+ServoX has been designed to provide a delightful experience for engineers integrating cloud optimization into their systems and 
+workflow. Developer ergonomics and operator efficiency are primary concerns as integrating and orchestrating disparate components
+can quickly become tiresome and complex. As a library, ServoX aspires to be as "batteries included" as possible and support developers
+with well designed, implemented, and tested solutions for common concerns. As a tool, ServoX strives to support system operators and
+devops engineers with strong support for common tasks and a high-velocity workflow.
 
-config path, command name, settings, env vars
+There are a few key components that form the foundation of the architecture:
+
+* **Connectors** - Connectors are pluggable components that enable the servo to interact with external systems such as metrics providers
+(Prometheus, Datadog, New Relic, etc), orchestration technologies (Kubernetes, cloud provider APIs, etc), or load generators. Every major 
+funtional component (including the servo itself) is a connector that inherits from the `Connector` base class. Connectors can process events
+dispatched from the servo (see Events below), provide services to the user (see CLI below), and interact with other connectors.
+* **Servo** - The Servo class models the active set of connectors and configuration that is executing. The servo handles connectivity with
+the Opsani Optimizer API (see Optimizer below) and is responsible for the primary concerns of connectivity management and event handling.
+* **Settings** - Configuration is a major shared concern in tools such as Opsani that are designed to integrate with arbitrary systems.
+Ensuring that configuration is valid, complete, and functional is a non-trivial task for any component with more than a few knobs and levers.
+ServoX provides a rich configuration subsystem built on Pydantic that makes modeling and processing configuration very straightforward. Out
+of the box support is provided for common needs such as environment variables and dotenv files. Configuration is strongly validated using
+JSON Schema and support is provided for generating config files directly from the connectors.
+* **Optimizer** - The Optimizer class represents an Opsani optimization engine that the servo interacts with via an API. The optimizer can
+be configured via CLI arguments, from the environment, or via assets such as Kubernetes secrets.
+* **Events** - The Event subsystem provides the primary interaction point between the Servo and Connectors in a loosely coupled manner. Events
+are simple string values that have connector defined semantics and can optionally return a result. The Servo base class defines the primary
+events of `DESCRIBE`, `MEASURE`, `ADJUST`, and `PROMOTE` which correspond to declaring the metrics & components that the connector is interested in,
+taking measurements and returning normalized scalar or time series data points, making changes to the application under optimization, or promoting
+an optimized configuration to the broader system.
+* **Assembly** - The Servo Assembly models the runtime environment of the servo outside of a particular configuration. The assembly is the parent
+of the servo and is responsible for "assembling" it by instantiating connectors as configured by the operator. Connectors can be used multiple times
+(e.g. you may want to connect to multiple discrete Prometheus services) or may not be used at all (e.g. you have a New Relic connector in the 
+container image but aren't using it).
+* **CLI** - The CLI provides the primary interface for interacting with the servo. The CLI is modular and contains a number of root level commands
+and a registered subcommand for each active connector. Common actions include `schema`, `validate`, `describe`, `version`, etc. Each action is
+implemented as an Event and are mounted contextually at the root CLI and as nested subcommands. For example, if you invoke `servo schema` you
+will get an output of the JSON Schema for the entire servo with each connector registered under its config key (more on this later). If you
+had the Prometheus connectors active, then `servo prometheus schema` would display the JSON Schema specific to the Prometheus connector.
+
+### Environment Variables & Dotenv
+
+Pay attention to the output of `servo --help` and `servo schema` to identify environment variables that can be used for configuration.
+The servo handles configuration of deeply nested attibutes by building the environment variable mapping on the fly at assembly time.
+
+For convenience, the `servo` CLI utility automatically supports `.env` files for loading configuration and is already in the `.gitignore`.
+Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid having to deal with the options to configure the optimizer.
 
 ### Connector Discovery
 
+Connectors are set up to be auto-discovered using setuptools entry point available from the Python standard library. When a new connector
+is installed into the assembly, it will be automatically discovered and available for interaction.
 
+The specific of how this mechanism works is discussed in detail on the [Python Packaging Guide](https://packaging.python.org/guides/creating-and-discovering-plugins/).
 
-import pkg_resources
+The bundled connectors are registered and discovered using this mechanism via entries in the `pyproject.toml` file under the
+`[tool.poetry.plugins."servo.connectors"]` stanza.
 
-discovered_plugins = {
-    entry_point.name: entry_point.load()
-    for entry_point
-    in pkg_resources.iter_entry_points('myapp.plugins')
-}
+### Requirements & Dependencies
 
-https://packaging.python.org/guides/creating-and-discovering-plugins/
+ServoX is implemented in Python and supported by a handful of excellent libraries from the Python Open Source community. Additional
+dependencies in the form of Python packages or system utilities are imposed by connectors (see below).
 
-In pyproject.toml:
-```
-[tool.poetry.plugins."servo.connectors"]
-".rst" = "some_module:SomeClass"
-```
+* [Python](https://www.python.org/) 3.6+ - ServoX makes liberal use of type hints to annotate the code and drive some functionality.
+* [Pydantic](https://pydantic-docs.helpmanual.io/) - Pydantic is a fantastic parsing and validation library that underlies most classes within ServoX. It enables the
+strong modeling and validation that forms the core of the configuration module.
+* [Typer](https://typer.tiangolo.com/) - Typer provides a nice, lightweight enhancement on top of [Click](https://click.palletsprojects.com/en/7.x/) for building CLIs in Python. The CLI is built out on top of Typer.
+* [httpx](https://www.python-httpx.org/) - httpx is a (mostly) requests compatible HTTP library that provides support for HTTP/2, is type annotated, has extensive test coverage, and supports async interactions on top of asyncio.
+* [loguru](https://loguru.readthedocs.io/en/stable/index.html) - A rich Python logging library that builds on the foundation of the standard library
+logging module and provides a number of enhancements.
 
-### Modules
+## Development
 
-* config
-* logging
-* http
-* testing
+### Contributing to ServoX
 
-## Installation
+Open Source contributions are always appreciated. Should you wish to get involved, drop us a line via GitHub issues or
+email to coordinate efforts.
 
-## CLI
+It is expected that most Open Source contributions will come in the form of new connectors. Should you wish to develop
+a connector, reach out to us at Opsani as we have connector developer guides that are in pre-release while ServoX matures.
+
+### Docker & Compose
+
+`Dockerfile` and `docker-compose.yaml` configurations are available in the repository and have been designed to support both
+development and deployment workflows. Configuration file mounts and environment variables can be used to influence the behavior
+of the servo within the container. The `SERVO_ENV` environment variable controls whether development packages are installed into
+the image (hint: set it to `SERVO_ENV=production` to slim down your images and speed up builds).
+
+### Work in Progress
+
+The following is a non-exhaustive list of work in progress on the road to shipping v2.0.0
+
+* [ ] Create connectors for vegeta, k8s, and prometheus
+* [ ] Build config classes for all connectors
+* [ ] Package builds
+* [ ] Implement testing API for exercising API dependent components (e.g. `ServoRunner`)
+* [ ] Produce config fixtures from existing projects
+* [ ] Include servo-exec in core library
+* [ ] Encoders
 
 ## Testing
 
-## Packaging
-
-## Contributing
+Tests are implemented using [Pytest](https://docs.pytest.org/en/stable/) and live in the `tests` subdirectory. Tests can be executed directly via the `pyenv` CLI
+interface (e.g. `pytest tests`) or via the developer module of the CLI via `servo dev test`.
 
 ## License
 
+ServoX is distributed under the terms of the Apache 2.0 Open Source license.
+
+A copy of the license is provided in the [LICENSE](LICENSE) file at the root of the repository.
