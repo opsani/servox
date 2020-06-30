@@ -36,6 +36,9 @@ from pydantic import (
 from pydantic.fields import ModelField
 
 
+USER_AGENT = "github.com/opsani/servox"
+
+
 class Optimizer(BaseSettings):
     """
     An Optimizer models an Opsani optimization engines that the Servo can connect to
@@ -347,13 +350,17 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         )
 
     ##
-    # Subclass services
+    # Subclass services    
 
-    # TODO: ServoRunner should use this?
-    async def api_client(self) -> httpx.AsyncClient:
+    def api_client(self) -> httpx.Client:
         """Yields an httpx.AsyncClient instance configured to talk to Opsani API"""
-        async with httpx.AsyncClient() as client:
-            yield client
+        base_url = f"{self.optimizer.base_url}accounts/{self.optimizer.org_domain}/applications/{self.optimizer.app_name}/"
+        headers = {
+            "Authorization": f"Bearer {self.optimizer.token}",
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+        }
+        return httpx.Client(base_url=base_url, headers=headers)
 
     @property
     def logger(self) -> logging.Logger:

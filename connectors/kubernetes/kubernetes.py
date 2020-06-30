@@ -925,7 +925,7 @@ class KubernetesConnector(Connector):
 
         from devtools import pformat
         #print(json.dumps(data), flush=True)
-        logger.info(pformat(json))
+        self.logger.info(pformat(json))
         # Schedule the next progress upd
 
     def _progress(self, progress, message):
@@ -947,6 +947,7 @@ class KubernetesConnector(Connector):
         
         return Description(components=components)
 
+    @event()
     def adjust(self, data) -> dict:
         try:
             desc = read_desc()

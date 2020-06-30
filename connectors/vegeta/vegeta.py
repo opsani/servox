@@ -288,6 +288,7 @@ class VegetaConnector(Connector):
         return Description(metrics=METRICS, components=[])
     
 
+    @event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?

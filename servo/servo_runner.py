@@ -9,12 +9,10 @@ import httpx
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
-from servo.connector import Optimizer
-from servo.servo import BaseServoSettings, Servo
+from servo.connector import Optimizer, USER_AGENT
+from servo.servo import BaseServoSettings, Servo, Events
 from servo.types import Control, Description, Measurement
-
-USER_AGENT = "github.com/opsani/servox"
-
+from logging import Logger
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -91,87 +89,79 @@ class ConnectorError(Exception):
 class ServoRunner:
     servo: Servo
     interactive: bool
-    _settings: BaseServoSettings
-    _optimizer: Optimizer
     base_url: str
     headers: Dict[str, str]
     _stop_flag: bool
 
-    def __init__(self, servo: Servo, **kwargs) -> None:
+    def __init__(self, servo: Servo, *, interactive: bool = False,  **kwargs) -> None:
         self.servo = servo
-        self.interactive = False
-        self._settings = servo.settings
-        self._optimizer = servo.settings.optimizer
-        self.base_url = f"{self._optimizer.base_url}accounts/{self._optimizer.org_domain}/applications/{self._optimizer.app_name}/"
-        self.headers = {
-            "Authorization": f"Bearer {self._optimizer.token}",
-            "User-Agent": USER_AGENT,
-            "Content-Type": "application/json",
-        }
+        self.interactive = interactive
         super().__init__()
+    
+    @property
+    def optimizer(self) -> Optimizer:
+        return self.servo.optimizer
+
+    @property
+    def settings(self) -> BaseServoSettings:
+        return self.servo.settings
+    
+    @property
+    def logger(self) -> Logger:
+        return self.servo.logger
 
     def describe(self) -> Description:
-        logger.info("Describing...")
+        self.logger.info("Describing...")
 
         # TODO: This message dispatch should go through a driver for in-process vs. subprocess
         aggregate_description = Description.construct()
-        for connector in self.servo.connectors:
-            describe_func = getattr(connector, "describe", None)
-            if callable(
-                describe_func
-            ):  # TODO: This should have a tighter contract (arity, etc)
-                description: Description = describe_func()
-                aggregate_description.components.extend(description.components)
-                aggregate_description.metrics.extend(description.metrics)
+        results: List[EventResult] = self.servo.dispatch_event(Events.DESCRIBE)
+        for result in results:
+            description = result.value
+            aggregate_description.components.extend(description.components)
+            aggregate_description.metrics.extend(description.metrics)
 
         return aggregate_description
 
     def measure(self, param: MeasureParams) -> Measurement:
-        logger.info(f"Measuring... [merics={', '.join(param.metrics)}]")
-        logger.trace(pformat(param))
+        self.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
+        self.logger.trace(pformat(param))
 
         aggregate_measurement = Measurement.construct()
-        for connector in self.servo.connectors:
-            measure_func = getattr(connector, "measure", None)
-            if callable(
-                measure_func
-            ):  # TODO: This should have a tighter contract (arity, etc)
-                measurement = measure_func(metrics=param.metrics, control=param.control)
-                aggregate_measurement.readings.extend(measurement.readings)
-                aggregate_measurement.annotations.update(measurement.annotations)
+        results: List[EventResult] = self.servo.dispatch_event(Events.MEASURE, metrics=param.metrics, control=param.control)
+        for result in results:
+            measurement = result.value
+            aggregate_measurement.readings.extend(measurement.readings)
+            aggregate_measurement.annotations.update(measurement.annotations)
 
         return aggregate_measurement
 
     def adjust(self, param) -> dict:
-        logger.info("Adjusting...")
-        logger.trace(pformat(param))
+        self.logger.info("Adjusting...")
+        self.logger.trace(pformat(param))
 
-        for connector in self.servo.connectors:
-            adjust_func = getattr(connector, "adjust", None)
-            if callable(
-                adjust_func
-            ):  # TODO: This should have a tighter contract (arity, etc)
-                adjustment = adjust_func(param)  # TODO: Should be modeled
-                result = adjustment.get("status", "undefined")
-                if result == "ok":
-                    logger.info(f"{connector.name} - Adjustment completed")
-                    return adjustment
-                else:
-                    raise ConnectorError(
-                        'Adjustment driver failed with status "{}" and message:\n{}'.format(
-                            status, str(rsp.get("message", "undefined"))
-                        ),
-                        status=status,
-                        reason=adjustment.get("reason", "undefined"),
-                    )
+        results: List[EventResult] = self.servo.dispatch_event(Events.ADJUST, param)
+        for result in results:
+            # TODO: Should be modeled
+            adjustment = result.value
+            status = adjustment.get("status", "undefined")
+
+            if status == "ok":
+                self.logger.info(f"{result.connector.name} - Adjustment completed")
+                return adjustment
+            else:
+                raise ConnectorError(
+                    'Adjustment driver failed with status "{}" and message:\n{}'.format(
+                        status, str(adjustment.get("message", "undefined"))
+                    ),
+                    status=status,
+                    reason=adjustment.get("reason", "undefined"),
+                )
 
         # TODO: Model a response class
         return {}
 
     # --- Helpers -----------------------------------------------------------------
-
-    def http_client(self) -> httpx.Client:
-        return httpx.Client(base_url=self.base_url, headers=self.headers)
 
     def delay(self):
         if self.interactive:
@@ -188,40 +178,40 @@ class ServoRunner:
         """
 
         event_request = EventRequest(event=event, param=param)
-        with self.http_client() as client:
+        with self.servo.api_client() as client:
             try:
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
             except httpx.HTTPError as error:
-                logger.exception(
+                self.logger.exception(
                     f"HTTP error encountered while posting {event.value} event"
                 )
-                logger.trace(pformat(event_request))
+                self.logger.trace(pformat(event_request))
                 raise error
 
         return parse_obj_as(Union[CommandResponse, Status], response.json())
 
     def exec_command(self):
         cmd_response = self.post_event(Event.WHATS_NEXT, None)
-        logger.debug(f"What's Next? => {cmd_response.command}")
-        logger.trace(pformat(cmd_response))
+        self.logger.debug(f"What's Next? => {cmd_response.command}")
+        self.logger.trace(pformat(cmd_response))
 
         try:
             if cmd_response.command == Command.DESCRIBE:
                 description = self.describe()
-                logger.info(
+                self.logger.info(
                     f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
                 )
-                logger.trace(pformat(description))
+                self.logger.trace(pformat(description))
                 param = dict(descriptor=description.opsani_dict(), status="ok")
                 self.post_event(Event.DESCRIPTION, param)
 
             elif cmd_response.command == Command.MEASURE:
                 measurement = self.measure(cmd_response.param)
-                logger.info(
+                self.logger.info(
                     f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
                 )
-                logger.trace(pformat(measurement))
+                self.logger.trace(pformat(measurement))
                 param = measurement.opsani_dict()
                 self.post_event(Event.MEASUREMENT, param)
 
@@ -249,7 +239,7 @@ class ServoRunner:
                     len(components_dict[component]["settings"])
                     for component in components_dict
                 )
-                logger.info(
+                self.logger.info(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
 
@@ -261,14 +251,14 @@ class ServoRunner:
                 ):  # ignore sleep request when interactive - let user decide
                     # TODO: Model this
                     duration = int(cmd_response.param.get("duration", 120))
-                    logger.info(f"Sleeping {duration} sec.")
+                    self.logger.info(f"Sleeping {duration} sec.")
                     time.sleep(duration)
 
             else:
                 raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
         except Exception as error:
-            logger.exception(f"{cmd_response.command} command failed!")
+            self.logger.exception(f"{cmd_response.command} command failed!")
             param = dict(status="failed", message=_exc_format(error))
             sys.exit(2)
             self.post_event(_event_for_command(cmd_response.command), param)
@@ -277,12 +267,12 @@ class ServoRunner:
         self._stop_flag = False
         self._init_signal_handlers()
 
-        logger.info(
-            f"Servo starting with {len(self.servo.connectors)} active connectors [{self._optimizer.id} @ {self._optimizer.base_url}]"
+        self.logger.info(
+            f"Servo starting with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
 
         # announce
-        logger.info("Saying HELLO.", end=" ")
+        self.logger.info("Saying HELLO.", end=" ")
         self.delay()
         self.post_event(Event.HELLO, dict(agent=USER_AGENT))
 
@@ -290,12 +280,12 @@ class ServoRunner:
             try:
                 self.exec_command()
             except Exception:
-                logger.exception("Exception encountered while executing command")
+                self.logger.exception("Exception encountered while executing command")
 
         try:
             self.post_event(Event.GOODBYE, dict(reason=self.stop_flag))
         except Exception as e:
-            logger.exception(
+            self.logger.exception(
                 "Warning: failed to send GOODBYE: {}. Exiting anyway".format(str(e))
             )
 
@@ -320,7 +310,7 @@ class ServoRunner:
             sig_name = "signal #{}".format(sig_num)
 
         # log signal
-        logger.info(
+        self.logger.info(
             f'*** Servo stop requested by signal "{format(sig_name)}". Sending GOODBYE'
         )
 
@@ -328,7 +318,7 @@ class ServoRunner:
         try:
             self.post_event(Event.GOODBYE, dict(reason=sig_name))
         except Exception as e:
-            logger.exception(
+            self.logger.exception(
                 "Warning: failed to send GOODBYE: {}. Exiting anyway".format(str(e))
             )
 

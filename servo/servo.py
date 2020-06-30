@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type, Union
+from enum import Enum
 
 import typer
 import yaml
@@ -21,6 +22,16 @@ from servo.connector import (
     event,
     EventResult
 )
+
+
+class Events(str, Enum):
+    """
+    Defines the standard Servo events.
+    """
+    DESCRIBE = 'describe'
+    MEASURE = 'measure'
+    ADJUST = 'adjust'
+    PROMOTE = 'promote'
 
 
 class BaseServoSettings(ConnectorSettings):
@@ -182,7 +193,7 @@ class ServoAssembly(BaseModel):
             args = kwargs.copy()
             for c in cls.all_connectors():
                 args[c.__key_path__] = c.settings_model().construct()
-            settings = ServoSettings(optimizer=optimizer, **args)
+            settings = ServoSettings(**args)
 
         # Initialize all active connectors
         connectors: List[Connector] = []
@@ -194,7 +205,7 @@ class ServoAssembly(BaseModel):
                 connectors.append(connector)
 
         # Build the servo object
-        servo = Servo(settings, connectors=connectors)
+        servo = Servo(settings, connectors=connectors, optimizer=optimizer)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,

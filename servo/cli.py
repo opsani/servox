@@ -328,7 +328,7 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
         @self.command()
         def run() -> None:
             """Run the servo"""
-            ServoRunner(servo).run()
+            ServoRunner(self.servo).run()
         
         @self.command()
         def connectors(
