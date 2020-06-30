@@ -15,7 +15,7 @@ from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 
 from servo.connector import Connector, ConnectorSettings, Optimizer
-from servo.servo import Servo, ServoAssembly
+from servo.servo import Servo, ServoAssembly, Events
 from servo.servo_runner import ServoRunner
 from servo.types import *
 
@@ -99,10 +99,25 @@ class SharedCommandsMixin:
             Describe metrics and settings
             """
             results: List[EventResult] = self.servo.dispatch_event(
-                "describe", include=self.connectors
+                Events.DESCRIBE, include=self.connectors
             )
+            headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
+            table = []
             for result in results:
-                debug(result.connector.name, result.value)
+                description: Description = result.value
+                components_column = []
+                for component in description.components:                     
+                    for setting in component.settings:
+                        components_column.append(f"{component.name}.{setting.name}={setting.value}")
+
+                metrics_column = []
+                for metric in description.metrics:
+                    metrics_column.append(f"{metric.name} ({metric.unit})")
+
+                row = [result.connector.name, "\n".join(components_column), "\n".join(metrics_column)]
+                table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         class SchemaOutputFormat(AbstractOutputFormat):
             json = JSON_FORMAT
