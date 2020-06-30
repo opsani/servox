@@ -20,7 +20,7 @@ from servo.connector import Connector, ConnectorSettings, License, Maturity, eve
 from servo.cli import ConnectorCLI
 from servo.types import Component, Setting, Description
 from pydantic import BaseModel, Extra, validator
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 json_enc = json.JSONEncoder(separators=(",", ":")).encode
 
@@ -870,16 +870,21 @@ def update(appname, desc, data, print_progress):
 
 
 class KuberneteSettings(ConnectorSettings):
-   pass
-   # namespace
+    namespace: Optional[str]
 
-   class Config:
+    @classmethod
+    def generate(cls) -> 'KubernetesSettings':
+        return cls(
+            namespace='default', 
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster"
+        )
+
+    class Config:
         # We are the base root of pluggable configuration
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
 
 VERSION = '1.2'
-
 
 @servo.connector.metadata(
     description="Kubernetes adjust connector",

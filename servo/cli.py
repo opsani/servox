@@ -37,7 +37,7 @@ connectors_to_update = []
 
 class SharedCommandsMixin:
     servo: Servo
-    settings: BaseServoSettings
+    settings: ConnectorSettings
     connectors: List[Connector]
     hide_servo_options: bool = True
 
@@ -171,23 +171,7 @@ class SharedCommandsMixin:
             except (ValidationError, yaml.scanner.ScannerError) as e:
                 typer.echo(f"X Invalid {self.connector.name} configuration in {file}")
                 typer.echo(e, err=True)
-                raise typer.Exit(1)
-
-
-        @self.command(name="generate")
-        def generate() -> None:
-            """Generate a configuration file"""
-            # TODO: Add force, output path, and format options
-
-            # NOTE: We generate with a potentially incomplete settings instance
-            # if there is required configuration without reasonable defaults. This
-            # should be fine because the errors at load time will be clear and we can
-            # embed examples into the schema or put in sentinel values.
-            # NOTE: We have to serialize through JSON first
-            schema = json.loads(json.dumps(self.connector.settings.dict(by_alias=True)))
-            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
-            output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.command_name}.yaml")
+                raise typer.Exit(1)        
         
         @self.command()
         def events():
@@ -283,7 +267,21 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
 
     # Register connector specific commands
     def add_commands(self):
-        pass
+
+        @self.command(name="generate")
+        def generate(
+            defaults: bool = typer.Option(
+                False, "--defaults", "-d", help="Include default values in the generated output"
+            )
+        ) -> None:
+            """Generate a configuration file"""
+            # TODO: Add force, output path, and format options
+            exclude_unset = not defaults
+            settings = self.connector.settings_model().generate()
+            schema = json.loads(json.dumps({ self.connector.config_key_path: settings.dict(by_alias=True, exclude_unset=exclude_unset) }))
+            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
+            output_path.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {self.connector.command_name}.yaml")
         
         
 
@@ -352,6 +350,27 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
+        
+        @self.command(name="generate")
+        def generate(
+            defaults: bool = typer.Option(
+                False, "--defaults", "-d", help="Include default values in the generated output"
+            )
+        ) -> None:
+            """Generate a configuration file"""
+            # TODO: Add force, output path, and format options
+            
+            exclude_unset = not defaults
+            args = {}
+            for c in self.assembly.all_connectors():
+                args[c.__key_path__] = c.settings_model().generate()
+            settings = self.assembly.settings_model(**args)
+
+            # NOTE: We have to serialize through JSON first (not all fields serialize directly)
+            schema = json.loads(json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset)))
+            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
+            output_path.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {self.connector.command_name}.yaml")
         
         @self.callback()
         def root_callback(

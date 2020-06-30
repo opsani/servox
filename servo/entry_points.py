@@ -50,7 +50,7 @@ def run_cli():
 
     for path, connector_class in routes.items():
         settings = connector_class.settings_model().construct()
-        connector = connector_class(settings)        
+        connector = connector_class(settings)
         connector_cli = connector.cli()
         connectors_to_update.append((connector, connector_cli, ))
         if connector_cli is not None:

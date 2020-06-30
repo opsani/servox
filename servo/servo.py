@@ -47,6 +47,10 @@ class BaseServoSettings(ConnectorSettings):
     connectors: Optional[Dict[str, str]] = None
     """A map of connector key-paths to fully qualified class names"""
 
+    @classmethod
+    def generate(cls) -> 'ConnectorSettings':
+        return cls()
+
     @validator("connectors", pre=True)
     @classmethod
     def validate_connectors(cls, connectors) -> Optional[Dict[str, str]]:
@@ -283,7 +287,10 @@ def _create_settings_model(
         config = yaml.load(open(config_file), Loader=yaml.FullLoader)
         if isinstance(config, dict):  # Config file could be blank or malformed
             connectors_value = config.get("connectors", None)
-            if connectors_value:
+            if not connectors_value:
+                # No explicit connector config, use the defaults
+                key_paths_to_connector_types = _default_routes()
+            else:
                 routes = _routes_for_connectors_descriptor(connectors_value)
                 setting_fields = {}
                 for path, connector_class in routes.items():
@@ -305,6 +312,9 @@ def _create_settings_model(
                         settings_model
                     )
                     key_paths_to_connector_types[path] = connector_class
+    else:
+        # No config file, use default routes
+        key_paths_to_connector_types = _default_routes()
 
     # If we don't have any target connectors, add all available as optional fields
     if setting_fields is None:

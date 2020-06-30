@@ -126,6 +126,17 @@ class ConnectorSettings(BaseSettings):
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
         return cls.parse_obj(config)
 
+    @classmethod
+    def generate(cls) -> 'ConnectorSettings':
+        """
+        Return a set of default settings for a new configuration.
+
+        Implementations should build a complete, validated Pydantic model and return it.
+
+        This is an abstract method that needs to be implemented in subclasses.
+        """
+        raise NotImplementedError(f"Generated settings must be implemented in the ConnectorSettings subclass '{cls.__qualname__}'")
+
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

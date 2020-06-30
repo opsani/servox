@@ -1016,19 +1016,36 @@ def test_vegeta_cli_generate(
     config_file = tmp_path / "vegeta.yaml"
     config = config_file.read_text()
     assert config == (
-        "connections: 10000\n"
-        "description: null\n"
-        "duration: 5m\n"
-        "format: http\n"
-        "http2: true\n"
-        "insecure: false\n"
-        "keepalive: true\n"
-        "max-body: -1\n"
-        "max-workers: 18446744073709551615\n"
-        "rate: 50/1s\n"
-        "target: GET http://localhost:8080\n"
-        "targets: null\n"
-        "workers: 10\n"
+        'vegeta:\n'
+        '  description: Update the rate, duration, and target/targets to match your load profile\n'
+        '  duration: 5m\n'
+        '  rate: 50/1s\n'
+        '  target: https://example.com/\n'
+    )
+
+def test_vegeta_cli_generate_with_defaults(
+    tmp_path: Path, vegeta_cli: typer.Typer, cli_runner: CliRunner
+) -> None:
+    result = cli_runner.invoke(vegeta_cli, "generate --defaults")
+    assert result.exit_code == 0
+    assert "Generated vegeta.yaml" in result.stdout
+    config_file = tmp_path / "vegeta.yaml"
+    config = config_file.read_text()
+    assert config == (
+        'vegeta:\n'
+        '  connections: 10000\n'
+        '  description: Update the rate, duration, and target/targets to match your load profile\n'
+        '  duration: 5m\n'
+        '  format: http\n'
+        '  http2: true\n'
+        '  insecure: false\n'
+        '  keepalive: true\n'
+        '  max-body: -1\n'
+        '  max-workers: 18446744073709551615\n'
+        '  rate: 50/1s\n'
+        '  target: https://example.com/\n'
+        '  targets: null\n'
+        '  workers: 10\n'
     )
 
 

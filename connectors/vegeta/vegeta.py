@@ -244,6 +244,15 @@ class VegetaSettings(ConnectorSettings):
             raise ValueError(str(e)) from e
 
         return v
+    
+    @classmethod
+    def generate(cls) -> 'VegetaSettings':
+        return cls(
+            rate='50/1s', 
+            duration='5m',
+            target='https://example.com/',
+            description="Update the rate, duration, and target/targets to match your load profile"
+        )
 
     class Config:
         json_encoders = {TargetFormat: lambda t: t.value()}
