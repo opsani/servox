@@ -1,9 +1,25 @@
 from datetime import datetime, timedelta
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, List, Iterable
 import signal
 import sys
 import durationpy
 from pydantic import BaseModel, validator
+
+def join_to_series(items: Iterable[str], *, conjunction='and', oxford_comma=True) -> str:
+    """
+    Concatenate any number of strings into a series suitable for use in English output.
+
+    Items are joined using a comma and a configurable conjunction, defaulting to 'and'.
+    """
+    count = len(items)
+    if count == 0: return ''
+    elif count == 1: return items[0]
+    elif count == 2: return f' {conjunction} '.join(items)
+    else:
+        series = ', '.join(items[0:-1])
+        last_item = items[-1]
+        delimiter = ',' if oxford_comma else ''
+        return f"{series}{delimiter} {conjunction} {last_item}"
 
 
 class DurationProgress(BaseModel):

@@ -3,11 +3,12 @@ import json
 import os
 from enum import Enum
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional, Set, Type, Union
 
 import typer
 import yaml
-from pydantic import BaseModel, Extra, create_model, validator
+from pydantic import BaseModel, Extra, create_model, validator, Field
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
 
@@ -21,6 +22,7 @@ from servo.connector import (
     Optimizer,
     metadata,
 )
+from servo.utilities import join_to_series
 
 
 class Events(str, Enum):
@@ -45,8 +47,28 @@ class BaseServoSettings(ConnectorSettings):
     See `ServoAssembly` for details on how the concrete model is built.
     """
 
-    connectors: Optional[Dict[str, str]] = None
-    """A map of connector key-paths to fully qualified class names"""
+    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(None,
+        description=(
+            "An optional, explicit configuration of the active connectors.\n"
+            "\nConfigurable as either an array of connector identifiers (names or class) or\n"
+            "a dictionary where the keys specify the key path to the connectors configuration\n"
+            "and the values identify the connector (by name or class name)."
+        ),
+        examples=[
+            [
+                "kubernetes",
+                "prometheus"
+            ],
+            {
+                "staging_prom": "prometheus",
+                "gateway_prom": "prometheus"
+            }
+        ]
+    )
+    """
+    An optional list of connector keys or a dict mapping of connector 
+    key-paths to connector class names
+    """
 
     @classmethod
     def generate(cls) -> "ConnectorSettings":
@@ -177,7 +199,7 @@ class ServoAssembly(BaseModel):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoSettings, connector_type_routes = _create_settings_model(
+        ServoSettings, routes = _create_settings_model(
             config_file=config_file, env=env
         )
 
@@ -189,28 +211,27 @@ class ServoAssembly(BaseModel):
                     f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
                 )
             config = {} if config is None else config
-            config["optimizer"] = optimizer.dict()
-            settings = ServoSettings.parse_obj(config)
+            servo_settings = ServoSettings.parse_obj(config)
         else:
             # If we do not have a config file, build a minimal configuration
             # NOTE: This configuration is likely incomplete/invalid due to required
             # settings on the connectors not being fully configured
             args = kwargs.copy()
-            for c in cls.all_connectors():
-                args[c.__key_path__] = c.settings_model().construct()
-            settings = ServoSettings(**args)
+            for key_path, connector_type in routes.items():
+                args[key_path] = connector_type.settings_model().construct()
+            servo_settings = ServoSettings.construct(**args)
 
         # Initialize all active connectors
         connectors: List[Connector] = []
-        for key_path, connector_type in connector_type_routes.items():
-            connector_settings = getattr(settings, key_path)
+        for key_path, connector_type in routes.items():
+            connector_settings = getattr(servo_settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
                 connector = connector_type(connector_settings, optimizer=optimizer)
                 connectors.append(connector)
 
         # Build the servo object
-        servo = Servo(settings, connectors=connectors, optimizer=optimizer)
+        servo = Servo(servo_settings, connectors=connectors, optimizer=optimizer)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
@@ -251,8 +272,6 @@ class ServoAssembly(BaseModel):
             self.top_level_schema(all=all), indent=2, default=pydantic_encoder
         )
 
-    # # TODO: Override the schema functions to decouple CLI from settings model
-
 
 def _module_path(cls: Type) -> str:
     if cls.__module__:
@@ -278,66 +297,68 @@ def _discover_connectors() -> Set[Type[Connector]]:
 def _create_settings_model(
     *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
 ) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
-    # map of config key in YAML to settings class for target connector
-    setting_fields: Optional[Dict[str, Type[ConnectorSettings]]] = None
-    key_paths_to_settings_type_names: Dict[str, str] = {}
-    key_paths_to_connector_types: Dict[str, Type[Connector]] = {}
+    # map of config key in YAML to settings class for target connector    
+    routes: Dict[str, Type[Connector]] = _default_routes()
+    require_fields: bool = False
 
     # NOTE: If `connectors` key is present in config file, require the keys to be present
     if config_file.exists():
         config = yaml.load(open(config_file), Loader=yaml.FullLoader)
         if isinstance(config, dict):  # Config file could be blank or malformed
             connectors_value = config.get("connectors", None)
-            if not connectors_value:
-                # No explicit connector config, use the defaults
-                key_paths_to_connector_types = _default_routes()
-            else:
+            if connectors_value:
                 routes = _routes_for_connectors_descriptor(connectors_value)
-                setting_fields = {}
-                for path, connector_class in routes.items():
-                    base_settings_model = connector_class.settings_model()
-                    settings_model = create_model(
-                        f"{path}_{base_settings_model.__qualname__}",
-                        __base__=base_settings_model,
-                    )
+                require_fields = True
 
-                    # Traverse across all the fields and update the env vars
-                    for name, field in settings_model.__fields__.items():
-                        field.field_info.extra["env_names"] = {
-                            f"SERVO_{path}_{name}".upper()
-                        }
-
-                    setting_fields[path] = (settings_model, ...)
-                    # TODO: Bundle this into class...
-                    key_paths_to_settings_type_names[path] = _module_path(
-                        settings_model
-                    )
-                    key_paths_to_connector_types[path] = connector_class
-    else:
-        # No config file, use default routes
-        key_paths_to_connector_types = _default_routes()
-
-    # If we don't have any target connectors, add all available as optional fields
-    if setting_fields is None:
-        setting_fields = {}
-        for c in Connector.all():
-            if c is not Servo:
-                setting_fields[c.__key_path__] = (c.settings_model(), None)
-                key_paths_to_settings_type_names[c.__key_path__] = _module_path(
-                    c.settings_model()
-                )
-                key_paths_to_connector_types[c.__key_path__] = c
+    # Create Pydantic fields for each active route
+    connector_versions: List[str] = []
+    setting_fields: Dict[str, Tuple[Type[ConnectorSettings], Any]] = {}
+    default_value = ... if require_fields else None # Pydantic uses ... for flagging fields required
+    for key_path, connector_class in routes.items():
+        settings_model = _derive_settings_model_at_key_path(connector_class.settings_model(), key_path)
+        settings_model.__config__.title = f"{connector_class.name} Settings (at {key_path})"
+        # schema_extra = settings_model.__config__.update(
+        #     "config_key_path"
+        # )
+        setting_fields[key_path] = (settings_model, default_value)
+        connector_versions.append(f"{connector_class.name} v{connector_class.version}")
 
     # Create our model
     servo_settings_model = create_model(
         "ServoSettings",
         __base__=BaseServoSettings,
-        # connectors=key_paths_to_settings_type_names,
-        # connectors=key_paths_to_connector_types,
         **setting_fields,
     )
+    
+    servo_settings_model.__config__.schema_extra = {
+        "description": f"Schema for configuration of Servo v{Servo.version} with {join_to_series(connector_versions)}"
+    }
 
-    return servo_settings_model, key_paths_to_connector_types
+    return servo_settings_model, routes
+
+def _normalize_name(name: str) -> str:
+    """
+    Normalizes the given name.
+    """    
+    return re.sub(r'[^a-zA-Z0-9.\-_]', '_', name)
+
+def _derive_settings_model_at_key_path(model: Type[ConnectorSettings], key_path: str) -> Type[ConnectorSettings]:
+    """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
+    # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
+    # because key-paths are guanranteed to be unique, we can utilize it as a 
+    settings_model = create_model(
+        _normalize_name(f"{key_path}__{model.__qualname__}"),
+        __base__=model,
+    )
+
+    # Traverse across all the fields and update the env vars
+    for name, field in settings_model.__fields__.items():
+        field.field_info.extra.pop("env", None)
+        field.field_info.extra["env_names"] = {
+            f"SERVO_{key_path}_{name}".upper()
+        }
+
+    return settings_model
 
 
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:

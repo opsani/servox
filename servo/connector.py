@@ -26,6 +26,7 @@ from pydantic import (
     BaseModel,
     BaseSettings,
     Extra,
+    Field,
     HttpUrl,
     constr,
     root_validator,
@@ -113,7 +114,10 @@ class ConnectorSettings(BaseSettings):
     configuration for the connector to function.
     """
 
-    description: Optional[str]
+    description: Optional[str] = Field(None, 
+        description="An optional annotation describing the configuration.",
+        env="SERVO_DESCRIPTION"
+    )
     """An optional textual description of the configyuration stanza useful for differentiating
     between configurations within assemblies.
     """
@@ -141,7 +145,6 @@ class ConnectorSettings(BaseSettings):
         super().__init_subclass__(**kwargs)
 
         # Set default environment variable names
-        # TODO: we can probably just use env_name
         for name, field in cls.__fields__.items():
             field.field_info.extra["env_names"] = {f"SERVO_{name}".upper()}
 
@@ -150,13 +153,8 @@ class ConnectorSettings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
-        fields = {
-            "description": {
-                "env": "SERVO_DESCRIPTION",
-                "env_names": {"SERVO_DESCRIPTION"},
-            }
-        }
 
+ConnectorSettings.update_forward_refs()
 
 EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
 

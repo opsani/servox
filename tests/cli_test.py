@@ -11,12 +11,6 @@ from typer.testing import CliRunner
 from servo import cli
 
 
-# Ensure no files from the working copy and found
-@pytest.fixture(autouse=True)
-def run_from_tmp_path(tmp_path: Path) -> None:
-    os.chdir(tmp_path)
-
-
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
@@ -168,7 +162,7 @@ def test_settings_dict(
 
 def test_settings_dict_file(
     cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path
-) -> None:
+) -> None:    
     path = tmp_path / "settings.py"
     result = cli_runner.invoke(cli_app, f"settings -f dict -o {path}")
     assert result.exit_code == 0
@@ -177,7 +171,7 @@ def test_settings_dict_file(
 
 
 def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
-    result = cli_runner.invoke(cli_app, "schema")
+    result = cli_runner.invoke(cli_app, "schema", catch_exceptions=False)
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo"

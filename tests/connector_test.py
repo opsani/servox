@@ -66,11 +66,6 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("base_url",)
         assert e.value.errors()[0]["msg"] == "invalid or missing URL scheme"
 
-
-class ConnectorSettingsTests:
-    pass
-
-
 class TestLicense:
     def test_license_from_string(self):
         l = License.from_str("MIT")
@@ -507,13 +502,13 @@ class TestServoAssembly:
         # Grab the vegeta field and check it
         vegeta_field = DynamicServoSettings.__fields__["vegeta"]
         vegeta_settings_type = vegeta_field.type_
-        assert vegeta_settings_type.__name__ == "vegeta_VegetaSettings"
+        assert vegeta_settings_type.__name__ == "vegeta__VegetaSettings"
         assert vegeta_field.field_info.extra["env_names"] == {"SERVO_VEGETA"}
 
         # Grab the other field and check it
         other_field = DynamicServoSettings.__fields__["other"]
         other_settings_type = other_field.type_
-        assert other_settings_type.__name__ == "other_VegetaSettings"
+        assert other_settings_type.__name__ == "other__VegetaSettings"
         assert other_field.field_info.extra["env_names"] == {"SERVO_OTHER"}
 
         with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
@@ -866,126 +861,157 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema == {
-        "title": "VegetaSettings",
-        "description": "Configuration of the Vegeta connector",
-        "type": "object",
-        "properties": {
-            "description": {
-                "title": "Description",
-                "env": "SERVO_DESCRIPTION",
-                "env_names": ["SERVO_DESCRIPTION",],
-                "type": "string",
+        'title': 'VegetaSettings',
+        'description': 'Configuration of the Vegeta connector',
+        'type': 'object',
+        'properties': {
+            'description': {
+                'title': 'Description',
+                'description': 'An optional annotation describing the configuration.',
+                'env': 'SERVO_DESCRIPTION',
+                'env_names': [
+                    'SERVO_DESCRIPTION',
+                ],
+                'type': 'string',
             },
-            "rate": {
-                "title": "Rate",
-                "description": (
-                    "Specifies the request rate per time unit to issue against the targets. Given in the format of req"
-                    "uest/time unit."
+            'rate': {
+                'title': 'Rate',
+                'description': (
+                    'Specifies the request rate per time unit to issue against the targets. Given in the format of req'
+                    'uest/time unit.'
                 ),
-                "env_names": ["SERVO_RATE",],
-                "type": "string",
+                'env_names': [
+                    'SERVO_RATE',
+                ],
+                'type': 'string',
             },
-            "duration": {
-                "title": "Duration",
-                "description": "Specifies the amount of time to issue requests to the targets.",
-                "env_names": ["SERVO_DURATION",],
-                "type": "string",
+            'duration': {
+                'title': 'Duration',
+                'description': 'Specifies the amount of time to issue requests to the targets.',
+                'env_names': [
+                    'SERVO_DURATION',
+                ],
+                'type': 'string',
             },
-            "format": {
-                "title": "Format",
-                "description": (
-                    "Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do"
-                    "cs for details."
+            'format': {
+                'title': 'Format',
+                'description': (
+                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
+                    'cs for details.'
                 ),
-                "default": "http",
-                "env_names": ["SERVO_FORMAT",],
-                "enum": ["http", "json",],
-                "type": "string",
+                'default': 'http',
+                'env_names': [
+                    'SERVO_FORMAT',
+                ],
+                'enum': [
+                    'http',
+                    'json',
+                ],
+                'type': 'string',
             },
-            "target": {
-                "title": "Target",
-                "description": (
-                    "Specifies a single formatted Vegeta target to load. See the format option to learn about availabl"
-                    "e target formats. This option is exclusive of the targets option and will provide a target to Veg"
-                    "eta via stdin."
+            'target': {
+                'title': 'Target',
+                'description': (
+                    'Specifies a single formatted Vegeta target to load. See the format option to learn about availabl'
+                    'e target formats. This option is exclusive of the targets option and will provide a target to Veg'
+                    'eta via stdin.'
                 ),
-                "env_names": ["SERVO_TARGET",],
-                "type": "string",
+                'env_names': [
+                    'SERVO_TARGET',
+                ],
+                'type': 'string',
             },
-            "targets": {
-                "title": "Targets",
-                "description": (
-                    "Specifies the file from which to read targets. See the format option to learn about available tar"
-                    "get formats. This option is exclusive of the target option and will provide targets to via throug"
-                    "h a file on disk."
+            'targets': {
+                'title': 'Targets',
+                'description': (
+                    'Specifies the file from which to read targets. See the format option to learn about available tar'
+                    'get formats. This option is exclusive of the target option and will provide targets to via throug'
+                    'h a file on disk.'
                 ),
-                "env_names": ["SERVO_TARGETS",],
-                "type": "string",
-                "format": "file-path",
+                'env_names': [
+                    'SERVO_TARGETS',
+                ],
+                'type': 'string',
+                'format': 'file-path',
             },
-            "connections": {
-                "title": "Connections",
-                "description": "Specifies the maximum number of idle open connections per target host.",
-                "default": 10000,
-                "env_names": ["SERVO_CONNECTIONS",],
-                "type": "integer",
+            'connections': {
+                'title': 'Connections',
+                'description': 'Specifies the maximum number of idle open connections per target host.',
+                'default': 10000,
+                'env_names': [
+                    'SERVO_CONNECTIONS',
+                ],
+                'type': 'integer',
             },
-            "workers": {
-                "title": "Workers",
-                "description": (
-                    "Specifies the initial number of workers used in the attack. The workers will automatically increa"
-                    "se to achieve the target request rate, up to max-workers."
+            'workers': {
+                'title': 'Workers',
+                'description': (
+                    'Specifies the initial number of workers used in the attack. The workers will automatically increa'
+                    'se to achieve the target request rate, up to max-workers.'
                 ),
-                "default": 10,
-                "env_names": ["SERVO_WORKERS",],
-                "type": "integer",
+                'default': 10,
+                'env_names': [
+                    'SERVO_WORKERS',
+                ],
+                'type': 'integer',
             },
-            "max-workers": {
-                "title": "Max-Workers",
-                "description": (
-                    "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
-                    "ency of the attack to simulate a target number of clients."
+            'max_workers': {
+                'title': 'Max Workers',
+                'description': (
+                    'The maximum number of workers used to sustain the attack. This can be used to control the concurr'
+                    'ency of the attack to simulate a target number of clients.'
                 ),
-                "default": 18446744073709551615,
-                "env": "",
-                "env_names": ["SERVO_MAX_WORKERS",],
-                "type": "integer",
+                'default': 18446744073709551615,
+                'env_names': [
+                    'SERVO_MAX_WORKERS',
+                ],
+                'type': 'integer',
             },
-            "max-body": {
-                "title": "Max-Body",
-                "description": (
-                    "Specifies the maximum number of bytes to capture from the body of each response. Remaining unread"
-                    " bytes will be fully read but discarded."
+            'max_body': {
+                'title': 'Max Body',
+                'description': (
+                    'Specifies the maximum number of bytes to capture from the body of each response. Remaining unread'
+                    ' bytes will be fully read but discarded.'
                 ),
-                "default": -1,
-                "env": "",
-                "env_names": ["SERVO_MAX_BODY",],
-                "type": "integer",
+                'default': -1,
+                'env_names': [
+                    'SERVO_MAX_BODY',
+                ],
+                'type': 'integer',
             },
-            "http2": {
-                "title": "Http2",
-                "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
-                "default": True,
-                "env_names": ["SERVO_HTTP2",],
-                "type": "boolean",
+            'http2': {
+                'title': 'Http2',
+                'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                'default': True,
+                'env_names': [
+                    'SERVO_HTTP2',
+                ],
+                'type': 'boolean',
             },
-            "keepalive": {
-                "title": "Keepalive",
-                "description": "Specifies whether to reuse TCP connections between HTTP requests.",
-                "default": True,
-                "env_names": ["SERVO_KEEPALIVE",],
-                "type": "boolean",
+            'keepalive': {
+                'title': 'Keepalive',
+                'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                'default': True,
+                'env_names': [
+                    'SERVO_KEEPALIVE',
+                ],
+                'type': 'boolean',
             },
-            "insecure": {
-                "title": "Insecure",
-                "description": "Specifies whether to ignore invalid server TLS certificates.",
-                "default": False,
-                "env_names": ["SERVO_INSECURE",],
-                "type": "boolean",
+            'insecure': {
+                'title': 'Insecure',
+                'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                'default': False,
+                'env_names': [
+                    'SERVO_INSECURE',
+                ],
+                'type': 'boolean',
             },
         },
-        "required": ["rate", "duration",],
-        "additionalProperties": False,
+        'required': [
+            'rate',
+            'duration',
+        ],
+        'additionalProperties': False,
     }
 
 
@@ -1001,12 +1027,6 @@ def test_vegeta_cli_schema_html(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
     result = cli_runner.invoke(vegeta_cli, "schema -f html")
     assert result.exit_code == 2
     assert "not yet implemented" in result.stderr
-
-
-# Ensure no files from the working copy and found
-@pytest.fixture(autouse=True)
-def run_from_tmp_path(tmp_path: Path) -> None:
-    os.chdir(tmp_path)
 
 
 def test_vegeta_cli_generate(
@@ -1043,8 +1063,8 @@ def test_vegeta_cli_generate_with_defaults(
         "  http2: true\n"
         "  insecure: false\n"
         "  keepalive: true\n"
-        "  max-body: -1\n"
-        "  max-workers: 18446744073709551615\n"
+        "  max_body: -1\n"
+        "  max_workers: 18446744073709551615\n"
         "  rate: 50/1s\n"
         "  target: https://example.com/\n"
         "  targets: null\n"
@@ -1065,8 +1085,8 @@ def test_vegeta_cli_validate(
             "http2: true\n"
             "insecure: false\n"
             "keepalive: true\n"
-            "max-body: -1\n"
-            "max-workers: 18446744073709551615\n"
+            "max_body: -1\n"
+            "max_workers: 18446744073709551615\n"
             "rate: 50/1s\n"
             "target: GET http://localhost:8080\n"
             "targets: null\n"
@@ -1102,8 +1122,8 @@ def test_vegeta_cli_validate_invalid_config(
             "http2: true\n"
             "insecure: false\n"
             "keepalive: true\n"
-            "max-body: -1\n"
-            "max-workers: 18446744073709551615\n"
+            "max_body: -1\n"
+            "max_workers: 18446744073709551615\n"
             #'rate: 50/1s\n'  # Rate is omitted
             "target: GET http://localhost:8080\n"
             "targets: null\n"

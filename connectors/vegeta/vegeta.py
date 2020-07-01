@@ -143,15 +143,11 @@ class VegetaSettings(ConnectorSettings):
     )
     max_workers: int = Field(
         18446744073709551615,
-        alias="max-workers",
         description="The maximum number of workers used to sustain the attack. This can be used to control the concurrency of the attack to simulate a target number of clients.",
-        env="",
     )
     max_body: int = Field(
         -1,
-        alias="max-body",
         description="Specifies the maximum number of bytes to capture from the body of each response. Remaining unread bytes will be fully read but discarded.",
-        env="",
     )
     http2: bool = Field(
         True,
