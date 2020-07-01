@@ -869,7 +869,7 @@ def update(appname, desc, data, print_progress):
 #     print("aborting operation...", file=sys.stderr)
 
 
-class KuberneteSettings(ConnectorSettings):
+class KubernetesSettings(ConnectorSettings):
     namespace: Optional[str]
 
     @classmethod
@@ -894,7 +894,7 @@ VERSION = '1.2'
     maturity=Maturity.EXPERIMENTAL,
 )
 class KubernetesConnector(Connector):
-    settings: KuberneteSettings
+    settings: KubernetesSettings
     progress: float = 0.0
 
     def cli(self) -> ConnectorCLI:
