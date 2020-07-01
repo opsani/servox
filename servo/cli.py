@@ -384,9 +384,16 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
             raise typer.Exit(2)
 
         @self.command()
-        def run() -> None:
+        def run(
+            interactive: bool = typer.Option(
+                False,
+                "--interactive",
+                "-i",
+                help="Include models from all available connectors",
+            )
+        ) -> None:
             """Run the servo"""
-            ServoRunner(self.servo).run()
+            ServoRunner(self.servo, interactive=interactive).run()
 
         @self.command()
         def connectors(
