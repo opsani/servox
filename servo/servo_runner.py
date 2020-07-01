@@ -1,6 +1,6 @@
-import signal
 import sys
 import time
+import signal
 from enum import Enum
 from logging import Logger
 from typing import Any, Dict, List, Optional, Union
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoSettings, Events, Servo
 from servo.types import Control, Description, Measurement
-
+from servo.utilities import SignalHandler
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -93,10 +93,11 @@ class ServoRunner:
     base_url: str
     headers: Dict[str, str]
     _stop_flag: bool
+    _signal_handler: SignalHandler
 
     def __init__(self, servo: Servo, *, interactive: bool = False, **kwargs) -> None:
         self.servo = servo
-        self.interactive = interactive
+        self.interactive = interactive        
         super().__init__()
 
     @property
@@ -268,7 +269,11 @@ class ServoRunner:
 
     def run(self) -> None:
         self._stop_flag = False
-        self._init_signal_handlers()
+        self._signal_handler = SignalHandler(
+            stop_callback=self._stop_callback,
+            restart_callback=self._restart_callback,
+            terminate_callback=self._terminate_callback,
+        )
 
         self.logger.info(
             f"Servo starting with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
@@ -289,32 +294,25 @@ class ServoRunner:
             self.post_event(Event.GOODBYE, dict(reason=self.stop_flag))
         except Exception as e:
             self.logger.exception(
-                "Warning: failed to send GOODBYE: {}. Exiting anyway".format(str(e))
+                f"Warning: failed to send GOODBYE: {e}. Exiting anyway"
             )
+    
+    def _stop_callback(self, sig_num: int) -> None:
+        self._stop_flag = "exit"
 
-    ###
-    # TODO: Factor into a signal handler class
-
-    def _init_signal_handlers(self):
-        # intercept SIGINT to provide graceful, traceback-less Ctrl-C/SIGTERM handling
-        signal.signal(signal.SIGTERM, self._signal_handler)  # container kill
-        signal.signal(signal.SIGINT, self._signal_handler)  # Ctrl-C
-        signal.signal(signal.SIGUSR1, self._graceful_stop_handler)
-        signal.signal(signal.SIGHUP, self._graceful_restart_handler)
-
-    def _signal_handler(self, sig_num, unused_frame):
-        # restore original signal handler (to prevent reentry)
-        signal.signal(sig_num, signal.SIG_DFL)
-
+    def _restart_callback(self, sig_num: int) -> None:
+        self._stop_flag = "restart"
+    
+    def _terminate_callback(self, sig_num: int) -> None:
         # determine signal name (best effort)
         try:
             sig_name = signal.Signals(sig_num).name
-        except Exception:
-            sig_name = "signal #{}".format(sig_num)
-
+        except ValueError:
+            sig_name = f"signal #{sig_num}"
+            
         # log signal
         self.logger.info(
-            f'*** Servo stop requested by signal "{format(sig_name)}". Sending GOODBYE'
+            f'*** Servo stop requested by signal "{sig_name}". Sending GOODBYE'
         )
 
         # send GOODBYE event (best effort)
@@ -322,18 +320,8 @@ class ServoRunner:
             self.post_event(Event.GOODBYE, dict(reason=sig_name))
         except Exception as e:
             self.logger.exception(
-                "Warning: failed to send GOODBYE: {}. Exiting anyway".format(str(e))
+                f"Warning: failed to send GOODBYE: {e}. Exiting anyway"
             )
-
-        sys.exit(0)  # abort now
-
-    def _graceful_stop_handler(self, sig_num, unused_frame):
-        """handle signal for graceful termination - simply set a flag to have the main loop exit after the current operation is completed"""
-        self._stop_flag = "exit"
-
-    def _graceful_restart_handler(self, sig_num, unused_frame):
-        """handle signal for restart - simply set a flag to have the main loop exit and restart the process after the current operation is completed"""
-        self._stop_flag = "restart"
 
 
 def _event_for_command(command: Command) -> Optional[Event]:
@@ -350,6 +338,4 @@ def _event_for_command(command: Command) -> Optional[Event]:
 def _exc_format(e):
     if type(e) is Exception:  # if it's just an Exception
         return str(e)  # print only the message but not the type
-    return "{}: {}".format(
-        type(e).__name__, str(e)
-    )  # print the exception type and message
+    return "{type(e).__name__}: {e}"
