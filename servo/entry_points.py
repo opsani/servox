@@ -41,6 +41,9 @@ def run_cli():
                 connectors_value = config.get("connectors", None)
                 if connectors_value:
                     routes = _routes_for_connectors_descriptor(connectors_value)
+        except (yaml.constructor.ConstructorError, yaml.scanner.ScannerError) as error:
+            print(f"error: config file '{config_file}' contains invalid YAML\n{error}")
+            exit(2)
         except (ValueError, TypeError) as error:
             logger.warning(
                 f'Warning: an unexpected error was encountered while processing config "{config_file}": ({error})',
