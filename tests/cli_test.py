@@ -174,7 +174,7 @@ def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "schema", catch_exceptions=False)
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
-    assert schema["title"] == "Servo"
+    assert schema["title"] == "Servo Configuration Schema"
 
 
 def test_schema_output_to_file(
@@ -184,14 +184,14 @@ def test_schema_output_to_file(
     result = cli_runner.invoke(cli_app, f"schema -f json -o {output_path}")
     assert result.exit_code == 0
     schema = json.loads(output_path.read_text())
-    assert schema["title"] == "Servo"
+    assert schema["title"] == "Servo Configuration Schema"
 
 
 def test_schema_all(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
-    assert schema["title"] == "Servo"
+    assert schema["title"] == "Servo Configuration Schema"
 
 
 def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
@@ -247,7 +247,7 @@ def test_schema_dict(cli_app: Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(cli_app, "schema -f dict")
     assert result.exit_code == 0
     dict = eval(result.stdout)
-    assert dict["title"] == "Servo"
+    assert dict["title"] == "Servo Configuration Schema"
 
 
 def test_schema_dict_file_output(
@@ -257,7 +257,7 @@ def test_schema_dict_file_output(
     result = cli_runner.invoke(cli_app, f"schema -f dict -o {path}")
     assert result.exit_code == 0
     dict = eval(path.read_text())
-    assert dict["title"] == "Servo"
+    assert dict["title"] == "Servo Configuration Schema"
 
 
 def test_validate(cli_runner: CliRunner, cli_app: Typer) -> None:

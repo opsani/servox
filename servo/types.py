@@ -1,10 +1,60 @@
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
-
+from typing import Dict, List, Optional, Tuple, Union, Any
+import semver
 from pydantic import BaseModel
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
+
+class License(Enum):
+    """Defined licenses"""
+
+    MIT = "MIT"
+    APACHE2 = "Apache 2.0"
+    PROPRIETARY = "Proprietary"
+
+    @classmethod
+    def from_str(cls, identifier: str) -> "License":
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No license identified by "{identifier}".')
+
+    def __str__(self):
+        return self.value
+
+
+class Maturity(Enum):
+    """Connector maturity level"""
+
+    EXPERIMENTAL = "Experimental"
+    STABLE = "Stable"
+    ROBUST = "Robust"
+
+    @classmethod
+    def from_str(cls, identifier: str) -> "Maturity":
+        """
+        Returns a `License` for the given string identifier (e.g. "MIT").
+        """
+        for _, env in cls.__members__.items():
+            if env.value == identifier:
+                return env
+        raise NameError(f'No maturity level identified by "{identifier}".')
+
+    def __str__(self):
+        return self.value
+
+
+Version = semver.VersionInfo
+
+
+class EventDescriptor(BaseModel):
+    name: str
+    kwargs: Dict[str, Any]
+
 
 Numeric = Union[float, int]
 

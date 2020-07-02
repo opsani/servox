@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Optional
 
 import typer
 import yaml
@@ -28,6 +28,12 @@ except ImportError:
 else:
     builtins.debug = debug
 
+
+# Represents an option to include specific CLI commands
+# A value of `None` (the typical default) enables auto-detection logic
+CommandOption = Optional[bool]
+
+
 # NOTE: There is a life-cycle dependency issue where we want to have commands
 # available only for active connectors but this requires the config file to be
 # parsed and the commands to be registered. The connectors have to be updated
@@ -42,7 +48,20 @@ class SharedCommandsMixin:
     connectors: List[Connector]
     hide_servo_options: bool = True
 
-    def add_shared_commands(self):
+    def add_shared_commands(self,
+        version: CommandOption = True,
+        schema: CommandOption = None,
+        settings: CommandOption = None,
+        generate: CommandOption = None,
+        validate: CommandOption = None,
+        events: CommandOption = None,
+        describe: CommandOption = None,
+        check: CommandOption = None,        
+        measure: CommandOption = None,
+        adjust: CommandOption = None,
+        promote: CommandOption = None,
+        **kwargs,
+    ):
         class SettingsOutputFormat(AbstractOutputFormat):
             yaml = YAML_FORMAT
             json = JSON_FORMAT
@@ -170,6 +189,7 @@ class SharedCommandsMixin:
                     output_data = pformat(self.assembly.top_level_schema(all=all))
 
             else:
+                
                 settings_class = self.settings.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
@@ -207,7 +227,6 @@ class SharedCommandsMixin:
         ) -> None:
             """Validate servo configuration file"""
             try:
-                # self.assembly.parse_file(file)
                 self.connector.settings_model().parse_file(file)
                 typer.echo(f"√ Valid {self.connector.name} configuration in {file}")
             except (ValidationError, yaml.scanner.ScannerError) as e:
@@ -296,12 +315,18 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
     def connectors(self) -> List["Connector"]:
         return [self.connector]
 
-    def __init__(self, connector: Connector, **kwargs):
+    def __init__(self, 
+        connector: Connector,
+        name: Optional[str] = None,
+        help: Optional[str] = None,
+        completion: CommandOption = False,
+        **kwargs,
+    ):
         self.connector = connector
-        name = kwargs.pop("name", connector.command_name)
-        help = kwargs.pop("help", connector.description)
-        add_completion = kwargs.pop("add_completion", False)
-        super().__init__(name=name, help=help, add_completion=add_completion, **kwargs)
+        name = name if name is not None else connector.command_name
+        help = help if help is not None else connector.description
+        completion = completion if completion else False
+        super().__init__(name=name, help=help, add_completion=completion, **kwargs)
         self.add_shared_commands()
         self.add_commands()
 
@@ -363,7 +388,7 @@ class ServoCLI(typer.Typer, SharedCommandsMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hide_servo_options = False
-        self.add_shared_commands()
+        self.add_shared_commands(**kwargs)
         self.add_commands()
 
     def add_commands(self):

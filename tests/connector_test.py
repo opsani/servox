@@ -20,7 +20,7 @@ from servo.connector import (
     event,
 )
 from servo.servo import BaseServoSettings, ServoAssembly
-from tests.conftest import environment_overrides
+from tests.test_helpers import environment_overrides
 
 
 class TestOptimizer:
@@ -117,8 +117,9 @@ class TestConnector:
 
 class TestSettings:
     def test_configuring_with_environment_variables(self) -> None:
-        with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
-            assert os.environ["SERVO_DESCRIPTION"] == "this description"
+        assert ConnectorSettings.__fields__['description'].field_info.extra["env_names"] == {"DESCRIPTION"}
+        with environment_overrides({"DESCRIPTION": "this description"}):
+            assert os.environ["DESCRIPTION"] == "this description"
             s = ConnectorSettings()
             assert s.description == "this description"
 
@@ -134,8 +135,8 @@ class TestServoSettings:
         assert "'BaseServoSettings' object has no attribute 'ignored'" in str(e)
 
     def test_override_optimizer_settings_with_env_vars(self) -> None:
-        with environment_overrides({"SERVO_OPTIMIZER_TOKEN": "abcdefg"}):
-            assert os.environ["SERVO_OPTIMIZER_TOKEN"] is not None
+        with environment_overrides({"OPSANI_TOKEN": "abcdefg"}):
+            assert os.environ["OPSANI_TOKEN"] is not None
             optimizer = Optimizer(app_name="foo", org_domain="dsada.com")
             assert optimizer.token == "abcdefg"
 
@@ -149,6 +150,10 @@ class TestServoSettings:
                     "token": "123456789",
                 }
             )
+            assert s is not None
+            schema = s.schema()
+            assert schema['properties']['connectors']['env_names'] == {'SERVO_CONNECTORS'}
+            assert s.connectors is not None
             assert s.connectors == {"measure": "tests.test_helpers.MeasureConnector"}
 
     def test_connectors_allows_none(self):
@@ -466,6 +471,7 @@ class TestServo:
 class TestServoAssembly:
     def test_warning_ambiguous_connectors(self) -> None:
         # TODO: This can be very hard to debug
+        # This is where you have 2 connector classes with the same name
         pass
 
     def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
@@ -482,6 +488,393 @@ class TestServoAssembly:
         )
         connector = servo.connectors[0]
         assert connector.optimizer == optimizer
+
+    def test_aliased_connectors_produce_schema(
+        self, servo_yaml: Path
+    ) -> None:
+        config = {
+            "connectors": {"vegeta": "vegeta", "other": "vegeta"},
+            "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+            "other": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+        }
+        servo_yaml.write_text(yaml.dump(config))
+
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        schema = json.loads(DynamicServoSettings.schema_json())
+
+        # Description on parent class can be squirrely
+        assert schema['properties']['description']['env_names'] == ['SERVO_DESCRIPTION']
+        assert schema == {
+        'title': 'Servo Configuration Schema',
+        'description': 'Schema for configuration of Servo v0.0.0 with Vegeta Connector v0.5.0',
+        'type': 'object',
+        'properties': {
+            'description': {
+                'title': 'Description',
+                'description': 'An optional annotation describing the configuration.',
+                'env_names': [
+                    'SERVO_DESCRIPTION',
+                ],
+                'type': 'string',
+            },
+            'connectors': {
+                'title': 'Connectors',
+                'description': (
+                    'An optional, explicit configuration of the active connectors.\n'
+                    '\n'
+                    'Configurable as either an array of connector identifiers (names or class) or\n'
+                    'a dictionary where the keys specify the key path to the connectors configuration\n'
+                    'and the values identify the connector (by name or class name).'
+                ),
+                'examples': [
+                    [
+                        'kubernetes',
+                        'prometheus',
+                    ],
+                    {
+                        'staging_prom': 'prometheus',
+                        'gateway_prom': 'prometheus',
+                    },
+                ],
+                'env_names': [
+                    'SERVO_CONNECTORS',
+                ],
+                'anyOf': [
+                    {
+                        'type': 'array',
+                        'items': {
+                            'type': 'string',
+                        },
+                    },
+                    {
+                        'type': 'object',
+                        'additionalProperties': {
+                            'type': 'string',
+                        },
+                    },
+                ],
+            },
+            'other': {
+                'title': 'Other',
+                'env_names': [
+                    'SERVO_OTHER',
+                ],
+                'allOf': [
+                    {
+                        '$ref': '#/definitions/VegetaSettings__other',
+                    },
+                ],
+            },
+            'vegeta': {
+                'title': 'Vegeta',
+                'env_names': [
+                    'SERVO_VEGETA',
+                ],
+                'allOf': [
+                    {
+                        '$ref': '#/definitions/VegetaSettings',
+                    },
+                ],
+            },
+        },
+        'required': [
+            'other',
+            'vegeta',
+        ],
+        'definitions': {
+            'TargetFormat': {
+                'title': 'TargetFormat',
+                'description': 'An enumeration.',
+                'enum': [
+                    'http',
+                    'json',
+                ],
+                'type': 'string',
+            },
+            'VegetaSettings__other': {
+                'title': 'Vegeta Connector Settings (at key-path other)',
+                'description': 'Configuration of the Vegeta connector',
+                'type': 'object',
+                'properties': {
+                    'description': {
+                        'title': 'Description',
+                        'description': 'An optional annotation describing the configuration.',
+                        'env_names': [
+                            'SERVO_OTHER_DESCRIPTION',
+                        ],
+                        'type': 'string',
+                    },
+                    'rate': {
+                        'title': 'Rate',
+                        'description': (
+                            'Specifies the request rate per time unit to issue against the targets. Given in the forma'
+                            't of request/time unit.'
+                        ),
+                        'env_names': [
+                            'SERVO_OTHER_RATE',
+                        ],
+                        'type': 'string',
+                    },
+                    'duration': {
+                        'title': 'Duration',
+                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'env_names': [
+                            'SERVO_OTHER_DURATION',
+                        ],
+                        'type': 'string',
+                    },
+                    'format': {
+                        '$ref': '#/definitions/TargetFormat',
+                    },
+                    'target': {
+                        'title': 'Target',
+                        'description': (
+                            'Specifies a single formatted Vegeta target to load. See the format option to learn about '
+                            'available target formats. This option is exclusive of the targets option and will provide'
+                            ' a target to Vegeta via stdin.'
+                        ),
+                        'env_names': [
+                            'SERVO_OTHER_TARGET',
+                        ],
+                        'type': 'string',
+                    },
+                    'targets': {
+                        'title': 'Targets',
+                        'description': (
+                            'Specifies the file from which to read targets. See the format option to learn about avail'
+                            'able target formats. This option is exclusive of the target option and will provide targe'
+                            'ts to via through a file on disk.'
+                        ),
+                        'env_names': [
+                            'SERVO_OTHER_TARGETS',
+                        ],
+                        'format': 'file-path',
+                        'type': 'string',
+                    },
+                    'connections': {
+                        'title': 'Connections',
+                        'description': 'Specifies the maximum number of idle open connections per target host.',
+                        'default': 10000,
+                        'env_names': [
+                            'SERVO_OTHER_CONNECTIONS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'workers': {
+                        'title': 'Workers',
+                        'description': (
+                            'Specifies the initial number of workers used in the attack. The workers will automaticall'
+                            'y increase to achieve the target request rate, up to max-workers.'
+                        ),
+                        'default': 10,
+                        'env_names': [
+                            'SERVO_OTHER_WORKERS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'max_workers': {
+                        'title': 'Max Workers',
+                        'description': (
+                            'The maximum number of workers used to sustain the attack. This can be used to control the'
+                            ' concurrency of the attack to simulate a target number of clients.'
+                        ),
+                        'default': 18446744073709551615,
+                        'env_names': [
+                            'SERVO_OTHER_MAX_WORKERS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'max_body': {
+                        'title': 'Max Body',
+                        'description': (
+                            'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
+                            'g unread bytes will be fully read but discarded.'
+                        ),
+                        'default': -1,
+                        'env_names': [
+                            'SERVO_OTHER_MAX_BODY',
+                        ],
+                        'type': 'integer',
+                    },
+                    'http2': {
+                        'title': 'Http2',
+                        'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                        'default': True,
+                        'env_names': [
+                            'SERVO_OTHER_HTTP2',
+                        ],
+                        'type': 'boolean',
+                    },
+                    'keepalive': {
+                        'title': 'Keepalive',
+                        'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                        'default': True,
+                        'env_names': [
+                            'SERVO_OTHER_KEEPALIVE',
+                        ],
+                        'type': 'boolean',
+                    },
+                    'insecure': {
+                        'title': 'Insecure',
+                        'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                        'default': False,
+                        'env_names': [
+                            'SERVO_OTHER_INSECURE',
+                        ],
+                        'type': 'boolean',
+                    },
+                },
+                'required': [
+                    'rate',
+                    'duration',
+                ],
+                'additionalProperties': False,
+            },
+            'VegetaSettings': {
+                'title': 'Vegeta Connector Settings (at key-path vegeta)',
+                'description': 'Configuration of the Vegeta connector',
+                'type': 'object',
+                'properties': {
+                    'description': {
+                        'title': 'Description',
+                        'description': 'An optional annotation describing the configuration.',
+                        'env_names': [
+                            'SERVO_VEGETA_DESCRIPTION',
+                        ],
+                        'type': 'string',
+                    },
+                    'rate': {
+                        'title': 'Rate',
+                        'description': (
+                            'Specifies the request rate per time unit to issue against the targets. Given in the forma'
+                            't of request/time unit.'
+                        ),
+                        'env_names': [
+                            'SERVO_VEGETA_RATE',
+                        ],
+                        'type': 'string',
+                    },
+                    'duration': {
+                        'title': 'Duration',
+                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'env_names': [
+                            'SERVO_VEGETA_DURATION',
+                        ],
+                        'type': 'string',
+                    },
+                    'format': {
+                        '$ref': '#/definitions/TargetFormat',
+                    },
+                    'target': {
+                        'title': 'Target',
+                        'description': (
+                            'Specifies a single formatted Vegeta target to load. See the format option to learn about '
+                            'available target formats. This option is exclusive of the targets option and will provide'
+                            ' a target to Vegeta via stdin.'
+                        ),
+                        'env_names': [
+                            'SERVO_VEGETA_TARGET',
+                        ],
+                        'type': 'string',
+                    },
+                    'targets': {
+                        'title': 'Targets',
+                        'description': (
+                            'Specifies the file from which to read targets. See the format option to learn about avail'
+                            'able target formats. This option is exclusive of the target option and will provide targe'
+                            'ts to via through a file on disk.'
+                        ),
+                        'env_names': [
+                            'SERVO_VEGETA_TARGETS',
+                        ],
+                        'format': 'file-path',
+                        'type': 'string',
+                    },
+                    'connections': {
+                        'title': 'Connections',
+                        'description': 'Specifies the maximum number of idle open connections per target host.',
+                        'default': 10000,
+                        'env_names': [
+                            'SERVO_VEGETA_CONNECTIONS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'workers': {
+                        'title': 'Workers',
+                        'description': (
+                            'Specifies the initial number of workers used in the attack. The workers will automaticall'
+                            'y increase to achieve the target request rate, up to max-workers.'
+                        ),
+                        'default': 10,
+                        'env_names': [
+                            'SERVO_VEGETA_WORKERS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'max_workers': {
+                        'title': 'Max Workers',
+                        'description': (
+                            'The maximum number of workers used to sustain the attack. This can be used to control the'
+                            ' concurrency of the attack to simulate a target number of clients.'
+                        ),
+                        'default': 18446744073709551615,
+                        'env_names': [
+                            'SERVO_VEGETA_MAX_WORKERS',
+                        ],
+                        'type': 'integer',
+                    },
+                    'max_body': {
+                        'title': 'Max Body',
+                        'description': (
+                            'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
+                            'g unread bytes will be fully read but discarded.'
+                        ),
+                        'default': -1,
+                        'env_names': [
+                            'SERVO_VEGETA_MAX_BODY',
+                        ],
+                        'type': 'integer',
+                    },
+                    'http2': {
+                        'title': 'Http2',
+                        'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                        'default': True,
+                        'env_names': [
+                            'SERVO_VEGETA_HTTP2',
+                        ],
+                        'type': 'boolean',
+                    },
+                    'keepalive': {
+                        'title': 'Keepalive',
+                        'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                        'default': True,
+                        'env_names': [
+                            'SERVO_VEGETA_KEEPALIVE',
+                        ],
+                        'type': 'boolean',
+                    },
+                    'insecure': {
+                        'title': 'Insecure',
+                        'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                        'default': False,
+                        'env_names': [
+                            'SERVO_VEGETA_INSECURE',
+                        ],
+                        'type': 'boolean',
+                    },
+                },
+                'required': [
+                    'rate',
+                    'duration',
+                ],
+                'additionalProperties': False,
+            },
+        },
+    }
 
     def test_aliased_connectors_get_distinct_env_configuration(
         self, servo_yaml: Path
@@ -502,18 +895,21 @@ class TestServoAssembly:
         # Grab the vegeta field and check it
         vegeta_field = DynamicServoSettings.__fields__["vegeta"]
         vegeta_settings_type = vegeta_field.type_
-        assert vegeta_settings_type.__name__ == "vegeta__VegetaSettings"
+        assert vegeta_settings_type.__name__ == "VegetaSettings"
         assert vegeta_field.field_info.extra["env_names"] == {"SERVO_VEGETA"}
 
         # Grab the other field and check it
         other_field = DynamicServoSettings.__fields__["other"]
         other_settings_type = other_field.type_
-        assert other_settings_type.__name__ == "other__VegetaSettings"
+        assert other_settings_type.__name__ == "VegetaSettings__other"
         assert other_field.field_info.extra["env_names"] == {"SERVO_OTHER"}
 
         with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
             assert os.environ["SERVO_DESCRIPTION"] == "this description"
-            s = ConnectorSettings()
+            s = DynamicServoSettings(
+                other=other_settings_type.construct(),
+                vegeta=vegeta_settings_type(rate=10, duration='10s', target="http://example.com/"),
+            )
             assert s.description == "this description"
 
         # Make sure the incorrect case does pass
@@ -840,6 +1236,7 @@ def test_vegeta_maturity() -> None:
     assert VegetaConnector.maturity == Maturity.STABLE
 
 
+# NOTE: Tests against the raw model
 @pytest.fixture()
 def vegeta_cli() -> typer.Typer:
     settings = VegetaSettings(
@@ -855,22 +1252,40 @@ def test_vegeta_cli_help(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None
     assert result.exit_code == 0
     assert "Usage: vegeta [OPTIONS] COMMAND [ARGS]..." in result.stdout
 
+def test_env_variable_prefixing() -> None:
+    schema_title_and_description_envs = [
+        [
+            'Connector Configuration Schema',
+            'DESCRIPTION',
+        ],
+        [
+            'Vegeta Connector Configuration Schema',
+            'VEGETA_DESCRIPTION',
+        ],
+        [
+            'Abstract Servo Configuration Schema',
+            'SERVO_DESCRIPTION',
+        ],
+    ]
+    schemas = [ConnectorSettings.schema(), VegetaSettings.schema(), BaseServoSettings.schema()]
+    # NOTE: popping the env_names without copying is a mistake you will only make once
+    values = list(map(lambda schema: [ schema['title'], schema['properties']['description']['env_names'].copy().pop() ], schemas))
+    assert values == schema_title_and_description_envs
 
 def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(vegeta_cli, "schema")
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema == {
-        'title': 'VegetaSettings',
+        'title': 'Vegeta Connector Configuration Schema',
         'description': 'Configuration of the Vegeta connector',
         'type': 'object',
         'properties': {
             'description': {
                 'title': 'Description',
                 'description': 'An optional annotation describing the configuration.',
-                'env': 'SERVO_DESCRIPTION',
                 'env_names': [
-                    'SERVO_DESCRIPTION',
+                    'VEGETA_DESCRIPTION',
                 ],
                 'type': 'string',
             },
@@ -881,7 +1296,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                     'uest/time unit.'
                 ),
                 'env_names': [
-                    'SERVO_RATE',
+                    'VEGETA_RATE',
                 ],
                 'type': 'string',
             },
@@ -889,25 +1304,12 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 'title': 'Duration',
                 'description': 'Specifies the amount of time to issue requests to the targets.',
                 'env_names': [
-                    'SERVO_DURATION',
+                    'VEGETA_DURATION',
                 ],
                 'type': 'string',
             },
             'format': {
-                'title': 'Format',
-                'description': (
-                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
-                    'cs for details.'
-                ),
-                'default': 'http',
-                'env_names': [
-                    'SERVO_FORMAT',
-                ],
-                'enum': [
-                    'http',
-                    'json',
-                ],
-                'type': 'string',
+                '$ref': '#/definitions/TargetFormat',
             },
             'target': {
                 'title': 'Target',
@@ -917,7 +1319,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                     'eta via stdin.'
                 ),
                 'env_names': [
-                    'SERVO_TARGET',
+                    'VEGETA_TARGET',
                 ],
                 'type': 'string',
             },
@@ -929,17 +1331,17 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                     'h a file on disk.'
                 ),
                 'env_names': [
-                    'SERVO_TARGETS',
+                    'VEGETA_TARGETS',
                 ],
-                'type': 'string',
                 'format': 'file-path',
+                'type': 'string',
             },
             'connections': {
                 'title': 'Connections',
                 'description': 'Specifies the maximum number of idle open connections per target host.',
                 'default': 10000,
                 'env_names': [
-                    'SERVO_CONNECTIONS',
+                    'VEGETA_CONNECTIONS',
                 ],
                 'type': 'integer',
             },
@@ -951,7 +1353,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 ),
                 'default': 10,
                 'env_names': [
-                    'SERVO_WORKERS',
+                    'VEGETA_WORKERS',
                 ],
                 'type': 'integer',
             },
@@ -963,7 +1365,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 ),
                 'default': 18446744073709551615,
                 'env_names': [
-                    'SERVO_MAX_WORKERS',
+                    'VEGETA_MAX_WORKERS',
                 ],
                 'type': 'integer',
             },
@@ -975,7 +1377,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 ),
                 'default': -1,
                 'env_names': [
-                    'SERVO_MAX_BODY',
+                    'VEGETA_MAX_BODY',
                 ],
                 'type': 'integer',
             },
@@ -984,7 +1386,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
                 'default': True,
                 'env_names': [
-                    'SERVO_HTTP2',
+                    'VEGETA_HTTP2',
                 ],
                 'type': 'boolean',
             },
@@ -993,7 +1395,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
                 'default': True,
                 'env_names': [
-                    'SERVO_KEEPALIVE',
+                    'VEGETA_KEEPALIVE',
                 ],
                 'type': 'boolean',
             },
@@ -1002,7 +1404,7 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
                 'description': 'Specifies whether to ignore invalid server TLS certificates.',
                 'default': False,
                 'env_names': [
-                    'SERVO_INSECURE',
+                    'VEGETA_INSECURE',
                 ],
                 'type': 'boolean',
             },
@@ -1012,6 +1414,17 @@ def test_vegeta_cli_schema_json(vegeta_cli: typer.Typer, cli_runner: CliRunner) 
             'duration',
         ],
         'additionalProperties': False,
+        'definitions': {
+            'TargetFormat': {
+                'title': 'TargetFormat',
+                'description': 'An enumeration.',
+                'enum': [
+                    'http',
+                    'json',
+                ],
+                'type': 'string',
+            },
+        },
     }
 
 

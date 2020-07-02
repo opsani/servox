@@ -36,7 +36,7 @@ class Events(str, Enum):
     ADJUST = "adjust"
     PROMOTE = "promote"
 
-
+# TODO: Make abstract , abc.ABC
 class BaseServoSettings(ConnectorSettings):
     """
     Abstract base class for Servo settings
@@ -71,7 +71,7 @@ class BaseServoSettings(ConnectorSettings):
     """
 
     @classmethod
-    def generate(cls) -> "ConnectorSettings":
+    def generate(cls: Type["BaseServoSettings"]) -> "BaseServoSettings":
         return cls()
 
     @validator("connectors", pre=True)
@@ -87,8 +87,8 @@ class BaseServoSettings(ConnectorSettings):
         # We are the base root of pluggable configuration
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.ignore
-
-        title = "Servo"
+        title = "Abstract Servo Configuration Schema"
+        env_prefix = "SERVO_"
 
 
 @metadata(
@@ -311,17 +311,14 @@ def _create_settings_model(
                 require_fields = True
 
     # Create Pydantic fields for each active route
-    connector_versions: List[str] = []
+    connector_versions: Dict[Type[Connector], str] = {} # use dict for uniquing and ordering
     setting_fields: Dict[str, Tuple[Type[ConnectorSettings], Any]] = {}
     default_value = ... if require_fields else None # Pydantic uses ... for flagging fields required
     for key_path, connector_class in routes.items():
-        settings_model = _derive_settings_model_at_key_path(connector_class.settings_model(), key_path)
-        settings_model.__config__.title = f"{connector_class.name} Settings (at {key_path})"
-        # schema_extra = settings_model.__config__.update(
-        #     "config_key_path"
-        # )
+        settings_model = _derive_settings_model_for_route(key_path, connector_class)
+        settings_model.__config__.title = f"{connector_class.name} Settings (at key-path {key_path})"
         setting_fields[key_path] = (settings_model, default_value)
-        connector_versions.append(f"{connector_class.name} v{connector_class.version}")
+        connector_versions[connector_class] = f"{connector_class.name} v{connector_class.version}"
 
     # Create our model
     servo_settings_model = create_model(
@@ -329,9 +326,11 @@ def _create_settings_model(
         __base__=BaseServoSettings,
         **setting_fields,
     )
-    
+
+    connectors_series = join_to_series(list(connector_versions.values()))
+    servo_settings_model.__config__.title = "Servo Configuration Schema"
     servo_settings_model.__config__.schema_extra = {
-        "description": f"Schema for configuration of Servo v{Servo.version} with {join_to_series(connector_versions)}"
+        "description": f"Schema for configuration of Servo v{Servo.version} with {connectors_series}"
     }
 
     return servo_settings_model, routes
@@ -342,18 +341,32 @@ def _normalize_name(name: str) -> str:
     """    
     return re.sub(r'[^a-zA-Z0-9.\-_]', '_', name)
 
-def _derive_settings_model_at_key_path(model: Type[ConnectorSettings], key_path: str) -> Type[ConnectorSettings]:
+def _derive_settings_model_for_route(key_path: str, model: Type[Connector]) -> Type[ConnectorSettings]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
     # because key-paths are guanranteed to be unique, we can utilize it as a 
+    base_setting_model = model.settings_model()
+
+    if base_setting_model == ConnectorSettings:
+        # Connector hasn't defined a settings class, use the connector class name as base name
+        # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
+        # due to naming conflicts.
+        model_name = f"{model.__name__}Settings"
+    elif key_path == model.__key_path__:
+        # Connector is mounted at the default route, use default name
+        model_name = f"{base_setting_model.__qualname__}"
+    else:
+        model_name = _normalize_name(f"{base_setting_model.__qualname__}__{key_path}")
+
+    # TODO: Check if the name has a conflict
     settings_model = create_model(
-        _normalize_name(f"{key_path}__{model.__qualname__}"),
-        __base__=model,
+        model_name,
+        __base__=base_setting_model,
     )
 
     # Traverse across all the fields and update the env vars
     for name, field in settings_model.__fields__.items():
-        field.field_info.extra.pop("env", None)
+        value = field.field_info.extra.pop("env", None)
         field.field_info.extra["env_names"] = {
             f"SERVO_{key_path}_{name}".upper()
         }

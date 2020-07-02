@@ -18,7 +18,6 @@ from typing import (
 
 import httpx
 import loguru
-import semver
 import typer
 import yaml
 from pkg_resources import EntryPoint, iter_entry_points
@@ -33,7 +32,14 @@ from pydantic import (
     validator,
 )
 from pydantic.main import ModelMetaclass
+from servo.types import (
+    EventDescriptor,
+    Version,
+    License,
+    Maturity
+)
 
+OPSANI_API_BASE_URL = "https://api.opsani.com/"
 USER_AGENT = "github.com/opsani/servox"
 
 
@@ -65,7 +71,7 @@ class Optimizer(BaseSettings):
     An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
     """
 
-    base_url: HttpUrl = "https://api.opsani.com/"
+    base_url: HttpUrl = OPSANI_API_BASE_URL
     """
     The base URL for accessing the Opsani API. This optiion is typically only useful for Opsani developers or in the context
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
@@ -90,16 +96,20 @@ class Optimizer(BaseSettings):
         return f"{self.org_domain}/{self.app_name}"
 
     class Config:
-        env_prefix = "SERVO_OPTIMIZER_"
         env_file = ".env"
-        case_sensitive = False  # TODO: Normalize the env vars
+        case_sensitive = True
         extra = Extra.forbid
         fields = {
             "token": {
-                "env": "SERVO_OPTIMIZER_TOKEN",
-                "env_names": {"SERVO_OPTIMIZER_TOKEN"},
+                "env": "OPSANI_TOKEN",
+            },
+            "base_url": {
+                "env": "OPSANI_BASE_URL",
             }
         }
+
+
+DEFAULT_SETTINGS_TITLE = "Connector Configuration Schema"
 
 
 class ConnectorSettings(BaseSettings):
@@ -115,8 +125,7 @@ class ConnectorSettings(BaseSettings):
     """
 
     description: Optional[str] = Field(None, 
-        description="An optional annotation describing the configuration.",
-        env="SERVO_DESCRIPTION"
+        description="An optional annotation describing the configuration."
     )
     """An optional textual description of the configyuration stanza useful for differentiating
     between configurations within assemblies.
@@ -124,6 +133,11 @@ class ConnectorSettings(BaseSettings):
 
     @classmethod
     def parse_file(cls, file: Path) -> "ConnectorSettings":
+        """
+        Parse a YAML configuration file and return a settings object with the contents.
+
+        If the file does not contain a valid configuration, a `ValidationError` will be raised.
+        """
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
         return cls.parse_obj(config)
 
@@ -144,17 +158,30 @@ class ConnectorSettings(BaseSettings):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # Set default environment variable names
+        # Schema title
+        base_name = cls.__name__.replace('Settings', '')
+        if cls.__config__.title == DEFAULT_SETTINGS_TITLE:
+            cls.__config__.title = f"{base_name} Connector Configuration Schema"
+
+        # Default prefix
+        prefix = cls.__config__.env_prefix
+        if prefix == '':            
+            prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + '_'
+
         for name, field in cls.__fields__.items():
-            field.field_info.extra["env_names"] = {f"SERVO_{name}".upper()}
+            field.field_info.extra["env_names"] = { f"{prefix}{name}".upper() }
 
     class Config:
-        env_prefix = "SERVO_"
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
+        title = DEFAULT_SETTINGS_TITLE
 
-ConnectorSettings.update_forward_refs()
+
+# Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
+env_names = ConnectorSettings.__fields__["description"].field_info.extra.get("env_names", set())
+ConnectorSettings.__fields__["description"].field_info.extra["env_names"] = set(map(str.upper, env_names))
+
 
 EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
 
@@ -176,7 +203,7 @@ _is_base_connector_class_defined = False
 class ConnectorMetaclass(ModelMetaclass):
     def __new__(mcs, name, bases, namespace, **kwargs):
         # Decorate the class with an event registry, inheriting from our parent connectors
-        events: Dict[str, "EventDescriptor"] = {}
+        events: Dict[str, EventDescriptor] = {}
 
         for base in reversed(bases):
             if (
@@ -204,7 +231,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Name of the connector, by default derived from the class name.
     """
 
-    version: ClassVar["Version"] = None
+    version: ClassVar[Version] = None
     """Semantic Versioning string of the connector.
     """
 
@@ -216,11 +243,11 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Link to the homepage of the connector.
     """
 
-    license: ClassVar[Optional["License"]] = None
+    license: ClassVar[Optional[License]] = None
     """An enumerated value that identifies the license that the connector is distributed under.
     """
 
-    maturity: ClassVar[Optional["Maturity"]] = None
+    maturity: ClassVar[Optional[Maturity]] = None
     """An enumerated value that identifies the self-selected maturity level of the connector, provided for
     advisory purposes.
     """
@@ -264,7 +291,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             # Attempt to parse
             cls.version = Version.parse(cls.version)
         assert isinstance(
-            cls.version, (Version, semver.VersionInfo)
+            cls.version, Version
         ), "version is not a semantic versioning descriptor"
         return v
 
@@ -322,7 +349,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         cls.__key_path__ = _key_path_for_connector_class(cls)
 
         cls.name = cls.__name__.replace("Connector", " Connector")
-        cls.version = semver.VersionInfo.parse("0.0.0")
+        cls.version = Version.parse("0.0.0")
 
         # Register events for all annotated methods (see `event` decorator)
         for key, value in cls.__dict__.items():
@@ -368,7 +395,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     # Subclass services
 
     def api_client(self) -> httpx.Client:
-        """Yields an httpx.AsyncClient instance configured to talk to Opsani API"""
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
         base_url = f"{self.optimizer.base_url}accounts/{self.optimizer.org_domain}/applications/{self.optimizer.app_name}/"
         headers = {
             "Authorization": f"Bearer {self.optimizer.token}",
@@ -382,11 +409,57 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """Returns the logger"""
         return loguru.logger
 
-    # TODO: Do we need this?
     @property
-    def cli(self) -> Optional[typer.Typer]:
-        """Returns a Typer CLI for the connector"""
-        return None
+    def cli(self,
+        *,
+        name: Optional[str] = None,
+        help: Optional[str] = None,
+        version: "CommandOption" = True,
+        completion: "CommandOption" = False,
+        schema: "CommandOption" = None,
+        settings: "CommandOption" = None,
+        generate: "CommandOption" = None,
+        validate: "CommandOption" = None,
+        events: "CommandOption" = None,
+        describe: "CommandOption" = None,
+        check: "CommandOption" = None,
+        measure: "CommandOption" = None,
+        adjust: "CommandOption" = None,
+        promote: "CommandOption" = None,
+        **kwargs,
+    ) -> Optional["ConnectorCLI"]:
+        """
+        Optionally initializes and returns a `ConnectorCLI` instance providing
+        connector specific CLI commands. When initialized as part of a servo
+        assembly, the CLI is mounted as a top-level sub-command.
+
+        By default, returns an instance of `ConnectorCLI` that automatically
+        adds common commands based on heuristics (e.g. if you have any settings
+        then you probably want a `settings` subcommand). There are keyword arguments 
+        available for explicitly controlling which commands are added.
+
+        Adhoc commands can be added by defining nested functions with Typer arguments
+        and using the `command()` decorator.Any
+        
+        See servo.cli.CommandCLI for more details.
+        """
+        return CommandCLI(
+            name=name,
+            help=help,
+            version=version,
+            completion=completion,
+            schema=schema,
+            settings=settings,
+            generate=generate,
+            validate=validate,
+            events=events,
+            describe=describe,
+            check=check,            
+            measure=measure,
+            adjust=adjust,
+            promote=promote,
+            **kwargs,
+        )
 
 
 _is_base_connector_class_defined = True
@@ -403,56 +476,10 @@ def _command_name_from_config_key_path(key_path: str) -> str:
     return key_path.split(".", 1)[-1].replace("_", "-").lower()
 
 
-class License(Enum):
-    """Defined licenses"""
-
-    MIT = "MIT"
-    APACHE2 = "Apache 2.0"
-    PROPRIETARY = "Proprietary"
-
-    @classmethod
-    def from_str(cls, identifier: str) -> "License":
-        """
-        Returns a `License` for the given string identifier (e.g. "MIT").
-        """
-        for _, env in cls.__members__.items():
-            if env.value == identifier:
-                return env
-        raise NameError(f'No license identified by "{identifier}".')
-
-    def __str__(self):
-        return self.value
-
-
-class Maturity(Enum):
-    """Connector maturity level"""
-
-    EXPERIMENTAL = "Experimental"
-    STABLE = "Stable"
-    ROBUST = "Robust"
-
-    @classmethod
-    def from_str(cls, identifier: str) -> "Maturity":
-        """
-        Returns a `License` for the given string identifier (e.g. "MIT").
-        """
-        for _, env in cls.__members__.items():
-            if env.value == identifier:
-                return env
-        raise NameError(f'No maturity level identified by "{identifier}".')
-
-    def __str__(self):
-        return self.value
-
-
-class Version(semver.VersionInfo):
-    pass
-
-
 def metadata(
     name: Optional[str] = None,
     description: Optional[str] = None,
-    version: Optional[semver.VersionInfo] = None,
+    version: Optional[Version] = None,
     homepage: Optional[HttpUrl] = None,
     license: Optional[License] = None,
     maturity: Optional[Maturity] = None,
@@ -470,7 +497,7 @@ def metadata(
         if version:
             cls.version = (
                 version
-                if isinstance(version, semver.VersionInfo)
+                if isinstance(version, Version)
                 else Version.parse(version)
             )
         if homepage:
@@ -482,11 +509,6 @@ def metadata(
         return cls
 
     return decorator
-
-
-class EventDescriptor(BaseModel):
-    name: str
-    kwargs: Dict[str, Any]
 
 
 def event(**kwargs):
