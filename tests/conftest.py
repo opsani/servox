@@ -1,5 +1,4 @@
 import os
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict
 
@@ -22,16 +21,6 @@ else:
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
-
-
-@contextmanager
-def environment_overrides(env: Dict[str, str]) -> None:
-    original_env = os.environ.copy()
-    os.environ.update(env)
-    try:
-        yield
-    finally:
-        os.environ = original_env
 
 
 @pytest.fixture()
