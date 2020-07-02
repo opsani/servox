@@ -3,19 +3,19 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Optional, Union
 
 import typer
 import yaml
 from devtools import pformat
-from pydantic import ValidationError
-from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 
+from pydantic import ValidationError
+from pydantic.json import pydantic_encoder
 from servo.connector import Connector, ConnectorSettings, Optimizer
-from servo.servo import Servo, ServoAssembly, Events
+from servo.servo import Events, Servo, ServoAssembly
 from servo.servo_runner import ServoRunner
 from servo.types import *
 
@@ -48,7 +48,8 @@ class SharedCommandsMixin:
     connectors: List[Connector]
     hide_servo_options: bool = True
 
-    def add_shared_commands(self,
+    def add_shared_commands(
+        self,
         version: CommandOption = True,
         schema: CommandOption = None,
         settings: CommandOption = None,
@@ -56,7 +57,7 @@ class SharedCommandsMixin:
         validate: CommandOption = None,
         events: CommandOption = None,
         describe: CommandOption = None,
-        check: CommandOption = None,        
+        check: CommandOption = None,
         measure: CommandOption = None,
         adjust: CommandOption = None,
         promote: CommandOption = None,
@@ -119,7 +120,7 @@ class SharedCommandsMixin:
                 status = "√ PASSED" if check.success else "X FAILED"
                 row = [result.connector.name, check.name, status, check.comment]
                 table.append(row)
-            
+
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         @self.command()
@@ -135,15 +136,21 @@ class SharedCommandsMixin:
             for result in results:
                 description: Description = result.value
                 components_column = []
-                for component in description.components:                     
+                for component in description.components:
                     for setting in component.settings:
-                        components_column.append(f"{component.name}.{setting.name}={setting.value}")
+                        components_column.append(
+                            f"{component.name}.{setting.name}={setting.value}"
+                        )
 
                 metrics_column = []
                 for metric in description.metrics:
                     metrics_column.append(f"{metric.name} ({metric.unit})")
 
-                row = [result.connector.name, "\n".join(components_column), "\n".join(metrics_column)]
+                row = [
+                    result.connector.name,
+                    "\n".join(components_column),
+                    "\n".join(metrics_column),
+                ]
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
@@ -189,7 +196,7 @@ class SharedCommandsMixin:
                     output_data = pformat(self.assembly.top_level_schema(all=all))
 
             else:
-                
+
                 settings_class = self.settings.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
@@ -315,7 +322,8 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
     def connectors(self) -> List["Connector"]:
         return [self.connector]
 
-    def __init__(self, 
+    def __init__(
+        self,
         connector: Connector,
         name: Optional[str] = None,
         help: Optional[str] = None,

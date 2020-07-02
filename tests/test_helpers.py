@@ -1,7 +1,9 @@
-from contextlib import contextmanager
 import os
-from servo.connector import Connector
+from contextlib import contextmanager
 from typing import Dict
+
+from servo.connector import Connector
+
 
 class MeasureConnector(Connector):
     pass
@@ -13,6 +15,7 @@ class AdjustConnector(Connector):
 
 class LoadgenConnector(Connector):
     pass
+
 
 @contextmanager
 def environment_overrides(env: Dict[str, str]) -> None:

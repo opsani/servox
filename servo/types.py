@@ -1,10 +1,13 @@
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import semver
-from pydantic import BaseModel
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
+
+from pydantic import BaseModel
+
 
 class License(Enum):
     """Defined licenses"""
@@ -95,9 +98,7 @@ class Setting(BaseModel):
     min: Numeric
     max: Numeric
     step: Numeric
-    value: Optional[
-        Union[Numeric, str]
-    ]
+    value: Optional[Union[Numeric, str]]
 
 
 class Component(BaseModel):
@@ -163,6 +164,7 @@ class CheckResult(BaseModel):
     name: str
     success: bool
     comment: Optional[str]
+
 
 # Common output formats
 YAML_FORMAT = "yaml"

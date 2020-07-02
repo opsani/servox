@@ -1,7 +1,6 @@
 import abc
 import logging
 import re
-from enum import Enum
 from pathlib import Path
 from typing import (
     Any,
@@ -18,9 +17,9 @@ from typing import (
 
 import httpx
 import loguru
-import typer
 import yaml
 from pkg_resources import EntryPoint, iter_entry_points
+
 from pydantic import (
     BaseModel,
     BaseSettings,
@@ -32,12 +31,7 @@ from pydantic import (
     validator,
 )
 from pydantic.main import ModelMetaclass
-from servo.types import (
-    EventDescriptor,
-    Version,
-    License,
-    Maturity
-)
+from servo.types import EventDescriptor, License, Maturity, Version
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
 USER_AGENT = "github.com/opsani/servox"
@@ -100,12 +94,8 @@ class Optimizer(BaseSettings):
         case_sensitive = True
         extra = Extra.forbid
         fields = {
-            "token": {
-                "env": "OPSANI_TOKEN",
-            },
-            "base_url": {
-                "env": "OPSANI_BASE_URL",
-            }
+            "token": {"env": "OPSANI_TOKEN",},
+            "base_url": {"env": "OPSANI_BASE_URL",},
         }
 
 
@@ -124,8 +114,8 @@ class ConnectorSettings(BaseSettings):
     configuration for the connector to function.
     """
 
-    description: Optional[str] = Field(None, 
-        description="An optional annotation describing the configuration."
+    description: Optional[str] = Field(
+        None, description="An optional annotation describing the configuration."
     )
     """An optional textual description of the configyuration stanza useful for differentiating
     between configurations within assemblies.
@@ -159,17 +149,17 @@ class ConnectorSettings(BaseSettings):
         super().__init_subclass__(**kwargs)
 
         # Schema title
-        base_name = cls.__name__.replace('Settings', '')
+        base_name = cls.__name__.replace("Settings", "")
         if cls.__config__.title == DEFAULT_SETTINGS_TITLE:
             cls.__config__.title = f"{base_name} Connector Configuration Schema"
 
         # Default prefix
         prefix = cls.__config__.env_prefix
-        if prefix == '':            
-            prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + '_'
+        if prefix == "":
+            prefix = re.sub(r"(?<!^)(?=[A-Z])", "_", base_name).upper() + "_"
 
         for name, field in cls.__fields__.items():
-            field.field_info.extra["env_names"] = { f"{prefix}{name}".upper() }
+            field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
 
     class Config:
         env_file = ".env"
@@ -179,8 +169,12 @@ class ConnectorSettings(BaseSettings):
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
-env_names = ConnectorSettings.__fields__["description"].field_info.extra.get("env_names", set())
-ConnectorSettings.__fields__["description"].field_info.extra["env_names"] = set(map(str.upper, env_names))
+env_names = ConnectorSettings.__fields__["description"].field_info.extra.get(
+    "env_names", set()
+)
+ConnectorSettings.__fields__["description"].field_info.extra["env_names"] = set(
+    map(str.upper, env_names)
+)
 
 
 EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
@@ -410,7 +404,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         return loguru.logger
 
     @property
-    def cli(self,
+    def cli(
+        self,
         *,
         name: Optional[str] = None,
         help: Optional[str] = None,
@@ -454,7 +449,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             validate=validate,
             events=events,
             describe=describe,
-            check=check,            
+            check=check,
             measure=measure,
             adjust=adjust,
             promote=promote,
@@ -496,9 +491,7 @@ def metadata(
             cls.description = description
         if version:
             cls.version = (
-                version
-                if isinstance(version, Version)
-                else Version.parse(version)
+                version if isinstance(version, Version) else Version.parse(version)
             )
         if homepage:
             cls.homepage = homepage

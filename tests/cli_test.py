@@ -162,7 +162,7 @@ def test_settings_dict(
 
 def test_settings_dict_file(
     cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path
-) -> None:    
+) -> None:
     path = tmp_path / "settings.py"
     result = cli_runner.invoke(cli_app, f"settings -f dict -o {path}")
     assert result.exit_code == 0

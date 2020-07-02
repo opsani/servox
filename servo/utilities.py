@@ -1,24 +1,32 @@
-from datetime import datetime, timedelta
-from typing import Optional, Union, Callable, List, Iterable
 import signal
 import sys
+from datetime import datetime, timedelta
+from typing import Callable, Iterable, Optional, Union
+
 import durationpy
+
 from pydantic import BaseModel, validator
 
-def join_to_series(items: Iterable[str], *, conjunction='and', oxford_comma=True) -> str:
+
+def join_to_series(
+    items: Iterable[str], *, conjunction="and", oxford_comma=True
+) -> str:
     """
     Concatenate any number of strings into a series suitable for use in English output.
 
     Items are joined using a comma and a configurable conjunction, defaulting to 'and'.
     """
     count = len(items)
-    if count == 0: return ''
-    elif count == 1: return items[0]
-    elif count == 2: return f' {conjunction} '.join(items)
+    if count == 0:
+        return ""
+    elif count == 1:
+        return items[0]
+    elif count == 2:
+        return f" {conjunction} ".join(items)
     else:
-        series = ', '.join(items[0:-1])
+        series = ", ".join(items[0:-1])
         last_item = items[-1]
-        delimiter = ',' if oxford_comma else ''
+        delimiter = "," if oxford_comma else ""
         return f"{series}{delimiter} {conjunction} {last_item}"
 
 
@@ -78,8 +86,8 @@ class SignalHandler:
     terminate_callback: Optional[SignalCallback] = None
 
     def __init__(
-        self, 
-        *, 
+        self,
+        *,
         stop_callback: Optional[SignalCallback] = None,
         restart_callback: Optional[SignalCallback] = None,
         terminate_callback: Optional[SignalCallback] = None,

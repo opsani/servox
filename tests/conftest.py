@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Dict
 
 import pytest
 from typer.testing import CliRunner
@@ -28,6 +27,7 @@ def servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
     config_path.touch()
     return config_path
+
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)

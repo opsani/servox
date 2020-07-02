@@ -1,6 +1,6 @@
+import signal
 import sys
 import time
-import signal
 from enum import Enum
 from logging import Logger
 from typing import Any, Dict, List, Optional, Union
@@ -8,12 +8,13 @@ from typing import Any, Dict, List, Optional, Union
 import backoff
 import httpx
 from devtools import pformat
-from pydantic import BaseModel, Field, parse_obj_as
 
+from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoSettings, Events, Servo
 from servo.types import Control, Description, Measurement
 from servo.utilities import SignalHandler
+
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -97,7 +98,7 @@ class ServoRunner:
 
     def __init__(self, servo: Servo, *, interactive: bool = False, **kwargs) -> None:
         self.servo = servo
-        self.interactive = interactive        
+        self.interactive = interactive
         super().__init__()
 
     @property
@@ -296,20 +297,20 @@ class ServoRunner:
             self.logger.exception(
                 f"Warning: failed to send GOODBYE: {e}. Exiting anyway"
             )
-    
+
     def _stop_callback(self, sig_num: int) -> None:
         self._stop_flag = "exit"
 
     def _restart_callback(self, sig_num: int) -> None:
         self._stop_flag = "restart"
-    
+
     def _terminate_callback(self, sig_num: int) -> None:
         # determine signal name (best effort)
         try:
             sig_name = signal.Signals(sig_num).name
         except ValueError:
             sig_name = f"signal #{sig_num}"
-            
+
         # log signal
         self.logger.info(
             f'*** Servo stop requested by signal "{sig_name}". Sending GOODBYE'

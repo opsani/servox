@@ -1,17 +1,17 @@
 import importlib
 import json
 import os
+import re
 from enum import Enum
 from pathlib import Path
-import re
 from typing import Any, Dict, List, Optional, Set, Type, Union
 
 import typer
 import yaml
-from pydantic import BaseModel, Extra, create_model, validator, Field
+
+from pydantic import BaseModel, Extra, Field, create_model, validator
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
-
 from servo.connector import (
     Connector,
     ConnectorLoader,
@@ -36,6 +36,7 @@ class Events(str, Enum):
     ADJUST = "adjust"
     PROMOTE = "promote"
 
+
 # TODO: Make abstract , abc.ABC
 class BaseServoSettings(ConnectorSettings):
     """
@@ -47,7 +48,8 @@ class BaseServoSettings(ConnectorSettings):
     See `ServoAssembly` for details on how the concrete model is built.
     """
 
-    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(None,
+    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(
+        None,
         description=(
             "An optional, explicit configuration of the active connectors.\n"
             "\nConfigurable as either an array of connector identifiers (names or class) or\n"
@@ -55,15 +57,9 @@ class BaseServoSettings(ConnectorSettings):
             "and the values identify the connector (by name or class name)."
         ),
         examples=[
-            [
-                "kubernetes",
-                "prometheus"
-            ],
-            {
-                "staging_prom": "prometheus",
-                "gateway_prom": "prometheus"
-            }
-        ]
+            ["kubernetes", "prometheus"],
+            {"staging_prom": "prometheus", "gateway_prom": "prometheus"},
+        ],
     )
     """
     An optional list of connector keys or a dict mapping of connector 
@@ -199,9 +195,7 @@ class ServoAssembly(BaseModel):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoSettings, routes = _create_settings_model(
-            config_file=config_file, env=env
-        )
+        ServoSettings, routes = _create_settings_model(config_file=config_file, env=env)
 
         # Build our Servo settings instance from the config file + environment
         if config_file.exists():
@@ -297,7 +291,7 @@ def _discover_connectors() -> Set[Type[Connector]]:
 def _create_settings_model(
     *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
 ) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
-    # map of config key in YAML to settings class for target connector    
+    # map of config key in YAML to settings class for target connector
     routes: Dict[str, Type[Connector]] = _default_routes()
     require_fields: bool = False
 
@@ -311,20 +305,26 @@ def _create_settings_model(
                 require_fields = True
 
     # Create Pydantic fields for each active route
-    connector_versions: Dict[Type[Connector], str] = {} # use dict for uniquing and ordering
+    connector_versions: Dict[
+        Type[Connector], str
+    ] = {}  # use dict for uniquing and ordering
     setting_fields: Dict[str, Tuple[Type[ConnectorSettings], Any]] = {}
-    default_value = ... if require_fields else None # Pydantic uses ... for flagging fields required
+    default_value = (
+        ... if require_fields else None
+    )  # Pydantic uses ... for flagging fields required
     for key_path, connector_class in routes.items():
         settings_model = _derive_settings_model_for_route(key_path, connector_class)
-        settings_model.__config__.title = f"{connector_class.name} Settings (at key-path {key_path})"
+        settings_model.__config__.title = (
+            f"{connector_class.name} Settings (at key-path {key_path})"
+        )
         setting_fields[key_path] = (settings_model, default_value)
-        connector_versions[connector_class] = f"{connector_class.name} v{connector_class.version}"
+        connector_versions[
+            connector_class
+        ] = f"{connector_class.name} v{connector_class.version}"
 
     # Create our model
     servo_settings_model = create_model(
-        "ServoSettings",
-        __base__=BaseServoSettings,
-        **setting_fields,
+        "ServoSettings", __base__=BaseServoSettings, **setting_fields,
     )
 
     connectors_series = join_to_series(list(connector_versions.values()))
@@ -335,16 +335,20 @@ def _create_settings_model(
 
     return servo_settings_model, routes
 
+
 def _normalize_name(name: str) -> str:
     """
     Normalizes the given name.
-    """    
-    return re.sub(r'[^a-zA-Z0-9.\-_]', '_', name)
+    """
+    return re.sub(r"[^a-zA-Z0-9.\-_]", "_", name)
 
-def _derive_settings_model_for_route(key_path: str, model: Type[Connector]) -> Type[ConnectorSettings]:
+
+def _derive_settings_model_for_route(
+    key_path: str, model: Type[Connector]
+) -> Type[ConnectorSettings]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
-    # because key-paths are guanranteed to be unique, we can utilize it as a 
+    # because key-paths are guanranteed to be unique, we can utilize it as a
     base_setting_model = model.settings_model()
 
     if base_setting_model == ConnectorSettings:
@@ -359,17 +363,12 @@ def _derive_settings_model_for_route(key_path: str, model: Type[Connector]) -> T
         model_name = _normalize_name(f"{base_setting_model.__qualname__}__{key_path}")
 
     # TODO: Check if the name has a conflict
-    settings_model = create_model(
-        model_name,
-        __base__=base_setting_model,
-    )
+    settings_model = create_model(model_name, __base__=base_setting_model,)
 
     # Traverse across all the fields and update the env vars
     for name, field in settings_model.__fields__.items():
-        value = field.field_info.extra.pop("env", None)
-        field.field_info.extra["env_names"] = {
-            f"SERVO_{key_path}_{name}".upper()
-        }
+        field.field_info.extra.pop("env", None)
+        field.field_info.extra["env_names"] = {f"SERVO_{key_path}_{name}".upper()}
 
     return settings_model
 
