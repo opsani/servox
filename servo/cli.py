@@ -64,7 +64,7 @@ class Context(typer.Context):
 
     def __init__(
         self,
-        command: click.Command,
+        command: 'Command', # NOTE: NEEDS TO BE OUR CLASS
         *args,
         config_file: Optional[Path] = None,
         optimizer: Optional[Optimizer] = None,
@@ -84,12 +84,19 @@ class Context(typer.Context):
 class ContextMixin:
     # NOTE: Override the Click `make_context` base method to inject our class
     def make_context(self, info_name, args, parent=None, **extra):
-        debug("$$$$ MAKING CONTEXT!!")
+        # debug("$$$$ MAKING CONTEXT!! from parent ", parent)
+        # if parent.__class__ == click.core.Context:
+        #     debug(parent['servo'])
+        #     raise ValueError("sadaslkdjaslk")
+
         for key, value in self.context_settings.items():
             if key not in extra:
                 extra[key] = value
 
-        if isinstance(parent, Context):
+        debug("### Parent is context: ", parent, "self=", self)
+        # if parent.__class__ == click.core.Context:
+        #     raise ValueError("asdsad")
+        if isinstance(parent, Context):            
             attributes = {"config_file", "optimizer", "assembly", "servo", "connector"}
             for attribute in attributes:
                 if attribute not in extra:
@@ -97,13 +104,24 @@ class ContextMixin:
 
         ctx = Context(self, info_name=info_name, parent=parent, **extra)
         with ctx.scope(cleanup=False):
-            debug(ctx, args)
+            debug(ctx, parent, args, f"{self .__class__.__bases__}")
             self.parse_args(ctx, args)
+        print("@@@@@ MY CONTEXT IS ", ctx, extra)
         return ctx
+
+# class BaseCommand(click.BaseCommand):
 
 class Command(click.Command, ContextMixin):
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
+    
+    def main(self, *args, **kwargs):
+        print("Alive")
+        return super().main(*args, **kwargs)
+
+# class MultiCommand(click.MultiCommand, ContextMixin):
+#     def make_context(self, info_name, args, parent=None, **extra):
+#         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
 class OrderedGroup(click.Group, ContextMixin):
     def make_context(self, info_name, args, parent=None, **extra):
@@ -116,7 +134,7 @@ class OrderedGroup(click.Group, ContextMixin):
 class CLI(typer.Typer):
     # CLI registry
     __clis__: Set["CLI"] = set()
-
+        
     @classmethod
     def register(
         cls,
@@ -126,7 +144,7 @@ class CLI(typer.Typer):
         # help: Optional[str] = None,
         **kwargs
     ):
-        cli = cls(context_selector, *args, **kwargs)
+        cli = cls(context_selector, *args, chain=True, **kwargs)
         cls.__clis__.add(cli)
         return cli
 
@@ -139,6 +157,7 @@ class CLI(typer.Typer):
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = None,
         **kwargs):
+        callback = self.root_callback
         if context_selector is not None:            
             if issubclass(context_selector, Connector):
                 if name is None:
@@ -187,12 +206,15 @@ class CLI(typer.Typer):
         cli: "CLI",
         *args,
         cls: Optional[Type[click.Command]] = None,
+        chain: bool = True,
         **kwargs,
     ) -> None:
         print("ADDING CLI!!")
         if not isinstance(cli, CLI):
             raise ValueError(f"Cannot add cli of type '{cli.__class__}: not a servo.cli.CLI")
-        return super().add_typer(cli, *args, cls=cls, **kwargs)
+        if cls is None:
+            cls = OrderedGroup
+        return self.add_typer(cli, *args, cls=cls, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
     # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption

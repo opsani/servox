@@ -270,28 +270,12 @@ class VegetaConnector(Connector):
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
-    def cli(self) -> ConnectorCLI:
-        """
-        Returns a Typer CLI for interacting with this connector
-        """
-        cli = ConnectorCLI(self, help="Load generation with Vegeta")
-
-        @cli.command()
-        def loadgen():
-            """
-            Run an adhoc load generation
-            """
-            self.measure()
-
-        return cli
-
     @event()
     def describe(self) -> Description:
         """
         Describe the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
-    
 
     @event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
@@ -427,3 +411,30 @@ def _number_of_lines_in_file(filename):
         for line in f:
             count += 1
     return count
+
+
+from servo.cli import CLI, Context
+
+cli = CLI.register(VegetaConnector)#, callback=CLI.root_callback)
+@cli.command() # TODO: What we really want is to be able to set scope=(connector, servo, none)
+def loadgen(context: Context):
+    """
+    Run an adhoc load generation
+    """
+    debug("!!! Got Context!", context, context.servo, context.connector)
+    #self.measure()
+
+# class VegetaCLI(CLI): Fget_com
+#     """
+#     Load generation with Vegeta
+#     """
+#     # TODO: Could be done with decorators like @connector_command(), @servo_command()
+
+#     def add_commands(self):
+#         @self.command()
+#         def loadgen(context: Context):
+#             """
+#             Run an adhoc load generation
+#             """
+#             debug("!!! Got Context!")
+#             #self.measure()
