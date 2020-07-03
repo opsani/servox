@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Set, Type, Callable
 
 import typer
 import yaml
@@ -21,7 +21,6 @@ from servo.types import *
 
 import click
 from typer.models import CommandFunctionType, Default
-from typing import Optional, Type, Callable
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -61,6 +60,8 @@ class Context(typer.Context):
     # Active connector
     connector: Optional[Connector] = None
 
+    # TODO: Logger?
+
     def __init__(
         self,
         command: click.Command,
@@ -96,6 +97,7 @@ class ContextMixin:
 
         ctx = Context(self, info_name=info_name, parent=parent, **extra)
         with ctx.scope(cleanup=False):
+            debug(ctx, args)
             self.parse_args(ctx, args)
         return ctx
 
@@ -112,23 +114,49 @@ class OrderedGroup(click.Group, ContextMixin):
         return self.commands
 
 class CLI(typer.Typer):
+    # CLI registry
+    __clis__: Set["CLI"] = set()
+
+    @classmethod
+    def register(
+        cls,
+        context_selector: Optional[Union[Type[Optimizer], Type[Servo], Type[Connector]]] = None,
+        *args, 
+        # name: Optional[str] = None,
+        # help: Optional[str] = None,
+        **kwargs
+    ):
+        cli = cls(context_selector, *args, **kwargs)
+        cls.__clis__.add(cli)
+        return cli
+
     def __init__(
         self, 
-        connector_type: Type[Connector],
+        context_selector: Optional[Union[Type[Optimizer], Type[Servo], Type[Connector]]] = None,
         *args,
         name: Optional[str] = None,
-        cls: Optional[Type[click.Command]] = None, 
+        help: Optional[str] = None,
+        command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = None,
         **kwargs):
-        if name is None:
-            name = connector_type.command_name
+        if context_selector is not None:            
+            if issubclass(context_selector, Connector):
+                if name is None:
+                    name = context_selector.command_name() # TODO: This can just be turned into a class var property
+                    # raise ValueError(f"sdasdsa: {context_selector}")
+                if help is None:
+                    help = context_selector.description
+                if callback is None:
+                    callback = self.root_callback
+        
         # NOTE: Set default command class to get custom context
-        if cls is None:
-            cls = Command
+        if command_type is None:
+            command_type = Command
         if callback is None:
+            # TODO: Infer this from the `context_type`
             callback = self.root_callback
-        debug("^^^ Initializing", cls, callback)
-        super().__init__(*args, cls=cls, callback=callback, **kwargs) 
+        debug("^^^ Initializing", command_type, callback)
+        super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
         
     def command(
         self,
@@ -153,15 +181,18 @@ class CLI(typer.Typer):
         print("INSIDE CALLBACK!!")
         return super().callback(*args, cls=cls, **kwargs)
     
-    def add_typer(
+    # TODO: Maybe name add_subcli?
+    def add_cli(
         self,
-        typer_instance: "Typer",
+        cli: "CLI",
         *args,
-        cls: Optional[Type[click.Command]] = OrderedGroup,
+        cls: Optional[Type[click.Command]] = None,
         **kwargs,
     ) -> None:
-        print("ADDING TYPER!!")
-        return super().add_typer(typer_instance, *args, cls=cls, **kwargs)
+        print("ADDING CLI!!")
+        if not isinstance(cli, CLI):
+            raise ValueError(f"Cannot add cli of type '{cli.__class__}: not a servo.cli.CLI")
+        return super().add_typer(cli, *args, cls=cls, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
     # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption
@@ -278,19 +309,19 @@ class ServoCLI(CLI):
     def __init__(
         self, 
         *args,
-        name: Optional[str] = "servox", 
-        cls: Optional[Type[click.Command]] = None,
+        name: Optional[str] = "servo", 
+        command_type: Optional[Type[click.Command]] = None,
         add_completion: bool = True, 
         no_args_is_help: bool = True,
         **kwargs
     ) -> None:        
         # NOTE: We pass OrderedGroup to suppress sorting of commands alphabetically
-        if cls is None:
-            cls = OrderedGroup
+        if command_type is None:
+            command_type = OrderedGroup
         super().__init__(
             *args,
             Servo,
-            cls=cls, 
+            command_type=command_type, 
             name=name, 
             add_completion=add_completion, 
             no_args_is_help=no_args_is_help,
@@ -368,6 +399,11 @@ class ServoCLI(CLI):
     
     def add_connector_commands(self) -> None:
         pass
+        print("\n\n\nWTF!!", self.__clis__)
+        for cli in self.__clis__:
+            print(cli)
+            # debug(cli)
+            self.add_cli(cli)
     
     def add_misc_commands(self) -> None:
         pass
@@ -700,7 +736,7 @@ class ConnectorCLI(typer.Typer, SharedCommandsMixin):
         **kwargs,
     ):
         self.connector = connector
-        name = name if name is not None else connector.command_name
+        name = name if name is not None else connector.command_name()
         help = help if help is not None else connector.description
         completion = completion if completion else False
         super().__init__(name=name, help=help, add_completion=completion)

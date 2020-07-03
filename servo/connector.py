@@ -307,6 +307,14 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         hints = get_type_hints(cls)
         settings_cls = hints["settings"]
         return settings_cls
+    
+    @classmethod
+    def command_name(cls):
+        # print("ONE\n\n")
+        # raise ValueError(f"sdasdsa: {context_selector}")
+        # print("TWO\n\n")
+        return cls.__key_path__
+        # return _command_name_from_config_key_path(cls.__name__)
 
     ##
     # Events
@@ -403,6 +411,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """Returns the logger"""
         return loguru.logger
 
+    # TODO: All of this shit goes away
     @property
     def cli(
         self,
