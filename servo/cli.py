@@ -36,12 +36,12 @@ else:
 # A value of `None` (the typical default) enables auto-detection logic
 CommandOption = Optional[bool]
 
-# TODO: An instance or a class or a method that returns a CLI instance
 # TODO: test passing callback as argument to command, via initializer for root callbacks
 # TODO: Tests to write: check the classes we get (OrderedGroup, Command, Context)
 # TODO: Test passing of correct context
 # TODO: Test the ordering of commands on the root typer
 
+# TODO: Print out better args when hit with debug()
 class Context(typer.Context):
     """
     Context models state required by different CLI invocations.
@@ -84,10 +84,8 @@ class Context(typer.Context):
 class ContextMixin:
     # NOTE: Override the Click `make_context` base method to inject our class
     def make_context(self, info_name, args, parent=None, **extra):
-        # debug("$$$$ MAKING CONTEXT!! from parent ", parent)
-        # if parent.__class__ == click.core.Context:
-        #     debug(parent['servo'])
-        #     raise ValueError("sadaslkdjaslk")
+        if parent and not issubclass(parent.__class__, Context):
+            raise ValueError(f"Encountered an unexpected parent subclass type '{parent.__class__}' while attempting to create a context")
 
         for key, value in self.context_settings.items():
             if key not in extra:
@@ -109,8 +107,6 @@ class ContextMixin:
         print("@@@@@ MY CONTEXT IS ", ctx, extra)
         return ctx
 
-# class BaseCommand(click.BaseCommand):
-
 class Command(click.Command, ContextMixin):
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
@@ -119,13 +115,17 @@ class Command(click.Command, ContextMixin):
         print("Alive")
         return super().main(*args, **kwargs)
 
-# class MultiCommand(click.MultiCommand, ContextMixin):
-#     def make_context(self, info_name, args, parent=None, **extra):
-#         return ContextMixin.make_context(self, info_name, args, parent, **extra)
-
-class OrderedGroup(click.Group, ContextMixin):
+class Group(click.Group, ContextMixin):
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
+
+    # # NOTE: Rely on ordering of modern Python dicts
+    # def list_commands(self, ctx):
+    #     return self.commands
+
+class OrderedGroup(Group, ContextMixin):
+    # def make_context(self, info_name, args, parent=None, **extra):
+    #     return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
     # NOTE: Rely on ordering of modern Python dicts
     def list_commands(self, ctx):
@@ -140,12 +140,19 @@ class CLI(typer.Typer):
         cls,
         context_selector: Optional[Union[Type[Optimizer], Type[Servo], Type[Connector]]] = None,
         *args, 
-        # name: Optional[str] = None,
-        # help: Optional[str] = None,
         **kwargs
     ):
-        cli = cls(context_selector, *args, chain=True, **kwargs)
+        cli = cls(context_selector, *args, **kwargs)
         cls.__clis__.add(cli)
+
+        @cli.callback()
+        def connector_callback(context: Context):
+            # TODO: Needs to handle other patterns
+            for connector in context.servo.connectors:
+                if isinstance(connector, context_selector):
+                    context.connector = connector
+
+
         return cli
 
     def __init__(
@@ -206,14 +213,13 @@ class CLI(typer.Typer):
         cli: "CLI",
         *args,
         cls: Optional[Type[click.Command]] = None,
-        chain: bool = True,
         **kwargs,
     ) -> None:
         print("ADDING CLI!!")
         if not isinstance(cli, CLI):
             raise ValueError(f"Cannot add cli of type '{cli.__class__}: not a servo.cli.CLI")
         if cls is None:
-            cls = OrderedGroup
+            cls = Group
         return self.add_typer(cli, *args, cls=cls, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback

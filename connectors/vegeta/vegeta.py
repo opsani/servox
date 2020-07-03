@@ -415,14 +415,15 @@ def _number_of_lines_in_file(filename):
 
 from servo.cli import CLI, Context
 
-cli = CLI.register(VegetaConnector)#, callback=CLI.root_callback)
+cli = CLI.register(VegetaConnector)
+# TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic
 @cli.command() # TODO: What we really want is to be able to set scope=(connector, servo, none)
 def loadgen(context: Context):
     """
     Run an adhoc load generation
     """
     debug("!!! Got Context!", context, context.servo, context.connector)
-    #self.measure()
+    context.connector.measure()
 
 # class VegetaCLI(CLI): Fget_com
 #     """
