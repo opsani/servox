@@ -17,7 +17,7 @@ import yaml
 # from adjust import Adjust, AdjustError
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import ConnectorCLI
+from servo.cli import CLI
 from servo.types import Component, Setting, Description, CheckResult
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
@@ -676,6 +676,7 @@ def _value(x):
 
 def update(appname, desc, data, print_progress):
 
+    # TODO: Seems like a config element?
     adjust_on = desc.get("adjust_on", False)
 
     if adjust_on:
@@ -692,6 +693,7 @@ def update(appname, desc, data, print_progress):
     _, raw = raw_query(appname, desc)
 
     # convert k8s list of deployments into map
+    # TODO: Model this
     raw = {dep['metadata']['name']: dep for dep in raw}
 
     patchlst = {}
@@ -702,7 +704,8 @@ def update(appname, desc, data, print_progress):
     # FIXME: off-spec; step-down in data if a 'state' key is provided at the top.
     if 'state' in data:
         data = data['state']
-
+    
+    # TODO: Traverse model objects
     for comp_name, comp_data in data.get("application", {}).get("components", {}).items():
         settings = comp_data.get("settings", {})
         if not settings:
@@ -859,15 +862,6 @@ def update(appname, desc, data, print_progress):
         if mon["ref_runtime_count"] != mon0["ref_runtime_count"]:
             raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
-    # update() return
-
-
-# cancel not supported
-# def cancel(signum, frame):
-#     if not wait_in_progress:
-#         sys_exit(1)
-#     print("aborting operation...", file=sys.stderr)
-
 
 class KubernetesSettings(ConnectorSettings):
     namespace: Optional[str]
@@ -896,21 +890,6 @@ VERSION = '1.2'
 class KubernetesConnector(Connector):
     settings: KubernetesSettings
     progress: float = 0.0
-
-    def cli(self) -> ConnectorCLI:
-        """
-        Returns a Typer CLI for interacting with this connector
-        """
-        cli = ConnectorCLI(self, help="Adjust Kubernetes infrastructure")
-
-        @cli.command()
-        def adjust():
-            """
-            Run an adhoc load generation
-            """
-            self.adjust()
-
-        return cli
 
     def print_progress(
             self,
@@ -946,6 +925,7 @@ class KubernetesConnector(Connector):
             raise AdjustError(str(e), reason="unknown") # maybe we should introduce reason=config (or even a different status class, instead of 'failed')
         desc.pop("driver", None)
 #        namespace = os.environ.get('OPTUNE_NAMESPACE', desc.get('namespace', self.app_id))
+        # TODO: Replace the namespace
         namespace = 'default'
         result = query(namespace, desc)        
         components = descriptor_to_components(result['application']['components'])
@@ -985,3 +965,18 @@ def descriptor_to_components(descriptor: dict) -> List[Component]:
         component = Component(name=component_name, settings=settings)
         components.append(component)
     return components
+
+# def cli(self) -> ConnectorCLI:
+#         """
+#         Returns a Typer CLI for interacting with this connector
+#         """
+#         cli = ConnectorCLI(self, help="Adjust Kubernetes infrastructure")
+
+#         @cli.command()
+#         def adjust():
+#             """
+#             Run an adhoc load generation
+#             """
+#             self.adjust()
+
+#         return cli
