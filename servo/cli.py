@@ -16,7 +16,7 @@ from tabulate import tabulate
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from servo.connector import Connector, ConnectorSettings, Optimizer
-from servo.servo import Events, Servo, ServoAssembly
+from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_settings_model_from_routes, _default_routes
 from servo.servo_runner import ServoRunner
 from servo.types import *
 
@@ -347,37 +347,55 @@ class CLI(typer.Typer):
         """
         Transforms a one or more connector key-paths into Connectors
         """
-        def connector_for_key(key: str) -> Optional[Union[Type[Connector], Connector]]:
-            
-            # Check if the string is connector class identifier
-            for connector_class in ServoAssembly.all_connectors():
-                if key in [
-                    connector_class.__name__,
-                    connector_class.__qualname__,
-                ]:
-                    return connector_class
-            
-            # Lookup by config key
-            for connector in context.servo.connectors:
-                if connector.config_key_path == key:
-                    return connector
-
         if value:
             if isinstance(value, str):
-                if connector := connector_for_key(value):
+                if connector := _connector_class_from_string(value):
                     return connector
                 else:
                     raise typer.BadParameter(f"no connector found for key '{value}'")
             else:
                 connectors: List[Connector] = []
                 for key in value:
-                    if connector := connector_for_key(key):
+                    if connector := _connector_class_from_string(key):
                         connectors.append(connector)
                     else:
                         raise typer.BadParameter(f"no connector found for key '{key}'")
                 return connectors
         else:
             return None
+        
+    @staticmethod    
+    def connector_routes_callback(
+        context: typer.Context,
+        value: Optional[List[str]]
+    ) -> Optional[Dict[str, Type[Connector]]]:
+        """
+        Transforms a one or more connector key-paths into Connectors
+        """                
+        if not value:
+            return None
+
+        routes: Dict[str, Type[Connector]] = {}
+        for key in value:
+            if ':' in key:
+                # We have an alias descriptor
+                key_path, identifier = key.split(':', 2)
+            else:
+                # Vanilla key-path or class name
+                key_path = None
+                identifier = key
+
+            try:
+                if connector_class := _connector_class_from_string(identifier):
+                    if key_path is None:
+                        key_path = connector_class.__key_path__
+                    routes[key_path] = connector_class
+                else:
+                    raise typer.BadParameter(f"no connector found for key '{identifier}'")
+            except ValueError as error:
+                raise typer.BadParameter(f"no connector found for key '{identifier}'")
+
+        return routes
 
 class ConnectorCLI(CLI):
     connector_type: Type[Connector]
@@ -872,10 +890,11 @@ class ServoCLI(CLI):
             else:
                 typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
         
-        # TODO: Support connector selection
+        # TODO: Specify connectors with `alias:connector` syntax for dictionary
         @self.command(section=section)
         def validate(
             context: Context,
+            # TODO: Turn this into an option
             file: Path = typer.Argument(
                 "servo.yaml",
                 exists=True,
@@ -913,12 +932,25 @@ class ServoCLI(CLI):
                 typer.echo(e, err=True)
                 raise typer.Exit(1)
         
-        # TODO: There is a duplicate command to untangle!
-        # TODO: This should work with an incomplete config
-        # TODO: Needs to be able to work with set of connector targets
         @self.command(section=section)
         def generate(
             context: Context,
+            connectors: Optional[List[str]] = typer.Argument(
+                None,
+                metavar="CONNECTORS",
+                help="Connectors to generate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`"
+            ),
+            file: Path = typer.Option(
+                "servo.yaml",
+                "--file",
+                "-f",       
+                exists=False,
+                file_okay=True,
+                dir_okay=False,
+                writable=True,
+                readable=True,
+                help="Output file to write"
+            ),            
             defaults: bool = typer.Option(
                 False,
                 "--defaults",
@@ -927,19 +959,38 @@ class ServoCLI(CLI):
             )
         ) -> None:
             """Generate a configuration file"""
-            # TODO: Add force, output path, and format options
-            # TODO: When dumping specific connectors, need to use the config key path
-
             exclude_unset = not defaults
-            settings = context.assembly.settings_model.generate()
+
+            routes = self.connector_routes_callback(context=context, value=connectors) if connectors else _default_routes()
+
+            # Build a settings model from our routes
+            settings_model = _create_settings_model_from_routes(routes)
+            settings = settings_model.generate()
+
+            if len(connectors):
+                # Check is we have any aliases and assign dictionary
+                connectors_dict: Dict[str, str] = {}
+                aliased = False
+                for identifier in connectors:
+                    if ':' in identifier:
+                        alias, id = identifier.split(':', 1)
+                        connectors_dict[alias] = id
+                        aliased = True
+                    else:
+                        connectors_dict[identifier] = identifier
+                
+                if aliased:
+                    settings.connectors = connectors_dict
+                else:
+                    # If there are no aliases just assign input values
+                    settings.connectors = connectors
 
             # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
             schema = json.loads(
                 json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset))
             )
-            output_path = Path.cwd() / f"servo.yaml"
-            output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated servo.yaml")
+            file.write_text(yaml.dump(schema))
+            typer.echo(f"Generated {file}")
     
     def add_connector_commands(self) -> None:
         for cli in ConnectorCLI.__clis__:

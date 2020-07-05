@@ -67,24 +67,21 @@ class BaseServoSettings(ConnectorSettings):
     """
 
     @classmethod
-    def generate(cls: Type["BaseServoSettings"]) -> "BaseServoSettings":
+    def generate(cls: Type["BaseServoSettings"], **kwargs) -> "BaseServoSettings":
         """
         Generate configuration for the servo settings
         """
-        args = {}
         for name, field in cls.__fields__.items():
-            if inspect.isclass(field.type_) and issubclass(field.type_, ConnectorSettings):
-                args[name] = field.type_.generate()
-        return cls(**args)
+            if name not in kwargs and inspect.isclass(field.type_) and issubclass(field.type_, ConnectorSettings):
+                kwargs[name] = field.type_.generate()
+        return cls(**kwargs)
 
     @validator("connectors", pre=True)
     @classmethod
     def validate_connectors(cls, connectors) -> Optional[Dict[str, str]]:
-        if routes := _routes_for_connectors_descriptor(connectors):
-            path_to_modules = {}
-            for path, connector_class in routes.items():
-                path_to_modules[path] = _module_path(connector_class)
-            return path_to_modules
+        # NOTE: Will raise if invalid
+        _routes_for_connectors_descriptor(connectors)
+        return connectors
 
     class Config:
         # We are the base root of pluggable configuration
@@ -287,23 +284,11 @@ def _discover_connectors() -> Set[Type[Connector]]:
         connectors.add(connector)
     return connectors
 
-
-def _create_settings_model(
-    *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
-) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
-    # map of config key in YAML to settings class for target connector
-    routes: Dict[str, Type[Connector]] = _default_routes()
-    require_fields: bool = False
-
-    # NOTE: If `connectors` key is present in config file, require the keys to be present
-    if config_file.exists():
-        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        if isinstance(config, dict):  # Config file could be blank or malformed
-            connectors_value = config.get("connectors", None)
-            if connectors_value:
-                routes = _routes_for_connectors_descriptor(connectors_value)
-                require_fields = True
-
+def _create_settings_model_from_routes(
+    routes = Dict[str, Type[Connector]],
+    *,
+    require_fields:bool = True,
+) -> Type[BaseServoSettings]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
         Type[Connector], str
@@ -312,6 +297,7 @@ def _create_settings_model(
     default_value = (
         ... if require_fields else None
     )  # Pydantic uses ... for flagging fields required
+
     for key_path, connector_class in routes.items():
         settings_model = _derive_settings_model_for_route(key_path, connector_class)
         settings_model.__config__.title = (
@@ -333,6 +319,25 @@ def _create_settings_model(
         "description": f"Schema for configuration of Servo v{Servo.version} with {connectors_series}"
     }
 
+    return servo_settings_model
+
+def _create_settings_model(
+    *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
+) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
+    # map of config key in YAML to settings class for target connector
+    routes: Dict[str, Type[Connector]] = _default_routes()
+    require_fields: bool = False
+
+    # NOTE: If `connectors` key is present in config file, require the keys to be present
+    if config_file.exists():
+        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+        if isinstance(config, dict):  # Config file could be blank or malformed
+            connectors_value = config.get("connectors", None)
+            if connectors_value:
+                routes = _routes_for_connectors_descriptor(connectors_value)
+                require_fields = True
+
+    servo_settings_model = _create_settings_model_from_routes(routes, require_fields=require_fields)    
     return servo_settings_model, routes
 
 
@@ -399,7 +404,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Try to load it as a module path
     if "." in connector:
-        module_path, class_name = e.split(":", 2)
+        module_path, class_name = connector.rsplit(".", 1)
         module = importlib.import_module(module_path)
         connector_class = getattr(module, class_name)
         if _validate_class(connector_class):
