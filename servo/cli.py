@@ -41,7 +41,7 @@ class Section(str, Enum):
     COMMANDS = "Commands"
     OTHER = "Other Commands"    
 
-# TODO: Print out better args when hit with debug()
+
 class Context(typer.Context):
     """
     Context models state required by different CLI invocations.
@@ -158,8 +158,8 @@ class Group(click.Group, ContextMixin):
 
             limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
 
-            # Sort the other commands
-            if section == Section.OTHER:
+            # Sort the connector and other commands as ordering isn't explicit
+            if section in (Section.CONNECTORS, Section.OTHER,):
                 commands = sorted(commands)
 
             rows = []
@@ -359,7 +359,7 @@ class ConnectorCLI(CLI):
         ConnectorCLI.__clis__.add(self)
 
         # TODO: This will not find the right connector in aliased configurations
-        # TODO: Probably auto-add options for selecting the right Connetor?
+        # TODO: Probably auto-add options for selecting the right Connector?
         def connector_callback(context: Context):            
             for connector in context.servo.connectors:
                 if isinstance(connector, connector_type):

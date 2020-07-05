@@ -16,6 +16,8 @@ from servo.connector import ConnectorLoader
 def run_cli():
     load_dotenv()
 
+    # NOTE: We load connectors here because waiting until assembly
+    # is too late for registering CLI commands
     for connector in ConnectorLoader().load():
         logger.debug(f"Loaded {connector.__qualname__}")
     
