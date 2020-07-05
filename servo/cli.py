@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Union, Set, Type, Callable
+from enum import Enum
 
 import typer
 import yaml
@@ -36,6 +37,14 @@ else:
 # A value of `None` (the typical default) enables auto-detection logic
 CommandOption = Optional[bool]
 
+class Section(str, Enum):
+    ASSEMBLY = "Assembly Commands"
+    CORE = "Core Commands"
+    CONFIG = "Configuration Commands"    
+    CONNECTORS = "Connector Commands"
+    COMMANDS = "Commands"
+    OTHER = "Other Commands"    
+
 # TODO: test passing callback as argument to command, via initializer for root callbacks
 # TODO: Tests to write: check the classes we get (OrderedGroup, Command, Context)
 # TODO: Test passing of correct context
@@ -60,8 +69,6 @@ class Context(typer.Context):
     # Active connector
     connector: Optional[Connector] = None
 
-    # TODO: Logger?
-
     def __init__(
         self,
         command: 'Command',
@@ -78,6 +85,7 @@ class Context(typer.Context):
         self.assembly = assembly
         self.servo = servo
         self.connector = connector
+        debug(kwargs)
         return super().__init__(command, *args, **kwargs)
 
 class ContextMixin:
@@ -90,7 +98,8 @@ class ContextMixin:
             if key not in extra:
                 extra[key] = value
 
-        if isinstance(parent, Context):            
+        if isinstance(parent, Context):
+            # TODO: These should be a constant
             attributes = {"config_file", "optimizer", "assembly", "servo", "connector"}
             for attribute in attributes:
                 if attribute not in extra:
@@ -102,12 +111,120 @@ class ContextMixin:
         return ctx
 
 class Command(click.Command, ContextMixin):
+    @property
+    def section(self) -> Section:
+        # NOTE: The `callback` property is the decorated function. See `command()`
+        return getattr(self.callback, 'section', Section.COMMANDS)
+        
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
 class Group(click.Group, ContextMixin):
+    #section: Section = Section.OTHER
+
     def make_context(self, info_name, args, parent=None, **extra):
+        debug(info_name, args, parent, extra)
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
+
+    def format_commands(self, ctx, formatter):
+        """Extra format methods for multi methods that adds all the commands
+        after the options.
+        """
+
+        sections_of_commands: Dict[Section, List[Tuple[str, Command]]] = {}
+        for section in Section:
+            sections_of_commands[section] = []
+        remainders: List[click.Command] = []
+
+        for command_name in self.list_commands(ctx):
+            command = self.get_command(ctx, command_name)
+            debug("GOT COMMAND: ", command, str(command.__module__))
+            if command.hidden:
+                continue
+            
+            section = getattr(command, 'section', Section.COMMANDS)
+            debug("Got section: ", section)
+            # if command.context_settings is not None:
+            #     section = command.context_settings.get('section', None)
+            # debug(command.context_settings)
+            # section = Section.OTHER if section is None else section
+
+            commands = sections_of_commands.get(section, [])
+            commands.append((command_name, command, ))
+            sections_of_commands[section] = commands
+    
+        debug(sections_of_commands)
+        for section, commands in sections_of_commands.items():
+            if len(commands) == 0:
+                continue
+
+            limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
+
+            rows = []
+            for name, command in commands:
+                help = command.get_short_help_str(limit)
+                rows.append((name, help))
+            
+            with formatter.section(section): # Section name....
+                formatter.write_dl(rows)
+
+            # allow for 3 times the default spacing
+            # if len(commands):
+            #     limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
+
+            #     rows = []
+            #     for subcommand, cmd in commands:
+            #         help = cmd.get_short_help_str(limit)
+            #         rows.append((subcommand, help))
+
+            #     if rows:
+            #         with formatter.section(section): # Section name....
+            #             formatter.write_dl(rows)
+
+        # TODO: Implement _format_commands_section()
+        # remainders = set()
+        # sections = CommandSections.values() #{"Management Commands", "Development Commands", "Other Commands"}
+        # for key, section in Section.__members__.items():
+        #     commands = []
+        #     for subcommand in self.list_commands(ctx):
+        #         cmd = self.get_command(ctx, subcommand)
+        #         debug("GOT COMMAND: ", cmd, str(cmd.__module__))
+        #         # What is this, the tool lied about a command.  Ignore it
+        #         if cmd is None:
+        #             continue
+        #         if cmd.hidden:
+        #             continue
+
+        #         if isinstance(subcommand, Command) and subcommand.section == section:                    
+        #             commands.append((subcommand, cmd))
+        #         else:
+        #             remainders.add((subcommand, cmd))
+
+        #     # allow for 3 times the default spacing
+        #     if len(commands):
+        #         limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
+
+        #         rows = []
+        #         for subcommand, cmd in commands:
+        #             help = cmd.get_short_help_str(limit)
+        #             rows.append((subcommand, help))
+
+        #         if rows:
+        #             with formatter.section(section):
+        #                 formatter.write_dl(rows)
+        
+        # allow for 3 times the default spacing
+        # if len(remainders):
+        #     limit = formatter.width - 6 - max(len(cmd[0]) for cmd in remainders)
+
+        #     rows = []
+        #     for subcommand, cmd in remainders:
+        #         help = cmd.get_short_help_str(limit)
+        #         rows.append((subcommand, help))
+
+        #     if rows:
+        #         with formatter.section("Other Commands"):
+        #             formatter.write_dl(rows)
 
 class OrderedGroup(Group):
     # NOTE: Rely on ordering of modern Python dicts
@@ -130,6 +247,8 @@ class CLI(typer.Typer):
         cls.__clis__.add(cli)
 
         # TODO: Move elsewhere
+        # TODO: Probably eliminate...
+        debug(cli)
         @cli.callback()
         def connector_callback(context: Context):
             # TODO: Needs to handle other patterns
@@ -149,7 +268,7 @@ class CLI(typer.Typer):
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = Default(None),
         **kwargs):
-        if context_selector is not None:            
+        if context_selector is not None:
             if issubclass(context_selector, Connector):
                 if name is None:
                     name = context_selector.command_name() # TODO: This can just be turned into a class var property
@@ -164,17 +283,44 @@ class CLI(typer.Typer):
         if isinstance(callback, DefaultPlaceholder):
             callback = self.root_callback
         super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
-        
+    
+    # def decdec(inner_dec):
+    #     def ddmain(outer_dec):
+    #         def decwrapper(f):
+    #             wrapped = inner_dec(outer_dec(f))
+    #             def fwrapper(*args, **kwargs):
+    #                 return wrapped(*args, **kwargs)
+    #             return fwrapper
+    #         return decwrapper
+    #     return ddmain
+
     def command(
         self,
         *args,
         cls: Optional[Type[click.Command]] = None,
+        # context_settings: Optional[Dict[Any, Any]] = None,
+        section: Section = Section.COMMANDS,
         **kwargs,
     ) -> Callable[[CommandFunctionType], CommandFunctionType]:
         # NOTE: Set default command class to get custom context
         if cls is None:
             cls = Command
-        return super().command(*args, cls=cls, **kwargs)
+        
+        parent_decorator = super().command(*args, cls=cls, **kwargs)
+        def decorator(f: CommandFunctionType) -> CommandFunctionType:
+            debug(f"Assigning section {section} to ", f)
+            f.section = section
+            val = parent_decorator(f)
+            debug("!!! Got return value: ", val)
+            return val
+        
+        return decorator
+        # if context_settings is None:
+        #     context_settings = {}
+        # context_settings['section'] = section
+        # TODO: Call into the decorator, get back the fun
+
+        # return super().command(*args, cls=cls, context_settings=context_settings, **kwargs)
     
     def callback(
         self,
@@ -187,17 +333,24 @@ class CLI(typer.Typer):
             cls = Group
         return super().callback(*args, cls=cls, **kwargs)
     
+    # TODO: Should I just make this add_typer() ?
     def add_cli(
         self,
         cli: "CLI",
         *args,
         cls: Optional[Type[click.Command]] = None,
+        # context_settings: Optional[Dict[Any, Any]] = None,
+        section: Section = Section.COMMANDS,
         **kwargs,
     ) -> None:
         if not isinstance(cli, CLI):
             raise ValueError(f"Cannot add cli of type '{cli.__class__}: not a servo.cli.CLI")
         if cls is None:
             cls = Group
+        # if context_settings is None:
+        #     context_settings = {}
+        # context_settings['section'] = section
+        # return self.add_typer(cli, *args, cls=cls, context_settings=context_settings, **kwargs)
         return self.add_typer(cli, *args, cls=cls, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
@@ -300,7 +453,7 @@ class ServoCLI(CLI):
     def __init__(
         self, 
         *args,
-        name: Optional[str] = "servo", 
+        name: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None,
         add_completion: bool = True, 
         no_args_is_help: bool = True,
@@ -323,48 +476,34 @@ class ServoCLI(CLI):
     def add_commands(self) -> None:
         self.add_core_commands()
         self.add_config_commands()
+        self.add_assembly_commands()
         self.add_connector_commands()
         self.add_misc_commands()
-
-        @self.command()
-        def foo(context: Context) -> None:
-            """Foo"""
-            debug(context)
-            debug(context.servo)
-            debug(context.optimizer)
-            self.echo("Foo!")
-            raise typer.Exit(0)
     
-    def add_core_commands(self) -> None:
-        @self.command()
-        def console() -> None:
-            """Open an interactive console"""
-            # TODO: Load up the environment and trigger IPython
-            typer.echo("Not yet implemented.", err=True)
-            raise typer.Exit(2)
-
-        @self.command()
+    def add_assembly_commands(self) -> None:
+        # @self.command()
+        # def new() -> None:
+        #     """Creates a new servo assembly at [PATH]"""
+        #     # TODO: Specify a list of connectors (or default to all)
+        #     # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
+        #     # TODO: Options for Docker Compose and Kubernetes?
+        #     typer.echo("Not yet implemented.", err=True)
+        #     raise typer.Exit(2)
+        @self.command(section=Section.ASSEMBLY)
         def new() -> None:
-            """Creates a new servo assembly at [PATH]"""
-            # TODO: Specify a list of connectors (or default to all)
-            # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
-            # TODO: Options for Docker Compose and Kubernetes?
-            typer.echo("Not yet implemented.", err=True)
-            raise typer.Exit(2)
+            """
+            Create a new servo assembly
+            """
+            pass
+        
+        @self.command(section=Section.ASSEMBLY)
+        def image() -> None:
+            """
+            Manage container images
+            """
+            pass
 
-        @self.command()
-        def run(
-            interactive: bool = typer.Option(
-                False,
-                "--interactive",
-                "-i",
-                help="Include models from all available connectors",
-            )
-        ) -> None:
-            """Run the servo"""
-            ServoRunner(self.servo, interactive=interactive).run()
-
-        @self.command()
+        @self.command(section=Section.ASSEMBLY)
         def connectors(
             all: bool = typer.Option(
                 False,
@@ -376,7 +515,7 @@ class ServoCLI(CLI):
                 False, "--verbose", "-v", help="Display verbose info"
             ),
         ) -> None:
-            """Display information about the assembly"""
+            """Manage connectors"""
             connectors = (
                 self.assembly.all_connectors() if all else self.servo.connectors
             )
@@ -393,8 +532,107 @@ class ServoCLI(CLI):
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
+        
+        @self.command(section=Section.ASSEMBLY)
+        def resources() -> None:
+            """
 
-        @self.command(name="generate")
+            """
+            pass
+
+    def add_core_commands(self) -> None:        
+        @self.command(section=Section.CORE)
+        def run(
+            interactive: bool = typer.Option(
+                False,
+                "--interactive",
+                "-i",
+                help="Include models from all available connectors",
+            )
+        ) -> None:
+            """
+            Run the servo
+            """
+            ServoRunner(self.servo, interactive=interactive).run()
+        
+        @self.command(section=Section.CORE)
+        def check() -> None:
+            """
+            Check that the servo is ready to run
+            """
+            # TODO: Requires a config file
+            # TODO: Run checks for all active connectors (or pick them)
+            results: List[EventResult] = self.servo.dispatch_event(
+                Events.CHECK, include=self.connectors
+            )
+            headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
+            table = []
+            for result in results:
+                check: CheckResult = result.value
+                status = "√ PASSED" if check.success else "X FAILED"
+                row = [result.connector.name, check.name, status, check.comment]
+                table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
+
+        @self.command(section=Section.CORE)
+        def describe() -> None:
+            """
+            Display information about servo resources
+            """
+            results: List[EventResult] = self.servo.dispatch_event(
+                Events.DESCRIBE, include=self.connectors
+            )
+            # TODO: Include events, allow specifying in a list
+            # TODO: Add --components --metrics OR 
+            # TODO: Format output variously
+            headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
+            table = []
+            for result in results:
+                description: Description = result.value
+                components_column = []
+                for component in description.components:
+                    for setting in component.settings:
+                        components_column.append(
+                            f"{component.name}.{setting.name}={setting.value}"
+                        )
+
+                metrics_column = []
+                for metric in description.metrics:
+                    metrics_column.append(f"{metric.name} ({metric.unit})")
+
+                row = [
+                    result.connector.name,
+                    "\n".join(components_column),
+                    "\n".join(metrics_column),
+                ]
+                table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
+        
+        @self.command(section=Section.CORE)
+        def measure() -> None:
+            """
+            Capture measurements for one or more metrics
+            """
+            pass
+        
+        @self.command(section=Section.CORE)
+        def adjust() -> None:
+            """
+            Adjust settings for one or more components
+            """
+            pass
+
+        @self.command(section=Section.CORE)
+        def promote() -> None:
+            """
+            Promote optimized settings to the cluster
+            """
+            pass
+
+        # TODO: There is a duplicate command to untangle!
+        @self.command()
         def generate(
             defaults: bool = typer.Option(
                 False,
@@ -420,63 +658,63 @@ class ServoCLI(CLI):
             output_path.write_text(yaml.dump(schema))
             typer.echo(f"Generated {self.connector.command_name}.yaml")
 
-        @self.command()
-        def check() -> None:
-            """Check the health of the assembly"""
-            # TODO: Requires a config file
-            # TODO: Run checks for all active connectors (or pick them)
-            results: List[EventResult] = self.servo.dispatch_event(
-                Events.CHECK, include=self.connectors
-            )
-            headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
-            table = []
-            for result in results:
-                check: CheckResult = result.value
-                status = "√ PASSED" if check.success else "X FAILED"
-                row = [result.connector.name, check.name, status, check.comment]
-                table.append(row)
+        
 
-            typer.echo(tabulate(table, headers, tablefmt="plain"))
+        
 
-        @self.command()
-        def describe() -> None:
-            """
-            Describe metrics and settings
-            """
-            results: List[EventResult] = self.servo.dispatch_event(
-                Events.DESCRIBE, include=self.connectors
-            )
-            headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
-            table = []
-            for result in results:
-                description: Description = result.value
-                components_column = []
-                for component in description.components:
-                    for setting in component.settings:
-                        components_column.append(
-                            f"{component.name}.{setting.name}={setting.value}"
-                        )
+    
+    def add_config_commands(self, section=Section.CONFIG) -> None:
+        class SettingsOutputFormat(AbstractOutputFormat):
+            yaml = YAML_FORMAT
+            json = JSON_FORMAT
+            dict = DICT_FORMAT
+            text = TEXT_FORMAT
 
-                metrics_column = []
-                for metric in description.metrics:
-                    metrics_column.append(f"{metric.name} ({metric.unit})")
+        @self.command(section=section)
+        def settings(
+            context: Context,
+            format: SettingsOutputFormat = typer.Option(
+                SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
+            ),
+            output: typer.FileTextWrite = typer.Option(
+                None, "--output", "-o", help="Output settings to [FILE]"
+            ),
+        ) -> None:
+            """Display the fully resolved settings"""
+            debug("\n\n\n!! Called with context", context, context.servo)
+            settings = context.servo.settings.dict(exclude_unset=True)
+            settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
+            settings_dict = json.loads(settings_json)
+            settings_dict_str = pformat(settings_dict)
+            settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
 
-                row = [
-                    result.connector.name,
-                    "\n".join(components_column),
-                    "\n".join(metrics_column),
-                ]
-                table.append(row)
+            if format == SettingsOutputFormat.text:
+                pass
+            else:
+                lexer = format.lexer()
+                if format == SettingsOutputFormat.yaml:
+                    data = settings_yaml
+                elif format == SettingsOutputFormat.json:
+                    data = settings_json
+                elif format == SettingsOutputFormat.dict:
+                    data = settings_dict_str
+                else:
+                    raise RuntimeError(
+                        "no handler configured for output format {format}"
+                    )
 
-            typer.echo(tabulate(table, headers, tablefmt="plain"))
-
+                if output:
+                    output.write(data)
+                else:
+                    typer.echo(highlight(data, lexer, TerminalFormatter()))
+        
         class SchemaOutputFormat(AbstractOutputFormat):
             json = JSON_FORMAT
             text = TEXT_FORMAT
             dict = DICT_FORMAT
             html = HTML_FORMAT
 
-        @self.command()
+        @self.command(section=section)
         def schema(
             all: bool = typer.Option(
                 False,
@@ -527,7 +765,7 @@ class ServoCLI(CLI):
             else:
                 typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
 
-        @self.command(name="validate")
+        @self.command(section=section)
         def validate(
             file: Path = typer.Argument(
                 "servo.yaml",
@@ -552,7 +790,9 @@ class ServoCLI(CLI):
                 typer.echo(f"X Invalid {self.connector.name} configuration in {file}")
                 typer.echo(e, err=True)
                 raise typer.Exit(1)
-
+        
+        # TODO: Where does this live?
+        # TODO: Components, Metrics, Events
         @self.command()
         def events():
             """
@@ -562,7 +802,8 @@ class ServoCLI(CLI):
             for connector in self.connectors:
                 debug(connector.name, connector.__events__)
 
-        @self.command(name="generate")
+        # FIXME: There are two competing copies of the generate command!!!
+        @self.command(section=section)
         def generate(
             defaults: bool = typer.Option(
                 False,
@@ -587,56 +828,10 @@ class ServoCLI(CLI):
             output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
             output_path.write_text(yaml.dump(schema))
             typer.echo(f"Generated {self.connector.command_name}.yaml")
-
-    
-    def add_config_commands(self) -> None:
-        class SettingsOutputFormat(AbstractOutputFormat):
-            yaml = YAML_FORMAT
-            json = JSON_FORMAT
-            dict = DICT_FORMAT
-            text = TEXT_FORMAT
-
-        @self.command()
-        def settings(
-            context: Context,
-            format: SettingsOutputFormat = typer.Option(
-                SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
-            ),
-            output: typer.FileTextWrite = typer.Option(
-                None, "--output", "-o", help="Output settings to [FILE]"
-            ),
-        ) -> None:
-            """Display the fully resolved settings"""
-            debug("\n\n\n!! Called with context", context, context.servo)
-            settings = context.servo.settings.dict(exclude_unset=True)
-            settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
-            settings_dict = json.loads(settings_json)
-            settings_dict_str = pformat(settings_dict)
-            settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
-
-            if format == SettingsOutputFormat.text:
-                pass
-            else:
-                lexer = format.lexer()
-                if format == SettingsOutputFormat.yaml:
-                    data = settings_yaml
-                elif format == SettingsOutputFormat.json:
-                    data = settings_json
-                elif format == SettingsOutputFormat.dict:
-                    data = settings_dict_str
-                else:
-                    raise RuntimeError(
-                        "no handler configured for output format {format}"
-                    )
-
-                if output:
-                    output.write(data)
-                else:
-                    typer.echo(highlight(data, lexer, TerminalFormatter()))
     
     def add_connector_commands(self) -> None:
         for cli in self.__clis__:
-            self.add_cli(cli)
+            self.add_cli(cli, section=Section.CONNECTORS)
     
     def add_misc_commands(self) -> None:
         class VersionOutputFormat(AbstractOutputFormat):
