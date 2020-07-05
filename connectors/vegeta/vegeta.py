@@ -23,7 +23,7 @@ import durationpy
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
 from servo.cli import ConnectorCLI, Context, Section
-from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
+from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description, CheckResult
 from servo.utilities import DurationProgress
 import subprocess
 import time
@@ -280,6 +280,24 @@ class VegetaConnector(Connector):
     @event()
     def metrics(self) -> List[Metric]:
         return METRICS
+    
+    @event()
+    def check(self) -> CheckResult:
+        # Take the current settings and run a 15 second check against it
+        self.warmup_until = datetime.now()
+        check_settings = self.settings.copy()
+        check_settings.duration = '15s'
+
+        exit_code, vegeta_cmd = self._run_vegeta(settings=check_settings)
+        if exit_code != 0:
+            return CheckResult(name="Check Vegeta execution", success=False, comment=f"Vegeta exited with non-zero exit code: {exit_code}")
+
+        # Look at the error rate
+        vegeta_report = self.vegeta_reports[-1]
+        if vegeta_report.error_rate >= 5.0:
+            return CheckResult(name="Check Vegeta error rate", success=False, comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}% (>= 5.0%)")
+
+        return CheckResult(name="Check Vegeta load generation", success=True, comment="All checks passed successfully.")
 
     @event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
@@ -307,21 +325,23 @@ class VegetaConnector(Connector):
 
         return measurement
 
-    def _run_vegeta(self):
+    def _run_vegeta(self, *, settings: Optional[VegetaSettings] = None):
+        settings = settings if settings else self.settings
+
         # construct and run Vegeta command
         vegeta_attack_args = list(map(str,[
             'vegeta', 'attack',
-            '-rate', self.settings.rate, 
-            '-duration', self.settings.duration, 
-            '-targets', self.settings.targets if self.settings.targets else 'stdin',
-            '-format', self.settings.format,
-            '-connections', self.settings.connections,
-            '-workers', self.settings.workers,
-            '-max-workers', self.settings.max_workers,
-            '-http2', self.settings.http2,
-            '-keepalive', self.settings.keepalive,
-            '-insecure', self.settings.insecure,
-            '-max-body', self.settings.max_body,
+            '-rate', settings.rate, 
+            '-duration', settings.duration, 
+            '-targets', settings.targets if settings.targets else 'stdin',
+            '-format', settings.format,
+            '-connections', settings.connections,
+            '-workers', settings.workers,
+            '-max-workers', settings.max_workers,
+            '-http2', settings.http2,
+            '-keepalive', settings.keepalive,
+            '-insecure', settings.insecure,
+            '-max-body', settings.max_body,
         ]))
 
         vegeta_report_args = [
@@ -330,20 +350,20 @@ class VegetaConnector(Connector):
             '-every', f'{REPORTING_INTERVAL}s'
         ]
 
-        echo_args = ['echo', f"{self.settings.target}"]
-        echo_cmd = f'echo "{self.settings.target}" | ' if self.settings.target else ''
+        echo_args = ['echo', f"{settings.target}"]
+        echo_cmd = f'echo "{settings.target}" | ' if settings.target else ''
         vegeta_cmd = echo_cmd + ' '.join(vegeta_attack_args) + ' | ' + ' '.join(vegeta_report_args)
         self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
 
         # If we are loading a single target, we need to connect an echo proc into Vegeta stdin
-        echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if self.settings.target else None
+        echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if settings.target else None
         vegeta_attack_proc = subprocess.Popen(vegeta_attack_args, stdin=echo_proc_stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # Pipe the output from the attack process into the reporting process
         report_proc = subprocess.Popen(vegeta_report_args, stdin=vegeta_attack_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # track progress against our load test duration
-        progress = DurationProgress(self.settings.duration)
+        progress = DurationProgress(settings.duration)
 
         # loop and poll our process pipe to gather report data
         # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
