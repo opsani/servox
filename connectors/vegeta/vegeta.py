@@ -367,7 +367,7 @@ class VegetaConnector(Connector):
         exit_code = report_proc.returncode
         if exit_code != 0:
             error = report_proc.stderr.readline()
-            logger.error(f"Vegeta exited with exit code {exit_code}: error: {error}")
+            self.logger.error(f"Vegeta exited with exit code {exit_code}: error: {error}")
 
         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
 

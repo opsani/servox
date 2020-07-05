@@ -41,11 +41,6 @@ class Section(str, Enum):
     COMMANDS = "Commands"
     OTHER = "Other Commands"    
 
-# TODO: test passing callback as argument to command, via initializer for root callbacks
-# TODO: Tests to write: check the classes we get (OrderedGroup, Command, Context)
-# TODO: Test passing of correct context
-# TODO: Test the ordering of commands on the root typer
-
 # TODO: Print out better args when hit with debug()
 class Context(typer.Context):
     """
@@ -182,7 +177,6 @@ class CLI(typer.Typer):
 
     section: Section = Section.COMMANDS
     
-    # TODO: Probably just use subclassing
     @classmethod
     def register(
         cls,
@@ -193,9 +187,6 @@ class CLI(typer.Typer):
         cli = cls(context_selector, *args, **kwargs)
         cls.__clis__.add(cli)
 
-        # TODO: Move elsewhere
-        # TODO: Probably eliminate...
-        debug(cli)
         @cli.callback()
         def connector_callback(context: Context):
             # TODO: Needs to handle other patterns
@@ -445,6 +436,7 @@ class ServoCLI(CLI):
 
         @self.command(section=Section.ASSEMBLY)
         def connectors(
+            context: Context,
             all: bool = typer.Option(
                 False,
                 "--all",
@@ -457,13 +449,13 @@ class ServoCLI(CLI):
         ) -> None:
             """Manage connectors"""
             connectors = (
-                self.assembly.all_connectors() if all else self.servo.connectors
+                context.assembly.all_connectors() if all else context.servo.connectors
             )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
-            row = [self.servo.name, self.servo.version, self.servo.description]
+            row = [context.servo.name, context.servo.version, context.servo.description]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
-                row += [self.servo.homepage, self.servo.maturity, self.servo.license]
+                row += [context.servo.homepage, context.servo.maturity, context.servo.license]
             table = [row]
             for connector in connectors:
                 row = [connector.name, connector.version, connector.description]
@@ -483,6 +475,7 @@ class ServoCLI(CLI):
     def add_core_commands(self, section=Section.OPS) -> None:        
         @self.command(section=section)
         def run(
+            context: Context,
             interactive: bool = typer.Option(
                 False,
                 "--interactive",
@@ -493,17 +486,17 @@ class ServoCLI(CLI):
             """
             Run the servo
             """
-            ServoRunner(self.servo, interactive=interactive).run()
+            ServoRunner(context.servo, interactive=interactive).run()
         
         @self.command(section=section)
-        def check() -> None:
+        def check(context: Context) -> None:
             """
             Check that the servo is ready to run
             """
             # TODO: Requires a config file
             # TODO: Run checks for all active connectors (or pick them)
-            results: List[EventResult] = self.servo.dispatch_event(
-                Events.CHECK, include=self.connectors
+            results: List[EventResult] = context.servo.dispatch_event(
+                Events.CHECK, include=context.servo.connectors
             )
             headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
             table = []
@@ -515,13 +508,16 @@ class ServoCLI(CLI):
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
+        # TODO: Select one or more connectors, resource types
+        # TODO: servo describe metrics, metrics/total_
+        # TODO: Maybe it's just a describe -l
         @self.command(section=section)
-        def describe() -> None:
+        def describe(context: Context) -> None:
             """
             Display information about servo resources
             """
-            results: List[EventResult] = self.servo.dispatch_event(
-                Events.DESCRIBE, include=self.connectors
+            results: List[EventResult] = context.servo.dispatch_event(
+                Events.DESCRIBE, include=context.servo.connectors
             )
             # TODO: Include events, allow specifying in a list
             # TODO: Add --components --metrics OR 
@@ -599,7 +595,6 @@ class ServoCLI(CLI):
             """
             Display configured settings
             """
-            debug("\n\n\n!! Called with context", context, context.servo)
             settings = context.servo.settings.dict(exclude_unset=True)
             settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
             settings_dict = json.loads(settings_json)
@@ -632,8 +627,10 @@ class ServoCLI(CLI):
             dict = DICT_FORMAT
             html = HTML_FORMAT
 
+        # TODO: Needs to support connector names, keys
         @self.command(section=section)
         def schema(
+            context: Context,
             all: bool = typer.Option(
                 False,
                 "--all",
@@ -659,14 +656,14 @@ class ServoCLI(CLI):
 
             if top_level:
                 if format == SchemaOutputFormat.json:
-                    output_data = self.assembly.top_level_schema_json(all=all)
+                    output_data = context.assembly.top_level_schema_json(all=all)
 
                 elif format == SchemaOutputFormat.dict:
-                    output_data = pformat(self.assembly.top_level_schema(all=all))
+                    output_data = pformat(context.assembly.top_level_schema(all=all))
 
             else:
 
-                settings_class = self.settings.__class__
+                settings_class = context.servo.settings.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
@@ -682,9 +679,11 @@ class ServoCLI(CLI):
                 output.write(output_data)
             else:
                 typer.echo(highlight(output_data, format.lexer(), TerminalFormatter()))
-
+        
+        # TODO: Support connector selection
         @self.command(section=section)
         def validate(
+            context: Context,
             file: Path = typer.Argument(
                 "servo.yaml",
                 exists=True,
@@ -702,16 +701,19 @@ class ServoCLI(CLI):
         ) -> None:
             """Validate a configuration file"""
             try:
-                self.connector.settings_model().parse_file(file)
-                typer.echo(f"√ Valid {self.connector.name} configuration in {file}")
+                context.servo.settings_model().parse_file(file)
+                typer.echo(f"√ Valid {context.servo.name} configuration in {file}")
             except (ValidationError, yaml.scanner.ScannerError) as e:
-                typer.echo(f"X Invalid {self.connector.name} configuration in {file}")
+                typer.echo(f"X Invalid {context.servo.name} configuration in {file}")
                 typer.echo(e, err=True)
                 raise typer.Exit(1)
         
         # TODO: There is a duplicate command to untangle!
+        # TODO: This should work with an incomplete config
+        # TODO: Needs to be able to work with set of connector targets
         @self.command()
         def generate(
+            context: Context,
             defaults: bool = typer.Option(
                 False,
                 "--defaults",
@@ -721,47 +723,18 @@ class ServoCLI(CLI):
         ) -> None:
             """Generate a configuration file"""
             # TODO: Add force, output path, and format options
+            # TODO: When dumping specific connectors, need to use the config key path
 
             exclude_unset = not defaults
-            args = {}
-            for c in self.assembly.all_connectors():
-                args[c.__key_path__] = c.settings_model().generate()
-            settings = self.assembly.settings_model(**args)
+            settings = context.assembly.settings_model.generate()
 
-            # NOTE: We have to serialize through JSON first (not all fields serialize directly)
+            # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
             schema = json.loads(
                 json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset))
             )
-            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
+            output_path = Path.cwd() / f"servo.yaml"
             output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.command_name}.yaml")
-
-        # FIXME: There are two competing copies of the generate command!!!
-        @self.command(section=section)
-        def generate(
-            defaults: bool = typer.Option(
-                False,
-                "--defaults",
-                "-d",
-                help="Include default values in the generated output",
-            )
-        ) -> None:
-            """Generate a configuration file"""
-            # TODO: Add force, output path, and format options
-            exclude_unset = not defaults
-            settings = self.connector.settings_model().generate()
-            schema = json.loads(
-                json.dumps(
-                    {
-                        self.connector.config_key_path: settings.dict(
-                            by_alias=True, exclude_unset=exclude_unset
-                        )
-                    }
-                )
-            )
-            output_path = Path.cwd() / f"{self.connector.command_name}.yaml"
-            output_path.write_text(yaml.dump(schema))
-            typer.echo(f"Generated {self.connector.command_name}.yaml")
+            typer.echo(f"Generated servo.yaml")
     
     def add_connector_commands(self) -> None:
         for cli in self.__clis__:
@@ -774,6 +747,7 @@ class ServoCLI(CLI):
 
         @self.command(section=section)
         def version(
+            context: Context,
             short: bool = typer.Option(
                 False,
                 "--short",
@@ -787,14 +761,14 @@ class ServoCLI(CLI):
             """
             Display version
             """
-            # TODO: This is gonna have to be updated to use the context
+            # TODO: Update to work with specific connectors
             if short:
                 if format == VersionOutputFormat.text:
-                    typer.echo(f"{self.connector.name} v{self.connector.version}")
+                    typer.echo(f"{context.servo.name} v{context.servo.version}")
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": self.connector.name,
-                        "version": str(self.connector.version),
+                        "name": context.servo.name,
+                        "version": str(context.servo.version),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
@@ -803,20 +777,20 @@ class ServoCLI(CLI):
                 if format == VersionOutputFormat.text:
                     typer.echo(
                         (
-                            f"{self.connector.name} v{self.connector.version} ({self.connector.maturity})\n"
-                            f"{self.connector.description}\n"
-                            f"{self.connector.homepage}\n"
-                            f"Licensed under the terms of {self.connector.license}"
+                            f"{context.servo.name} v{context.servo.version} ({context.servo.maturity})\n"
+                            f"{context.servo.description}\n"
+                            f"{context.servo.homepage}\n"
+                            f"Licensed under the terms of {context.servo.license}"
                         )
                     )
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": self.connector.name,
-                        "version": str(self.connector.version),
-                        "maturity": str(self.connector.maturity),
-                        "description": self.connector.description,
-                        "homepage": self.connector.homepage,
-                        "license": str(self.connector.license),
+                        "name": context.servo.name,
+                        "version": str(context.servo.version),
+                        "maturity": str(context.servo.maturity),
+                        "description": context.servo.description,
+                        "homepage": context.servo.homepage,
+                        "license": str(context.servo.license),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
