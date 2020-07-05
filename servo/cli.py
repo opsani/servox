@@ -194,7 +194,6 @@ class CLI(typer.Typer):
         if isinstance(callback, DefaultPlaceholder):
             callback = self.root_callback
         self.section = section
-        print(args)
         super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
 
     def command(
@@ -249,6 +248,7 @@ class CLI(typer.Typer):
         return self.add_typer(cli, *args, cls=cls, context_settings=context_settings, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
+    # TODO: probably put these on a Callbacks class or something
     # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption
     @staticmethod
     def root_callback(
@@ -309,7 +309,7 @@ class CLI(typer.Typer):
         # Resolve token
         if token is None and token_file is None:
             raise typer.BadParameter(
-                "API token must be provided via --token, --token-file, or ENV['OPSANI_TOKEN']"
+                "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
             )
 
         if token is not None and token_file is not None:
@@ -415,9 +415,9 @@ class ServoCLI(CLI):
         self.add_other_commands()
     
     def add_assembly_commands(self) -> None:
-        #     # TODO: Specify a list of connectors (or default to all)
-        #     # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
-        #     # TODO: Options for Docker Compose and Kubernetes?        
+        # TODO: Specify a list of connectors (or default to all)
+        # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
+        # TODO: Options for Docker Compose and Kubernetes?        
         @self.command(section=Section.ASSEMBLY)
         def new() -> None:
             """
@@ -425,25 +425,44 @@ class ServoCLI(CLI):
             """
             _not_yet_implemented()
         
-        @self.command(section=Section.ASSEMBLY)
-        def info() -> None:
-            """
-            Display info about the assembly
-            """
-            # TODO: Events, components, metrics
-            # TODO: This needs to be a subgroup?
-            _not_yet_implemented()
+        get_cli = CLI(name="get", help="Display one or more resources")
         
-        # TODO: Where does this live?
-        # TODO: Components, Metrics, Events
-        # @self.command()
-        # def events():
-        #     """
-        #     Display registered events
-        #     """
-        #     # TODO: Format this output
-        #     for connector in self.connectors:
-        #         debug(connector.name, connector.__events__)
+        @get_cli.command()
+        def components() -> None:
+            """
+            Display adjustable components
+            """
+            pass
+        
+        @get_cli.command()
+        def events(context: Context) -> None:
+            """
+            Display processable events
+            """
+            events_to_connectors: Dict[str, Set[str]] = {}
+            for connector in context.servo.connectors:
+                for name, event_descriptor in connector.__events__.items():
+                    connectors = events_to_connectors.get(name, set())
+                    connectors.add(connector.__class__.__name__)
+                    events_to_connectors[name] = connectors
+
+            headers = ["EVENT", "CONNECTORS"]
+            table = []
+            for event in sorted(events_to_connectors.keys()):
+                connectors = events_to_connectors[event]
+                row = [event, "\n".join(sorted(connectors))]
+                table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))            
+        
+        @get_cli.command()
+        def metrics() -> None:
+            """
+            Display measurable metrics
+            """
+            pass
+        
+        self.add_cli(get_cli, section=Section.ASSEMBLY)
 
         @self.command(section=Section.ASSEMBLY)
         def connectors(
