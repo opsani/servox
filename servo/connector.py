@@ -122,13 +122,18 @@ class ConnectorSettings(BaseSettings):
     """
 
     @classmethod
-    def parse_file(cls, file: Path) -> "ConnectorSettings":
+    def parse_file(cls, file: Path, *, key: Optional[str] = None) -> "ConnectorSettings":
         """
         Parse a YAML configuration file and return a settings object with the contents.
 
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
+        if key:
+            try:
+                config = config[key]
+            except KeyError as error:
+                raise KeyError(f"invalid key '{key}'") from error
         return cls.parse_obj(config)
 
     @classmethod

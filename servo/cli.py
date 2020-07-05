@@ -862,7 +862,7 @@ class ServoCLI(CLI):
                     output_data = pformat(settings_class.schema())
                 else:
                     raise RuntimeError(
-                        "no handler configured for output format {format}"
+                        f"no handler configured for output format {format}"
                     )
 
             assert output_data is not None, "output_data not assigned"
@@ -884,19 +884,32 @@ class ServoCLI(CLI):
                 writable=False,
                 readable=True,
             ),
-            all: bool = typer.Option(
-                False,
-                "--all",
-                "-a",
-                help="Include models from all available connectors",
+            connector: Optional[str] = typer.Option(
+                None,
+                "--connector",
+                "-c",
+                callback=self.connectors_callback,
+                metavar="CONNECTOR",
+                help="Specify connector to validate against"
+            ),
+            key: Optional[str] = typer.Option(
+                None,
+                "--key",
+                "-k",
+                help="Specify a key for accessing the configuration",
             ),
         ) -> None:
             """Validate a configuration file"""
             try:
-                context.servo.settings_model().parse_file(file)
-                typer.echo(f"√ Valid {context.servo.name} configuration in {file}")
-            except (ValidationError, yaml.scanner.ScannerError) as e:
-                typer.echo(f"X Invalid {context.servo.name} configuration in {file}")
+                if connector:
+                    if not key:
+                        key = connector.__key_path__
+                else:
+                    connector = context.servo
+                connector.settings_model().parse_file(file, key=key)
+                typer.echo(f"√ Valid {connector.name} configuration in {file}")
+            except (ValidationError, yaml.scanner.ScannerError, KeyError) as e:
+                typer.echo(f"X Invalid {connector.name} configuration in {file}")
                 typer.echo(e, err=True)
                 raise typer.Exit(1)
         
