@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Union, Set, Type, Callable
+from typing import List, Optional, Union, Set, Type, Callable, Iterable
 from enum import Enum
 
 import typer
@@ -545,32 +545,54 @@ class ServoCLI(CLI):
             """
             ServoRunner(context.servo, interactive=interactive).run()
 
+        def connectors_callback(context: typer.Context, param: typer.CallbackParam, value: Optional[List[str]]) -> Optional[List[Connector]]:
+            """
+            Transforms a list of connector key-paths into a list of Connectors
+            """            
+            if value:
+                connectors: List[Connector] = []
+
+                for key in value:
+                    size = len(connectors)
+                    for connector in context.servo.connectors:
+                        if connector.config_key_path == key:                            
+                            connectors.append(connector)
+                            break
+                    
+                    if len(connectors) == size:
+                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                
+                return connectors
+            else:
+                return None
+
+        def validate_connectors_respond_to_event(connectors: Iterable[Connector], event: str) -> None:
+            for connector in connectors:
+                if not connector.responds_to_event(event):
+                    raise typer.BadParameter(f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{connector.config_key_path}')")
+
         @self.command(section=section)
         def check(
             context: Context,
-            connectors: Optional[List[str]] = typer.Argument(None)
+            connectors: Optional[List[str]] = typer.Argument(
+                None, 
+                help="The connectors to check", 
+                callback=connectors_callback
+            )
         ) -> None:
             """
             Check that the servo is ready to run
             """
-            connector_instances: List[Connector] = []
-            if connectors:
-                for key in connectors:
-                    size = len(connector_instances)
-                    for connector in context.servo.connectors:
-                        if connector.config_key_path == key:
-                            if not connector.responds_to_event('check'):
-                                raise typer.BadParameter(f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{key}')")
-                            connector_instances.append(connector)
-                            break
-                    
-                    if len(connector_instances) == size:
-                        raise typer.BadParameter(f"no connector found for key '{key}'")
-            else:
-                connector_instances = context.servo.connectors
             # TODO: Requires a config file
+            
+            # Validate that explicit args support check events
+            if connectors:
+                validate_connectors_respond_to_event(connectors, Events.CHECK)
+            else:
+                connectors = context.servo.connectors
+            
             results: List[EventResult] = context.servo.dispatch_event(
-                Events.CHECK, include=connector_instances
+                Events.CHECK, include=connectors
             )
             headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
             table = []
@@ -582,17 +604,28 @@ class ServoCLI(CLI):
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
-        # TODO: Select one or more connectors, resource types
         @self.command(section=section)
-        def describe(context: Context) -> None:
+        def describe(
+            context: Context,
+            connectors: Optional[List[str]] = typer.Argument(
+                None, 
+                help="The connectors to describe", 
+                callback=connectors_callback
+            )
+        ) -> None:
             """
             Display current state of servo resources
             """
+
+            # Validate that explicit args support describe events
+            if connectors:
+                validate_connectors_respond_to_event(connectors, Events.DESCRIBE)
+            else:
+                connectors = context.servo.connectors
+
             results: List[EventResult] = context.servo.dispatch_event(
-                Events.DESCRIBE, include=context.servo.connectors
+                Events.DESCRIBE, include=connectors
             )
-            # TODO: Add --components --metrics OR 
-            # TODO: Format output variously
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
             table = []
             for result in results:
