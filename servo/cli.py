@@ -121,7 +121,7 @@ class Command(click.Command, ContextMixin):
     @property
     def section(self) -> Section:
         # NOTE: The `callback` property is the decorated function. See `command()` on CLI
-        return getattr(self.callback, 'section')#, Section.COMMANDS)
+        return getattr(self.callback, 'section')
         
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
@@ -133,7 +133,6 @@ class Group(click.Group, ContextMixin):
     #     return getattr(self.callback, 'section', Section.OTHER)#, Section.COMMANDS)
 
     def make_context(self, info_name, args, parent=None, **extra):
-        debug(info_name, args, parent, extra)
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
     def format_commands(self, ctx, formatter):
@@ -154,6 +153,7 @@ class Group(click.Group, ContextMixin):
             # NOTE: On Groups, we pass the section through via `context_settings`
             # TODO: This is defaulting on Group instances -- needs to be passed through
             # default_section = getattr(self, 'section', Section.COMMANDS)
+            # TODO: Should be able to factor this up into a section() function
             section = getattr(command, 'section', None)
             debug("Got section: ", section)
             if section is None and command.context_settings is not None:

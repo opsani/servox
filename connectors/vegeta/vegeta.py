@@ -417,7 +417,7 @@ from servo.cli import CLI, Context
 
 cli = CLI.register(VegetaConnector)
 # TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic
-@cli.command(section=Section.CONNECTORS) # TODO: What we really want is to be able to set scope=(connector, servo, none)
+@cli.command() # TODO: What we really want is to be able to set scope=(connector, servo, none)
 def loadgen(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """
     Run an adhoc load generation
