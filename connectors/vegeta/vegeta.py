@@ -22,7 +22,7 @@ from pydantic import (
 import durationpy
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import CLI, Context, Section
+from servo.cli import ConnectorCLI, Context, Section
 from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
 from servo.utilities import DurationProgress
 import subprocess
@@ -405,6 +405,7 @@ class VegetaConnector(Connector):
         latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
         return f'Vegeta attacking "{self.settings.target}" @ {self.settings.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
 
+
 def _number_of_lines_in_file(filename):
     count = 0
     with open(filename, 'r') as f:
@@ -412,8 +413,9 @@ def _number_of_lines_in_file(filename):
             count += 1
     return count
 
-cli = CLI.register(VegetaConnector, help="Load testing with Vegeta")
-# TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic
+
+cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+# TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic params
 @cli.command()
 def attack(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """

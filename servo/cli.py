@@ -175,49 +175,18 @@ class OrderedGroup(Group):
     def list_commands(self, ctx):
         return self.commands
 
-class CLI(typer.Typer):
-    # CLI registry
-    __clis__: Set["CLI"] = set()
-
+class CLI(typer.Typer):    
     section: Section = Section.COMMANDS
-    
-    @classmethod
-    def register(
-        cls,
-        context_selector: Optional[Union[Type[Optimizer], Type[Servo], Type[Connector]]] = None,
-        *args, 
-        **kwargs
-    ):
-        cli = cls(context_selector, *args, **kwargs)
-        cls.__clis__.add(cli)
-
-        @cli.callback()
-        def connector_callback(context: Context):
-            # TODO: Needs to handle other patterns
-            for connector in context.servo.connectors:
-                if isinstance(connector, context_selector):
-                    context.connector = connector
-
-        return cli
 
     def __init__(
         self, 
-        context_selector: Optional[Union[Type[Optimizer], Type[Servo], Type[Connector]]] = None,
         *args,
         name: Optional[str] = None,
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = Default(None),
         section: Section = Section.COMMANDS,
-        **kwargs):
-        if context_selector is not None:
-            if issubclass(context_selector, Connector):
-                if name is None:
-                    name = _command_name_from_config_key_path(context_selector.__key_path__)
-                if help is None:
-                    help = context_selector.description
-                if isinstance(callback, DefaultPlaceholder):
-                    callback = self.root_callback
+        **kwargs):        
         
         # NOTE: Set default command class to get custom context
         if command_type is None:
@@ -225,6 +194,7 @@ class CLI(typer.Typer):
         if isinstance(callback, DefaultPlaceholder):
             callback = self.root_callback
         self.section = section
+        print(args)
         super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
 
     def command(
@@ -368,6 +338,43 @@ class CLI(typer.Typer):
         ctx.assembly = assembly
         ctx.servo = servo
 
+class ConnectorCLI(CLI):
+    connector_type: Type[Connector]
+
+    # CLI registry
+    __clis__: Set["CLI"] = set()
+
+    def __init__(
+        self,
+        connector_type: Type[Connector],
+        *args,
+        name: Optional[str] = None,
+        help: Optional[str] = None,
+        command_type: Optional[Type[click.Command]] = None, 
+        callback: Optional[Callable] = Default(None),
+        section: Section = Section.COMMANDS,        
+        **kwargs
+    ):
+        # Register for automated inclusion in the ServoCLI
+        ConnectorCLI.__clis__.add(self)
+
+        # TODO: This will not find the right connector in aliased configurations
+        # TODO: Probably auto-add options for selecting the right Connetor?
+        def connector_callback(context: Context):            
+            for connector in context.servo.connectors:
+                if isinstance(connector, connector_type):
+                    context.connector = connector
+
+        if name is None:
+            name = _command_name_from_config_key_path(connector_type.__key_path__)
+        if help is None:
+            help = connector_type.description
+        if isinstance(callback, DefaultPlaceholder):
+            callback = connector_callback        
+
+        super().__init__(*args, name=name, help=help, command_type=command_type, callback=callback, section=section, **kwargs)    
+
+
 class ServoCLI(CLI):
     """
     Provides the top-level commandline interface for interacting with the servo.
@@ -387,7 +394,7 @@ class ServoCLI(CLI):
             command_type = OrderedGroup
         super().__init__(
             *args,
-            Servo,
+            # Servo,
             command_type=command_type, 
             name=name, 
             add_completion=add_completion, 
@@ -741,7 +748,7 @@ class ServoCLI(CLI):
             typer.echo(f"Generated servo.yaml")
     
     def add_connector_commands(self) -> None:
-        for cli in self.__clis__:
+        for cli in ConnectorCLI.__clis__:
             self.add_cli(cli, section=Section.CONNECTORS)
     
     def add_other_commands(self, section=Section.OTHER) -> None:
