@@ -544,16 +544,33 @@ class ServoCLI(CLI):
             Run the servo
             """
             ServoRunner(context.servo, interactive=interactive).run()
-        
+
         @self.command(section=section)
-        def check(context: Context) -> None:
+        def check(
+            context: Context,
+            connectors: Optional[List[str]] = typer.Argument(None)
+        ) -> None:
             """
             Check that the servo is ready to run
             """
+            connector_instances: List[Connector] = []
+            if connectors:
+                for key in connectors:
+                    size = len(connector_instances)
+                    for connector in context.servo.connectors:
+                        if connector.config_key_path == key:
+                            if not connector.responds_to_event('check'):
+                                raise typer.BadParameter(f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{key}')")
+                            connector_instances.append(connector)
+                            break
+                    
+                    if len(connector_instances) == size:
+                        raise typer.BadParameter(f"no connector found for key '{key}'")
+            else:
+                connector_instances = context.servo.connectors
             # TODO: Requires a config file
-            # TODO: Run checks for all active connectors (or pick them)
             results: List[EventResult] = context.servo.dispatch_event(
-                Events.CHECK, include=context.servo.connectors
+                Events.CHECK, include=connector_instances
             )
             headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
             table = []
