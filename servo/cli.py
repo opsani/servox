@@ -339,27 +339,55 @@ class CLI(typer.Typer):
         ctx.servo = servo
 
     @staticmethod    
-    def connectors_callback(
-        context: typer.Context, 
-        param: typer.CallbackParam, 
+    def connectors_instance_callback(
+        context: typer.Context,  
         value: Optional[Union[str, List[str]]]
-    ) -> Optional[Union[Connector, Type[Connector], List[Connector]]]:
+    ) -> Optional[Union[Connector, List[Connector]]]:
         """
-        Transforms a one or more connector key-paths into Connectors
+        Transforms a one or more connector key-paths into Connector instances
+        """
+        if value:
+            if isinstance(value, str):
+                # Lookup by key
+                for connector in context.servo.connectors:
+                    if connector.config_key_path == value:
+                        return connector
+                raise typer.BadParameter(f"no connector found for key '{value}'")
+            else:
+                connectors: List[Connector] = []
+                for key in value:
+                    size = len(connectors)
+                    for connector in context.servo.connectors:
+                        if connector.config_key_path == key:
+                            connectors.append(connector)
+                            break
+                    if len(connectors) == size:
+                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                return connectors
+        else:
+            return None
+
+    @staticmethod    
+    def connectors_type_callback(
+        context: typer.Context, 
+        value: Optional[Union[str, List[str]]]
+    ) -> Optional[Union[Type[Connector], List[Type[Connector]]]]:
+        """
+        Transforms a one or more connector key-paths into Connector types
         """
         if value:
             if isinstance(value, str):
                 if connector := _connector_class_from_string(value):
                     return connector
                 else:
-                    raise typer.BadParameter(f"no connector found for key '{value}'")
+                    raise typer.BadParameter(f"no Connector type found for key '{value}'")
             else:
                 connectors: List[Connector] = []
                 for key in value:
                     if connector := _connector_class_from_string(key):
                         connectors.append(connector)
                     else:
-                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                        raise typer.BadParameter(f"no Connector type found for key '{key}'")
                 return connectors
         else:
             return None
@@ -385,14 +413,11 @@ class CLI(typer.Typer):
                 key_path = None
                 identifier = key
 
-            try:
-                if connector_class := _connector_class_from_string(identifier):
-                    if key_path is None:
-                        key_path = connector_class.__key_path__
-                    routes[key_path] = connector_class
-                else:
-                    raise typer.BadParameter(f"no connector found for key '{identifier}'")
-            except ValueError as error:
+            if connector_class := _connector_class_from_string(identifier):
+                if key_path is None:
+                    key_path = connector_class.__key_path__
+                routes[key_path] = connector_class
+            else:
                 raise typer.BadParameter(f"no connector found for key '{identifier}'")
 
         return routes
@@ -604,8 +629,6 @@ class ServoCLI(CLI):
             """
             ServoRunner(context.servo, interactive=interactive).run()
 
-        
-
         def validate_connectors_respond_to_event(connectors: Iterable[Connector], event: str) -> None:
             for connector in connectors:
                 if not connector.responds_to_event(event):
@@ -617,7 +640,7 @@ class ServoCLI(CLI):
             connectors: Optional[List[str]] = typer.Argument(
                 None, 
                 help="The connectors to check", 
-                callback=self.connectors_callback
+                callback=self.connectors_instance_callback
             )
         ) -> None:
             """
@@ -650,7 +673,7 @@ class ServoCLI(CLI):
             connectors: Optional[List[str]] = typer.Argument(
                 None, 
                 help="The connectors to describe", 
-                callback=self.connectors_callback
+                callback=self.connectors_instance_callback
             )
         ) -> None:
             """
@@ -848,7 +871,7 @@ class ServoCLI(CLI):
             connector: Optional[str] = typer.Argument(
                 None, 
                 help="Display schema for a specific connector by key or class name", 
-                callback=self.connectors_callback
+                callback=self.connectors_type_callback
             )
         ) -> None:
             """Display configuration schema"""
@@ -907,7 +930,7 @@ class ServoCLI(CLI):
                 None,
                 "--connector",
                 "-c",
-                callback=self.connectors_callback,
+                callback=self.connectors_type_callback,
                 metavar="CONNECTOR",
                 help="Specify connector to validate against"
             ),

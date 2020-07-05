@@ -410,7 +410,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
         if _validate_class(connector_class):
             return connector_class
 
-    raise ValueError(f"{connector} does not identify a Connector class")
+    return None
 
 
 def _validate_class(connector: type) -> bool:
