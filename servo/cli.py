@@ -69,10 +69,12 @@ class Context(typer.Context):
     # Active connector
     connector: Optional[Connector] = None
 
+    section: Section = Section.COMMANDS
+
     @classmethod
     def attributes(cls) -> Set[str]:
         """Returns the names of the attributes to be hydrated by ContextMixin"""
-        return {"config_file", "optimizer", "assembly", "servo", "connector"}
+        return {"config_file", "optimizer", "assembly", "servo", "connector", "section"}
 
     def __init__(
         self,
@@ -83,6 +85,7 @@ class Context(typer.Context):
         assembly: Optional[ServoAssembly] = None,
         servo: Optional[Servo] = None,
         connector: Optional[Connector] = None,
+        section: Section = Section.COMMANDS,
         **kwargs
     ):
         self.config_file = config_file
@@ -90,6 +93,7 @@ class Context(typer.Context):
         self.assembly = assembly
         self.servo = servo
         self.connector = connector
+        self.section = section
         debug(kwargs)
         return super().__init__(command, *args, **kwargs)
 
@@ -123,7 +127,10 @@ class Command(click.Command, ContextMixin):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
 class Group(click.Group, ContextMixin):
-    #section: Section = Section.OTHER
+    # @property
+    # def section(self) -> Section:
+    #     # NOTE: The `callback` property is the decorated function. See `command()` on CLI
+    #     return getattr(self.callback, 'section', Section.OTHER)#, Section.COMMANDS)
 
     def make_context(self, info_name, args, parent=None, **extra):
         debug(info_name, args, parent, extra)
@@ -137,7 +144,6 @@ class Group(click.Group, ContextMixin):
         sections_of_commands: Dict[Section, List[Tuple[str, Command]]] = {}
         for section in Section:
             sections_of_commands[section] = []
-        remainders: List[click.Command] = []
 
         for command_name in self.list_commands(ctx):
             command = self.get_command(ctx, command_name)
@@ -145,19 +151,21 @@ class Group(click.Group, ContextMixin):
             if command.hidden:
                 continue
             
+            # NOTE: On Groups, we pass the section through via `context_settings`
             # TODO: This is defaulting on Group instances -- needs to be passed through
-            section = getattr(command, 'section', Section.COMMANDS)
+            # default_section = getattr(self, 'section', Section.COMMANDS)
+            section = getattr(command, 'section', None)
             debug("Got section: ", section)
-            # if command.context_settings is not None:
-            #     section = command.context_settings.get('section', None)
-            # debug(command.context_settings)
-            # section = Section.OTHER if section is None else section
+            if section is None and command.context_settings is not None:
+                debug("HAVE CONTEXT SETTINGS OF: ", command.context_settings)
+                section = command.context_settings.get('section', None)
+            section = Section.COMMANDS if section is None else section
+            debug("RESOLVED SETTINGS TO ", section)
 
             commands = sections_of_commands.get(section, [])
             commands.append((command_name, command, ))
             sections_of_commands[section] = commands
     
-        debug(sections_of_commands)
         for section, commands in sections_of_commands.items():
             if len(commands) == 0:
                 continue
@@ -169,66 +177,8 @@ class Group(click.Group, ContextMixin):
                 help = command.get_short_help_str(limit)
                 rows.append((name, help))
             
-            with formatter.section(section): # Section name....
+            with formatter.section(section):
                 formatter.write_dl(rows)
-
-            # allow for 3 times the default spacing
-            # if len(commands):
-            #     limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
-
-            #     rows = []
-            #     for subcommand, cmd in commands:
-            #         help = cmd.get_short_help_str(limit)
-            #         rows.append((subcommand, help))
-
-            #     if rows:
-            #         with formatter.section(section): # Section name....
-            #             formatter.write_dl(rows)
-
-        # TODO: Implement _format_commands_section()
-        # remainders = set()
-        # sections = CommandSections.values() #{"Management Commands", "Development Commands", "Other Commands"}
-        # for key, section in Section.__members__.items():
-        #     commands = []
-        #     for subcommand in self.list_commands(ctx):
-        #         cmd = self.get_command(ctx, subcommand)
-        #         debug("GOT COMMAND: ", cmd, str(cmd.__module__))
-        #         # What is this, the tool lied about a command.  Ignore it
-        #         if cmd is None:
-        #             continue
-        #         if cmd.hidden:
-        #             continue
-
-        #         if isinstance(subcommand, Command) and subcommand.section == section:                    
-        #             commands.append((subcommand, cmd))
-        #         else:
-        #             remainders.add((subcommand, cmd))
-
-        #     # allow for 3 times the default spacing
-        #     if len(commands):
-        #         limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
-
-        #         rows = []
-        #         for subcommand, cmd in commands:
-        #             help = cmd.get_short_help_str(limit)
-        #             rows.append((subcommand, help))
-
-        #         if rows:
-        #             with formatter.section(section):
-        #                 formatter.write_dl(rows)
-        
-        # allow for 3 times the default spacing
-        # if len(remainders):
-        #     limit = formatter.width - 6 - max(len(cmd[0]) for cmd in remainders)
-
-        #     rows = []
-        #     for subcommand, cmd in remainders:
-        #         help = cmd.get_short_help_str(limit)
-        #         rows.append((subcommand, help))
-
-        #     if rows:
-        #         with formatter.section("Other Commands"):
-        #             formatter.write_dl(rows)
 
 class OrderedGroup(Group):
     # NOTE: Rely on ordering of modern Python dicts
@@ -271,9 +221,12 @@ class CLI(typer.Typer):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = Default(None),
+        section: Optional[Section] = None,
         **kwargs):
+        self.section = section
         if context_selector is not None:
             if issubclass(context_selector, Connector):
+                self.section = Section.CONNECTORS
                 if name is None:
                     name = context_selector.command_name() # TODO: This can just be turned into a class var property
                 if help is None:
@@ -325,15 +278,20 @@ class CLI(typer.Typer):
         *args,
         cls: Optional[Type[click.Command]] = None,
         section: Section = Section.COMMANDS,
+        context_settings: Optional[Dict[Any, Any]] = None,
         **kwargs,
     ) -> None:
         if not isinstance(cli, CLI):
             raise ValueError(f"Cannot add cli of type '{cli.__class__}: not a servo.cli.CLI")
         if cls is None:
             cls = Group
-        debug("Setting section to ", section)
+        # TODO: Mop up the defaulting behavior here
+        debug("Setting section to ", section, " on ", cli)
         cli.section = section
-        return self.add_typer(cli, *args, cls=cls, **kwargs)
+        if context_settings is None:
+            context_settings = {}
+        context_settings['section'] = section
+        return self.add_typer(cli, *args, cls=cls, context_settings=context_settings, **kwargs)
     
     # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
     # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption
@@ -810,12 +768,12 @@ class ServoCLI(CLI):
         for cli in self.__clis__:
             self.add_cli(cli, section=Section.CONNECTORS)
     
-    def add_misc_commands(self) -> None:
+    def add_misc_commands(self, section=Section.OTHER) -> None:
         class VersionOutputFormat(AbstractOutputFormat):
             text = TEXT_FORMAT
             json = JSON_FORMAT
 
-        @self.command()
+        @self.command(section=section)
         def version(
             short: bool = typer.Option(
                 False,
