@@ -119,18 +119,22 @@ class ContextMixin:
 
 class Command(click.Command, ContextMixin):
     @property
-    def section(self) -> Section:
+    def section(self) -> Optional[Section]:
         # NOTE: The `callback` property is the decorated function. See `command()` on CLI
-        return getattr(self.callback, 'section')
+        return getattr(self.callback, 'section', None)
         
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
 class Group(click.Group, ContextMixin):
-    # @property
-    # def section(self) -> Section:
-    #     # NOTE: The `callback` property is the decorated function. See `command()` on CLI
-    #     return getattr(self.callback, 'section', Section.OTHER)#, Section.COMMANDS)
+    @property
+    def section(self) -> Optional[Section]:
+        # NOTE: For Groups, Typer doesn't give us a great way to pass the state (can't decorate callback fn)
+        # so instead we hang it on the context and rely on the command() to override it
+        if self.context_settings:
+            return self.context_settings.get('section', None)
+        else:
+            return None
 
     def make_context(self, info_name, args, parent=None, **extra):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
@@ -146,21 +150,12 @@ class Group(click.Group, ContextMixin):
 
         for command_name in self.list_commands(ctx):
             command = self.get_command(ctx, command_name)
-            debug("GOT COMMAND: ", command, str(command.__module__))
             if command.hidden:
                 continue
             
-            # NOTE: On Groups, we pass the section through via `context_settings`
-            # TODO: This is defaulting on Group instances -- needs to be passed through
-            # default_section = getattr(self, 'section', Section.COMMANDS)
-            # TODO: Should be able to factor this up into a section() function
-            section = getattr(command, 'section', None)
-            debug("Got section: ", section)
-            if section is None and command.context_settings is not None:
-                debug("HAVE CONTEXT SETTINGS OF: ", command.context_settings)
-                section = command.context_settings.get('section', None)
-            section = Section.COMMANDS if section is None else section
-            debug("RESOLVED SETTINGS TO ", section)
+            # Determine the command section
+            # NOTE: We may have non-CLI instances so we guard attribute access
+            section = getattr(command, 'section', Section.COMMANDS)
 
             commands = sections_of_commands.get(section, [])
             commands.append((command_name, command, ))
