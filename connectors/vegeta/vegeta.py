@@ -412,30 +412,11 @@ def _number_of_lines_in_file(filename):
             count += 1
     return count
 
-
-from servo.cli import CLI, Context
-
-cli = CLI.register(VegetaConnector)
+cli = CLI.register(VegetaConnector, help="Load testing with Vegeta")
 # TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic
-@cli.command() # TODO: What we really want is to be able to set scope=(connector, servo, none)
-def loadgen(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
+@cli.command()
+def attack(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """
     Run an adhoc load generation
     """
-    debug("!!! Got Context!", context, context.servo, context.connector)
     context.connector.measure()
-
-# class VegetaCLI(CLI): Fget_com
-#     """
-#     Load generation with Vegeta
-#     """
-#     # TODO: Could be done with decorators like @connector_command(), @servo_command()
-
-#     def add_commands(self):
-#         @self.command()
-#         def loadgen(context: Context):
-#             """
-#             Run an adhoc load generation
-#             """
-#             debug("!!! Got Context!")
-#             #self.measure()

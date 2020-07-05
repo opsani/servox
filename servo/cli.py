@@ -33,10 +33,6 @@ else:
     builtins.debug = debug
 
 
-# Represents an option to include specific CLI commands
-# A value of `None` (the typical default) enables auto-detection logic
-CommandOption = Optional[bool]
-
 class Section(str, Enum):
     ASSEMBLY = "Assembly Commands"
     OPS = "Operational Commands"
@@ -140,8 +136,8 @@ class Group(click.Group, ContextMixin):
         return ContextMixin.make_context(self, info_name, args, parent, **extra)
 
     def format_commands(self, ctx, formatter):
-        """Extra format methods for multi methods that adds all the commands
-        after the options.
+        """
+        Formats all commands into sections
         """
 
         sections_of_commands: Dict[Section, List[Tuple[str, Command]]] = {}
@@ -183,6 +179,8 @@ class OrderedGroup(Group):
 class CLI(typer.Typer):
     # CLI registry
     __clis__: Set["CLI"] = set()
+
+    section: Section = Section.COMMANDS
     
     # TODO: Probably just use subclassing
     @classmethod
@@ -215,12 +213,12 @@ class CLI(typer.Typer):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = Default(None),
-        section: Optional[Section] = None,
+        section: Section = Section.COMMANDS,
         **kwargs):
         if context_selector is not None:
             if issubclass(context_selector, Connector):
                 if name is None:
-                    name = context_selector.command_name() # TODO: This can just be turned into a class var property
+                    name = _command_name_from_config_key_path(context_selector.__key_path__)
                 if help is None:
                     help = context_selector.description
                 if isinstance(callback, DefaultPlaceholder):
@@ -231,13 +229,14 @@ class CLI(typer.Typer):
             command_type = Group
         if isinstance(callback, DefaultPlaceholder):
             callback = self.root_callback
+        self.section = section
         super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
 
     def command(
         self,
         *args,
         cls: Optional[Type[click.Command]] = None,
-        section: Section = Section.COMMANDS,
+        section: Section = None,
         **kwargs,
     ) -> Callable[[CommandFunctionType], CommandFunctionType]:
         # NOTE: Set default command class to get custom context & section support
@@ -248,7 +247,7 @@ class CLI(typer.Typer):
         # section metadata and then returning the Typer decorator implementation
         parent_decorator = super().command(*args, cls=cls, **kwargs)
         def decorator(f: CommandFunctionType) -> CommandFunctionType:
-            f.section = section
+            f.section = section if section else self.section
             return parent_decorator(f)
         
         return decorator
@@ -269,7 +268,7 @@ class CLI(typer.Typer):
         cli: "CLI",
         *args,
         cls: Optional[Type[click.Command]] = None,
-        section: Section = Section.COMMANDS,
+        section: Optional[Section] = None,
         context_settings: Optional[Dict[Any, Any]] = None,
         **kwargs,
     ) -> None:
@@ -279,6 +278,7 @@ class CLI(typer.Typer):
             cls = Group
         if context_settings is None:
             context_settings = {}
+        section = section if section else cli.section
         # NOTE: Hang section state on the context for `Group` to pick up later
         context_settings['section'] = section
         return self.add_typer(cli, *args, cls=cls, context_settings=context_settings, **kwargs)
@@ -552,6 +552,13 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain"))
         
         @self.command(section=section)
+        def baseline() -> None:
+            """
+            Adjust settings to baseline configuration
+            """
+            _not_yet_implemented()
+
+        @self.command(section=section)
         def measure() -> None:
             """
             Capture measurements for one or more metrics
@@ -589,13 +596,15 @@ class ServoCLI(CLI):
                 None, "--output", "-o", help="Output settings to [FILE]"
             ),
         ) -> None:
-            """Display the fully resolved settings"""
+            """
+            Display configured settings
+            """
             debug("\n\n\n!! Called with context", context, context.servo)
             settings = context.servo.settings.dict(exclude_unset=True)
             settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
             settings_dict = json.loads(settings_json)
             settings_dict_str = pformat(settings_dict)
-            settings_yaml = yaml.dump(settings_dict, indent=4, sort_keys=True)
+            settings_yaml = yaml.dump(settings_dict, indent=2, sort_keys=True)
 
             if format == SettingsOutputFormat.text:
                 pass
@@ -691,7 +700,7 @@ class ServoCLI(CLI):
                 help="Include models from all available connectors",
             ),
         ) -> None:
-            """Validate servo configuration file"""
+            """Validate a configuration file"""
             try:
                 self.connector.settings_model().parse_file(file)
                 typer.echo(f"√ Valid {self.connector.name} configuration in {file}")
@@ -877,7 +886,7 @@ def new_servo_cli() -> ServoCLI:
             __run(cmd)
 
 
-    cli.add_cli(dev_typer)
+    cli.add_cli(dev_typer, section=Section.OTHER)
 
     return cli
 
@@ -887,3 +896,7 @@ def __run(args: Union[str, List[str]], **kwargs) -> None:
     process = subprocess.run(args, **kwargs)
     if process.returncode != 0:
         sys.exit(process.returncode)
+
+def _command_name_from_config_key_path(key_path: str) -> str:
+    # foo.bar.this_key => this-key
+    return key_path.split(".", 1)[-1].replace("_", "-").lower()
