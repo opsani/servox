@@ -338,6 +338,32 @@ class CLI(typer.Typer):
         ctx.assembly = assembly
         ctx.servo = servo
 
+    @staticmethod    
+    def connectors_callback(
+        context: typer.Context, 
+        param: typer.CallbackParam, 
+        value: Optional[List[str]]
+    ) -> Optional[List[Connector]]:
+        """
+        Transforms a list of connector key-paths into a list of Connectors
+        """            
+        if value:
+            connectors: List[Connector] = []
+
+            for key in value:
+                size = len(connectors)
+                for connector in context.servo.connectors:
+                    if connector.config_key_path == key:                            
+                        connectors.append(connector)
+                        break
+                
+                if len(connectors) == size:
+                    raise typer.BadParameter(f"no connector found for key '{key}'")
+            
+            return connectors
+        else:
+            return None
+
 class ConnectorCLI(CLI):
     connector_type: Type[Connector]
 
@@ -545,26 +571,7 @@ class ServoCLI(CLI):
             """
             ServoRunner(context.servo, interactive=interactive).run()
 
-        def connectors_callback(context: typer.Context, param: typer.CallbackParam, value: Optional[List[str]]) -> Optional[List[Connector]]:
-            """
-            Transforms a list of connector key-paths into a list of Connectors
-            """            
-            if value:
-                connectors: List[Connector] = []
-
-                for key in value:
-                    size = len(connectors)
-                    for connector in context.servo.connectors:
-                        if connector.config_key_path == key:                            
-                            connectors.append(connector)
-                            break
-                    
-                    if len(connectors) == size:
-                        raise typer.BadParameter(f"no connector found for key '{key}'")
-                
-                return connectors
-            else:
-                return None
+        
 
         def validate_connectors_respond_to_event(connectors: Iterable[Connector], event: str) -> None:
             for connector in connectors:
@@ -577,7 +584,7 @@ class ServoCLI(CLI):
             connectors: Optional[List[str]] = typer.Argument(
                 None, 
                 help="The connectors to check", 
-                callback=connectors_callback
+                callback=self.connectors_callback
             )
         ) -> None:
             """
@@ -610,7 +617,7 @@ class ServoCLI(CLI):
             connectors: Optional[List[str]] = typer.Argument(
                 None, 
                 help="The connectors to describe", 
-                callback=connectors_callback
+                callback=self.connectors_callback
             )
         ) -> None:
             """
@@ -743,11 +750,16 @@ class ServoCLI(CLI):
             output: typer.FileTextWrite = typer.Option(
                 None, "--output", "-o", help="Output settings to [FILE]"
             ),
+            keys: Optional[List[str]] = typer.Argument(
+                None, 
+                help="Display settings for specific keys"
+            )
         ) -> None:
             """
             Display configured settings
             """
-            settings = context.servo.settings.dict(exclude_unset=True)
+            include = set(keys) if keys else None
+            settings = context.servo.settings.dict(exclude_unset=True, include=include)
             settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
             settings_dict = json.loads(settings_json)
             settings_dict_str = pformat(settings_dict)
