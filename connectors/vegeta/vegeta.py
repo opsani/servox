@@ -329,7 +329,7 @@ class VegetaConnector(Connector):
         echo_args = ['echo', f"{self.settings.target}"]
         echo_cmd = f'echo "{self.settings.target}" | ' if self.settings.target else ''
         vegeta_cmd = echo_cmd + ' '.join(vegeta_attack_args) + ' | ' + ' '.join(vegeta_report_args)
-        self.logger.debug("Vegeta started: ", vegeta_cmd)
+        self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
 
         # If we are loading a single target, we need to connect an echo proc into Vegeta stdin
         echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if self.settings.target else None
