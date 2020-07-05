@@ -158,6 +158,10 @@ class Group(click.Group, ContextMixin):
 
             limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
 
+            # Sort the other commands
+            if section == Section.OTHER:
+                commands = sorted(commands)
+
             rows = []
             for name, command in commands:
                 help = command.get_short_help_str(limit)
@@ -397,11 +401,11 @@ class ServoCLI(CLI):
         raise typer.Exit(2)
     
     def add_commands(self) -> None:
-        self.add_core_commands()
+        self.add_ops_commands()
         self.add_config_commands()
         self.add_assembly_commands()
         self.add_connector_commands()
-        self.add_misc_commands()
+        self.add_other_commands()
     
     def add_assembly_commands(self) -> None:
         #     # TODO: Specify a list of connectors (or default to all)
@@ -472,7 +476,7 @@ class ServoCLI(CLI):
             """
             _not_yet_implemented()
 
-    def add_core_commands(self, section=Section.OPS) -> None:        
+    def add_ops_commands(self, section=Section.OPS) -> None:        
         @self.command(section=section)
         def run(
             context: Context,
@@ -711,7 +715,7 @@ class ServoCLI(CLI):
         # TODO: There is a duplicate command to untangle!
         # TODO: This should work with an incomplete config
         # TODO: Needs to be able to work with set of connector targets
-        @self.command()
+        @self.command(section=section)
         def generate(
             context: Context,
             defaults: bool = typer.Option(
@@ -740,7 +744,46 @@ class ServoCLI(CLI):
         for cli in self.__clis__:
             self.add_cli(cli, section=Section.CONNECTORS)
     
-    def add_misc_commands(self, section=Section.OTHER) -> None:
+    def add_other_commands(self, section=Section.OTHER) -> None:
+        # TODO: This should auto-detect if we are in a dev copy
+        dev_cli = CLI(name="dev", help="Developer utilities", callback=None)
+
+        @dev_cli.command()
+        def test() -> None:
+            """Run automated tests"""
+            __run(
+                "pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests"
+            )
+
+
+        @dev_cli.command()
+        def lint() -> None:
+            """Emit opinionated linter warnings and suggestions"""
+            cmds = [
+                "flake8 servo",
+                "mypy servo",
+                "black --check servo --diff",
+                "isort --recursive --check-only servo",
+            ]
+            for cmd in cmds:
+                __run(cmd)
+
+
+        @dev_cli.command()
+        def format() -> None:
+            """Apply automatic formatting to the codebase"""
+            cmds = [
+                "isort --recursive  --force-single-line-imports servo tests",
+                "autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests",
+                "black servo tests",
+                "isort --recursive servo tests",
+            ]
+            for cmd in cmds:
+                __run(cmd)
+
+
+        self.add_cli(dev_cli, section=Section.OTHER)
+
         class VersionOutputFormat(AbstractOutputFormat):
             text = TEXT_FORMAT
             json = JSON_FORMAT
@@ -798,78 +841,13 @@ class ServoCLI(CLI):
 
             raise typer.Exit(0)
 
-def new_servo_cli() -> ServoCLI:
-    cli = ServoCLI()
-
-    ### Begin developer subcommands
-    # NOTE: registered as top level commands for convenience in dev
-
-    dev_typer = CLI(name="dev", help="Developer utilities")
-
-    # @cli.callback(invoke_without_command=True)
-    def testing(ctx: typer.Context):
-        print("!!!! In here!")
-        debug(ctx)
-        for command_info in dev_typer.registered_commands:
-            debug(command_info.name)
-            if command_info.name == 'test':                
-                print("Hiding!")
-                dev_typer.hidden = True
-            
-            typer_click_object = typer.main.get_command(cli)
-            debug(typer_click_object)
-            def hello():
-                print("FSDADA")
-            typer_click_object.add_command(hello, "hello")
-    
-    @dev_typer.command(name="wtf")
-    def thing():
-        print('fffff')
-
-    @dev_typer.command(name="test")
-    def developer_test() -> None:
-        """Run automated tests"""
-        __run(
-            "pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests"
-        )
-
-
-    @dev_typer.command(name="lint")
-    def developer_lint() -> None:
-        """Emit opinionated linter warnings and suggestions"""
-        cmds = [
-            "flake8 servo",
-            "mypy servo",
-            "black --check servo --diff",
-            "isort --recursive --check-only servo",
-        ]
-        for cmd in cmds:
-            __run(cmd)
-
-
-    @dev_typer.command(name="format")
-    def developer_format() -> None:
-        """Apply automatic formatting to the codebase"""
-        cmds = [
-            "isort --recursive  --force-single-line-imports servo tests",
-            "autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests",
-            "black servo tests",
-            "isort --recursive servo tests",
-        ]
-        for cmd in cmds:
-            __run(cmd)
-
-
-    cli.add_cli(dev_typer, section=Section.OTHER)
-
-    return cli
-
 
 def __run(args: Union[str, List[str]], **kwargs) -> None:
     args = shlex.split(args) if isinstance(args, str) else args
     process = subprocess.run(args, **kwargs)
     if process.returncode != 0:
         sys.exit(process.returncode)
+
 
 def _command_name_from_config_key_path(key_path: str) -> str:
     # foo.bar.this_key => this-key

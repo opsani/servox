@@ -9,7 +9,7 @@
 from dotenv import load_dotenv
 from loguru import logger
 
-from servo.cli import new_servo_cli
+from servo.cli import ServoCLI
 from servo.connector import ConnectorLoader
 
 
@@ -17,7 +17,7 @@ def run_cli():
     load_dotenv()
 
     for connector in ConnectorLoader().load():
-        logger.info(f"Loaded {connector.__qualname__}")
+        logger.debug(f"Loaded {connector.__qualname__}")
     
-    cli = new_servo_cli()
+    cli = ServoCLI()
     cli()

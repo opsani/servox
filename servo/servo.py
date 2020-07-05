@@ -23,7 +23,7 @@ from servo.connector import (
     metadata,
 )
 from servo.utilities import join_to_series
-
+import inspect
 
 class Events(str, Enum):
     """
@@ -68,7 +68,14 @@ class BaseServoSettings(ConnectorSettings):
 
     @classmethod
     def generate(cls: Type["BaseServoSettings"]) -> "BaseServoSettings":
-        return cls()
+        """
+        Generate configuration for the servo settings
+        """
+        args = {}
+        for name, field in cls.__fields__.items():
+            if inspect.isclass(field.type_) and issubclass(field.type_, ConnectorSettings):
+                args[name] = field.type_.generate()
+        return cls(**args)
 
     @validator("connectors", pre=True)
     @classmethod
