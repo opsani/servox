@@ -650,6 +650,25 @@ class ServoCLI(CLI):
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
         
+        def metrics_callback(context: typer.Context, value: Optional[List[str]]) -> Optional[List[Metric]]:
+            if not value:
+                return value
+            
+            all_metrics_by_name: Dict[str, Metric] = {}
+            results = context.servo.dispatch_event('metrics')
+            for result in results:
+                for metric in result.value:
+                    all_metrics_by_name[metric.name] = metric
+
+            metrics: List[Metric] = []
+            for metric_name in value:
+                if metric := all_metrics_by_name.get(metric_name, None):
+                    metrics.append(metric)
+                else:
+                    raise typer.BadParameter(f"no metric found named '{metric_name}'")
+            
+            return metrics
+            
         @self.command(section=section)
         def baseline() -> None:
             """
@@ -658,11 +677,41 @@ class ServoCLI(CLI):
             _not_yet_implemented()
 
         @self.command(section=section)
-        def measure() -> None:
+        def measure(
+            context: Context,
+            metrics: Optional[List[str]] = typer.Argument(
+                None, 
+                help="The metrics to measure", 
+                callback=metrics_callback
+            )
+        ) -> None:
             """
             Capture measurements for one or more metrics
             """
-            _not_yet_implemented()
+            # TODO: Limit the dispatch to the connectors that support the target metrics
+            aggregate_measurement = Measurement.construct()
+            results: List[EventResult] = context.servo.dispatch_event(
+                Events.MEASURE, metrics=metrics, control=Control()
+            )
+            for result in results:
+                measurement = result.value
+                aggregate_measurement.readings.extend(measurement.readings)
+                aggregate_measurement.annotations.update(measurement.annotations)
+            
+            metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
+            headers = ["METRIC", "UNIT", "READINGS"]
+            table = []
+            for reading in aggregate_measurement.readings:
+                if metric_names is None or reading.metric.name in metric_names:
+                    values = list(map(lambda r: f"{r[1]} @ {r[0]}", reading.values))
+                    row = [
+                        reading.metric.name,
+                        reading.metric.unit,
+                        "\n".join(values),
+                    ]
+                    table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
         
         @self.command(section=section)
         def adjust() -> None:

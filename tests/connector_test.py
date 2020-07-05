@@ -1484,14 +1484,6 @@ class TestConnectorEvents:
         def another_example_event(self) -> str:
             return "example_event"
 
-    def test_command_name_for_nested_connectors(self) -> None:
-        settings = ConnectorSettings.construct()
-        connector = TestConnectorEvents.FakeConnector(settings=settings)
-        assert connector.command_name == "fake"
-
-        connector = TestConnectorEvents.AnotherFakeConnector(settings=settings)
-        assert connector.command_name == "another-fake"
-
     def test_event_registration(self) -> None:
         events = TestConnectorEvents.FakeConnector.__events__
         assert events is not None
