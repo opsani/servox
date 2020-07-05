@@ -377,7 +377,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
     if not isinstance(connector, str):
         return None
 
-    # Check fo an existing class in the namespace
+    # Check for an existing class in the namespace
     connector_class = globals().get(connector, None)
     try:
         connector_class = (

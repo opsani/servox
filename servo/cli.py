@@ -342,25 +342,40 @@ class CLI(typer.Typer):
     def connectors_callback(
         context: typer.Context, 
         param: typer.CallbackParam, 
-        value: Optional[List[str]]
-    ) -> Optional[List[Connector]]:
+        value: Optional[Union[str, List[str]]]
+    ) -> Optional[Union[Connector, Type[Connector], List[Connector]]]:
         """
-        Transforms a list of connector key-paths into a list of Connectors
-        """            
-        if value:
-            connectors: List[Connector] = []
-
-            for key in value:
-                size = len(connectors)
-                for connector in context.servo.connectors:
-                    if connector.config_key_path == key:                            
-                        connectors.append(connector)
-                        break
-                
-                if len(connectors) == size:
-                    raise typer.BadParameter(f"no connector found for key '{key}'")
+        Transforms a one or more connector key-paths into Connectors
+        """
+        def connector_for_key(key: str) -> Optional[Union[Type[Connector], Connector]]:
             
-            return connectors
+            # Check if the string is connector class identifier
+            for connector_class in ServoAssembly.all_connectors():
+                if key in [
+                    connector_class.__name__,
+                    connector_class.__qualname__,
+                ]:
+                    return connector_class
+            
+            # Lookup by config key
+            for connector in context.servo.connectors:
+                if connector.config_key_path == key:
+                    return connector
+
+        if value:
+            if isinstance(value, str):
+                if connector := connector_for_key(value):
+                    return connector
+                else:
+                    raise typer.BadParameter(f"no connector found for key '{value}'")
+            else:
+                connectors: List[Connector] = []
+                for key in value:
+                    if connector := connector_for_key(key):
+                        connectors.append(connector)
+                    else:
+                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                return connectors
         else:
             return None
 
@@ -378,7 +393,7 @@ class ConnectorCLI(CLI):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None, 
         callback: Optional[Callable] = Default(None),
-        section: Section = Section.COMMANDS,        
+        section: Section = Section.COMMANDS,
         **kwargs
     ):
         # Register for automated inclusion in the ServoCLI
@@ -791,7 +806,6 @@ class ServoCLI(CLI):
             dict = DICT_FORMAT
             html = HTML_FORMAT
 
-        # TODO: Needs to support connector names, keys
         @self.command(section=section)
         def schema(
             context: Context,
@@ -812,6 +826,12 @@ class ServoCLI(CLI):
             output: typer.FileTextWrite = typer.Option(
                 None, "--output", "-o", help="Output schema to [FILE]"
             ),
+            # TODO: may need a different callback for getting types. Needs to be able to work without config
+            connector: Optional[str] = typer.Argument(
+                None, 
+                help="Display schema for a specific connector by key or class name", 
+                callback=self.connectors_callback
+            )
         ) -> None:
             """Display configuration schema"""
             if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
@@ -827,7 +847,15 @@ class ServoCLI(CLI):
 
             else:
 
-                settings_class = context.servo.settings.__class__
+                if connector:
+                    if isinstance(connector, Connector):
+                        settings_class = connector.settings.__class__
+                    elif issubclass(connector, Connector):
+                        settings_class = connector.settings_model()
+                    else:
+                        raise typer.BadParameter(f"unexpected connector type '{connector.__class__.__name__}'")
+                else:
+                    settings_class = context.servo.settings.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
