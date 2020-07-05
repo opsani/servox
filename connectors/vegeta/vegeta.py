@@ -276,6 +276,10 @@ class VegetaConnector(Connector):
         Describe the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
+    
+    @event()
+    def metrics(self) -> List[Metric]:
+        return METRICS
 
     @event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:

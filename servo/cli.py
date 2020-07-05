@@ -456,11 +456,28 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain"))            
         
         @get_cli.command()
-        def metrics() -> None:
+        def metrics(context: Context) -> None:
             """
             Display measurable metrics
             """
-            pass
+            metrics_to_connectors: Dict[str, tuple(str, Set[str])] = {}
+            results = context.servo.dispatch_event('metrics')
+            for result in results:
+                for metric in result.value:
+                    units_and_connectors = metrics_to_connectors.get(metric.name, [metric.unit, set()])
+                    connectors = units_and_connectors[1].add(result.connector.__class__.__name__)
+                    metrics_to_connectors[metric.name] = units_and_connectors
+
+            headers = ["METRIC", "UNIT", "CONNECTORS"]
+            table = []
+            for metric in sorted(metrics_to_connectors.keys()):
+                units_and_connectors = metrics_to_connectors[metric]
+                unit = units_and_connectors[0]
+                unit_str = f"{unit.name} ({unit.value})"
+                row = [metric, unit_str, "\n".join(sorted(units_and_connectors[1]))]
+                table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain"))  
         
         self.add_cli(get_cli, section=Section.ASSEMBLY)
 

@@ -152,13 +152,6 @@ class Servo(Connector):
 
         return results
 
-    ##
-    # Misc
-
-    def cli(self) -> typer.Typer:
-        # TODO: Return the root CLI?
-        pass
-
 
 class ServoAssembly(BaseModel):
     """
