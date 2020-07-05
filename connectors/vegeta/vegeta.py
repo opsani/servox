@@ -22,7 +22,7 @@ from pydantic import (
 import durationpy
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import CLI, Context
+from servo.cli import CLI, Context, Section
 from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description
 from servo.utilities import DurationProgress
 import subprocess
@@ -417,8 +417,8 @@ from servo.cli import CLI, Context
 
 cli = CLI.register(VegetaConnector)
 # TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic
-@cli.command() # TODO: What we really want is to be able to set scope=(connector, servo, none)
-def loadgen(context: Context):
+@cli.command(section=Section.CONNECTORS) # TODO: What we really want is to be able to set scope=(connector, servo, none)
+def loadgen(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """
     Run an adhoc load generation
     """
