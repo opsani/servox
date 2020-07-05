@@ -930,6 +930,11 @@ class KubernetesConnector(Connector):
         result = query(namespace, desc)        
         components = descriptor_to_components(result['application']['components'])
         return Description(components=components)
+    
+    @event()
+    def components(self) -> Description:
+        desc = read_desc()
+        return descriptor_to_components(desc['application']['components'])
 
     @event()
     def adjust(self, data) -> dict:
@@ -960,6 +965,9 @@ def descriptor_to_components(descriptor: dict) -> List[Component]:
         settings = []
         for setting_name in descriptor[component_name]['settings']:
             setting_values = descriptor[component_name]['settings'][setting_name]
+            # FIXME: Temporary hack
+            if not setting_values.get('type', None):
+                setting_values['type'] = 'range'
             setting = Setting(name=setting_name, **setting_values)
             settings.append(setting)
         component = Component(name=component_name, settings=settings)

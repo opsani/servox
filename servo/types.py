@@ -100,6 +100,11 @@ class Setting(BaseModel):
     step: Numeric
     value: Optional[Union[Numeric, str]]
 
+    def __str__(self):
+        if self.type == SettingType.RANGE:
+            return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
+
+        return f"{self.name} ({self.type})"
 
 class Component(BaseModel):
     name: str

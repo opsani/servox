@@ -425,16 +425,26 @@ class ServoCLI(CLI):
             """
             _not_yet_implemented()
         
-        get_cli = CLI(name="get", help="Display one or more resources")
+        show_cli = CLI(name="show", help="Display one or more resources")
         
-        @get_cli.command()
-        def components() -> None:
+        @show_cli.command()
+        def components(context: Context) -> None:
             """
             Display adjustable components
             """
-            pass
+            results = context.servo.dispatch_event('components')
+            headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
+            table = []
+            for result in results:
+                components = result.value
+                for component in result.value:
+                    settings_list = sorted(list(map(lambda s: s.__str__(), component.settings)))
+                    row = [component.name, "\n".join(settings_list), result.connector.name]
+                    table.append(row)
+
+            typer.echo(tabulate(table, headers, tablefmt="plain")) 
         
-        @get_cli.command()
+        @show_cli.command()
         def events(context: Context) -> None:
             """
             Display processable events
@@ -453,9 +463,9 @@ class ServoCLI(CLI):
                 row = [event, "\n".join(sorted(connectors))]
                 table.append(row)
 
-            typer.echo(tabulate(table, headers, tablefmt="plain"))            
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
         
-        @get_cli.command()
+        @show_cli.command()
         def metrics(context: Context) -> None:
             """
             Display measurable metrics
@@ -479,7 +489,7 @@ class ServoCLI(CLI):
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))  
         
-        self.add_cli(get_cli, section=Section.ASSEMBLY)
+        self.add_cli(show_cli, section=Section.ASSEMBLY)
 
         @self.command(section=Section.ASSEMBLY)
         def connectors(
@@ -556,20 +566,16 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         # TODO: Select one or more connectors, resource types
-        # TODO: servo describe metrics, metrics/total_
-        # TODO: Maybe it's just a describe -l
         @self.command(section=section)
         def describe(context: Context) -> None:
             """
-            Display information about servo resources
+            Display current state of servo resources
             """
             results: List[EventResult] = context.servo.dispatch_event(
                 Events.DESCRIBE, include=context.servo.connectors
             )
-            # TODO: Include events, allow specifying in a list
             # TODO: Add --components --metrics OR 
             # TODO: Format output variously
-            # TODO: This needs to actually run a describe op
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
             table = []
             for result in results:
