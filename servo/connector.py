@@ -362,8 +362,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__events__[key] = v
 
     def __init__(
-        self,
-        settings: ConnectorSettings,
+        self,        
         *,
         config_key_path: Optional[str] = None,
         **kwargs,
@@ -374,7 +373,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             else self.__class__.__key_path__
         )
         super().__init__(
-            settings=settings,
             config_key_path=config_key_path,
             **kwargs,
         )

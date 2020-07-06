@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type, Union
 
 import typer
+import httpx
 import yaml
 
 from pydantic import BaseModel, Extra, Field, create_model, validator
@@ -21,7 +22,9 @@ from servo.connector import (
     Maturity,
     Optimizer,
     metadata,
+    event,
 )
+from servo.types import Event, EventRequest, CheckResult
 from servo.utilities import join_to_series
 import inspect
 
@@ -113,6 +116,28 @@ class Servo(Connector):
     """The active connectors within the Servo.
     """
 
+    def __init__(
+        self, 
+        *args, 
+        connectors: List[Connector] = [],
+        **kwargs
+    ) -> None:
+        super().__init__(*args, connectors=connectors, **kwargs)
+
+        # NOTE: The Servo itself is an event processor
+        self.connectors.append(self)
+
+    @event()
+    def check(self) -> CheckResult:
+        from servo.types import Event, EventRequest
+        with self.api_client() as client:
+            event_request = EventRequest(event=Event.HELLO)
+            response = client.post("servo", data=event_request.json())
+            if response.status_code != httpx.codes.OK:
+                return CheckResult(name="Check Opsani API connectivity", success=False, comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani")
+
+        return CheckResult(name="Check Servo", success=True, comment="All checks passed successfully.")
+
     ##
     # Event processing
 
@@ -138,6 +163,7 @@ class Servo(Connector):
             raise RuntimeError("Not yet implemented.")
         results: List[EventResult] = []
         connectors = include if include is not None else self.connectors
+
         if exclude:
             connectors = list(filter(lambda c: c not in exclude, connectors))
         for connector in connectors:
@@ -218,11 +244,11 @@ class ServoAssembly(BaseModel):
             connector_settings = getattr(servo_settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
-                connector = connector_type(connector_settings, optimizer=optimizer)
+                connector = connector_type(settings=connector_settings, optimizer=optimizer)
                 connectors.append(connector)
 
         # Build the servo object
-        servo = Servo(servo_settings, connectors=connectors, optimizer=optimizer)
+        servo = Servo(settings=servo_settings, connectors=connectors, optimizer=optimizer)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,

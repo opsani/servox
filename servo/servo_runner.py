@@ -12,24 +12,8 @@ from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoSettings, Events, Servo
-from servo.types import Control, Description, Measurement
+from servo.types import Control, Description, Measurement, Event, Command, EventRequest
 from servo.utilities import SignalHandler
-
-
-class Command(str, Enum):
-    DESCRIBE = "DESCRIBE"
-    MEASURE = "MEASURE"
-    ADJUST = "ADJUST"
-    SLEEP = "SLEEP"
-
-
-class Event(str, Enum):
-    HELLO = "HELLO"
-    GOODBYE = "GOODBYE"
-    DESCRIPTION = "DESCRIPTION"
-    WHATS_NEXT = "WHATS_NEXT"
-    ADJUSTMENT = "ADJUSTMENT"
-    MEASUREMENT = "MEASUREMENT"
 
 
 class Status(BaseModel):
@@ -47,16 +31,6 @@ class SleepResponse(BaseModel):
 class MeasureParams(BaseModel):
     metrics: List[str]
     control: Control
-
-
-class EventRequest(BaseModel):
-    event: Event
-    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
-
-    class Config:
-        json_encoders = {
-            Event: lambda v: str(v),
-        }
 
 
 class CommandResponse(BaseModel):
