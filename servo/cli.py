@@ -12,6 +12,8 @@ from devtools import pformat
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
+from logging import Logger
+from loguru import logger
 
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
@@ -53,6 +55,10 @@ class Context(typer.Context):
     config_file: Optional[Path] = None
     optimizer: Optional[Optimizer] = None
 
+    token: Optional[str] = None
+    token_file: Optional[Path] = None
+    base_url: Optional[str] = None
+
     # Assembled servo
     assembly: Optional[ServoAssembly] = None
     servo: Optional[Servo] = None
@@ -66,7 +72,7 @@ class Context(typer.Context):
     @classmethod
     def attributes(cls) -> Set[str]:
         """Returns the names of the attributes to be hydrated by ContextMixin"""
-        return {"config_file", "optimizer", "assembly", "servo", "connector", "section"}
+        return {"config_file", "optimizer", "assembly", "servo", "connector", "section", "token", "token_file", "base_url"}
 
     def __init__(
         self,
@@ -78,6 +84,9 @@ class Context(typer.Context):
         servo: Optional[Servo] = None,
         connector: Optional[Connector] = None,
         section: Section = Section.COMMANDS,
+        token: Optional[str] = None,
+        token_file: Optional[Path] = None,
+        base_url: Optional[str] = None,
         **kwargs
     ):
         self.config_file = config_file
@@ -86,6 +95,9 @@ class Context(typer.Context):
         self.servo = servo
         self.connector = connector
         self.section = section
+        self.token = token
+        self.token_file = token_file
+        self.base_url = base_url
         return super().__init__(command, *args, **kwargs)
 
 class ContextMixin:
@@ -195,6 +207,10 @@ class CLI(typer.Typer):
             callback = self.root_callback
         self.section = section
         super().__init__(*args, name=name, help=help, cls=command_type, callback=callback, **kwargs) 
+    
+    @property
+    def logger(self) -> Logger:
+        return logger
 
     def command(
         self,
@@ -303,32 +319,44 @@ class CLI(typer.Typer):
             help="Servo configuration file",
         ),
     ):
-        if optimizer is None:
+        ctx.config_file = config_file
+        ctx.optimizer = optimizer
+        ctx.token = token
+        ctx.token_file = token_file
+        ctx.base_url = base_url
+
+        # TODO: This should be pluggable
+        if ctx.invoked_subcommand not in {"generate"}:
+            CLI.assemble_from_context(ctx)
+
+    @staticmethod
+    def assemble_from_context(ctx: Context):
+        if ctx.optimizer is None:
             raise typer.BadParameter("An optimizer must be specified")
 
         # Resolve token
-        if token is None and token_file is None:
+        if ctx.token is None and ctx.token_file is None:
             raise typer.BadParameter(
                 "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
             )
 
-        if token is not None and token_file is not None:
+        if ctx.token is not None and ctx.token_file is not None:
             raise typer.BadParameter(
                 "--token and --token-file cannot both be given"
             )
 
-        if token_file is not None and token_file.exists():
-            token = token_file.read_text()
+        if ctx.token_file is not None and ctx.token_file.exists():
+            ctx.token = ctx.token_file.read_text()
 
-        if len(token) == 0 or token.isspace():
+        if len(ctx.token) == 0 or ctx.token.isspace():
             raise typer.BadParameter("token cannot be blank")
 
-        optimizer = Optimizer(optimizer, token=token, base_url=base_url)
+        optimizer = Optimizer(ctx.optimizer, token=ctx.token, base_url=ctx.base_url)
 
         # Assemble the Servo
         try:
             assembly, servo, ServoSettings = ServoAssembly.assemble(
-                config_file=config_file, optimizer=optimizer
+                config_file=ctx.config_file, optimizer=optimizer
             )
         except ValidationError as error:
             typer.echo(error, err=True)
@@ -586,7 +614,7 @@ class ServoCLI(CLI):
             ),
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose info"
-            ),
+            )
         ) -> None:
             """Manage connectors"""
             connectors = (
@@ -777,11 +805,42 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain"))
         
         @self.command(section=section)
-        def adjust() -> None:
+        def adjust(
+            context: Context,
+            settings: Optional[List[str]] = typer.Argument(
+                None, 
+                help="The settings to adjust (format is [COMPONENT].[SETTING=[VALUE])", 
+            )
+        ) -> None:
             """
             Adjust settings for one or more components
             """
-            _not_yet_implemented()
+            components: List[Component] = []
+            for descriptor in settings:
+                component_name, setting_descriptor = descriptor.split('.', 1)
+                setting_name, value = setting_descriptor.split('=', 1)
+                # TODO: This setting object is incomplete annd needs to be modeled
+                setting = Setting.construct(name=setting_name, value=float(value))
+                component = Component(name=component_name, settings=[setting])
+                components.append(component)
+            
+            # TODO: Should be modeled directly as an adjustment instead of jamming into Description
+            description = Description(components=components)
+            results: List[EventResult] = context.servo.dispatch_event(Events.ADJUST, description.opsani_dict())
+            for result in results:                
+                adjustment = result.value
+                status = adjustment.get("status", "undefined")
+                
+                if status == "ok":
+                    self.logger.info(f"{result.connector.name} - Adjustment completed")
+                else:
+                    raise ConnectorError(
+                        'Adjustment driver failed with status "{}" and message:\n{}'.format(
+                            status, str(adjustment.get("message", "undefined"))
+                        ),
+                        status=status,
+                        reason=adjustment.get("reason", "undefined"),
+                    )
 
         @self.command(section=section)
         def promote() -> None:
@@ -867,7 +926,6 @@ class ServoCLI(CLI):
             output: typer.FileTextWrite = typer.Option(
                 None, "--output", "-o", help="Output schema to [FILE]"
             ),
-            # TODO: may need a different callback for getting types. Needs to be able to work without config
             connector: Optional[str] = typer.Argument(
                 None, 
                 help="Display schema for a specific connector by key or class name", 
@@ -942,6 +1000,7 @@ class ServoCLI(CLI):
             ),
         ) -> None:
             """Validate a configuration file"""
+            # TODO: This guy only needs a config file, not a full assembly
             try:
                 if connector:
                     if not key:
@@ -1012,7 +1071,9 @@ class ServoCLI(CLI):
             schema = json.loads(
                 json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset))
             )
-            file.write_text(yaml.dump(schema))
+            config = yaml.dump(schema)
+            file.write_text(config)
+            typer.echo(highlight(config, YamlLexer(), TerminalFormatter()))
             typer.echo(f"Generated {file}")
     
     def add_connector_commands(self) -> None:
