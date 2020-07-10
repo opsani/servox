@@ -27,8 +27,11 @@ def servo_cli() -> ServoCLI:
     return ServoCLI()
 
 @pytest.fixture()
-def optimizer_env() -> None:
+def optimizer_env() -> None:    
     os.environ.update({ "OPSANI_OPTIMIZER": "dev.opsani.com/servox", "OPSANI_TOKEN": "123456789" })
+    yield
+    os.environ.pop("OPSANI_OPTIMIZER", None)
+    os.environ.pop("OPSANI_TOKEN", None)
 
 @pytest.fixture()
 def servo_yaml(tmp_path: Path) -> Path:
@@ -41,3 +44,11 @@ def servo_yaml(tmp_path: Path) -> Path:
 @pytest.fixture(autouse=True)
 def run_from_tmp_path(tmp_path: Path) -> None:
     os.chdir(tmp_path)
+
+# Ensure that we don't have configuration bleeding into tests
+@pytest.fixture(autouse=True)
+def run_in_clean_environemtn() -> None:
+    for key, value in os.environ.items():
+        if key.startswith("SERVO_") or key.startswith("OPSANI_"):
+            os.environ.pop(key)
+        

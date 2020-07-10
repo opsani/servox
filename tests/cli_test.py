@@ -121,7 +121,7 @@ def test_run_with_malformed_config_file(
 
 
 def test_settings_yaml(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(cli_app, "settings -f yaml", catch_exceptions=False)
     assert result.exit_code == 0
@@ -129,7 +129,7 @@ def test_settings_yaml(
 
 
 def test_settings_yaml_file(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(cli_app, f"settings -f yaml -o {path}")
@@ -138,7 +138,7 @@ def test_settings_yaml_file(
 
 
 def test_settings_json(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(cli_app, "settings -f json")
     assert result.exit_code == 0
@@ -177,7 +177,7 @@ def table_test_command_options(cli_runner: CliRunner, cli_app: Typer) -> None:
 # Test name and help
 
 def test_settings_json_file(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None
 ) -> None:
     path = tmp_path / "settings.json"
     result = cli_runner.invoke(cli_app, f"settings -f json -o {path}")
@@ -187,7 +187,7 @@ def test_settings_json_file(
 
 
 def test_settings_dict(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(cli_app, "settings -f dict")
     assert result.exit_code == 0
@@ -196,7 +196,7 @@ def test_settings_dict(
 
 
 def test_settings_dict_file(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.py"
     result = cli_runner.invoke(cli_app, f"settings -f dict -o {path}")
@@ -205,15 +205,15 @@ def test_settings_dict_file(
     assert settings["connectors"] is not None
 
 
-def test_schema(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_schema(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "schema", catch_exceptions=False)
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"Expected status code of 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Configuration Schema"
 
 
 def test_schema_output_to_file(
-    cli_runner: CliRunner, cli_app: Typer, tmp_path: Path
+    cli_runner: CliRunner, cli_app: Typer, tmp_path: Path, optimizer_env: None
 ) -> None:
     output_path = tmp_path / "schema.json"
     result = cli_runner.invoke(cli_app, f"schema -f json -o {output_path}")
@@ -222,36 +222,36 @@ def test_schema_output_to_file(
     assert schema["title"] == "Servo Configuration Schema"
 
 
-def test_schema_all(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_schema_all(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Configuration Schema"
 
 
-def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_schema_top_level(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--top-level"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Schema"
 
 
-def test_schema_all_top_level(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_schema_all_top_level(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, ["schema", "--top-level", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Schema"
 
 
-def test_schema_top_level_dict(cli_app: Typer, cli_runner: CliRunner) -> None:
+def test_schema_top_level_dict(cli_app: Typer, cli_runner: CliRunner, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "schema -f dict --top-level")
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"stdout: {result.stdout}\n\nstderr: {result.stderr}"
     schema = eval(result.stdout)
     assert schema["title"] == "Servo Schema"
 
 
 def test_schema_top_level_dict_file_output(
-    cli_app: Typer, cli_runner: CliRunner, tmp_path: Path
+    cli_app: Typer, cli_runner: CliRunner, tmp_path: Path, optimizer_env: None
 ) -> None:
     path = tmp_path / "output.dict"
     result = cli_runner.invoke(cli_app, f"schema -f dict --top-level -o {path}")
@@ -259,7 +259,6 @@ def test_schema_top_level_dict_file_output(
     schema = eval(path.read_text())
     assert schema["title"] == "Servo Schema"
 
-# TODO: This needs to be scoped to a class to not bother all other tests
 class TestCommands:
     @pytest.fixture(autouse=True)
     def test_set_defaults_via_env(self) -> None:
@@ -433,3 +432,21 @@ class TestCLIFoundation():
     
     # TODO: test errors with callbacks when run with incomplete configurations
     # TODO: Specifically config file doesn't exist, malformed, etc. No optimizer...
+
+def test_command_name_for_nested_connectors() -> None:
+    from servo.cli import _command_name_from_config_key_path
+    assert _command_name_from_config_key_path("fake") == "fake"
+    assert _command_name_from_config_key_path("another_fake") == "another-fake"
+
+# TODO: test setting section via initializer, add_cli
+# TODO: test version is always the bottom command in other
+# TODO: section settable on CLI class, via @command(), and via add_cli()
+# TODO: Default should be COMMANDS if you don't config
+
+# TODO: test passing callback as argument to command, via initializer for root callbacks
+# TODO: Tests to write: check the classes we get (OrderedGroup, Command, Context)
+# TODO: Test passing of correct context
+# TODO: Test the ordering of commands on the root typer
+# TODO: Test running disassembled()
+# TODO: Test before and after events
+# TODO: Test trying to generate against a class that doesn't have settings (should be a warning instead of error!)

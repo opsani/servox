@@ -326,7 +326,7 @@ class CLI(typer.Typer):
         ctx.base_url = base_url
 
         # TODO: This should be pluggable
-        if ctx.invoked_subcommand not in {"generate"}:
+        if ctx.invoked_subcommand not in {"schema", "generate", "validate"}:
             CLI.assemble_from_context(ctx)
 
     @staticmethod
@@ -495,7 +495,7 @@ class ServoCLI(CLI):
     def __init__(
         self, 
         *args,
-        name: Optional[str] = None,
+        name: Optional[str] = "servo",
         command_type: Optional[Type[click.Command]] = None,
         add_completion: bool = True, 
         no_args_is_help: bool = True,
@@ -506,7 +506,6 @@ class ServoCLI(CLI):
             command_type = OrderedGroup
         super().__init__(
             *args,
-            # Servo,
             command_type=command_type, 
             name=name, 
             add_completion=add_completion, 
@@ -938,6 +937,8 @@ class ServoCLI(CLI):
                 raise typer.Exit(1)
 
             if top_level:
+                CLI.assemble_from_context(context)
+
                 if format == SchemaOutputFormat.json:
                     output_data = context.assembly.top_level_schema_json(all=all)
 
@@ -954,6 +955,7 @@ class ServoCLI(CLI):
                     else:
                         raise typer.BadParameter(f"unexpected connector type '{connector.__class__.__name__}'")
                 else:
+                    CLI.assemble_from_context(context)
                     settings_class = context.servo.settings.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
@@ -975,44 +977,43 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def validate(
             context: Context,
-            # TODO: Turn this into an option
-            file: Path = typer.Argument(
+            connectors: Optional[List[str]] = typer.Argument(
+                None,
+                metavar="CONNECTORS",
+                help="Connectors to validate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`"
+            ),
+            file: Path = typer.Option(
                 "servo.yaml",
+                "--file",
+                "-f",       
                 exists=True,
                 file_okay=True,
                 dir_okay=False,
                 writable=False,
                 readable=True,
+                help="Output file to validate"
             ),
-            connector: Optional[str] = typer.Option(
-                None,
-                "--connector",
-                "-c",
-                callback=self.connectors_type_callback,
-                metavar="CONNECTOR",
-                help="Specify connector to validate against"
-            ),
-            key: Optional[str] = typer.Option(
-                None,
-                "--key",
-                "-k",
-                help="Specify a key for accessing the configuration",
-            ),
+            quiet: bool = typer.Option(
+                False,
+                "--quiet",
+                "-q",
+                help="Do not echo generated output to stdout",
+            )
         ) -> None:
-            """Validate a configuration file"""
-            # TODO: This guy only needs a config file, not a full assembly
+            """Validate a configuration"""
             try:
-                if connector:
-                    if not key:
-                        key = connector.__key_path__
-                else:
-                    connector = context.servo
-                connector.settings_model().parse_file(file, key=key)
-                typer.echo(f"√ Valid {connector.name} configuration in {file}")
+                # NOTE: When connector descriptor is provided the validation is constrained
+                routes = self.connector_routes_callback(context=context, value=connectors)
+                settings_model, routes = _create_settings_model(config_file=file, routes=routes)
+                result = settings_model.parse_file(file)
             except (ValidationError, yaml.scanner.ScannerError, KeyError) as e:
-                typer.echo(f"X Invalid {connector.name} configuration in {file}")
-                typer.echo(e, err=True)
+                if not quiet:
+                    typer.echo(f"X Invalid configuration in {file}", err=True)
+                    typer.echo(e, err=True)
                 raise typer.Exit(1)
+            
+            if not quiet:
+                typer.echo(f"√ Valid configuration in {file}")
         
         @self.command(section=section)
         def generate(

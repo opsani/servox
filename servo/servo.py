@@ -104,9 +104,7 @@ class BaseServoSettings(ConnectorSettings):
 
 
     class Config:
-        # We are the base root of pluggable configuration
-        # so we ignore any extra fields so you can turn connectors on and off
-        extra = Extra.ignore
+        extra = Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"
 
@@ -364,10 +362,14 @@ def _create_settings_model_from_routes(
     return servo_settings_model
 
 def _create_settings_model(
-    *, config_file: Path, env: Optional[Dict[str, str]] = os.environ
+    *, 
+    config_file: Path, 
+    routes: Dict[str, Type[Connector]] = None,
+    env: Optional[Dict[str, str]] = os.environ
 ) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
     # map of config key in YAML to settings class for target connector
-    routes: Dict[str, Type[Connector]] = _default_routes()
+    if routes is None:
+        routes = _default_routes()
     require_fields: bool = False
 
     # NOTE: If `connectors` key is present in config file, require the keys to be present
