@@ -242,12 +242,13 @@ class VegetaSettings(ConnectorSettings):
         return v
     
     @classmethod
-    def generate(cls) -> 'VegetaSettings':
+    def generate(cls, **kwargs) -> 'VegetaSettings':
         return cls(
             rate='50/1s', 
             duration='5m',
             target='https://example.com/',
-            description="Update the rate, duration, and target/targets to match your load profile"
+            description="Update the rate, duration, and target/targets to match your load profile",
+            **kwargs
         )
 
     class Config:

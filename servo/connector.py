@@ -137,7 +137,7 @@ class ConnectorSettings(BaseSettings):
         return cls.parse_obj(config)
 
     @classmethod
-    def generate(cls) -> "ConnectorSettings":
+    def generate(cls, **kwargs) -> "ConnectorSettings":
         """
         Return a set of default settings for a new configuration.
 

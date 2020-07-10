@@ -9,20 +9,20 @@ from typing import Optional
 class StubConnectorSettings(ConnectorSettings):
     name: Optional[str]
 
+    @classmethod
+    def generate(cls, **kwargs) -> 'StubConnectorSettings':
+        return cls(**kwargs)
 
 class MeasureConnector(Connector):
     settings: StubConnectorSettings
-    pass
 
 
 class AdjustConnector(Connector):
     settings: StubConnectorSettings
-    pass
 
 
 class LoadgenConnector(Connector):
-    # settings: StubConnectorSettings
-    pass
+    settings: StubConnectorSettings
 
 
 @contextmanager

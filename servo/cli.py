@@ -1050,6 +1050,11 @@ class ServoCLI(CLI):
                 "--quiet",
                 "-q",
                 help="Do not echo generated output to stdout",
+            ),
+            force: bool = typer.Option(
+                False,
+                "--force",
+                help="Overwrite output file without prompting",
             )
         ) -> None:
             """Generate a configuration"""
@@ -1088,6 +1093,10 @@ class ServoCLI(CLI):
                     exclude=exclude
                 ))
             )
+            if file.exists() and force == False:
+                delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
+                if not delete:
+                    raise typer.Abort()
             config = yaml.dump(schema)
             file.write_text(config)
             if not quiet:

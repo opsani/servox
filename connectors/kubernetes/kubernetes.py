@@ -867,10 +867,11 @@ class KubernetesSettings(ConnectorSettings):
     namespace: Optional[str]
 
     @classmethod
-    def generate(cls) -> 'KubernetesSettings':
+    def generate(cls, **kwargs) -> 'KubernetesSettings':
         return cls(
             namespace='default', 
-            description="Update the namespace, deployment, etc. to match your Kubernetes cluster"
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            **kwargs
         )
 
     class Config:

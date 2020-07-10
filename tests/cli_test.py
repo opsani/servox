@@ -327,10 +327,25 @@ class TestCommands:
     def test_validate(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
 
-
-    def test_generate(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
-        # TODO: Generate this thing in test dir
-        pass
+    def test_generate_prompts_to_overwrite(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
+        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml measure", input="y\n")
+        assert result.exit_code == 0
+        assert "already exists. Overwrite it?" in result.stdout
+        content = yaml.full_load(servo_yaml.read_text())
+        assert content == {'connectors': ['measure'], 'measure': {}}
+    
+    def test_generate_prompts_to_overwrite_declined(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
+        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml measure", input="N\n")
+        assert result.exit_code == 1
+        assert "already exists. Overwrite it?" in result.stdout
+        content = yaml.full_load(servo_yaml.read_text())
+        assert content is None
+    
+    def test_generate_prompts_to_overwrite_forced(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
+        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml --force measure", input="y\n")
+        assert result.exit_code == 0
+        content = yaml.full_load(servo_yaml.read_text())
+        assert content == {'connectors': ['measure'], 'measure': {}}
     
     def test_generate_connector_without_settings(self, cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
         pass
