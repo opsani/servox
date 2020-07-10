@@ -21,6 +21,7 @@ from servo.connector import Connector, ConnectorSettings, Optimizer
 from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_settings_model_from_routes, _default_routes, _create_settings_model
 from servo.servo_runner import ServoRunner
 from servo.types import *
+import servo.logging
 
 import click
 from typer.models import CommandFunctionType, Default, DefaultPlaceholder

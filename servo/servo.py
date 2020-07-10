@@ -393,28 +393,65 @@ def _normalize_name(name: str) -> str:
     """
     return re.sub(r"[^a-zA-Z0-9.\-_]", "_", name)
 
+class SettingModelCacheEntry:
+    connector_type: Type[Connector]
+    key_path: str
+    settings_model: Type[ConnectorSettings]
+
+    def __init__(self, 
+        connector_type: Type[Connector],
+        key_path: str,
+        settings_model: Type[ConnectorSettings],
+    ) -> None:
+        self.connector_type = connector_type
+        self.key_path = key_path
+        self.settings_model = settings_model
+    
+    def __str__(self):
+        return f"{self.settings_model} for {self.connector_type.__name__} at key-path '{self.key_path}'"
+
+__settings_models_cache__: List[SettingModelCacheEntry] = []
 
 def _derive_settings_model_for_route(
-    key_path: str, model: Type[Connector]
+    key_path: str, 
+    model: Type[Connector]
 ) -> Type[ConnectorSettings]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
-    # because key-paths are guanranteed to be unique, we can utilize it as a
-    base_setting_model = model.settings_model()
+    # because key-paths are guanranteed to be unique, we can utilize it as a cache key
+    base_settings_model = model.settings_model()
 
-    if base_setting_model == ConnectorSettings:
-        # Connector hasn't defined a settings class, use the connector class name as base name
-        # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
-        # due to naming conflicts.
-        model_name = f"{model.__name__}Settings"
-    elif key_path == model.__key_path__:
-        # Connector is mounted at the default route, use default name
-        model_name = f"{base_setting_model.__qualname__}"
-    else:
-        model_name = _normalize_name(f"{base_setting_model.__qualname__}__{key_path}")
+    # See if we already have a matching model
+    settings_model: Optional[Type[ConnectorSettings]] = None
+    naming_conflict = False
+    model_names = set()
+    for cache_entry in __settings_models_cache__:
+        model_names.add(cache_entry.settings_model.__name__)
+        if cache_entry.connector_type is model and cache_entry.key_path == key_path:# and issubclass(cache_entry.settings_model, base_setting_model):
+            settings_model = cache_entry.settings_model
+            break
 
-    # TODO: Check if the name has a conflict
-    settings_model = create_model(model_name, __base__=base_setting_model,)
+    if settings_model is None:
+        if base_settings_model == ConnectorSettings:
+            # Connector hasn't defined a settings class or is reusing one, use the connector class name as base name
+            # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
+            # due to naming conflicts.
+            model_name = f"{model.__name__}Settings"
+        elif key_path == model.__key_path__ and not f"{base_settings_model.__qualname__}" in model_names:
+            # Connector is mounted at the default route, use default name
+            model_name = f"{base_settings_model.__qualname__}"
+        else:
+            model_name = _normalize_name(f"{base_settings_model.__qualname__}__{key_path}")
+
+        settings_model = create_model(model_name, __base__=base_settings_model)
+
+    # Cache it for reuse
+    cache_entry = SettingModelCacheEntry(
+        connector_type=model,
+        key_path=key_path,
+        settings_model=settings_model
+    )
+    __settings_models_cache__.append(cache_entry)
 
     # Traverse across all the fields and update the env vars
     for name, field in settings_model.__fields__.items():
