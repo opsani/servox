@@ -8,8 +8,8 @@ root_path = Path(__file__).parents[1]
 
 # logging configuration
 handlers = [        
-    { "sink": sys.stdout, "colorize": True, "filter": "app.asgi", "level": logging.DEBUG },
-    { "sink": sys.stdout, "colorize": True, "filter": "uvicorn", "level": logging.DEBUG },
+    { "sink": sys.stdout, "colorize": True, "filter": "connectors", "level": logging.INFO },
+    { "sink": sys.stdout, "colorize": True, "filter": "servo", "level": logging.INFO },
 ]
 
 logs_path = root_path / 'logs' / f"servo.log"
@@ -19,6 +19,7 @@ handlers.append(
         "colorize": True, 
         "filter": {
             "servo": logging.DEBUG, 
+            "connectors": logging.DEBUG,
             "tests": logging.DEBUG,
         },
         "backtrace": True, 
