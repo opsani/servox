@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
+from servo.cli import ServoCLI
 
 # Force the test connectors to load early
 from tests.test_helpers import MeasureConnector, AdjustConnector, LoadgenConnector
@@ -20,6 +21,10 @@ else:
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
+
+@pytest.fixture()
+def servo_cli() -> ServoCLI:
+    return ServoCLI()
 
 @pytest.fixture()
 def optimizer_env() -> None:

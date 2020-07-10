@@ -4,7 +4,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Type, Union
+from typing import Any, Dict, List, Optional, Set, Type, Union, Iterable
 
 import typer
 import httpx
@@ -81,10 +81,27 @@ class BaseServoSettings(ConnectorSettings):
 
     @validator("connectors", pre=True)
     @classmethod
-    def validate_connectors(cls, connectors) -> Optional[Dict[str, str]]:
+    def validate_connectors(cls, connectors) -> Optional[Union[Dict[str, str], List[str]]]:
+        if isinstance(connectors, str):
+            # NOTE: Special case. When we are invoked with a string it is typically an env var
+            try:
+                decoded_value = BaseServoSettings.__config__.json_loads(connectors)  # type: ignore
+            except ValueError as e:
+                raise ValueError(f'error parsing JSON for "{connectors}"') from e
+
+            # Prevent infinite recursion
+            if isinstance(decoded_value, str):
+                raise ValueError(
+                    f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
+                )
+            
+            connectors = decoded_value
+
+        connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if invalid
         _routes_for_connectors_descriptor(connectors)
         return connectors
+
 
     class Config:
         # We are the base root of pluggable configuration
@@ -447,11 +464,36 @@ def _validate_class(connector: type) -> bool:
 
     return True
 
+def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
+    if connectors is None:
+        return connectors
+    elif isinstance(connectors, str):
+        if _connector_class_from_string(connectors) is None:
+            raise ValueError(f"Invalid connectors value: {connectors}")
+        return connectors
+    elif isinstance(connectors, type) and issubclass(connectors, Connector):
+        return connectors.__name__
+    elif isinstance(connectors, (list, tuple, set)):
+        connectors_list: List[str] = []
+        for connector in connectors:
+            connectors_list.append(_normalize_connectors(connector))
+        return connectors_list
+    elif isinstance(connectors, dict):
+        normalized_dict: Dict[str, str] = {}
+        for key, value in connectors.items():
+            if not isinstance(key, str):
+                raise ValueError(f"Connector descriptor keys must be strings (invalid value '{key}'")
+            normalized_dict[key] = _normalize_connectors(value)
+        
+        return normalized_dict
+    else:
+        raise ValueError(f"Invalid connectors value: {connectors}")
 
 def _routes_for_connectors_descriptor(connectors):
     if connectors is None:
         # None indicates that all available connectors should be activated
         return None
+        
     elif isinstance(connectors, str):
         # NOTE: Special case. When we are invoked with a string it is typically an env var
         try:
