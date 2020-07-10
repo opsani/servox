@@ -1458,7 +1458,7 @@ def test_vegeta_cli_generate(
     assert result.exit_code == 0
     assert "Generated servo.yaml" in result.stdout
     config_file = tmp_path / "servo.yaml"
-    config = yaml.load(config_file.read_text())
+    config = yaml.full_load(config_file.read_text())
     assert config == {
         'connectors': ['vegeta'],
         'vegeta': {
@@ -1550,27 +1550,29 @@ def test_vegeta_cli_generate_aliases(
 def test_vegeta_cli_generate_with_defaults(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "generate --defaults")
+    result = cli_runner.invoke(servo_cli, "generate vegeta --defaults -f vegeta.yaml -s")
     assert result.exit_code == 0
     assert "Generated vegeta.yaml" in result.stdout
     config_file = tmp_path / "vegeta.yaml"
-    config = config_file.read_text()
-    assert config == (
-        "vegeta:\n"
-        "  connections: 10000\n"
-        "  description: Update the rate, duration, and target/targets to match your load profile\n"
-        "  duration: 5m\n"
-        "  format: http\n"
-        "  http2: true\n"
-        "  insecure: false\n"
-        "  keepalive: true\n"
-        "  max_body: -1\n"
-        "  max_workers: 18446744073709551615\n"
-        "  rate: 50/1s\n"
-        "  target: https://example.com/\n"
-        "  targets: null\n"
-        "  workers: 10\n"
-    )
+    config = yaml.full_load(config_file.read_text())
+    assert config == {
+        'description': None,
+        'vegeta': {
+            'connections': 10000,
+            'description': 'Update the rate, duration, and target/targets to match your load profile',
+            'duration': '5m',
+            'format': 'http',
+            'http2': True,
+            'insecure': False,
+            'keepalive': True,
+            'max_body': -1,
+            'max_workers': 18446744073709551615,
+            'rate': '50/1s',
+            'target': 'https://example.com/',
+            'targets': None,
+            'workers': 10,
+        },
+    }
 
 
 def test_vegeta_cli_validate(
@@ -1611,7 +1613,7 @@ def test_vegeta_cli_validate_no_such_file(
 
 
 def test_vegeta_cli_validate_invalid_config(
-    tmp_path: Path, vegeta_cli: typer.Typer, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "invalid.yaml"
     config_file.write_text(
@@ -1632,21 +1634,22 @@ def test_vegeta_cli_validate_invalid_config(
         )
     )
     result = cli_runner.invoke(
-        vegeta_cli, "validate invalid.yaml", catch_exceptions=False
+        servo_cli, "validate -f invalid.yaml", catch_exceptions=False
     )
+    debug(result.stdout, result.stderr)
     assert result.exit_code == 1
     assert "2 validation errors for VegetaSettings" in result.stderr
 
 
 def test_vegeta_cli_validate_invalid_syntax(
-    tmp_path: Path, vegeta_cli: typer.Typer, cli_runner: CliRunner
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "invalid.yaml"
     config_file.write_text(
         ("connections: 10000\n" "descriptions\n\n null\n" "duratio\n\n_   n: 5m\n")
     )
     result = cli_runner.invoke(
-        vegeta_cli, "validate invalid.yaml", catch_exceptions=False
+        servo_cli, "validate invalid.yaml", catch_exceptions=False
     )
     assert result.exit_code == 1
     assert "X Invalid Vegeta Connector configuration in invalid.yaml\n" in result.stdout
