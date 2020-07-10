@@ -21,6 +21,9 @@ else:
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
 
+@pytest.fixture()
+def optimizer_env() -> None:
+    os.environ.update({ "OPSANI_OPTIMIZER": "dev.opsani.com/servox", "OPSANI_TOKEN": "123456789" })
 
 @pytest.fixture()
 def servo_yaml(tmp_path: Path) -> Path:

@@ -20,6 +20,7 @@ from servo.connector import (
     event,
 )
 from servo.servo import BaseServoSettings, ServoAssembly
+from servo.cli import ConnectorCLI, ServoCLI
 from tests.test_helpers import environment_overrides
 
 
@@ -112,7 +113,7 @@ class TestConnector:
         class FancyConnector(Connector):
             pass
 
-        c = FancyConnector(ConnectorSettings())
+        c = FancyConnector(settings=ConnectorSettings())
         assert c.config_key_path == "fancy"
 
 
@@ -1028,13 +1029,13 @@ def test_init_vegeta_connector() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings)
+    connector = VegetaConnector(settings=settings)
     assert connector is not None
 
 
 def test_init_vegeta_connector_no_settings() -> None:
     with pytest.raises(ValidationError) as e:
-        VegetaConnector(None)
+        VegetaConnector(settings=None)
     assert "1 validation error for VegetaConnector" in str(e.value)
 
 
@@ -1047,7 +1048,7 @@ def test_init_connector_no_version_raises() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings, path="whatever")
+        connector = FakeConnector(settings=settings, path="whatever")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "version must be provided"
 
@@ -1061,7 +1062,7 @@ def test_init_connector_invalid_version_raises() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings, path="whatever", version="b")
+        connector = FakeConnector(settings=settings, path="whatever", version="b")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "invalid is not valid SemVer string"
 
@@ -1074,7 +1075,7 @@ def test_init_connector_parses_version_string() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = FakeConnector(settings, path="whatever")
+    connector = FakeConnector(settings=settings, path="whatever")
     assert connector.version is not None
     assert connector.version == Version.parse("0.5.0")
 
@@ -1088,7 +1089,7 @@ def test_init_connector_no_name_raises() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings, path="test", name=None)
+        connector = FakeConnector(settings=settings, path="test", name=None)
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
@@ -1097,7 +1098,7 @@ def test_vegeta_default_key_path() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings)
+    connector = VegetaConnector(settings=settings)
     assert connector.config_key_path == "vegeta"
 
 
@@ -1105,7 +1106,7 @@ def test_vegeta_config_override() -> None:
     settings = VegetaSettings(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings, config_key_path="monkey")
+    connector = VegetaConnector(settings=settings, config_key_path="monkey")
     assert connector.config_key_path == "monkey"
 
 
@@ -1114,7 +1115,7 @@ def test_vegeta_id_invalid() -> None:
         settings = VegetaSettings(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(settings, config_key_path="THIS IS NOT COOL")
+        connector = VegetaConnector(settings=settings, config_key_path="THIS IS NOT COOL")
     assert "2 validation errors for VegetaConnector" in str(e.value)
     assert (
         e.value.errors()[0]["msg"]

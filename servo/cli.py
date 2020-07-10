@@ -1040,7 +1040,7 @@ class ServoCLI(CLI):
                 help="Include default values in the generated output",
             )
         ) -> None:
-            """Generate a configuration file"""
+            """Generate a configuration"""
             exclude_unset = not defaults
 
             routes = self.connector_routes_callback(context=context, value=connectors) if connectors else _default_routes()

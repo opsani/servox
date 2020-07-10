@@ -878,11 +878,9 @@ class KubernetesSettings(ConnectorSettings):
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
 
-VERSION = '1.2'
-
 @servo.connector.metadata(
     description="Kubernetes adjust connector",
-    version="0.5.0",
+    version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
@@ -973,18 +971,3 @@ def descriptor_to_components(descriptor: dict) -> List[Component]:
         component = Component(name=component_name, settings=settings)
         components.append(component)
     return components
-
-# def cli(self) -> ConnectorCLI:
-#         """
-#         Returns a Typer CLI for interacting with this connector
-#         """
-#         cli = ConnectorCLI(self, help="Adjust Kubernetes infrastructure")
-
-#         @cli.command()
-#         def adjust():
-#             """
-#             Run an adhoc load generation
-#             """
-#             self.adjust()
-
-#         return cli

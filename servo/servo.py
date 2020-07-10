@@ -299,8 +299,7 @@ def _module_path(cls: Type) -> str:
 
 def _discover_connectors() -> Set[Type[Connector]]:
     """
-    Discover available connectors that are registered via setuptools
-    entry points.
+    Discover available connectors that are registered via setuptools entry points.
 
     See ConnectorLoader for details.
     """

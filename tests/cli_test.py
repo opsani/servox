@@ -10,15 +10,20 @@ from typer.testing import CliRunner
 
 from servo import cli
 from servo.cli import CLI, ServoCLI
+from servo.servo import BaseServoSettings
+from servo.connector import ConnectorSettings, Optimizer
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
 
+@pytest.fixture()
+def optimizer() -> Optimizer:
+    return Optimizer("dev.opsani.com/servox", token="123456789")
 
 @pytest.fixture()
-def cli_app() -> Typer:
-    return cli.new_servo_cli()
+def cli_app() -> ServoCLI:
+    return ServoCLI()
 
 
 @pytest.fixture()
@@ -34,7 +39,7 @@ def vegeta_config_file(servo_yaml: Path) -> Path:
 def test_help(cli_runner: CliRunner, cli_app: Typer) -> None:
     result = cli_runner.invoke(cli_app, "--help")
     assert result.exit_code == 0
-    assert "servox [OPTIONS] COMMAND [ARGS]" in result.stdout
+    assert "servo [OPTIONS] COMMAND [ARGS]" in result.stdout
 
 
 def test_new(cli_runner: CliRunner, cli_app: Typer) -> None:
@@ -49,20 +54,20 @@ def test_console(cli_runner: CliRunner, cli_app: Typer) -> None:
     """Open an interactive console"""
 
 
-def test_connectors(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_connectors(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "connectors", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
-def test_connectors_all(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_connectors_all(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "connectors --all")
     assert result.exit_code == 0
     assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, optimizer_env: None
 ) -> None:
     result = cli_runner.invoke(cli_app, "connectors -v")
     assert result.exit_code == 0
@@ -72,7 +77,7 @@ def test_connectors_verbose(
     )
 
 
-def test_connectors_all_verbose(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_connectors_all_verbose(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
@@ -84,14 +89,14 @@ def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
     pass
 
 
-def test_version(cli_runner: CliRunner, cli_app: Typer) -> None:
+def test_version(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "version")
     assert result.exit_code == 0
     assert "Servo v0.0.0" in result.stdout
 
 
 def test_settings(
-    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path
+    cli_runner: CliRunner, cli_app: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(cli_app, "settings")
     assert result.exit_code == 0
@@ -99,15 +104,15 @@ def test_settings(
 
 
 def test_run_with_empty_config_file(
-    cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path
+    cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path, optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(cli_app, "settings", catch_exceptions=False)
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"RESULT: {result.stderr}"
     assert "{}" in result.stdout
 
 
 def test_run_with_malformed_config_file(
-    cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path
+    cli_runner: CliRunner, cli_app: Typer, servo_yaml: Path, optimizer_env: None,
 ) -> None:
     servo_yaml.write_text("</\n\n..:989890j\n___*")
     with pytest.raises(ValueError) as e:
