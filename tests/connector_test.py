@@ -374,7 +374,7 @@ class TestServo:
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
-        assert len(servo.connectors) == 2
+        assert len(servo.connectors) == 3
         first_connector = servo.connectors[0]
         assert first_connector.name == "FirstTestServo Connector"
         second_connector = servo.connectors[1]

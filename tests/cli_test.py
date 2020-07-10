@@ -84,10 +84,40 @@ def test_connectors_all_verbose(cli_runner: CliRunner, cli_app: Typer, optimizer
         "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
     )
 
+def test_check_no_optimizer(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "check")
+    assert result.exit_code == 2
+    assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
-def test_check(cli_runner: CliRunner, cli_app: Typer) -> None:
-    pass
+def test_check(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(cli_app, "check")
+    assert result.exit_code == 0
+    assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
 
+def test_show_help_requires_optimizer(cli_runner: CliRunner, cli_app: Typer) -> None:
+    result = cli_runner.invoke(cli_app, "show --help")
+    assert result.exit_code == 2
+    assert "Error: Invalid value: An optimizer must be specified" in result.stderr
+
+def test_show_help(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
+    result = cli_runner.invoke(cli_app, "show --help")
+    assert result.exit_code == 0
+    assert "Display one or more resources" in result.stdout
+
+def test_show_components(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(cli_app, "show components", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
+
+def test_show_events(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(cli_app, "show events", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+
+def test_show_metrics(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(cli_app, "show metrics", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
 
 def test_version(cli_runner: CliRunner, cli_app: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(cli_app, "version")

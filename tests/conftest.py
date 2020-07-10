@@ -4,9 +4,11 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 from servo.cli import ServoCLI
+import yaml
+import json
 
 # Force the test connectors to load early
-from tests.test_helpers import MeasureConnector, AdjustConnector, LoadgenConnector
+from tests.test_helpers import MeasureConnector, AdjustConnector, LoadgenConnector, StubConnectorSettings
 
 # Add the devtools debug() function globally in tests
 try:
@@ -37,6 +39,23 @@ def optimizer_env() -> None:
 def servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
     config_path.touch()
+    return config_path
+
+@pytest.fixture()
+def stub_servo_yaml(tmp_path: Path) -> Path:
+    config_path: Path = tmp_path / "servo.yaml"
+    settings = StubConnectorSettings(name="stub")
+    measure_config_json = json.loads(
+        json.dumps(settings.dict(
+            by_alias=True, 
+        ))
+    )
+    config = {
+        "connectors": ["measure"],
+        "measure": measure_config_json
+    }
+    config = yaml.dump(config)
+    config_path.write_text(config)
     return config_path
 
 
