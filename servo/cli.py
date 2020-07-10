@@ -621,11 +621,9 @@ class ServoCLI(CLI):
                 context.assembly.all_connectors() if all else context.servo.connectors
             )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
-            row = [context.servo.name, context.servo.version, context.servo.description]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
-                row += [context.servo.homepage, context.servo.maturity, context.servo.license]
-            table = [row]
+            table = []
             for connector in connectors:
                 row = [connector.name, connector.version, connector.description]
                 if verbose:
