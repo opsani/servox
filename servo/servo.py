@@ -180,7 +180,9 @@ class Servo(Connector):
         connectors = include if include is not None else self.connectors
 
         if exclude:
-            connectors = list(filter(lambda c: c not in exclude, connectors))
+            # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
+            excluded_keypaths = list(map(lambda c: c.__key_path__, exclude))
+            connectors = list(filter(lambda c: c.__key_path__ not in excluded_keypaths, connectors))
         for connector in connectors:
             result = connector.process_event(event, *args, **kwargs)
             if result is not None:
