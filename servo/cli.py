@@ -18,7 +18,7 @@ from loguru import logger
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from servo.connector import Connector, ConnectorSettings, Optimizer
-from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_settings_model_from_routes, _default_routes
+from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_settings_model_from_routes, _default_routes, _create_settings_model
 from servo.servo_runner import ServoRunner
 from servo.types import *
 
@@ -649,7 +649,7 @@ class ServoCLI(CLI):
                 False,
                 "--interactive",
                 "-i",
-                help="Include models from all available connectors",
+                help="Run in interactive mode (examine and confirm commands)",
             )
         ) -> None:
             """
@@ -1032,16 +1032,29 @@ class ServoCLI(CLI):
                 writable=True,
                 readable=True,
                 help="Output file to write"
-            ),            
+            ),
             defaults: bool = typer.Option(
                 False,
                 "--defaults",
                 "-d",
                 help="Include default values in the generated output",
+            ),
+            standalone: bool = typer.Option(
+                False,
+                "--standalone",
+                "-s",
+                help="Exclude connectors descriptor in generated output",
+            ),
+            quiet: bool = typer.Option(
+                False,
+                "--quiet",
+                "-q",
+                help="Do not echo generated output to stdout",
             )
         ) -> None:
             """Generate a configuration"""
             exclude_unset = not defaults
+            exclude = {"connectors"} if standalone else {}
 
             routes = self.connector_routes_callback(context=context, value=connectors) if connectors else _default_routes()
 
@@ -1069,12 +1082,17 @@ class ServoCLI(CLI):
 
             # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
             schema = json.loads(
-                json.dumps(settings.dict(by_alias=True, exclude_unset=exclude_unset))
+                json.dumps(settings.dict(
+                    by_alias=True, 
+                    exclude_unset=exclude_unset, 
+                    exclude=exclude
+                ))
             )
             config = yaml.dump(schema)
             file.write_text(config)
-            typer.echo(highlight(config, YamlLexer(), TerminalFormatter()))
-            typer.echo(f"Generated {file}")
+            if not quiet:
+                typer.echo(highlight(config, YamlLexer(), TerminalFormatter()))
+                typer.echo(f"Generated {file}")
     
     def add_connector_commands(self) -> None:
         for cli in ConnectorCLI.__clis__:
