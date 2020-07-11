@@ -28,7 +28,7 @@ This is the path of least resistance but any Python package management system sh
 * Install dependencies: `poetry install`
 * Activate the venv: `poetry shell`
 * Start interacting with the servo: `servo --help`
-* Generate a config file: `servo generate`
+* Initialize your environment: `servo init`
 
 ## Overview
 
@@ -83,10 +83,8 @@ of the servo and is responsible for "assembling" it by instantiating connectors 
 (e.g. you may want to connect to multiple discrete Prometheus services) or may not be used at all (e.g. you have a New Relic connector in the 
 container image but aren't using it).
 * **CLI** - The CLI provides the primary interface for interacting with the servo. The CLI is modular and contains a number of root level commands
-and a registered subcommand for each active connector. Common actions include `schema`, `validate`, `describe`, `version`, etc. Each action is
-implemented as an Event and are mounted contextually at the root CLI and as nested subcommands. For example, if you invoke `servo schema` you
-will get an output of the JSON Schema for the entire servo with each connector registered under its config key (more on this later). If you
-had the Prometheus connectors active, then `servo prometheus schema` would display the JSON Schema specific to the Prometheus connector.
+and connectors can optionally register additional commands. Most of the root level commands are driven through the event
+subsystem and connectors which respond to the relevant events will automatically become accessible through the CLI. For example, executing `servo schema` will emit a complete JSON Schema document for the assembly while `servo schema kubernetes` will emit a JSON Schema specific to the Kubernetes connector. 
 
 ### Environment Variables & Dotenv
 
@@ -94,7 +92,7 @@ Pay attention to the output of `servo --help` and `servo schema` to identify env
 The servo handles configuration of deeply nested attributes by building the environment variable mapping on the fly at assembly time.
 
 For convenience, the `servo` CLI utility automatically supports `.env` files for loading configuration and is already in the `.gitignore`.
-Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid having to deal with the options to configure the optimizer.
+Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid having to deal with the options to configure the optimizer. The `servo init` command will help set this up interactively.
 
 ### Connector Discovery
 
@@ -175,6 +173,26 @@ strong modeling and validation that forms the core of the configuration module.
 * [httpx](https://www.python-httpx.org/) - httpx is a (mostly) requests compatible HTTP library that provides support for HTTP/2, is type annotated, has extensive test coverage, and supports async interactions on top of asyncio.
 * [loguru](https://loguru.readthedocs.io/en/stable/index.html) - A rich Python logging library that builds on the foundation of the standard library
 logging module and provides a number of enhancements.
+
+### Responding to and Emitting Events
+
+### Extending the CLI
+
+Should your connector wish to expose additional commands to the CLI, it can do so via the `ConnectorCLI` class.
+Instances are automatically registred with the CLI and the `Context` is configured appropriately when commands are
+invoked. All CLI extensions are namespaced as subcommands to keep things tidy and avoid naming conflicts.
+
+A simple example of a CLI extension that will register `servo vegeta attack` is:
+
+```python
+cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+@cli.command()
+def attack(context: Context):
+    """
+    Run an adhoc load generation
+    """
+    context.connector.measure()
+```
 
 ## Development
 
