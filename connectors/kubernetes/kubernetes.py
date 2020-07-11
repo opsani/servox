@@ -12,12 +12,9 @@ from collections.abc import Iterable
 
 import json
 import yaml
-# import signal
 
-# from adjust import Adjust, AdjustError
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import CLI
 from servo.types import Component, Setting, Description, CheckResult
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
@@ -48,11 +45,7 @@ DEPLOYMENT = "deployment"
 # DEPLOYMENT = "deployment.v1.apps"  # new, not supported in 1.8 (it has v1beta1)
 RESOURCE_MAP = {"mem": "memory", "cpu": "cpu"}
 
-
-class ConfigError(Exception): # user-provided descriptor not readable
-    pass
-
-
+# TODO: Support as a plugin
 def import_encoder_base():
     try:
         return importlib.import_module('encoders.base')
@@ -63,6 +56,7 @@ def import_encoder_base():
 # (copied inline from skopos/.../plugins/spec_hash_helper.py)
 import hashlib
 
+# TODO: Why do we need this?
 def _dbg(*data):
     with open('/skopos/plugins/dbg.log', 'a') as f:
         print(data, file=f)
@@ -150,6 +144,7 @@ def k_patch(namespace, typ, obj, patchstr):
 
 def read_desc():
     """load the user-defined descriptor, returning a dictionary of the contents under the k8s top-level key, if any"""
+    # TODO: Eliminate this
     try:
         f = open(DESC_FILE)
         desc = yaml.safe_load(f)

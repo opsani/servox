@@ -490,6 +490,17 @@ def test_ordering_of_config_commands(servo_cli: CLI, cli_runner: CliRunner) -> N
     assert result.exit_code == 0
     assert re.search(r".*settings.*\n.*schema.*\n.*validate.*\n.*generate.*", result.stdout, flags=re.MULTILINE) is not None
 
+def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
+    result = cli_runner.invoke(servo_cli, "init", catch_exceptions=False, input="dev.opsani.com/servox\n123456789\nn\n")
+    assert result.exit_code == 0
+    dotenv = Path('.env')
+    assert dotenv.read_text() == 'OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789'
+    servo_yaml = Path('servo.yaml')    
+    assert servo_yaml.read_text() is not None
+
+def test_init_existing(servo_cli: CLI, cli_runner: CliRunner) -> None:
+    pass
+
 # TODO: test setting section via initializer, add_cli
 # TODO: section settable on CLI class, via @command(), and via add_cli()
 

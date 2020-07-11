@@ -143,11 +143,9 @@ class ConnectorSettings(BaseSettings):
 
         Implementations should build a complete, validated Pydantic model and return it.
 
-        This is an abstract method that needs to be implemented in subclasses.
+        This is an abstract method that needs to be implemented in subclasses in order to support config generation.
         """
-        raise NotImplementedError(
-            f"Generated settings must be implemented in the ConnectorSettings subclass '{cls.__qualname__}'"
-        )
+        return cls()
 
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):

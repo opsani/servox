@@ -19,6 +19,7 @@ pygments = "^2.6.1"
 devtools = "^0.5.1"
 backoff = "^1.10.0"
 typer = "^0.3.0"
+bullet = "^2.1.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"

@@ -287,7 +287,7 @@ class VegetaConnector(Connector):
         # Take the current settings and run a 15 second check against it
         self.warmup_until = datetime.now()
         check_settings = self.settings.copy()
-        check_settings.duration = '15s'
+        check_settings.duration = '5s'
 
         exit_code, vegeta_cmd = self._run_vegeta(settings=check_settings)
         if exit_code != 0:

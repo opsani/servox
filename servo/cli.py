@@ -14,6 +14,7 @@ from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 from logging import Logger
 from loguru import logger
+from bullet import Check, colors, styles
 
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
@@ -327,7 +328,7 @@ class CLI(typer.Typer):
         ctx.base_url = base_url
 
         # TODO: This should be pluggable
-        if ctx.invoked_subcommand not in {"schema", "generate", "validate"}:
+        if ctx.invoked_subcommand not in {"init", "schema", "generate", "validate"}:
             CLI.assemble_from_context(ctx)
 
     @staticmethod
@@ -472,7 +473,7 @@ class ConnectorCLI(CLI):
         ConnectorCLI.__clis__.add(self)
 
         # TODO: This will not find the right connector in aliased configurations
-        # TODO: Probably auto-add options for selecting the right Connector?
+        # TODO: Use the subcommand name to find our instance
         def connector_callback(context: Context):            
             for connector in context.servo.connectors:
                 if isinstance(connector, connector_type):
@@ -527,13 +528,54 @@ class ServoCLI(CLI):
         self.add_other_commands()
     
     def add_assembly_commands(self) -> None:
-        # TODO: Specify a list of connectors (or default to all)
         # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
-        # TODO: Options for Docker Compose and Kubernetes?        
+        # TODO: Options for Docker Compose and Kubernetes?
+
         @self.command(section=Section.ASSEMBLY)
-        def new() -> None:
+        def init(
+            context: Context
+        ) -> None:
             """
-            Create a new servo assembly
+            Initialize a servo assembly
+            """
+            dotenv_file = Path('.env')
+            write_dotenv = True
+            if dotenv_file.exists():
+                write_dotenv = typer.confirm(f"File '{dotenv_file}' already exists. Overwrite it?")
+
+            if write_dotenv:
+                optimizer = typer.prompt("Opsani optimizer? (format: dev.opsani.con/app-name)", default=context.optimizer)
+                token = typer.prompt("API token?", default=context.token)
+                dotenv_file.write_text(f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}")
+                typer.echo(".env file initialized")
+
+            customize = typer.confirm(f"Generating servo.yaml. Do you want to select the connectors?")
+            if customize:
+                check = Check("Which connectors do you want to activate? ",
+                    choices = list(map(lambda c: c.name, ServoAssembly.all_connectors())),
+                    check = " √",
+                    margin = 2,
+                    check_color = colors.bright(colors.foreground["green"]),
+                    check_on_switch = colors.bright(colors.foreground["green"]),
+                    background_color = colors.background["black"],
+                    background_on_switch = colors.background["white"],
+                    word_color = colors.foreground["white"],
+                    word_on_switch = colors.foreground["black"]
+                )
+
+                result = check.launch()
+                connectors = list(filter(None, map(lambda c: c.__key_path__ if c.name in result else None, ServoAssembly.all_connectors())))
+            else:
+                connectors = None
+
+            typer_click_object = typer.main.get_group(self)
+            context.invoke(typer_click_object.commands['generate'], connectors=connectors)
+
+        @self.command(section=Section.ASSEMBLY, hidden=True)
+        def new() -> None:
+            # TODO: --dotenv --compose
+            """
+            Create a new servo assembly at [PATH]
             """
             _not_yet_implemented()
         
@@ -631,13 +673,6 @@ class ServoCLI(CLI):
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
-        
-        @self.command(section=Section.ASSEMBLY)
-        def image() -> None:
-            """
-            Manage assembly container images
-            """
-            _not_yet_implemented()
 
     def add_ops_commands(self, section=Section.OPS) -> None:        
         @self.command(section=section)
@@ -758,7 +793,7 @@ class ServoCLI(CLI):
             
             return metrics
             
-        @self.command(section=section)
+        @self.command(section=section, hidden=True)
         def baseline() -> None:
             """
             Adjust settings to baseline configuration
@@ -840,7 +875,7 @@ class ServoCLI(CLI):
                         reason=adjustment.get("reason", "undefined"),
                     )
 
-        @self.command(section=section)
+        @self.command(section=section, hidden=True)
         def promote() -> None:
             """
             Promote optimized settings to the cluster
@@ -1067,7 +1102,7 @@ class ServoCLI(CLI):
             settings_model = _create_settings_model_from_routes(routes)
             settings = settings_model.generate()
 
-            if len(connectors):
+            if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary
                 connectors_dict: Dict[str, str] = {}
                 aliased = False
