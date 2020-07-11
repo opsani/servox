@@ -2,19 +2,27 @@ import os
 from contextlib import contextmanager
 from typing import Dict
 
-from servo.connector import Connector
+from servo.connector import Connector, ConnectorSettings
+from typing import Optional
 
+
+class StubConnectorSettings(ConnectorSettings):
+    name: Optional[str]
+
+    @classmethod
+    def generate(cls, **kwargs) -> 'StubConnectorSettings':
+        return cls(**kwargs)
 
 class MeasureConnector(Connector):
-    pass
+    settings: StubConnectorSettings
 
 
 class AdjustConnector(Connector):
-    pass
+    settings: StubConnectorSettings
 
 
 class LoadgenConnector(Connector):
-    pass
+    settings: StubConnectorSettings
 
 
 @contextmanager

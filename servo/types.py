@@ -100,6 +100,11 @@ class Setting(BaseModel):
     step: Numeric
     value: Optional[Union[Numeric, str]]
 
+    def __str__(self):
+        if self.type == SettingType.RANGE:
+            return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
+
+        return f"{self.name} ({self.type})"
 
 class Component(BaseModel):
     name: str
@@ -189,3 +194,29 @@ class AbstractOutputFormat(str, Enum):
             return None
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
+
+
+class Command(str, Enum):
+    DESCRIBE = "DESCRIBE"
+    MEASURE = "MEASURE"
+    ADJUST = "ADJUST"
+    SLEEP = "SLEEP"
+
+
+class Event(str, Enum):
+    HELLO = "HELLO"
+    GOODBYE = "GOODBYE"
+    DESCRIPTION = "DESCRIPTION"
+    WHATS_NEXT = "WHATS_NEXT"
+    ADJUSTMENT = "ADJUSTMENT"
+    MEASUREMENT = "MEASUREMENT"
+
+    
+class EventRequest(BaseModel):
+    event: Event
+    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
+
+    class Config:
+        json_encoders = {
+            Event: lambda v: str(v),
+        }

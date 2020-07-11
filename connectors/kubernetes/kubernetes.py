@@ -12,12 +12,9 @@ from collections.abc import Iterable
 
 import json
 import yaml
-# import signal
 
-# from adjust import Adjust, AdjustError
 import servo
 from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import ConnectorCLI
 from servo.types import Component, Setting, Description, CheckResult
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
@@ -48,11 +45,7 @@ DEPLOYMENT = "deployment"
 # DEPLOYMENT = "deployment.v1.apps"  # new, not supported in 1.8 (it has v1beta1)
 RESOURCE_MAP = {"mem": "memory", "cpu": "cpu"}
 
-
-class ConfigError(Exception): # user-provided descriptor not readable
-    pass
-
-
+# TODO: Support as a plugin
 def import_encoder_base():
     try:
         return importlib.import_module('encoders.base')
@@ -63,6 +56,7 @@ def import_encoder_base():
 # (copied inline from skopos/.../plugins/spec_hash_helper.py)
 import hashlib
 
+# TODO: Why do we need this?
 def _dbg(*data):
     with open('/skopos/plugins/dbg.log', 'a') as f:
         print(data, file=f)
@@ -150,6 +144,7 @@ def k_patch(namespace, typ, obj, patchstr):
 
 def read_desc():
     """load the user-defined descriptor, returning a dictionary of the contents under the k8s top-level key, if any"""
+    # TODO: Eliminate this
     try:
         f = open(DESC_FILE)
         desc = yaml.safe_load(f)
@@ -676,6 +671,7 @@ def _value(x):
 
 def update(appname, desc, data, print_progress):
 
+    # TODO: Seems like a config element?
     adjust_on = desc.get("adjust_on", False)
 
     if adjust_on:
@@ -692,6 +688,7 @@ def update(appname, desc, data, print_progress):
     _, raw = raw_query(appname, desc)
 
     # convert k8s list of deployments into map
+    # TODO: Model this
     raw = {dep['metadata']['name']: dep for dep in raw}
 
     patchlst = {}
@@ -702,7 +699,8 @@ def update(appname, desc, data, print_progress):
     # FIXME: off-spec; step-down in data if a 'state' key is provided at the top.
     if 'state' in data:
         data = data['state']
-
+    
+    # TODO: Traverse model objects
     for comp_name, comp_data in data.get("application", {}).get("components", {}).items():
         settings = comp_data.get("settings", {})
         if not settings:
@@ -859,24 +857,16 @@ def update(appname, desc, data, print_progress):
         if mon["ref_runtime_count"] != mon0["ref_runtime_count"]:
             raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
-    # update() return
-
-
-# cancel not supported
-# def cancel(signum, frame):
-#     if not wait_in_progress:
-#         sys_exit(1)
-#     print("aborting operation...", file=sys.stderr)
-
 
 class KubernetesSettings(ConnectorSettings):
     namespace: Optional[str]
 
     @classmethod
-    def generate(cls) -> 'KubernetesSettings':
+    def generate(cls, **kwargs) -> 'KubernetesSettings':
         return cls(
             namespace='default', 
-            description="Update the namespace, deployment, etc. to match your Kubernetes cluster"
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            **kwargs
         )
 
     class Config:
@@ -884,11 +874,9 @@ class KubernetesSettings(ConnectorSettings):
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
 
-VERSION = '1.2'
-
 @servo.connector.metadata(
     description="Kubernetes adjust connector",
-    version="0.5.0",
+    version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
@@ -896,21 +884,6 @@ VERSION = '1.2'
 class KubernetesConnector(Connector):
     settings: KubernetesSettings
     progress: float = 0.0
-
-    def cli(self) -> ConnectorCLI:
-        """
-        Returns a Typer CLI for interacting with this connector
-        """
-        cli = ConnectorCLI(self, help="Adjust Kubernetes infrastructure")
-
-        @cli.command()
-        def adjust():
-            """
-            Run an adhoc load generation
-            """
-            self.adjust()
-
-        return cli
 
     def print_progress(
             self,
@@ -946,10 +919,16 @@ class KubernetesConnector(Connector):
             raise AdjustError(str(e), reason="unknown") # maybe we should introduce reason=config (or even a different status class, instead of 'failed')
         desc.pop("driver", None)
 #        namespace = os.environ.get('OPTUNE_NAMESPACE', desc.get('namespace', self.app_id))
+        # TODO: Replace the namespace
         namespace = 'default'
         result = query(namespace, desc)        
         components = descriptor_to_components(result['application']['components'])
         return Description(components=components)
+    
+    @event()
+    def components(self) -> Description:
+        desc = read_desc()
+        return descriptor_to_components(desc['application']['components'])
 
     @event()
     def adjust(self, data) -> dict:
@@ -980,6 +959,9 @@ def descriptor_to_components(descriptor: dict) -> List[Component]:
         settings = []
         for setting_name in descriptor[component_name]['settings']:
             setting_values = descriptor[component_name]['settings'][setting_name]
+            # FIXME: Temporary hack
+            if not setting_values.get('type', None):
+                setting_values['type'] = 'range'
             setting = Setting(name=setting_name, **setting_values)
             settings.append(setting)
         component = Component(name=component_name, settings=settings)

@@ -122,27 +122,30 @@ class ConnectorSettings(BaseSettings):
     """
 
     @classmethod
-    def parse_file(cls, file: Path) -> "ConnectorSettings":
+    def parse_file(cls, file: Path, *, key: Optional[str] = None) -> "ConnectorSettings":
         """
         Parse a YAML configuration file and return a settings object with the contents.
 
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
+        if key:
+            try:
+                config = config[key]
+            except KeyError as error:
+                raise KeyError(f"invalid key '{key}'") from error
         return cls.parse_obj(config)
 
     @classmethod
-    def generate(cls) -> "ConnectorSettings":
+    def generate(cls, **kwargs) -> "ConnectorSettings":
         """
         Return a set of default settings for a new configuration.
 
         Implementations should build a complete, validated Pydantic model and return it.
 
-        This is an abstract method that needs to be implemented in subclasses.
+        This is an abstract method that needs to be implemented in subclasses in order to support config generation.
         """
-        raise NotImplementedError(
-            f"Generated settings must be implemented in the ConnectorSettings subclass '{cls.__qualname__}'"
-        )
+        return cls()
 
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
@@ -264,10 +267,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Key-path to the root of the connector's configuration.
     """
 
-    command_name: constr(regex=r"^[a-z\-\_]{3,32}$")
-    """Name of the command for interacting with the connector instance via the CLI.
-    """
-
     @classmethod
     def all(cls) -> Set[Type["Connector"]]:
         """Return a set of all Connector subclasses"""
@@ -361,11 +360,9 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__events__[key] = v
 
     def __init__(
-        self,
-        settings: ConnectorSettings,
+        self,        
         *,
         config_key_path: Optional[str] = None,
-        command_name: Optional[str] = None,
         **kwargs,
     ):
         config_key_path = (
@@ -373,15 +370,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             if config_key_path is not None
             else self.__class__.__key_path__
         )
-        command_name = (
-            command_name
-            if command_name is not None
-            else _command_name_from_config_key_path(config_key_path)
-        )
         super().__init__(
-            settings=settings,
             config_key_path=config_key_path,
-            command_name=command_name,
             **kwargs,
         )
 
@@ -403,59 +393,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """Returns the logger"""
         return loguru.logger
 
-    @property
-    def cli(
-        self,
-        *,
-        name: Optional[str] = None,
-        help: Optional[str] = None,
-        version: "CommandOption" = True,
-        completion: "CommandOption" = False,
-        schema: "CommandOption" = None,
-        settings: "CommandOption" = None,
-        generate: "CommandOption" = None,
-        validate: "CommandOption" = None,
-        events: "CommandOption" = None,
-        describe: "CommandOption" = None,
-        check: "CommandOption" = None,
-        measure: "CommandOption" = None,
-        adjust: "CommandOption" = None,
-        promote: "CommandOption" = None,
-        **kwargs,
-    ) -> Optional["ConnectorCLI"]:
-        """
-        Optionally initializes and returns a `ConnectorCLI` instance providing
-        connector specific CLI commands. When initialized as part of a servo
-        assembly, the CLI is mounted as a top-level sub-command.
-
-        By default, returns an instance of `ConnectorCLI` that automatically
-        adds common commands based on heuristics (e.g. if you have any settings
-        then you probably want a `settings` subcommand). There are keyword arguments 
-        available for explicitly controlling which commands are added.
-
-        Adhoc commands can be added by defining nested functions with Typer arguments
-        and using the `command()` decorator.Any
-        
-        See servo.cli.CommandCLI for more details.
-        """
-        return CommandCLI(
-            name=name,
-            help=help,
-            version=version,
-            completion=completion,
-            schema=schema,
-            settings=settings,
-            generate=generate,
-            validate=validate,
-            events=events,
-            describe=describe,
-            check=check,
-            measure=measure,
-            adjust=adjust,
-            promote=promote,
-            **kwargs,
-        )
-
 
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs()
@@ -464,11 +401,6 @@ EventResult.update_forward_refs()
 def _key_path_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-
-
-def _command_name_from_config_key_path(key_path: str) -> str:
-    # foo.bar.this_key => this-key
-    return key_path.split(".", 1)[-1].replace("_", "-").lower()
 
 
 def metadata(
