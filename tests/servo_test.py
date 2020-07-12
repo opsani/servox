@@ -6,7 +6,7 @@ import json
 import pytest
 from pydantic import Extra, ValidationError
 from servo import __version__, connector
-from servo.servo import BaseServoSettings, ServoAssembly, Servo
+from servo.servo import BaseServoSettings, ServoAssembly, Servo, Events
 from servo.connector import Connector, Optimizer, ConnectorSettings, on_event, before_event, after_event
 from servo.types import Event, EventHandler, EventResult, Preposition, EventError, CancelEventError
 from tests.test_helpers import environment_overrides
@@ -16,29 +16,39 @@ def test_version():
     assert __version__ == "0.1.0"
 
 class FirstTestServoConnector(Connector):
+    started_up: bool = False
+
     @on_event()
     def this_is_an_event(self) -> str:
         return "this is the result"
     
-    @after_event('adjust')
+    @after_event(Events.ADJUST)
     def adjust_handler(self) -> str:
         return "adjusting!"
     
-    @before_event('measure')
+    @before_event(Events.MEASURE)
     def do_something_before_measuring(self) -> str:
         return "measuring!"
     
-    @before_event('promote')
+    @before_event(Events.PROMOTE)
     def run_before_promotion(self) -> str:
         return "about to promote!"
 
-    @on_event('promote')
+    @on_event(Events.PROMOTE)
     def run_on_promotion(self) -> str:
         return "promoting!"
     
-    @after_event('promote')
+    @after_event(Events.PROMOTE)
     def run_after_promotion(self) -> str:
         return "promoted!!"
+    
+    @on_event(Events.STARTUP)
+    def handle_startup(self) -> str:
+        self.started_up = True
+    
+    @on_event(Events.SHUTDOWN)
+    def handle_shutdown(self) -> str:
+        pass
     
     class Config:
         # NOTE: Necessary to utilize mocking
@@ -208,6 +218,44 @@ def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     assert result.connector == connector
     assert result.event.name == 'promote'
     assert result.preposition == Preposition.ON
+
+def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
+    connector = servo.routes['first_test_servo']
+    before_handler = connector.get_event_handlers('promote', Preposition.BEFORE)[0]
+    before_spy = mocker.spy(before_handler, 'handler')
+    on_handler = connector.get_event_handlers('promote', Preposition.ON)[0]
+    on_spy = mocker.spy(on_handler, 'handler')
+    after_handler = connector.get_event_handlers('promote', Preposition.AFTER)[0]
+    after_spy = mocker.spy(after_handler, 'handler')
+    servo.dispatch_event('promote', prepositions=Preposition.ON)
+    before_spy.assert_not_called()
+    on_spy.assert_called_once()
+    after_spy.assert_not_called()
+
+def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> None:
+    connector = servo.routes['first_test_servo']
+    before_handler = connector.get_event_handlers('promote', Preposition.BEFORE)[0]
+    before_spy = mocker.spy(before_handler, 'handler')
+    on_handler = connector.get_event_handlers('promote', Preposition.ON)[0]
+    on_spy = mocker.spy(on_handler, 'handler')
+    after_handler = connector.get_event_handlers('promote', Preposition.AFTER)[0]
+    after_spy = mocker.spy(after_handler, 'handler')
+    servo.dispatch_event('promote', prepositions=Preposition.ON | Preposition.BEFORE)
+    before_spy.assert_called_once()
+    on_spy.assert_called_once()
+    after_spy.assert_not_called()
+
+def test_startup_event(mocker, servo: servo) -> None:
+    connector = servo.routes['first_test_servo']
+    # NOTE: This is tracked as state because we can't inject a spy
+    assert connector.started_up
+
+def test_shutdown_event(mocker, servo: servo) -> None:
+    connector = servo.routes['first_test_servo']
+    on_handler = connector.get_event_handlers('shutdown', Preposition.ON)[0]
+    on_spy = mocker.spy(on_handler, 'handler')
+    servo.__del__()
+    on_spy.assert_called_once()
 
 class TestServoAssembly:
     def test_warning_ambiguous_connectors(self) -> None:

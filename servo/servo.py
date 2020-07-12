@@ -33,7 +33,8 @@ class Events(str, Enum):
     """
     Defines the standard Servo events.
     """
-
+    STARTUP = "startup"
+    SHUTDOWN = "shutdown"
     CHECK = "check"
     DESCRIBE = "describe"
     MEASURE = "measure"
@@ -145,6 +146,12 @@ class Servo(Connector):
 
         # NOTE: The Servo itself is registered at the blank key-path to facilitate eventing.
         self.routes[''] = self
+
+        # Dispatch the startup event
+        self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
+    
+    def __del__(self): 
+        self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON)
     
     @property
     def connectors(self) -> List[Connector]:
@@ -175,6 +182,7 @@ class Servo(Connector):
         all: bool = False,
         include: Optional[List[Connector]] = None,
         exclude: Optional[List[Connector]] = None,
+        prepositions: Preposition = (Preposition.BEFORE | Preposition.ON | Preposition.AFTER),
         **kwargs,
     ) -> Union[EventResult, List[EventResult]]:
         """
@@ -197,27 +205,30 @@ class Servo(Connector):
             connectors = list(filter(lambda c: c.__key_path__ not in excluded_keypaths, connectors))
 
         # Invoke the before event handlers
-        try:
-            for connector in connectors:
-                connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
-        except CancelEventError as error:
-            # Cancelled by a before event handler. Unpack the result and return it
-            return [error.result]
+        if prepositions & Preposition.BEFORE:
+            try:
+                for connector in connectors:
+                    connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+            except CancelEventError as error:
+                # Cancelled by a before event handler. Unpack the result and return it
+                return [error.result]
 
 
         # Invoke the on event handlers and gather results
-        for connector in connectors:
-            connector_results = connector.process_event(event, Preposition.ON, *args, **kwargs)
-            if connector_results is not None:
-                results.extend(connector_results)
-                if first:
-                    break
+        if prepositions & Preposition.ON:
+            for connector in connectors:
+                connector_results = connector.process_event(event, Preposition.ON, *args, **kwargs)
+                if connector_results is not None:
+                    results.extend(connector_results)
+                    if first:
+                        break
         
         # Invoke the after event handlers
-        after_args = list(args)
-        after_args.insert(0, results)
-        for connector in connectors:
-            connector.process_event(event, Preposition.AFTER, *args, **kwargs)
+        if prepositions & Preposition.AFTER:
+            after_args = list(args)
+            after_args.insert(0, results)
+            for connector in connectors:
+                connector.process_event(event, Preposition.AFTER, *args, **kwargs)
 
         if first:
             return results[0] if results else None

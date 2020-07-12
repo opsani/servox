@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from datetime import datetime
-from enum import Enum
+from enum import Enum, Flag, auto
 from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Callable, Type
 
 import semver
@@ -55,11 +55,18 @@ class Maturity(Enum):
 Version = semver.VersionInfo
 
 
-class Preposition(str, Enum):
-    BEFORE = "before"
-    AFTER = "after"
-    ON = "on"
+class Preposition(Flag):
+    BEFORE = auto()
+    ON = auto()
+    AFTER = auto()
 
+    def __str__(self):
+        if self == Preposition.BEFORE:
+            return "before"
+        elif self == Preposition.ON:
+            return "on"
+        elif self == Preposition.AFTER:
+            return "after"
 
 class Event(BaseModel):
     name: str
