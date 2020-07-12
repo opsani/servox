@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, Extra, Field, create_model, validator
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
+from servo import connector
 from servo.connector import (
     Connector,
     ConnectorLoader,
@@ -21,10 +22,8 @@ from servo.connector import (
     License,
     Maturity,
     Optimizer,
-    metadata,
-    event,
 )
-from servo.types import Event, EventRequest, CheckResult
+from servo.types import Preposition, Event, EventHandler, CheckResult, CancelEventError, APIRequest
 from servo.utilities import join_to_series
 import inspect
 
@@ -109,7 +108,7 @@ class BaseServoSettings(ConnectorSettings):
         env_prefix = "SERVO_"
 
 
-@metadata(
+@connector.metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
     maturity=Maturity.ROBUST,
@@ -141,12 +140,19 @@ class Servo(Connector):
 
         # NOTE: The Servo itself is an event processor
         self.connectors.append(self)
+    
+    @property
+    def routes(self) -> Dict[str, Connector]:
+        """
+        Returns a dictionary of key-paths to connector instances
+        """
+        return dict(map(lambda c: (c.config_key_path, c), self.connectors))
 
-    @event()
+    @connector.on_event()
     def check(self) -> CheckResult:
-        from servo.types import Event, EventRequest
+        from servo.types import APIEvent, APIRequest
         with self.api_client() as client:
-            event_request = EventRequest(event=Event.HELLO)
+            event_request = APIRequest(event=APIEvent.HELLO)
             response = client.post("servo", data=event_request.json())
             if response.status_code != httpx.codes.OK:
                 return CheckResult(name="Check Opsani API connectivity", success=False, comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani")
@@ -158,7 +164,7 @@ class Servo(Connector):
 
     def dispatch_event(
         self,
-        event: str,
+        event: Union[Event, str],
         *args,
         first: bool = False,
         all: bool = False,
@@ -178,17 +184,38 @@ class Servo(Connector):
             raise RuntimeError("Not yet implemented.")
         results: List[EventResult] = []
         connectors = include if include is not None else self.connectors
+        event = Event(name=event) if isinstance(event, str) else event
 
         if exclude:
             # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
             excluded_keypaths = list(map(lambda c: c.__key_path__, exclude))
             connectors = list(filter(lambda c: c.__key_path__ not in excluded_keypaths, connectors))
+
+        # Invoke the before event handlers
+        try:
+            for connector in connectors:
+                connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+        except CancelEventError as error:
+            # Cancelled by a before event handler. Unpack the result and return it
+            return [error.result]
+
+
+        # Invoke the on event handlers and gather results
         for connector in connectors:
-            result = connector.process_event(event, *args, **kwargs)
-            if result is not None:
+            connector_results = connector.process_event(event, Preposition.ON, *args, **kwargs)
+            if connector_results is not None:
+                results.extend(connector_results)
                 if first:
-                    return result
-                results.append(result)
+                    break
+        
+        # Invoke the after event handlers
+        after_args = list(args)
+        after_args.insert(0, results)
+        for connector in connectors:
+            connector.process_event(event, Preposition.AFTER, *args, **kwargs)
+
+        if first:
+            return results[0] if results else None
 
         return results
 

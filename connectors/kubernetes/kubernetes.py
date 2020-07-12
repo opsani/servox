@@ -14,7 +14,8 @@ import json
 import yaml
 
 import servo
-from servo.connector import Connector, ConnectorSettings, License, Maturity, event
+from servo import connector
+from servo.connector import Connector, ConnectorSettings, License, Maturity
 from servo.types import Component, Setting, Description, CheckResult
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
@@ -874,7 +875,7 @@ class KubernetesSettings(ConnectorSettings):
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
 
-@servo.connector.metadata(
+@connector.metadata(
     description="Kubernetes adjust connector",
     version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
@@ -911,7 +912,7 @@ class KubernetesConnector(Connector):
         self.progress = progress
         self.print_progress(message=message)
 
-    @event()
+    @connector.on_event()
     def describe(self) -> Description:
         try:
             desc = read_desc()
@@ -925,12 +926,12 @@ class KubernetesConnector(Connector):
         components = descriptor_to_components(result['application']['components'])
         return Description(components=components)
     
-    @event()
+    @connector.on_event()
     def components(self) -> Description:
         desc = read_desc()
         return descriptor_to_components(desc['application']['components'])
 
-    @event()
+    @connector.on_event()
     def adjust(self, data) -> dict:
         try:
             desc = read_desc()
@@ -943,7 +944,7 @@ class KubernetesConnector(Connector):
         r = update(namespace, desc, data, self._progress)
         return r
     
-    @event()
+    @connector.on_event()
     def check(self) -> CheckResult:
         try:
             self.describe()

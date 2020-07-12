@@ -599,23 +599,95 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain")) 
         
         @show_cli.command()
-        def events(context: Context) -> None:
+        def events(
+            context: Context,
+            all: bool = typer.Option(
+                None,
+                "--all",
+                "-a",
+                help="Include models from all available connectors",
+            ),
+            by_connector: bool = typer.Option(
+                None,
+                "--by-connector",
+                "-c",
+                help="Display output by connector instead of event",
+            ),
+            before: bool = typer.Option(
+                None,
+                help="Display before event handlers",
+            ),
+            on: bool = typer.Option(
+                None,
+                help="Display on event handlers",
+            ),
+            after: bool = typer.Option(
+                None,
+                help="Display after event handlers",
+            )
+        ) -> None:
             """
-            Display processable events
+            Display event handler info
             """
-            events_to_connectors: Dict[str, Set[str]] = {}
-            for connector in context.servo.connectors:
-                for name, event_descriptor in connector.__events__.items():
-                    connectors = events_to_connectors.get(name, set())
-                    connectors.add(connector.__class__.__name__)
-                    events_to_connectors[name] = connectors
-
-            headers = ["EVENT", "CONNECTORS"]
+            event_handlers: List[EventHandler] = []
+            connectors = (
+                context.assembly.all_connectors() if all else context.servo.connectors
+            )
+            for connector in connectors:
+                event_handlers.extend(connector.__event_handlers__)
+            
+            # If we have switched any on the preposition only include explicitly flagged
+            preposition_switched = list(filter(lambda s: s is not None, (before, on, after)))
+            if preposition_switched:                                
+                if False in preposition_switched:
+                    # Handle explicit exclusions
+                    prepositions = [Preposition.BEFORE, Preposition.ON, Preposition.AFTER]
+                    if before == False: prepositions.remove(Preposition.BEFORE)
+                    if on == False: prepositions.remove(Preposition.ON)
+                    if after == False: prepositions.remove(Preposition.AFTER)
+                else:
+                    # Add explicit inclusions
+                    prepositions = []
+                    if before: prepositions.append(Preposition.BEFORE)
+                    if on: prepositions.append(Preposition.ON)
+                    if after: prepositions.append(Preposition.AFTER)
+            else:
+                prepositions = [Preposition.BEFORE, Preposition.ON, Preposition.AFTER]
+            
+            sorted_event_names = sorted(list(set(map(lambda handler: handler.event.name, event_handlers))))
             table = []
-            for event in sorted(events_to_connectors.keys()):
-                connectors = events_to_connectors[event]
-                row = [event, "\n".join(sorted(connectors))]
-                table.append(row)
+
+            if by_connector:
+                headers = ["CONNECTOR", "EVENTS"]
+                connector_types_by_name = dict(map(lambda handler: (handler.connector_type.__name__, connector, ), event_handlers))
+                sorted_connector_names = sorted(connector_types_by_name.keys())
+                for connector_name in sorted_connector_names:
+                    connector_type = connector_types_by_name[connector_name]
+                    event_labels = []
+                    for event_name in sorted_event_names:
+                        for preposition in prepositions:
+                            handlers = list(filter(lambda h: h.event.name == event_name and h.preposition == preposition and h.connector_type.__name__ == connector_name, event_handlers)) 
+                            if handlers:
+                                if preposition != Preposition.ON:
+                                    event_labels.append(f"{preposition} {event_name}")
+                                else:
+                                    event_labels.append(event_name)
+
+                    row = [connector_name, "\n".join(event_labels)]
+                    table.append(row)
+            else:
+                headers = ["EVENT", "CONNECTORS"]
+                for event_name in sorted_event_names:
+                    for preposition in prepositions:
+                        handlers = list(filter(lambda h: h.event.name == event_name and h.preposition == preposition, event_handlers))
+                        if handlers:
+                            sorted_connector_names = sorted(list(set(map(lambda handler: handler.connector_type.__name__, handlers))))
+                            if preposition != Preposition.ON:
+                                label = f"{preposition} {event_name}"
+                            else:
+                                label = event_name
+                            row = [label, "\n".join(sorted(sorted_connector_names))]
+                            table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
         

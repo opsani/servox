@@ -21,7 +21,8 @@ from pydantic import (
 )
 import durationpy
 import servo
-from servo.connector import Connector, ConnectorSettings, License, Maturity, event
+from servo import connector # TODO: Let's cleanup these imports...
+from servo.connector import Connector, ConnectorSettings, License, Maturity
 from servo.cli import ConnectorCLI, Context, Section
 from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description, CheckResult
 from servo.utilities import DurationProgress
@@ -259,7 +260,7 @@ class VegetaSettings(ConnectorSettings):
 # TODO: Move to settings
 REPORTING_INTERVAL = 2
 
-@servo.connector.metadata(
+@connector.metadata(
     description="Vegeta load testing connector",
     version="0.5.0",
     homepage="https://github.com/opsani/vegeta-connector",
@@ -271,18 +272,18 @@ class VegetaConnector(Connector):
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
-    @event()
+    @connector.on_event()
     def describe(self) -> Description:
         """
         Describe the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
     
-    @event()
+    @connector.on_event()
     def metrics(self) -> List[Metric]:
         return METRICS
     
-    @event()
+    @connector.on_event()
     def check(self) -> CheckResult:
         # Take the current settings and run a 15 second check against it
         self.warmup_until = datetime.now()
@@ -300,7 +301,7 @@ class VegetaConnector(Connector):
 
         return CheckResult(name="Check Vegeta load generation", success=True, comment="All checks passed successfully.")
 
-    @event()
+    @connector.on_event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?

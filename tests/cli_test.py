@@ -103,15 +103,75 @@ def test_show_help(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None)
     assert result.exit_code == 0
     assert "Display one or more resources" in result.stdout
 
-def test_show_components(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+def test_show_components(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path) -> None:
     result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
-def test_show_events(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+def test_show_events(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path) -> None:
     result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert 'check    Servo\n' in result.stdout
+    assert len(result.stdout.split("\n")) == 3
+
+def test_show_events_all(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert len(result.stdout.split("\n")) > 3
+
+def test_show_events_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --on", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.search('check\\s+Servo\n', result.stdout)
+    assert re.search('measure\\s+MeasureConnector\n', result.stdout)
+    assert not re.search('before measure\\s+MeasureConnector', result.stdout)
+    assert not re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert len(result.stdout.split("\n")) > 3
+
+def test_show_events_no_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --no-on", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert not re.search('check\\s+Servo\n', result.stdout)
+    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
+    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+
+def test_show_events_after_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --after --on", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.search('check\\s+Servo\n', result.stdout)
+    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
+    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+
+def test_show_events_no_on_before(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --no-on --before", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
+    assert not re.search('check\\s+Servo\n', result.stdout)
+    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
+    assert re.search('before measure\\s+MeasureConnector', result.stdout)
+    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+
+def test_show_events_no_after(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --no-after", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
+    assert re.search('check\\s+Servo\n', result.stdout)
+    assert re.search('measure\\s+MeasureConnector\n', result.stdout)
+    assert re.search('before measure\\s+MeasureConnector', result.stdout)
+    assert not re.search('after measure\\s+MeasureConnector', result.stdout)
+
+def test_show_events_by_connector(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "show events --by-connector", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("CONNECTOR\\s+EVENTS", result.stdout)    
+    assert re.search('Servo\\s+check\n', result.stdout)
+    assert re.search('MeasureConnector\\s+before measure\n\\s+measure\n\\s+after measure', result.stdout, flags=re.MULTILINE)
 
 def test_show_metrics(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
     result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)

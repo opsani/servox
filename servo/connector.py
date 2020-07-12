@@ -11,8 +11,9 @@ from typing import (
     Optional,
     Set,
     Type,
-    TypeVar,
     get_type_hints,
+    Union,
+    List
 )
 
 import httpx
@@ -31,7 +32,7 @@ from pydantic import (
     validator,
 )
 from pydantic.main import ModelMetaclass
-from servo.types import EventDescriptor, License, Maturity, Version
+from servo.types import Event, Preposition, EventHandlerType, EventHandler, EventResult, License, Maturity, Version, EventError, CancelEventError
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
 USER_AGENT = "github.com/opsani/servox"
@@ -180,19 +181,6 @@ ConnectorSettings.__fields__["description"].field_info.extra["env_names"] = set(
 )
 
 
-EventFunctionType = TypeVar("EventFunctionType", bound=Callable[..., Any])
-
-
-class EventResult(BaseModel):
-    """
-    Encapsulates the result of a dispatched Connector event
-    """
-
-    connector: "Connector"
-    event: str
-    value: Any
-
-
 # NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
 _is_base_connector_class_defined = False
 
@@ -200,7 +188,8 @@ _is_base_connector_class_defined = False
 class ConnectorMetaclass(ModelMetaclass):
     def __new__(mcs, name, bases, namespace, **kwargs):
         # Decorate the class with an event registry, inheriting from our parent connectors
-        events: Dict[str, EventDescriptor] = {}
+        events: Set[Event] = set()
+        event_handlers: List[EventDescriptor] = []
 
         for base in reversed(bases):
             if (
@@ -209,14 +198,15 @@ class ConnectorMetaclass(ModelMetaclass):
                 and base is not Connector
             ):
                 events.update(base.__events__)
+                event_handlers.extend(base.__event_handlers__)
 
         new_namespace = {
             "__events__": events,
+            "__event_handlers__": event_handlers,
             **{n: v for n, v in namespace.items()},
         }
         cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
         return cls
-
 
 class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """
@@ -298,7 +288,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
     @classmethod
     def settings_model(cls) -> Type["Settings"]:
-        """Return the settings model backing the connector. 
+        """
+        Return the settings model backing the connector. 
         
         The effective type of the setting instance is defined by the type hint definitions of the 
         `settings_model` and `settings` level attributes closest in definition to the target class.
@@ -311,26 +302,68 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     # Events
 
     @classmethod
-    def responds_to_event(cls, event: str) -> bool:
+    def responds_to_event(cls, event: Union[Event, str]) -> bool:
         """
-        Returns True if the Connector processes the specified event.
+        Returns True if the Connector processes the specified event (before, on, or after).
         """
-        return bool(cls.__events__.get(event, False))
+        if isinstance(event, str):
+            event = Event(name=event)
+        
+        handlers = list(filter(lambda handler: handler.event == event, cls.__event_handlers__))
+        return len(handlers) > 0
+    
+    @classmethod
+    def get_event_handlers(cls, event: Union[Event, str], preposition: Preposition = Preposition.ON) -> List[EventHandler]:
+        """
+        Retrieves the event handlers for the given event and preposition.
+        """
+        if isinstance(event, str):
+            event = Event(name=event)
 
-    def process_event(self, event: str, *args, **kwargs) -> Optional[EventResult]:
+        return list(filter(lambda handler: handler.event == event and handler.preposition == preposition, cls.__event_handlers__))
+
+    def process_event(self, event: Event, preposition: Preposition, *args, **kwargs) -> Optional[List[EventResult]]:
         """
-        Process an event and return the result.
-        Return None if the connector does not respond to the event.
+        Process an event and return the results.
+        Returns None if the connector does not respond to the event.
         """
-        if not self.responds_to_event(event):
+        event_handlers = self.get_event_handlers(event, preposition)
+        if len(event_handlers) == 0:
             return None
+        
+        results: List[EventResult] = []
+        for event_handler in event_handlers:
+            # NOTE: Explicit kwargs take precendence over those defined during handler declaration
+            handler_kwargs = event_handler.kwargs.copy()
+            handler_kwargs.update(kwargs)
+            try:
+                value = event_handler.handler(self, *args, **kwargs)
+            except CancelEventError as error:
+                if preposition != Preposition.BEFORE:
+                    raise TypeError(f"Cannot cancel an event from an {preposition} handler") from error
+                
+                # Annotate the exception and reraise to halt execution
+                error.result = EventResult(
+                    connector=self, 
+                    event=event, 
+                    preposition=preposition,
+                    handler=event_handler, 
+                    value=error
+                )
+                raise error
+            except EventError as error:
+                value = error
 
-        event_fn = getattr(self, event, None)
-        if not callable(event_fn):
-            raise ValueError("Encountered a non-callable handler for event '{event}'")
-
-        value = event_fn(*args, **kwargs)
-        return EventResult(connector=self, event=event, value=value)
+            result = EventResult(
+                connector=self, 
+                event=event, 
+                preposition=preposition,
+                handler=event_handler, 
+                value=value
+            )
+            results.append(result)
+        
+        return results
 
     # subclass registry of connectors
     __connectors__: Set[Type["Connector"]] = set()
@@ -344,20 +377,17 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         cls.name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
 
-        # Register events for all annotated methods (see `event` decorator)
+        # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
-            if v := getattr(value, "__connector_event__", None):
-                if not isinstance(v, EventDescriptor):
+            if handler := getattr(value, "__event_handler__", None):
+                if not isinstance(handler, EventHandler):
                     raise TypeError(
-                        f"Unexpected event descriptor of type '{v.__class__}'"
+                        f"Unexpected event descriptor of type '{handler.__class__}'"
                     )
 
-                if cls.__events__.get(key, None):
-                    raise ValueError(
-                        f"Duplicate event handler registered for event '{key}'"
-                    )
-
-                cls.__events__[key] = v
+                handler.connector_type = cls
+                cls.__event_handlers__.append(handler)
+                cls.__events__.add(handler.event)
 
     def __init__(
         self,        
@@ -395,8 +425,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
 
 _is_base_connector_class_defined = True
-EventResult.update_forward_refs()
-
+EventResult.update_forward_refs(Connector=Connector)
+EventHandler.update_forward_refs(Connector=Connector)
 
 def _key_path_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
@@ -436,14 +466,66 @@ def metadata(
     return decorator
 
 
-def event(**kwargs):
+def before_event(event: Optional[str] = None, **kwargs) -> Callable[[EventHandlerType], EventHandlerType]:
     """
-    Registers an event on the Connector
+    Registers the decorated function as an event handler to run before the specified event.
+
+    Before event handlers can cancel event propagation by raising `CancelEventError`.
+
+    :param event: The name of the event to run the handler before.
+    """
+    return event_handler(event, Preposition.BEFORE, **kwargs)
+
+
+def on_event(event: Optional[str] = None,  **kwargs) -> Callable[[EventHandlerType], EventHandlerType]:
+    """
+    Registers the decorated function as an event handler to run on the specified event.
+
+    :param event: The name of the event to run the handler on.
+    """
+    return event_handler(event, Preposition.ON, **kwargs)
+
+
+def after_event(event: Optional[str] = None, **kwargs) -> Callable[[EventHandlerType], EventHandlerType]:
+    """
+    Registers the decorated function as an event handler to run after the specified event.
+
+    After event handlers are invoked with the event results as their first argument (type `List[EventResult]`).
+
+    :param event: The name of the event to run the handler after.
+    """
+    return event_handler(event, Preposition.AFTER, **kwargs)
+
+
+def event_handler(
+    event_name: Optional[str] = None, 
+    preposition: Preposition = Preposition.ON, 
+    **kwargs
+) -> Callable[[EventHandlerType], EventHandlerType]:
+    """
+    Registers the decorated function as an event handler.
+
+    Event handlers are the foundational mechanism for connectors to provide functionality
+    to the servo assembly. As events occur during operation, handlers are invoked and the
+    results are aggregated and evalauted by the servo. Event handlers are registered for
+    a specific event preposition, enabling them to execute before, after, or during an event.
+
+    :param event: Specifies the event name. If not given, inferred from the name of the decorated handler function.
+    :param preposition: Specifies the sequencing of a handler in relation to the event.
     """
 
-    def decorator(fn: EventFunctionType) -> EventFunctionType:
+
+    def decorator(fn: EventHandlerType) -> EventHandlerType:
+        name = event_name if event_name else fn.__name__
+        event = Event(name=name)
+
         # Annotate the function for processing later, see Connector.__init_subclass__
-        fn.__connector_event__ = EventDescriptor(name=fn.__name__, kwargs=kwargs)
+        fn.__event_handler__ = EventHandler(
+            event=event,
+            preposition=preposition,
+            handler=fn,
+            kwargs=kwargs
+        )
         return fn
 
     return decorator
