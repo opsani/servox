@@ -77,6 +77,17 @@ def test_all_connectors() -> None:
     c = ServoAssembly.construct().all_connectors()
     assert FirstTestServoConnector in c
 
+def test_servo_routes(servo: Servo) -> None:
+    first_connector = servo.routes['first_test_servo']
+    assert first_connector.name == "FirstTestServo Connector"
+    results = servo.dispatch_event("this_is_an_event", include=[first_connector])
+    assert len(results) == 1
+    assert results[0].value == "this is the result"
+
+def test_servo_routes_includes_servo(servo: Servo) -> None:
+    servo_entry = servo.routes['']
+    assert isinstance(servo_entry, Servo)
+
 def test_dispatch_event(servo: Servo) -> None:
     results = servo.dispatch_event("this_is_an_event")
     assert len(results) == 2

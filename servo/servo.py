@@ -2,6 +2,7 @@ import importlib
 import json
 import os
 import re
+import abc
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Type, Union, Iterable
@@ -27,6 +28,7 @@ from servo.types import Preposition, Event, EventHandler, CheckResult, CancelEve
 from servo.utilities import join_to_series
 import inspect
 
+
 class Events(str, Enum):
     """
     Defines the standard Servo events.
@@ -39,8 +41,7 @@ class Events(str, Enum):
     PROMOTE = "promote"
 
 
-# TODO: Make abstract , abc.ABC
-class BaseServoSettings(ConnectorSettings):
+class BaseServoSettings(ConnectorSettings, abc.ABC):
     """
     Abstract base class for Servo settings
 
@@ -123,30 +124,34 @@ class Servo(Connector):
     """Settings for the Servo.
 
     Note that the Servo settings are dynamically built at Servo assembly time.
-    The concrete 
+    The concrete type is built in `ServoAssembly.assemble()` and adds a field
+    for each active connector.
     """
 
-    connectors: List[Connector] = []
-    """The active connectors within the Servo.
+    routes: Dict[str, Connector]
+    """Routes for active connectors.
+
+    The keys are key-paths that map to the implicit or explicit connector declarations 
+    in the configuration. The values are fully configured Connector instances.
     """
 
     def __init__(
         self, 
         *args, 
-        connectors: List[Connector] = [],
+        routes: Dict[str, Connector] = {},
         **kwargs
     ) -> None:
-        super().__init__(*args, connectors=connectors, **kwargs)
+        super().__init__(*args, routes=routes, **kwargs)
 
-        # NOTE: The Servo itself is an event processor
-        self.connectors.append(self)
+        # NOTE: The Servo itself is registered at the blank key-path to facilitate eventing.
+        self.routes[''] = self
     
     @property
-    def routes(self) -> Dict[str, Connector]:
+    def connectors(self) -> List[Connector]:
         """
-        Returns a dictionary of key-paths to connector instances
+        Returns a list of the active connectors.
         """
-        return dict(map(lambda c: (c.config_key_path, c), self.connectors))
+        return list(self.routes.values())
 
     @connector.on_event()
     def check(self) -> CheckResult:
@@ -283,16 +288,16 @@ class ServoAssembly(BaseModel):
             servo_settings = ServoSettings.construct(**args)
 
         # Initialize all active connectors
-        connectors: List[Connector] = []
+        servo_routes: Dict[str, Connector] = {}
         for key_path, connector_type in routes.items():
             connector_settings = getattr(servo_settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
                 connector = connector_type(settings=connector_settings, optimizer=optimizer)
-                connectors.append(connector)
+                servo_routes[key_path] = connector
 
         # Build the servo object
-        servo = Servo(settings=servo_settings, connectors=connectors, optimizer=optimizer)
+        servo = Servo(settings=servo_settings, routes=servo_routes, optimizer=optimizer)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
