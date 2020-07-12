@@ -6,9 +6,11 @@ from typer.testing import CliRunner
 from servo.cli import ServoCLI
 import yaml
 import json
+import random
+import string
 
 # Force the test connectors to load early
-from tests.test_helpers import MeasureConnector, AdjustConnector, LoadgenConnector, StubConnectorSettings
+from tests.test_helpers import MeasureConnector, AdjustConnector, StubConnectorSettings
 
 # Add the devtools debug() function globally in tests
 try:
@@ -66,8 +68,12 @@ def run_from_tmp_path(tmp_path: Path) -> None:
 
 # Ensure that we don't have configuration bleeding into tests
 @pytest.fixture(autouse=True)
-def run_in_clean_environemtn() -> None:
+def run_in_clean_environment() -> None:
     for key, value in os.environ.items():
         if key.startswith("SERVO_") or key.startswith("OPSANI_"):
             os.environ.pop(key)
-        
+
+@pytest.fixture()
+def random_string() -> str:
+    letters = string.ascii_letters
+    return ''.join(random.choice(letters) for i in range(32))

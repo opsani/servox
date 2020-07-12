@@ -9,7 +9,6 @@ from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from pydantic import BaseModel, validator
 
-
 class License(Enum):
     """Defined licenses"""
 
@@ -53,63 +52,6 @@ class Maturity(Enum):
 
 
 Version = semver.VersionInfo
-
-
-class Preposition(Flag):
-    BEFORE = auto()
-    ON = auto()
-    AFTER = auto()
-
-    def __str__(self):
-        if self == Preposition.BEFORE:
-            return "before"
-        elif self == Preposition.ON:
-            return "on"
-        elif self == Preposition.AFTER:
-            return "after"
-
-class Event(BaseModel):
-    name: str
-
-    def __hash__(self):
-        return hash((self.name, ))
-
-EventHandlerType = TypeVar("EventHandlerType", bound=Callable[..., Any])
-
-
-class EventHandler(BaseModel):
-    event: Event
-    preposition: Preposition
-    kwargs: Dict[str, Any]
-    connector_type: Optional[Type["Connector"]]
-    handler: EventHandlerType
-
-    def __str__(self):
-        return f"{self.preposition} {self.event}"
-
-
-class EventResult(BaseModel):
-    """
-    Encapsulates the result of a dispatched Connector event
-    """
-    event: Event
-    preposition: Preposition
-    handler: EventHandler
-    connector: "Connector"
-    created_at: datetime = None
-    value: Any
-
-    @validator('created_at', pre=True, always=True)
-    def set_created_at_now(cls, v):
-        return v or datetime.now()
-
-
-class EventError(RuntimeError):
-    pass
-
-
-class CancelEventError(EventError):
-    result: EventResult
 
 
 Numeric = Union[float, int]
@@ -271,5 +213,5 @@ class APIRequest(BaseModel):
 
     class Config:
         json_encoders = {
-            Event: lambda v: str(v),
+            APIEvent: lambda v: str(v),
         }

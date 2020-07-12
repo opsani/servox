@@ -2,8 +2,9 @@ import os
 from contextlib import contextmanager
 from typing import Dict
 
-from servo import connector
+from servo.servo import connector, Events
 from servo.connector import Connector, ConnectorSettings
+from servo.types import Measurement
 from typing import Optional
 
 
@@ -18,16 +19,16 @@ class StubConnectorSettings(ConnectorSettings):
 class MeasureConnector(Connector):
     settings: StubConnectorSettings
 
-    @connector.before_event('measure')
-    def before_measure(self, *args, **kwargs):
+    @connector.before_event(Events.MEASURE)
+    def before_measure(self, *args, **kwargs) -> None:
         pass
 
     @connector.on_event()
-    def measure(self, *args, **kwargs):
+    def measure(self, *args, **kwargs) -> Measurement:
         pass
 
-    @connector.after_event('measure')
-    def after_measure(self, *args, **kwargs):
+    @connector.after_event(Events.MEASURE)
+    def after_measure(self, *args, **kwargs) -> None:
         pass
 
 
@@ -35,16 +36,9 @@ class AdjustConnector(Connector):
     settings: StubConnectorSettings
 
     @connector.on_event()
-    def adjust(self, *args, **kwargs):
+    def adjust(self, *args, **kwargs) -> dict:
         pass
 
-
-class LoadgenConnector(Connector):
-    settings: StubConnectorSettings
-
-    @connector.on_event()
-    def loadgen(self, *args, **kwargs):
-        pass
 
 @contextmanager
 def environment_overrides(env: Dict[str, str]) -> None:

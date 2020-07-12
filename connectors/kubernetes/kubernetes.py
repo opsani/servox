@@ -31,6 +31,10 @@ class AdjustError(Exception):
         self.reason = reason
         super().__init__(*args)
 
+# TODO: Temporary
+class ConfigError(Exception):
+    pass
+
 # === constants
 DESC_FILE = "./servo.yaml"
 EXCLUDE_LABEL = 'optune.ai/exclude'
@@ -932,7 +936,7 @@ class KubernetesConnector(Connector):
         return descriptor_to_components(desc['application']['components'])
 
     @connector.on_event()
-    def adjust(self, data) -> dict:
+    def adjust(self, data: dict) -> dict:
         try:
             desc = read_desc()
             #debug(desc)

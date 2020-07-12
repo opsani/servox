@@ -21,10 +21,11 @@ from servo.connector import (
     before_event,
     on_event,
     after_event,
+    event,
 )
 from servo.servo import BaseServoSettings, ServoAssembly
 from servo.cli import ConnectorCLI, ServoCLI
-from servo.types import Event, Preposition
+from servo.events import Event, Preposition
 from tests.test_helpers import environment_overrides
 
 
@@ -955,7 +956,7 @@ def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
 
 class TestConnectorEvents:
     class FakeConnector(Connector):
-        @on_event()
+        @event(handler=True)
         def example_event(self) -> None:
             return 12345
         
@@ -963,19 +964,19 @@ class TestConnectorEvents:
             extra = Extra.allow
 
     class AnotherFakeConnector(FakeConnector):
-        @on_event()
+        @event(handler=True)
         def another_example_event(self) -> str:
             return "example_event"
 
     def test_event_registration(self) -> None:
         events = TestConnectorEvents.FakeConnector.__events__
         assert events is not None
-        assert Event(name='example_event') in events
+        assert events['example_event']
 
     def test_event_inheritance(self) -> None:
         events = TestConnectorEvents.AnotherFakeConnector.__events__
         assert events is not None
-        assert Event(name='example_event') in events
+        assert events['example_event']
 
     def test_responds_to_event(self) -> None:
         assert TestConnectorEvents.FakeConnector.responds_to_event("example_event")
@@ -994,7 +995,8 @@ class TestConnectorEvents:
     def test_event_invoke(self) -> None:
         settings = ConnectorSettings.construct()
         connector = TestConnectorEvents.FakeConnector(settings=settings)
-        results = connector.process_event(Event(name="example_event"), Preposition.ON)
+        event = connector.__events__['example_event']
+        results = connector.process_event(event, Preposition.ON)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"

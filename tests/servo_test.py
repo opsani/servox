@@ -3,12 +3,15 @@ import os
 import sys
 import yaml
 import json
+from inspect import Signature
+from typing import List
 import pytest
 from pydantic import Extra, ValidationError
 from servo import __version__, connector
 from servo.servo import BaseServoSettings, ServoAssembly, Servo, Events
-from servo.connector import Connector, Optimizer, ConnectorSettings, on_event, before_event, after_event
-from servo.types import Event, EventHandler, EventResult, Preposition, EventError, CancelEventError
+from servo.connector import Connector, Optimizer, ConnectorSettings, event, on_event, before_event, after_event
+from servo.types import Control, Measurement, Control, Measurement
+from servo.events import Event, EventHandler, EventResult, Preposition, EventError, CancelEventError
 from tests.test_helpers import environment_overrides
 from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaSettings
 
@@ -18,36 +21,36 @@ def test_version():
 class FirstTestServoConnector(Connector):
     started_up: bool = False
 
-    @on_event()
+    @event(handler=True)
     def this_is_an_event(self) -> str:
         return "this is the result"
     
     @after_event(Events.ADJUST)
-    def adjust_handler(self) -> str:
+    def adjust_handler(self, results: List[EventResult]) -> None:
         return "adjusting!"
     
     @before_event(Events.MEASURE)
-    def do_something_before_measuring(self) -> str:
+    def do_something_before_measuring(self) -> None:
         return "measuring!"
     
     @before_event(Events.PROMOTE)
-    def run_before_promotion(self) -> str:
+    def run_before_promotion(self) -> None:
         return "about to promote!"
 
     @on_event(Events.PROMOTE)
-    def run_on_promotion(self) -> str:
-        return "promoting!"
+    def run_on_promotion(self) -> None:
+        pass
     
     @after_event(Events.PROMOTE)
-    def run_after_promotion(self) -> str:
+    def run_after_promotion(self, results: List[EventResult]) -> None:
         return "promoted!!"
     
     @on_event(Events.STARTUP)
-    def handle_startup(self) -> str:
+    def handle_startup(self) -> None:
         self.started_up = True
     
     @on_event(Events.SHUTDOWN)
-    def handle_shutdown(self) -> str:
+    def handle_shutdown(self) -> None:
         pass
     
     class Config:
@@ -59,7 +62,7 @@ class SecondTestServoConnector(Connector):
     def this_is_an_event(self) -> str:
         return "this is a different result"
 
-    @on_event()
+    @event(handler=True)
     def another_event(self) -> None:
         pass
 
@@ -121,7 +124,7 @@ def test_dispatch_event_exclude(servo: Servo) -> None:
     assert first_connector.name == "FirstTestServo Connector"
     second_connector = servo.connectors[1]
     assert second_connector.name == "SecondTestServo Connector"
-    event_names = set(map(lambda e: e.name, second_connector.__events__))
+    event_names = set(second_connector.__events__.keys())
     assert "this_is_an_event" in event_names
     results = servo.dispatch_event("this_is_an_event", exclude=[first_connector])
     assert len(results) == 1
@@ -255,14 +258,146 @@ def test_shutdown_event(mocker, servo: servo) -> None:
     on_handler = connector.get_event_handlers('shutdown', Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, 'handler')
     servo.__del__()
-    on_spy.assert_called_once()
+    on_spy.assert_called()
 
-class TestServoAssembly:
-    def test_warning_ambiguous_connectors(self) -> None:
-        # TODO: This can be very hard to debug
-        # This is where you have 2 connector classes with the same name
+def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
+    with pytest.raises(KeyError) as error:
+        servo.dispatch_event('this_is_not_an_event', prepositions=Preposition.ON)
+    assert str(error.value) == "'this_is_not_an_event'"
+
+##
+# Test event handlers
+
+def test_creating_event_programmatically(random_string: str) -> None:    
+    signature = Signature.from_callable(test_shutdown_event)
+    Connector.create_event(random_string, signature)
+    event = Connector.__events__[random_string]
+    assert event.name == random_string
+    assert event.signature == signature
+
+def test_creating_event_programmatically_from_callable(random_string: str) -> None:
+    Connector.create_event(random_string, test_shutdown_event)
+    event = Connector.__events__[random_string]
+    assert event.name == random_string
+    assert event.signature == Signature.from_callable(test_shutdown_event)
+
+def test_redeclaring_an_existing_event_fails() -> None:
+    with pytest.raises(ValueError) as error:
+        class InvalidConnector:
+            @connector.event('adjust')
+            def invalid_adjust(self) -> None:
+                pass
+    assert error
+    assert str(error.value) == "Event 'adjust' has already been created"
+
+def test_registering_event_with_wrong_handler_fails() -> None:
+    with pytest.raises(TypeError) as error:
+        class InvalidConnector:
+            @connector.on_event('adjust')
+            def invalid_adjust(self) -> None:
+                pass
+    assert error
+    assert str(error.value) == "Invalid return type annotation for 'adjust' event handler: expected <class 'dict'>, but found None"
+
+def test_registering_event_handler_fails_with_no_self() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.on_event('adjust')
+        def invalid_adjust() -> None:
+            pass
+    assert error
+    assert str(error.value) == 'Invalid signature for \'adjust\' event handler: () -> None, "self" must be the first argument'
+
+def test_event_decorator_disallows_var_positional_args() -> None:
+    with pytest.raises(TypeError) as error:
+        class InvalidConnector:
+            @connector.event('failio')
+            def invalid_event(self, *args) -> None:
+                pass
+    assert error
+    assert str(error.value) == "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
+
+def test_registering_event_handler_with_missing_positional_param_fails() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.on_event('adjust')
+        def invalid_adjust(self) -> dict:
+            pass
+    assert error
+    assert str(error.value) == "Missing required parameter: 'data'"
+
+def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.on_event('measure')
+        def invalid_measure(self, *, control: Control = Control()) -> Measurement:
+            pass
+    assert error
+    assert str(error.value) == "Missing required parameter: 'metrics'"
+
+def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
+    @connector.on_event('measure')
+    def invalid_measure(self, *, control: Control = Control(), **kwargs) -> Measurement:
         pass
 
+def test_registering_event_handler_with_too_many_positional_params_fails() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.on_event('startup')
+        def invalid_measure(self, invalid, /) -> None:
+            pass
+    assert error
+    assert str(error.value) == "Invalid type annotation for 'startup' event handler: encountered extra positional parameters (invalid and self)"
+
+def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.on_event('startup')
+        def invalid_measure(self, invalid: str, another: int) -> None:
+            pass
+    assert error
+    assert str(error.value) == "Invalid type annotation for 'startup' event handler: encountered extra parameters (another and invalid)"
+
+def test_registering_before_handlers() -> None:
+    @connector.before_event('measure')
+    def before_measure(self) -> None:
+        pass
+    assert before_measure.__event_handler__.event.name == 'measure'
+    assert before_measure.__event_handler__.preposition == Preposition.BEFORE
+
+def test_registering_before_handler_fails_with_extra_args() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.before_event('measure')
+        def invalid_measure(self, invalid: str, another: int) -> None:
+            pass
+    assert error
+    assert str(error.value) == "Invalid type annotation for 'before measure' event handler: encountered extra parameters (another and invalid)"
+
+def test_validation_of_before_handlers_ignores_kwargs() -> None:
+    @connector.before_event('measure')
+    def before_measure(self, **kwargs) -> None:
+        pass
+    assert before_measure.__event_handler__.event.name == 'measure'
+    assert before_measure.__event_handler__.preposition == Preposition.BEFORE
+
+def test_validation_of_after_handlers() -> None:
+    @connector.after_event('measure')
+    def after_event(self, results: List[EventResult]) -> None:
+        pass
+    assert after_event.__event_handler__.event.name == 'measure'
+    assert after_event.__event_handler__.preposition == Preposition.AFTER
+
+def test_registering_after_handler_fails_with_extra_args() -> None:
+    with pytest.raises(TypeError) as error:
+        @connector.after_event('measure')
+        def invalid_measure(self, results: List[EventResult], invalid: str, another: int) -> None:
+            pass
+    assert error
+    assert str(error.value) == "Invalid type annotation for 'after measure' event handler: encountered extra parameters (another and invalid)"
+
+def test_validation_of_after_handlers_ignores_kwargs() -> None:
+    @connector.after_event('measure')
+    def after_measure(self, results: List[EventResult], **kwargs) -> None:
+        pass
+    assert after_measure.__event_handler__.event.name == 'measure'
+    assert after_measure.__event_handler__.preposition == Preposition.AFTER
+
+class TestServoAssembly:
     def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
         config = {
             "connectors": {"vegeta": "vegeta"},

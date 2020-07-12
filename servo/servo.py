@@ -24,23 +24,77 @@ from servo.connector import (
     Maturity,
     Optimizer,
 )
-from servo.types import Preposition, Event, EventHandler, CheckResult, CancelEventError, APIRequest
+from servo.types import APIRequest, Metric, Component, Description, Control, Measurement
+from servo.events import Preposition, Event, EventHandler, CheckResult, CancelEventError
 from servo.utilities import join_to_series
 import inspect
 
-
 class Events(str, Enum):
     """
-    Defines the standard Servo events.
+    Events is an enumeration of the names of events defined by the servo.
     """
+
+    # Lifecycle events
     STARTUP = "startup"
     SHUTDOWN = "shutdown"
+
+    # Informational events
+    METRICS = "metrics"
+    COMPONENTS = "components"
+
+    # Operational events
     CHECK = "check"
     DESCRIBE = "describe"
     MEASURE = "measure"
     ADJUST = "adjust"
     PROMOTE = "promote"
 
+
+class _EventDefinitions:
+    """
+    Defines the default events. This class is declarative and is never directly referenced.
+
+    The event signature is inferred from the decorated function.
+    """
+
+    # Lifecycle events
+    @connector.event(Events.STARTUP)
+    def startup(self) -> None:
+        pass
+
+    @connector.event(Events.SHUTDOWN)
+    def shutdown(self) -> None:
+        pass
+
+    # Informational events
+    @connector.event(Events.METRICS)
+    def metrics(self) -> List[Metric]:
+        pass
+
+    @connector.event(Events.COMPONENTS)
+    def components(self) -> Description:
+        pass
+
+    # Operational events
+    @connector.event(Events.MEASURE)
+    def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
+        pass
+
+    @connector.event(Events.CHECK)
+    def check(self) -> CheckResult:
+        pass
+    
+    @connector.event(Events.DESCRIBE)
+    def describe(self) -> Description:
+        pass    
+
+    @connector.event(Events.ADJUST)
+    def adjust(self, data: dict) -> dict:
+        pass
+
+    @connector.event(Events.PROMOTE)
+    def promote(self) -> None:
+        pass
 
 class BaseServoSettings(ConnectorSettings, abc.ABC):
     """
@@ -160,17 +214,6 @@ class Servo(Connector):
         """
         return list(self.routes.values())
 
-    @connector.on_event()
-    def check(self) -> CheckResult:
-        from servo.types import APIEvent, APIRequest
-        with self.api_client() as client:
-            event_request = APIRequest(event=APIEvent.HELLO)
-            response = client.post("servo", data=event_request.json())
-            if response.status_code != httpx.codes.OK:
-                return CheckResult(name="Check Opsani API connectivity", success=False, comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani")
-
-        return CheckResult(name="Check Servo", success=True, comment="All checks passed successfully.")
-
     ##
     # Event processing
 
@@ -179,7 +222,6 @@ class Servo(Connector):
         event: Union[Event, str],
         *args,
         first: bool = False,
-        all: bool = False,
         include: Optional[List[Connector]] = None,
         exclude: Optional[List[Connector]] = None,
         prepositions: Preposition = (Preposition.BEFORE | Preposition.ON | Preposition.AFTER),
@@ -189,15 +231,12 @@ class Servo(Connector):
         Dispatches an event to active connectors for processing and returns the results.
 
         :param first: When True, halt dispatch and return the result from the first connector that responds.
-        :param all: When True, the event is dispatched to all connectors available rather than the active ones.
         :param include: A list of specific connectors to dispatch the event to.
         :param exclude: A list of specific connectors to exclude from event dispatch.
         """
-        if all:
-            raise RuntimeError("Not yet implemented.")
         results: List[EventResult] = []
         connectors = include if include is not None else self.connectors
-        event = Event(name=event) if isinstance(event, str) else event
+        event = self.__events__[event] if isinstance(event, str) else event
 
         if exclude:
             # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
@@ -213,7 +252,6 @@ class Servo(Connector):
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
 
-
         # Invoke the on event handlers and gather results
         if prepositions & Preposition.ON:
             for connector in connectors:
@@ -228,12 +266,26 @@ class Servo(Connector):
             after_args = list(args)
             after_args.insert(0, results)
             for connector in connectors:
-                connector.process_event(event, Preposition.AFTER, *args, **kwargs)
+                connector.process_event(event, Preposition.AFTER, results, *args, **kwargs)
 
         if first:
             return results[0] if results else None
 
         return results
+    
+    ##
+    # Event handlers
+
+    @connector.on_event()
+    def check(self) -> CheckResult:
+        from servo.types import APIEvent, APIRequest
+        with self.api_client() as client:
+            event_request = APIRequest(event=APIEvent.HELLO)
+            response = client.post("servo", data=event_request.json())
+            if response.status_code != httpx.codes.OK:
+                return CheckResult(name="Check Opsani API connectivity", success=False, comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani")
+
+        return CheckResult(name="Check Servo", success=True, comment="All checks passed successfully.")
 
 
 class ServoAssembly(BaseModel):
