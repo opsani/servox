@@ -33,6 +33,7 @@ wemake-python-styleguide = "^0.14.0"
 devtools = "^0.5.1"
 ipython = "^7.15.0"
 black = "^19.10b0"
+pytest-mock = "^3.2.0"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
