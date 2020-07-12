@@ -1,12 +1,13 @@
+from __future__ import annotations
 import time
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Callable, Type
 
 import semver
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 
 
 class License(Enum):
@@ -54,9 +55,54 @@ class Maturity(Enum):
 Version = semver.VersionInfo
 
 
-class EventDescriptor(BaseModel):
+class Preposition(str, Enum):
+    BEFORE = "before"
+    AFTER = "after"
+    ON = "on"
+
+
+class Event(BaseModel):
     name: str
+
+    def __hash__(self):
+        return hash((self.name, ))
+
+EventHandlerType = TypeVar("EventHandlerType", bound=Callable[..., Any])
+
+
+class EventHandler(BaseModel):
+    event: Event
+    preposition: Preposition
     kwargs: Dict[str, Any]
+    connector_type: Optional[Type["Connector"]]
+    handler: EventHandlerType
+
+    def __str__(self):
+        return f"{self.preposition} {self.event}"
+
+
+class EventResult(BaseModel):
+    """
+    Encapsulates the result of a dispatched Connector event
+    """
+    event: Event
+    preposition: Preposition
+    handler: EventHandler
+    connector: "Connector"
+    created_at: datetime = None
+    value: Any
+
+    @validator('created_at', pre=True, always=True)
+    def set_created_at_now(cls, v):
+        return v or datetime.now()
+
+
+class EventError(RuntimeError):
+    pass
+
+
+class CancelEventError(EventError):
+    result: EventResult
 
 
 Numeric = Union[float, int]
@@ -196,14 +242,14 @@ class AbstractOutputFormat(str, Enum):
             raise RuntimeError("no lexer configured for output format {self.value}")
 
 
-class Command(str, Enum):
+class APICommand(str, Enum):
     DESCRIBE = "DESCRIBE"
     MEASURE = "MEASURE"
     ADJUST = "ADJUST"
     SLEEP = "SLEEP"
 
 
-class Event(str, Enum):
+class APIEvent(str, Enum):
     HELLO = "HELLO"
     GOODBYE = "GOODBYE"
     DESCRIPTION = "DESCRIPTION"
@@ -212,8 +258,8 @@ class Event(str, Enum):
     MEASUREMENT = "MEASUREMENT"
 
     
-class EventRequest(BaseModel):
-    event: Event
+class APIRequest(BaseModel):
+    event: APIEvent
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
     class Config:

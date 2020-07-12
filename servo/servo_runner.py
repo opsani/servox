@@ -12,7 +12,7 @@ from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoSettings, Events, Servo
-from servo.types import Control, Description, Measurement, Event, Command, EventRequest
+from servo.types import Control, Description, Measurement, Event, APICommand, APIRequest
 from servo.utilities import SignalHandler
 
 
@@ -34,14 +34,14 @@ class MeasureParams(BaseModel):
 
 
 class CommandResponse(BaseModel):
-    command: Command = Field(alias="cmd",)
+    command: APICommand = Field(alias="cmd",)
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
     ]  # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
-            Command: lambda v: str(v),
+            APICommand: lambda v: str(v),
         }
 
 
@@ -156,7 +156,7 @@ class ServoRunner:
         Send request to cloud service. Retry if it fails to connect.
         """
 
-        event_request = EventRequest(event=event, param=param)
+        event_request = APIRequest(event=event, param=param)
         with self.servo.api_client() as client:
             try:
                 response = client.post("servo", data=event_request.json())
@@ -299,13 +299,13 @@ class ServoRunner:
             )
 
 
-def _event_for_command(command: Command) -> Optional[Event]:
-    if cmd_response.command == Command.DESCRIBE:
-        return Event.DESCRIPTION
-    elif cmd_response.command == Command.MEASURE:
-        return Event.MEASUREMENT
-    elif cmd_response.command == Command.ADJUST:
-        return Event.ADJUSTMENT
+def _event_for_command(command: APICommand) -> Optional[Event]:
+    if cmd_response.command == APICommand.DESCRIBE:
+        return APIEvent.DESCRIPTION
+    elif cmd_response.command == APICommand.MEASURE:
+        return APIEvent.MEASUREMENT
+    elif cmd_response.command == APICommand.ADJUST:
+        return APIEvent.ADJUSTMENT
     else:
         return None
 
