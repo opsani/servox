@@ -14,7 +14,7 @@ from servo.connector import ConnectorLoader
 
 
 def run_cli():
-    load_dotenv(find_dotenv())
+    load_dotenv(find_dotenv(usecwd=True))
 
     # NOTE: We load connectors here because waiting until assembly
     # is too late for registering CLI commands
