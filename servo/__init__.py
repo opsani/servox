@@ -7,6 +7,7 @@ import servo.events
 import servo.types
 import servo.cli
 import servo.utilities
+import servo.logging
 
 # Import the core classes
 # These are what most developers will need
