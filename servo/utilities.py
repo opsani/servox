@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Callable, Iterable, Optional, Union
 
 import durationpy
-
 from pydantic import BaseModel, validator
 
 

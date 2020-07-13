@@ -3,12 +3,21 @@ import importlib.metadata
 __version__ = importlib.metadata.version(__name__)
 
 import servo.connector
+import servo.events
 import servo.types
 import servo.cli
 import servo.utilities
 
-# Import the core connector classes
-# This is what most developers will need
+# Import the core classes
+# These are what most developers will need
+from .events import (
+    Event,
+    EventHandler,
+    EventResult, 
+    Preposition,
+    EventError,
+    CancelEventError,
+)
 from .connector import (
     Optimizer,
     BaseConfiguration,

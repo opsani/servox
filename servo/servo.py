@@ -1,34 +1,34 @@
+import abc
 import importlib
+import inspect
 import json
 import os
 import re
-import abc
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Type, Union, Iterable
+from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union
 
-import typer
 import httpx
 import yaml
-
 from pydantic import BaseModel, Extra, Field, create_model, validator
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
+
+import servo
 from servo import connector
 from servo.connector import (
+    BaseConfiguration,
     Connector,
     ConnectorLoader,
-    BaseConfiguration,
     EventResult,
     License,
     Maturity,
     Optimizer,
 )
-import servo
-from servo.types import Metric, Component, Description, Control, Measurement
-from servo.events import Preposition, Event, EventHandler, CheckResult, CancelEventError
+from servo.events import CancelEventError, Event, Preposition
+from servo.types import Control, Description, Measurement, Metric, CheckResult
 from servo.utilities import join_to_series
-import inspect
+
 
 class Events(str, Enum):
     """
@@ -78,16 +78,18 @@ class _EventDefinitions:
 
     # Operational events
     @connector.event(Events.MEASURE)
-    def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
+    def measure(
+        self, *, metrics: List[str] = None, control: Control = Control()
+    ) -> Measurement:
         pass
 
     @connector.event(Events.CHECK)
     def check(self) -> CheckResult:
         pass
-    
+
     @connector.event(Events.DESCRIBE)
     def describe(self) -> Description:
-        pass    
+        pass
 
     @connector.event(Events.ADJUST)
     def adjust(self, data: dict) -> dict:
@@ -96,6 +98,7 @@ class _EventDefinitions:
     @connector.event(Events.PROMOTE)
     def promote(self) -> None:
         pass
+
 
 class BaseServoConfiguration(BaseConfiguration, abc.ABC):
     """
@@ -126,18 +129,26 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
     """
 
     @classmethod
-    def generate(cls: Type["BaseServoConfiguration"], **kwargs) -> "BaseServoConfiguration":
+    def generate(
+        cls: Type["BaseServoConfiguration"], **kwargs
+    ) -> "BaseServoConfiguration":
         """
         Generate configuration for the servo settings
         """
         for name, field in cls.__fields__.items():
-            if name not in kwargs and inspect.isclass(field.type_) and issubclass(field.type_, BaseConfiguration):
+            if (
+                name not in kwargs
+                and inspect.isclass(field.type_)
+                and issubclass(field.type_, BaseConfiguration)
+            ):
                 kwargs[name] = field.type_.generate()
         return cls(**kwargs)
 
     @validator("connectors", pre=True)
     @classmethod
-    def validate_connectors(cls, connectors) -> Optional[Union[Dict[str, str], List[str]]]:
+    def validate_connectors(
+        cls, connectors
+    ) -> Optional[Union[Dict[str, str], List[str]]]:
         if isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
             try:
@@ -150,14 +161,13 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
                 raise ValueError(
                     f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
                 )
-            
+
             connectors = decoded_value
 
         connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if invalid
         _routes_for_connectors_descriptor(connectors)
         return connectors
-
 
     class Config:
         extra = Extra.forbid
@@ -192,23 +202,18 @@ class Servo(Connector):
     in the configuration. The values are fully configured Connector instances.
     """
 
-    def __init__(
-        self, 
-        *args, 
-        routes: Dict[str, Connector] = {},
-        **kwargs
-    ) -> None:
+    def __init__(self, *args, routes: Dict[str, Connector] = {}, **kwargs) -> None:
         super().__init__(*args, routes=routes, **kwargs)
 
         # NOTE: The Servo itself is registered at the blank key-path to facilitate eventing.
-        self.routes[''] = self
+        self.routes[""] = self
 
         # Dispatch the startup event
         self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
-    
-    def __del__(self): 
+
+    def __del__(self):
         self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON)
-    
+
     @property
     def connectors(self) -> List[Connector]:
         """
@@ -226,7 +231,9 @@ class Servo(Connector):
         first: bool = False,
         include: Optional[List[Connector]] = None,
         exclude: Optional[List[Connector]] = None,
-        prepositions: Preposition = (Preposition.BEFORE | Preposition.ON | Preposition.AFTER),
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
         **kwargs,
     ) -> Union[EventResult, List[EventResult]]:
         """
@@ -243,7 +250,9 @@ class Servo(Connector):
         if exclude:
             # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
             excluded_keypaths = list(map(lambda c: c.__key_path__, exclude))
-            connectors = list(filter(lambda c: c.__key_path__ not in excluded_keypaths, connectors))
+            connectors = list(
+                filter(lambda c: c.__key_path__ not in excluded_keypaths, connectors)
+            )
 
         # Invoke the before event handlers
         if prepositions & Preposition.BEFORE:
@@ -257,37 +266,48 @@ class Servo(Connector):
         # Invoke the on event handlers and gather results
         if prepositions & Preposition.ON:
             for connector in connectors:
-                connector_results = connector.process_event(event, Preposition.ON, *args, **kwargs)
+                connector_results = connector.process_event(
+                    event, Preposition.ON, *args, **kwargs
+                )
                 if connector_results is not None:
                     results.extend(connector_results)
                     if first:
                         break
-        
+
         # Invoke the after event handlers
         if prepositions & Preposition.AFTER:
             after_args = list(args)
             after_args.insert(0, results)
             for connector in connectors:
-                connector.process_event(event, Preposition.AFTER, results, *args, **kwargs)
+                connector.process_event(
+                    event, Preposition.AFTER, results, *args, **kwargs
+                )
 
         if first:
             return results[0] if results else None
 
         return results
-    
+
     ##
     # Event handlers
 
     @connector.on_event()
     def check(self) -> CheckResult:
         from servo.servo_runner import APIRequest, APIEvent
+
         with self.api_client() as client:
             event_request = APIRequest(event=APIEvent.HELLO)
             response = client.post("servo", data=event_request.json())
             if response.status_code != httpx.codes.OK:
-                return CheckResult(name="Check Opsani API connectivity", success=False, comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani")
+                return CheckResult(
+                    name="Check Opsani API connectivity",
+                    success=False,
+                    comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani",
+                )
 
-        return CheckResult(name="Check Servo", success=True, comment="All checks passed successfully.")
+        return CheckResult(
+            name="Check Servo", success=True, comment="All checks passed successfully."
+        )
 
 
 class ServoAssembly(BaseModel):
@@ -358,11 +378,15 @@ class ServoAssembly(BaseModel):
             connector_settings = getattr(servo_settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
-                connector = connector_type(configuration=connector_settings, optimizer=optimizer)
+                connector = connector_type(
+                    configuration=connector_settings, optimizer=optimizer
+                )
                 servo_routes[key_path] = connector
 
         # Build the servo object
-        servo = Servo(configuration=servo_settings, routes=servo_routes, optimizer=optimizer)
+        servo = Servo(
+            configuration=servo_settings, routes=servo_routes, optimizer=optimizer
+        )
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
@@ -423,10 +447,9 @@ def _discover_connectors() -> Set[Type[Connector]]:
         connectors.add(connector)
     return connectors
 
+
 def _create_config_model_from_routes(
-    routes = Dict[str, Type[Connector]],
-    *,
-    require_fields:bool = True,
+    routes=Dict[str, Type[Connector]], *, require_fields: bool = True,
 ) -> Type[BaseServoConfiguration]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
@@ -460,11 +483,12 @@ def _create_config_model_from_routes(
 
     return servo_config_model
 
+
 def _create_config_model(
-    *, 
-    config_file: Path, 
+    *,
+    config_file: Path,
     routes: Dict[str, Type[Connector]] = None,
-    env: Optional[Dict[str, str]] = os.environ
+    env: Optional[Dict[str, str]] = os.environ,
 ) -> (Type[BaseServoConfiguration], Dict[str, Type[Connector]]):
     # map of config key in YAML to settings class for target connector
     if routes is None:
@@ -480,7 +504,9 @@ def _create_config_model(
                 routes = _routes_for_connectors_descriptor(connectors_value)
                 require_fields = True
 
-    servo_config_model = _create_config_model_from_routes(routes, require_fields=require_fields)    
+    servo_config_model = _create_config_model_from_routes(
+        routes, require_fields=require_fields
+    )
     return servo_config_model, routes
 
 
@@ -490,12 +516,14 @@ def _normalize_name(name: str) -> str:
     """
     return re.sub(r"[^a-zA-Z0-9.\-_]", "_", name)
 
+
 class SettingModelCacheEntry:
     connector_type: Type[Connector]
     key_path: str
     config_model: Type[BaseConfiguration]
 
-    def __init__(self, 
+    def __init__(
+        self,
         connector_type: Type[Connector],
         key_path: str,
         config_model: Type[BaseConfiguration],
@@ -503,15 +531,16 @@ class SettingModelCacheEntry:
         self.connector_type = connector_type
         self.key_path = key_path
         self.config_model = config_model
-    
+
     def __str__(self):
         return f"{self.config_model} for {self.connector_type.__name__} at key-path '{self.key_path}'"
 
+
 __config_models_cache__: List[SettingModelCacheEntry] = []
 
+
 def _derive_config_model_for_route(
-    key_path: str, 
-    model: Type[Connector]
+    key_path: str, model: Type[Connector]
 ) -> Type[BaseConfiguration]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
@@ -520,11 +549,12 @@ def _derive_config_model_for_route(
 
     # See if we already have a matching model
     config_model: Optional[Type[BaseConfiguration]] = None
-    naming_conflict = False
     model_names = set()
     for cache_entry in __config_models_cache__:
         model_names.add(cache_entry.config_model.__name__)
-        if cache_entry.connector_type is model and cache_entry.key_path == key_path:# and issubclass(cache_entry.config_model, base_setting_model):
+        if (
+            cache_entry.connector_type is model and cache_entry.key_path == key_path
+        ):  # and issubclass(cache_entry.config_model, base_setting_model):
             config_model = cache_entry.config_model
             break
 
@@ -534,19 +564,22 @@ def _derive_config_model_for_route(
             # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
             # due to naming conflicts.
             model_name = f"{model.__name__}Settings"
-        elif key_path == model.__key_path__ and not f"{base_config_model.__qualname__}" in model_names:
+        elif (
+            key_path == model.__key_path__
+            and not f"{base_config_model.__qualname__}" in model_names
+        ):
             # Connector is mounted at the default route, use default name
             model_name = f"{base_config_model.__qualname__}"
         else:
-            model_name = _normalize_name(f"{base_config_model.__qualname__}__{key_path}")
+            model_name = _normalize_name(
+                f"{base_config_model.__qualname__}__{key_path}"
+            )
 
         config_model = create_model(model_name, __base__=base_config_model)
 
     # Cache it for reuse
     cache_entry = SettingModelCacheEntry(
-        connector_type=model,
-        key_path=key_path,
-        config_model=config_model
+        connector_type=model, key_path=key_path, config_model=config_model
     )
     __config_models_cache__.append(cache_entry)
 
@@ -602,6 +635,7 @@ def _validate_class(connector: type) -> bool:
 
     return True
 
+
 def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
     if connectors is None:
         return connectors
@@ -620,18 +654,21 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
         normalized_dict: Dict[str, str] = {}
         for key, value in connectors.items():
             if not isinstance(key, str):
-                raise ValueError(f"Connector descriptor keys must be strings (invalid value '{key}'")
+                raise ValueError(
+                    f"Connector descriptor keys must be strings (invalid value '{key}'"
+                )
             normalized_dict[key] = _normalize_connectors(value)
-        
+
         return normalized_dict
     else:
         raise ValueError(f"Invalid connectors value: {connectors}")
+
 
 def _routes_for_connectors_descriptor(connectors):
     if connectors is None:
         # None indicates that all available connectors should be activated
         return None
-        
+
     elif isinstance(connectors, str):
         # NOTE: Special case. When we are invoked with a string it is typically an env var
         try:

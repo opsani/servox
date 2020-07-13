@@ -3,29 +3,23 @@ import os
 from pathlib import Path
 
 import pytest
-import typer
 import yaml
+from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
-from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaConfiguration
-from pydantic import ValidationError, Extra
+from connectors.vegeta.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
+from servo.cli import ServoCLI
 from servo.connector import (
-    Connector,
     BaseConfiguration,
-    EventResult,
+    Connector,
     License,
     Maturity,
     Optimizer,
     Version,
-    event_handler,
-    before_event,
-    on_event,
-    after_event,
     event,
 )
-from servo.servo import BaseServoConfiguration, ServoAssembly
-from servo.cli import ConnectorCLI, ServoCLI
-from servo.events import Event, Preposition
+from servo.events import Preposition
+from servo.servo import BaseServoConfiguration
 from tests.test_helpers import environment_overrides
 
 
@@ -152,7 +146,9 @@ class TestVegetaConfiguration:
         assert s.rate == "0"
 
     def test_validate_rate_no_time_unit(self) -> None:
-        s = VegetaConfiguration(rate="500", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(
+            rate="500", duration="0", target="GET http://example.com"
+        )
         assert s.rate == "500"
 
     def test_validate_rate_integer(self) -> None:
@@ -160,7 +156,9 @@ class TestVegetaConfiguration:
         assert s.rate == "500"
 
     def test_validate_rate_connections_over_time(self) -> None:
-        s = VegetaConfiguration(rate="500/1s", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(
+            rate="500/1s", duration="0", target="GET http://example.com"
+        )
         assert s.rate == "500/1s"
 
     def test_validate_rate_raises_when_invalid(self) -> None:
@@ -191,7 +189,9 @@ class TestVegetaConfiguration:
         assert s.duration == "0"
 
     def test_validate_duration_seconds(self) -> None:
-        s = VegetaConfiguration(rate="0", duration="1s", target="GET http://example.com")
+        s = VegetaConfiguration(
+            rate="0", duration="1s", target="GET http://example.com"
+        )
         assert s.duration == "1s"
 
     def test_validate_duration_hours_minutes_and_seconds(self) -> None:
@@ -391,9 +391,14 @@ def test_vegeta_id_invalid() -> None:
         config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(configuration=config, config_key_path="THIS IS NOT COOL")    
+        connector = VegetaConnector(
+            configuration=config, config_key_path="THIS IS NOT COOL"
+        )
     error_messages = list(map(lambda error: error["msg"], e.value.errors()))
-    assert "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores" in error_messages
+    assert (
+        "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        in error_messages
+    )
 
 
 def test_vegeta_name() -> None:
@@ -453,157 +458,127 @@ def test_env_variable_prefixing() -> None:
     assert values == schema_title_and_description_envs
 
 
-def test_vegeta_cli_schema_json(servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None) -> None:
+def test_vegeta_cli_schema_json(
+    servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "schema vegeta")
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema == {
-        'title': 'Vegeta Connector Configuration Schema',
-        'description': 'Configuration of the Vegeta connector',
-        'type': 'object',
-        'properties': {
-            'description': {
-                'title': 'Description',
-                'description': 'An optional annotation describing the configuration.',
-                'env_names': [
-                    'VEGETA_DESCRIPTION',
-                ],
-                'type': 'string',
+        "title": "Vegeta Connector Configuration Schema",
+        "description": "Configuration of the Vegeta connector",
+        "type": "object",
+        "properties": {
+            "description": {
+                "title": "Description",
+                "description": "An optional annotation describing the configuration.",
+                "env_names": ["VEGETA_DESCRIPTION",],
+                "type": "string",
             },
-            'rate': {
-                'title': 'Rate',
-                'description': (
-                    'Specifies the request rate per time unit to issue against the targets. Given in the format of req'
-                    'uest/time unit.'
+            "rate": {
+                "title": "Rate",
+                "description": (
+                    "Specifies the request rate per time unit to issue against the targets. Given in the format of req"
+                    "uest/time unit."
                 ),
-                'env_names': [
-                    'VEGETA_RATE',
-                ],
-                'type': 'string',
+                "env_names": ["VEGETA_RATE",],
+                "type": "string",
             },
-            'duration': {
-                'title': 'Duration',
-                'description': 'Specifies the amount of time to issue requests to the targets.',
-                'env_names': [
-                    'VEGETA_DURATION',
-                ],
-                'type': 'string',
+            "duration": {
+                "title": "Duration",
+                "description": "Specifies the amount of time to issue requests to the targets.",
+                "env_names": ["VEGETA_DURATION",],
+                "type": "string",
             },
-            'format': {
-                '$ref': '#/definitions/TargetFormat',
-            },
-            'target': {
-                'title': 'Target',
-                'description': (
-                    'Specifies a single formatted Vegeta target to load. See the format option to learn about availabl'
-                    'e target formats. This option is exclusive of the targets option and will provide a target to Veg'
-                    'eta via stdin.'
+            "format": {"$ref": "#/definitions/TargetFormat",},
+            "target": {
+                "title": "Target",
+                "description": (
+                    "Specifies a single formatted Vegeta target to load. See the format option to learn about availabl"
+                    "e target formats. This option is exclusive of the targets option and will provide a target to Veg"
+                    "eta via stdin."
                 ),
-                'env_names': [
-                    'VEGETA_TARGET',
-                ],
-                'type': 'string',
+                "env_names": ["VEGETA_TARGET",],
+                "type": "string",
             },
-            'targets': {
-                'title': 'Targets',
-                'description': (
-                    'Specifies the file from which to read targets. See the format option to learn about available tar'
-                    'get formats. This option is exclusive of the target option and will provide targets to via throug'
-                    'h a file on disk.'
+            "targets": {
+                "title": "Targets",
+                "description": (
+                    "Specifies the file from which to read targets. See the format option to learn about available tar"
+                    "get formats. This option is exclusive of the target option and will provide targets to via throug"
+                    "h a file on disk."
                 ),
-                'env_names': [
-                    'VEGETA_TARGETS',
-                ],
-                'format': 'file-path',
-                'type': 'string',
+                "env_names": ["VEGETA_TARGETS",],
+                "format": "file-path",
+                "type": "string",
             },
-            'connections': {
-                'title': 'Connections',
-                'description': 'Specifies the maximum number of idle open connections per target host.',
-                'default': 10000,
-                'env_names': [
-                    'VEGETA_CONNECTIONS',
-                ],
-                'type': 'integer',
+            "connections": {
+                "title": "Connections",
+                "description": "Specifies the maximum number of idle open connections per target host.",
+                "default": 10000,
+                "env_names": ["VEGETA_CONNECTIONS",],
+                "type": "integer",
             },
-            'workers': {
-                'title': 'Workers',
-                'description': (
-                    'Specifies the initial number of workers used in the attack. The workers will automatically increa'
-                    'se to achieve the target request rate, up to max-workers.'
+            "workers": {
+                "title": "Workers",
+                "description": (
+                    "Specifies the initial number of workers used in the attack. The workers will automatically increa"
+                    "se to achieve the target request rate, up to max-workers."
                 ),
-                'default': 10,
-                'env_names': [
-                    'VEGETA_WORKERS',
-                ],
-                'type': 'integer',
+                "default": 10,
+                "env_names": ["VEGETA_WORKERS",],
+                "type": "integer",
             },
-            'max_workers': {
-                'title': 'Max Workers',
-                'description': (
-                    'The maximum number of workers used to sustain the attack. This can be used to control the concurr'
-                    'ency of the attack to simulate a target number of clients.'
+            "max_workers": {
+                "title": "Max Workers",
+                "description": (
+                    "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
+                    "ency of the attack to simulate a target number of clients."
                 ),
-                'default': 18446744073709551615,
-                'env_names': [
-                    'VEGETA_MAX_WORKERS',
-                ],
-                'type': 'integer',
+                "default": 18446744073709551615,
+                "env_names": ["VEGETA_MAX_WORKERS",],
+                "type": "integer",
             },
-            'max_body': {
-                'title': 'Max Body',
-                'description': (
-                    'Specifies the maximum number of bytes to capture from the body of each response. Remaining unread'
-                    ' bytes will be fully read but discarded.'
+            "max_body": {
+                "title": "Max Body",
+                "description": (
+                    "Specifies the maximum number of bytes to capture from the body of each response. Remaining unread"
+                    " bytes will be fully read but discarded."
                 ),
-                'default': -1,
-                'env_names': [
-                    'VEGETA_MAX_BODY',
-                ],
-                'type': 'integer',
+                "default": -1,
+                "env_names": ["VEGETA_MAX_BODY",],
+                "type": "integer",
             },
-            'http2': {
-                'title': 'Http2',
-                'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
-                'default': True,
-                'env_names': [
-                    'VEGETA_HTTP2',
-                ],
-                'type': 'boolean',
+            "http2": {
+                "title": "Http2",
+                "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
+                "default": True,
+                "env_names": ["VEGETA_HTTP2",],
+                "type": "boolean",
             },
-            'keepalive': {
-                'title': 'Keepalive',
-                'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
-                'default': True,
-                'env_names': [
-                    'VEGETA_KEEPALIVE',
-                ],
-                'type': 'boolean',
+            "keepalive": {
+                "title": "Keepalive",
+                "description": "Specifies whether to reuse TCP connections between HTTP requests.",
+                "default": True,
+                "env_names": ["VEGETA_KEEPALIVE",],
+                "type": "boolean",
             },
-            'insecure': {
-                'title': 'Insecure',
-                'description': 'Specifies whether to ignore invalid server TLS certificates.',
-                'default': False,
-                'env_names': [
-                    'VEGETA_INSECURE',
-                ],
-                'type': 'boolean',
+            "insecure": {
+                "title": "Insecure",
+                "description": "Specifies whether to ignore invalid server TLS certificates.",
+                "default": False,
+                "env_names": ["VEGETA_INSECURE",],
+                "type": "boolean",
             },
         },
-        'required': [
-            'rate',
-            'duration',
-        ],
-        'additionalProperties': False,
-        'definitions': {
-            'TargetFormat': {
-                'title': 'TargetFormat',
-                'description': 'An enumeration.',
-                'enum': [
-                    'http',
-                    'json',
-                ],
-                'type': 'string',
+        "required": ["rate", "duration",],
+        "additionalProperties": False,
+        "definitions": {
+            "TargetFormat": {
+                "title": "TargetFormat",
+                "description": "An enumeration.",
+                "enum": ["http", "json",],
+                "type": "string",
             },
         },
     }
@@ -632,14 +607,15 @@ def test_vegeta_cli_generate(
     config_file = tmp_path / "servo.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'connectors': ['vegeta'],
-        'vegeta': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
+        "connectors": ["vegeta"],
+        "vegeta": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
     }
+
 
 def test_vegeta_cli_generate_filename(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -650,14 +626,15 @@ def test_vegeta_cli_generate_filename(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'connectors': ['vegeta'],
-        'vegeta': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
+        "connectors": ["vegeta"],
+        "vegeta": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
     }
+
 
 def test_vegeta_cli_generate_quiet(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -668,14 +645,15 @@ def test_vegeta_cli_generate_quiet(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'connectors': ['vegeta'],
-        'vegeta': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
+        "connectors": ["vegeta"],
+        "vegeta": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
     }
+
 
 def test_vegeta_cli_generate_standalone(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -685,66 +663,70 @@ def test_vegeta_cli_generate_standalone(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'vegeta': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
+        "vegeta": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
     }
+
 
 def test_vegeta_cli_generate_aliases(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "generate one:vegeta two:vegeta -f vegeta.yaml")
+    result = cli_runner.invoke(
+        servo_cli, "generate one:vegeta two:vegeta -f vegeta.yaml"
+    )
     assert result.exit_code == 0
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'connectors': {
-            'one': 'vegeta',
-            'two': 'vegeta',
+        "connectors": {"one": "vegeta", "two": "vegeta",},
+        "one": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
-        'one': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
-        },
-        'two': {
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'rate': '50/1s',
-            'target': 'https://example.com/',
+        "two": {
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "rate": "50/1s",
+            "target": "https://example.com/",
         },
     }
+
 
 def test_vegeta_cli_generate_with_defaults(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "generate vegeta --defaults -f vegeta.yaml -s")
+    result = cli_runner.invoke(
+        servo_cli, "generate vegeta --defaults -f vegeta.yaml -s"
+    )
     assert result.exit_code == 0
     assert "Generated vegeta.yaml" in result.stdout
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'description': None,
-        'vegeta': {
-            'connections': 10000,
-            'description': 'Update the rate, duration, and target/targets to match your load profile',
-            'duration': '5m',
-            'format': 'http',
-            'http2': True,
-            'insecure': False,
-            'keepalive': True,
-            'max_body': -1,
-            'max_workers': 18446744073709551615,
-            'rate': '50/1s',
-            'target': 'https://example.com/',
-            'targets': None,
-            'workers': 10,
+        "description": None,
+        "vegeta": {
+            "connections": 10000,
+            "description": "Update the rate, duration, and target/targets to match your load profile",
+            "duration": "5m",
+            "format": "http",
+            "http2": True,
+            "insecure": False,
+            "keepalive": True,
+            "max_body": -1,
+            "max_workers": 18446744073709551615,
+            "rate": "50/1s",
+            "target": "https://example.com/",
+            "targets": None,
+            "workers": 10,
         },
     }
+
 
 # TODO: quiet mode, file argument, dict syntax, invalid connector descriptor
 # TODO: verify requiring models
@@ -755,9 +737,14 @@ def test_vegeta_cli_validate(
     config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
-    result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml", catch_exceptions=False)
-    assert result.exit_code == 0, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    result = cli_runner.invoke(
+        servo_cli, "validate -f vegeta.yaml", catch_exceptions=False
+    )
+    assert (
+        result.exit_code == 0
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "√ Valid configuration in vegeta.yaml" in result.stdout
+
 
 def test_vegeta_cli_validate_quiet(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -767,8 +754,11 @@ def test_vegeta_cli_validate_quiet(
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -q -f vegeta.yaml")
-    assert result.exit_code == 0, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 0
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "" == result.stdout
+
 
 def test_vegeta_cli_validate_dict(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -776,15 +766,18 @@ def test_vegeta_cli_validate_dict(
     config_file = tmp_path / "vegeta.yaml"
     config = VegetaConfiguration.generate()
     config_dict = {
-        "connectors": { "first": "vegeta", "second": "vegeta" },        
+        "connectors": {"first": "vegeta", "second": "vegeta"},
         "first": config.dict(exclude_unset=True),
-        "second": config.dict(exclude_unset=True)
+        "second": config.dict(exclude_unset=True),
     }
     config_yaml = yaml.dump(config_dict)
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
-    assert result.exit_code == 0, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 0
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "√ Valid configuration in vegeta.yaml" in result.stdout
+
 
 def test_vegeta_cli_validate_invalid(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -793,8 +786,11 @@ def test_vegeta_cli_validate_invalid(
     config_yaml = yaml.dump({"vegeta": {}})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
-    assert result.exit_code == 1, f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 1
+    ), f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "X Invalid configuration in vegeta.yaml" in result.stderr
+
 
 def test_vegeta_cli_validate_invalid_key(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -804,8 +800,11 @@ def test_vegeta_cli_validate_invalid_key(
     config_yaml = yaml.dump({"nonsense": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
-    assert result.exit_code == 1, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 1
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "X Invalid configuration in vegeta.yaml" in result.stderr
+
 
 def test_vegeta_cli_validate_file_doesnt_exist(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -815,8 +814,11 @@ def test_vegeta_cli_validate_file_doesnt_exist(
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f wrong.yaml")
-    assert result.exit_code == 2, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 2
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "File 'wrong.yaml' does not exist" in result.stderr
+
 
 def test_vegeta_cli_validate_wrong_connector(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -826,8 +828,11 @@ def test_vegeta_cli_validate_wrong_connector(
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml measure")
-    assert result.exit_code == 1, f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 1
+    ), f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "X Invalid configuration in vegeta.yaml" in result.stderr
+
 
 def test_vegeta_cli_validate_alias_syntax(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -837,8 +842,11 @@ def test_vegeta_cli_validate_alias_syntax(
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml vegeta:vegeta")
-    assert result.exit_code == 0, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 0
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "√ Valid configuration in vegeta.yaml" in result.stdout
+
 
 def test_vegeta_cli_validate_aliasing(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -848,8 +856,11 @@ def test_vegeta_cli_validate_aliasing(
     config_yaml = yaml.dump({"vegeta_alias": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml vegeta_alias:vegeta")
-    assert result.exit_code == 0, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 0
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "√ Valid configuration in vegeta.yaml" in result.stdout
+
 
 def test_vegeta_cli_validate_invalid_dict(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -859,8 +870,11 @@ def test_vegeta_cli_validate_invalid_dict(
     config_yaml = yaml.dump({"nonsense": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
-    assert result.exit_code == 1, f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 1
+    ), f"Expected exit code 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "X Invalid configuration in vegeta.yaml" in result.stderr
+
 
 def test_vegeta_cli_validate_quiet_invalid(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -869,9 +883,10 @@ def test_vegeta_cli_validate_quiet_invalid(
     config_yaml = yaml.dump({"vegeta": {}})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -q -f vegeta.yaml")
-    assert result.exit_code == 1, f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 1
+    ), f"Expected exit code 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert "" == result.stdout
-
 
 
 def test_vegeta_cli_validate_no_such_file(
@@ -927,6 +942,7 @@ def test_vegeta_cli_validate_invalid_syntax(
     assert "X Invalid configuration in invalid.yaml" in result.stderr
     assert "could not find expected ':'" in result.stderr
 
+
 # TODO: Has to be called on parent?
 @pytest.mark.xfail
 def test_vegeta_cli_version(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
@@ -939,10 +955,9 @@ def test_vegeta_cli_version(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
         "Licensed under the terms of Apache 2.0\n"
     ) in result.stdout
 
+
 @pytest.mark.xfail
-def test_vegeta_cli_version_short(
-    servo_cli: ServoCLI, cli_runner: CliRunner
-) -> None:
+def test_vegeta_cli_version_short(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(servo_cli, "version -s")
     assert result.exit_code == 0
     assert "Vegeta Connector v0.5.0" in result.stdout
@@ -957,7 +972,7 @@ class TestConnectorEvents:
         @event(handler=True)
         def example_event(self) -> None:
             return 12345
-        
+
         class Config:
             extra = Extra.allow
 
@@ -969,12 +984,12 @@ class TestConnectorEvents:
     def test_event_registration(self) -> None:
         events = TestConnectorEvents.FakeConnector.__events__
         assert events is not None
-        assert events['example_event']
+        assert events["example_event"]
 
     def test_event_inheritance(self) -> None:
         events = TestConnectorEvents.AnotherFakeConnector.__events__
         assert events is not None
-        assert events['example_event']
+        assert events["example_event"]
 
     def test_responds_to_event(self) -> None:
         assert TestConnectorEvents.FakeConnector.responds_to_event("example_event")
@@ -993,7 +1008,7 @@ class TestConnectorEvents:
     def test_event_invoke(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(configuration=config)
-        event = connector.__events__['example_event']
+        event = connector.__events__["example_event"]
         results = connector.process_event(event, Preposition.ON)
         assert results is not None
         result = results[0]

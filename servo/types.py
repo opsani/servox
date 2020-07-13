@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import time
 from datetime import datetime
-from enum import Enum, Flag, auto
-from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Callable, Type
+from enum import Enum
+from typing import Dict, List, Optional, Tuple, Union
 
 import semver
+from pydantic import BaseModel
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
-from pydantic import BaseModel, validator
 
 class License(Enum):
     """Defined licenses"""
@@ -100,6 +101,7 @@ class Setting(BaseModel):
             return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
 
         return f"{self.name} ({self.type})"
+
 
 class Component(BaseModel):
     name: str

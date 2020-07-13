@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Union
 import backoff
 import httpx
 from devtools import pformat
-
 from pydantic import BaseModel, Field, parse_obj_as
+
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoConfiguration, Events, Servo
 from servo.types import Control, Description, Measurement
@@ -31,7 +31,7 @@ class APIEvent(str, Enum):
     ADJUSTMENT = "ADJUSTMENT"
     MEASUREMENT = "MEASUREMENT"
 
-    
+
 class APIRequest(BaseModel):
     event: APIEvent
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types

@@ -1,20 +1,19 @@
 import os
 from contextlib import contextmanager
-from typing import Dict
+from typing import Dict, Optional
 
-from servo.servo import connector, Events
-from servo.connector import Connector, BaseConfiguration
+from servo.connector import BaseConfiguration, Connector
+from servo.servo import Events, connector
 from servo.types import Measurement
-from typing import Optional
 
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
 
     @classmethod
-    def generate(cls, **kwargs) -> 'StubBaseConfiguration':
+    def generate(cls, **kwargs) -> "StubBaseConfiguration":
         return cls(**kwargs)
-        
+
 
 class MeasureConnector(Connector):
     configuration: StubBaseConfiguration

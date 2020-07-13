@@ -1,32 +1,35 @@
+import logging
 import sys
 from pathlib import Path
-import logging
-from logging import Logger
+
 from loguru import logger
 
 root_path = Path(__file__).parents[1]
 
 # logging configuration
-handlers = [        
-    { "sink": sys.stdout, "colorize": True, "filter": "connectors", "level": logging.INFO },
-    { "sink": sys.stdout, "colorize": True, "filter": "servo", "level": logging.INFO },
+handlers = [
+    {
+        "sink": sys.stdout,
+        "colorize": True,
+        "filter": "connectors",
+        "level": logging.INFO,
+    },
+    {"sink": sys.stdout, "colorize": True, "filter": "servo", "level": logging.INFO},
 ]
 
-logs_path = root_path / 'logs' / f"servo.log"
+logs_path = root_path / "logs" / f"servo.log"
 handlers.append(
-    { 
-        "sink": logs_path, 
-        "colorize": True, 
+    {
+        "sink": logs_path,
+        "colorize": True,
         "filter": {
-            "servo": logging.DEBUG, 
+            "servo": logging.DEBUG,
             "connectors": logging.DEBUG,
             "tests": logging.DEBUG,
         },
-        "backtrace": True, 
+        "backtrace": True,
         "diagnose": True,
     }
 )
 
-logger.configure(
-    handlers=handlers
-)
+logger.configure(handlers=handlers)

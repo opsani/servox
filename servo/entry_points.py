@@ -20,6 +20,6 @@ def run_cli():
     # is too late for registering CLI commands
     for connector in ConnectorLoader().load():
         logger.debug(f"Loaded {connector.__qualname__}")
-    
+
     cli = ServoCLI()
     cli()

@@ -1,28 +1,26 @@
 import abc
 import logging
 import re
+from inspect import Parameter, Signature
 from pathlib import Path
-from inspect import Signature, Parameter
 from typing import (
     Any,
     Callable,
     ClassVar,
     Dict,
     Generator,
+    List,
     Optional,
     Set,
     Type,
-    get_type_hints,
     Union,
-    List,
-    Tuple
+    get_type_hints,
 )
 
 import httpx
 import loguru
 import yaml
 from pkg_resources import EntryPoint, iter_entry_points
-
 from pydantic import (
     BaseModel,
     BaseSettings,
@@ -34,8 +32,17 @@ from pydantic import (
     validator,
 )
 from pydantic.main import ModelMetaclass
+
+from servo.events import (
+    CancelEventError,
+    Event,
+    EventCallable,
+    EventError,
+    EventHandler,
+    EventResult,
+    Preposition,
+)
 from servo.types import License, Maturity, Version
-from servo.events import Event, Preposition, EventCallable, EventHandler, EventResult, EventError, CancelEventError
 from servo.utilities import join_to_series
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
@@ -127,7 +134,9 @@ class BaseConfiguration(BaseSettings):
     """
 
     @classmethod
-    def parse_file(cls, file: Path, *, key: Optional[str] = None) -> "BaseConfiguration":
+    def parse_file(
+        cls, file: Path, *, key: Optional[str] = None
+    ) -> "BaseConfiguration":
         """
         Parse a YAML configuration file and return a configuration object with the contents.
 
@@ -208,6 +217,7 @@ class ConnectorMetaclass(ModelMetaclass):
         }
         cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
         return cls
+
 
 class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """
@@ -307,10 +317,21 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     def create_event(cls, name: str, signature: Union[Callable, Signature]) -> Event:
         if cls.__events__.get(name, None):
             raise ValueError(f"Event '{name}' has already been created")
-        
-        signature = signature if isinstance(signature, Signature) else Signature.from_callable(signature)
-        if list(filter(lambda param: param.kind == Parameter.VAR_POSITIONAL, signature.parameters.values())):
-            raise TypeError(f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)")
+
+        signature = (
+            signature
+            if isinstance(signature, Signature)
+            else Signature.from_callable(signature)
+        )
+        if list(
+            filter(
+                lambda param: param.kind == Parameter.VAR_POSITIONAL,
+                signature.parameters.values(),
+            )
+        ):
+            raise TypeError(
+                f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
+            )
 
         event = Event(name=name, signature=signature)
         cls.__events__[name] = event
@@ -323,21 +344,33 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """
         if isinstance(event, str):
             event = cls.__events__.get(event)
-        
-        handlers = list(filter(lambda handler: handler.event == event, cls.__event_handlers__))
+
+        handlers = list(
+            filter(lambda handler: handler.event == event, cls.__event_handlers__)
+        )
         return len(handlers) > 0
-    
+
     @classmethod
-    def get_event_handlers(cls, event: Union[Event, str], preposition: Preposition = Preposition.ON) -> List[EventHandler]:
+    def get_event_handlers(
+        cls, event: Union[Event, str], preposition: Preposition = Preposition.ON
+    ) -> List[EventHandler]:
         """
         Retrieves the event handlers for the given event and preposition.
         """
         if isinstance(event, str):
             event = cls.__events__.get(event)
 
-        return list(filter(lambda handler: handler.event == event and handler.preposition == preposition, cls.__event_handlers__))
+        return list(
+            filter(
+                lambda handler: handler.event == event
+                and handler.preposition == preposition,
+                cls.__event_handlers__,
+            )
+        )
 
-    def process_event(self, event: Event, preposition: Preposition, *args, **kwargs) -> Optional[List[EventResult]]:
+    def process_event(
+        self, event: Event, preposition: Preposition, *args, **kwargs
+    ) -> Optional[List[EventResult]]:
         """
         Process an event and return the results.
         Returns None if the connector does not respond to the event.
@@ -345,7 +378,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         event_handlers = self.get_event_handlers(event, preposition)
         if len(event_handlers) == 0:
             return None
-        
+
         results: List[EventResult] = []
         for event_handler in event_handlers:
             # NOTE: Explicit kwargs take precendence over those defined during handler declaration
@@ -355,29 +388,31 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 value = event_handler.handler(self, *args, **kwargs)
             except CancelEventError as error:
                 if preposition != Preposition.BEFORE:
-                    raise TypeError(f"Cannot cancel an event from an {preposition} handler") from error
-                
+                    raise TypeError(
+                        f"Cannot cancel an event from an {preposition} handler"
+                    ) from error
+
                 # Annotate the exception and reraise to halt execution
                 error.result = EventResult(
-                    connector=self, 
-                    event=event, 
+                    connector=self,
+                    event=event,
                     preposition=preposition,
-                    handler=event_handler, 
-                    value=error
+                    handler=event_handler,
+                    value=error,
                 )
                 raise error
             except EventError as error:
                 value = error
 
             result = EventResult(
-                connector=self, 
-                event=event, 
+                connector=self,
+                event=event,
                 preposition=preposition,
-                handler=event_handler, 
-                value=value
+                handler=event_handler,
+                value=value,
             )
             results.append(result)
-        
+
         return results
 
     # subclass registry of connectors
@@ -405,10 +440,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__event_handlers__.append(handler)
 
     def __init__(
-        self,        
-        *,
-        config_key_path: Optional[str] = None,
-        **kwargs,
+        self, *, config_key_path: Optional[str] = None, **kwargs,
     ):
         config_key_path = (
             config_key_path
@@ -416,8 +448,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             else self.__class__.__key_path__
         )
         super().__init__(
-            config_key_path=config_key_path,
-            **kwargs,
+            config_key_path=config_key_path, **kwargs,
         )
 
     ##
@@ -442,6 +473,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
+
 
 def _key_path_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
@@ -481,7 +513,9 @@ def metadata(
     return decorator
 
 
-def event(name: Optional[str] = None, *, handler: bool = False) -> Callable[[EventCallable], EventCallable]:
+def event(
+    name: Optional[str] = None, *, handler: bool = False
+) -> Callable[[EventCallable], EventCallable]:
     """
     Creates a new event using the signature of the decorated function.
 
@@ -490,6 +524,7 @@ def event(name: Optional[str] = None, *, handler: bool = False) -> Callable[[Eve
 
     :param handler: When True, the decorated function implementation is registered as an on event handler.
     """
+
     def decorator(fn: EventCallable) -> EventCallable:
         event_name = name if name else fn.__name__
         Connector.create_event(event_name, fn)
@@ -503,7 +538,9 @@ def event(name: Optional[str] = None, *, handler: bool = False) -> Callable[[Eve
     return decorator
 
 
-def before_event(event: Optional[str] = None, **kwargs) -> Callable[[EventCallable], EventCallable]:
+def before_event(
+    event: Optional[str] = None, **kwargs
+) -> Callable[[EventCallable], EventCallable]:
     """
     Registers the decorated function as an event handler to run before the specified event.
 
@@ -518,7 +555,9 @@ def before_event(event: Optional[str] = None, **kwargs) -> Callable[[EventCallab
     return event_handler(event, Preposition.BEFORE, **kwargs)
 
 
-def on_event(event: Optional[str] = None,  **kwargs) -> Callable[[EventCallable], EventCallable]:
+def on_event(
+    event: Optional[str] = None, **kwargs
+) -> Callable[[EventCallable], EventCallable]:
     """
     Registers the decorated function as an event handler to run on the specified event.
 
@@ -528,7 +567,9 @@ def on_event(event: Optional[str] = None,  **kwargs) -> Callable[[EventCallable]
     return event_handler(event, Preposition.ON, **kwargs)
 
 
-def after_event(event: Optional[str] = None, **kwargs) -> Callable[[EventCallable], EventCallable]:
+def after_event(
+    event: Optional[str] = None, **kwargs
+) -> Callable[[EventCallable], EventCallable]:
     """
     Registers the decorated function as an event handler to run after the specified event.
 
@@ -540,10 +581,11 @@ def after_event(event: Optional[str] = None, **kwargs) -> Callable[[EventCallabl
     """
     return event_handler(event, Preposition.AFTER, **kwargs)
 
+
 def event_handler(
-    event_name: Optional[str] = None, 
-    preposition: Preposition = Preposition.ON, 
-    **kwargs
+    event_name: Optional[str] = None,
+    preposition: Preposition = Preposition.ON,
+    **kwargs,
 ) -> Callable[[EventCallable], EventCallable]:
     """
     Registers the decorated function as an event handler.
@@ -563,32 +605,40 @@ def event_handler(
         event = Connector.__events__.get(name, None)
         if event is None:
             raise ValueError(f"Unknown event '{name}'")
-        
+
         if preposition != Preposition.ON:
             name = f"{preposition} {name}"
         handler_signature = Signature.from_callable(fn)
-        
+
         if preposition == Preposition.BEFORE:
             before_handler_signature = Signature.from_callable(__before_handler)
-            _validate_handler_signature(handler_signature, event_signature=before_handler_signature, handler_name=name)
+            _validate_handler_signature(
+                handler_signature,
+                event_signature=before_handler_signature,
+                handler_name=name,
+            )
         elif preposition == Preposition.ON:
-            _validate_handler_signature(handler_signature, event_signature=event.signature, handler_name=name)
+            _validate_handler_signature(
+                handler_signature, event_signature=event.signature, handler_name=name
+            )
         elif preposition == Preposition.AFTER:
             after_handler_signature = Signature.from_callable(__after_handler)
-            _validate_handler_signature(handler_signature, event_signature=after_handler_signature, handler_name=name)        
+            _validate_handler_signature(
+                handler_signature,
+                event_signature=after_handler_signature,
+                handler_name=name,
+            )
         else:
-            assert("Undefined preposition value")
+            assert "Undefined preposition value"
 
         # Annotate the function for processing later, see Connector.__init_subclass__
         fn.__event_handler__ = EventHandler(
-            event=event,
-            preposition=preposition,
-            handler=fn,
-            kwargs=kwargs
+            event=event, preposition=preposition, handler=fn, kwargs=kwargs
         )
         return fn
 
     return decorator
+
 
 def __before_handler(self) -> None:
     pass
@@ -599,10 +649,7 @@ def __after_handler(self, results: List[EventResult]) -> None:
 
 
 def _validate_handler_signature(
-    handler_signature: Signature, 
-    *, 
-    event_signature: Signature, 
-    handler_name: str
+    handler_signature: Signature, *, event_signature: Signature, handler_name: str
 ) -> None:
     """
     Validates that the given handler signature is compatible with the event signature. Validation
@@ -621,71 +668,160 @@ def _validate_handler_signature(
         return
 
     handler_parameters: Mapping[str, Parameter] = handler_signature.parameters
-    handler_positional_parameters = list(filter(lambda param: param.kind in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL], handler_parameters.values()))
-    handler_keyword_parameters = dict(filter(lambda item: item[1].kind in [Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD, Parameter.VAR_KEYWORD], handler_parameters.items()))
+    handler_positional_parameters = list(
+        filter(
+            lambda param: param.kind
+            in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL],
+            handler_parameters.values(),
+        )
+    )
+    handler_keyword_parameters = dict(
+        filter(
+            lambda item: item[1].kind
+            in [
+                Parameter.KEYWORD_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+                Parameter.VAR_KEYWORD,
+            ],
+            handler_parameters.items(),
+        )
+    )
 
     event_parameters: Mapping[str, Parameter] = event_signature.parameters
-    event_positional_parameters = list(filter(lambda param: param.kind in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL], event_parameters.values()))
-    event_keyword_parameters = dict(filter(lambda item: item[1].kind in [Parameter.KEYWORD_ONLY, Parameter.POSITIONAL_OR_KEYWORD, Parameter.VAR_KEYWORD], event_parameters.items()))
+    event_positional_parameters = list(
+        filter(
+            lambda param: param.kind
+            in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL],
+            event_parameters.values(),
+        )
+    )
+    event_keyword_parameters = dict(
+        filter(
+            lambda item: item[1].kind
+            in [
+                Parameter.KEYWORD_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+                Parameter.VAR_KEYWORD,
+            ],
+            event_parameters.items(),
+        )
+    )
 
     # We assume instance methods
     args = list(handler_parameters.keys())
     first_arg = args.pop(0) if args else None
-    if first_arg != 'self':
+    if first_arg != "self":
         raise TypeError(
-            f'Invalid signature for \'{handler_name}\' event handler: {handler_signature}, "self" must be the first argument'
+            f"Invalid signature for '{handler_name}' event handler: {handler_signature}, \"self\" must be the first argument"
         )
-    
+
     # Check return type annotation
     if handler_signature.return_annotation != event_signature.return_annotation:
-        raise TypeError(f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}")
-    
+        raise TypeError(
+            f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
+        )
+
     # Check for extraneous positional parameters on the handler
-    handler_positional_only = list(filter(lambda param: param.kind == Parameter.POSITIONAL_ONLY, handler_positional_parameters))
-    event_positional_only = list(filter(lambda param: param.kind == Parameter.POSITIONAL_ONLY, event_positional_parameters))    
+    handler_positional_only = list(
+        filter(
+            lambda param: param.kind == Parameter.POSITIONAL_ONLY,
+            handler_positional_parameters,
+        )
+    )
+    event_positional_only = list(
+        filter(
+            lambda param: param.kind == Parameter.POSITIONAL_ONLY,
+            event_positional_parameters,
+        )
+    )
     if len(handler_positional_only) > len(event_positional_only):
-        extra_param_names = sorted(list(set(map(lambda p: p.name, handler_positional_only)) - set(map(lambda p: p.name, event_positional_only))))
-        raise TypeError(f"Invalid type annotation for '{handler_name}' event handler: encountered extra positional parameters ({join_to_series(extra_param_names)})")
+        extra_param_names = sorted(
+            list(
+                set(map(lambda p: p.name, handler_positional_only))
+                - set(map(lambda p: p.name, event_positional_only))
+            )
+        )
+        raise TypeError(
+            f"Invalid type annotation for '{handler_name}' event handler: encountered extra positional parameters ({join_to_series(extra_param_names)})"
+        )
 
     # Check for extraneous keyword parameters on the handler
-    handler_keyword_nonvar = dict(filter(lambda item: item[1].kind != Parameter.VAR_KEYWORD, handler_keyword_parameters.items()))
-    event_keyword_nonvar = dict(filter(lambda item: item[1].kind != Parameter.VAR_KEYWORD, event_keyword_parameters.items()))    
-    extraneous_keywords = sorted(list(set(handler_keyword_nonvar.keys()) - set(event_keyword_nonvar.keys())))
+    handler_keyword_nonvar = dict(
+        filter(
+            lambda item: item[1].kind != Parameter.VAR_KEYWORD,
+            handler_keyword_parameters.items(),
+        )
+    )
+    event_keyword_nonvar = dict(
+        filter(
+            lambda item: item[1].kind != Parameter.VAR_KEYWORD,
+            event_keyword_parameters.items(),
+        )
+    )
+    extraneous_keywords = sorted(
+        list(set(handler_keyword_nonvar.keys()) - set(event_keyword_nonvar.keys()))
+    )
     if extraneous_keywords:
-        raise TypeError(f"Invalid type annotation for '{handler_name}' event handler: encountered extra parameters ({join_to_series(extraneous_keywords)})")
+        raise TypeError(
+            f"Invalid type annotation for '{handler_name}' event handler: encountered extra parameters ({join_to_series(extraneous_keywords)})"
+        )
 
     # Iterate the event signature parameters and see if the handler's signature satisfies each one
     for index, (parameter_name, event_parameter) in enumerate(event_parameters.items()):
         if event_parameter.kind == Parameter.POSITIONAL_ONLY:
             if index > len(handler_positional_parameters) - 1:
                 if handler_positional_parameters[-1].kind != Parameter.VAR_POSITIONAL:
-                    raise TypeError(f"Missing required positional parameter: '{parameter_name}'")
-                                
+                    raise TypeError(
+                        f"Missing required positional parameter: '{parameter_name}'"
+                    )
+
             handler_parameter = handler_positional_parameters[index]
             if handler_parameter != Parameter.VAR_POSITIONAL:
                 # Compare types
                 if handler_parameter.annotation != event_parameter.annotation:
-                    raise TypeError(f"Incorrect type annotation for positional parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}")
+                    raise TypeError(
+                        f"Incorrect type annotation for positional parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}"
+                    )
 
-                if handler_parameter.return_annotation != event_parameter.return_annotation:
-                    raise TypeError(f"Incorrect return type annotation for positional parameter '{parameter_name}': expected {event_parameter.return_annotation}, but found {handler_parameter.return_annotation}")
+                if (
+                    handler_parameter.return_annotation
+                    != event_parameter.return_annotation
+                ):
+                    raise TypeError(
+                        f"Incorrect return type annotation for positional parameter '{parameter_name}': expected {event_parameter.return_annotation}, but found {handler_parameter.return_annotation}"
+                    )
 
         elif event_parameter.kind == Parameter.VAR_POSITIONAL:
             # NOTE: This should never happen
-            raise TypeError("Invalid signature: events cannot declare variable positional arguments (e.g. *args)")
+            raise TypeError(
+                "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
+            )
 
-        elif event_parameter.kind in [Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY]:
-            if handler_parameter := handler_keyword_parameters.get(parameter_name, None):
+        elif event_parameter.kind in [
+            Parameter.POSITIONAL_OR_KEYWORD,
+            Parameter.KEYWORD_ONLY,
+        ]:
+            if handler_parameter := handler_keyword_parameters.get(
+                parameter_name, None
+            ):
                 # We have the keyword arg, check the types
                 if handler_parameter.annotation != event_parameter.annotation:
-                    raise TypeError(f"Incorrect type annotation for parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}")                        
+                    raise TypeError(
+                        f"Incorrect type annotation for parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}"
+                    )
             else:
                 # Check if the last parameter is a VAR_KEYWORD
-                if list(handler_keyword_parameters.values())[-1].kind != Parameter.VAR_KEYWORD:
-                    raise TypeError(f"Missing required parameter: '{parameter_name}': expected signature: {event_signature}")
+                if (
+                    list(handler_keyword_parameters.values())[-1].kind
+                    != Parameter.VAR_KEYWORD
+                ):
+                    raise TypeError(
+                        f"Missing required parameter: '{parameter_name}': expected signature: {event_signature}"
+                    )
 
         else:
             assert event_parameter.kind == Parameter.VAR_KEYWORD, event_parameter.kind
+
 
 #####
 

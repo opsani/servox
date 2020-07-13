@@ -9,17 +9,19 @@ from typer import Typer
 from typer.testing import CliRunner
 
 import servo
-from servo.cli import CLI, ServoCLI, Context
-from servo.servo import BaseServoConfiguration
+from servo.cli import CLI, Context, ServoCLI
 from servo.connector import BaseConfiguration, Optimizer
+
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
 
+
 @pytest.fixture()
 def optimizer() -> Optimizer:
     return Optimizer("dev.opsani.com/servox", token="123456789")
+
 
 @pytest.fixture()
 def servo_cli() -> ServoCLI:
@@ -54,20 +56,27 @@ def test_console(cli_runner: CliRunner, servo_cli: Typer) -> None:
     """Open an interactive console"""
 
 
-def test_connectors(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+def test_connectors(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
-def test_connectors_all(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+def test_connectors_all(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "connectors --all")
     assert result.exit_code == 0
     assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors -v")
     assert result.exit_code == 0
@@ -76,107 +85,161 @@ def test_connectors_verbose(
         result.stdout,
     )
 
-def test_connectors_all_verbose(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+
+def test_connectors_all_verbose(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
         "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
     )
 
+
 def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 2
     assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
-def test_check(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+
+def test_check(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
+
 
 def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     result = cli_runner.invoke(servo_cli, "show --help")
     assert result.exit_code == 2
     assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
-def test_show_help(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+
+def test_show_help(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "show --help")
     assert result.exit_code == 0
     assert "Display one or more resources" in result.stdout
 
-def test_show_components(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path) -> None:
+
+def test_show_components(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
-def test_show_events(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path) -> None:
+
+def test_show_events(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert 'check    Servo\n' in result.stdout
+    assert "check    Servo\n" in result.stdout
     assert len(result.stdout.split("\n")) == 3
 
-def test_show_events_all(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+
+def test_show_events_all(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert re.search("after measure\\s+MeasureConnector", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
-def test_show_events_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+
+def test_show_events_on(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "show events --on", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search('check\\s+Servo\n', result.stdout)
-    assert re.search('measure\\s+MeasureConnector\n', result.stdout)
-    assert not re.search('before measure\\s+MeasureConnector', result.stdout)
-    assert not re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert re.search("check\\s+Servo\n", result.stdout)
+    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
+    assert not re.search("before measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
-def test_show_events_no_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+
+def test_show_events_no_on(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "show events --no-on", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert not re.search('check\\s+Servo\n', result.stdout)
-    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
-    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert not re.search("check\\s+Servo\n", result.stdout)
+    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
+    assert re.search("after measure\\s+MeasureConnector", result.stdout)
 
-def test_show_events_after_on(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --after --on", catch_exceptions=False)
+
+def test_show_events_after_on(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(
+        servo_cli, "show events --after --on", catch_exceptions=False
+    )
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search('check\\s+Servo\n', result.stdout)
-    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
-    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert re.search("check\\s+Servo\n", result.stdout)
+    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
+    assert re.search("after measure\\s+MeasureConnector", result.stdout)
 
-def test_show_events_no_on_before(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --no-on --before", catch_exceptions=False)
+
+def test_show_events_no_on_before(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(
+        servo_cli, "show events --no-on --before", catch_exceptions=False
+    )
     assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
-    assert not re.search('check\\s+Servo\n', result.stdout)
-    assert not re.search('^measure\\s+MeasureConnector\n', result.stdout)
-    assert re.search('before measure\\s+MeasureConnector', result.stdout)
-    assert re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert not re.search("check\\s+Servo\n", result.stdout)
+    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
+    assert re.search("before measure\\s+MeasureConnector", result.stdout)
+    assert re.search("after measure\\s+MeasureConnector", result.stdout)
 
-def test_show_events_no_after(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --no-after", catch_exceptions=False)
+
+def test_show_events_no_after(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(
+        servo_cli, "show events --no-after", catch_exceptions=False
+    )
     assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
-    assert re.search('check\\s+Servo\n', result.stdout)
-    assert re.search('measure\\s+MeasureConnector\n', result.stdout)
-    assert re.search('before measure\\s+MeasureConnector', result.stdout)
-    assert not re.search('after measure\\s+MeasureConnector', result.stdout)
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.search("check\\s+Servo\n", result.stdout)
+    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
+    assert re.search("before measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
 
-def test_show_events_by_connector(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --by-connector", catch_exceptions=False)
+
+def test_show_events_by_connector(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(
+        servo_cli, "show events --by-connector", catch_exceptions=False
+    )
     assert result.exit_code == 0
-    assert re.match("CONNECTOR\\s+EVENTS", result.stdout)    
-    assert re.search('Servo\\s+check\n', result.stdout)
-    assert re.search('MeasureConnector\\s+before measure\n\\s+measure\n\\s+after measure', result.stdout, flags=re.MULTILINE)
+    assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
+    assert re.search("Servo\\s+check\n", result.stdout)
+    assert re.search(
+        "MeasureConnector\\s+before measure\n\\s+measure\n\\s+after measure",
+        result.stdout,
+        flags=re.MULTILINE,
+    )
 
-def test_show_metrics(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+
+def test_show_metrics(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
     result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
+
 
 def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(servo_cli, "version")
@@ -185,7 +248,10 @@ def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -
 
 
 def test_config(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config")
     assert result.exit_code == 0
@@ -210,7 +276,10 @@ def test_run_with_malformed_config_file(
 
 
 def test_config_yaml(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config -f yaml", catch_exceptions=False)
     assert result.exit_code == 0
@@ -218,7 +287,11 @@ def test_config_yaml(
 
 
 def test_config_yaml_file(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    tmp_path: Path,
+    optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f yaml -o {path}")
@@ -227,12 +300,16 @@ def test_config_yaml_file(
 
 
 def test_config_json(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config -f json")
     assert result.exit_code == 0
     settings = json.loads(result.stdout)
     assert settings["connectors"] is not None
+
 
 def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
     commands = [
@@ -246,11 +323,11 @@ def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
         check,
         measure,
         adjust,
-        promote
+        promote,
     ]
 
     settings = BaseConfiguration.construct()
-    connector = MeasureConnector.construct(settings)
+    MeasureConnector.construct(settings)
     for value in (True, False):
         kwargs = dict.fromkeys(commands, value)
         cli = ConnectorCLI(name="tester", **kwargs)
@@ -258,15 +335,24 @@ def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
             result = cli_runner.invoke(cli, command)
             if value:
                 # TODO: Ask Click for the command?
-                assert result.exit_code == 0, f"Expected {command} to return a zero exit code but got {result.exit_code}"
+                assert (
+                    result.exit_code == 0
+                ), f"Expected {command} to return a zero exit code but got {result.exit_code}"
             else:
-                assert result.exit_code == 1, f"Expected {command} to return a non-zero exit code but got {result.exit_code}"
-            
+                assert (
+                    result.exit_code == 1
+                ), f"Expected {command} to return a non-zero exit code but got {result.exit_code}"
+
 
 # Test name and help
 
+
 def test_config_json_file(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    tmp_path: Path,
+    optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.json"
     result = cli_runner.invoke(servo_cli, f"config -f json -o {path}")
@@ -276,7 +362,10 @@ def test_config_json_file(
 
 
 def test_config_dict(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config -f dict")
     assert result.exit_code == 0
@@ -285,7 +374,11 @@ def test_config_dict(
 
 
 def test_config_dict_file(
-    cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    tmp_path: Path,
+    optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.py"
     result = cli_runner.invoke(servo_cli, f"config -f dict -o {path}")
@@ -296,7 +389,9 @@ def test_config_dict_file(
 
 def test_schema(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(servo_cli, "schema", catch_exceptions=False)
-    assert result.exit_code == 0, f"Expected status code of 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert (
+        result.exit_code == 0
+    ), f"Expected status code of 0 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Configuration Schema"
 
@@ -311,28 +406,36 @@ def test_schema_output_to_file(
     assert schema["title"] == "Servo Configuration Schema"
 
 
-def test_schema_all(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+def test_schema_all(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, ["schema", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Configuration Schema"
 
 
-def test_schema_top_level(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+def test_schema_top_level(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, ["schema", "--top-level"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Schema"
 
 
-def test_schema_all_top_level(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+def test_schema_all_top_level(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, ["schema", "--top-level", "--all"])
     assert result.exit_code == 0
     schema = json.loads(result.stdout)
     assert schema["title"] == "Servo Schema"
 
 
-def test_schema_top_level_dict(servo_cli: Typer, cli_runner: CliRunner, optimizer_env: None) -> None:
+def test_schema_top_level_dict(
+    servo_cli: Typer, cli_runner: CliRunner, optimizer_env: None
+) -> None:
     result = cli_runner.invoke(servo_cli, "schema -f dict --top-level")
     assert result.exit_code == 0, f"stdout: {result.stdout}\n\nstderr: {result.stderr}"
     schema = eval(result.stdout)
@@ -348,24 +451,22 @@ def test_schema_top_level_dict_file_output(
     schema = eval(path.read_text())
     assert schema["title"] == "Servo Schema"
 
+
 class TestCommands:
     @pytest.fixture(autouse=True)
     def test_set_defaults_via_env(self) -> None:
         os.environ["OPSANI_OPTIMIZER"] = "dev.opsani.com/test-app"
         os.environ["OPSANI_TOKEN"] = "123456789"
 
-
     def test_schema_text(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f text")
         assert result.exit_code == 1
         assert "not yet implemented" in result.stderr
 
-
     def test_schema_html(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f html", catch_exceptions=False)
         assert result.exit_code == 1
         assert "not yet implemented" in result.stderr
-
 
     def test_schema_dict(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f dict")
@@ -373,9 +474,8 @@ class TestCommands:
         dict = eval(result.stdout)
         assert dict["title"] == "Servo Configuration Schema"
 
-
-    def test_schema_dict_file_output(self, 
-        servo_cli: Typer, cli_runner: CliRunner, tmp_path: Path
+    def test_schema_dict_file_output(
+        self, servo_cli: Typer, cli_runner: CliRunner, tmp_path: Path
     ) -> None:
         path = tmp_path / "output.dict"
         result = cli_runner.invoke(servo_cli, f"schema -f dict -o {path}")
@@ -383,48 +483,60 @@ class TestCommands:
         dict = eval(path.read_text())
         assert dict["title"] == "Servo Configuration Schema"
 
-
     def test_validate(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
 
-    def test_generate_prompts_to_overwrite(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
-        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml measure", input="y\n")
+    def test_generate_prompts_to_overwrite(
+        self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "generate -f servo.yaml measure", input="y\n"
+        )
         assert result.exit_code == 0
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(servo_yaml.read_text())
-        assert content == {'connectors': ['measure'], 'measure': {}}
-    
-    def test_generate_prompts_to_overwrite_declined(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
-        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml measure", input="N\n")
+        assert content == {"connectors": ["measure"], "measure": {}}
+
+    def test_generate_prompts_to_overwrite_declined(
+        self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "generate -f servo.yaml measure", input="N\n"
+        )
         assert result.exit_code == 1
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(servo_yaml.read_text())
         assert content is None
-    
-    def test_generate_prompts_to_overwrite_forced(self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path) -> None:
-        result = cli_runner.invoke(servo_cli, "generate -f servo.yaml --force measure", input="y\n")
+
+    def test_generate_prompts_to_overwrite_forced(
+        self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "generate -f servo.yaml --force measure", input="y\n"
+        )
         assert result.exit_code == 0
         content = yaml.full_load(servo_yaml.read_text())
-        assert content == {'connectors': ['measure'], 'measure': {}}
-    
-    def test_generate_connector_without_settings(self, cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
-        pass
+        assert content == {"connectors": ["measure"], "measure": {}}
 
+    def test_generate_connector_without_settings(
+        self,
+        cli_runner: CliRunner,
+        servo_cli: Typer,
+        optimizer_env: None,
+        stub_servo_yaml: Path,
+    ) -> None:
+        pass
 
     def test_developer_test(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
 
-
     def test_developer_lint(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
-
 
     def test_developer_format(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
 
-
     ## CLI Lifecycle tests
-
 
     def test_loading_cli_without_specific_connectors_activates_all_optionally(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
@@ -432,12 +544,10 @@ class TestCommands:
         # temp config file, no connectors key
         pass
 
-
     def test_loading_cli_with_specific_connectors_only_activates_required(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
     ) -> None:
         pass
-
 
     def test_loading_cli_with_empty_connectors_list_disables_all(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
@@ -445,7 +555,8 @@ class TestCommands:
         servo_yaml.write_text(yaml.dump({"connectors": []}))
         cli_runner.invoke(servo_cli, "info")
 
-class TestCLIFoundation():
+
+class TestCLIFoundation:
     class TheTestCLI(CLI):
         pass
 
@@ -466,8 +577,11 @@ class TestCLIFoundation():
         result = cli_runner.invoke(cli, "", catch_exceptions=False)
         assert result.exit_code == 0
 
-    def test_context_class_in_subcommand_groups(self, cli: CLI, cli_runner: CliRunner) -> None:
+    def test_context_class_in_subcommand_groups(
+        self, cli: CLI, cli_runner: CliRunner
+    ) -> None:
         sub_cli = TestCLIFoundation.TheTestCLI(name="another", callback=None)
+
         @sub_cli.command()
         def test(context: Context) -> None:
             assert context is not None
@@ -475,12 +589,12 @@ class TestCLIFoundation():
             assert context.servo == None
             assert context.assembly == None
             assert context.connector == None
-        
+
         cli.add_cli(sub_cli)
 
         result = cli_runner.invoke(cli, "another test", catch_exceptions=False)
         assert result.exit_code == 0
-    
+
     def test_context_inheritance(self, cli: CLI, cli_runner: CliRunner) -> None:
         sub_cli = TestCLIFoundation.TheTestCLI(name="another", callback=None)
 
@@ -492,12 +606,12 @@ class TestCLIFoundation():
         def test(context: Context) -> None:
             assert context is not None
             assert context.obj == 31337
-        
+
         cli.add_cli(sub_cli)
 
         result = cli_runner.invoke(cli, "another test", catch_exceptions=False)
         assert result.exit_code == 0
-    
+
     def test_context_state_for_base_callback(self) -> None:
         # TODO: config file path, optimizer settings
         pass
@@ -509,20 +623,22 @@ class TestCLIFoundation():
     def test_context_state_for_connector_callback(self) -> None:
         # TODO: Full servo assembly, connector is set to the target
         pass
-    
+
     # TODO: Target arbitrary number of connectors
     def test_context_state_for_connectors_callback(self) -> None:
         # TODO: Full servo assembly, connectors is set to the targets
         pass
-    
-    def test_that_servo_cli_commands_are_explicitly_ordered(self, cli: CLI, cli_runner: CliRunner) -> None:
+
+    def test_that_servo_cli_commands_are_explicitly_ordered(
+        self, cli: CLI, cli_runner: CliRunner
+    ) -> None:
         servo_cli = ServoCLI(name="servo", callback=None)
 
         # Add in explicit non lexical sort order
         @servo_cli.command()
         def zzzz(context: Context) -> None:
             pass
-        
+
         @servo_cli.command()
         def aaaa(context: Context) -> None:
             pass
@@ -533,33 +649,63 @@ class TestCLIFoundation():
 
         result = cli_runner.invoke(servo_cli, "--help", catch_exceptions=False)
         assert result.exit_code == 0
-        assert re.search(r"zzzz\n.*aaaa\n.*mmmm\n", result.stdout, flags=re.MULTILINE) is not None
+        assert (
+            re.search(r"zzzz\n.*aaaa\n.*mmmm\n", result.stdout, flags=re.MULTILINE)
+            is not None
+        )
+
 
 def test_command_name_for_nested_connectors() -> None:
     from servo.cli import _command_name_from_config_key_path
+
     assert _command_name_from_config_key_path("fake") == "fake"
     assert _command_name_from_config_key_path("another_fake") == "another-fake"
+
 
 def test_ordering_of_ops_commands(servo_cli: CLI, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(servo_cli, "--help", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.search(r".*run.*\n.*check.*\n.*describe.*\n", result.stdout, flags=re.MULTILINE) is not None
+    assert (
+        re.search(
+            r".*run.*\n.*check.*\n.*describe.*\n", result.stdout, flags=re.MULTILINE
+        )
+        is not None
+    )
+
 
 def test_ordering_of_config_commands(servo_cli: CLI, cli_runner: CliRunner) -> None:
     result = cli_runner.invoke(servo_cli, "--help", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.search(r".*settings.*\n.*schema.*\n.*validate.*\n.*generate.*", result.stdout, flags=re.MULTILINE) is not None
+    assert (
+        re.search(
+            r".*settings.*\n.*schema.*\n.*validate.*\n.*generate.*",
+            result.stdout,
+            flags=re.MULTILINE,
+        )
+        is not None
+    )
+
 
 def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(servo_cli, "init", catch_exceptions=False, input="dev.opsani.com/servox\n123456789\nn\n")
+    result = cli_runner.invoke(
+        servo_cli,
+        "init",
+        catch_exceptions=False,
+        input="dev.opsani.com/servox\n123456789\nn\n",
+    )
     assert result.exit_code == 0
-    dotenv = Path('.env')
-    assert dotenv.read_text() == 'OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789'
-    servo_yaml = Path('servo.yaml')    
+    dotenv = Path(".env")
+    assert (
+        dotenv.read_text()
+        == "OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789"
+    )
+    servo_yaml = Path("servo.yaml")
     assert servo_yaml.read_text() is not None
+
 
 def test_init_existing(servo_cli: CLI, cli_runner: CliRunner) -> None:
     pass
+
 
 # TODO: test setting section via initializer, add_cli
 # TODO: section settable on CLI class, via @command(), and via add_cli()
