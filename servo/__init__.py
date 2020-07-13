@@ -2,7 +2,7 @@ import importlib.metadata
 
 for pkg in {"servo", "servox"}:
     try:
-        __version__ = importlib.metadata.version(__name__)
+        __version__ = importlib.metadata.version(pkg)
         break
     except importlib.metadata.PackageNotFoundError:
         pass
