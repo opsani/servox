@@ -322,7 +322,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
         def invalid_adjust(self) -> dict:
             pass
     assert error
-    assert str(error.value) == "Missing required parameter: 'data'"
+    assert str(error.value) == "Missing required parameter: 'data': expected signature: (self, data: dict) -> dict"
 
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     with pytest.raises(TypeError) as error:
@@ -330,7 +330,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
         def invalid_measure(self, *, control: Control = Control()) -> Measurement:
             pass
     assert error
-    assert str(error.value) == "Missing required parameter: 'metrics'"
+    assert str(error.value) == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: List[str] = None, control: servo.types.Control = Control(duration=None, past=0, warmup=0, delay=0, load=None)) -> servo.types.Measurement"
 
 def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
     @connector.on_event('measure')

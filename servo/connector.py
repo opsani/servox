@@ -682,7 +682,7 @@ def _validate_handler_signature(
             else:
                 # Check if the last parameter is a VAR_KEYWORD
                 if list(handler_keyword_parameters.values())[-1].kind != Parameter.VAR_KEYWORD:
-                    raise TypeError(f"Missing required parameter: '{parameter_name}'")
+                    raise TypeError(f"Missing required parameter: '{parameter_name}': expected signature: {event_signature}")
 
         else:
             assert event_parameter.kind == Parameter.VAR_KEYWORD, event_parameter.kind
