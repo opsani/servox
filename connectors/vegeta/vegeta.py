@@ -3,14 +3,8 @@ import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set, Tuple
-
-import httpx
-import typer
-import yaml
 from pydantic import (
     BaseModel,
-    BaseSettings,
-    Extra,
     Field,
     FilePath,
     HttpUrl,
@@ -20,10 +14,22 @@ from pydantic import (
     validator,
 )
 import durationpy
-import servo
-from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.cli import ConnectorCLI, Context, Section
-from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description, CheckResult
+from servo import (
+    BaseConfiguration,
+    Connector,
+    metadata,
+    on_event,
+    cli,
+    Metric,
+    Unit,
+    License,
+    Maturity,
+    Measurement,
+    Control,
+    TimeSeries,
+    Description,
+    CheckResult,
+)
 from servo.utilities import DurationProgress
 import subprocess
 import time
@@ -112,7 +118,7 @@ class VegetaReport(BaseModel):
         else:
             raise ValueError(f"unknown key '{key}'")
 
-class VegetaSettings(ConnectorSettings):
+class VegetaConfiguration(BaseConfiguration):
     """
     Configuration of the Vegeta connector
     """
@@ -242,7 +248,7 @@ class VegetaSettings(ConnectorSettings):
         return v
     
     @classmethod
-    def generate(cls, **kwargs) -> 'VegetaSettings':
+    def generate(cls, **kwargs) -> 'VegetaConfiguration':
         return cls(
             rate='50/1s', 
             duration='5m',
@@ -259,7 +265,7 @@ class VegetaSettings(ConnectorSettings):
 # TODO: Move to settings
 REPORTING_INTERVAL = 2
 
-@servo.connector.metadata(
+@metadata(
     description="Vegeta load testing connector",
     version="0.5.0",
     homepage="https://github.com/opsani/vegeta-connector",
@@ -267,22 +273,22 @@ REPORTING_INTERVAL = 2
     maturity=Maturity.STABLE,
 )
 class VegetaConnector(Connector):
-    settings: VegetaSettings
+    configuration: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
-    @event()
+    @on_event()
     def describe(self) -> Description:
         """
         Describe the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
     
-    @event()
+    @on_event()
     def metrics(self) -> List[Metric]:
         return METRICS
     
-    @event()
+    @on_event()
     def check(self) -> CheckResult:
         # Take the current settings and run a 15 second check against it
         self.warmup_until = datetime.now()
@@ -300,7 +306,7 @@ class VegetaConnector(Connector):
 
         return CheckResult(name="Check Vegeta load generation", success=True, comment="All checks passed successfully.")
 
-    @event()
+    @on_event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?
@@ -326,8 +332,8 @@ class VegetaConnector(Connector):
 
         return measurement
 
-    def _run_vegeta(self, *, settings: Optional[VegetaSettings] = None):
-        settings = settings if settings else self.settings
+    def _run_vegeta(self, *, configuration: Optional[VegetaConfiguration] = None):
+        configuration = configuration if configuration else self.configuration
 
         # construct and run Vegeta command
         vegeta_attack_args = list(map(str,[
@@ -439,10 +445,9 @@ def _number_of_lines_in_file(filename):
     return count
 
 
-cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
-# TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic params
-@cli.command()
-def attack(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
+app = cli.ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+@app.command()
+def attack(context: cli.Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """
     Run an adhoc load generation
     """

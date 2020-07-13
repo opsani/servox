@@ -13,9 +13,15 @@ from collections.abc import Iterable
 import json
 import yaml
 
-import servo
-from servo.connector import Connector, ConnectorSettings, License, Maturity, event
-from servo.types import Component, Setting, Description, CheckResult
+from servo import (
+    connector,
+    License,
+    Maturity,
+    Component,
+    Setting,
+    Description,
+    CheckResult
+)
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
 
@@ -29,6 +35,10 @@ class AdjustError(Exception):
         self.status = status
         self.reason = reason
         super().__init__(*args)
+
+# TODO: Temporary
+class ConfigError(Exception):
+    pass
 
 # === constants
 DESC_FILE = "./servo.yaml"
@@ -858,11 +868,11 @@ def update(appname, desc, data, print_progress):
             raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
 
-class KubernetesSettings(ConnectorSettings):
+class KubernetesConfiguration(connector.BaseConfiguration):
     namespace: Optional[str]
 
     @classmethod
-    def generate(cls, **kwargs) -> 'KubernetesSettings':
+    def generate(cls, **kwargs) -> 'KubernetesConfiguration':
         return cls(
             namespace='default', 
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
@@ -874,15 +884,15 @@ class KubernetesSettings(ConnectorSettings):
         # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
 
-@servo.connector.metadata(
+@connector.metadata(
     description="Kubernetes adjust connector",
     version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class KubernetesConnector(Connector):
-    settings: KubernetesSettings
+class KubernetesConnector(connector.Connector):
+    configuration: KubernetesConfiguration
     progress: float = 0.0
 
     def print_progress(
@@ -911,7 +921,7 @@ class KubernetesConnector(Connector):
         self.progress = progress
         self.print_progress(message=message)
 
-    @event()
+    @connector.on_event()
     def describe(self) -> Description:
         try:
             desc = read_desc()
@@ -925,13 +935,13 @@ class KubernetesConnector(Connector):
         components = descriptor_to_components(result['application']['components'])
         return Description(components=components)
     
-    @event()
+    @connector.on_event()
     def components(self) -> Description:
         desc = read_desc()
         return descriptor_to_components(desc['application']['components'])
 
-    @event()
-    def adjust(self, data) -> dict:
+    @connector.on_event()
+    def adjust(self, data: dict) -> dict:
         try:
             desc = read_desc()
             #debug(desc)
@@ -943,7 +953,7 @@ class KubernetesConnector(Connector):
         r = update(namespace, desc, data, self._progress)
         return r
     
-    @event()
+    @connector.on_event()
     def check(self) -> CheckResult:
         try:
             self.describe()
