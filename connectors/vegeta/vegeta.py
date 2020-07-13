@@ -15,7 +15,10 @@ from pydantic import (
 )
 import durationpy
 from servo import (
-    connector,
+    BaseConfiguration,
+    Connector,
+    metadata,
+    on_event,
     cli,
     Metric,
     Unit,
@@ -115,8 +118,7 @@ class VegetaReport(BaseModel):
         else:
             raise ValueError(f"unknown key '{key}'")
 
-# TODO: Could become connectors.vegeta.Configuration
-class VegetaConfiguration(connector.BaseConfiguration):
+class VegetaConfiguration(BaseConfiguration):
     """
     Configuration of the Vegeta connector
     """
@@ -263,30 +265,30 @@ class VegetaConfiguration(connector.BaseConfiguration):
 # TODO: Move to settings
 REPORTING_INTERVAL = 2
 
-@connector.metadata(
+@metadata(
     description="Vegeta load testing connector",
     version="0.5.0",
     homepage="https://github.com/opsani/vegeta-connector",
     license=License.APACHE2,
     maturity=Maturity.STABLE,
 )
-class VegetaConnector(connector.Connector):
+class VegetaConnector(Connector):
     configuration: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
-    @connector.on_event()
+    @on_event()
     def describe(self) -> Description:
         """
         Describe the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
     
-    @connector.on_event()
+    @on_event()
     def metrics(self) -> List[Metric]:
         return METRICS
     
-    @connector.on_event()
+    @on_event()
     def check(self) -> CheckResult:
         # Take the current settings and run a 15 second check against it
         self.warmup_until = datetime.now()
@@ -304,7 +306,7 @@ class VegetaConnector(connector.Connector):
 
         return CheckResult(name="Check Vegeta load generation", success=True, comment="All checks passed successfully.")
 
-    @connector.on_event()
+    @on_event()
     def measure(self, *, metrics: List[str] = None, control: Control = Control()) -> Measurement:
         # Handle delay (if any)
         # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?
