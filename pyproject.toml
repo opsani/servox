@@ -1,11 +1,12 @@
 [tool.poetry]
 name = "servox"
-version = "0.2.2"
+version = "0.2.3"
 description = "Opsani Servo: The Next Generation"
 authors = ["Blake Watters <blake@opsani.com>"]
 license = "Apache-2.0"
 packages = [
     { include = "servo" },
+    { include = "connectors" },
 ]
 
 [tool.poetry.dependencies]
@@ -41,7 +42,6 @@ pytest-mock = "^3.2.0"
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
 
-# TODO: Example entry point for testing plugins
 [tool.poetry.plugins."servo.connectors"]
 "vegeta" = "connectors.vegeta.vegeta:VegetaConnector"
 "kubernetes" = "connectors.kubernetes.kubernetes:KubernetesConnector"
