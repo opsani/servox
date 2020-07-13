@@ -13,10 +13,15 @@ from collections.abc import Iterable
 import json
 import yaml
 
-import servo
-from servo import connector
-from servo.connector import Connector, ConnectorSettings, License, Maturity
-from servo.types import Component, Setting, Description, CheckResult
+from servo import (
+    connector,
+    License,
+    Maturity,
+    Component,
+    Setting,
+    Description,
+    CheckResult
+)
 from pydantic import BaseModel, Extra, validator
 from typing import List, Tuple, Optional
 
@@ -863,7 +868,7 @@ def update(appname, desc, data, print_progress):
             raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
 
-class KubernetesSettings(ConnectorSettings):
+class KubernetesSettings(connector.ConnectorSettings):
     namespace: Optional[str]
 
     @classmethod
@@ -886,7 +891,7 @@ class KubernetesSettings(ConnectorSettings):
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class KubernetesConnector(Connector):
+class KubernetesConnector(connector.Connector):
     settings: KubernetesSettings
     progress: float = 0.0
 
