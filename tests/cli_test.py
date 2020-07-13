@@ -8,7 +8,7 @@ import yaml
 from typer import Typer
 from typer.testing import CliRunner
 
-from servo import cli
+import servo
 from servo.cli import CLI, ServoCLI, Context
 from servo.servo import BaseServoConfiguration
 from servo.connector import BaseConfiguration, Optimizer
@@ -181,7 +181,7 @@ def test_show_metrics(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: No
 def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
     result = cli_runner.invoke(servo_cli, "version")
     assert result.exit_code == 0
-    assert "Servo v0.0.0" in result.stdout
+    assert f"Servo v{servo.__version__}" in result.stdout
 
 
 def test_config(

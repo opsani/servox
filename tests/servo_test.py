@@ -16,7 +16,7 @@ from tests.test_helpers import environment_overrides
 from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaConfiguration
 
 def test_version():
-    assert __version__ == "0.1.0"
+    assert __version__
 
 class FirstTestServoConnector(Connector):
     started_up: bool = False
@@ -432,7 +432,7 @@ class TestServoAssembly:
         assert schema["properties"]["description"]["env_names"] == ["SERVO_DESCRIPTION"]
         assert schema == {
         'title': 'Servo Configuration Schema',
-        'description': 'Schema for configuration of Servo v0.0.0 with Vegeta Connector v0.5.0',
+        'description': 'Schema for configuration of Servo v0.2.0 with Vegeta Connector v0.5.0',
         'type': 'object',
         'properties': {
             'description': {

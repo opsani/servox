@@ -24,6 +24,7 @@ from servo.connector import (
     Maturity,
     Optimizer,
 )
+import servo
 from servo.types import Metric, Component, Description, Control, Measurement
 from servo.events import Preposition, Event, EventHandler, CheckResult, CancelEventError
 from servo.utilities import join_to_series
@@ -169,6 +170,7 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
     homepage="https://opsani.com/",
     maturity=Maturity.ROBUST,
     license=License.APACHE2,
+    version=servo.__version__,
 )
 class Servo(Connector):
     """
