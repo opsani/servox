@@ -12,9 +12,34 @@ from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoSettings, Events, Servo
-# from servo.events import Control, Description, Measurement, Event, APICommand, APIRequest
-from servo.types import Control, Description, Measurement, APICommand, APIEvent, APIRequest
+from servo.types import Control, Description, Measurement
 from servo.utilities import SignalHandler
+
+
+class APICommand(str, Enum):
+    DESCRIBE = "DESCRIBE"
+    MEASURE = "MEASURE"
+    ADJUST = "ADJUST"
+    SLEEP = "SLEEP"
+
+
+class APIEvent(str, Enum):
+    HELLO = "HELLO"
+    GOODBYE = "GOODBYE"
+    DESCRIPTION = "DESCRIPTION"
+    WHATS_NEXT = "WHATS_NEXT"
+    ADJUSTMENT = "ADJUSTMENT"
+    MEASUREMENT = "MEASUREMENT"
+
+    
+class APIRequest(BaseModel):
+    event: APIEvent
+    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
+
+    class Config:
+        json_encoders = {
+            APIEvent: lambda v: str(v),
+        }
 
 
 class Status(BaseModel):

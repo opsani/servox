@@ -189,29 +189,3 @@ class AbstractOutputFormat(str, Enum):
             return None
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
-
-
-class APICommand(str, Enum):
-    DESCRIBE = "DESCRIBE"
-    MEASURE = "MEASURE"
-    ADJUST = "ADJUST"
-    SLEEP = "SLEEP"
-
-
-class APIEvent(str, Enum):
-    HELLO = "HELLO"
-    GOODBYE = "GOODBYE"
-    DESCRIPTION = "DESCRIPTION"
-    WHATS_NEXT = "WHATS_NEXT"
-    ADJUSTMENT = "ADJUSTMENT"
-    MEASUREMENT = "MEASUREMENT"
-
-    
-class APIRequest(BaseModel):
-    event: APIEvent
-    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
-
-    class Config:
-        json_encoders = {
-            APIEvent: lambda v: str(v),
-        }

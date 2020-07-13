@@ -24,7 +24,7 @@ from servo.connector import (
     Maturity,
     Optimizer,
 )
-from servo.types import APIRequest, Metric, Component, Description, Control, Measurement
+from servo.types import Metric, Component, Description, Control, Measurement
 from servo.events import Preposition, Event, EventHandler, CheckResult, CancelEventError
 from servo.utilities import join_to_series
 import inspect
@@ -278,7 +278,7 @@ class Servo(Connector):
 
     @connector.on_event()
     def check(self) -> CheckResult:
-        from servo.types import APIEvent, APIRequest
+        from servo.servo_runner import APIRequest, APIEvent
         with self.api_client() as client:
             event_request = APIRequest(event=APIEvent.HELLO)
             response = client.post("servo", data=event_request.json())

@@ -3,14 +3,8 @@ import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, get_type_hints, Union, Set, Tuple
-
-import httpx
-import typer
-import yaml
 from pydantic import (
     BaseModel,
-    BaseSettings,
-    Extra,
     Field,
     FilePath,
     HttpUrl,
@@ -20,11 +14,19 @@ from pydantic import (
     validator,
 )
 import durationpy
-import servo
-from servo import connector # TODO: Let's cleanup these imports...
-from servo.connector import Connector, ConnectorSettings, License, Maturity
-from servo.cli import ConnectorCLI, Context, Section
-from servo.types import Metric, Unit, Measurement, Numeric, Control, TimeSeries, Description, CheckResult
+from servo import (
+    connector,
+    cli,
+    Metric,
+    Unit,
+    License,
+    Maturity,
+    Measurement,
+    Control,
+    TimeSeries,
+    Description,
+    CheckResult,
+)
 from servo.utilities import DurationProgress
 import subprocess
 import time
@@ -113,7 +115,7 @@ class VegetaReport(BaseModel):
         else:
             raise ValueError(f"unknown key '{key}'")
 
-class VegetaSettings(ConnectorSettings):
+class VegetaSettings(connector.ConnectorSettings):
     """
     Configuration of the Vegeta connector
     """
@@ -267,7 +269,7 @@ REPORTING_INTERVAL = 2
     license=License.APACHE2,
     maturity=Maturity.STABLE,
 )
-class VegetaConnector(Connector):
+class VegetaConnector(connector.Connector):
     settings: VegetaSettings
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
@@ -440,10 +442,9 @@ def _number_of_lines_in_file(filename):
     return count
 
 
-cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
-# TODO: What I really want to be able to do is make servo, assembly, optimizer, and connector magic params
-@cli.command()
-def attack(context: Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
+app = cli.ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+@app.command()
+def attack(context: cli.Context): # TODO: Needs to take args for the possible targets. Default if there is only 1
     """
     Run an adhoc load generation
     """
