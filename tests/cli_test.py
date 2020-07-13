@@ -10,8 +10,8 @@ from typer.testing import CliRunner
 
 from servo import cli
 from servo.cli import CLI, ServoCLI, Context
-from servo.servo import BaseServoSettings
-from servo.connector import ConnectorSettings, Optimizer
+from servo.servo import BaseServoConfiguration
+from servo.connector import BaseConfiguration, Optimizer
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
@@ -184,10 +184,10 @@ def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -
     assert "Servo v0.0.0" in result.stdout
 
 
-def test_settings(
+def test_config(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "settings")
+    result = cli_runner.invoke(servo_cli, "config")
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
@@ -195,7 +195,7 @@ def test_settings(
 def test_run_with_empty_config_file(
     cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path, optimizer_env: None,
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "settings", catch_exceptions=False)
+    result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert result.exit_code == 0, f"RESULT: {result.stderr}"
     assert "{}" in result.stdout
 
@@ -205,31 +205,31 @@ def test_run_with_malformed_config_file(
 ) -> None:
     servo_yaml.write_text("</\n\n..:989890j\n___*")
     with pytest.raises(ValueError) as e:
-        cli_runner.invoke(servo_cli, "settings", catch_exceptions=False)
+        cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert "parsed to an unexpected value of type" in str(e)
 
 
-def test_settings_yaml(
+def test_config_yaml(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "settings -f yaml", catch_exceptions=False)
+    result = cli_runner.invoke(servo_cli, "config -f yaml", catch_exceptions=False)
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
 
-def test_settings_yaml_file(
+def test_config_yaml_file(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.yaml"
-    result = cli_runner.invoke(servo_cli, f"settings -f yaml -o {path}")
+    result = cli_runner.invoke(servo_cli, f"config -f yaml -o {path}")
     assert result.exit_code == 0
     assert "connectors:" in path.read_text()
 
 
-def test_settings_json(
+def test_config_json(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "settings -f json")
+    result = cli_runner.invoke(servo_cli, "config -f json")
     assert result.exit_code == 0
     settings = json.loads(result.stdout)
     assert settings["connectors"] is not None
@@ -238,7 +238,7 @@ def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
     commands = [
         version,
         schema,
-        settings,
+        config,
         generate,
         validate,
         events,
@@ -249,7 +249,7 @@ def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
         promote
     ]
 
-    settings = ConnectorSettings.construct()
+    settings = BaseConfiguration.construct()
     connector = MeasureConnector.construct(settings)
     for value in (True, False):
         kwargs = dict.fromkeys(commands, value)
@@ -265,30 +265,30 @@ def table_test_command_options(cli_runner: CliRunner, servo_cli: Typer) -> None:
 
 # Test name and help
 
-def test_settings_json_file(
+def test_config_json_file(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None
 ) -> None:
     path = tmp_path / "settings.json"
-    result = cli_runner.invoke(servo_cli, f"settings -f json -o {path}")
+    result = cli_runner.invoke(servo_cli, f"config -f json -o {path}")
     assert result.exit_code == 0
     settings = json.loads(path.read_text())
     assert settings["connectors"] is not None
 
 
-def test_settings_dict(
+def test_config_dict(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, optimizer_env: None,
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "settings -f dict")
+    result = cli_runner.invoke(servo_cli, "config -f dict")
     assert result.exit_code == 0
     settings = eval(result.stdout)
     assert settings["connectors"] is not None
 
 
-def test_settings_dict_file(
+def test_config_dict_file(
     cli_runner: CliRunner, servo_cli: Typer, vegeta_config_file: Path, tmp_path: Path, optimizer_env: None,
 ) -> None:
     path = tmp_path / "settings.py"
-    result = cli_runner.invoke(servo_cli, f"settings -f dict -o {path}")
+    result = cli_runner.invoke(servo_cli, f"config -f dict -o {path}")
     assert result.exit_code == 0
     settings = eval(path.read_text())
     assert settings["connectors"] is not None

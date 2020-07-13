@@ -11,7 +11,7 @@ from devtools import pformat
 
 from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
-from servo.servo import BaseServoSettings, Events, Servo
+from servo.servo import BaseServoConfiguration, Events, Servo
 from servo.types import Control, Description, Measurement
 from servo.utilities import SignalHandler
 
@@ -106,8 +106,8 @@ class ServoRunner:
         return self.servo.optimizer
 
     @property
-    def settings(self) -> BaseServoSettings:
-        return self.servo.settings
+    def configuration(self) -> BaseServoConfiguration:
+        return self.servo.configuration
 
     @property
     def logger(self) -> Logger:

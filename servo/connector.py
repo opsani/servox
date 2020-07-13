@@ -104,16 +104,16 @@ class Optimizer(BaseSettings):
         }
 
 
-DEFAULT_SETTINGS_TITLE = "Connector Configuration Schema"
+DEFAULT_TITLE = "Connector Configuration Schema"
 
 
-class ConnectorSettings(BaseSettings):
+class BaseConfiguration(BaseSettings):
     """
-    ConnectorSettings is the base configuration class for Opsani Servo Connectors.
+    BaseConfiguration is the base configuration class for Opsani Servo Connectors.
 
-    ConnectorSettings instances are typically paired 1:1 with a Connector class
+    BaseConfiguration instances are typically paired 1:1 with a Connector class
     that inherits from `servo.connector.Connector` and provides the business logic
-    of the connector. Settings classes are configuration specific specific and designed
+    of the connector. Configuration classes are connector specific and designed
     to be initialized from commandline arguments, environment variables, and defaults.
     Connectors are initialized with a valid settings instance capable of providing necessary
     configuration for the connector to function.
@@ -122,14 +122,14 @@ class ConnectorSettings(BaseSettings):
     description: Optional[str] = Field(
         None, description="An optional annotation describing the configuration."
     )
-    """An optional textual description of the configyuration stanza useful for differentiating
+    """An optional textual description of the configuration stanza useful for differentiating
     between configurations within assemblies.
     """
 
     @classmethod
-    def parse_file(cls, file: Path, *, key: Optional[str] = None) -> "ConnectorSettings":
+    def parse_file(cls, file: Path, *, key: Optional[str] = None) -> "BaseConfiguration":
         """
-        Parse a YAML configuration file and return a settings object with the contents.
+        Parse a YAML configuration file and return a configuration object with the contents.
 
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
@@ -142,7 +142,7 @@ class ConnectorSettings(BaseSettings):
         return cls.parse_obj(config)
 
     @classmethod
-    def generate(cls, **kwargs) -> "ConnectorSettings":
+    def generate(cls, **kwargs) -> "BaseConfiguration":
         """
         Return a set of default settings for a new configuration.
 
@@ -157,8 +157,8 @@ class ConnectorSettings(BaseSettings):
         super().__init_subclass__(**kwargs)
 
         # Schema title
-        base_name = cls.__name__.replace("Settings", "")
-        if cls.__config__.title == DEFAULT_SETTINGS_TITLE:
+        base_name = cls.__name__.replace("Configuration", "")
+        if cls.__config__.title == DEFAULT_TITLE:
             cls.__config__.title = f"{base_name} Connector Configuration Schema"
 
         # Default prefix
@@ -173,14 +173,14 @@ class ConnectorSettings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
-        title = DEFAULT_SETTINGS_TITLE
+        title = DEFAULT_TITLE
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
-env_names = ConnectorSettings.__fields__["description"].field_info.extra.get(
+env_names = BaseConfiguration.__fields__["description"].field_info.extra.get(
     "env_names", set()
 )
-ConnectorSettings.__fields__["description"].field_info.extra["env_names"] = set(
+BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
 
@@ -240,11 +240,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     advisory purposes.
     """
 
+    ##
     # Instance configuration
-
-    settings: ConnectorSettings
-    """Settings for the connector set explicitly or loaded from a config file.
-    """
 
     optimizer: Optional[Optimizer]
     """Name of the command for interacting with the connector instance via the CLI.
@@ -252,6 +249,10 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     Note that optimizers are attached as configuration to Connector instance because
     the settings are not managed as part of the assembly config files and are always
     provided via environment variablesm, commandline arguments, or secrets management.
+    """
+
+    configuration: BaseConfiguration
+    """Configuration for the connector set explicitly or loaded from a config file.
     """
 
     config_key_path: str
@@ -288,16 +289,16 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         return v
 
     @classmethod
-    def settings_model(cls) -> Type["Settings"]:
+    def config_model(cls) -> Type["BaseConfiguration"]:
         """
-        Return the settings model backing the connector. 
+        Return the configuration model backing the connector. 
         
-        The effective type of the setting instance is defined by the type hint definitions of the 
-        `settings_model` and `settings` level attributes closest in definition to the target class.
+        The effective type of the configuration instance is defined by the type hint definitions of the 
+        `config_model` and `configuration` level attributes closest in definition to the target class.
         """
         hints = get_type_hints(cls)
-        settings_cls = hints["settings"]
-        return settings_cls
+        config_cls = hints["configuration"]
+        return config_cls
 
     ##
     # Events

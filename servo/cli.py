@@ -18,8 +18,8 @@ from bullet import Check, colors, styles
 
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
-from servo.connector import Connector, ConnectorSettings, Optimizer
-from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_settings_model_from_routes, _default_routes, _create_settings_model
+from servo.connector import Connector, BaseConfiguration, Optimizer
+from servo.servo import Events, Servo, ServoAssembly, _connector_class_from_string, _create_config_model_from_routes, _default_routes, _create_config_model
 from servo.servo_runner import ServoRunner
 from servo.types import *
 from servo.events import Preposition, Event, EventHandler
@@ -963,13 +963,13 @@ class ServoCLI(CLI):
             text = TEXT_FORMAT
 
         @self.command(section=section)
-        def settings(
+        def config(
             context: Context,
             format: SettingsOutputFormat = typer.Option(
                 SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
             ),
             output: typer.FileTextWrite = typer.Option(
-                None, "--output", "-o", help="Output settings to [FILE]"
+                None, "--output", "-o", help="Output configuration to [FILE]"
             ),
             keys: Optional[List[str]] = typer.Argument(
                 None, 
@@ -980,7 +980,7 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            settings = context.servo.settings.dict(exclude_unset=True, include=include)
+            settings = context.servo.configuration.dict(exclude_unset=True, include=include)
             settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
             settings_dict = json.loads(settings_json)
             settings_dict_str = pformat(settings_dict)
@@ -1058,12 +1058,12 @@ class ServoCLI(CLI):
                     if isinstance(connector, Connector):
                         settings_class = connector.settings.__class__
                     elif issubclass(connector, Connector):
-                        settings_class = connector.settings_model()
+                        settings_class = connector.config_model()
                     else:
                         raise typer.BadParameter(f"unexpected connector type '{connector.__class__.__name__}'")
                 else:
                     CLI.assemble_from_context(context)
-                    settings_class = context.servo.settings.__class__
+                    settings_class = context.servo.configuration.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
@@ -1111,8 +1111,8 @@ class ServoCLI(CLI):
             try:
                 # NOTE: When connector descriptor is provided the validation is constrained
                 routes = self.connector_routes_callback(context=context, value=connectors)
-                settings_model, routes = _create_settings_model(config_file=file, routes=routes)
-                result = settings_model.parse_file(file)
+                config_model, routes = _create_config_model(config_file=file, routes=routes)
+                result = config_model.parse_file(file)
             except (ValidationError, yaml.scanner.ScannerError, KeyError) as e:
                 if not quiet:
                     typer.echo(f"X Invalid configuration in {file}", err=True)
@@ -1172,8 +1172,8 @@ class ServoCLI(CLI):
             routes = self.connector_routes_callback(context=context, value=connectors) if connectors else _default_routes()
 
             # Build a settings model from our routes
-            settings_model = _create_settings_model_from_routes(routes)
-            settings = settings_model.generate()
+            config_model = _create_config_model_from_routes(routes)
+            settings = config_model.generate()
 
             if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary

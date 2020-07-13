@@ -126,7 +126,7 @@ functional component (including the servo itself) is a connector that inherits f
 dispatched from the servo (see Events below), provide services to the user (see CLI below), and interact with other connectors.
 * **Servo** - The Servo class models the active set of connectors and configuration that is executing. The servo handles connectivity with
 the Opsani Optimizer API (see Optimizer below) and is responsible for the primary concerns of connectivity management and event handling.
-* **Settings** - Configuration is a major shared concern in tools such as Opsani that are designed to integrate with arbitrary systems.
+* **Configuration** - Configuration is a major shared concern in tools such as Opsani that are designed to integrate with arbitrary systems.
 Ensuring that configuration is valid, complete, and functional is a non-trivial task for any component with more than a few knobs and levers.
 ServoX provides a rich configuration subsystem built on Pydantic that makes modeling and processing configuration very straightforward. Out
 of the box support is provided for common needs such as environment variables and dotenv files. Configuration is strongly validated using

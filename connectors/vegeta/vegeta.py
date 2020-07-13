@@ -115,7 +115,8 @@ class VegetaReport(BaseModel):
         else:
             raise ValueError(f"unknown key '{key}'")
 
-class VegetaSettings(connector.ConnectorSettings):
+# TODO: Could become connectors.vegeta.Configuration
+class VegetaConfiguration(connector.BaseConfiguration):
     """
     Configuration of the Vegeta connector
     """
@@ -245,7 +246,7 @@ class VegetaSettings(connector.ConnectorSettings):
         return v
     
     @classmethod
-    def generate(cls, **kwargs) -> 'VegetaSettings':
+    def generate(cls, **kwargs) -> 'VegetaConfiguration':
         return cls(
             rate='50/1s', 
             duration='5m',
@@ -270,7 +271,7 @@ REPORTING_INTERVAL = 2
     maturity=Maturity.STABLE,
 )
 class VegetaConnector(connector.Connector):
-    settings: VegetaSettings
+    configuration: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
@@ -329,8 +330,8 @@ class VegetaConnector(connector.Connector):
 
         return measurement
 
-    def _run_vegeta(self, *, settings: Optional[VegetaSettings] = None):
-        settings = settings if settings else self.settings
+    def _run_vegeta(self, *, configuration: Optional[VegetaConfiguration] = None):
+        configuration = configuration if configuration else self.configuration
 
         # construct and run Vegeta command
         vegeta_attack_args = list(map(str,[

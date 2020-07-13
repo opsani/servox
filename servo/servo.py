@@ -18,7 +18,7 @@ from servo import connector
 from servo.connector import (
     Connector,
     ConnectorLoader,
-    ConnectorSettings,
+    BaseConfiguration,
     EventResult,
     License,
     Maturity,
@@ -96,11 +96,11 @@ class _EventDefinitions:
     def promote(self) -> None:
         pass
 
-class BaseServoSettings(ConnectorSettings, abc.ABC):
+class BaseServoConfiguration(BaseConfiguration, abc.ABC):
     """
     Abstract base class for Servo settings
 
-    Note that the concrete BaseServoSettings class is built dynamically at runtime
+    Note that the concrete BaseServoConfiguration class is built dynamically at runtime
     based on the avilable connectors and configuration in effect.
 
     See `ServoAssembly` for details on how the concrete model is built.
@@ -125,12 +125,12 @@ class BaseServoSettings(ConnectorSettings, abc.ABC):
     """
 
     @classmethod
-    def generate(cls: Type["BaseServoSettings"], **kwargs) -> "BaseServoSettings":
+    def generate(cls: Type["BaseServoConfiguration"], **kwargs) -> "BaseServoConfiguration":
         """
         Generate configuration for the servo settings
         """
         for name, field in cls.__fields__.items():
-            if name not in kwargs and inspect.isclass(field.type_) and issubclass(field.type_, ConnectorSettings):
+            if name not in kwargs and inspect.isclass(field.type_) and issubclass(field.type_, BaseConfiguration):
                 kwargs[name] = field.type_.generate()
         return cls(**kwargs)
 
@@ -140,7 +140,7 @@ class BaseServoSettings(ConnectorSettings, abc.ABC):
         if isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
             try:
-                decoded_value = BaseServoSettings.__config__.json_loads(connectors)  # type: ignore
+                decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
             except ValueError as e:
                 raise ValueError(f'error parsing JSON for "{connectors}"') from e
 
@@ -175,10 +175,10 @@ class Servo(Connector):
     The Servo
     """
 
-    settings: BaseServoSettings
-    """Settings for the Servo.
+    configuration: BaseServoConfiguration
+    """Configuration for the Servo.
 
-    Note that the Servo settings are dynamically built at Servo assembly time.
+    Note that the Servo configuration is built dynamically at Servo assembly time.
     The concrete type is built in `ServoAssembly.assemble()` and adds a field
     for each active connector.
     """
@@ -300,7 +300,7 @@ class ServoAssembly(BaseModel):
     in the config file.
 
     The ServoAssembly class is responsible for handling the connector
-    loading and creating a concrete BaseServoSettings model that supports
+    loading and creating a concrete BaseServoConfiguration model that supports
     the connectors available and activated in the assembly. An assembly
     is the combination of configuration and associated code artifacts
     in an executable environment (e.g. a Docker image or a Python virtualenv
@@ -315,7 +315,7 @@ class ServoAssembly(BaseModel):
     optimizer: Optimizer
 
     ## Assembled settings & Servo
-    settings_model: Type[BaseServoSettings]
+    config_model: Type[BaseServoConfiguration]
     servo: Servo
 
     @classmethod
@@ -326,11 +326,11 @@ class ServoAssembly(BaseModel):
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> ("ServoAssembly", Servo, Type[BaseServoSettings]):
+    ) -> ("ServoAssembly", Servo, Type[BaseServoConfiguration]):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoSettings, routes = _create_settings_model(config_file=config_file, env=env)
+        ServoSettings, routes = _create_config_model(config_file=config_file, env=env)
 
         # Build our Servo settings instance from the config file + environment
         if config_file.exists():
@@ -347,7 +347,7 @@ class ServoAssembly(BaseModel):
             # settings on the connectors not being fully configured
             args = kwargs.copy()
             for key_path, connector_type in routes.items():
-                args[key_path] = connector_type.settings_model().construct()
+                args[key_path] = connector_type.config_model().construct()
             servo_settings = ServoSettings.construct(**args)
 
         # Initialize all active connectors
@@ -356,15 +356,15 @@ class ServoAssembly(BaseModel):
             connector_settings = getattr(servo_settings, key_path)
             if connector_settings:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
-                connector = connector_type(settings=connector_settings, optimizer=optimizer)
+                connector = connector_type(configuration=connector_settings, optimizer=optimizer)
                 servo_routes[key_path] = connector
 
         # Build the servo object
-        servo = Servo(settings=servo_settings, routes=servo_routes, optimizer=optimizer)
+        servo = Servo(configuration=servo_settings, routes=servo_routes, optimizer=optimizer)
         assembly = ServoAssembly(
             config_file=config_file,
             optimizer=optimizer,
-            settings_model=ServoSettings,
+            config_model=ServoSettings,
             servo=servo,
         )
 
@@ -392,8 +392,8 @@ class ServoAssembly(BaseModel):
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         """Returns a schema that only includes connector model definitions"""
         connectors = self.all_connectors() if all else self.servo.connectors
-        settings_models = list(map(lambda c: c.settings_model(), connectors))
-        return pydantic_schema(settings_models, title="Servo Schema")
+        config_models = list(map(lambda c: c.config_model(), connectors))
+        return pydantic_schema(config_models, title="Servo Schema")
 
     def top_level_schema_json(self, *, all: bool = False) -> str:
         """Return a JSON string representation of the top level schema"""
@@ -421,49 +421,49 @@ def _discover_connectors() -> Set[Type[Connector]]:
         connectors.add(connector)
     return connectors
 
-def _create_settings_model_from_routes(
+def _create_config_model_from_routes(
     routes = Dict[str, Type[Connector]],
     *,
     require_fields:bool = True,
-) -> Type[BaseServoSettings]:
+) -> Type[BaseServoConfiguration]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
         Type[Connector], str
     ] = {}  # use dict for uniquing and ordering
-    setting_fields: Dict[str, Tuple[Type[ConnectorSettings], Any]] = {}
+    setting_fields: Dict[str, Tuple[Type[BaseConfiguration], Any]] = {}
     default_value = (
         ... if require_fields else None
     )  # Pydantic uses ... for flagging fields required
 
     for key_path, connector_class in routes.items():
-        settings_model = _derive_settings_model_for_route(key_path, connector_class)
-        settings_model.__config__.title = (
+        config_model = _derive_config_model_for_route(key_path, connector_class)
+        config_model.__config__.title = (
             f"{connector_class.name} Settings (at key-path {key_path})"
         )
-        setting_fields[key_path] = (settings_model, default_value)
+        setting_fields[key_path] = (config_model, default_value)
         connector_versions[
             connector_class
         ] = f"{connector_class.name} v{connector_class.version}"
 
     # Create our model
-    servo_settings_model = create_model(
-        "ServoSettings", __base__=BaseServoSettings, **setting_fields,
+    servo_config_model = create_model(
+        "ServoSettings", __base__=BaseServoConfiguration, **setting_fields,
     )
 
     connectors_series = join_to_series(list(connector_versions.values()))
-    servo_settings_model.__config__.title = "Servo Configuration Schema"
-    servo_settings_model.__config__.schema_extra = {
+    servo_config_model.__config__.title = "Servo Configuration Schema"
+    servo_config_model.__config__.schema_extra = {
         "description": f"Schema for configuration of Servo v{Servo.version} with {connectors_series}"
     }
 
-    return servo_settings_model
+    return servo_config_model
 
-def _create_settings_model(
+def _create_config_model(
     *, 
     config_file: Path, 
     routes: Dict[str, Type[Connector]] = None,
     env: Optional[Dict[str, str]] = os.environ
-) -> (Type[BaseServoSettings], Dict[str, Type[Connector]]):
+) -> (Type[BaseServoConfiguration], Dict[str, Type[Connector]]):
     # map of config key in YAML to settings class for target connector
     if routes is None:
         routes = _default_routes()
@@ -478,8 +478,8 @@ def _create_settings_model(
                 routes = _routes_for_connectors_descriptor(connectors_value)
                 require_fields = True
 
-    servo_settings_model = _create_settings_model_from_routes(routes, require_fields=require_fields)    
-    return servo_settings_model, routes
+    servo_config_model = _create_config_model_from_routes(routes, require_fields=require_fields)    
+    return servo_config_model, routes
 
 
 def _normalize_name(name: str) -> str:
@@ -491,69 +491,69 @@ def _normalize_name(name: str) -> str:
 class SettingModelCacheEntry:
     connector_type: Type[Connector]
     key_path: str
-    settings_model: Type[ConnectorSettings]
+    config_model: Type[BaseConfiguration]
 
     def __init__(self, 
         connector_type: Type[Connector],
         key_path: str,
-        settings_model: Type[ConnectorSettings],
+        config_model: Type[BaseConfiguration],
     ) -> None:
         self.connector_type = connector_type
         self.key_path = key_path
-        self.settings_model = settings_model
+        self.config_model = config_model
     
     def __str__(self):
-        return f"{self.settings_model} for {self.connector_type.__name__} at key-path '{self.key_path}'"
+        return f"{self.config_model} for {self.connector_type.__name__} at key-path '{self.key_path}'"
 
-__settings_models_cache__: List[SettingModelCacheEntry] = []
+__config_models_cache__: List[SettingModelCacheEntry] = []
 
-def _derive_settings_model_for_route(
+def _derive_config_model_for_route(
     key_path: str, 
     model: Type[Connector]
-) -> Type[ConnectorSettings]:
+) -> Type[BaseConfiguration]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
     # because key-paths are guanranteed to be unique, we can utilize it as a cache key
-    base_settings_model = model.settings_model()
+    base_config_model = model.config_model()
 
     # See if we already have a matching model
-    settings_model: Optional[Type[ConnectorSettings]] = None
+    config_model: Optional[Type[BaseConfiguration]] = None
     naming_conflict = False
     model_names = set()
-    for cache_entry in __settings_models_cache__:
-        model_names.add(cache_entry.settings_model.__name__)
-        if cache_entry.connector_type is model and cache_entry.key_path == key_path:# and issubclass(cache_entry.settings_model, base_setting_model):
-            settings_model = cache_entry.settings_model
+    for cache_entry in __config_models_cache__:
+        model_names.add(cache_entry.config_model.__name__)
+        if cache_entry.connector_type is model and cache_entry.key_path == key_path:# and issubclass(cache_entry.config_model, base_setting_model):
+            config_model = cache_entry.config_model
             break
 
-    if settings_model is None:
-        if base_settings_model == ConnectorSettings:
+    if config_model is None:
+        if base_config_model == BaseConfiguration:
             # Connector hasn't defined a settings class or is reusing one, use the connector class name as base name
             # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
             # due to naming conflicts.
             model_name = f"{model.__name__}Settings"
-        elif key_path == model.__key_path__ and not f"{base_settings_model.__qualname__}" in model_names:
+        elif key_path == model.__key_path__ and not f"{base_config_model.__qualname__}" in model_names:
             # Connector is mounted at the default route, use default name
-            model_name = f"{base_settings_model.__qualname__}"
+            model_name = f"{base_config_model.__qualname__}"
         else:
-            model_name = _normalize_name(f"{base_settings_model.__qualname__}__{key_path}")
+            model_name = _normalize_name(f"{base_config_model.__qualname__}__{key_path}")
 
-        settings_model = create_model(model_name, __base__=base_settings_model)
+        config_model = create_model(model_name, __base__=base_config_model)
 
     # Cache it for reuse
     cache_entry = SettingModelCacheEntry(
         connector_type=model,
         key_path=key_path,
-        settings_model=settings_model
+        config_model=config_model
     )
-    __settings_models_cache__.append(cache_entry)
+    __config_models_cache__.append(cache_entry)
 
     # Traverse across all the fields and update the env vars
-    for name, field in settings_model.__fields__.items():
+    for name, field in config_model.__fields__.items():
         field.field_info.extra.pop("env", None)
         field.field_info.extra["env_names"] = {f"SERVO_{key_path}_{name}".upper()}
 
-    return settings_model
+    return config_model
 
 
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
@@ -633,7 +633,7 @@ def _routes_for_connectors_descriptor(connectors):
     elif isinstance(connectors, str):
         # NOTE: Special case. When we are invoked with a string it is typically an env var
         try:
-            decoded_value = BaseServoSettings.__config__.json_loads(connectors)  # type: ignore
+            decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
         except ValueError as e:
             raise ValueError(f'error parsing JSON for "{connectors}"') from e
 

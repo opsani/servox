@@ -10,7 +10,7 @@ import random
 import string
 
 # Force the test connectors to load early
-from tests.test_helpers import MeasureConnector, AdjustConnector, StubConnectorSettings
+from tests.test_helpers import MeasureConnector, AdjustConnector, StubBaseConfiguration
 
 # Add the devtools debug() function globally in tests
 try:
@@ -46,7 +46,7 @@ def servo_yaml(tmp_path: Path) -> Path:
 @pytest.fixture()
 def stub_servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
-    settings = StubConnectorSettings(name="stub")
+    settings = StubBaseConfiguration(name="stub")
     measure_config_json = json.loads(
         json.dumps(settings.dict(
             by_alias=True, 

@@ -3,21 +3,21 @@ from contextlib import contextmanager
 from typing import Dict
 
 from servo.servo import connector, Events
-from servo.connector import Connector, ConnectorSettings
+from servo.connector import Connector, BaseConfiguration
 from servo.types import Measurement
 from typing import Optional
 
 
-class StubConnectorSettings(ConnectorSettings):
+class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
 
     @classmethod
-    def generate(cls, **kwargs) -> 'StubConnectorSettings':
+    def generate(cls, **kwargs) -> 'StubBaseConfiguration':
         return cls(**kwargs)
         
 
 class MeasureConnector(Connector):
-    settings: StubConnectorSettings
+    configuration: StubBaseConfiguration
 
     @connector.before_event(Events.MEASURE)
     def before_measure(self, *args, **kwargs) -> None:
@@ -33,7 +33,7 @@ class MeasureConnector(Connector):
 
 
 class AdjustConnector(Connector):
-    settings: StubConnectorSettings
+    configuration: StubBaseConfiguration
 
     @connector.on_event()
     def adjust(self, *args, **kwargs) -> dict:

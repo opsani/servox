@@ -868,11 +868,11 @@ def update(appname, desc, data, print_progress):
             raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
 
-class KubernetesSettings(connector.ConnectorSettings):
+class KubernetesConfiguration(connector.BaseConfiguration):
     namespace: Optional[str]
 
     @classmethod
-    def generate(cls, **kwargs) -> 'KubernetesSettings':
+    def generate(cls, **kwargs) -> 'KubernetesConfiguration':
         return cls(
             namespace='default', 
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
@@ -892,7 +892,7 @@ class KubernetesSettings(connector.ConnectorSettings):
     maturity=Maturity.EXPERIMENTAL,
 )
 class KubernetesConnector(connector.Connector):
-    settings: KubernetesSettings
+    configuration: KubernetesConfiguration
     progress: float = 0.0
 
     def print_progress(

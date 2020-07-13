@@ -8,12 +8,12 @@ from typing import List
 import pytest
 from pydantic import Extra, ValidationError
 from servo import __version__, connector
-from servo.servo import BaseServoSettings, ServoAssembly, Servo, Events
-from servo.connector import Connector, Optimizer, ConnectorSettings, event, on_event, before_event, after_event
+from servo.servo import BaseServoConfiguration, ServoAssembly, Servo, Events
+from servo.connector import Connector, Optimizer, BaseConfiguration, event, on_event, before_event, after_event
 from servo.types import Control, Measurement, Control, Measurement
 from servo.events import Event, EventHandler, EventResult, Preposition, EventError, CancelEventError
 from tests.test_helpers import environment_overrides
-from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaSettings
+from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaConfiguration
 
 def test_version():
     assert __version__ == "0.1.0"
@@ -487,7 +487,7 @@ class TestServoAssembly:
                 ],
                 'allOf': [
                     {
-                        '$ref': '#/definitions/VegetaSettings__other',
+                        '$ref': '#/definitions/VegetaConfiguration__other',
                     },
                 ],
             },
@@ -498,7 +498,7 @@ class TestServoAssembly:
                 ],
                 'allOf': [
                     {
-                        '$ref': '#/definitions/VegetaSettings',
+                        '$ref': '#/definitions/VegetaConfiguration',
                     },
                 ],
             },
@@ -518,7 +518,7 @@ class TestServoAssembly:
                 ],
                 'type': 'string',
             },
-            'VegetaSettings__other': {
+            'VegetaConfiguration__other': {
                 'title': 'Vegeta Connector Settings (at key-path other)',
                 'description': 'Configuration of the Vegeta connector',
                 'type': 'object',
@@ -657,7 +657,7 @@ class TestServoAssembly:
                 ],
                 'additionalProperties': False,
             },
-            'VegetaSettings': {
+            'VegetaConfiguration': {
                 'title': 'Vegeta Connector Settings (at key-path vegeta)',
                 'description': 'Configuration of the Vegeta connector',
                 'type': 'object',
@@ -811,25 +811,25 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoConfiguration = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
         # Grab the vegeta field and check it
-        vegeta_field = DynamicServoSettings.__fields__["vegeta"]
+        vegeta_field = DynamicServoConfiguration.__fields__["vegeta"]
         vegeta_settings_type = vegeta_field.type_
-        assert vegeta_settings_type.__name__ == "VegetaSettings"
+        assert vegeta_settings_type.__name__ == "VegetaConfiguration"
         assert vegeta_field.field_info.extra["env_names"] == {"SERVO_VEGETA"}
 
         # Grab the other field and check it
-        other_field = DynamicServoSettings.__fields__["other"]
+        other_field = DynamicServoConfiguration.__fields__["other"]
         other_settings_type = other_field.type_
-        assert other_settings_type.__name__ == "VegetaSettings__other"
+        assert other_settings_type.__name__ == "VegetaConfiguration__other"
         assert other_field.field_info.extra["env_names"] == {"SERVO_OTHER"}
 
         with environment_overrides({"SERVO_DESCRIPTION": "this description"}):
             assert os.environ["SERVO_DESCRIPTION"] == "this description"
-            s = DynamicServoSettings(
+            s = DynamicServoConfiguration(
                 other=other_settings_type.construct(),
                 vegeta=vegeta_settings_type(
                     rate=10, duration="10s", target="http://example.com/"
@@ -880,7 +880,7 @@ def test_generating_schema_with_test_connectors(optimizer_env: None, servo_yaml:
 class TestServoSettings:
     def test_forbids_extra_attributes(self) -> None:
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            BaseServoConfiguration(
                 forbidden=[]
             )
             assert "extra fields not permitted" in str(e)
@@ -894,7 +894,7 @@ class TestServoSettings:
     def test_set_connectors_with_env_vars(self) -> None:
         with environment_overrides({"SERVO_CONNECTORS": '["measure"]'}):
             assert os.environ["SERVO_CONNECTORS"] is not None
-            s = BaseServoSettings()
+            s = BaseServoConfiguration()
             assert s is not None
             schema = s.schema()
             assert schema["properties"]["connectors"]["env_names"] == {
@@ -904,7 +904,7 @@ class TestServoSettings:
             assert s.connectors == ["measure"]
 
     def test_connectors_allows_none(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors=None,
         )
         assert s.connectors is None
@@ -916,77 +916,77 @@ class TestServoSettings:
         class BarConnector(Connector):
             pass
 
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={FooConnector, BarConnector},
         )
         assert set(s.connectors) == {'FooConnector', 'BarConnector'}
 
     def test_connectors_rejects_invalid_connector_set_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
-                connectors={BaseServoSettings},
+            BaseServoConfiguration(
+                connectors={BaseServoConfiguration},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
-            == "Invalid connectors value: <class 'servo.servo.BaseServoSettings'>"
+            == "Invalid connectors value: <class 'servo.servo.BaseServoConfiguration'>"
         )
 
     def test_connectors_allows_set_of_class_names(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"MeasureConnector", "AdjustConnector"},
         )
         assert set(s.connectors) == {"MeasureConnector", "AdjustConnector"}
 
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
-                connectors={"BaseServoSettings"},
+            BaseServoConfiguration(
+                connectors={"BaseServoConfiguration"},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
-            == "BaseServoSettings is not a Connector subclass"
+            == "BaseServoConfiguration is not a Connector subclass"
         )
 
     def test_connectors_allows_set_of_keys(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"vegeta"},
         )
         assert s.connectors == ["vegeta"]
 
     def test_connectors_allows_dict_of_keys_to_classes(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"alias": VegetaConnector},
         )
         assert s.connectors == {"alias": 'VegetaConnector'}
 
     def test_connectors_allows_dict_of_keys_to_class_names(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"alias": "VegetaConnector"},
         )
         assert s.connectors == {"alias": "VegetaConnector"}
 
     def test_connectors_allows_dict_with_explicit_map_to_default_key_path(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"vegeta": "VegetaConnector"},
         )
         assert s.connectors == {"vegeta": "VegetaConnector"}
 
     def test_connectors_allows_dict_with_explicit_map_to_default_class(self):
-        s = BaseServoSettings(
+        s = BaseServoConfiguration(
             connectors={"vegeta": VegetaConnector},
         )
         assert s.connectors == {"vegeta": 'VegetaConnector'}
 
     def test_connectors_forbids_dict_with_existing_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            BaseServoConfiguration(
                 connectors={"vegeta": "MeasureConnector"},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
@@ -1003,19 +1003,19 @@ class TestServoSettings:
 
     def test_connectors_forbids_dict_with_reserved_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            BaseServoConfiguration(
                 connectors={"connectors": "VegetaConnector"},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert e.value.errors()[0]["msg"] == 'Key "connectors" is reserved'
 
     def test_connectors_forbids_dict_with_invalid_key(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            BaseServoConfiguration(
                 connectors={"This Is Not Valid": "VegetaConnector"},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
@@ -1024,10 +1024,10 @@ class TestServoSettings:
 
     def test_connectors_rejects_invalid_connector_dict_values(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoSettings(
+            BaseServoConfiguration(
                 connectors={"whatever": "Not a Real Connector"},
             )
-        assert "1 validation error for BaseServoSettings" in str(e.value)
+        assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]

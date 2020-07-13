@@ -7,11 +7,11 @@ import typer
 import yaml
 from typer.testing import CliRunner
 
-from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaSettings
+from connectors.vegeta.vegeta import TargetFormat, VegetaConnector, VegetaConfiguration
 from pydantic import ValidationError, Extra
 from servo.connector import (
     Connector,
-    ConnectorSettings,
+    BaseConfiguration,
     EventResult,
     License,
     Maturity,
@@ -23,7 +23,7 @@ from servo.connector import (
     after_event,
     event,
 )
-from servo.servo import BaseServoSettings, ServoAssembly
+from servo.servo import BaseServoConfiguration, ServoAssembly
 from servo.cli import ConnectorCLI, ServoCLI
 from servo.events import Event, Preposition
 from tests.test_helpers import environment_overrides
@@ -118,18 +118,18 @@ class TestConnector:
         class FancyConnector(Connector):
             pass
 
-        c = FancyConnector(settings=ConnectorSettings())
+        c = FancyConnector(configuration=BaseConfiguration())
         assert c.config_key_path == "fancy"
 
 
 class TestSettings:
     def test_configuring_with_environment_variables(self) -> None:
-        assert ConnectorSettings.__fields__["description"].field_info.extra[
+        assert BaseConfiguration.__fields__["description"].field_info.extra[
             "env_names"
         ] == {"DESCRIPTION"}
         with environment_overrides({"DESCRIPTION": "this description"}):
             assert os.environ["DESCRIPTION"] == "this description"
-            s = ConnectorSettings()
+            s = BaseConfiguration()
             assert s.description == "this description"
 
 
@@ -138,37 +138,37 @@ class TestSettings:
 ###
 
 
-class TestVegetaSettings:
+class TestVegetaConfiguration:
     def test_rate_is_required(self) -> None:
-        schema = VegetaSettings.schema()
+        schema = VegetaConfiguration.schema()
         assert "rate" in schema["required"]
 
     def test_duration_is_required(self) -> None:
-        schema = VegetaSettings.schema()
+        schema = VegetaConfiguration.schema()
         assert "duration" in schema["required"]
 
     def test_validate_infinite_rate(self) -> None:
-        s = VegetaSettings(rate="0", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(rate="0", duration="0", target="GET http://example.com")
         assert s.rate == "0"
 
     def test_validate_rate_no_time_unit(self) -> None:
-        s = VegetaSettings(rate="500", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(rate="500", duration="0", target="GET http://example.com")
         assert s.rate == "500"
 
     def test_validate_rate_integer(self) -> None:
-        s = VegetaSettings(rate=500, duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(rate=500, duration="0", target="GET http://example.com")
         assert s.rate == "500"
 
     def test_validate_rate_connections_over_time(self) -> None:
-        s = VegetaSettings(rate="500/1s", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(rate="500/1s", duration="0", target="GET http://example.com")
         assert s.rate == "500/1s"
 
     def test_validate_rate_raises_when_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(
+            VegetaConfiguration(
                 rate="INVALID", duration="0", target="GET http://example.com"
             )
-        assert "1 validation error for VegetaSettings" in str(e.value)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("rate",)
         assert (
             e.value.errors()[0]["msg"] == "rate strings are of the form hits/interval"
@@ -176,10 +176,10 @@ class TestVegetaSettings:
 
     def test_validate_rate_raises_when_invalid_duration(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(
+            VegetaConfiguration(
                 rate="500/1zxzczc", duration="0", target="GET http://example.com"
             )
-        assert "1 validation error for VegetaSettings" in str(e.value)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("rate",)
         assert (
             e.value.errors()[0]["msg"]
@@ -187,36 +187,36 @@ class TestVegetaSettings:
         )
 
     def test_validate_duration_infinite_attack(self) -> None:
-        s = VegetaSettings(rate="0", duration="0", target="GET http://example.com")
+        s = VegetaConfiguration(rate="0", duration="0", target="GET http://example.com")
         assert s.duration == "0"
 
     def test_validate_duration_seconds(self) -> None:
-        s = VegetaSettings(rate="0", duration="1s", target="GET http://example.com")
+        s = VegetaConfiguration(rate="0", duration="1s", target="GET http://example.com")
         assert s.duration == "1s"
 
     def test_validate_duration_hours_minutes_and_seconds(self) -> None:
-        s = VegetaSettings(
+        s = VegetaConfiguration(
             rate="0", duration="1h35m20s", target="GET http://example.com"
         )
         assert s.duration == "1h35m20s"
 
     def test_validate_duration_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(
+            VegetaConfiguration(
                 rate="0", duration="INVALID", target="GET http://example.com"
             )
-        assert "1 validation error for VegetaSettings" in str(e.value)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("duration",)
         assert e.value.errors()[0]["msg"] == "Invalid duration INVALID"
 
     def test_validate_target_with_http_format(self) -> None:
-        s = VegetaSettings(
+        s = VegetaConfiguration(
             rate="0", duration="0", format="http", target="GET http://example.com"
         )
         assert s.format == TargetFormat.http
 
     def test_validate_target_with_json_format(self) -> None:
-        s = VegetaSettings(
+        s = VegetaConfiguration(
             rate="0",
             duration="0",
             format="json",
@@ -226,13 +226,13 @@ class TestVegetaSettings:
 
     def test_validate_target_with_invalid_format(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(
+            VegetaConfiguration(
                 rate="0",
                 duration="0",
                 format="invalid",
                 target="GET http://example.com",
             )
-        assert "1 validation error for VegetaSettings" in str(e.value)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("format",)
         assert (
             e.value.errors()[0]["msg"]
@@ -241,8 +241,8 @@ class TestVegetaSettings:
 
     def test_validate_taget_or_targets_must_be_selected(self, tmp_path: Path) -> None:
         with pytest.raises(ValidationError) as e:
-            s = VegetaSettings(rate="0", duration="0")
-        assert "1 validation error for VegetaSettings" in str(e.value)
+            s = VegetaConfiguration(rate="0", duration="0")
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("__root__",)
         assert e.value.errors()[0]["msg"] == "target or targets must be configured"
 
@@ -252,13 +252,13 @@ class TestVegetaSettings:
         targets = tmp_path / "targets"
         targets.touch()
         with pytest.raises(ValidationError) as e:
-            s = VegetaSettings(
+            s = VegetaConfiguration(
                 rate="0",
                 duration="0",
                 target="GET http://example.com",
                 targets="targets",
             )
-        assert "1 validation error for VegetaSettings" in str(e.value)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("__root__",)
         assert (
             e.value.errors()[0]["msg"] == "target and targets cannot both be configured"
@@ -267,21 +267,21 @@ class TestVegetaSettings:
     def test_validate_targets_with_path(self, tmp_path: Path) -> None:
         targets = tmp_path / "targets"
         targets.touch()
-        s = VegetaSettings(rate="0", duration="0", targets=targets)
+        s = VegetaConfiguration(rate="0", duration="0", targets=targets)
         assert s.targets == targets
 
     def test_validate_targets_with_path_doesnt_exist(self, tmp_path: Path) -> None:
         targets = tmp_path / "targets"
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(rate="0", duration="0", targets=targets)
-        assert "2 validation errors for VegetaSettings" in str(e.value)
+            VegetaConfiguration(rate="0", duration="0", targets=targets)
+        assert "2 validation errors for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("targets",)
         assert "file or directory at path" in e.value.errors()[0]["msg"]
 
     def test_providing_invalid_target_with_json_format(self, tmp_path: Path) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(rate="0", duration="0", format="json", target="INVALID")
-        assert "1 validation error for VegetaSettings" in str(e.value)
+            VegetaConfiguration(rate="0", duration="0", format="json", target="INVALID")
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("__root__",)
         assert "the target is not valid JSON" in e.value.errors()[0]["msg"]
 
@@ -289,8 +289,8 @@ class TestVegetaSettings:
         targets = tmp_path / "targets.json"
         targets.write_text("<xml>INVALID</xml>")
         with pytest.raises(ValidationError) as e:
-            VegetaSettings(rate="0", duration="0", format="json", targets=targets)
-        assert "1 validation error for VegetaSettings" in str(e.value)
+            VegetaConfiguration(rate="0", duration="0", format="json", targets=targets)
+        assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("__root__",)
         assert "the targets file is not valid JSON" in e.value.errors()[0]["msg"]
 
@@ -302,16 +302,16 @@ class VegetaConnectorTests:
 
 
 def test_init_vegeta_connector() -> None:
-    settings = VegetaSettings(
+    config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings=settings)
+    connector = VegetaConnector(configuration=config)
     assert connector is not None
 
 
 def test_init_vegeta_connector_no_settings() -> None:
     with pytest.raises(ValidationError) as e:
-        VegetaConnector(settings=None)
+        VegetaConnector(configuration=None)
     assert "1 validation error for VegetaConnector" in str(e.value)
 
 
@@ -321,10 +321,10 @@ def test_init_connector_no_version_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.version = None
-        settings = VegetaSettings(
+        config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings=settings, path="whatever")
+        connector = FakeConnector(configuration=config, path="whatever")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "version must be provided"
 
@@ -335,10 +335,10 @@ def test_init_connector_invalid_version_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.version = "invalid"
-        settings = VegetaSettings(
+        config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings=settings, path="whatever", version="b")
+        connector = FakeConnector(configuration=config, path="whatever", version="b")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "invalid is not valid SemVer string"
 
@@ -348,10 +348,10 @@ def test_init_connector_parses_version_string() -> None:
         pass
 
     FakeConnector.version = "0.5.0"
-    settings = VegetaSettings(
+    config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = FakeConnector(settings=settings, path="whatever")
+    connector = FakeConnector(configuration=config, path="whatever")
     assert connector.version is not None
     assert connector.version == Version.parse("0.5.0")
 
@@ -362,36 +362,36 @@ def test_init_connector_no_name_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.name = None
-        settings = VegetaSettings(
+        config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(settings=settings, path="test", name=None)
+        connector = FakeConnector(configuration=config, path="test", name=None)
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
 def test_vegeta_default_key_path() -> None:
-    settings = VegetaSettings(
+    config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings=settings)
+    connector = VegetaConnector(configuration=config)
     assert connector.config_key_path == "vegeta"
 
 
 def test_vegeta_config_override() -> None:
-    settings = VegetaSettings(
+    config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(settings=settings, config_key_path="monkey")
+    connector = VegetaConnector(configuration=config, config_key_path="monkey")
     assert connector.config_key_path == "monkey"
 
 
 def test_vegeta_id_invalid() -> None:
     with pytest.raises(ValidationError) as e:
-        settings = VegetaSettings(
+        config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(settings=settings, config_key_path="THIS IS NOT COOL")    
+        connector = VegetaConnector(configuration=config, config_key_path="THIS IS NOT COOL")    
     error_messages = list(map(lambda error: error["msg"], e.value.errors()))
     assert "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores" in error_messages
 
@@ -436,9 +436,9 @@ def test_env_variable_prefixing() -> None:
         ["Abstract Servo Configuration Schema", "SERVO_DESCRIPTION",],
     ]
     schemas = [
-        ConnectorSettings.schema(),
-        VegetaSettings.schema(),
-        BaseServoSettings.schema(),
+        BaseConfiguration.schema(),
+        VegetaConfiguration.schema(),
+        BaseServoConfiguration.schema(),
     ]
     # NOTE: popping the env_names without copying is a mistake you will only make once
     values = list(
@@ -752,7 +752,7 @@ def test_vegeta_cli_validate(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml", catch_exceptions=False)
@@ -763,7 +763,7 @@ def test_vegeta_cli_validate_quiet(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -q -f vegeta.yaml")
@@ -774,7 +774,7 @@ def test_vegeta_cli_validate_dict(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_dict = {
         "connectors": { "first": "vegeta", "second": "vegeta" },        
         "first": config.dict(exclude_unset=True),
@@ -800,7 +800,7 @@ def test_vegeta_cli_validate_invalid_key(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"nonsense": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
@@ -811,7 +811,7 @@ def test_vegeta_cli_validate_file_doesnt_exist(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f wrong.yaml")
@@ -822,7 +822,7 @@ def test_vegeta_cli_validate_wrong_connector(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml measure")
@@ -833,7 +833,7 @@ def test_vegeta_cli_validate_alias_syntax(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml vegeta:vegeta")
@@ -844,7 +844,7 @@ def test_vegeta_cli_validate_aliasing(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"vegeta_alias": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml vegeta_alias:vegeta")
@@ -855,7 +855,7 @@ def test_vegeta_cli_validate_invalid_dict(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
 ) -> None:
     config_file = tmp_path / "vegeta.yaml"
-    config = VegetaSettings.generate()
+    config = VegetaConfiguration.generate()
     config_yaml = yaml.dump({"nonsense": config.dict(exclude_unset=True)})
     config_file.write_text(config_yaml)
     result = cli_runner.invoke(servo_cli, "validate -f vegeta.yaml")
@@ -991,8 +991,8 @@ class TestConnectorEvents:
         )
 
     def test_event_invoke(self) -> None:
-        settings = ConnectorSettings.construct()
-        connector = TestConnectorEvents.FakeConnector(settings=settings)
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(configuration=config)
         event = connector.__events__['example_event']
         results = connector.process_event(event, Preposition.ON)
         assert results is not None
@@ -1002,7 +1002,7 @@ class TestConnectorEvents:
         assert result.value == 12345
 
     def test_event_invoke_not_supported(self) -> None:
-        settings = ConnectorSettings.construct()
-        connector = TestConnectorEvents.FakeConnector(settings=settings)
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(configuration=config)
         result = connector.process_event("unknown_event", Preposition.ON)
         assert result is None
