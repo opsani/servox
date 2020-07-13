@@ -517,7 +517,10 @@ class TestServoAssembly:
         connector = servo.connectors[0]
         assert connector.optimizer == optimizer
 
-    def test_aliased_connectors_produce_schema(self, servo_yaml: Path) -> None:
+    def test_aliased_connectors_produce_schema(self, servo_yaml: Path, mocker) -> None:
+        mocker.patch.object(Servo, "version", "100.0.0")
+        mocker.patch.object(VegetaConnector, "version", "100.0.0")
+
         config = {
             "connectors": {"vegeta": "vegeta", "other": "vegeta"},
             "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
@@ -530,13 +533,14 @@ class TestServoAssembly:
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
+
         schema = json.loads(DynamicServoSettings.schema_json())
 
         # Description on parent class can be squirrely
         assert schema["properties"]["description"]["env_names"] == ["SERVO_DESCRIPTION"]
         assert schema == {
             "title": "Servo Configuration Schema",
-            "description": "Schema for configuration of Servo v0.2.0 with Vegeta Connector v0.5.0",
+            "description": "Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0",
             "type": "object",
             "properties": {
                 "description": {
