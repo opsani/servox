@@ -5,7 +5,7 @@ import sys
 from enum import Enum
 from logging import Logger
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Set, Type, Union, Any
+from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
 
 import click
 import typer

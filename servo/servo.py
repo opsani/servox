@@ -26,7 +26,7 @@ from servo.connector import (
     Optimizer,
 )
 from servo.events import CancelEventError, Event, Preposition
-from servo.types import Control, Description, Measurement, Metric, CheckResult
+from servo.types import CheckResult, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
 
