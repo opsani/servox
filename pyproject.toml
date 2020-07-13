@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "servo"
+name = "servox"
 version = "0.2.0"
 description = "Opsani Servo: The Next Generation"
 authors = ["Blake Watters <blake@opsani.com>"]
