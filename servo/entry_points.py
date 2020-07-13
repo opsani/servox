@@ -6,7 +6,7 @@
 # reinstalls of all package dependencies.
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from loguru import logger
 
 from servo.cli import ServoCLI
@@ -14,7 +14,7 @@ from servo.connector import ConnectorLoader
 
 
 def run_cli():
-    load_dotenv()
+    load_dotenv(find_dotenv())
 
     # NOTE: We load connectors here because waiting until assembly
     # is too late for registering CLI commands
