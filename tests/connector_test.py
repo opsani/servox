@@ -490,20 +490,7 @@ def test_vegeta_cli_schema_json(servo_cli: ServoCLI, cli_runner: CliRunner, opti
                 'type': 'string',
             },
             'format': {
-                'title': 'Format',
-                'description': (
-                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
-                    'cs for details.'
-                ),
-                'default': 'http',
-                'env_names': [
-                    'VEGETA_FORMAT',
-                ],
-                'enum': [
-                    'http',
-                    'json',
-                ],
-                'type': 'string',
+                '$ref': '#/definitions/TargetFormat',
             },
             'target': {
                 'title': 'Target',
@@ -527,8 +514,8 @@ def test_vegeta_cli_schema_json(servo_cli: ServoCLI, cli_runner: CliRunner, opti
                 'env_names': [
                     'VEGETA_TARGETS',
                 ],
-                'type': 'string',
                 'format': 'file-path',
+                'type': 'string',
             },
             'connections': {
                 'title': 'Connections',
@@ -608,6 +595,17 @@ def test_vegeta_cli_schema_json(servo_cli: ServoCLI, cli_runner: CliRunner, opti
             'duration',
         ],
         'additionalProperties': False,
+        'definitions': {
+            'TargetFormat': {
+                'title': 'TargetFormat',
+                'description': 'An enumeration.',
+                'enum': [
+                    'http',
+                    'json',
+                ],
+                'type': 'string',
+            },
+        },
     }
 
 
