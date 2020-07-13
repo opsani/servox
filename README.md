@@ -27,8 +27,8 @@ This is the path of least resistance but any Python package management system sh
 * Install Poetry: `curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python`
 * Install dependencies: `poetry install`
 * Activate the venv: `poetry shell`
-* Start interacting with the servo: `servo --help`
 * Initialize your environment: `servo init`
+* Start interacting with the servo: `servo --help`
 
 ## Overview
 
@@ -48,7 +48,67 @@ ServoX will be released as Servo 2.0.0 during the summer of 2020.
 
 Access to an Opsani optimizer is required to deploy the servo and run the end to end integration tests. If you do not currently
 have access to an Opsani environment but are otherwise interested in working with the CO engine and Servo, please reach out to us
-at info@opsani.com and we will get back with you,
+at info@opsani.com and we will get back with you.
+
+### Usage
+
+#### Displaying Help
+
+```console
+❯ servo --help
+```
+
+#### Initializing an Assembly
+
+**NOTE**: A Dotenv file is recommended during development to keep the CLI options
+under control. The init command will generate one for you.
+
+```console
+❯ servo init
+```
+
+#### Configuration
+
+```console
+# Generate a config file with all available connectors
+❯ servo generate
+
+# Validate a config file
+❯ servo validate
+
+# Display config schema
+❯ servo schema
+```
+
+#### Displaying Info
+
+```console
+# View the connectors
+❯ servo connectors
+
+❯ servo show events
+❯ servo show components
+❯ servo show metrics
+```
+
+#### Running Operations
+
+```console
+# Check servo readiness
+❯ servo check
+
+# Describe application state
+❯ servo describe
+
+# Capture and display a measurement
+❯ servo measure
+
+# Adjust the memory of web-server to 512MB and cpu of gateway to .8 millicores
+❯ servo adjust web.mem=512 gateway.cpu=0.8
+
+# Run the servo to start optimizing
+❯ servo run
+```
 
 ## Architecture
 
@@ -85,6 +145,90 @@ container image but aren't using it).
 * **CLI** - The CLI provides the primary interface for interacting with the servo. The CLI is modular and contains a number of root level commands
 and connectors can optionally register additional commands. Most of the root level commands are driven through the event
 subsystem and connectors which respond to the relevant events will automatically become accessible through the CLI. For example, executing `servo schema` will emit a complete JSON Schema document for the assembly while `servo schema kubernetes` will emit a JSON Schema specific to the Kubernetes connector. 
+
+### Understanding Events
+
+The servo is built around an event driven architecture and utilizes a lightweight eventing system to
+pass messages between connectors. Events are simple strings identifiers that are bound to a Python
+[inspect.Signature](https://docs.python.org/3/library/inspect.html#inspect.Signature) object. The
+signature is used when event handlers are registered to enforce a contract around the parameter
+and return types, method arity, etc.
+
+Any connector can define an event provided that no other connector has already registered an event 
+with the desired name. The `Servo` class defines several basic events covering essential functionality
+such as declaring metrics and components, capturing measurements, and performing adjustments. These 
+events are integrated into the CLI and readily accessible. For example, executing `servo show metrics`
+dispatches the `metrics` event to all active connectors and displays the aggregate results in a table.
+More substantial commands such as `measure` and `adjust` work in the same manner -- dispatching events
+and visualizing the results. Whenever possible functionality is implemented via eventing.
+
+When the servo is run, it connects to the Opsani optimizer via the API and receives instructions
+about which actions to take to facilitate the optimization activity. These commands are dispatched
+to the connectors via events.
+
+The default events are available on the `servo.servo.Events` enumeration and include:
+
+| Event | Category | Description |
+|-------|----------|-------------|
+| startup | Lifecycle | Dispatched when the servo is assembled. |
+| shutdown | Lifecycle | Dispatched when the servo is being shutdown. |
+| metrics | Informational | Dispatched to gather the metrics being measured. |
+| components | Informational | Dispatched to gather the components & settings available for adjustment. |
+| check | Operational | Asks connectors to check if they are ready to run by validating settings, etc. |
+| describe | Operational | Gathers the current state of the application under optimization. |
+| measure | Operational | Takes a measurement of target metrics and reports them to the optimizer. |
+| adjust | Operational | Applies a change to the components/settings of the application under optimization and reports status to the optimizer. |
+
+#### Event Handlers & Prepositions
+
+Event handlers are easily registered via a set of method decorators available on the `servo.connector`
+module. Handlers are registered with a *preposition* which determines if it is invoked before, on,
+or after the event has been processed.
+
+```python
+from servo.connector import Connector, EventResult, before_event, after_event, on_event
+from servo.types import Metric, Unit
+
+class SomeConnector(Connector):
+  @before_event('measure')
+  def notify_before_measure(self) -> None:
+    self.logger.info("We are about to measure...")
+
+  @on_event('metrics')
+  def metrics(self) -> List[Metric]:
+    return [Metric('throughput', Unit.REQUESTS_PER_MINUTE)]
+  
+  @after_event('adjust')
+  def analyze_results(self, results: List[EventResult]) -> None:
+    self.logger.info(f"We got some results: {results}")
+```
+
+Each preposition has different capabilities available to it. Before event handlers can cancel
+the execution of the event by raising a `CancelEventError`. On event handlers can return results
+that are aggregated and available for processing. After event handlers get access to all of the
+results returned by active connectors via the on event handlers.
+
+#### Creating a new Event
+
+Events can be created either programmatically via the `Connector.create_event()` class methd or
+declaratively via the `event()` decorator:
+
+```python
+from servo.connector import Connector, event
+
+class AnotherConnector(Connector):
+  @event(name='load_test', handler=True)
+  def run_load_test(self, url: str, duration: int = 60) -> str:
+    return "Do something..."
+```
+
+The `event` decorator uses the parameter and return type signature of the decorated method to 
+define the signature requirements for any on event handler defined against the event. In this
+example, the `handler=True` keyword argument is provided to created the event **and** register
+the decorated method as an on event handler for the new event.
+
+Once an event is created, the connector can dispatch against it to notify other connectors of
+changes in state or to request data from them.
 
 ### Environment Variables & Dotenv
 
@@ -161,6 +305,47 @@ new_relic:
   setting_2: another value
 ```
 
+These configurations can be generated for you by providing arguments to `servo generate`. A space
+delimited list of connector names will explicitly populate the `connectors` key and a syntax of
+`alias:connector` will configure aliases:
+
+```console
+❯ servo generate foo:vegeta bar:kubernetes
+bar:
+  description: Update the namespace, deployment, etc. to match your Kubernetes cluster
+  namespace: default
+connectors:
+  bar: kubernetes
+  foo: vegeta
+foo:
+  description: Update the rate, duration, and target/targets to match your load profile
+  duration: 5m
+  rate: 50/1s
+  target: https://example.com/
+
+Generated servo.yaml
+```
+
+### Extending the CLI
+
+Should your connector wish to expose additional commands to the CLI, it can do so via the `ConnectorCLI` class.
+Instances are automatically registred with the CLI and the `Context` is configured appropriately when commands are
+invoked. All CLI extensions are namespaced as subcommands to keep things tidy and avoid naming conflicts.
+
+A simple example of a CLI extension that will register `servo vegeta attack` is:
+
+```python
+from servo.cli import ConnectorCLI, Context
+
+cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+@cli.command()
+def attack(context: Context):
+    """
+    Run an adhoc load generation
+    """
+    context.connector.measure()
+```
+
 ### Requirements & Dependencies
 
 ServoX is implemented in Python and supported by a handful of excellent libraries from the Python Open Source community. Additional
@@ -173,26 +358,6 @@ strong modeling and validation that forms the core of the configuration module.
 * [httpx](https://www.python-httpx.org/) - httpx is a (mostly) requests compatible HTTP library that provides support for HTTP/2, is type annotated, has extensive test coverage, and supports async interactions on top of asyncio.
 * [loguru](https://loguru.readthedocs.io/en/stable/index.html) - A rich Python logging library that builds on the foundation of the standard library
 logging module and provides a number of enhancements.
-
-### Responding to and Emitting Events
-
-### Extending the CLI
-
-Should your connector wish to expose additional commands to the CLI, it can do so via the `ConnectorCLI` class.
-Instances are automatically registred with the CLI and the `Context` is configured appropriately when commands are
-invoked. All CLI extensions are namespaced as subcommands to keep things tidy and avoid naming conflicts.
-
-A simple example of a CLI extension that will register `servo vegeta attack` is:
-
-```python
-cli = ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
-@cli.command()
-def attack(context: Context):
-    """
-    Run an adhoc load generation
-    """
-    context.connector.measure()
-```
 
 ## Development
 
