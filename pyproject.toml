@@ -1,9 +1,12 @@
 [tool.poetry]
 name = "servox"
-version = "0.2.0"
+version = "0.2.1"
 description = "Opsani Servo: The Next Generation"
 authors = ["Blake Watters <blake@opsani.com>"]
 license = "Apache-2.0"
+packages = [
+    { include = "servo" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.8"

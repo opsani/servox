@@ -1,6 +1,11 @@
 import importlib.metadata
 
-__version__ = importlib.metadata.version(__name__)
+for pkg in {"servo", "servox"}:
+    try:
+        __version__ = importlib.metadata.version(__name__)
+        break
+    except importlib.metadata.PackageNotFoundError:
+        pass
 
 import servo.connector
 import servo.events
