@@ -175,13 +175,13 @@ DICT_FORMAT = "dict"
 HTML_FORMAT = "html"
 TEXT_FORMAT = "text"
 MARKDOWN_FORMAT = "markdown"
-
+CONFIGMAP_FORMAT = "configmap"
 
 class AbstractOutputFormat(str, Enum):
     """Defines common behaviors for command specific output format enumerations"""
 
     def lexer(self) -> Optional["pygments.Lexer"]:
-        if self.value == YAML_FORMAT:
+        if self.value in [YAML_FORMAT, CONFIGMAP_FORMAT]:
             return YamlLexer()
         elif self.value == JSON_FORMAT:
             return JsonLexer()

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ from typer.testing import CliRunner
 import servo
 from servo.cli import CLI, Context, ServoCLI
 from servo.connector import BaseConfiguration, Optimizer
-
+from servo.servo import Servo
+from connectors.vegeta.vegeta import VegetaConnector
+from freezegun import freeze_time
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
@@ -297,6 +300,46 @@ def test_config_yaml_file(
     result = cli_runner.invoke(servo_cli, f"config -f yaml -o {path}")
     assert result.exit_code == 0
     assert "connectors:" in path.read_text()
+
+@freeze_time('2020-01-01')
+def test_config_configmap_file(
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    vegeta_config_file: Path,
+    tmp_path: Path,
+    optimizer_env: None,
+    mocker
+) -> None:
+    mocker.patch.object(Servo, "version", "100.0.0")
+    mocker.patch.object(VegetaConnector, "version", "100.0.0")
+    path = tmp_path / "settings.yaml"
+    result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
+    assert result.exit_code == 0
+    assert path.read_text() == (
+        '---\n'
+        'apiVersion: v1\n'
+        'kind: ConfigMap\n'
+        'metadata:\n'
+        '  name: opsani-servo-config\n'
+        '  labels:\n'
+        '    app.kubernetes.io/name: servo\n'
+        '    app.kubernetes.io/version: 100.0.0\n'
+        '  annotations:\n'
+        "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
+        '    servo.opsani.com/connectors: \'[{"name": "Vegeta Connector", "description": "Vegeta\n'
+        '      load testing connector", "version": "100.0.0", "url": "https://github.com/opsani/vegeta-connector",\n'
+        '      "config_key_path": "vegeta"}, {"name": "Servo", "description": "Continuous Optimization\n'
+        '      Orchestrator", "version": "100.0.0", "url": "https://opsani.com/", "config_key_path":\n'
+        '      "servo"}]\'\n'
+        'data:\n'
+        '  servo.yaml: |\n'
+        '    connectors:\n'
+        '    - vegeta\n'
+        '    vegeta:\n'
+        "      duration: '0'\n"
+        "      rate: '0'\n"
+        '      target: https://opsani.com/\n'
+    )
 
 
 def test_config_json(

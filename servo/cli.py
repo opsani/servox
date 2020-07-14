@@ -2,6 +2,7 @@ import json
 import shlex
 import subprocess
 import sys
+from datetime import datetime, timezone
 from enum import Enum
 from logging import Logger
 from pathlib import Path
@@ -33,6 +34,7 @@ from servo.servo import (
 )
 from servo.servo_runner import ServoRunner
 from servo.types import *
+from servo.utilities import PreservedScalarString
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -1056,17 +1058,18 @@ class ServoCLI(CLI):
             _not_yet_implemented()
 
     def add_config_commands(self, section=Section.CONFIG) -> None:
-        class SettingsOutputFormat(AbstractOutputFormat):
+        class ConfigOutputFormat(AbstractOutputFormat):
             yaml = YAML_FORMAT
             json = JSON_FORMAT
             dict = DICT_FORMAT
             text = TEXT_FORMAT
+            configmap = CONFIGMAP_FORMAT
 
         @self.command(section=section)
         def config(
             context: Context,
-            format: SettingsOutputFormat = typer.Option(
-                SettingsOutputFormat.yaml, "--format", "-f", help="Select output format"
+            format: ConfigOutputFormat = typer.Option(
+                ConfigOutputFormat.yaml, "--format", "-f", help="Select output format"
             ),
             output: typer.FileTextWrite = typer.Option(
                 None, "--output", "-o", help="Output configuration to [FILE]"
@@ -1079,24 +1082,58 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            settings = context.servo.configuration.dict(
+            config = context.servo.configuration.dict(
                 exclude_unset=True, include=include
             )
-            settings_json = json.dumps(settings, indent=2, default=pydantic_encoder)
-            settings_dict = json.loads(settings_json)
-            settings_dict_str = pformat(settings_dict)
-            settings_yaml = yaml.dump(settings_dict, indent=2, sort_keys=True)
+            config_json = json.dumps(config, indent=2, default=pydantic_encoder)
+            config_dict = json.loads(config_json)
+            config_dict_str = pformat(config_dict)
+            config_yaml = yaml.dump(config_dict, indent=2, sort_keys=True)
 
-            if format == SettingsOutputFormat.text:
+            if format == ConfigOutputFormat.text:
                 pass
             else:
                 lexer = format.lexer()
-                if format == SettingsOutputFormat.yaml:
-                    data = settings_yaml
-                elif format == SettingsOutputFormat.json:
-                    data = settings_json
-                elif format == SettingsOutputFormat.dict:
-                    data = settings_dict_str
+                if format == ConfigOutputFormat.yaml:
+                    data = config_yaml
+                elif format == ConfigOutputFormat.json:
+                    data = config_json
+                elif format == ConfigOutputFormat.dict:
+                    data = config_dict_str
+                elif format == ConfigOutputFormat.configmap:                    
+                    configured_at = datetime.now(timezone.utc).isoformat()
+                    connectors = []
+                    for connector in context.servo.connectors:
+                        connectors.append({
+                            "name": connector.name,
+                            "description": connector.description,
+                            "version": str(connector.version),
+                            "url": str(connector.homepage),
+                            "config_key_path": connector.config_key_path,
+                        })
+                    connectors_json_str = json.dumps(connectors, indent=None)
+
+                    debug(PreservedScalarString(connectors_json_str))
+
+                    configmap = {
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {
+                            "name": "opsani-servo-config",
+                            "labels": {
+                                "app.kubernetes.io/name": "servo",
+                                "app.kubernetes.io/version": str(context.servo.version),
+                            },
+                            "annotations": {
+                                "servo.opsani.com/configured_at": configured_at,
+                                "servo.opsani.com/connectors": connectors_json_str,
+                            }
+                        },
+                        "data": {
+                            "servo.yaml": PreservedScalarString(config_yaml)
+                        }
+                    }
+                    data = yaml.dump(configmap, indent=2, sort_keys=False, explicit_start=True)
                 else:
                     raise RuntimeError(
                         "no handler configured for output format {format}"
