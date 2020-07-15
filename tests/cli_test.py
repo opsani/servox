@@ -134,15 +134,24 @@ def test_show_components(
     assert result.exit_code == 0
     assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
-
-def test_show_events(
+def test_show_events_empty_config_file(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
     assert "check    Servo\n" in result.stdout
     assert len(result.stdout.split("\n")) == 3
+
+def test_show_events_no_config_file(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
+    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+    assert re.search("^check", result.stdout, flags=re.MULTILINE)
+    assert re.search("^adjust\\s.+", result.stdout, flags=re.MULTILINE)
+    assert re.search("^components\\s.+", result.stdout, flags=re.MULTILINE)
 
 
 def test_show_events_all(
@@ -150,6 +159,7 @@ def test_show_events_all(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
     assert result.exit_code == 0
+    debug(result.stdout)
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("after measure\\s+MeasureConnector", result.stdout)
     assert len(result.stdout.split("\n")) > 3
@@ -328,9 +338,7 @@ def test_config_configmap_file(
         "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
         '    servo.opsani.com/connectors: \'[{"name": "Vegeta Connector", "description": "Vegeta\n'
         '      load testing connector", "version": "100.0.0", "url": "https://github.com/opsani/vegeta-connector",\n'
-        '      "config_key_path": "vegeta"}, {"name": "Servo", "description": "Continuous Optimization\n'
-        '      Orchestrator", "version": "100.0.0", "url": "https://opsani.com/", "config_key_path":\n'
-        '      "servo"}]\'\n'
+        '      "config_key": "vegeta"}]\'\n'
         'data:\n'
         '  servo.yaml: |\n'
         '    connectors:\n'
@@ -513,6 +521,7 @@ class TestCommands:
 
     def test_schema_dict(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f dict")
+        debug(result.stderr, result.stdout)
         assert result.exit_code == 0
         dict = eval(result.stdout)
         assert dict["title"] == "Servo Configuration Schema"
@@ -699,10 +708,10 @@ class TestCLIFoundation:
 
 
 def test_command_name_for_nested_connectors() -> None:
-    from servo.cli import _command_name_from_config_key_path
+    from servo.cli import _command_name_from_config_key
 
-    assert _command_name_from_config_key_path("fake") == "fake"
-    assert _command_name_from_config_key_path("another_fake") == "another-fake"
+    assert _command_name_from_config_key("fake") == "fake"
+    assert _command_name_from_config_key("another_fake") == "another-fake"
 
 
 def test_ordering_of_ops_commands(servo_cli: CLI, cli_runner: CliRunner) -> None:

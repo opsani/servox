@@ -17,6 +17,7 @@ from servo.connector import (
     before_event,
     event,
     on_event,
+    _events,
 )
 from servo.events import CancelEventError, EventError, EventResult, Preposition
 from servo.servo import BaseServoConfiguration, Events, Servo, ServoAssembly
@@ -100,8 +101,8 @@ def servo(assembly: ServoAssembly) -> Servo:
     return assembly.servo
 
 
-def test_all_connectors() -> None:
-    c = ServoAssembly.construct().all_connectors()
+def test_all_connector_types() -> None:
+    c = ServoAssembly.construct().all_connector_types()
     assert FirstTestServoConnector in c
 
 
@@ -112,11 +113,17 @@ def test_servo_routes(servo: Servo) -> None:
     assert len(results) == 1
     assert results[0].value == "this is the result"
 
+def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> None:
+    connector_ids = list(map(lambda c: id(c), servo.__connectors__))
+    assert connector_ids
+    route_ids = list(map(lambda c: id(c), servo.routes.values()))
+    assert route_ids
+    assert connector_ids == (route_ids + [id(servo)])
 
-def test_servo_routes_includes_servo(servo: Servo) -> None:
-    servo_entry = servo.routes[""]
-    assert isinstance(servo_entry, Servo)
-
+    # Verify each child has correct references
+    for conn in servo.__connectors__:
+        subconnector_ids = list(map(lambda c: id(c), conn.__connectors__))
+        assert subconnector_ids == connector_ids
 
 def test_dispatch_event(servo: Servo) -> None:
     results = servo.dispatch_event("this_is_an_event")
@@ -139,12 +146,12 @@ def test_dispatch_event_include(servo: Servo) -> None:
 
 
 def test_dispatch_event_exclude(servo: Servo) -> None:
-    assert len(servo.connectors) == 3
+    assert len(servo.connectors) == 2
     first_connector = servo.connectors[0]
     assert first_connector.name == "FirstTestServo Connector"
     second_connector = servo.connectors[1]
     assert second_connector.name == "SecondTestServo Connector"
-    event_names = set(second_connector.__events__.keys())
+    event_names = set(_events.keys())
     assert "this_is_an_event" in event_names
     results = servo.dispatch_event("this_is_an_event", exclude=[first_connector])
     assert len(results) == 1
@@ -280,15 +287,14 @@ def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> Non
 
 def test_startup_event(mocker, servo: servo) -> None:
     connector = servo.routes["first_test_servo"]
-    # NOTE: This is tracked as state because we can't inject a spy
-    assert connector.started_up
+    assert connector.started_up == True
 
 
 def test_shutdown_event(mocker, servo: servo) -> None:
     connector = servo.routes["first_test_servo"]
     on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
-    servo.__del__()
+    servo.shutdown()
     on_spy.assert_called()
 
 
@@ -305,14 +311,14 @@ def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
 def test_creating_event_programmatically(random_string: str) -> None:
     signature = Signature.from_callable(test_shutdown_event)
     Connector.create_event(random_string, signature)
-    event = Connector.__events__[random_string]
+    event = _events[random_string]
     assert event.name == random_string
     assert event.signature == signature
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
     Connector.create_event(random_string, test_shutdown_event)
-    event = Connector.__events__[random_string]
+    event = _events[random_string]
     assert event.name == random_string
     assert event.signature == Signature.from_callable(test_shutdown_event)
 
@@ -502,6 +508,13 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
 
 
 class TestServoAssembly:
+    def test_assemble_empty_config_active_connectors(self, servo_yaml: Path):
+        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
+        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+        assert assembly.active_connectors == [servo]
+
     def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
         config = {
             "connectors": {"vegeta": "vegeta"},
@@ -970,7 +983,7 @@ class TestServoSettings:
         s = BaseServoConfiguration(connectors={"alias": "VegetaConnector"},)
         assert s.connectors == {"alias": "VegetaConnector"}
 
-    def test_connectors_allows_dict_with_explicit_map_to_default_key_path(self):
+    def test_connectors_allows_dict_with_explicit_map_to_default_config_key(self):
         s = BaseServoConfiguration(connectors={"vegeta": "VegetaConnector"},)
         assert s.connectors == {"vegeta": "VegetaConnector"}
 

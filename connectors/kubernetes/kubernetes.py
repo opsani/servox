@@ -892,7 +892,7 @@ class KubernetesConfiguration(connector.BaseConfiguration):
     maturity=Maturity.EXPERIMENTAL,
 )
 class KubernetesConnector(connector.Connector):
-    configuration: KubernetesConfiguration
+    config: KubernetesConfiguration
     progress: float = 0.0
 
     def print_progress(

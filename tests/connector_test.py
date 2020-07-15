@@ -17,6 +17,8 @@ from servo.connector import (
     Optimizer,
     Version,
     event,
+    _connector_subclasses,
+    _events
 )
 from servo.events import Preposition
 from servo.servo import BaseServoConfiguration
@@ -94,7 +96,7 @@ class TestConnector:
         class RegisterMe(Connector):
             pass
 
-        assert RegisterMe in Connector.all()
+        assert RegisterMe in _connector_subclasses
 
     def test_default_name(self) -> None:
         class TestConnector(Connector):
@@ -108,12 +110,12 @@ class TestConnector:
 
         assert TestConnector.version == "0.0.0"
 
-    def test_default_key_path(self) -> None:
+    def test_default_config_key(self) -> None:
         class FancyConnector(Connector):
             pass
 
-        c = FancyConnector(configuration=BaseConfiguration())
-        assert c.config_key_path == "fancy"
+        c = FancyConnector(config=BaseConfiguration())
+        assert c.config_key == "fancy"
 
 
 class TestSettings:
@@ -305,13 +307,13 @@ def test_init_vegeta_connector() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(configuration=config)
+    connector = VegetaConnector(config=config)
     assert connector is not None
 
 
 def test_init_vegeta_connector_no_settings() -> None:
     with pytest.raises(ValidationError) as e:
-        VegetaConnector(configuration=None)
+        VegetaConnector(config=None)
     assert "1 validation error for VegetaConnector" in str(e.value)
 
 
@@ -324,7 +326,7 @@ def test_init_connector_no_version_raises() -> None:
         config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(configuration=config, path="whatever")
+        connector = FakeConnector(config=config, path="whatever")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "version must be provided"
 
@@ -338,7 +340,7 @@ def test_init_connector_invalid_version_raises() -> None:
         config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(configuration=config, path="whatever", version="b")
+        connector = FakeConnector(config=config, path="whatever", version="b")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "invalid is not valid SemVer string"
 
@@ -351,7 +353,7 @@ def test_init_connector_parses_version_string() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = FakeConnector(configuration=config, path="whatever")
+    connector = FakeConnector(config=config, path="whatever")
     assert connector.version is not None
     assert connector.version == Version.parse("0.5.0")
 
@@ -365,25 +367,25 @@ def test_init_connector_no_name_raises() -> None:
         config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = FakeConnector(configuration=config, path="test", name=None)
+        connector = FakeConnector(config=config, path="test", name=None)
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
-def test_vegeta_default_key_path() -> None:
+def test_vegeta_default_config_key() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(configuration=config)
-    assert connector.config_key_path == "vegeta"
+    connector = VegetaConnector(config=config)
+    assert connector.config_key == "vegeta"
 
 
 def test_vegeta_config_override() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(configuration=config, config_key_path="monkey")
-    assert connector.config_key_path == "monkey"
+    connector = VegetaConnector(config=config, config_key="monkey")
+    assert connector.config_key == "monkey"
 
 
 def test_vegeta_id_invalid() -> None:
@@ -392,7 +394,7 @@ def test_vegeta_id_invalid() -> None:
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
         connector = VegetaConnector(
-            configuration=config, config_key_path="THIS IS NOT COOL"
+            configuration=config, config_key="THIS IS NOT COOL"
         )
     error_messages = list(map(lambda error: error["msg"], e.value.errors()))
     assert (
@@ -982,14 +984,12 @@ class TestConnectorEvents:
             return "example_event"
 
     def test_event_registration(self) -> None:
-        events = TestConnectorEvents.FakeConnector.__events__
-        assert events is not None
-        assert events["example_event"]
+        assert _events is not None
+        assert _events["example_event"]
 
     def test_event_inheritance(self) -> None:
-        events = TestConnectorEvents.AnotherFakeConnector.__events__
-        assert events is not None
-        assert events["example_event"]
+        assert _events is not None
+        assert _events["example_event"]
 
     def test_responds_to_event(self) -> None:
         assert TestConnectorEvents.FakeConnector.responds_to_event("example_event")
@@ -1007,8 +1007,8 @@ class TestConnectorEvents:
 
     def test_event_invoke(self) -> None:
         config = BaseConfiguration.construct()
-        connector = TestConnectorEvents.FakeConnector(configuration=config)
-        event = connector.__events__["example_event"]
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        event = _events["example_event"]
         results = connector.process_event(event, Preposition.ON)
         assert results is not None
         result = results[0]
@@ -1018,6 +1018,35 @@ class TestConnectorEvents:
 
     def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
-        connector = TestConnectorEvents.FakeConnector(configuration=config)
+        connector = TestConnectorEvents.FakeConnector(config=config)
         result = connector.process_event("unknown_event", Preposition.ON)
         assert result is None
+    
+    def test_event_dispatch_standalone(self) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        event = _events["example_event"]
+
+        # Dispatch back to self
+        results = connector.dispatch_event(event)
+        assert results is not None
+        result = results[0]
+        assert result.event.name == "example_event"
+        assert result.connector == connector
+        assert result.value == 12345
+    
+    def test_event_dispatch_standalone(self) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)        
+        fake_connector = TestConnectorEvents.AnotherFakeConnector(
+            config=config,
+            __connectors__=[connector]
+        )
+        # Dispatch to peer
+        results = fake_connector.dispatch_event('example_event')
+        assert results is not None
+        result = results[0]
+        assert result.event.name == "example_event"
+        assert result.connector == connector
+        assert result.value == 12345
+

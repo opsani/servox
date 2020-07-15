@@ -273,7 +273,7 @@ REPORTING_INTERVAL = 2
     maturity=Maturity.STABLE,
 )
 class VegetaConnector(Connector):
-    configuration: VegetaConfiguration
+    config: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []    
     warmup_until: Optional[datetime] = None
 
@@ -332,7 +332,7 @@ class VegetaConnector(Connector):
 
         return measurement
 
-    def _run_vegeta(self, *, configuration: Optional[VegetaConfiguration] = None):
+    def _run_vegeta(self, *, config: Optional[VegetaConfiguration] = None):
         configuration = configuration if configuration else self.configuration
 
         # construct and run Vegeta command

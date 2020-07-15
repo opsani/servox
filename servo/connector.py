@@ -3,6 +3,7 @@ import logging
 import re
 from inspect import Parameter, Signature
 from pathlib import Path
+from weakref import WeakKeyDictionary
 from typing import (
     Any,
     Callable,
@@ -100,6 +101,13 @@ class Optimizer(BaseSettings):
         of the form `example.com/my-app` or `another.com/app-2`.
         """
         return f"{self.org_domain}/{self.app_name}"
+    
+    @property
+    def api_url(self) -> str:
+        """
+        Returns a complete URL for interacting with the optimizer API.
+        """
+        return f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
 
     class Config:
         env_file = ".env"
@@ -193,6 +201,10 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
 
+# Global registries
+_connector_subclasses: Set[Type["Connector"]] = set()
+_events: Dict[str, Event] = {}
+_connector_event_bus = WeakKeyDictionary()
 
 # NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
 _is_base_connector_class_defined = False
@@ -215,6 +227,7 @@ class ConnectorMetaclass(ModelMetaclass):
             "__event_handlers__": event_handlers,
             **{n: v for n, v in namespace.items()},
         }
+
         cls = super().__new__(mcs, name, bases, new_namespace, **kwargs)
         return cls
 
@@ -261,18 +274,13 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     provided via environment variablesm, commandline arguments, or secrets management.
     """
 
-    configuration: BaseConfiguration
+    config: BaseConfiguration
     """Configuration for the connector set explicitly or loaded from a config file.
     """
 
-    config_key_path: str
+    config_key: Optional[str] = None
     """Key-path to the root of the connector's configuration.
     """
-
-    @classmethod
-    def all(cls) -> Set[Type["Connector"]]:
-        """Return a set of all Connector subclasses"""
-        return cls.__connectors__
 
     ##
     # Configuration
@@ -290,32 +298,46 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         ), "version is not a semantic versioning descriptor"
         return v
 
-    @validator("config_key_path")
+    @validator("config_key")
     @classmethod
-    def validate_config_key_path(cls, v):
+    def validate_config_key(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
         ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
-
+    
     @classmethod
     def config_model(cls) -> Type["BaseConfiguration"]:
         """
         Return the configuration model backing the connector. 
         
-        The effective type of the configuration instance is defined by the type hint definitions of the 
-        `config_model` and `configuration` level attributes closest in definition to the target class.
+        The model is determined by the type hint of the `configuration` attribute
+        nearest in definition to the target class in the inheritance hierarchy.
         """
         hints = get_type_hints(cls)
-        config_cls = hints["configuration"]
+        config_cls = hints["config"]
         return config_cls
 
     ##
     # Events
 
-    @classmethod
-    def create_event(cls, name: str, signature: Union[Callable, Signature]) -> Event:
-        if cls.__events__.get(name, None):
+    @staticmethod
+    def events() -> List[Event]:
+        """
+        Return all registered events.
+        """
+        return list(_events.values())
+
+    @staticmethod
+    def get_event(name: str) -> Optional[Event]:
+        """
+        Retrieve an event by name or `None` if it does not exist.
+        """
+        return _events.get(name, None)
+
+    @staticmethod
+    def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
+        if _events.get(name, None):
             raise ValueError(f"Event '{name}' has already been created")
 
         signature = (
@@ -334,7 +356,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             )
 
         event = Event(name=name, signature=signature)
-        cls.__events__[name] = event
+        _events[name] = event
         return event
 
     @classmethod
@@ -343,7 +365,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         Returns True if the Connector processes the specified event (before, on, or after).
         """
         if isinstance(event, str):
-            event = cls.__events__.get(event)
+            event = _events.get(event)
 
         handlers = list(
             filter(lambda handler: handler.event == event, cls.__event_handlers__)
@@ -358,7 +380,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         Retrieves the event handlers for the given event and preposition.
         """
         if isinstance(event, str):
-            event = cls.__events__.get(event)
+            event = _events.get(event)
 
         return list(
             filter(
@@ -367,6 +389,78 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__event_handlers__,
             )
         )
+
+    ##
+    # Event processing
+
+    def dispatch_event(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List['Connector']] = None,
+        exclude: Optional[List['Connector']] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Dispatches an event to active connectors for processing and returns the results.
+
+        Eventing can be used to notify other connectors of activities and state changes
+        driven by one connector or to facilitate loosely coupled cross-connector RPC 
+        communication.
+
+        :param first: When True, halt dispatch and return the result from the first connector that responds.
+        :param include: A list of specific connectors to dispatch the event to.
+        :param exclude: A list of specific connectors to exclude from event dispatch.
+        """
+        results: List[EventResult] = []
+        connectors = include if include is not None else self.__connectors__
+        event = _events[event] if isinstance(event, str) else event
+
+        if exclude:
+            # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
+            # TODO: Is this necessary/correct? Should just be `config_key` ?
+            excluded_keypaths = list(map(lambda c: c.__config_key__, exclude))
+            connectors = list(
+                filter(lambda c: c.__config_key__ not in excluded_keypaths, connectors)
+            )
+
+        # Invoke the before event handlers
+        if prepositions & Preposition.BEFORE:
+            try:
+                for connector in connectors:
+                    connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+            except CancelEventError as error:
+                # Cancelled by a before event handler. Unpack the result and return it
+                return [error.result]
+
+        # Invoke the on event handlers and gather results        
+        if prepositions & Preposition.ON:
+            for connector in connectors:
+                connector_results = connector.process_event(
+                    event, Preposition.ON, *args, **kwargs
+                )
+                if connector_results is not None:
+                    results.extend(connector_results)
+                    if first:
+                        break
+
+        # Invoke the after event handlers
+        if prepositions & Preposition.AFTER:
+            after_args = list(args)
+            after_args.insert(0, results)
+            for connector in connectors:
+                connector.process_event(
+                    event, Preposition.AFTER, results, *args, **kwargs
+                )
+
+        if first:
+            return results[0] if results else None
+
+        return results
 
     def process_event(
         self, event: Event, preposition: Preposition, *args, **kwargs
@@ -415,15 +509,14 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
         return results
 
-    # subclass registry of connectors
-    __connectors__: Set[Type["Connector"]] = set()
-    __events__: Dict[str, Event] = {}
-
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        cls.__connectors__.add(cls)
-        cls.__key_path__ = _key_path_for_connector_class(cls)
+        # print(f"cls is {cls}")
+        # cls.__subclasses___.add(cls)
+        _connector_subclasses.add(cls)
+        # TODO: Do I need this? I could just put it as a class var also!
+        cls.__config_key__ = _config_key_for_connector_class(cls)
 
         cls.name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
@@ -440,29 +533,44 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__event_handlers__.append(handler)
 
     def __init__(
-        self, *, config_key_path: Optional[str] = None, **kwargs,
+        self, 
+        *,
+        config_key: Optional[str] = None,
+        __connectors__: List['Connector'] = None,
+        **kwargs,
     ):
-        config_key_path = (
-            config_key_path
-            if config_key_path is not None
-            else self.__class__.__key_path__
+        config_key = (
+            config_key
+            if config_key is not None
+            else self.__class__.__config_key__
         )
         super().__init__(
-            config_key_path=config_key_path, **kwargs,
+            config_key=config_key, **kwargs,
         )
+        
+        # NOTE: Connector references are held off the model so 
+        # that Pydantic doesn't see additional attributes
+        __connectors__ = __connectors__ if __connectors__ is not None else [self]
+        _connector_event_bus[self] = __connectors__
 
+    def __hash__(self):
+        return hash((self.name, self.config_key, id(self),))
+    
+    @property
+    def __connectors__(self) -> List['Connector']:
+        return _connector_event_bus[self]
+        
     ##
     # Subclass services
 
     def api_client(self) -> httpx.Client:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""
-        base_url = f"{self.optimizer.base_url}accounts/{self.optimizer.org_domain}/applications/{self.optimizer.app_name}/"
+        """Yields an httpx.Client instance configured to talk to Opsani API"""        
         headers = {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-        return httpx.Client(base_url=base_url, headers=headers)
+        return httpx.Client(base_url=self.optimizer.api_url, headers=headers)
 
     @property
     def logger(self) -> logging.Logger:
@@ -475,7 +583,7 @@ EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
 
 
-def _key_path_for_connector_class(cls: Type[Connector]) -> str:
+def _config_key_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
@@ -602,7 +710,7 @@ def event_handler(
 
     def decorator(fn: EventCallable) -> EventCallable:
         name = event_name if event_name else fn.__name__
-        event = Connector.__events__.get(name, None)
+        event = _events.get(name, None)
         if event is None:
             raise ValueError(f"Unknown event '{name}'")
 

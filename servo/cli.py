@@ -386,7 +386,7 @@ class CLI(typer.Typer):
 
         # Assemble the Servo
         try:
-            assembly, servo, ServoSettings = ServoAssembly.assemble(
+            assembly, servo, ServoConfiguration = ServoAssembly.assemble(
                 config_file=ctx.config_file, optimizer=optimizer
             )
         except ValidationError as error:
@@ -408,7 +408,7 @@ class CLI(typer.Typer):
             if isinstance(value, str):
                 # Lookup by key
                 for connector in context.servo.connectors:
-                    if connector.config_key_path == value:
+                    if connector.config_key == value:
                         return connector
                 raise typer.BadParameter(f"no connector found for key '{value}'")
             else:
@@ -416,7 +416,7 @@ class CLI(typer.Typer):
                 for key in value:
                     size = len(connectors)
                     for connector in context.servo.connectors:
-                        if connector.config_key_path == key:
+                        if connector.config_key == key:
                             connectors.append(connector)
                             break
                     if len(connectors) == size:
@@ -467,16 +467,16 @@ class CLI(typer.Typer):
         for key in value:
             if ":" in key:
                 # We have an alias descriptor
-                key_path, identifier = key.split(":", 2)
+                config_key, identifier = key.split(":", 2)
             else:
                 # Vanilla key-path or class name
-                key_path = None
+                config_key = None
                 identifier = key
 
             if connector_class := _connector_class_from_string(identifier):
-                if key_path is None:
-                    key_path = connector_class.__key_path__
-                routes[key_path] = connector_class
+                if config_key is None:
+                    config_key = connector_class.__config_key__
+                routes[config_key] = connector_class
             else:
                 raise typer.BadParameter(f"no connector found for key '{identifier}'")
 
@@ -511,7 +511,7 @@ class ConnectorCLI(CLI):
                     context.connector = connector
 
         if name is None:
-            name = _command_name_from_config_key_path(connector_type.__key_path__)
+            name = _command_name_from_config_key(connector_type.__config_key__)
         if help is None:
             help = connector_type.description
         if isinstance(callback, DefaultPlaceholder):
@@ -599,7 +599,7 @@ class ServoCLI(CLI):
             if customize:
                 check = Check(
                     "Which connectors do you want to activate? ",
-                    choices=list(map(lambda c: c.name, ServoAssembly.all_connectors())),
+                    choices=list(map(lambda c: c.name, ServoAssembly.all_connector_types())),
                     check=" √",
                     margin=2,
                     check_color=colors.bright(colors.foreground["green"]),
@@ -615,8 +615,8 @@ class ServoCLI(CLI):
                     filter(
                         None,
                         map(
-                            lambda c: c.__key_path__ if c.name in result else None,
-                            ServoAssembly.all_connectors(),
+                            lambda c: c.__config_key__ if c.name in result else None,
+                            ServoAssembly.all_connector_types(),
                         ),
                     )
                 )
@@ -643,7 +643,7 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = context.servo.dispatch_event("components")
+            results = context.servo.dispatch_event(Events.COMPONENTS)
             headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
             table = []
             for result in results:
@@ -684,9 +684,14 @@ class ServoCLI(CLI):
             Display event handler info
             """
             event_handlers: List[EventHandler] = []
-            connectors = (
-                context.assembly.all_connectors() if all else context.servo.connectors
-            )
+            if all:
+                connectors = ServoAssembly.all_connector_types()
+            else:
+                connectors = context.assembly.active_connectors
+            # connectors = (
+            #     context.assembly.all_connector_types() if all else context.assembly.active_connectors
+            # )
+            # connectors = [context.servo]
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
 
@@ -829,7 +834,7 @@ class ServoCLI(CLI):
         ) -> None:
             """Manage connectors"""
             connectors = (
-                context.assembly.all_connectors() if all else context.servo.connectors
+                context.assembly.all_connector_types() if all else context.servo.connectors
             )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
@@ -865,7 +870,7 @@ class ServoCLI(CLI):
             for connector in connectors:
                 if not connector.responds_to_event(event):
                     raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{connector.config_key_path}')"
+                        f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{connector.config_key}')"
                     )
 
         @self.command(section=section)
@@ -1082,7 +1087,7 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            config = context.servo.configuration.dict(
+            config = context.servo.config.dict(
                 exclude_unset=True, include=include
             )
             config_json = json.dumps(config, indent=2, default=pydantic_encoder)
@@ -1109,7 +1114,7 @@ class ServoCLI(CLI):
                             "description": connector.description,
                             "version": str(connector.version),
                             "url": str(connector.homepage),
-                            "config_key_path": connector.config_key_path,
+                            "config_key": connector.config_key,
                         })
                     connectors_json_str = json.dumps(connectors, indent=None)
 
@@ -1203,7 +1208,7 @@ class ServoCLI(CLI):
                         )
                 else:
                     CLI.assemble_from_context(context)
-                    settings_class = context.servo.configuration.__class__
+                    settings_class = context.servo.config.__class__
                 if format == SchemaOutputFormat.json:
                     output_data = settings_class.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
@@ -1454,6 +1459,6 @@ def _run(args: Union[str, List[str]], **kwargs) -> None:
         sys.exit(process.returncode)
 
 
-def _command_name_from_config_key_path(key_path: str) -> str:
+def _command_name_from_config_key(config_key: str) -> str:
     # foo.bar.this_key => this-key
-    return key_path.split(".", 1)[-1].replace("_", "-").lower()
+    return config_key.split(".", 1)[-1].replace("_", "-").lower()

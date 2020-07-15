@@ -16,7 +16,7 @@ class StubBaseConfiguration(BaseConfiguration):
 
 
 class MeasureConnector(Connector):
-    configuration: StubBaseConfiguration
+    config: StubBaseConfiguration
 
     @connector.before_event(Events.MEASURE)
     def before_measure(self, *args, **kwargs) -> None:
@@ -32,7 +32,7 @@ class MeasureConnector(Connector):
 
 
 class AdjustConnector(Connector):
-    configuration: StubBaseConfiguration
+    config: StubBaseConfiguration
 
     @connector.on_event()
     def adjust(self, *args, **kwargs) -> dict:
