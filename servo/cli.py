@@ -684,14 +684,9 @@ class ServoCLI(CLI):
             Display event handler info
             """
             event_handlers: List[EventHandler] = []
-            if all:
-                connectors = ServoAssembly.all_connector_types()
-            else:
-                connectors = context.assembly.active_connectors
-            # connectors = (
-            #     context.assembly.all_connector_types() if all else context.assembly.active_connectors
-            # )
-            # connectors = [context.servo]
+            connectors = (
+                ServoAssembly.all_connector_types() if all else context.assembly.active_connectors
+            )
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
 
@@ -1117,8 +1112,6 @@ class ServoCLI(CLI):
                             "config_key": connector.config_key,
                         })
                     connectors_json_str = json.dumps(connectors, indent=None)
-
-                    debug(PreservedScalarString(connectors_json_str))
 
                     configmap = {
                         "apiVersion": "v1",
