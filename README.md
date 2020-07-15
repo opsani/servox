@@ -183,7 +183,8 @@ The default events are available on the `servo.servo.Events` enumeration and inc
 
 Event handlers are easily registered via a set of method decorators available on the `servo.connector`
 module. Handlers are registered with a *preposition* which determines if it is invoked before, on,
-or after the event has been processed.
+or after the event has been processed. Handlers are invoked when the servo or another connector dispatches 
+an event.
 
 ```python
 from servo.connector import Connector, EventResult, before_event, after_event, on_event
@@ -229,6 +230,21 @@ the decorated method as an on event handler for the new event.
 
 Once an event is created, the connector can dispatch against it to notify other connectors of
 changes in state or to request data from them.
+
+#### Dispatching an Event
+
+Connectors can notify or interact with other connectors by dispatching an event. When the servo is
+assembled, an event bus is transparently established between the connectors to facilitate event
+driven interaction.
+
+```python
+class ExampleConnector(Connector):
+  def do_something(self) -> None:
+    # Gather metrics from other connectors
+    results: List[EventResult] = self.dispatch_event("metrics")
+    for result in results:
+      print(f"Gathered metrics: {result.value}")
+```
 
 ### Environment Variables & Dotenv
 
