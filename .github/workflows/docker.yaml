@@ -14,3 +14,4 @@ jobs:
         repository: opsani/servox
         tag_with_ref: true
         add_git_labels: true
+        cache_froms: opsani/servox:latest
