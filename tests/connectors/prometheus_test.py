@@ -10,7 +10,7 @@ class TestPrometheusMetric:
             name='test', 
             unit=Unit.REQUESTS_PER_MINUTE,
             query="throughput", 
-            # period='45m',
+            period='45m',
         )
         # assert metric.period == timedelta(seconds=2700) # 45 mins
 
@@ -26,7 +26,7 @@ class TestPrometheusMetric:
     # Query
     def test_query_required(self):
         try:
-            PrometheusMetric('throughput', Unit.REQUESTS_PER_MINUTE, query=None)
+            PrometheusMetric(name='throughput', unit=Unit.REQUESTS_PER_MINUTE, query=None)
         except ValidationError as error:
             assert {
                 'loc': (
