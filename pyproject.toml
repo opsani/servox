@@ -6,7 +6,6 @@ authors = ["Blake Watters <blake@opsani.com>"]
 license = "Apache-2.0"
 packages = [
     { include = "servo" },
-    { include = "connectors" },
 ]
 
 [tool.poetry.dependencies]
@@ -14,7 +13,7 @@ python = "^3.8"
 pydantic = "^1.5.1"
 loguru = "^0.5.1"
 httpx = "^0.13.3"
-python-dotenv = ">=0.13,<0.15"
+python-dotenv = "^0.14.0"
 semver = "^2.10.1"
 pyaml = "^20.4.0"
 durationpy = "^0.5"
