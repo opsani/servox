@@ -393,6 +393,13 @@ development and deployment workflows. Configuration file mounts and environment 
 of the servo within the container. The `SERVO_ENV` environment variable controls whether development packages are installed into
 the image (hint: set it to `SERVO_ENV=production` to slim down your images and speed up builds).
 
+Pre-built Docker images are available on [opsani/servox](https://hub.docker.com/repository/docker/opsani/servox) on Docker Hub. Images are built using BuildKit and can be used as the basis for 
+very fast customized builds:
+
+```console
+❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
+```
+
 ### Work in Progress
 
 The following is a non-exhaustive list of work in progress on the road to shipping v2.0.0
