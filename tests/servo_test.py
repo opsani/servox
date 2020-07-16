@@ -8,7 +8,7 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
-from connectors.vegeta.vegeta import VegetaConnector
+from servo.connectors.vegeta import VegetaConnector
 from servo import __version__, connector
 from servo.connector import (
     Connector,

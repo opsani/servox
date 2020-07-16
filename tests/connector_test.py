@@ -7,7 +7,7 @@ import yaml
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
-from connectors.vegeta.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
+from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.cli import ServoCLI
 from servo.connector import (
     BaseConfiguration,

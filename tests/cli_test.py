@@ -13,7 +13,7 @@ import servo
 from servo.cli import CLI, Context, ServoCLI
 from servo.connector import BaseConfiguration, Optimizer
 from servo.servo import Servo
-from connectors.vegeta.vegeta import VegetaConnector
+from servo.connectors.vegeta import VegetaConnector
 from freezegun import freeze_time
 
 @pytest.fixture()

@@ -512,8 +512,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # print(f"cls is {cls}")
-        # cls.__subclasses___.add(cls)
         _connector_subclasses.add(cls)
         # TODO: Do I need this? I could just put it as a class var also!
         cls.__config_key__ = _config_key_for_connector_class(cls)
