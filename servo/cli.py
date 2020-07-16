@@ -359,7 +359,7 @@ class CLI(typer.Typer):
         ctx.base_url = base_url
 
         # TODO: This should be pluggable
-        if ctx.invoked_subcommand not in {"init", "schema", "generate", "validate"}:
+        if ctx.invoked_subcommand not in {"init", "schema", "generate", "validate", "version"}:
             CLI.assemble_from_context(ctx)
 
     @staticmethod
@@ -1411,11 +1411,11 @@ class ServoCLI(CLI):
             # TODO: Update to work with specific connectors
             if short:
                 if format == VersionOutputFormat.text:
-                    typer.echo(f"{context.servo.name} v{context.servo.version}")
+                    typer.echo(f"{Servo.name} v{Servo.version}")
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": context.servo.name,
-                        "version": str(context.servo.version),
+                        "name": Servo.name,
+                        "version": str(Servo.version),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
@@ -1424,20 +1424,20 @@ class ServoCLI(CLI):
                 if format == VersionOutputFormat.text:
                     typer.echo(
                         (
-                            f"{context.servo.name} v{context.servo.version} ({context.servo.maturity})\n"
-                            f"{context.servo.description}\n"
-                            f"{context.servo.homepage}\n"
-                            f"Licensed under the terms of {context.servo.license}"
+                            f"{Servo.name} v{Servo.version} ({Servo.maturity})\n"
+                            f"{Servo.description}\n"
+                            f"{Servo.homepage}\n"
+                            f"Licensed under the terms of {Servo.license}"
                         )
                     )
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": context.servo.name,
-                        "version": str(context.servo.version),
-                        "maturity": str(context.servo.maturity),
-                        "description": context.servo.description,
-                        "homepage": context.servo.homepage,
-                        "license": str(context.servo.license),
+                        "name": Servo.name,
+                        "version": str(Servo.version),
+                        "maturity": str(Servo.maturity),
+                        "description": Servo.description,
+                        "homepage": Servo.homepage,
+                        "license": str(Servo.license),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:

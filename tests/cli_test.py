@@ -260,6 +260,12 @@ def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -
     assert f"Servo v{servo.__version__}" in result.stdout
 
 
+def test_version_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
+    result = cli_runner.invoke(servo_cli, "version", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert f"Servo v{servo.__version__}" in result.stdout
+
+
 def test_config(
     cli_runner: CliRunner,
     servo_cli: Typer,
