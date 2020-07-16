@@ -1192,20 +1192,21 @@ class ServoCLI(CLI):
 
                 if connector:
                     if isinstance(connector, Connector):
-                        settings_class = connector.settings.__class__
+                        config_model = connector.config.__class__
                     elif issubclass(connector, Connector):
-                        settings_class = connector.config_model()
+                        config_model = connector.config_model()
                     else:
                         raise typer.BadParameter(
                             f"unexpected connector type '{connector.__class__.__name__}'"
                         )
                 else:
                     CLI.assemble_from_context(context)
-                    settings_class = context.servo.config.__class__
+                    config_model = context.servo.config.__class__
+                
                 if format == SchemaOutputFormat.json:
-                    output_data = settings_class.schema_json(indent=2)
+                    output_data = config_model.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
-                    output_data = pformat(settings_class.schema())
+                    output_data = pformat(config_model.schema())
                 else:
                     raise RuntimeError(
                         f"no handler configured for output format {format}"
