@@ -29,6 +29,7 @@ from servo import (
     TimeSeries,
     Description,
     CheckResult,
+    Numeric,
 )
 from servo.utilities import DurationProgress
 import subprocess
@@ -100,15 +101,15 @@ class VegetaReport(BaseModel):
     errors: List[str]
 
     @validator('throughput')
-    def convert_throughput_to_rpm(cls, throughput):
+    def convert_throughput_to_rpm(cls, throughput: float) -> float:
         return throughput * 60
     
     @validator('error_rate', always=True, pre=True)
-    def calculate_error_rate_from_success(cls, v, values):
+    def calculate_error_rate_from_success(cls, v, values: Dict[str, Any]) -> float:
         success_rate = values['success']
         return 100 - (success_rate * 100) # Fraction of success inverted into % of error
 
-    def get(self, key: str):
+    def get(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
         elif '.' in key:
@@ -170,7 +171,7 @@ class VegetaConfiguration(BaseConfiguration):
 
     @root_validator()
     @classmethod
-    def validate_target(cls, values):
+    def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         target, targets = values.get("target"), values.get("targets")
         if target is None and targets is None:
             raise ValueError("target or targets must be configured")
@@ -182,7 +183,7 @@ class VegetaConfiguration(BaseConfiguration):
 
     @root_validator()
     @classmethod
-    def validate_target_format(cls, values):
+    def validate_target_format(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         target, targets = values.get("target"), values.get("targets")
 
         # Validate JSON target formats
@@ -204,7 +205,7 @@ class VegetaConfiguration(BaseConfiguration):
 
     @validator("rate")
     @classmethod
-    def validate_rate(cls, v):
+    def validate_rate(cls, v: Union[int, str]) -> str:
         assert isinstance(
             v, (int, str)
         ), "rate must be an integer or a rate descriptor string"
@@ -231,7 +232,7 @@ class VegetaConfiguration(BaseConfiguration):
 
     @validator("duration")
     @classmethod
-    def validate_duration(cls, v):
+    def validate_duration(cls, v: str) -> timedelta:
         assert isinstance(
             v, (int, str)
         ), "duration must be an integer or a duration descriptor string"
@@ -252,7 +253,7 @@ class VegetaConfiguration(BaseConfiguration):
         return cls(
             rate='50/1s', 
             duration='5m',
-            target='https://example.com/',
+            target='GET https://example.com/',
             description="Update the rate, duration, and target/targets to match your load profile",
             **kwargs
         )
@@ -262,7 +263,7 @@ class VegetaConfiguration(BaseConfiguration):
 
 
 
-# TODO: Move to settings
+# TODO: Move to config
 REPORTING_INTERVAL = 2
 
 @metadata(
@@ -290,19 +291,22 @@ class VegetaConnector(Connector):
     
     @on_event()
     def check(self) -> CheckResult:
-        # Take the current settings and run a 15 second check against it
+        # Take the current config and run a 5 second check against it
         self.warmup_until = datetime.now()
-        check_settings = self.settings.copy()
-        check_settings.duration = '5s'
+        check_config = self.config.copy()
+        check_config.duration = '5s'
 
-        exit_code, vegeta_cmd = self._run_vegeta(settings=check_settings)
+        exit_code, vegeta_cmd = self._run_vegeta(config=check_config)
         if exit_code != 0:
             return CheckResult(name="Check Vegeta execution", success=False, comment=f"Vegeta exited with non-zero exit code: {exit_code}")
 
         # Look at the error rate
-        vegeta_report = self.vegeta_reports[-1]
-        if vegeta_report.error_rate >= 5.0:
-            return CheckResult(name="Check Vegeta error rate", success=False, comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}% (>= 5.0%)")
+        if self.vegeta_reports:
+            vegeta_report = self.vegeta_reports[-1]
+            if vegeta_report.error_rate >= 5.0:
+                return CheckResult(name="Check Vegeta error rate", success=False, comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}% (>= 5.0%)")
+        else:
+            return CheckResult(name="Check Vegeta reporting", success=False, comment=f"Vegeta did emit any reports")
 
         return CheckResult(name="Check Vegeta load generation", success=True, comment="All checks passed successfully.")
 
@@ -316,8 +320,8 @@ class VegetaConnector(Connector):
 
         self.warmup_until = datetime.now() + timedelta(seconds=control.warmup)
         
-        number_of_urls = 1 if self.settings.target else _number_of_lines_in_file(self.settings.targets)
-        summary = f"Loading {number_of_urls} URL(s) for {self.settings.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.settings.rate}"
+        number_of_urls = 1 if self.config.target else _number_of_lines_in_file(self.config.targets)
+        summary = f"Loading {number_of_urls} URL(s) for {self.config.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate}"
         self.logger.info(summary)
 
         # Run the load generation
@@ -332,23 +336,23 @@ class VegetaConnector(Connector):
 
         return measurement
 
-    def _run_vegeta(self, *, config: Optional[VegetaConfiguration] = None):
-        configuration = configuration if configuration else self.configuration
+    def _run_vegeta(self, *, config: Optional[VegetaConfiguration] = None) -> (int, str):
+        config = config if config else self.config
 
         # construct and run Vegeta command
         vegeta_attack_args = list(map(str,[
             'vegeta', 'attack',
-            '-rate', settings.rate, 
-            '-duration', settings.duration, 
-            '-targets', settings.targets if settings.targets else 'stdin',
-            '-format', settings.format,
-            '-connections', settings.connections,
-            '-workers', settings.workers,
-            '-max-workers', settings.max_workers,
-            '-http2', settings.http2,
-            '-keepalive', settings.keepalive,
-            '-insecure', settings.insecure,
-            '-max-body', settings.max_body,
+            '-rate', config.rate, 
+            '-duration', config.duration, 
+            '-targets', config.targets if config.targets else 'stdin',
+            '-format', config.format,
+            '-connections', config.connections,
+            '-workers', config.workers,
+            '-max-workers', config.max_workers,
+            '-http2', config.http2,
+            '-keepalive', config.keepalive,
+            '-insecure', config.insecure,
+            '-max-body', config.max_body,
         ]))
 
         vegeta_report_args = [
@@ -357,20 +361,20 @@ class VegetaConnector(Connector):
             '-every', f'{REPORTING_INTERVAL}s'
         ]
 
-        echo_args = ['echo', f"{settings.target}"]
-        echo_cmd = f'echo "{settings.target}" | ' if settings.target else ''
+        echo_args = ['echo', f"{config.target}"]
+        echo_cmd = f'echo "{config.target}" | ' if config.target else ''
         vegeta_cmd = echo_cmd + ' '.join(vegeta_attack_args) + ' | ' + ' '.join(vegeta_report_args)
         self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
 
         # If we are loading a single target, we need to connect an echo proc into Vegeta stdin
-        echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if settings.target else None
+        echo_proc_stdout = subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout if config.target else None
         vegeta_attack_proc = subprocess.Popen(vegeta_attack_args, stdin=echo_proc_stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # Pipe the output from the attack process into the reporting process
         report_proc = subprocess.Popen(vegeta_report_args, stdin=vegeta_attack_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf8')
 
         # track progress against our load test duration
-        progress = DurationProgress(settings.duration)
+        progress = DurationProgress(config.duration)
 
         # loop and poll our process pipe to gather report data
         # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
@@ -397,15 +401,15 @@ class VegetaConnector(Connector):
 
         exit_code = report_proc.returncode
         if exit_code != 0:
-            error = report_proc.stderr.readline()
-            self.logger.error(f"Vegeta exited with exit code {exit_code}: error: {error}")
+            error = '\n'.join(report_proc.stderr.readlines())
+            self.logger.error(f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}: error: {error}")
 
         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
 
         return exit_code, vegeta_cmd
 
     # helper:  take the time series metrics gathered during the attack and map them into OCO format
-    def _time_series_readings_from_vegeta_reports(self):
+    def _time_series_readings_from_vegeta_reports(self) -> List[TimeSeries]:
         readings = []
 
         for metric in METRICS:
@@ -434,10 +438,10 @@ class VegetaConnector(Connector):
         latency_90th = format_metric(report.latencies.p90, Unit.MILLISECONDS)
         latency_95th = format_metric(report.latencies.p95, Unit.MILLISECONDS)
         latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
-        return f'Vegeta attacking "{self.settings.target}" @ {self.settings.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
+        return f'Vegeta attacking "{self.config.target}" @ {self.config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
 
 
-def _number_of_lines_in_file(filename):
+def _number_of_lines_in_file(filename: str):
     count = 0
     with open(filename, 'r') as f:
         for line in f:

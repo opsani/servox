@@ -298,10 +298,38 @@ class TestVegetaConfiguration:
 
     # TODO: Test the combination of JSON and HTTP targets
 
+# TODO: All of these tests need to be expanded
+class TestVegetaConnector:
+    @pytest.fixture
+    def vegeta_connector(self) -> VegetaConnector:
+        config = VegetaConfiguration(
+            rate="50/1s", duration="5m", target="GET http://localhost:8080"
+        )
+        return VegetaConnector(config=config)
 
-class VegetaConnectorTests:
-    pass
+    @pytest.fixture(autouse=True)
+    def mock_run_vegeta(self, mocker) -> None:
+        mocker.patch.object(VegetaConnector, "_run_vegeta", return_value=(1, "vegeta attack"))
 
+    def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
+        mocker.patch.object(VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack"))
+        result = vegeta_connector.check()
+    
+    def test_vegeta_metrics(self, vegeta_connector: VegetaConnector, mocker) -> None:
+        mocker.patch.object(VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack"))
+        result = vegeta_connector.metrics()
+
+    def test_vegeta_check_failed(self, vegeta_connector: VegetaConnector) -> None:        
+        result = vegeta_connector.check()
+    
+    def test_vegeta_metrics_failed(self, vegeta_connector: VegetaConnector) -> None:
+        result = vegeta_connector.metrics()
+    
+    def test_vegeta_describe(self, vegeta_connector: VegetaConnector) -> None:
+        result = vegeta_connector.describe()
+    
+    def test_vegeta_measure(self, vegeta_connector: VegetaConnector) -> None:
+        result = vegeta_connector.measure()
 
 def test_init_vegeta_connector() -> None:
     config = VegetaConfiguration(
@@ -599,6 +627,27 @@ def test_vegeta_cli_schema_html(servo_cli: ServoCLI, cli_runner: CliRunner) -> N
     assert result.exit_code == 2
     assert "not yet implemented" in result.stderr
 
+@pytest.fixture
+def mock_run_vegeta(mocker) -> None:
+    mocker.patch.object(VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack"))
+
+@pytest.mark.xfail
+def test_vegeta_cli_check(
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, mock_run_vegeta, optimizer_env: None
+) -> None:
+    result = cli_runner.invoke(servo_cli, "check vegeta")
+    debug(result.stderr)
+    assert result.exit_code == 0
+
+@pytest.mark.xfail
+def test_vegeta_cli_measure(
+    tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner, mock_run_vegeta, optimizer_env: None
+) -> None:
+    result = cli_runner.invoke(servo_cli, "measure vegeta")
+    debug(result.stderr)
+    assert result.exit_code == 0
+
+# TODO: Need to run a fake vegeta or mock subprocess
 
 def test_vegeta_cli_generate(
     tmp_path: Path, servo_cli: ServoCLI, cli_runner: CliRunner
@@ -614,7 +663,7 @@ def test_vegeta_cli_generate(
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
     }
 
@@ -633,7 +682,7 @@ def test_vegeta_cli_generate_filename(
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
     }
 
@@ -652,7 +701,7 @@ def test_vegeta_cli_generate_quiet(
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
     }
 
@@ -669,7 +718,7 @@ def test_vegeta_cli_generate_standalone(
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
     }
 
@@ -689,13 +738,13 @@ def test_vegeta_cli_generate_aliases(
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
         "two": {
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
         },
     }
 
@@ -723,7 +772,7 @@ def test_vegeta_cli_generate_with_defaults(
             "max_body": -1,
             "max_workers": 18446744073709551615,
             "rate": "50/1s",
-            "target": "https://example.com/",
+            "target": "GET https://example.com/",
             "targets": None,
             "workers": 10,
         },
