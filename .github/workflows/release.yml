@@ -11,9 +11,21 @@ jobs:
       with:
         python-version: '3.8'
         architecture: x64
-    - run: pip install poetry==1.0.9
-    - run: poetry install
-    - run: poetry run pytest tests
-    - run: poetry build
-    - run: poetry publish --username=__token__ --password=${{ secrets.PYPI_TOKEN }}
+    - name: Install and configure Poetry
+      run: |
+        pip install poetry==1.0.*
+        poetry config virtualenvs.in-project true
+    - name: Set up cache
+      uses: actions/cache@v1
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+    - name: Install dependencies
+      run: poetry install
+    - name: Run pytest
+      run: poetry run pytest tests
+    - name: Build artifacts
+      run: poetry build
+    - name: Publish to PyPI
+      run: poetry publish --username=__token__ --password=${{ secrets.PYPI_TOKEN }}
   
