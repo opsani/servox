@@ -21,7 +21,7 @@ class TestPrometheusMetric:
             query="throughput", 
             period=180,
             )
-        # assert metric.period == timedelta(seconds=180)
+        assert metric.period == timedelta(seconds=180).seconds
     
     # Query
     def test_query_required(self):
