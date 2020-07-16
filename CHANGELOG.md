@@ -15,6 +15,11 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2020-07-16
+
+### Fixed
+- Eliminated secondary connectors package to eliminate Docker & PyPI distribution issues.
+
 ## [0.3.0] - 2020-07-15
 
 ### Added
