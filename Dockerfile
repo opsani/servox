@@ -11,8 +11,11 @@ ENV SERVO_ENV=${SERVO_ENV:-development} \
     PIP_DEFAULT_TIMEOUT=100 \
     # Poetry
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR='/var/cache/pypoetry'    
+    POETRY_CACHE_DIR='/var/cache/pypoetry' \
+    # Vegeta
+    VEGETA_VERSION=12.8.3
 
+# Install kubectl
 RUN apt-get update \
   && apt-get install -y apt-utils apt-transport-https gnupg2 \
   && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
@@ -20,6 +23,13 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y kubectl
 
+# Install Vegeta
+RUN wget -q "https://github.com/tsenart/vegeta/releases/download/v$VEGETA_VERSION/vegeta-$VEGETA_VERSION-linux-amd64.tar.gz" -O /tmp/vegeta.tar.gz \
+ && cd bin \
+ && tar xzf /tmp/vegeta.tar.gz \
+ && rm /tmp/vegeta.tar.gz
+
+# Build Servo
 WORKDIR /servo
 
 COPY poetry.lock pyproject.toml ./
