@@ -513,7 +513,7 @@ class TestServoAssembly:
         assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
-        assert assembly.active_connectors == [servo]
+        assert assembly.connectors == [servo]
 
     def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
         config = {

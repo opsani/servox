@@ -685,7 +685,7 @@ class ServoCLI(CLI):
             """
             event_handlers: List[EventHandler] = []
             connectors = (
-                ServoAssembly.all_connector_types() if all else context.assembly.active_connectors
+                context.assembly.all_connector_types() if all else context.assembly.connectors
             )
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
@@ -829,7 +829,7 @@ class ServoCLI(CLI):
         ) -> None:
             """Manage connectors"""
             connectors = (
-                context.assembly.all_connector_types() if all else context.servo.connectors
+                context.assembly.all_connector_types() if all else context.assembly.connectors
             )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
@@ -886,7 +886,7 @@ class ServoCLI(CLI):
             if connectors:
                 validate_connectors_respond_to_event(connectors, Events.CHECK)
             else:
-                connectors = context.servo.connectors
+                connectors = context.assembly.connectors
 
             results: List[EventResult] = context.servo.dispatch_event(
                 Events.CHECK, include=connectors
@@ -918,7 +918,7 @@ class ServoCLI(CLI):
             if connectors:
                 validate_connectors_respond_to_event(connectors, Events.DESCRIBE)
             else:
-                connectors = context.servo.connectors
+                connectors = context.assembly.connectors
 
             results: List[EventResult] = context.servo.dispatch_event(
                 Events.DESCRIBE, include=connectors

@@ -350,7 +350,7 @@ class ServoAssembly(BaseModel):
         return _connector_subclasses
 
     @property
-    def active_connectors(self) -> List[Connector]:
+    def connectors(self) -> List[Connector]:
         """
         Returns a list of all active connectors in the assembly including the Servo.
         """

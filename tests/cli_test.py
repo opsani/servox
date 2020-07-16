@@ -159,10 +159,17 @@ def test_show_events_all(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
     assert result.exit_code == 0
-    debug(result.stdout)
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("after measure\\s+MeasureConnector", result.stdout)
     assert len(result.stdout.split("\n")) > 3
+
+
+def test_show_events_includes_servo(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+) -> None:
+    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.search("Servo", result.stdout)
 
 
 def test_show_events_on(
