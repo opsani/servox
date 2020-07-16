@@ -15,13 +15,14 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.3.0] - 2020-07-15
 
 ### Added
 - Config files can be outputted in Kubernetes ConfigMap format (`servo config -f configmap`).
 - All Connectors can now dispatch events (previously only available to the `Servo` class).
 - `Optimizer` now includes an `api_url` property.
 - Event accessor `Connector.events` and `Connector.get_event`.
+- Project automation via GitHub Actions (Dependabot, release-drafter, PyPI release, Docker builds).
 
 ### Removed
 - Removed `ServoAssembly.default_routes` from the API (usage eliminated).
