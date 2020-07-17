@@ -1,6 +1,8 @@
 FROM python:3.8
 
-ENV SERVO_ENV=${SERVO_ENV:-development} \    
+ARG SERVO_ENV=development
+
+ENV SERVO_ENV=${SERVO_ENV} \    
     # Python
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
@@ -32,6 +34,10 @@ RUN wget -q "https://github.com/tsenart/vegeta/releases/download/v$VEGETA_VERSIO
 # Build Servo
 WORKDIR /servo
 
+# The entry point is copied in ahead of the main sources
+# so that the servo CLI is installed by Poetry. The sequencing
+# here accelerates builds by ensuring that only essential
+# cache friendly files are in the stage when Poetry executes.
 COPY poetry.lock pyproject.toml ./
 COPY servo/entry_points.py servo/entry_points.py
 
@@ -51,6 +57,6 @@ CMD servo \
     $(if [ ! -z ${OPSANI_TOKEN} ]; then \
         echo "--token ${OPSANI_TOKEN}"; \
       else \
-        echo "--token-file /var/run/secrets/opsani.com/optimizer.token"; \
+        echo "--token-file /servo/opsani.token"; \
       fi) \
     run

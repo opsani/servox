@@ -390,11 +390,16 @@ a connector, reach out to us at Opsani as we have connector developer guides tha
 
 `Dockerfile` and `docker-compose.yaml` configurations are available in the repository and have been designed to support both
 development and deployment workflows. Configuration file mounts and environment variables can be used to influence the behavior
-of the servo within the container. The `SERVO_ENV` environment variable controls whether development packages are installed into
-the image (hint: set it to `SERVO_ENV=production` to slim down your images and speed up builds).
+of the servo within the container.
 
-Pre-built Docker images are available on [opsani/servox](https://hub.docker.com/repository/docker/opsani/servox) on Docker Hub. Images are built using BuildKit and can be used as the basis for 
-very fast customized builds:
+The `SERVO_ENV` build argument controls the target environment for the built image. 
+Building with `SERVO_ENV=production` excludes development packages from the image
+to reduce size and build time.
+
+Pre-built Docker images are available on [opsani/servox](https://hub.docker.com/repository/docker/opsani/servox) on Docker Hub. The documentation for these images
+is available within this repository at [docs/README-DOCKER_HUB.md](docs/README-DOCKER_HUB.md).
+
+Pre-built images are built using BuildKit and can be used as the basis for very fast customized builds:
 
 ```console
 ❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .

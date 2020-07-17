@@ -15,6 +15,18 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+- Docker image builds now correctly support excluding development dependencies via the `SERVO_ENV` build argument.
+
+### Added
+- Docker images are now published to Docker Hub with README content from `docs/README-DOCKERHUB.md`.
+
+### Changed
+- Updated Docker and Docker Compose configurations to use `/servo/opsani.token` as the default path for API tokens mounted as a file.
+- Docker images pushed to Docker Hub are now built with `SERVO_ENV=production` to exclude development packages.
+
 ## [0.3.1] - 2020-07-16
 
 ### Fixed

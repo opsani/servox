@@ -2,15 +2,10 @@ version: '3.8'
 
 services:
   servo:
+    image: opsani/servox
     build:
       context: .
     restart: always
-    tty: true
-    logging:
-      driver: json-file
-      options:
-        max-size: 200k
-        max-file: "10"
     environment:
       - SERVO_ENV=${SERVO_ENV:-development}
       - OPSANI_OPTIMIZER=${OPSANI_OPTIMIZER:?Opsani Optimizer must be configured}
@@ -22,5 +17,5 @@ services:
         read_only: true
       - type: bind
         source: ${OPSANI_TOKEN_FILE:-/dev/null}
-        target: /var/run/secrets/opsani.com/optimizer.token
+        target: /servo/opsani.token
         read_only: true
