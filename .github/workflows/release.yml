@@ -39,5 +39,4 @@ jobs:
         tag_with_ref: true
         add_git_labels: true
         cache_froms: opsani/servox:latest
-        build_args: BUILDKIT_INLINE_CACHE=1 SERVO_ENV=production
-        
+        build_args: BUILDKIT_INLINE_CACHE=1,SERVO_ENV=production
