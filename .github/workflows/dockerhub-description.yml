@@ -16,6 +16,6 @@ jobs:
       env:
         DOCKERHUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         DOCKERHUB_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        DOCKERHUB_REPOSITORY: peterevans/dockerhub-description
+        DOCKERHUB_REPOSITORY: opsani/servox
         README_FILEPATH: ./docs/README-DOCKER_HUB.md
         
