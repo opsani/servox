@@ -369,7 +369,7 @@ class VegetaConnector(Connector):
         number_of_urls = (
             1 if self.config.target else _number_of_lines_in_file(self.config.targets)
         )
-        summary = f"Loading {number_of_urls} URL(s) for {self.config.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate}"
+        summary = f"Loading {number_of_urls} URL(s) for {self.config.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate} (reporting every {self.config.reporting_interval})"
         self.logger.info(summary)
 
         # Run the load generation
@@ -434,7 +434,7 @@ class VegetaConnector(Connector):
             "-type",
             "json",
             "-every",
-            config.reporting_interval,
+            str(config.reporting_interval),
         ]
 
         echo_args = ["echo", f"{config.target}"]
@@ -525,7 +525,7 @@ class VegetaConnector(Connector):
             for report in self.vegeta_reports:
                 values.append((report.end, report.get(key),))
 
-            readings.append(TimeSeries(metric=metric, values=values))
+            readings.append(TimeSeries(metric, values))
 
         return readings
 
@@ -556,7 +556,7 @@ app = cli.ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
 @app.command()
 def attack(
     context: cli.Context,
-):  # TODO: Needs to take args for the possible targets. Default if there is only 1
+):
     """
     Run an adhoc load generation
     """
