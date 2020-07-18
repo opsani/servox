@@ -8,6 +8,7 @@ import yaml
 from pydantic.json import pydantic_encoder
 
 from servo.connector import BaseConfiguration, Connector
+from servo.events import before_event, on_event, after_event
 from servo.servo import Events, connector
 from servo.types import Measurement
 
@@ -23,15 +24,15 @@ class StubBaseConfiguration(BaseConfiguration):
 class MeasureConnector(Connector):
     config: StubBaseConfiguration
 
-    @connector.before_event(Events.MEASURE)
+    @before_event(Events.MEASURE)
     def before_measure(self, *args, **kwargs) -> None:
         pass
 
-    @connector.on_event()
+    @on_event()
     def measure(self, *args, **kwargs) -> Measurement:
         pass
 
-    @connector.after_event(Events.MEASURE)
+    @after_event(Events.MEASURE)
     def after_measure(self, *args, **kwargs) -> None:
         pass
 
@@ -39,7 +40,7 @@ class MeasureConnector(Connector):
 class AdjustConnector(Connector):
     config: StubBaseConfiguration
 
-    @connector.on_event()
+    @on_event()
     def adjust(self, *args, **kwargs) -> dict:
         pass
 

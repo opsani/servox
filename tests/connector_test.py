@@ -17,12 +17,10 @@ from servo.connector import (
     Maturity,
     Optimizer,
     Version,
-    _connector_subclasses,
-    _events,
-    event,
+    _connector_subclasses,    
 )
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import Preposition
+from servo.events import Preposition, _events, event
 from servo.servo import BaseServoConfiguration
 from tests.test_helpers import *
 
