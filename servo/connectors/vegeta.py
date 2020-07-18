@@ -30,16 +30,18 @@ from servo import (
     CheckResult,
     Numeric,
     Duration,
+    DurationError,
+    HTTP_METHODS
 )
-from servo.utilities import DurationProgress, DurationError, timedelta_from_duration_str
+from servo.utilities import DurationProgress, values_for_keys
 import subprocess
 import time
-from threading import Timer
+from io import StringIO
 from datetime import datetime, timedelta
 import copy
 import sys
 from devtools import pformat
-
+import jsonschema
 
 ###
 ### Vegeta 
@@ -131,7 +133,7 @@ class VegetaConfiguration(BaseConfiguration):
         description="Specifies the amount of time to issue requests to the targets.",
     )
     format: TargetFormat = Field(
-        "http",
+        TargetFormat.http,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
     )
     target: Optional[str] = Field(
@@ -173,39 +175,75 @@ class VegetaConfiguration(BaseConfiguration):
         description="How often to report metrics during a measurement cycle.",
     )
 
-    @root_validator()
+    @root_validator(pre=True)
     @classmethod
-    def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        target, targets = values.get("target"), values.get("targets")
-        if target is None and targets is None:
+    def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:        
+        target, targets = values_for_keys(values, ("target", "targets"))
+        if target is None and targets is None:            
             raise ValueError("target or targets must be configured")
 
-        if target is not None and targets is not None:
+        if target and targets:
             raise ValueError("target and targets cannot both be configured")
 
         return values
+    
+    @staticmethod
+    def target_json_schema() -> Dict[str, Any]:
+        """
+        Returns the parsed JSON Schema for validating Vegeta targets in the JSON format.
+        """
+        schema_path = Path(__file__).parent / 'vegeta_target_schema.json'
+        return json.load(open(schema_path))
+    
+    @validator("target", "targets")    
+    @classmethod    
+    def validate_target_format(cls, value: Union[str, FilePath], field: Field, values: Dict[str, Any]) -> str:
+        if value is None:
+            return value
 
-    @root_validator()
-    @classmethod
-    def validate_target_format(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        target, targets = values.get("target"), values.get("targets")
+        format: TargetFormat = values.get("format")
+        if field.name == 'target':
+            value_stream = StringIO(value)
+        elif field.name == 'targets':
+            value_stream = open(value)
+  
+        if format == TargetFormat.http:
+            # Scan through the targets and run basic heuristics
+            # We don't validate ordering to avoid building a full parser
+            count = 0
+            for line in value_stream:
+                count = count + 1
+                line = line.strip()
+                if len(line) == 0 or line[0] in ('#', '@'):
+                    continue
+                
+                maybe_method_and_url = line.split(" ", 2)
+                if len(maybe_method_and_url) == 2 and maybe_method_and_url[0] in HTTP_METHODS:
+                    if re.match("https?://*", maybe_method_and_url[1]):
+                        continue
+                
+                maybe_header_and_value = line.split(":", 2)
+                if len(maybe_header_and_value) == 2 and maybe_header_and_value[1]:
+                    continue
+                
+                raise ValueError(f"invalid target: {line}")
+            
+            if count == 0:
+                raise ValueError(f"no targets found")
 
-        # Validate JSON target formats
-        if target is not None and values.get("format") == TargetFormat.json:
+        elif format == TargetFormat.json:
             try:
-                json.loads(target)
-            except Exception as e:
-                raise ValueError("the target is not valid JSON") from e
+                data = json.load(value_stream)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"{field.name} contains invalid JSON") from e
 
-        if targets is not None and values.get("format") == TargetFormat.json:
+            # Validate the target data with JSON Schema            
             try:
-                json.load(open(targets))
-            except Exception as e:
-                raise ValueError("the targets file is not valid JSON") from e
+                jsonschema.validate(instance=data, schema=cls.target_json_schema())
+            except jsonschema.ValidationError as error:
+                raise ValueError(f"Invalid Vegeta JSON target: {error.message}") from error
 
-        # TODO: Add validation of JSON with JSON Schema (https://github.com/tsenart/vegeta/blob/master/lib/target.schema.json)
-        # and HTTP format
-        return values
+        return value
 
     @validator("rate")
     @classmethod
@@ -228,7 +266,7 @@ class VegetaConfiguration(BaseConfiguration):
 
         # Try to parse it from Golang duration string
         try:
-            timedelta_from_duration_str(duration)
+            Duration(duration)
         except DurationError as e:
             raise ValueError(f"Invalid duration '{duration}' in rate '{v}'") from e
 
