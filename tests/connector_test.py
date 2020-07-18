@@ -104,6 +104,7 @@ class TestConnector:
 
         assert TestConnector.name == "Test"
         assert TestConnector.full_name == "Test Connector"
+        assert TestConnector.__default_name__ == "test"
 
     def test_default_version(self) -> None:
         class TestConnector(Connector):
@@ -111,12 +112,12 @@ class TestConnector:
 
         assert TestConnector.version == "0.0.0"
 
-    def test_default_config_key(self) -> None:
+    def test_default_name(self) -> None:
         class FancyConnector(Connector):
             pass
 
         c = FancyConnector(config=BaseConfiguration())
-        assert c.config_key == "fancy"
+        assert c.__default_name__ == "fancy"
 
 
 class TestBaseConfiguration:
@@ -586,31 +587,31 @@ def test_init_connector_no_name_raises() -> None:
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
-def test_vegeta_default_config_key() -> None:
+def test_vegeta_default_name() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
     connector = VegetaConnector(config=config)
-    assert connector.config_key == "vegeta"
+    assert connector.name == "vegeta"
 
 
 def test_vegeta_config_override() -> None:
     config = VegetaConfiguration(
         rate="50/1s", duration="5m", target="GET http://localhost:8080"
     )
-    connector = VegetaConnector(config=config, config_key="monkey")
-    assert connector.config_key == "monkey"
+    connector = VegetaConnector(config=config, name="monkey")
+    assert connector.name == "monkey"
 
 
-def test_vegeta_id_invalid() -> None:
+def test_vegeta_name_invalid() -> None:
     with pytest.raises(ValidationError) as e:
         config = VegetaConfiguration(
             rate="50/1s", duration="5m", target="GET http://localhost:8080"
         )
-        connector = VegetaConnector(configuration=config, config_key="THIS IS NOT COOL")
+        connector = VegetaConnector(configuration=config, name="THIS IS NOT COOL")
     error_messages = list(map(lambda error: error["msg"], e.value.errors()))
     assert (
-        "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        "names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         in error_messages
     )
 

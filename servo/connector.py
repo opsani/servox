@@ -289,7 +289,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """
 
     # Connector metadata
-    name: ClassVar[str] = None
+    name: str = None
     """Name of the connector, by default derived from the class name.
     """
 
@@ -333,10 +333,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Configuration for the connector set explicitly or loaded from a config file.
     """
 
-    config_key: Optional[str] = None
-    """Key-path to the root of the connector's configuration.
-    """
-
     ##
     # Configuration
 
@@ -353,12 +349,12 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         ), "version is not a semantic versioning descriptor"
         return v
 
-    @validator("config_key")
+    @validator("name")
     @classmethod
-    def validate_config_key(cls, v):
+    def validate_name(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
-        ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        ), "names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
 
     @classmethod
@@ -438,10 +434,10 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         event = get_event(event) if isinstance(event, str) else event
 
         if exclude:
-            # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
-            excluded_keypaths = list(map(lambda c: c.config_key, exclude))
+            # NOTE: We filter by name to avoid recursive hell in Pydantic
+            excluded_names = list(map(lambda c: c.name, exclude))
             connectors = list(
-                filter(lambda c: c.config_key not in excluded_keypaths, connectors)
+                filter(lambda c: c.name not in excluded_names, connectors)
             )
 
         # Invoke the before event handlers
@@ -533,7 +529,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         cls.name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
-        cls.config_key = _config_key_for_connector_class(cls)
+        cls.__default_name__ = _name_for_connector_class(cls)
 
         # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
@@ -549,15 +545,15 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     def __init__(
         self,
         *,
-        config_key: Optional[str] = None,
+        name: Optional[str] = None,
         __connectors__: List["Connector"] = None,
         **kwargs,
     ):
-        config_key = (
-            config_key if config_key is not None else self.__class__.config_key
+        name = (
+            name if name is not None else self.__class__.__default_name__
         )
         super().__init__(
-            config_key=config_key, **kwargs,
+            name=name, **kwargs,
         )
 
         # NOTE: Connector references are held off the model so
@@ -566,7 +562,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         _connector_event_bus[self] = __connectors__
 
     def __hash__(self):
-        return hash((self.name, self.config_key, id(self),))
+        return hash((self.name, id(self),))
 
     @property
     def __connectors__(self) -> List["Connector"]:
@@ -587,7 +583,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     @property
     def logger(self) -> logging.Logger:
         """Returns the logger"""
-        return loguru.logger.bind(connector=self.config_key)
+        return loguru.logger.bind(connector=self.name)
 
 
 _is_base_connector_class_defined = True
@@ -595,7 +591,7 @@ EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
 
 
-def _config_key_for_connector_class(cls: Type[Connector]) -> str:
+def _name_for_connector_class(cls: Type[Connector]) -> str:
     name = re.sub(r"Connector$", "", cls.__name__)
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 

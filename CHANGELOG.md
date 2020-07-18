@@ -28,6 +28,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - The Vegeta connector now validates the `target` and `targets` settings.
 - The check command now supports a verbose and non-verbose modes for outputting multiple checks from a connector.
 - The version command can now output version data for connectors.
+- The connectors command now outputs names for displaying aliased configurations.
 
 ### Removed
 - The `durationpy` package has been removed in favor of a local implementation.
@@ -38,6 +39,8 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - The reporting interval is now configurable `VegetaConfiguration`.
 - The check event now returns a list of checks instead of one result.
 - Removed the 'Connector` suffix from the default connector name attribute and introduced `full_name`.
+- The `__config_key__` attribute has been renamed to `__default_name__`.
+- The identifier for connectors has been renamed to `name` for simplicitly and clarity.
 
 ## [0.3.1] - 2020-07-16
 
