@@ -1,6 +1,8 @@
+import os
+import asyncio
 import json
 import re
-import subprocess
+# import subprocess
 import time
 from datetime import datetime, timedelta
 from enum import Enum
@@ -350,7 +352,7 @@ class VegetaConnector(Connector):
         return checks
 
     @on_event()
-    def measure(
+    async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
         # Handle delay (if any)
@@ -369,7 +371,7 @@ class VegetaConnector(Connector):
         self.logger.info(summary)
 
         # Run the load generation
-        exit_code, command = self._run_vegeta()
+        exit_code, command = await self._run_vegeta()
 
         self.logger.info(
             f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports"
@@ -386,11 +388,11 @@ class VegetaConnector(Connector):
 
         return measurement
 
-    def _run_vegeta(
+    async def _run_vegeta(
         self, *, config: Optional[VegetaConfiguration] = None
     ) -> (int, str):
         config = config if config else self.config
-
+        
         # construct and run Vegeta command
         vegeta_attack_args = list(
             map(
@@ -444,27 +446,50 @@ class VegetaConnector(Connector):
         self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
 
         # If we are loading a single target, we need to connect an echo proc into Vegeta stdin
-        echo_proc_stdout = (
-            subprocess.Popen(echo_args, stdout=subprocess.PIPE, encoding="utf8").stdout
-            if config.target
-            else None
+        if config.target:
+            echo_read, echo_write = os.pipe()
+            echo_proc = await asyncio.create_subprocess_exec(*echo_args, stdout=echo_write)
+        else:
+            echo_read = None
+        
+        os.close(echo_write)
+        # if echo_proc:
+        #      echo_proc_stdout, stderr = await echo_proc.communicate()
+        # else:
+        #     echo_proc_stdout = None
+        # vegeta_attack_proc = subprocess.Popen(
+        #     vegeta_attack_args,
+        #     stdin=echo_proc_stdout,
+        #     stdout=subprocess.PIPE,
+        #     stderr=subprocess.PIPE,
+        #     encoding="utf8",
+        # )
+        attack_read, attack_write = os.pipe()
+        vegeta_attack_proc = await asyncio.create_subprocess_exec(
+            *vegeta_attack_args,
+            stdin=echo_read,
+            stdout=attack_write,
+            stderr=attack_write,
         )
-        vegeta_attack_proc = subprocess.Popen(
-            vegeta_attack_args,
-            stdin=echo_proc_stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            encoding="utf8",
-        )
+        os.close(echo_read)
+        os.close(attack_write)
 
         # Pipe the output from the attack process into the reporting process
-        report_proc = subprocess.Popen(
-            vegeta_report_args,
-            stdin=vegeta_attack_proc.stdout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            encoding="utf8",
+        # report_proc = subprocess.Popen(
+        #     vegeta_report_args,
+        #     stdin=vegeta_attack_proc.stdout,
+        #     stdout=subprocess.PIPE,
+        #     stderr=subprocess.PIPE,
+        #     encoding="utf8",
+        # )
+        # attack_proc_stdout, stderr = await vegeta_attack_proc.communicate()
+        report_proc = await asyncio.create_subprocess_exec(
+            *vegeta_report_args,
+            stdin=attack_read,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        os.close(attack_read)
 
         # track progress against our load test duration
         progress = DurationProgress(config.duration)
@@ -473,7 +498,11 @@ class VegetaConnector(Connector):
         # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
         ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
         while True:
-            output = report_proc.stdout.readline()
+            # await asyncio.sleep(1)
+            data = await report_proc.stdout.readline()
+            if not data:
+                break
+            output = data.decode('ascii').rstrip()
             if output:
                 json_report = ansi_escape.sub("", output)
                 vegeta_report = VegetaReport(**json.loads(json_report))
@@ -490,13 +519,15 @@ class VegetaConnector(Connector):
                         f"Vegeta metrics excluded (warmup in effect): {metrics}"
                     )
 
-            if report_proc.poll() is not None:
+            # if report_proc.poll() is not None:
+            if report_proc.returncode:
                 # Child process has exited, stop polling
                 break
 
+        stdout, stderr = await report_proc.communicate()
         exit_code = report_proc.returncode
         if exit_code != 0:
-            error = "\n".join(report_proc.stderr.readlines())
+            error = stderr.decode().strip()
             self.logger.error(
                 f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}: error: {error}"
             )

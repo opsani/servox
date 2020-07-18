@@ -1,8 +1,10 @@
 import abc
+import asyncio
 import json
 import logging
 import re
 from inspect import Parameter, Signature
+from functools import reduce
 from pathlib import Path
 from typing import (
     Any,
@@ -406,7 +408,100 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     ##
     # Event processing
 
+    async def dispatch_event_async(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Dispatches an event to active connectors for processing and returns the results.
+
+        Eventing can be used to notify other connectors of activities and state changes
+        driven by one connector or to facilitate loosely coupled cross-connector RPC 
+        communication.
+
+        :param first: When True, halt dispatch and return the result from the first connector that responds.
+        :param include: A list of specific connectors to dispatch the event to.
+        :param exclude: A list of specific connectors to exclude from event dispatch.
+        """
+        results: List[EventResult] = []
+        connectors = include if include is not None else self.__connectors__
+        event = get_event(event) if isinstance(event, str) else event
+
+        if exclude:
+            # NOTE: We filter by name to avoid recursive hell in Pydantic
+            excluded_names = list(map(lambda c: c.name, exclude))
+            connectors = list(
+                filter(lambda c: c.name not in excluded_names, connectors)
+            )
+
+        # Invoke the before event handlers
+        if prepositions & Preposition.BEFORE:
+            try:
+                for connector in connectors:
+                    await connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+            except CancelEventError as error:
+                # Cancelled by a before event handler. Unpack the result and return it
+                return [error.result]
+
+        # Invoke the on event handlers and gather results
+        if prepositions & Preposition.ON:
+            if first:
+                # A single responder has been requested
+                for connector in connectors:
+                    results = await connector.process_event(event, Preposition.ON, *args, **kwargs)
+                    if results:
+                        break
+            else:
+                group = asyncio.gather(
+                    *[ c.process_event(event, Preposition.ON, *args, **kwargs) for c in connectors ]
+                )
+                results = await group
+                results = list(filter(lambda r: r is not None, results))
+                if results:
+                    results = reduce(lambda x, y: x+y, results)
+
+        # Invoke the after event handlers
+        if prepositions & Preposition.AFTER:
+            after_args = list(args)
+            after_args.insert(0, results)
+            for connector in connectors:
+                # Fire and forget after handlers
+                asyncio.ensure_future(
+                    connector.process_event(
+                        event, Preposition.AFTER, results, *after_args, **kwargs
+                    )
+                )
+
+        if first:
+            return results[0] if results else None
+
+        return results
+    
     def dispatch_event(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        return asyncio.run(
+            self.dispatch_event_async(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+        )
+
+    def dispatch_event_sync(
         self,
         event: Union[Event, str],
         *args,
@@ -473,8 +568,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             return results[0] if results else None
 
         return results
-
-    def process_event(
+    
+    async def process_event(
         self, event: Event, preposition: Preposition, *args, **kwargs
     ) -> Optional[List[EventResult]]:
         """
@@ -491,7 +586,10 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             handler_kwargs = event_handler.kwargs.copy()
             handler_kwargs.update(kwargs)
             try:
-                value = event_handler.handler(self, *args, **kwargs)
+                if asyncio.iscoroutinefunction(event_handler.handler):
+                    value = await event_handler.handler(self, *args, **kwargs)
+                else:
+                    value = event_handler.handler(self, *args, **kwargs)
             except CancelEventError as error:
                 if preposition != Preposition.BEFORE:
                     raise TypeError(
