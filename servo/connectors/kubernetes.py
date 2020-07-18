@@ -22,6 +22,7 @@ from servo import (
     Maturity,
     Setting,
     connector,
+    on_event
 )
 
 json_enc = json.JSONEncoder(separators=(",", ":")).encode
@@ -1160,7 +1161,7 @@ class KubernetesConnector(connector.Connector):
         self.progress = progress
         self.print_progress(message=message)
 
-    @connector.on_event()
+    @on_event()
     def describe(self) -> Description:
         try:
             desc = read_desc()
@@ -1176,12 +1177,12 @@ class KubernetesConnector(connector.Connector):
         components = descriptor_to_components(result["application"]["components"])
         return Description(components=components)
 
-    @connector.on_event()
+    @on_event()
     def components(self) -> Description:
         desc = read_desc()
         return descriptor_to_components(desc["application"]["components"])
 
-    @connector.on_event()
+    @on_event()
     def adjust(self, data: dict) -> dict:
         try:
             desc = read_desc()
@@ -1196,7 +1197,7 @@ class KubernetesConnector(connector.Connector):
         r = update(namespace, desc, data, self._progress)
         return r
 
-    @connector.on_event()
+    @on_event()
     def check(self) -> CheckResult:
         try:
             self.describe()

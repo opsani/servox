@@ -25,7 +25,7 @@ from servo.connector import (
     Optimizer,
     _connector_subclasses,
 )
-from servo.events import Preposition
+from servo.events import Preposition, event, on_event
 from servo.types import CheckResult, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
@@ -59,43 +59,43 @@ class _EventDefinitions:
     """
 
     # Lifecycle events
-    @connector.event(Events.STARTUP)
+    @event(Events.STARTUP)
     def startup(self) -> None:
         pass
 
-    @connector.event(Events.SHUTDOWN)
+    @event(Events.SHUTDOWN)
     def shutdown(self) -> None:
         pass
 
     # Informational events
-    @connector.event(Events.METRICS)
+    @event(Events.METRICS)
     def metrics(self) -> List[Metric]:
         pass
 
-    @connector.event(Events.COMPONENTS)
+    @event(Events.COMPONENTS)
     def components(self) -> Description:
         pass
 
     # Operational events
-    @connector.event(Events.MEASURE)
+    @event(Events.MEASURE)
     def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
         pass
 
-    @connector.event(Events.CHECK)
+    @event(Events.CHECK)
     def check(self) -> CheckResult:
         pass
 
-    @connector.event(Events.DESCRIBE)
+    @event(Events.DESCRIBE)
     def describe(self) -> Description:
         pass
 
-    @connector.event(Events.ADJUST)
+    @event(Events.ADJUST)
     def adjust(self, data: dict) -> dict:
         pass
 
-    @connector.event(Events.PROMOTE)
+    @event(Events.PROMOTE)
     def promote(self) -> None:
         pass
 
@@ -224,7 +224,7 @@ class Servo(Connector):
     ##
     # Event handlers
 
-    @connector.on_event()
+    @on_event()
     def check(self) -> CheckResult:
         from servo.servo_runner import APIEvent, APIRequest
 

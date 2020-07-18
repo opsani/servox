@@ -20,6 +20,7 @@ from servo import (
     Control,
     Description,
     Duration,
+    DurationProgress,
     License,
     Maturity,
     Measurement,
@@ -30,8 +31,8 @@ from servo import (
     cli,
     metadata,
     on_event,
+    values_for_keys
 )
-from servo.utilities import DurationProgress, values_for_keys
 
 ###
 ### Vegeta

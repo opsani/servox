@@ -60,6 +60,105 @@ Version = semver.VersionInfo
 Numeric = Union[float, int]
 
 
+class Duration(timedelta):
+    """
+    Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
+
+    Duration objects can be initialized with a duration string, a numeric seconds value, 
+    a timedelta object, and with the time component keywoards of timedelta.
+
+    Refer to `servo.utilities.duration_str` for details about duration strings.
+    """
+
+    def __new__(
+        cls, duration: Union[str, Numeric, timedelta] = 0, **kwargs,
+    ):
+        seconds = kwargs.pop("seconds", 0)
+        microseconds = kwargs.pop("microseconds", 0)
+
+        if isinstance(duration, str):
+            # Parse microseconds from the string
+            microseconds = microseconds + microseconds_from_duration_str(duration)
+        elif isinstance(duration, timedelta):
+            # convert the timedelta into a microseconds float
+            microseconds = microseconds + (duration / timedelta(microseconds=1))
+        elif isinstance(duration, (int, float)):
+            # Numeric first arg maps to seconds on timedelta initializer
+            # NOTE: We are diverging from the behavior of timedelta here
+            seconds = seconds + duration
+
+        return timedelta.__new__(
+            cls, seconds=seconds, microseconds=microseconds, **kwargs
+        )
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: dict) -> None:
+        field_schema.update(
+            type="string",
+            format="duration",
+            pattern="([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
+            examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
+        )
+
+    @classmethod
+    def validate(cls, value) -> "Duration":
+        if isinstance(value, (str, timedelta, int, float)):
+            return cls(value)
+
+        # Parse into a timedelta with Pydantic parser
+        td = pydantic.datetime_parse.parse_duration(value)
+        microseconds: float = td / timedelta(microseconds=1)
+        return cls(microseconds=microseconds)
+
+    def __str__(self):
+        return timedelta_to_duration_str(self)
+
+    def __repr__(self):
+        return f"Duration('{self}' {super().__str__()})"
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.__str__() == other
+        elif isinstance(other, timedelta):
+            return super().__eq__(other)
+        elif isinstance(other, (int, float)):
+            return self.total_seconds() == other
+
+        return False
+
+
+class DurationProgress(BaseModel):
+    duration: Duration
+    started_at: Optional[datetime]
+
+    def __init__(self, duration: "Duration", **kwargs) -> None:
+        super().__init__(duration=duration, **kwargs)
+
+    def start(self) -> None:
+        assert not self.is_started()
+        self.started_at = datetime.now()
+
+    def is_started(self) -> bool:
+        return self.started_at is not None
+
+    def is_completed(self) -> bool:
+        return self.progress() >= 100
+
+    def progress(self) -> float:
+        return min(100.0, 100.0 * (self.elapsed()) / self.duration)
+
+    def elapsed(self) -> timedelta:
+        return datetime.now() - self.started_at
+
+    def annotate(self, str_to_annotate: str) -> str:
+        elapsed = timedelta_to_duration_str(self.elapsed())
+        return f"{self.progress():.2f}% complete, {elapsed} elapsed - {str_to_annotate}"
+
+
 class Unit(str, Enum):
     REQUESTS_PER_MINUTE = "rpm"
     REQUESTS_PER_SECOND = "rps"
@@ -79,10 +178,16 @@ class DataPoint(BaseModel):
     metric: Metric
     value: Numeric
 
+    def __init__(self, metric: Metric, value: Numeric, **kwargs) -> None:
+        super().__init__(metric=metric, value=value, **kwargs)
+
 
 class TimeSeries(BaseModel):
     metric: Metric
     values: List[Tuple[datetime, Numeric]]
+
+    def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
+        super().__init__(metric=metric, values=values, **kwargs)
 
 
 class SettingType(str, Enum):
@@ -109,6 +214,9 @@ class Component(BaseModel):
     name: str
     settings: List[Setting]
 
+    def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
+        super().__init__(name=name, settings=settings, **kwargs)
+
     def opsani_dict(self) -> dict:
         settings_dict = {"settings": {}}
         for setting in self.settings:
@@ -119,10 +227,10 @@ class Component(BaseModel):
 
 
 class Control(BaseModel):
-    duration: Optional['Duration']
-    past: 'Duration' = 0
-    warmup: 'Duration' = 0
-    delay: 'Duration' = 0
+    duration: Optional[Duration]
+    past: Duration = 0
+    warmup: Duration = 0
+    delay: Duration = 0
     load: Optional[dict]
 
 
@@ -195,76 +303,7 @@ class AbstractOutputFormat(str, Enum):
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
 
-
-class Duration(timedelta):
-    """
-    Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
-
-    Duration objects can be initialized with a duration string, a numeric seconds value, 
-    a timedelta object, and with the time component keywoards of timedelta.
-
-    Refer to `servo.utilities.duration_str` for details about duration strings.
-    """
-
-    def __new__(
-        cls, duration: Union[str, Numeric, timedelta] = 0, **kwargs,
-    ):
-        seconds = kwargs.pop("seconds", 0)
-        microseconds = kwargs.pop("microseconds", 0)
-
-        if isinstance(duration, str):
-            # Parse microseconds from the string
-            microseconds = microseconds + microseconds_from_duration_str(duration)
-        elif isinstance(duration, timedelta):
-            # convert the timedelta into a microseconds float
-            microseconds = microseconds + (duration / timedelta(microseconds=1))
-        elif isinstance(duration, (int, float)):
-            # Numeric first arg maps to seconds on timedelta initializer
-            # NOTE: We are diverging from the behavior of timedelta here
-            seconds = seconds + duration
-
-        return timedelta.__new__(
-            cls, seconds=seconds, microseconds=microseconds, **kwargs
-        )
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def __modify_schema__(cls, field_schema: dict) -> None:
-        field_schema.update(
-            type="string",
-            format="duration",
-            pattern="([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
-            examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
-        )
-
-    @classmethod
-    def validate(cls, value) -> "Duration":
-        if isinstance(value, (str, timedelta, int, float)):
-            return cls(value)
-
-        # Parse into a timedelta with Pydantic parser
-        td = pydantic.datetime_parse.parse_duration(value)
-        microseconds: float = td / timedelta(microseconds=1)
-        return cls(microseconds=microseconds)
-
-    def __str__(self):
-        return timedelta_to_duration_str(self)
-
-    def __repr__(self):
-        return f"Duration('{self}' {super().__str__()})"
-
-    def __eq__(self, other) -> bool:
-        if isinstance(other, str):
-            return self.__str__() == other
-        elif isinstance(other, timedelta):
-            return super().__eq__(other)
-        elif isinstance(other, (int, float)):
-            return self.total_seconds() == other
-
-        return False
+Control.update_forward_refs()
 
 
 DurationType = Union[Duration, timedelta, str, bytes, int, float]

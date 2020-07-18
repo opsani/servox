@@ -12,14 +12,20 @@ from servo import __version__, connector
 from servo.connector import (
     Connector,
     Optimizer,
+)
+from servo.connectors.vegeta import VegetaConnector
+from servo.events import (
+    CancelEventError, 
+    EventError, 
+    EventResult, 
+    Preposition, 
     _events,
     after_event,
     before_event,
+    create_event,
     event,
     on_event,
 )
-from servo.connectors.vegeta import VegetaConnector
-from servo.events import CancelEventError, EventError, EventResult, Preposition
 from servo.servo import BaseServoConfiguration, Events, Servo, ServoAssembly
 from servo.types import Control, Measurement
 from tests.test_helpers import environment_overrides
@@ -312,14 +318,14 @@ def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
 
 def test_creating_event_programmatically(random_string: str) -> None:
     signature = Signature.from_callable(test_shutdown_event)
-    Connector.create_event(random_string, signature)
+    create_event(random_string, signature)
     event = _events[random_string]
     assert event.name == random_string
     assert event.signature == signature
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
-    Connector.create_event(random_string, test_shutdown_event)
+    create_event(random_string, test_shutdown_event)
     event = _events[random_string]
     assert event.name == random_string
     assert event.signature == Signature.from_callable(test_shutdown_event)
@@ -329,7 +335,7 @@ def test_redeclaring_an_existing_event_fails() -> None:
     with pytest.raises(ValueError) as error:
 
         class InvalidConnector:
-            @connector.event("adjust")
+            @event("adjust")
             def invalid_adjust(self) -> None:
                 pass
 
@@ -341,7 +347,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
     with pytest.raises(TypeError) as error:
 
         class InvalidConnector:
-            @connector.on_event("adjust")
+            @on_event("adjust")
             def invalid_adjust(self) -> None:
                 pass
 
@@ -355,7 +361,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 def test_registering_event_handler_fails_with_no_self() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("adjust")
+        @on_event("adjust")
         def invalid_adjust() -> None:
             pass
 
@@ -370,7 +376,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
     with pytest.raises(TypeError) as error:
 
         class InvalidConnector:
-            @connector.event("failio")
+            @event("failio")
             def invalid_event(self, *args) -> None:
                 pass
 
@@ -384,7 +390,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
 def test_registering_event_handler_with_missing_positional_param_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("adjust")
+        @on_event("adjust")
         def invalid_adjust(self) -> dict:
             pass
 
@@ -398,7 +404,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("measure")
+        @on_event("measure")
         def invalid_measure(self, *, control: Control = Control()) -> Measurement:
             pass
 
@@ -410,7 +416,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
 
 
 def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
-    @connector.on_event("measure")
+    @on_event("measure")
     def invalid_measure(self, *, control: Control = Control(), **kwargs) -> Measurement:
         pass
 
@@ -418,7 +424,7 @@ def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_
 def test_registering_event_handler_with_too_many_positional_params_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("startup")
+        @on_event("startup")
         def invalid_measure(self, invalid, /) -> None:
             pass
 
@@ -432,7 +438,7 @@ def test_registering_event_handler_with_too_many_positional_params_fails() -> No
 def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("startup")
+        @on_event("startup")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
 
@@ -444,7 +450,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
 
 
 def test_registering_before_handlers() -> None:
-    @connector.before_event("measure")
+    @before_event("measure")
     def before_measure(self) -> None:
         pass
 
@@ -455,7 +461,7 @@ def test_registering_before_handlers() -> None:
 def test_registering_before_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.before_event("measure")
+        @before_event("measure")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
 
@@ -467,7 +473,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
 
 
 def test_validation_of_before_handlers_ignores_kwargs() -> None:
-    @connector.before_event("measure")
+    @before_event("measure")
     def before_measure(self, **kwargs) -> None:
         pass
 
@@ -476,18 +482,18 @@ def test_validation_of_before_handlers_ignores_kwargs() -> None:
 
 
 def test_validation_of_after_handlers() -> None:
-    @connector.after_event("measure")
-    def after_event(self, results: List[EventResult]) -> None:
+    @after_event("measure")
+    def after_measure(self, results: List[EventResult]) -> None:
         pass
 
-    assert after_event.__event_handler__.event.name == "measure"
-    assert after_event.__event_handler__.preposition == Preposition.AFTER
+    assert after_measure.__event_handler__.event.name == "measure"
+    assert after_measure.__event_handler__.preposition == Preposition.AFTER
 
 
 def test_registering_after_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.after_event("measure")
+        @after_event("measure")
         def invalid_measure(
             self, results: List[EventResult], invalid: str, another: int
         ) -> None:
@@ -501,7 +507,7 @@ def test_registering_after_handler_fails_with_extra_args() -> None:
 
 
 def test_validation_of_after_handlers_ignores_kwargs() -> None:
-    @connector.after_event("measure")
+    @after_event("measure")
     def after_measure(self, results: List[EventResult], **kwargs) -> None:
         pass
 
