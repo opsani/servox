@@ -119,10 +119,10 @@ class Component(BaseModel):
 
 
 class Control(BaseModel):
-    duration: Optional[int]
-    past: int = 0
-    warmup: int = 0
-    delay: int = 0
+    duration: Optional['Duration']
+    past: 'Duration' = 0
+    warmup: 'Duration' = 0
+    delay: 'Duration' = 0
     load: Optional[dict]
 
 
