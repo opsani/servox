@@ -587,7 +587,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     @property
     def logger(self) -> logging.Logger:
         """Returns the logger"""
-        return loguru.logger
+        return loguru.logger.bind(connector=self.config_key)
 
 
 _is_base_connector_class_defined = True
