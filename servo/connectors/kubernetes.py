@@ -15,7 +15,7 @@ import yaml
 from pydantic import Extra
 
 from servo import (
-    CheckResult,
+    Check,
     Component,
     Description,
     License,
@@ -1198,15 +1198,15 @@ class KubernetesConnector(connector.Connector):
         return r
 
     @on_event()
-    def check(self) -> CheckResult:
+    def check(self) -> List[Check]:
         try:
             self.describe()
         except Exception as e:
-            return CheckResult(
+            return [Check(
                 name="Connect to Kubernetes", success=False, comment=str(e)
-            )
+            )]
 
-        return CheckResult(name="Connect to Kubernetes", success=True, comment="")
+        return [Check(name="Connect to Kubernetes", success=True, comment="")]
 
 
 def descriptor_to_components(descriptor: dict) -> List[Component]:

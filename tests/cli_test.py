@@ -110,6 +110,14 @@ def test_check(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 0
+    assert re.match("CONNECTOR\\s+STATUS", result.stdout)
+
+
+def test_check_verbose(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "check -v")
+    assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
 
 

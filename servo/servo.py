@@ -26,7 +26,7 @@ from servo.connector import (
     _connector_subclasses,
 )
 from servo.events import Preposition, event, on_event
-from servo.types import CheckResult, Control, Description, Measurement, Metric
+from servo.types import Check, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
 
@@ -84,7 +84,7 @@ class _EventDefinitions:
         pass
 
     @event(Events.CHECK)
-    def check(self) -> CheckResult:
+    def check(self) -> List[Check]:
         pass
 
     @event(Events.DESCRIBE)
@@ -225,22 +225,18 @@ class Servo(Connector):
     # Event handlers
 
     @on_event()
-    def check(self) -> CheckResult:
+    def check(self) -> List[Check]:
         from servo.servo_runner import APIEvent, APIRequest
 
         with self.api_client() as client:
             event_request = APIRequest(event=APIEvent.HELLO)
             response = client.post("servo", data=event_request.json())
-            if response.status_code != httpx.codes.OK:
-                return CheckResult(
-                    name="Check Opsani API connectivity",
-                    success=False,
-                    comment=f"Encountered an unexpected status code of {response.status_code} when connecting to Opsani",
-                )
-
-        return CheckResult(
-            name="Check Servo", success=True, comment="All checks passed successfully."
-        )
+            success = (response.status_code == httpx.codes.OK)
+            return [Check(
+                name="Opsani API connectivity",
+                success=success,
+                comment=f"Response status code: {response.status_code}",
+            )]
 
 
 class ServoAssembly(BaseModel):

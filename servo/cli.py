@@ -888,6 +888,9 @@ class ServoCLI(CLI):
                 help="The connectors to check",
                 callback=self.connectors_instance_callback,
             ),
+            verbose: bool = typer.Option(
+                False, "--verbose", "-v", help="Display verbose output"
+            ),
         ) -> None:
             """
             Check that the servo is ready to run
@@ -903,13 +906,27 @@ class ServoCLI(CLI):
             results: List[EventResult] = context.servo.dispatch_event(
                 Events.CHECK, include=connectors
             )
-            headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
             table = []
-            for result in results:
-                check: CheckResult = result.value
-                status = "√ PASSED" if check.success else "X FAILED"
-                row = [result.connector.name, check.name, status, check.comment]
-                table.append(row)
+            if verbose:
+                headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
+                for result in results:
+                    checks: List[Check] = result.value                
+                    names, statuses, comments = [], [], []
+                    for check in checks:
+                        names.append(check.name)                
+                        statuses.append("√ PASSED" if check.success else "X FAILED")
+                        comments.append(check.comment)
+                    row = [result.connector.name, "\n".join(names), "\n".join(statuses), "\n".join(comments)]
+                    table.append(row)
+            else:
+                from functools import reduce
+                headers = ["CONNECTOR", "STATUS"]
+                for result in results:
+                    checks: List[Check] = result.value                
+                    success = reduce(lambda success, c: success and c.success, checks)
+                    status = "√ PASSED" if success else "X FAILED"
+                    row = [result.connector.name, status]
+                    table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
