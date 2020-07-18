@@ -1082,24 +1082,20 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            config = context.servo.config.dict(
-                exclude_unset=True, include=include
-            )
-            config_json = json.dumps(config, indent=2, default=pydantic_encoder)
-            config_dict = json.loads(config_json)
-            config_dict_str = pformat(config_dict)
-            config_yaml = yaml.dump(config_dict, indent=2, sort_keys=True)
+            export_options = dict(exclude_unset=True, include=include, indent=2)
 
             if format == ConfigOutputFormat.text:
                 pass
             else:
                 lexer = format.lexer()
                 if format == ConfigOutputFormat.yaml:
-                    data = config_yaml
+                    data = context.servo.config.yaml(sort_keys=True, **export_options)
                 elif format == ConfigOutputFormat.json:
-                    data = config_json
+                    data = context.servo.config.json(**export_options)
                 elif format == ConfigOutputFormat.dict:
-                    data = config_dict_str
+                    # NOTE: Round-trip through JSON to produce primitives
+                    config_dict = context.servo.config.json(**export_options)
+                    data = pformat(json.loads(config_dict))
                 elif format == ConfigOutputFormat.configmap:                    
                     configured_at = datetime.now(timezone.utc).isoformat()
                     connectors = []
@@ -1128,7 +1124,9 @@ class ServoCLI(CLI):
                             }
                         },
                         "data": {
-                            "servo.yaml": PreservedScalarString(config_yaml)
+                            "servo.yaml": PreservedScalarString(
+                                context.servo.config.yaml(sort_keys=True, **export_options)
+                            )
                         }
                     }
                     data = yaml.dump(configmap, indent=2, sort_keys=False, explicit_start=True)
@@ -1312,7 +1310,7 @@ class ServoCLI(CLI):
 
             # Build a settings model from our routes
             config_model = _create_config_model_from_routes(routes)
-            settings = config_model.generate()
+            config = config_model.generate()
 
             if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary
@@ -1327,27 +1325,19 @@ class ServoCLI(CLI):
                         connectors_dict[identifier] = identifier
 
                 if aliased:
-                    settings.connectors = connectors_dict
+                    config.connectors = connectors_dict
                 else:
                     # If there are no aliases just assign input values
-                    settings.connectors = connectors
-
-            # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
-            schema = json.loads(
-                json.dumps(
-                    settings.dict(
-                        by_alias=True, exclude_unset=exclude_unset, exclude=exclude
-                    )
-                )
-            )
+                    config.connectors = connectors
+            
+            config_yaml = config.yaml(by_alias=True, exclude_unset=exclude_unset, exclude=exclude)
             if file.exists() and force == False:
                 delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
                 if not delete:
                     raise typer.Abort()
-            config = yaml.dump(schema)
-            file.write_text(config)
+            file.write_text(config_yaml)
             if not quiet:
-                typer.echo(highlight(config, YamlLexer(), TerminalFormatter()))
+                typer.echo(highlight(config_yaml, YamlLexer(), TerminalFormatter()))
                 typer.echo(f"Generated {file}")
 
     def add_connector_commands(self) -> None:

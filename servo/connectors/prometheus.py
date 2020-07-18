@@ -5,7 +5,6 @@ import yaml
 import servo
 from servo.connector import Connector, BaseConfiguration, License, Maturity, event, metadata, on_event
 from servo.types import *
-import durationpy
 from pydantic import BaseModel, Extra, validator, HttpUrl, AnyHttpUrl
 from typing import List, Tuple, Optional, Any
 from datetime import timedelta
@@ -15,18 +14,9 @@ from devtools import pformat
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
 
-
 class PrometheusMetric(Metric):
     query: str
-    # period: timedelta
-    period: int = 0
-
-    # @classmethod
-    # @validator("period", pre=True, always=True)
-    # def validate_period(cls, value) -> timedelta:
-    #     if isinstance(value, str):
-    #         return durationpy.from_str(value)
-    #     return 0
+    period: Duration
 
 
 class PrometheusConfiguration(BaseConfiguration):
@@ -38,8 +28,8 @@ class PrometheusConfiguration(BaseConfiguration):
         return cls(
             description="Update the base_url and metrics to match your Prometheus configuration",
             metrics=[
-                PrometheusMetric('throughput', Unit.REQUESTS_PER_SECOND, query="rate(http_requests_total[1s])[3m]", period=0),
-                PrometheusMetric('error_rate', Unit.PERCENTAGE, query="rate(errors)", period=0),
+                PrometheusMetric(name='throughput', unit=Unit.REQUESTS_PER_SECOND, query="rate(http_requests_total[1s])[3m]", period='1m'),
+                PrometheusMetric(name='error_rate', unit=Unit.PERCENTAGE, query="rate(errors)", period='1m'),
             ],
             **kwargs
         )

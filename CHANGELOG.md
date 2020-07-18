@@ -15,6 +15,20 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- Introduced Duration class for modeling time durations as Golang style duration strings.
+- BaseConfiguration now provides a `yaml` method for easily to YAML.
+- BaseConfiguration now provides a `json_encoders` static method for easily accessing the default encoders.
+- 
+
+### Changed
+- The reporting interval is now configurable `VegetaConfiguration`.
+
+### Removed
+- The `durationpy` package has been removed in favor of a local implementation.
+
 ## [0.3.1] - 2020-07-16
 
 ### Fixed
