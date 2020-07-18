@@ -4,6 +4,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from enum import Enum
+from functools import reduce
 from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
@@ -891,6 +892,9 @@ class ServoCLI(CLI):
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose output"
             ),
+            quiet: bool = typer.Option(
+                False, "--quiet", "-q", help="Do not echo generated output to stdout",
+            ),
         ) -> None:
             """
             Check that the servo is ready to run
@@ -906,9 +910,11 @@ class ServoCLI(CLI):
             results: List[EventResult] = context.servo.dispatch_event(
                 Events.CHECK, include=connectors
             )
+
             table = []
+            ready = True
             if verbose:
-                headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
+                headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]                    
                 for result in results:
                     checks: List[Check] = result.value                
                     names, statuses, comments = [], [], []
@@ -916,19 +922,25 @@ class ServoCLI(CLI):
                         names.append(check.name)                
                         statuses.append("√ PASSED" if check.success else "X FAILED")
                         comments.append(check.comment)
+                        ready = ready and check.success
                     row = [result.connector.name, "\n".join(names), "\n".join(statuses), "\n".join(comments)]
                     table.append(row)
-            else:
-                from functools import reduce
+            else:                    
                 headers = ["CONNECTOR", "STATUS"]
                 for result in results:
                     checks: List[Check] = result.value                
                     success = reduce(lambda success, c: success and c.success, checks)
+                    ready = ready and success
                     status = "√ PASSED" if success else "X FAILED"
                     row = [result.connector.name, status]
                     table.append(row)
-
-            typer.echo(tabulate(table, headers, tablefmt="plain"))
+                
+            # Output table and exit
+            if not quiet:
+                typer.echo(tabulate(table, headers, tablefmt="plain"))
+                
+            exit_code = 0 if ready else 1
+            raise typer.Exit(exit_code)
 
         @self.command(section=section)
         def describe(
@@ -1131,7 +1143,7 @@ class ServoCLI(CLI):
                     for connector in context.servo.connectors:
                         connectors.append(
                             {
-                                "name": connector.name,
+                                "name": connector.full_name,
                                 "description": connector.description,
                                 "version": str(connector.version),
                                 "url": str(connector.homepage),
@@ -1258,7 +1270,6 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                metavar="CONNECTORS",
                 help="Connectors to validate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
             file: Path = typer.Option(
@@ -1300,7 +1311,6 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                metavar="CONNECTORS",
                 help="Connectors to generate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
             file: Path = typer.Option(
@@ -1425,6 +1435,10 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def version(
             context: Context,
+            connector: Optional[str] = typer.Argument(
+                None,
+                help="Display version for a connector",
+            ),
             short: bool = typer.Option(
                 False, "--short", "-s", help="Display short version details",
             ),
@@ -1435,14 +1449,20 @@ class ServoCLI(CLI):
             """
             Display version
             """
-            # TODO: Update to work with specific connectors
+            if connector:
+                connector_class = _connector_class_from_string(connector)
+                if not connector_class:
+                    raise typer.BadParameter(f"no connector found for key '{identifier}'")
+            else:
+                connector_class = Servo
+            
             if short:
                 if format == VersionOutputFormat.text:
-                    typer.echo(f"{Servo.name} v{Servo.version}")
+                    typer.echo(f"{connector_class.full_name} v{connector_class.version}")
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": Servo.name,
-                        "version": str(Servo.version),
+                        "name": connector_class.full_name,
+                        "version": str(connector_class.version),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
@@ -1451,20 +1471,20 @@ class ServoCLI(CLI):
                 if format == VersionOutputFormat.text:
                     typer.echo(
                         (
-                            f"{Servo.name} v{Servo.version} ({Servo.maturity})\n"
-                            f"{Servo.description}\n"
-                            f"{Servo.homepage}\n"
-                            f"Licensed under the terms of {Servo.license}"
+                            f"{connector_class.full_name} v{connector_class.version} ({connector_class.maturity})\n"
+                            f"{connector_class.description}\n"
+                            f"{connector_class.homepage}\n"
+                            f"Licensed under the terms of {connector_class.license}"
                         )
                     )
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": Servo.name,
-                        "version": str(Servo.version),
-                        "maturity": str(Servo.maturity),
-                        "description": Servo.description,
-                        "homepage": Servo.homepage,
-                        "license": str(Servo.license),
+                        "name": connector_class.full_name,
+                        "version": str(connector_class.version),
+                        "maturity": str(connector_class.maturity),
+                        "description": connector_class.description,
+                        "homepage": connector_class.homepage,
+                        "license": str(connector_class.license),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:

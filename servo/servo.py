@@ -404,12 +404,12 @@ def _create_config_model_from_routes(
     for config_key, connector_class in routes.items():
         config_model = _derive_config_model_for_route(config_key, connector_class)
         config_model.__config__.title = (
-            f"{connector_class.name} Settings (at key-path {config_key})"
+            f"{connector_class.full_name} Settings (at key-path {config_key})"
         )
         setting_fields[config_key] = (config_model, default_value)
         connector_versions[
             connector_class
-        ] = f"{connector_class.name} v{connector_class.version}"
+        ] = f"{connector_class.full_name} v{connector_class.version}"
 
     # Create our model
     servo_config_model = create_model(

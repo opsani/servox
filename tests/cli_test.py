@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 from freezegun import freeze_time
+import respx
 from typer import Typer
 from typer.testing import CliRunner
 
@@ -112,12 +113,14 @@ def test_check(
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+STATUS", result.stdout)
 
-
+@respx.mock
 def test_check_verbose(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "check -v")
-    assert result.exit_code == 0
+    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
+    result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
+    assert request.called
+    assert result.exit_code == 0    
     assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
 
 

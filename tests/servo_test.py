@@ -114,7 +114,7 @@ def test_all_connector_types() -> None:
 
 def test_servo_routes(servo: Servo) -> None:
     first_connector = servo.routes["first_test_servo"]
-    assert first_connector.name == "FirstTestServo Connector"
+    assert first_connector.name == "FirstTestServo"
     results = servo.dispatch_event("this_is_an_event", include=[first_connector])
     assert len(results) == 1
     assert results[0].value == "this is the result"
@@ -147,7 +147,7 @@ def test_dispatch_event_first(servo: Servo) -> None:
 
 def test_dispatch_event_include(servo: Servo) -> None:
     first_connector = servo.connectors[0]
-    assert first_connector.name == "FirstTestServo Connector"
+    assert first_connector.name == "FirstTestServo"
     results = servo.dispatch_event("this_is_an_event", include=[first_connector])
     assert len(results) == 1
     assert results[0].value == "this is the result"
@@ -156,9 +156,9 @@ def test_dispatch_event_include(servo: Servo) -> None:
 def test_dispatch_event_exclude(servo: Servo) -> None:
     assert len(servo.connectors) == 2
     first_connector = servo.connectors[0]
-    assert first_connector.name == "FirstTestServo Connector"
+    assert first_connector.name == "FirstTestServo"
     second_connector = servo.connectors[1]
-    assert second_connector.name == "SecondTestServo Connector"
+    assert second_connector.name == "SecondTestServo"
     event_names = set(_events.keys())
     assert "this_is_an_event" in event_names
     results = servo.dispatch_event("this_is_an_event", exclude=[first_connector])

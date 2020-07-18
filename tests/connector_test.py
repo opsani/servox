@@ -102,7 +102,8 @@ class TestConnector:
         class TestConnector(Connector):
             pass
 
-        assert TestConnector.name == "Test Connector"
+        assert TestConnector.name == "Test"
+        assert TestConnector.full_name == "Test Connector"
 
     def test_default_version(self) -> None:
         class TestConnector(Connector):
@@ -615,7 +616,7 @@ def test_vegeta_id_invalid() -> None:
 
 
 def test_vegeta_name() -> None:
-    assert VegetaConnector.name == "Vegeta Connector"
+    assert VegetaConnector.name == "Vegeta"
 
 
 def test_vegeta_description() -> None:
@@ -623,12 +624,10 @@ def test_vegeta_description() -> None:
 
 
 def test_vegeta_version() -> None:
-    # TODO: Type violation
     assert VegetaConnector.version == "0.5.0"
 
 
 def test_vegeta_homepage() -> None:
-    # TODO: Type violation
     assert VegetaConnector.homepage == "https://github.com/opsani/vegeta-connector"
 
 
@@ -1198,10 +1197,8 @@ def test_vegeta_cli_validate_invalid_syntax(
     assert "could not find expected ':'" in result.stderr
 
 
-# TODO: Has to be called on parent?
-@pytest.mark.xfail
 def test_vegeta_cli_version(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
-    result = cli_runner.invoke(servo_cli, "version")
+    result = cli_runner.invoke(servo_cli, "version vegeta")
     assert result.exit_code == 0
     assert (
         "Vegeta Connector v0.5.0 (Stable)\n"
