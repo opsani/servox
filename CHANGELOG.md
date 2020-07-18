@@ -27,6 +27,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - BaseConfiguration now provides a `json_encoders` static method for easily accessing the default encoders.
 - The Vegeta connector now validates the `target` and `targets` settings.
 - The check command now supports a verbose and non-verbose modes for outputting multiple checks from a connector.
+- The version command can now output version data for connectors.
 
 ### Removed
 - The `durationpy` package has been removed in favor of a local implementation.
@@ -36,6 +37,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - Docker images pushed to Docker Hub are now built with `SERVO_ENV=production` to exclude development packages.
 - The reporting interval is now configurable `VegetaConfiguration`.
 - The check event now returns a list of checks instead of one result.
+- Removed the 'Connector` suffix from the default connector name attribute and introduced `full_name`.
 
 ## [0.3.1] - 2020-07-16
 

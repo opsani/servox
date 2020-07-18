@@ -293,6 +293,10 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Name of the connector, by default derived from the class name.
     """
 
+    full_name: ClassVar[str] = None
+    """The full name of the connector for referencing it unambiguously.
+    """
+
     version: ClassVar[Version] = None
     """Semantic Versioning string of the connector.
     """
@@ -529,7 +533,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         # TODO: Do I need this? I could just put it as a class var also!
         cls.__config_key__ = _config_key_for_connector_class(cls)
 
-        cls.name = cls.__name__.replace("Connector", " Connector")
+        cls.name = cls.__name__.replace("Connector", "")
+        cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
 
         # Register events handlers for all annotated methods (see `event_handler` decorator)
