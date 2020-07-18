@@ -482,7 +482,7 @@ class CLI(typer.Typer):
 
             if connector_class := _connector_class_from_string(identifier):
                 if config_key is None:
-                    config_key = connector_class.__config_key__
+                    config_key = connector_class.config_key
                 routes[config_key] = connector_class
             else:
                 raise typer.BadParameter(f"no connector found for key '{identifier}'")
@@ -518,7 +518,7 @@ class ConnectorCLI(CLI):
                     context.connector = connector
 
         if name is None:
-            name = _command_name_from_config_key(connector_type.__config_key__)
+            name = _command_name_from_config_key(connector_type.config_key)
         if help is None:
             help = connector_type.description
         if isinstance(callback, DefaultPlaceholder):
@@ -624,7 +624,7 @@ class ServoCLI(CLI):
                     filter(
                         None,
                         map(
-                            lambda c: c.__config_key__ if c.name in result else None,
+                            lambda c: c.config_key if c.name in result else None,
                             ServoAssembly.all_connector_types(),
                         ),
                     )

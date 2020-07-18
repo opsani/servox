@@ -504,7 +504,7 @@ def _derive_config_model_for_route(
             # due to naming conflicts.
             model_name = f"{model.__name__}Settings"
         elif (
-            config_key == model.__config_key__
+            config_key == model.config_key
             and not f"{base_config_model.__qualname__}" in model_names
         ):
             # Connector is mounted at the default route, use default name
@@ -548,7 +548,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Check if the string is an identifier for a connector
     for connector_class in ServoAssembly.all_connector_types():
-        if connector == connector_class.__config_key__ or connector in [
+        if connector == connector_class.config_key or connector in [
             connector_class.__name__,
             connector_class.__qualname__,
         ]:
@@ -627,9 +627,9 @@ def _routes_for_connectors_descriptor(connectors):
         connector_routes: Dict[str, str] = {}
         for connector in connectors:
             if _validate_class(connector):
-                connector_routes[connector.__config_key__] = connector
+                connector_routes[connector.config_key] = connector
             elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.__config_key__] = connector_class
+                connector_routes[connector_class.config_key] = connector_class
             else:
                 raise ValueError(f"Missing validation for value {connector}")
 
@@ -689,5 +689,5 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:
-            routes[connector.__config_key__] = connector
+            routes[connector.config_key] = connector
     return routes
