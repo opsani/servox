@@ -314,6 +314,7 @@ class ServoAssembly(BaseModel):
                     config=connector_config,
                     optimizer=optimizer,
                     __connectors__=connectors,
+                    config_key=config_key,
                 )
                 servo_routes[config_key] = connector
                 connectors.append(connector)
