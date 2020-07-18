@@ -8,17 +8,17 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
-from servo.connectors.vegeta import VegetaConnector
 from servo import __version__, connector
 from servo.connector import (
     Connector,
     Optimizer,
+    _events,
     after_event,
     before_event,
     event,
     on_event,
-    _events,
 )
+from servo.connectors.vegeta import VegetaConnector
 from servo.events import CancelEventError, EventError, EventResult, Preposition
 from servo.servo import BaseServoConfiguration, Events, Servo, ServoAssembly
 from servo.types import Control, Measurement
@@ -113,6 +113,7 @@ def test_servo_routes(servo: Servo) -> None:
     assert len(results) == 1
     assert results[0].value == "this is the result"
 
+
 def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> None:
     connector_ids = list(map(lambda c: id(c), servo.__connectors__))
     assert connector_ids
@@ -124,6 +125,7 @@ def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> Non
     for conn in servo.__connectors__:
         subconnector_ids = list(map(lambda c: id(c), conn.__connectors__))
         assert subconnector_ids == connector_ids
+
 
 def test_dispatch_event(servo: Servo) -> None:
     results = servo.dispatch_event("this_is_an_event")
@@ -552,420 +554,303 @@ class TestServoAssembly:
         # Description on parent class can be squirrely
         assert schema["properties"]["description"]["env_names"] == ["SERVO_DESCRIPTION"]
         assert schema == {
-            'title': 'Servo Configuration Schema',
-            'description': 'Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0',
-            'type': 'object',
-            'properties': {
-                'description': {
-                    'title': 'Description',
-                    'description': 'An optional annotation describing the configuration.',
-                    'env_names': [
-                        'SERVO_DESCRIPTION',
-                    ],
-                    'type': 'string',
+            "title": "Servo Configuration Schema",
+            "description": "Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0",
+            "type": "object",
+            "properties": {
+                "description": {
+                    "title": "Description",
+                    "description": "An optional annotation describing the configuration.",
+                    "env_names": ["SERVO_DESCRIPTION",],
+                    "type": "string",
                 },
-                'connectors': {
-                    'title': 'Connectors',
-                    'description': (
-                        'An optional, explicit configuration of the active connectors.\n'
-                        '\n'
-                        'Configurable as either an array of connector identifiers (names or class) or\n'
-                        'a dictionary where the keys specify the key path to the connectors configuration\n'
-                        'and the values identify the connector (by name or class name).'
+                "connectors": {
+                    "title": "Connectors",
+                    "description": (
+                        "An optional, explicit configuration of the active connectors.\n"
+                        "\n"
+                        "Configurable as either an array of connector identifiers (names or class) or\n"
+                        "a dictionary where the keys specify the key path to the connectors configuration\n"
+                        "and the values identify the connector (by name or class name)."
                     ),
-                    'examples': [
-                        [
-                            'kubernetes',
-                            'prometheus',
-                        ],
-                        {
-                            'staging_prom': 'prometheus',
-                            'gateway_prom': 'prometheus',
-                        },
+                    "examples": [
+                        ["kubernetes", "prometheus",],
+                        {"staging_prom": "prometheus", "gateway_prom": "prometheus",},
                     ],
-                    'env_names': [
-                        'SERVO_CONNECTORS',
-                    ],
-                    'anyOf': [
+                    "env_names": ["SERVO_CONNECTORS",],
+                    "anyOf": [
+                        {"type": "array", "items": {"type": "string",},},
                         {
-                            'type': 'array',
-                            'items': {
-                                'type': 'string',
-                            },
-                        },
-                        {
-                            'type': 'object',
-                            'additionalProperties': {
-                                'type': 'string',
-                            },
+                            "type": "object",
+                            "additionalProperties": {"type": "string",},
                         },
                     ],
                 },
-                'other': {
-                    'title': 'Other',
-                    'env_names': [
-                        'SERVO_OTHER',
-                    ],
-                    'allOf': [
-                        {
-                            '$ref': '#/definitions/VegetaConfiguration__other',
-                        },
-                    ],
+                "other": {
+                    "title": "Other",
+                    "env_names": ["SERVO_OTHER",],
+                    "allOf": [{"$ref": "#/definitions/VegetaConfiguration__other",},],
                 },
-                'vegeta': {
-                    'title': 'Vegeta',
-                    'env_names': [
-                        'SERVO_VEGETA',
-                    ],
-                    'allOf': [
-                        {
-                            '$ref': '#/definitions/VegetaConfiguration',
-                        },
-                    ],
+                "vegeta": {
+                    "title": "Vegeta",
+                    "env_names": ["SERVO_VEGETA",],
+                    "allOf": [{"$ref": "#/definitions/VegetaConfiguration",},],
                 },
             },
-            'required': [
-                'other',
-                'vegeta',
-            ],
-            'additionalProperties': False,
-            'definitions': {
-                'TargetFormat': {
-                    'title': 'TargetFormat',
-                    'description': 'An enumeration.',
-                    'enum': [
-                        'http',
-                        'json',
-                    ],
-                    'type': 'string',
+            "required": ["other", "vegeta",],
+            "additionalProperties": False,
+            "definitions": {
+                "TargetFormat": {
+                    "title": "TargetFormat",
+                    "description": "An enumeration.",
+                    "enum": ["http", "json",],
+                    "type": "string",
                 },
-                'VegetaConfiguration__other': {
-                    'title': 'Vegeta Connector Settings (at key-path other)',
-                    'description': 'Configuration of the Vegeta connector',
-                    'type': 'object',
-                    'properties': {
-                        'description': {
-                            'title': 'Description',
-                            'description': 'An optional annotation describing the configuration.',
-                            'env_names': [
-                                'SERVO_OTHER_DESCRIPTION',
-                            ],
-                            'type': 'string',
+                "VegetaConfiguration__other": {
+                    "title": "Vegeta Connector Settings (at key-path other)",
+                    "description": "Configuration of the Vegeta connector",
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "title": "Description",
+                            "description": "An optional annotation describing the configuration.",
+                            "env_names": ["SERVO_OTHER_DESCRIPTION",],
+                            "type": "string",
                         },
-                        'rate': {
-                            'title': 'Rate',
-                            'description': (
-                                'Specifies the request rate per time unit to issue against the targets. Given in the forma'
-                                't of request/time unit.'
+                        "rate": {
+                            "title": "Rate",
+                            "description": (
+                                "Specifies the request rate per time unit to issue against the targets. Given in the forma"
+                                "t of request/time unit."
                             ),
-                            'env_names': [
-                                'SERVO_OTHER_RATE',
-                            ],
-                            'type': 'string',
+                            "env_names": ["SERVO_OTHER_RATE",],
+                            "type": "string",
                         },
-                        'duration': {
-                            'title': 'Duration',
-                            'description': 'Specifies the amount of time to issue requests to the targets.',
-                            'env_names': [
-                                'SERVO_OTHER_DURATION',
-                            ],
-                            'type': 'string',
-                            'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
-                            'examples': [
-                                '300ms',
-                                '5m',
-                                '2h45m',
-                                '72h3m0.5s',
-                            ],
+                        "duration": {
+                            "title": "Duration",
+                            "description": "Specifies the amount of time to issue requests to the targets.",
+                            "env_names": ["SERVO_OTHER_DURATION",],
+                            "type": "string",
+                            "format": "duration",
+                            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
                         },
-                        'format': {
-                            '$ref': '#/definitions/TargetFormat',
-                        },
-                        'target': {
-                            'title': 'Target',
-                            'description': (
-                                'Specifies a single formatted Vegeta target to load. See the format option to learn about '
-                                'available target formats. This option is exclusive of the targets option and will provide'
-                                ' a target to Vegeta via stdin.'
+                        "format": {"$ref": "#/definitions/TargetFormat",},
+                        "target": {
+                            "title": "Target",
+                            "description": (
+                                "Specifies a single formatted Vegeta target to load. See the format option to learn about "
+                                "available target formats. This option is exclusive of the targets option and will provide"
+                                " a target to Vegeta via stdin."
                             ),
-                            'env_names': [
-                                'SERVO_OTHER_TARGET',
-                            ],
-                            'type': 'string',
+                            "env_names": ["SERVO_OTHER_TARGET",],
+                            "type": "string",
                         },
-                        'targets': {
-                            'title': 'Targets',
-                            'description': (
-                                'Specifies the file from which to read targets. See the format option to learn about avail'
-                                'able target formats. This option is exclusive of the target option and will provide targe'
-                                'ts to via through a file on disk.'
+                        "targets": {
+                            "title": "Targets",
+                            "description": (
+                                "Specifies the file from which to read targets. See the format option to learn about avail"
+                                "able target formats. This option is exclusive of the target option and will provide targe"
+                                "ts to via through a file on disk."
                             ),
-                            'env_names': [
-                                'SERVO_OTHER_TARGETS',
-                            ],
-                            'format': 'file-path',
-                            'type': 'string',
+                            "env_names": ["SERVO_OTHER_TARGETS",],
+                            "format": "file-path",
+                            "type": "string",
                         },
-                        'connections': {
-                            'title': 'Connections',
-                            'description': 'Specifies the maximum number of idle open connections per target host.',
-                            'default': 10000,
-                            'env_names': [
-                                'SERVO_OTHER_CONNECTIONS',
-                            ],
-                            'type': 'integer',
+                        "connections": {
+                            "title": "Connections",
+                            "description": "Specifies the maximum number of idle open connections per target host.",
+                            "default": 10000,
+                            "env_names": ["SERVO_OTHER_CONNECTIONS",],
+                            "type": "integer",
                         },
-                        'workers': {
-                            'title': 'Workers',
-                            'description': (
-                                'Specifies the initial number of workers used in the attack. The workers will automaticall'
-                                'y increase to achieve the target request rate, up to max-workers.'
+                        "workers": {
+                            "title": "Workers",
+                            "description": (
+                                "Specifies the initial number of workers used in the attack. The workers will automaticall"
+                                "y increase to achieve the target request rate, up to max-workers."
                             ),
-                            'default': 10,
-                            'env_names': [
-                                'SERVO_OTHER_WORKERS',
-                            ],
-                            'type': 'integer',
+                            "default": 10,
+                            "env_names": ["SERVO_OTHER_WORKERS",],
+                            "type": "integer",
                         },
-                        'max_workers': {
-                            'title': 'Max Workers',
-                            'description': (
-                                'The maximum number of workers used to sustain the attack. This can be used to control the'
-                                ' concurrency of the attack to simulate a target number of clients.'
+                        "max_workers": {
+                            "title": "Max Workers",
+                            "description": (
+                                "The maximum number of workers used to sustain the attack. This can be used to control the"
+                                " concurrency of the attack to simulate a target number of clients."
                             ),
-                            'default': 18446744073709551615,
-                            'env_names': [
-                                'SERVO_OTHER_MAX_WORKERS',
-                            ],
-                            'type': 'integer',
+                            "default": 18446744073709551615,
+                            "env_names": ["SERVO_OTHER_MAX_WORKERS",],
+                            "type": "integer",
                         },
-                        'max_body': {
-                            'title': 'Max Body',
-                            'description': (
-                                'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
-                                'g unread bytes will be fully read but discarded.'
+                        "max_body": {
+                            "title": "Max Body",
+                            "description": (
+                                "Specifies the maximum number of bytes to capture from the body of each response. Remainin"
+                                "g unread bytes will be fully read but discarded."
                             ),
-                            'default': -1,
-                            'env_names': [
-                                'SERVO_OTHER_MAX_BODY',
-                            ],
-                            'type': 'integer',
+                            "default": -1,
+                            "env_names": ["SERVO_OTHER_MAX_BODY",],
+                            "type": "integer",
                         },
-                        'http2': {
-                            'title': 'Http2',
-                            'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
-                            'default': True,
-                            'env_names': [
-                                'SERVO_OTHER_HTTP2',
-                            ],
-                            'type': 'boolean',
+                        "http2": {
+                            "title": "Http2",
+                            "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
+                            "default": True,
+                            "env_names": ["SERVO_OTHER_HTTP2",],
+                            "type": "boolean",
                         },
-                        'keepalive': {
-                            'title': 'Keepalive',
-                            'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
-                            'default': True,
-                            'env_names': [
-                                'SERVO_OTHER_KEEPALIVE',
-                            ],
-                            'type': 'boolean',
+                        "keepalive": {
+                            "title": "Keepalive",
+                            "description": "Specifies whether to reuse TCP connections between HTTP requests.",
+                            "default": True,
+                            "env_names": ["SERVO_OTHER_KEEPALIVE",],
+                            "type": "boolean",
                         },
-                        'insecure': {
-                            'title': 'Insecure',
-                            'description': 'Specifies whether to ignore invalid server TLS certificates.',
-                            'default': False,
-                            'env_names': [
-                                'SERVO_OTHER_INSECURE',
-                            ],
-                            'type': 'boolean',
+                        "insecure": {
+                            "title": "Insecure",
+                            "description": "Specifies whether to ignore invalid server TLS certificates.",
+                            "default": False,
+                            "env_names": ["SERVO_OTHER_INSECURE",],
+                            "type": "boolean",
                         },
-                        'reporting_interval': {
-                            'title': 'Reporting Interval',
-                            'description': 'How often to report metrics during a measurement cycle.',
-                            'default': '15s',
-                            'env_names': [
-                                'SERVO_OTHER_REPORTING_INTERVAL',
-                            ],
-                            'type': 'string',
-                            'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
-                            'examples': [
-                                '300ms',
-                                '5m',
-                                '2h45m',
-                                '72h3m0.5s',
-                            ],
+                        "reporting_interval": {
+                            "title": "Reporting Interval",
+                            "description": "How often to report metrics during a measurement cycle.",
+                            "default": "15s",
+                            "env_names": ["SERVO_OTHER_REPORTING_INTERVAL",],
+                            "type": "string",
+                            "format": "duration",
+                            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
                         },
                     },
-                    'required': [
-                        'rate',
-                        'duration',
-                    ],
-                    'additionalProperties': False,
+                    "required": ["rate", "duration",],
+                    "additionalProperties": False,
                 },
-                'VegetaConfiguration': {
-                    'title': 'Vegeta Connector Settings (at key-path vegeta)',
-                    'description': 'Configuration of the Vegeta connector',
-                    'type': 'object',
-                    'properties': {
-                        'description': {
-                            'title': 'Description',
-                            'description': 'An optional annotation describing the configuration.',
-                            'env_names': [
-                                'SERVO_VEGETA_DESCRIPTION',
-                            ],
-                            'type': 'string',
+                "VegetaConfiguration": {
+                    "title": "Vegeta Connector Settings (at key-path vegeta)",
+                    "description": "Configuration of the Vegeta connector",
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "title": "Description",
+                            "description": "An optional annotation describing the configuration.",
+                            "env_names": ["SERVO_VEGETA_DESCRIPTION",],
+                            "type": "string",
                         },
-                        'rate': {
-                            'title': 'Rate',
-                            'description': (
-                                'Specifies the request rate per time unit to issue against the targets. Given in the forma'
-                                't of request/time unit.'
+                        "rate": {
+                            "title": "Rate",
+                            "description": (
+                                "Specifies the request rate per time unit to issue against the targets. Given in the forma"
+                                "t of request/time unit."
                             ),
-                            'env_names': [
-                                'SERVO_VEGETA_RATE',
-                            ],
-                            'type': 'string',
+                            "env_names": ["SERVO_VEGETA_RATE",],
+                            "type": "string",
                         },
-                        'duration': {
-                            'title': 'Duration',
-                            'description': 'Specifies the amount of time to issue requests to the targets.',
-                            'env_names': [
-                                'SERVO_VEGETA_DURATION',
-                            ],
-                            'type': 'string',
-                            'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
-                            'examples': [
-                                '300ms',
-                                '5m',
-                                '2h45m',
-                                '72h3m0.5s',
-                            ],
+                        "duration": {
+                            "title": "Duration",
+                            "description": "Specifies the amount of time to issue requests to the targets.",
+                            "env_names": ["SERVO_VEGETA_DURATION",],
+                            "type": "string",
+                            "format": "duration",
+                            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
                         },
-                        'format': {
-                            '$ref': '#/definitions/TargetFormat',
-                        },
-                        'target': {
-                            'title': 'Target',
-                            'description': (
-                                'Specifies a single formatted Vegeta target to load. See the format option to learn about '
-                                'available target formats. This option is exclusive of the targets option and will provide'
-                                ' a target to Vegeta via stdin.'
+                        "format": {"$ref": "#/definitions/TargetFormat",},
+                        "target": {
+                            "title": "Target",
+                            "description": (
+                                "Specifies a single formatted Vegeta target to load. See the format option to learn about "
+                                "available target formats. This option is exclusive of the targets option and will provide"
+                                " a target to Vegeta via stdin."
                             ),
-                            'env_names': [
-                                'SERVO_VEGETA_TARGET',
-                            ],
-                            'type': 'string',
+                            "env_names": ["SERVO_VEGETA_TARGET",],
+                            "type": "string",
                         },
-                        'targets': {
-                            'title': 'Targets',
-                            'description': (
-                                'Specifies the file from which to read targets. See the format option to learn about avail'
-                                'able target formats. This option is exclusive of the target option and will provide targe'
-                                'ts to via through a file on disk.'
+                        "targets": {
+                            "title": "Targets",
+                            "description": (
+                                "Specifies the file from which to read targets. See the format option to learn about avail"
+                                "able target formats. This option is exclusive of the target option and will provide targe"
+                                "ts to via through a file on disk."
                             ),
-                            'env_names': [
-                                'SERVO_VEGETA_TARGETS',
-                            ],
-                            'format': 'file-path',
-                            'type': 'string',
+                            "env_names": ["SERVO_VEGETA_TARGETS",],
+                            "format": "file-path",
+                            "type": "string",
                         },
-                        'connections': {
-                            'title': 'Connections',
-                            'description': 'Specifies the maximum number of idle open connections per target host.',
-                            'default': 10000,
-                            'env_names': [
-                                'SERVO_VEGETA_CONNECTIONS',
-                            ],
-                            'type': 'integer',
+                        "connections": {
+                            "title": "Connections",
+                            "description": "Specifies the maximum number of idle open connections per target host.",
+                            "default": 10000,
+                            "env_names": ["SERVO_VEGETA_CONNECTIONS",],
+                            "type": "integer",
                         },
-                        'workers': {
-                            'title': 'Workers',
-                            'description': (
-                                'Specifies the initial number of workers used in the attack. The workers will automaticall'
-                                'y increase to achieve the target request rate, up to max-workers.'
+                        "workers": {
+                            "title": "Workers",
+                            "description": (
+                                "Specifies the initial number of workers used in the attack. The workers will automaticall"
+                                "y increase to achieve the target request rate, up to max-workers."
                             ),
-                            'default': 10,
-                            'env_names': [
-                                'SERVO_VEGETA_WORKERS',
-                            ],
-                            'type': 'integer',
+                            "default": 10,
+                            "env_names": ["SERVO_VEGETA_WORKERS",],
+                            "type": "integer",
                         },
-                        'max_workers': {
-                            'title': 'Max Workers',
-                            'description': (
-                                'The maximum number of workers used to sustain the attack. This can be used to control the'
-                                ' concurrency of the attack to simulate a target number of clients.'
+                        "max_workers": {
+                            "title": "Max Workers",
+                            "description": (
+                                "The maximum number of workers used to sustain the attack. This can be used to control the"
+                                " concurrency of the attack to simulate a target number of clients."
                             ),
-                            'default': 18446744073709551615,
-                            'env_names': [
-                                'SERVO_VEGETA_MAX_WORKERS',
-                            ],
-                            'type': 'integer',
+                            "default": 18446744073709551615,
+                            "env_names": ["SERVO_VEGETA_MAX_WORKERS",],
+                            "type": "integer",
                         },
-                        'max_body': {
-                            'title': 'Max Body',
-                            'description': (
-                                'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
-                                'g unread bytes will be fully read but discarded.'
+                        "max_body": {
+                            "title": "Max Body",
+                            "description": (
+                                "Specifies the maximum number of bytes to capture from the body of each response. Remainin"
+                                "g unread bytes will be fully read but discarded."
                             ),
-                            'default': -1,
-                            'env_names': [
-                                'SERVO_VEGETA_MAX_BODY',
-                            ],
-                            'type': 'integer',
+                            "default": -1,
+                            "env_names": ["SERVO_VEGETA_MAX_BODY",],
+                            "type": "integer",
                         },
-                        'http2': {
-                            'title': 'Http2',
-                            'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
-                            'default': True,
-                            'env_names': [
-                                'SERVO_VEGETA_HTTP2',
-                            ],
-                            'type': 'boolean',
+                        "http2": {
+                            "title": "Http2",
+                            "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
+                            "default": True,
+                            "env_names": ["SERVO_VEGETA_HTTP2",],
+                            "type": "boolean",
                         },
-                        'keepalive': {
-                            'title': 'Keepalive',
-                            'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
-                            'default': True,
-                            'env_names': [
-                                'SERVO_VEGETA_KEEPALIVE',
-                            ],
-                            'type': 'boolean',
+                        "keepalive": {
+                            "title": "Keepalive",
+                            "description": "Specifies whether to reuse TCP connections between HTTP requests.",
+                            "default": True,
+                            "env_names": ["SERVO_VEGETA_KEEPALIVE",],
+                            "type": "boolean",
                         },
-                        'insecure': {
-                            'title': 'Insecure',
-                            'description': 'Specifies whether to ignore invalid server TLS certificates.',
-                            'default': False,
-                            'env_names': [
-                                'SERVO_VEGETA_INSECURE',
-                            ],
-                            'type': 'boolean',
+                        "insecure": {
+                            "title": "Insecure",
+                            "description": "Specifies whether to ignore invalid server TLS certificates.",
+                            "default": False,
+                            "env_names": ["SERVO_VEGETA_INSECURE",],
+                            "type": "boolean",
                         },
-                        'reporting_interval': {
-                            'title': 'Reporting Interval',
-                            'description': 'How often to report metrics during a measurement cycle.',
-                            'default': '15s',
-                            'env_names': [
-                                'SERVO_VEGETA_REPORTING_INTERVAL',
-                            ],
-                            'type': 'string',
-                            'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
-                            'examples': [
-                                '300ms',
-                                '5m',
-                                '2h45m',
-                                '72h3m0.5s',
-                            ],
+                        "reporting_interval": {
+                            "title": "Reporting Interval",
+                            "description": "How often to report metrics during a measurement cycle.",
+                            "default": "15s",
+                            "env_names": ["SERVO_VEGETA_REPORTING_INTERVAL",],
+                            "type": "string",
+                            "format": "duration",
+                            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
                         },
                     },
-                    'required': [
-                        'rate',
-                        'duration',
-                    ],
-                    'additionalProperties': False,
+                    "required": ["rate", "duration",],
+                    "additionalProperties": False,
                 },
             },
         }

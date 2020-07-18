@@ -15,7 +15,6 @@ from bullet import Check, colors
 from devtools import pformat
 from loguru import logger
 from pydantic import ValidationError
-from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
@@ -39,6 +38,7 @@ from servo.utilities import PreservedScalarString
 # Add the devtools debug() function to the CLI if its available
 try:
     import builtins
+
     from devtools import debug
 except ImportError:
     pass
@@ -359,7 +359,13 @@ class CLI(typer.Typer):
         ctx.base_url = base_url
 
         # TODO: This should be pluggable
-        if ctx.invoked_subcommand not in {"init", "schema", "generate", "validate", "version"}:
+        if ctx.invoked_subcommand not in {
+            "init",
+            "schema",
+            "generate",
+            "validate",
+            "version",
+        }:
             CLI.assemble_from_context(ctx)
 
     @staticmethod
@@ -599,7 +605,9 @@ class ServoCLI(CLI):
             if customize:
                 check = Check(
                     "Which connectors do you want to activate? ",
-                    choices=list(map(lambda c: c.name, ServoAssembly.all_connector_types())),
+                    choices=list(
+                        map(lambda c: c.name, ServoAssembly.all_connector_types())
+                    ),
                     check=" √",
                     margin=2,
                     check_color=colors.bright(colors.foreground["green"]),
@@ -685,7 +693,9 @@ class ServoCLI(CLI):
             """
             event_handlers: List[EventHandler] = []
             connectors = (
-                context.assembly.all_connector_types() if all else context.assembly.connectors
+                context.assembly.all_connector_types()
+                if all
+                else context.assembly.connectors
             )
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
@@ -829,7 +839,9 @@ class ServoCLI(CLI):
         ) -> None:
             """Manage connectors"""
             connectors = (
-                context.assembly.all_connector_types() if all else context.assembly.connectors
+                context.assembly.all_connector_types()
+                if all
+                else context.assembly.connectors
             )
             headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
@@ -1096,17 +1108,19 @@ class ServoCLI(CLI):
                     # NOTE: Round-trip through JSON to produce primitives
                     config_dict = context.servo.config.json(**export_options)
                     data = pformat(json.loads(config_dict))
-                elif format == ConfigOutputFormat.configmap:                    
+                elif format == ConfigOutputFormat.configmap:
                     configured_at = datetime.now(timezone.utc).isoformat()
                     connectors = []
                     for connector in context.servo.connectors:
-                        connectors.append({
-                            "name": connector.name,
-                            "description": connector.description,
-                            "version": str(connector.version),
-                            "url": str(connector.homepage),
-                            "config_key": connector.config_key,
-                        })
+                        connectors.append(
+                            {
+                                "name": connector.name,
+                                "description": connector.description,
+                                "version": str(connector.version),
+                                "url": str(connector.homepage),
+                                "config_key": connector.config_key,
+                            }
+                        )
                     connectors_json_str = json.dumps(connectors, indent=None)
 
                     configmap = {
@@ -1121,15 +1135,19 @@ class ServoCLI(CLI):
                             "annotations": {
                                 "servo.opsani.com/configured_at": configured_at,
                                 "servo.opsani.com/connectors": connectors_json_str,
-                            }
+                            },
                         },
                         "data": {
                             "servo.yaml": PreservedScalarString(
-                                context.servo.config.yaml(sort_keys=True, **export_options)
+                                context.servo.config.yaml(
+                                    sort_keys=True, **export_options
+                                )
                             )
-                        }
+                        },
                     }
-                    data = yaml.dump(configmap, indent=2, sort_keys=False, explicit_start=True)
+                    data = yaml.dump(
+                        configmap, indent=2, sort_keys=False, explicit_start=True
+                    )
                 else:
                     raise RuntimeError(
                         "no handler configured for output format {format}"
@@ -1200,7 +1218,7 @@ class ServoCLI(CLI):
                 else:
                     CLI.assemble_from_context(context)
                     config_model = context.servo.config.__class__
-                
+
                 if format == SchemaOutputFormat.json:
                     output_data = config_model.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
@@ -1329,8 +1347,10 @@ class ServoCLI(CLI):
                 else:
                     # If there are no aliases just assign input values
                     config.connectors = connectors
-            
-            config_yaml = config.yaml(by_alias=True, exclude_unset=exclude_unset, exclude=exclude)
+
+            config_yaml = config.yaml(
+                by_alias=True, exclude_unset=exclude_unset, exclude=exclude
+            )
             if file.exists() and force == False:
                 delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
                 if not delete:

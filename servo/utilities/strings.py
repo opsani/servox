@@ -1,7 +1,8 @@
 from typing import Iterable
 
+
 def join_to_series(
-    items: Iterable[str], *, conjunction: str = "and", oxford_comma: bool =True
+    items: Iterable[str], *, conjunction: str = "and", oxford_comma: bool = True
 ) -> str:
     """
     Concatenate any number of strings into a series suitable for use in English output.

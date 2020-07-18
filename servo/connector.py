@@ -1,9 +1,9 @@
 import abc
+import json
 import logging
 import re
 from inspect import Parameter, Signature
 from pathlib import Path
-from weakref import WeakKeyDictionary
 from typing import (
     Any,
     Callable,
@@ -17,9 +17,8 @@ from typing import (
     Union,
     get_type_hints,
 )
+from weakref import WeakKeyDictionary
 
-import json
-import yaml
 import httpx
 import loguru
 import yaml
@@ -45,8 +44,8 @@ from servo.events import (
     EventResult,
     Preposition,
 )
-from servo.types import License, Maturity, Version, Duration
-from servo.utilities import join_to_series, timedelta_to_duration_str
+from servo.types import Duration, License, Maturity, Version
+from servo.utilities import join_to_series
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
 USER_AGENT = "github.com/opsani/servox"
@@ -103,13 +102,15 @@ class Optimizer(BaseSettings):
         of the form `example.com/my-app` or `another.com/app-2`.
         """
         return f"{self.org_domain}/{self.app_name}"
-    
+
     @property
     def api_url(self) -> str:
         """
         Returns a complete URL for interacting with the optimizer API.
         """
-        return f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+        return (
+            f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+        )
 
     class Config:
         env_file = ".env"
@@ -126,6 +127,7 @@ DEFAULT_JSON_ENCODERS = {
     # Serialize Duration as Golang duration strings (treated as a timedelta otherwise)
     Duration: lambda d: f"{d}"
 }
+
 
 class BaseConfiguration(BaseSettings):
     """
@@ -194,8 +196,8 @@ class BaseConfiguration(BaseSettings):
     def yaml(
         self,
         *,
-        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
-        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
         by_alias: bool = False,
         skip_defaults: bool = None,
         exclude_unset: bool = False,
@@ -212,24 +214,26 @@ class BaseConfiguration(BaseSettings):
         # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
         config_json = self.json(
             include=include,
-            exclude=exclude,             
-            by_alias=by_alias, 
+            exclude=exclude,
+            by_alias=by_alias,
             skip_defaults=skip_defaults,
-            exclude_unset=exclude_unset, 
-            exclude_defaults=exclude_defaults, 
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
             exclude_none=exclude_none,
             encoder=encoder,
-            **dumps_kwargs
+            **dumps_kwargs,
         )
         return yaml.dump(json.loads(config_json))
-    
+
     @staticmethod
-    def json_encoders(encoders: Dict[Type[Any], Callable[..., Any]] = {}) -> Dict[Type[Any], Callable[..., Any]]:
+    def json_encoders(
+        encoders: Dict[Type[Any], Callable[..., Any]] = {}
+    ) -> Dict[Type[Any], Callable[..., Any]]:
         """
         Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes 
         when `json_encoders` need to be customized. Encoders provided in the encoders argument 
         are merged into the returned dict and take precedence over the defaults.
-        """        
+        """
         return {**DEFAULT_JSON_ENCODERS, **encoders}
 
     class Config:
@@ -352,7 +356,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
         ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
-    
+
     @classmethod
     def config_model(cls) -> Type["BaseConfiguration"]:
         """
@@ -445,8 +449,8 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List['Connector']] = None,
-        exclude: Optional[List['Connector']] = None,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -484,7 +488,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
 
-        # Invoke the on event handlers and gather results        
+        # Invoke the on event handlers and gather results
         if prepositions & Preposition.ON:
             for connector in connectors:
                 connector_results = connector.process_event(
@@ -578,38 +582,36 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__event_handlers__.append(handler)
 
     def __init__(
-        self, 
+        self,
         *,
         config_key: Optional[str] = None,
-        __connectors__: List['Connector'] = None,
+        __connectors__: List["Connector"] = None,
         **kwargs,
     ):
         config_key = (
-            config_key
-            if config_key is not None
-            else self.__class__.__config_key__
+            config_key if config_key is not None else self.__class__.__config_key__
         )
         super().__init__(
             config_key=config_key, **kwargs,
         )
-        
-        # NOTE: Connector references are held off the model so 
+
+        # NOTE: Connector references are held off the model so
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
 
     def __hash__(self):
         return hash((self.name, self.config_key, id(self),))
-    
+
     @property
-    def __connectors__(self) -> List['Connector']:
+    def __connectors__(self) -> List["Connector"]:
         return _connector_event_bus[self]
-        
+
     ##
     # Subclass services
 
     def api_client(self) -> httpx.Client:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""        
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
         headers = {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
