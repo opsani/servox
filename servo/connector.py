@@ -439,10 +439,9 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
         if exclude:
             # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
-            # TODO: Is this necessary/correct? Should just be `config_key` ?
-            excluded_keypaths = list(map(lambda c: c.__config_key__, exclude))
+            excluded_keypaths = list(map(lambda c: c.config_key, exclude))
             connectors = list(
-                filter(lambda c: c.__config_key__ not in excluded_keypaths, connectors)
+                filter(lambda c: c.config_key not in excluded_keypaths, connectors)
             )
 
         # Invoke the before event handlers
@@ -530,12 +529,11 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
-        # TODO: Do I need this? I could just put it as a class var also!
-        cls.__config_key__ = _config_key_for_connector_class(cls)
 
         cls.name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
+        cls.config_key = _config_key_for_connector_class(cls)
 
         # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
@@ -556,7 +554,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         **kwargs,
     ):
         config_key = (
-            config_key if config_key is not None else self.__class__.__config_key__
+            config_key if config_key is not None else self.__class__.config_key
         )
         super().__init__(
             config_key=config_key, **kwargs,
