@@ -18,6 +18,8 @@ from typing import (
     get_type_hints,
 )
 
+import json
+import yaml
 import httpx
 import loguru
 import yaml
@@ -43,8 +45,8 @@ from servo.events import (
     EventResult,
     Preposition,
 )
-from servo.types import License, Maturity, Version
-from servo.utilities import join_to_series
+from servo.types import License, Maturity, Version, Duration
+from servo.utilities import join_to_series, timedelta_to_duration_str
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
 USER_AGENT = "github.com/opsani/servox"
@@ -120,7 +122,10 @@ class Optimizer(BaseSettings):
 
 
 DEFAULT_TITLE = "Connector Configuration Schema"
-
+DEFAULT_JSON_ENCODERS = {
+    # Serialize Duration as Golang duration strings (treated as a timedelta otherwise)
+    Duration: lambda d: f"{d}"
+}
 
 class BaseConfiguration(BaseSettings):
     """
@@ -186,11 +191,53 @@ class BaseConfiguration(BaseSettings):
         for name, field in cls.__fields__.items():
             field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
 
+    def yaml(
+        self,
+        *,
+        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        encoder: Optional[Callable[[Any], Any]] = None,
+        **dumps_kwargs: Any,
+    ) -> str:
+        """
+        Generate a YAML representation of the configuration.
+
+        Arguments are passed through to the Pydantic `BaseModel.json` method.
+        """
+        # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
+        config_json = self.json(
+            include=include,
+            exclude=exclude,             
+            by_alias=by_alias, 
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset, 
+            exclude_defaults=exclude_defaults, 
+            exclude_none=exclude_none,
+            encoder=encoder,
+            **dumps_kwargs
+        )
+        return yaml.dump(json.loads(config_json))
+    
+    @staticmethod
+    def json_encoders(encoders: Dict[Type[Any], Callable[..., Any]] = {}) -> Dict[Type[Any], Callable[..., Any]]:
+        """
+        Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes 
+        when `json_encoders` need to be customized. Encoders provided in the encoders argument 
+        are merged into the returned dict and take precedence over the defaults.
+        """        
+        return {**DEFAULT_JSON_ENCODERS, **encoders}
+
     class Config:
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
         title = DEFAULT_TITLE
+        json_encoders = DEFAULT_JSON_ENCODERS
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR

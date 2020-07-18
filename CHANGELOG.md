@@ -22,10 +22,17 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ### Added
 - Docker images are now published to Docker Hub with README content from `docs/README-DOCKERHUB.md`.
+- Introduced Duration class for modeling time durations as Golang style duration strings.
+- BaseConfiguration now provides a `yaml` method for easily to YAML.
+- BaseConfiguration now provides a `json_encoders` static method for easily accessing the default encoders.
+
+### Removed
+- The `durationpy` package has been removed in favor of a local implementation.
 
 ### Changed
 - Updated Docker and Docker Compose configurations to use `/servo/opsani.token` as the default path for API tokens mounted as a file.
 - Docker images pushed to Docker Hub are now built with `SERVO_ENV=production` to exclude development packages.
+- The reporting interval is now configurable `VegetaConfiguration`.
 
 ## [0.3.1] - 2020-07-16
 

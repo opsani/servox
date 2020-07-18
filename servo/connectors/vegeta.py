@@ -13,7 +13,6 @@ from pydantic import (
     root_validator,
     validator,
 )
-import durationpy
 from servo import (
     BaseConfiguration,
     Connector,
@@ -30,8 +29,9 @@ from servo import (
     Description,
     CheckResult,
     Numeric,
+    Duration,
 )
-from servo.utilities import DurationProgress
+from servo.utilities import DurationProgress, DurationError, timedelta_from_duration_str
 import subprocess
 import time
 from threading import Timer
@@ -127,7 +127,7 @@ class VegetaConfiguration(BaseConfiguration):
     rate: str = Field(
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
     )
-    duration: str = Field(
+    duration: Duration = Field(
         description="Specifies the amount of time to issue requests to the targets.",
     )
     format: TargetFormat = Field(
@@ -167,6 +167,10 @@ class VegetaConfiguration(BaseConfiguration):
     insecure: bool = Field(
         False,
         description="Specifies whether to ignore invalid server TLS certificates.",
+    )
+    reporting_interval: Duration = Field(
+        '15s',
+        description="How often to report metrics during a measurement cycle.",
     )
 
     @root_validator()
@@ -211,7 +215,7 @@ class VegetaConfiguration(BaseConfiguration):
         ), "rate must be an integer or a rate descriptor string"
 
         # Integer rates
-        if isinstance(v, int) or v.isnumeric():
+        if isinstance(v, int) or v.isdigit():
             return str(v)
 
         # Check for hits/interval
@@ -224,30 +228,12 @@ class VegetaConfiguration(BaseConfiguration):
 
         # Try to parse it from Golang duration string
         try:
-            durationpy.from_str(duration)
-        except Exception as e:
+            timedelta_from_duration_str(duration)
+        except DurationError as e:
             raise ValueError(f"Invalid duration '{duration}' in rate '{v}'") from e
 
         return v
 
-    @validator("duration")
-    @classmethod
-    def validate_duration(cls, v: str) -> timedelta:
-        assert isinstance(
-            v, (int, str)
-        ), "duration must be an integer or a duration descriptor string"
-
-        if v == "0" or v == 0:
-            return v
-
-        # Try to parse it from Golang duration string
-        try:
-            durationpy.from_str(v)
-        except Exception as e:
-            raise ValueError(str(e)) from e
-
-        return v
-    
     @classmethod
     def generate(cls, **kwargs) -> 'VegetaConfiguration':
         return cls(
@@ -259,12 +245,9 @@ class VegetaConfiguration(BaseConfiguration):
         )
 
     class Config:
-        json_encoders = {TargetFormat: lambda t: t.value()}
-
-
-
-# TODO: Move to config
-REPORTING_INTERVAL = 2
+        json_encoders = BaseConfiguration.json_encoders({
+            TargetFormat: lambda t: t.value()
+        })
 
 @metadata(
     description="Vegeta load testing connector",
@@ -295,6 +278,7 @@ class VegetaConnector(Connector):
         self.warmup_until = datetime.now()
         check_config = self.config.copy()
         check_config.duration = '5s'
+        check_config.reporting_interval = '1s'
 
         exit_code, vegeta_cmd = self._run_vegeta(config=check_config)
         if exit_code != 0:
@@ -358,7 +342,7 @@ class VegetaConnector(Connector):
         vegeta_report_args = [
             'vegeta', 'report', 
             '-type', 'json',
-            '-every', f'{REPORTING_INTERVAL}s'
+            '-every', config.reporting_interval
         ]
 
         echo_args = ['echo', f"{config.target}"]
