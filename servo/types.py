@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 
 import semver
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
@@ -272,10 +272,16 @@ class Measurement(BaseModel):
         return dict(metrics=readings, annotations=self.annotations)
 
 
-class CheckResult(BaseModel):
+class Check(BaseModel):
     name: str
+    description: Optional[str]
     success: bool
     comment: Optional[str]
+    created_at: datetime = None
+
+    @validator("created_at", pre=True, always=True)
+    def set_created_at_now(cls, v):
+        return v or datetime.now()
 
 
 # Common output formats

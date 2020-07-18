@@ -4,15 +4,21 @@ from typing import List, Optional
 import httpx
 from pydantic import AnyHttpUrl, validator
 
-from servo.connector import (
+from servo import (
     BaseConfiguration,
     Connector,
+    Control,
+    Check,
+    Description,
+    Duration,
     License,
     Maturity,
+    Measurement,
+    Metric,
+    Unit,
     metadata,
     on_event,
 )
-from servo.types import *
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
@@ -66,21 +72,22 @@ class PrometheusConnector(Connector):
     config: PrometheusConfiguration
 
     @on_event()
-    def check(self) -> CheckResult:  # TODO: Turn this into a list
+    def check(self) -> List[Check]:
         start, end = time.time() - 600, time.time()
+        checks = []
         for metric in self.config.metrics:
             m_values = self._query_prom(metric, start, end)
             self.logger.debug(
                 "Initial value for metric %s: %s" % (metric.query, m_values)
             )
+            checks.append(
+                Check(
+                    name=f'Check query: {metric.query}',
+                    success=True,
+                )
+            )
 
-        return CheckResult(
-            name="Check Prometheus",
-            success=True,
-            comment="!!!!!! All checks passed successfully.",
-        )
-        # TODO: For check: run each query and look at results
-        # TODO: This should become an awway with results of pass, fail, warn
+        return checks
 
     @on_event()
     def describe(self) -> Description:

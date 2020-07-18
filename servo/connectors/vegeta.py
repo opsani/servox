@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, FilePath, root_validator, validator
 from servo import (
     HTTP_METHODS,
     BaseConfiguration,
-    CheckResult,
+    Check,
     Connector,
     Control,
     Description,
@@ -317,49 +317,45 @@ class VegetaConnector(Connector):
         return METRICS
 
     @on_event()
-    def check(self) -> CheckResult:
+    def check(self) -> List[Check]:
         # Take the current config and run a 5 second check against it
         self.warmup_until = datetime.now()
         check_config = self.config.copy()
         check_config.duration = "5s"
         check_config.reporting_interval = "1s"
 
+        checks = []
         exit_code, vegeta_cmd = self._run_vegeta(config=check_config)
-        if exit_code != 0:
-            return CheckResult(
-                name="Check Vegeta execution",
-                success=False,
-                comment=f"Vegeta exited with non-zero exit code: {exit_code}",
-            )
+        checks.append(Check(
+            name="Vegeta execution",
+            success=(exit_code == 0),
+            comment=f"Vegeta exit code: {exit_code}",
+        ))
 
         # Look at the error rate
+        checks.append(Check(
+            name="Report aggregation",
+            success=(len(self.vegeta_reports) > 0),
+            comment=f"Collected {len(self.vegeta_reports)} reports",
+        ))
         if self.vegeta_reports:
             vegeta_report = self.vegeta_reports[-1]
-            if vegeta_report.error_rate >= 5.0:
-                return CheckResult(
-                    name="Check Vegeta error rate",
-                    success=False,
-                    comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}% (>= 5.0%)",
-                )
-        else:
-            return CheckResult(
-                name="Check Vegeta reporting",
+            success = (vegeta_report.error_rate < 5.0)
+            checks.append(Check(
+                name="Error rate < 5.0%",
                 success=False,
-                comment=f"Vegeta did emit any reports",
-            )
+                comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
+            ))
 
-        return CheckResult(
-            name="Check Vegeta load generation",
-            success=True,
-            comment="All checks passed successfully.",
-        )
+        return checks
 
     @on_event()
     def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
         # Handle delay (if any)
-        # TODO: Make the delay/warm-up reusable... Push the delay onto the control class?
+        # TODO: Push the delay and warm-up into a reusable before filter
+        # TODO: Use an event to signal the connector when warmup is complete
         if control.delay > 0:
             self.logger.info(f"DELAY: sleeping {control.delay} seconds")
             time.sleep(control.delay)
