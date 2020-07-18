@@ -7,9 +7,10 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import semver
 from pydantic import BaseModel
-from pydantic.datetime_parse import parse_duration as pydantic_parse_duration
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
-from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str, DurationError
+
+from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
+
 
 class License(Enum):
     """Defined licenses"""
@@ -57,7 +58,6 @@ Version = semver.VersionInfo
 
 
 Numeric = Union[float, int]
-# Duration = Union[timedelta, str, int, float]
 
 
 class Unit(str, Enum):
@@ -179,6 +179,7 @@ TEXT_FORMAT = "text"
 MARKDOWN_FORMAT = "markdown"
 CONFIGMAP_FORMAT = "configmap"
 
+
 class AbstractOutputFormat(str, Enum):
     """Defines common behaviors for command specific output format enumerations"""
 
@@ -194,6 +195,7 @@ class AbstractOutputFormat(str, Enum):
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
 
+
 class Duration(timedelta):
     """
     Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
@@ -201,15 +203,14 @@ class Duration(timedelta):
     Duration objects can be initialized with a duration string, a numeric seconds value, 
     a timedelta object, and with the time component keywoards of timedelta.
 
-    Refer to `servo.utilities.duration` for details about duration strings.
+    Refer to `servo.utilities.duration_str` for details about duration strings.
     """
 
-    def __new__(cls, 
-        duration: Union[str, Numeric, timedelta] = 0,
-        **kwargs,
+    def __new__(
+        cls, duration: Union[str, Numeric, timedelta] = 0, **kwargs,
     ):
-        seconds = kwargs.pop('seconds', 0)
-        microseconds = kwargs.pop('microseconds', 0)
+        seconds = kwargs.pop("seconds", 0)
+        microseconds = kwargs.pop("microseconds", 0)
 
         if isinstance(duration, str):
             # Parse microseconds from the string
@@ -221,8 +222,10 @@ class Duration(timedelta):
             # Numeric first arg maps to seconds on timedelta initializer
             # NOTE: We are diverging from the behavior of timedelta here
             seconds = seconds + duration
-        
-        return timedelta.__new__(cls, seconds=seconds, microseconds=microseconds, **kwargs)
+
+        return timedelta.__new__(
+            cls, seconds=seconds, microseconds=microseconds, **kwargs
+        )
 
     @classmethod
     def __get_validators__(cls):
@@ -231,20 +234,20 @@ class Duration(timedelta):
     @classmethod
     def __modify_schema__(cls, field_schema: dict) -> None:
         field_schema.update(
-            type='string',
-            format='duration',
-            pattern='([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?',
-            examples=['300ms', '5m', '2h45m', '72h3m0.5s'],
+            type="string",
+            format="duration",
+            pattern="([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
+            examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
         )
 
     @classmethod
-    def validate(cls, value) -> 'Duration':
+    def validate(cls, value) -> "Duration":
         if isinstance(value, (str, timedelta, int, float)):
-            return Duration(value)
-        
+            return cls(value)
+
         # Parse into a timedelta with Pydantic parser
-        delta = pydantic.datetime_parse.parse_duration(value)
-        microseconds: float = value / timedelta(microseconds=1)
+        td = pydantic.datetime_parse.parse_duration(value)
+        microseconds: float = td / timedelta(microseconds=1)
         return cls(microseconds=microseconds)
 
     def __str__(self):
@@ -252,7 +255,7 @@ class Duration(timedelta):
 
     def __repr__(self):
         return f"Duration('{self}' {super().__str__()})"
-    
+
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
             return self.__str__() == other
@@ -260,10 +263,21 @@ class Duration(timedelta):
             return super().__eq__(other)
         elif isinstance(other, (int, float)):
             return self.total_seconds() == other
-        
+
         return False
+
 
 DurationType = Union[Duration, timedelta, str, bytes, int, float]
 
 
-HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "OPTIONS", "TRACE", "HEAD", "DELETE", "CONNECT")
+HTTP_METHODS = (
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "OPTIONS",
+    "TRACE",
+    "HEAD",
+    "DELETE",
+    "CONNECT",
+)

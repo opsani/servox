@@ -1,7 +1,10 @@
-import pytest
 from datetime import timedelta
+
+import pytest
 from pydantic import create_model
-from servo.types import Duration, DurationError
+
+from servo.types import Duration
+
 
 class TestDuration:
     def test_init_with_seconds(self) -> None:
@@ -18,8 +21,8 @@ class TestDuration:
         assert duration.total_seconds() == 300
 
     def test_init_with_invalid_str(self) -> None:
-        with pytest.raises(DurationError) as error:
-            duration = Duration("invalid")
+        with pytest.raises(ValueError) as error:
+            Duration("invalid")
         assert str(error.value) == "Invalid duration 'invalid'"
 
     def test_init_with_time_components(self) -> None:
@@ -49,15 +52,10 @@ class TestDuration:
     def test_pydantic_schema(self) -> None:
         model = create_model("duration_model", duration=(Duration, ...))
         schema = model.schema()
-        assert schema['properties']['duration'] == {
-            'title': 'Duration',
-            'type': 'string',
-            'format': 'duration',
-            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
-            'examples': [
-                '300ms',
-                '5m',
-                '2h45m',
-                '72h3m0.5s',
-            ],
+        assert schema["properties"]["duration"] == {
+            "title": "Duration",
+            "type": "string",
+            "format": "duration",
+            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }

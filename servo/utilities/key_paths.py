@@ -1,4 +1,5 @@
-from typing import List, Union, Tuple, Any
+from typing import Any, List, Tuple, Union
+
 
 def values_for_keys(obj: dict, keys: Union[List[str], Tuple[str]]) -> List[Any]:
     """

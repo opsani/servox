@@ -1,13 +1,16 @@
-from pydantic import BaseModel, validator
 from datetime import datetime, timedelta
-from typing import Callable, Iterable, Optional, Union, Type, Any
+from typing import Optional
+
+from pydantic import BaseModel
+
 from .duration_str import timedelta_to_duration_str
 
+
 class DurationProgress(BaseModel):
-    duration: 'Duration'
+    duration: "Duration"
     started_at: Optional[datetime]
 
-    def __init__(self, duration: 'Duration', **kwargs) -> None:
+    def __init__(self, duration: "Duration", **kwargs) -> None:
         super().__init__(duration=duration, **kwargs)
 
     def start(self) -> None:

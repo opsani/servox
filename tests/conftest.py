@@ -15,6 +15,7 @@ from tests.test_helpers import StubBaseConfiguration
 # Add the devtools debug() function globally in tests
 try:
     import builtins
+
     from devtools import debug
 except ImportError:
     pass

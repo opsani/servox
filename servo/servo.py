@@ -20,13 +20,12 @@ from servo.connector import (
     BaseConfiguration,
     Connector,
     ConnectorLoader,
-    EventResult,
     License,
     Maturity,
     Optimizer,
     _connector_subclasses,
 )
-from servo.events import CancelEventError, Event, Preposition
+from servo.events import Preposition
 from servo.types import CheckResult, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
@@ -209,7 +208,7 @@ class Servo(Connector):
         # Ensure the routes refer to the same objects by identity
         self.routes.update(routes)
 
-        # Dispatch the startup event        
+        # Dispatch the startup event
         self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
 
     def shutdown(self):
@@ -227,7 +226,7 @@ class Servo(Connector):
 
     @connector.on_event()
     def check(self) -> CheckResult:
-        from servo.servo_runner import APIRequest, APIEvent
+        from servo.servo_runner import APIEvent, APIRequest
 
         with self.api_client() as client:
             event_request = APIRequest(event=APIEvent.HELLO)
@@ -286,7 +285,9 @@ class ServoAssembly(BaseModel):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
-        ServoConfiguration, routes = _create_config_model(config_file=config_file, env=env)
+        ServoConfiguration, routes = _create_config_model(
+            config_file=config_file, env=env
+        )
 
         # Build our Servo configuration from the config file + environment
         if config_file.exists():
@@ -304,14 +305,14 @@ class ServoAssembly(BaseModel):
             args = kwargs.copy()
             for config_key, connector_type in routes.items():
                 args[config_key] = connector_type.config_model().construct()
-            servo_config = ServoConfiguration.construct(**args)        
+            servo_config = ServoConfiguration.construct(**args)
 
         # Initialize all active connectors
         connectors: List[Connector] = []
         servo_routes: Dict[str, Connector] = {}
         for config_key, connector_type in routes.items():
             connector_config = getattr(servo_config, config_key)
-            if connector_config:                
+            if connector_config:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
                 connector = connector_type(
                     config=connector_config,
@@ -321,9 +322,12 @@ class ServoAssembly(BaseModel):
                 servo_routes[config_key] = connector
                 connectors.append(connector)
 
-        # Build the servo object        
+        # Build the servo object
         servo = Servo(
-            config=servo_config, routes=servo_routes, optimizer=optimizer, __connectors__=connectors
+            config=servo_config,
+            routes=servo_routes,
+            optimizer=optimizer,
+            __connectors__=connectors,
         )
         connectors.append(servo)
         assembly = ServoAssembly(
@@ -334,7 +338,7 @@ class ServoAssembly(BaseModel):
         )
 
         return assembly, servo, ServoConfiguration
-    
+
     def __init__(self, *args, servo: Servo, **kwargs):
         super().__init__(*args, servo=servo, **kwargs)
 
@@ -493,9 +497,7 @@ def _derive_config_model_for_route(
     model_names = set()
     for cache_entry in __config_models_cache__:
         model_names.add(cache_entry.config_model.__name__)
-        if (
-            cache_entry.connector_type is model and cache_entry.config_key == config_key
-        ):
+        if cache_entry.connector_type is model and cache_entry.config_key == config_key:
             config_model = cache_entry.config_model
             break
 

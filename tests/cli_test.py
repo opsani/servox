@@ -1,20 +1,20 @@
 import json
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 import yaml
+from freezegun import freeze_time
 from typer import Typer
 from typer.testing import CliRunner
 
 import servo
 from servo.cli import CLI, Context, ServoCLI
 from servo.connector import BaseConfiguration, Optimizer
-from servo.servo import Servo
 from servo.connectors.vegeta import VegetaConnector
-from freezegun import freeze_time
+from servo.servo import Servo
+
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
@@ -35,7 +35,7 @@ def servo_cli() -> ServoCLI:
 def vegeta_config_file(servo_yaml: Path) -> Path:
     config = {
         "connectors": ["vegeta"],
-        "vegeta": {"duration": '25m', "rate": 0, "target": "https://opsani.com/"},
+        "vegeta": {"duration": "25m", "rate": 0, "target": "https://opsani.com/"},
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
@@ -134,14 +134,16 @@ def test_show_components(
     assert result.exit_code == 0
     assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
+
 def test_show_events_empty_config_file(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert "check    Servo\n" in result.stdout
     assert len(result.stdout.split("\n")) == 3
+
 
 def test_show_events_no_config_file(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
@@ -324,41 +326,42 @@ def test_config_yaml_file(
     assert result.exit_code == 0
     assert "connectors:" in path.read_text()
 
-@freeze_time('2020-01-01')
+
+@freeze_time("2020-01-01")
 def test_config_configmap_file(
     cli_runner: CliRunner,
     servo_cli: Typer,
     vegeta_config_file: Path,
     tmp_path: Path,
     optimizer_env: None,
-    mocker
+    mocker,
 ) -> None:
     mocker.patch.object(Servo, "version", "100.0.0")
     mocker.patch.object(VegetaConnector, "version", "100.0.0")
     path = tmp_path / "settings.yaml"
-    result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
+    cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     assert path.read_text() == (
-        '---\n'
-        'apiVersion: v1\n'
-        'kind: ConfigMap\n'
-        'metadata:\n'
-        '  name: opsani-servo-config\n'
-        '  labels:\n'
-        '    app.kubernetes.io/name: servo\n'
-        '    app.kubernetes.io/version: 100.0.0\n'
-        '  annotations:\n'
+        "---\n"
+        "apiVersion: v1\n"
+        "kind: ConfigMap\n"
+        "metadata:\n"
+        "  name: opsani-servo-config\n"
+        "  labels:\n"
+        "    app.kubernetes.io/name: servo\n"
+        "    app.kubernetes.io/version: 100.0.0\n"
+        "  annotations:\n"
         "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
         '    servo.opsani.com/connectors: \'[{"name": "Vegeta Connector", "description": "Vegeta\n'
         '      load testing connector", "version": "100.0.0", "url": "https://github.com/opsani/vegeta-connector",\n'
         '      "config_key": "vegeta"}]\'\n'
-        'data:\n'
-        '  servo.yaml: |\n'
-        '    connectors:\n'
-        '    - vegeta\n'
-        '    vegeta:\n'
+        "data:\n"
+        "  servo.yaml: |\n"
+        "    connectors:\n"
+        "    - vegeta\n"
+        "    vegeta:\n"
         "      duration: 25m\n"
         "      rate: '0'\n"
-        '      target: https://opsani.com/\n'
+        "      target: https://opsani.com/\n"
     )
 
 

@@ -1,10 +1,10 @@
+import json
 import os
 from contextlib import contextmanager
-from typing import Dict, Optional, Type, Any, Union
 from pathlib import Path
-import yaml
-import json
+from typing import Any, Dict, Optional, Type, Union
 
+import yaml
 from pydantic.json import pydantic_encoder
 
 from servo.connector import BaseConfiguration, Connector
@@ -53,6 +53,7 @@ def environment_overrides(env: Dict[str, str]) -> None:
     finally:
         os.environ = original_env
 
+
 def generate_config_yaml(
     config: Dict[str, Union[BaseConfiguration, dict]],
     cls: Type[BaseConfiguration] = BaseConfiguration,
@@ -72,21 +73,24 @@ def generate_config_yaml(
     config_json = cls.__config__.json_dumps(config, default=pydantic_encoder)
     return yaml.dump(json.loads(config_json))
 
+
 def write_config_yaml(
-    config: Dict[str, BaseConfiguration], 
-    file: Path, 
-    cls: Type[BaseConfiguration] = BaseConfiguration, 
+    config: Dict[str, BaseConfiguration],
+    file: Path,
+    cls: Type[BaseConfiguration] = BaseConfiguration,
     **dict_kwargs
 ) -> str:
     config_yaml = generate_config_yaml(config)
     file.write_text(config_yaml)
     return config_yaml
 
+
 def dict_key_path(obj: dict, key_path: str) -> Any:
-    components = key_path.split('.')
+    components = key_path.split(".")
     for component in components:
         obj = obj[component]
     return obj
+
 
 def yaml_key_path(yaml_str: str, key_path: str) -> Any:
     """
@@ -95,10 +99,10 @@ def yaml_key_path(yaml_str: str, key_path: str) -> Any:
     obj = yaml.full_load(yaml_str)
     return dict_key_path(obj, key_path)
 
+
 def json_key_path(json_str: str, key_path: str) -> Any:
     """
     Parse a JSON document and return a value at the target key-path.
     """
     obj = json.loads(json_str)
     return dict_key_path(obj, key_path)
-

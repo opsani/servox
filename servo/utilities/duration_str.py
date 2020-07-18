@@ -4,16 +4,16 @@
 import re
 from datetime import timedelta
 
-_nanosecond_size  = 1
+_nanosecond_size = 1
 _microsecond_size = 1000 * _nanosecond_size
 _millisecond_size = 1000 * _microsecond_size
-_second_size      = 1000 * _millisecond_size
-_minute_size      = 60   * _second_size
-_hour_size        = 60   * _minute_size
-_day_size         = 24   * _hour_size
-_week_size        = 7    * _day_size
-_month_size       = 30   * _day_size
-_year_size        = 365  * _day_size
+_second_size = 1000 * _millisecond_size
+_minute_size = 60 * _second_size
+_hour_size = 60 * _minute_size
+_day_size = 24 * _hour_size
+_week_size = 7 * _day_size
+_month_size = 30 * _day_size
+_year_size = 365 * _day_size
 
 units = {
     "ns": _nanosecond_size,
@@ -21,18 +21,15 @@ units = {
     "µs": _microsecond_size,
     "μs": _microsecond_size,
     "ms": _millisecond_size,
-    "s":  _second_size,
-    "m":  _minute_size,
-    "h":  _hour_size,
-    "d":  _day_size,
-    "w":  _week_size,
+    "s": _second_size,
+    "m": _minute_size,
+    "h": _hour_size,
+    "d": _day_size,
+    "w": _week_size,
     "mm": _month_size,
-    "y":  _year_size,
+    "y": _year_size,
 }
 
-
-class DurationError(ValueError):
-    """Duration parsing error"""
 
 def microseconds_from_duration_str(duration: str) -> float:
     """
@@ -41,31 +38,30 @@ def microseconds_from_duration_str(duration: str) -> float:
     if duration in ("0", "+0", "-0"):
         return 0
 
-    pattern = re.compile(r'([\d\.]+)([a-zµμ]+)')
+    pattern = re.compile(r"([\d\.]+)([a-zµμ]+)")
     matches = pattern.findall(duration)
     if not len(matches):
-        raise DurationError(f"Invalid duration '{duration}'")
+        raise ValueError(f"Invalid duration '{duration}'")
 
     total = 0
-    sign = -1 if duration[0] == '-' else 1
+    sign = -1 if duration[0] == "-" else 1
 
     for (value, unit) in matches:
         if unit not in units:
-            raise DurationError(
-                f"Unknown unit '{unit}' in duration '{duration}'")
+            raise ValueError(f"Unknown unit '{unit}' in duration '{duration}'")
         try:
             total += float(value) * units[unit]
         except Exception:
-            raise DurationError(
-                f"Invalid value '{value}' in duration '{duration}'")
+            raise ValueError(f"Invalid value '{value}' in duration '{duration}'")
 
     return sign * (total / _microsecond_size)
+
 
 def timedelta_from_duration_str(duration: str) -> timedelta:
     """
     Parse a Golang duration string into a Python timedelta value.
 
-    Raises a DurationError if the string cannot be parsed.
+    Raises a ValueError if the string cannot be parsed.
 
     A duration string is a possibly signed sequence of decimal numbers, 
     each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m".
@@ -79,6 +75,7 @@ def timedelta_from_duration_str(duration: str) -> timedelta:
         h - hour
     """
     return timedelta(microseconds=microseconds_from_duration_str(duration))
+
 
 def timedelta_to_duration_str(delta: timedelta, extended: bool = False) -> str:
     """
