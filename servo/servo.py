@@ -299,24 +299,24 @@ class ServoAssembly(BaseModel):
             # NOTE: This configuration is likely incomplete/invalid due to required
             # settings on the connectors not being fully configured
             args = kwargs.copy()
-            for config_key, connector_type in routes.items():
-                args[config_key] = connector_type.config_model().construct()
+            for name, connector_type in routes.items():
+                args[name] = connector_type.config_model().construct()
             servo_config = ServoConfiguration.construct(**args)
 
         # Initialize all active connectors
         connectors: List[Connector] = []
         servo_routes: Dict[str, Connector] = {}
-        for config_key, connector_type in routes.items():
-            connector_config = getattr(servo_config, config_key)
+        for name, connector_type in routes.items():
+            connector_config = getattr(servo_config, name)
             if connector_config:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
                 connector = connector_type(
+                    name=name,
                     config=connector_config,
                     optimizer=optimizer,
                     __connectors__=connectors,
-                    config_key=config_key,
                 )
-                servo_routes[config_key] = connector
+                servo_routes[name] = connector
                 connectors.append(connector)
 
         # Build the servo object
@@ -402,12 +402,12 @@ def _create_config_model_from_routes(
         ... if require_fields else None
     )  # Pydantic uses ... for flagging fields required
 
-    for config_key, connector_class in routes.items():
-        config_model = _derive_config_model_for_route(config_key, connector_class)
+    for name, connector_class in routes.items():
+        config_model = _derive_config_model_for_route(name, connector_class)
         config_model.__config__.title = (
-            f"{connector_class.full_name} Settings (at key-path {config_key})"
+            f"{connector_class.full_name} Settings (named {name})"
         )
-        setting_fields[config_key] = (config_model, default_value)
+        setting_fields[name] = (config_model, default_value)
         connector_versions[
             connector_class
         ] = f"{connector_class.full_name} v{connector_class.version}"
@@ -461,28 +461,28 @@ def _normalize_name(name: str) -> str:
 
 class SettingModelCacheEntry:
     connector_type: Type[Connector]
-    config_key: str
+    connector_name: str
     config_model: Type[BaseConfiguration]
 
     def __init__(
         self,
         connector_type: Type[Connector],
-        config_key: str,
+        connector_name: str,
         config_model: Type[BaseConfiguration],
     ) -> None:
         self.connector_type = connector_type
-        self.config_key = config_key
+        self.connector_name = connector_name
         self.config_model = config_model
 
     def __str__(self):
-        return f"{self.config_model} for {self.connector_type.__name__} at key-path '{self.config_key}'"
+        return f"{self.config_model} for {self.connector_type.__name__} named '{self.connector_name}'"
 
 
 __config_models_cache__: List[SettingModelCacheEntry] = []
 
 
 def _derive_config_model_for_route(
-    config_key: str, model: Type[Connector]
+    name: str, model: Type[Connector]
 ) -> Type[BaseConfiguration]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
@@ -494,7 +494,7 @@ def _derive_config_model_for_route(
     model_names = set()
     for cache_entry in __config_models_cache__:
         model_names.add(cache_entry.config_model.__name__)
-        if cache_entry.connector_type is model and cache_entry.config_key == config_key:
+        if cache_entry.connector_type is model and cache_entry.connector_name == name:
             config_model = cache_entry.config_model
             break
 
@@ -505,28 +505,28 @@ def _derive_config_model_for_route(
             # due to naming conflicts.
             model_name = f"{model.__name__}Settings"
         elif (
-            config_key == model.config_key
+            name == model.__default_name__
             and not f"{base_config_model.__qualname__}" in model_names
         ):
             # Connector is mounted at the default route, use default name
             model_name = f"{base_config_model.__qualname__}"
         else:
             model_name = _normalize_name(
-                f"{base_config_model.__qualname__}__{config_key}"
+                f"{base_config_model.__qualname__}__{name}"
             )
 
         config_model = create_model(model_name, __base__=base_config_model)
 
     # Cache it for reuse
     cache_entry = SettingModelCacheEntry(
-        connector_type=model, config_key=config_key, config_model=config_model
+        connector_type=model, connector_name=name, config_model=config_model
     )
     __config_models_cache__.append(cache_entry)
 
     # Traverse across all the fields and update the env vars
-    for name, field in config_model.__fields__.items():
+    for field_name, field in config_model.__fields__.items():
         field.field_info.extra.pop("env", None)
-        field.field_info.extra["env_names"] = {f"SERVO_{config_key}_{name}".upper()}
+        field.field_info.extra["env_names"] = {f"SERVO_{name}_{field_name}".upper()}
 
     return config_model
 
@@ -549,7 +549,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
 
     # Check if the string is an identifier for a connector
     for connector_class in ServoAssembly.all_connector_types():
-        if connector == connector_class.config_key or connector in [
+        if connector == connector_class.__default_name__ or connector in [
             connector_class.__name__,
             connector_class.__qualname__,
         ]:
@@ -628,9 +628,9 @@ def _routes_for_connectors_descriptor(connectors):
         connector_routes: Dict[str, str] = {}
         for connector in connectors:
             if _validate_class(connector):
-                connector_routes[connector.config_key] = connector
+                connector_routes[connector.__default_name__] = connector
             elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.config_key] = connector_class
+                connector_routes[connector_class.__default_name__] = connector_class
             else:
                 raise ValueError(f"Missing validation for value {connector}")
 
@@ -641,15 +641,15 @@ def _routes_for_connectors_descriptor(connectors):
         reserved_keys = _reserved_keys()
 
         connector_routes = {}
-        for config_path, value in connectors.items():
-            if not isinstance(config_path, str):
-                raise ValueError(f'Key "{config_path}" is not a string')
+        for name, value in connectors.items():
+            if not isinstance(name, str):
+                raise TypeError(f'Connector names must be strings: "{key}"')
 
-            # Validate the key format
+            # Validate the name
             try:
-                Connector.validate_config_key(config_path)
+                Connector.validate_name(name)
             except AssertionError as e:
-                raise ValueError(f'Key "{config_path}" is not valid: {e}') from e
+                raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
 
             # Resolve the connector class
             if isinstance(value, type):
@@ -658,16 +658,16 @@ def _routes_for_connectors_descriptor(connectors):
                 connector_class = _connector_class_from_string(value)
 
             # Check for key reservations
-            if config_path in reserved_keys:
-                if c := connector_map.get(config_path, None):
+            if name in reserved_keys:
+                if c := connector_map.get(name, None):
                     if connector_class != c:
                         raise ValueError(
-                            f'Key "{config_path}" is reserved by `{c.__name__}`'
+                            f'Name "{name}" is reserved by `{c.__name__}`'
                         )
                 else:
-                    raise ValueError(f'Key "{config_path}" is reserved')
+                    raise ValueError(f'Name "{name}" is reserved')
 
-            connector_routes[config_path] = connector_class
+            connector_routes[name] = connector_class
 
         return connector_routes
 
@@ -677,7 +677,7 @@ def _routes_for_connectors_descriptor(connectors):
         )
 
 
-RESERVED_KEYS = ["connectors", "control", "measure", "adjust"]
+RESERVED_KEYS = ["connectors", "control", "measure", "adjust", "optimization"]
 
 
 def _reserved_keys() -> List[str]:
@@ -690,5 +690,5 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:
-            routes[connector.config_key] = connector
+            routes[connector.__default_name__] = connector
     return routes

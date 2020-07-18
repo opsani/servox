@@ -65,7 +65,7 @@ def test_connectors(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.match("NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_all(
@@ -73,7 +73,7 @@ def test_connectors_all(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors --all")
     assert result.exit_code == 0
-    assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.search("^DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
@@ -85,7 +85,7 @@ def test_connectors_verbose(
     result = cli_runner.invoke(servo_cli, "connectors -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
+        "NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
         result.stdout,
     )
 
@@ -96,7 +96,7 @@ def test_connectors_all_verbose(
     result = cli_runner.invoke(servo_cli, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
+        "DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
     )
 
 
@@ -173,7 +173,7 @@ def test_show_events_all(
     result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
 
@@ -192,9 +192,9 @@ def test_show_events_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
-    assert not re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("measure\\s+Measure\n", result.stdout)
+    assert not re.search("before measure\\s+Measure", result.stdout)
+    assert not re.search("after measure\\s+Measure", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
 
@@ -205,8 +205,8 @@ def test_show_events_no_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_after_on(
@@ -218,8 +218,8 @@ def test_show_events_after_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_no_on_before(
@@ -231,9 +231,9 @@ def test_show_events_no_on_before(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("before measure\\s+Measure", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_no_after(
@@ -245,9 +245,9 @@ def test_show_events_no_after(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("measure\\s+Measure\n", result.stdout)
+    assert re.search("before measure\\s+Measure", result.stdout)
+    assert not re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_by_connector(
@@ -259,8 +259,9 @@ def test_show_events_by_connector(
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
     assert re.search("Servo\\s+check\n", result.stdout)
+    debug(result.stdout)
     assert re.search(
-        "MeasureConnector\\s+before measure\n\\s+measure\n\\s+after measure",
+        "Measure\\s+before measure\n\\s+measure\n\\s+after measure",
         result.stdout,
         flags=re.MULTILINE,
     )
@@ -352,27 +353,27 @@ def test_config_configmap_file(
     path = tmp_path / "settings.yaml"
     cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     assert path.read_text() == (
-        "---\n"
-        "apiVersion: v1\n"
-        "kind: ConfigMap\n"
-        "metadata:\n"
-        "  name: opsani-servo-config\n"
-        "  labels:\n"
-        "    app.kubernetes.io/name: servo\n"
-        "    app.kubernetes.io/version: 100.0.0\n"
-        "  annotations:\n"
+        '---\n'
+        'apiVersion: v1\n'
+        'kind: ConfigMap\n'
+        'metadata:\n'
+        '  name: opsani-servo-config\n'
+        '  labels:\n'
+        '    app.kubernetes.io/name: servo\n'
+        '    app.kubernetes.io/version: 100.0.0\n'
+        '  annotations:\n'
         "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
-        '    servo.opsani.com/connectors: \'[{"name": "Vegeta Connector", "description": "Vegeta\n'
-        '      load testing connector", "version": "100.0.0", "url": "https://github.com/opsani/vegeta-connector",\n'
-        '      "config_key": "vegeta"}]\'\n'
-        "data:\n"
-        "  servo.yaml: |\n"
-        "    connectors:\n"
-        "    - vegeta\n"
-        "    vegeta:\n"
-        "      duration: 25m\n"
+        '    servo.opsani.com/connectors: \'[{"name": "vegeta", "type": "Vegeta Connector",\n'
+        '      "description": "Vegeta load testing connector", "version": "100.0.0", "url":\n'
+        '      "https://github.com/opsani/vegeta-connector"}]\'\n'
+        'data:\n'
+        '  servo.yaml: |\n'
+        '    connectors:\n'
+        '    - vegeta\n'
+        '    vegeta:\n'
+        '      duration: 25m\n'
         "      rate: '0'\n"
-        "      target: https://opsani.com/\n"
+        '      target: https://opsani.com/\n'
     )
 
 

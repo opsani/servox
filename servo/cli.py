@@ -415,23 +415,23 @@ class CLI(typer.Typer):
             if isinstance(value, str):
                 # Lookup by key
                 for connector in context.servo.connectors:
-                    if connector.config_key == value:
+                    if connector.name == value:
                         return connector
-                raise typer.BadParameter(f"no connector found for key '{value}'")
+                raise typer.BadParameter(f"no connector found named '{value}'")
             else:
                 connectors: List[Connector] = []
                 for key in value:
                     size = len(connectors)
                     for connector in context.servo.connectors:
-                        if connector.config_key == key:
+                        if connector.name == key:
                             connectors.append(connector)
                             break
                     if len(connectors) == size:
-                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                        raise typer.BadParameter(f"no connector found named '{key}'")
                 return connectors
         else:
             return None
-
+    
     @staticmethod
     def connectors_type_callback(
         context: typer.Context, value: Optional[Union[str, List[str]]]
@@ -465,7 +465,7 @@ class CLI(typer.Typer):
         context: typer.Context, value: Optional[List[str]]
     ) -> Optional[Dict[str, Type[Connector]]]:
         """
-        Transforms a one or more connector key-paths into Connectors
+        Transforms a one or more connector descriptors into a dict of names to Connectors
         """
         if not value:
             return None
@@ -474,20 +474,37 @@ class CLI(typer.Typer):
         for key in value:
             if ":" in key:
                 # We have an alias descriptor
-                config_key, identifier = key.split(":", 2)
+                name, identifier = key.split(":", 2)
             else:
                 # Vanilla key-path or class name
-                config_key = None
+                name = None
                 identifier = key
 
             if connector_class := _connector_class_from_string(identifier):
-                if config_key is None:
-                    config_key = connector_class.config_key
-                routes[config_key] = connector_class
+                if name is None:
+                    name = connector_class.__default_name__
+                routes[name] = connector_class
             else:
-                raise typer.BadParameter(f"no connector found for key '{identifier}'")
+                raise typer.BadParameter(f"no connector found for identifier '{identifier}'")
 
         return routes
+    
+    @staticmethod
+    def duration_callback(
+        context: typer.Context, value: Optional[str]
+    ) -> Optional[Union[Connector, List[Connector]]]:
+        """
+        Transform a string into a Duration object.
+
+        Parses duration strings.
+        """
+        if not value:
+            return None
+        
+        try:
+            return Duration(value)
+        except ValueError as e:
+            raise typer.BadParameter(f"invalid duration parameter: {e}") from e
 
 
 class ConnectorCLI(CLI):
@@ -518,7 +535,7 @@ class ConnectorCLI(CLI):
                     context.connector = connector
 
         if name is None:
-            name = _command_name_from_config_key(connector_type.config_key)
+            name = _command_name_from_config_key(connector_type.__default_name__)
         if help is None:
             help = connector_type.description
         if isinstance(callback, DefaultPlaceholder):
@@ -624,7 +641,7 @@ class ServoCLI(CLI):
                     filter(
                         None,
                         map(
-                            lambda c: c.config_key if c.name in result else None,
+                            lambda c: c.__default_name__ if c.name in result else None,
                             ServoAssembly.all_connector_types(),
                         ),
                     )
@@ -740,7 +757,7 @@ class ServoCLI(CLI):
                 headers = ["CONNECTOR", "EVENTS"]
                 connector_types_by_name = dict(
                     map(
-                        lambda handler: (handler.connector_type.__name__, connector,),
+                        lambda handler: (handler.connector_type.name, connector,),
                         event_handlers,
                     )
                 )
@@ -754,7 +771,7 @@ class ServoCLI(CLI):
                                 filter(
                                     lambda h: h.event.name == event_name
                                     and h.preposition == preposition
-                                    and h.connector_type.__name__ == connector_name,
+                                    and h.connector_type.name == connector_name,
                                     event_handlers,
                                 )
                             )
@@ -782,7 +799,7 @@ class ServoCLI(CLI):
                                 list(
                                     set(
                                         map(
-                                            lambda handler: handler.connector_type.__name__,
+                                            lambda handler: handler.connector_type.name,
                                             handlers,
                                         )
                                     )
@@ -809,7 +826,7 @@ class ServoCLI(CLI):
                     units_and_connectors = metrics_to_connectors.get(
                         metric.name, [metric.unit, set()]
                     )
-                    units_and_connectors[1].add(result.connector.__class__.__name__)
+                    units_and_connectors[1].add(result.connector.__class__.name)
                     metrics_to_connectors[metric.name] = units_and_connectors
 
             headers = ["METRIC", "UNIT", "CONNECTORS"]
@@ -844,14 +861,27 @@ class ServoCLI(CLI):
                 if all
                 else context.assembly.connectors
             )
-            headers = ["NAME", "VERSION", "DESCRIPTION"]
+            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
+            if all:
+                headers[0] = "DEFAULT NAME"
             table = []
-            for connector in connectors:
-                row = [connector.name, connector.version, connector.description]
+            connectors_by_type = {}
+            for c in connectors:
+                c_type = c.__class__ if isinstance(c, Connector) else c
+                c_list = connectors_by_type.get(c_type, [])
+                c_list.append(c)
+                connectors_by_type[c_type] = c_list
+            
+            for connector_type in connectors_by_type.keys():
+                if all:
+                    names = [connector_type.__default_name__]
+                else:
+                    names = list(map(lambda c: c.name, connectors_by_type[connector_type]))
+                row = ['\n'.join(names), connector_type.name, connector_type.version, connector_type.description]
                 if verbose:
-                    row += [connector.homepage, connector.maturity, connector.license]
+                    row += [connector_type.homepage, connector_type.maturity, connector_type.license]
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
@@ -878,7 +908,7 @@ class ServoCLI(CLI):
             for connector in connectors:
                 if not connector.responds_to_event(event):
                     raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{connector.config_key}')"
+                        f"connectors of type '{connector.__class__.__name__}' do not support checks (name '{connector.name}')"
                     )
 
         @self.command(section=section)
@@ -886,7 +916,7 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                help="The connectors to check",
+                help="Connectors to check",
                 callback=self.connectors_instance_callback,
             ),
             verbose: bool = typer.Option(
@@ -1020,34 +1050,49 @@ class ServoCLI(CLI):
         def measure(
             context: Context,
             metrics: Optional[List[str]] = typer.Argument(
-                None, help="The metrics to measure", callback=metrics_callback
+                None, help="Metrics to measure", callback=metrics_callback
+            ),
+            connectors: Optional[List[str]] = typer.Option(
+                None,
+                "--connectors",
+                "-c",
+                help="Connectors to measure from",
+                metavar="[CONNECTORS]...",
+                callback=self.connectors_instance_callback,
+            ),
+            duration: Optional[str] = typer.Option(
+                '1m',
+                "--duration",
+                "-d",
+                help="Duration of the measurement",
+                metavar="DURATION",
+                callback=self.duration_callback,
             ),
         ) -> None:
             """
             Capture measurements for one or more metrics
-            """
+            """            
+            if not connectors:
+                connectors = context.assembly.connectors
             # TODO: Limit the dispatch to the connectors that support the target metrics
-            aggregate_measurement = Measurement.construct()
             results: List[EventResult] = context.servo.dispatch_event(
-                Events.MEASURE, metrics=metrics, control=Control()
+                Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             )
-            for result in results:
-                measurement = result.value
-                aggregate_measurement.readings.extend(measurement.readings)
-                aggregate_measurement.annotations.update(measurement.annotations)
-
+           
             metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
             headers = ["METRIC", "UNIT", "READINGS"]
             table = []
-            for reading in aggregate_measurement.readings:
-                if metric_names is None or reading.metric.name in metric_names:
-                    values = list(map(lambda r: f"{r[1]} @ {r[0]}", reading.values))
-                    row = [
-                        reading.metric.name,
-                        reading.metric.unit,
-                        "\n".join(values),
-                    ]
-                    table.append(row)
+            for result in results:
+                measurement = result.value
+                for reading in measurement.readings:
+                    if metric_names is None or reading.metric.name in metric_names:
+                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}]", reading.values))
+                        row = [
+                            reading.metric.name,
+                            reading.metric.unit,
+                            "\n".join(values),
+                        ]
+                        table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
@@ -1143,11 +1188,11 @@ class ServoCLI(CLI):
                     for connector in context.servo.connectors:
                         connectors.append(
                             {
-                                "name": connector.full_name,
+                                "name": connector.name,
+                                "type": connector.full_name,
                                 "description": connector.description,
                                 "version": str(connector.version),
-                                "url": str(connector.homepage),
-                                "config_key": connector.config_key,
+                                "url": str(connector.homepage),                                
                             }
                         )
                     connectors_json_str = json.dumps(connectors, indent=None)

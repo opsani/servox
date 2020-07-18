@@ -180,6 +180,9 @@ class DataPoint(BaseModel):
 
     def __init__(self, metric: Metric, value: Numeric, **kwargs) -> None:
         super().__init__(metric=metric, value=value, **kwargs)
+    
+    def __str__(self) -> str:
+        return f"{self.value:.2f}{self.unit.value}"
 
 
 class TimeSeries(BaseModel):
@@ -246,9 +249,10 @@ class Description(BaseModel):
             dict["measurement"]["metrics"][metric.name] = {"unit": metric.unit.value}
         return dict
 
+Readings = List[Union[DataPoint, TimeSeries]]
 
 class Measurement(BaseModel):
-    readings: List[Union[DataPoint, TimeSeries]] = []
+    readings: Readings = []
     annotations: Dict[str, str] = {}
 
     def opsani_dict(self) -> dict:
