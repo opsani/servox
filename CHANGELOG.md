@@ -21,7 +21,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - Introduced Duration class for modeling time durations as Golang style duration strings.
 - BaseConfiguration now provides a `yaml` method for easily to YAML.
 - BaseConfiguration now provides a `json_encoders` static method for easily accessing the default encoders.
-- 
+- The Vegeta connector now validates the `target` and `targets` settings.
 
 ### Changed
 - The reporting interval is now configurable `VegetaConfiguration`.

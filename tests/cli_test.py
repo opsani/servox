@@ -35,7 +35,7 @@ def servo_cli() -> ServoCLI:
 def vegeta_config_file(servo_yaml: Path) -> Path:
     config = {
         "connectors": ["vegeta"],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+        "vegeta": {"duration": '25m', "rate": 0, "target": "https://opsani.com/"},
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
@@ -337,7 +337,6 @@ def test_config_configmap_file(
     mocker.patch.object(VegetaConnector, "version", "100.0.0")
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
-    assert result.exit_code == 0
     assert path.read_text() == (
         '---\n'
         'apiVersion: v1\n'
@@ -357,7 +356,7 @@ def test_config_configmap_file(
         '    connectors:\n'
         '    - vegeta\n'
         '    vegeta:\n'
-        "      duration: '0'\n"
+        "      duration: 25m\n"
         "      rate: '0'\n"
         '      target: https://opsani.com/\n'
     )
@@ -534,7 +533,6 @@ class TestCommands:
 
     def test_schema_dict(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f dict")
-        debug(result.stderr, result.stdout)
         assert result.exit_code == 0
         dict = eval(result.stdout)
         assert dict["title"] == "Servo Configuration Schema"

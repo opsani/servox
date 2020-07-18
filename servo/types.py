@@ -264,3 +264,6 @@ class Duration(timedelta):
         return False
 
 DurationType = Union[Duration, timedelta, str, bytes, int, float]
+
+
+HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "OPTIONS", "TRACE", "HEAD", "DELETE", "CONNECT")
