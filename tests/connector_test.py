@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from datetime import timedelta
@@ -24,6 +25,7 @@ from servo.events import Preposition, _events, event
 from servo.servo import BaseServoConfiguration
 from tests.test_helpers import *
 
+pytestmark = pytest.mark.asyncio
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -51,7 +53,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("app_name",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^[a-z\\-]{3,64}$"'
+            == 'string does not match regex "^[a-z\\-\.0-9]{3,64}$"'
         )
 
     def test_token_validation(self) -> None:
@@ -493,11 +495,11 @@ class TestVegetaConnector:
             VegetaConnector, "_run_vegeta", return_value=(1, "vegeta attack")
         )
 
-    def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
+    async def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
         mocker.patch.object(
             VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack")
         )
-        vegeta_connector.check()
+        await vegeta_connector.check()
 
     def test_vegeta_metrics(self, vegeta_connector: VegetaConnector, mocker) -> None:
         mocker.patch.object(
@@ -505,8 +507,8 @@ class TestVegetaConnector:
         )
         vegeta_connector.metrics()
 
-    def test_vegeta_check_failed(self, vegeta_connector: VegetaConnector) -> None:
-        vegeta_connector.check()
+    async def test_vegeta_check_failed(self, vegeta_connector: VegetaConnector) -> None:
+        await vegeta_connector.check()
 
     def test_vegeta_metrics_failed(self, vegeta_connector: VegetaConnector) -> None:
         vegeta_connector.metrics()
@@ -514,8 +516,8 @@ class TestVegetaConnector:
     def test_vegeta_describe(self, vegeta_connector: VegetaConnector) -> None:
         vegeta_connector.describe()
 
-    def test_vegeta_measure(self, vegeta_connector: VegetaConnector) -> None:
-        vegeta_connector.measure()
+    async def test_vegeta_measure(self, vegeta_connector: VegetaConnector) -> None:
+        await vegeta_connector.measure()
 
 
 def test_init_vegeta_connector() -> None:
@@ -1256,21 +1258,21 @@ class TestConnectorEvents:
             "another_example_event"
         )
 
-    def test_event_invoke(self) -> None:
+    async def test_event_invoke(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["example_event"]
-        results = connector.process_event(event, Preposition.ON)
+        results = await connector.process_event(event, Preposition.ON)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
 
-    def test_event_invoke_not_supported(self) -> None:
+    async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
-        result = connector.process_event("unknown_event", Preposition.ON)
+        result = await connector.process_event("unknown_event", Preposition.ON)
         assert result is None
 
     def test_event_dispatch_standalone(self) -> None:
@@ -1286,14 +1288,14 @@ class TestConnectorEvents:
         assert result.connector == connector
         assert result.value == 12345
 
-    def test_event_dispatch_standalone(self) -> None:
+    async def test_event_dispatch_standalone(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         fake_connector = TestConnectorEvents.AnotherFakeConnector(
             config=config, __connectors__=[connector]
         )
         # Dispatch to peer
-        results = fake_connector.dispatch_event("example_event")
+        results = await fake_connector.dispatch_event("example_event")
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"

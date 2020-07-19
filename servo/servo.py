@@ -225,12 +225,12 @@ class Servo(Connector):
     # Event handlers
 
     @on_event()
-    def check(self) -> List[Check]:
+    async def check(self) -> List[Check]:
         from servo.servo_runner import APIEvent, APIRequest
 
-        with self.api_client() as client:
+        async with self.api_client() as client:
             event_request = APIRequest(event=APIEvent.HELLO)
-            response = client.post("servo", data=event_request.json())
+            response = await client.post("servo", data=event_request.json())
             success = (response.status_code == httpx.codes.OK)
             return [Check(
                 name="Opsani API connectivity",
