@@ -1,3 +1,4 @@
+import asyncio
 import json
 import shlex
 import subprocess
@@ -367,7 +368,11 @@ class CLI(typer.Typer):
             "validate",
             "version",
         }:
-            CLI.assemble_from_context(ctx)
+            try:
+                CLI.assemble_from_context(ctx)
+            except ValidationError as error:
+                typer.echo(f"Invalid configuration: {error}", err=True)
+                raise typer.Exit(2)
 
     @staticmethod
     def assemble_from_context(ctx: Context):
@@ -669,7 +674,7 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = context.servo.dispatch_event(Events.COMPONENTS)
+            results = context.servo.dispatch_event_sync(Events.COMPONENTS)
             headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
             table = []
             for result in results:
@@ -820,7 +825,7 @@ class ServoCLI(CLI):
             Display measurable metrics
             """
             metrics_to_connectors: Dict[str, tuple(str, Set[str])] = {}
-            results = context.servo.dispatch_event("metrics")
+            results = context.servo.dispatch_event_sync("metrics")
             for result in results:
                 for metric in result.value:
                     units_and_connectors = metrics_to_connectors.get(
@@ -900,7 +905,7 @@ class ServoCLI(CLI):
             """
             Run the servo
             """
-            ServoRunner(context.servo, interactive=interactive).run()
+            ServoRunner(context.servo, interactive=interactive).run_sync()
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[Connector], event: str
@@ -937,7 +942,7 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.CHECK, include=connectors
             )
 
@@ -991,7 +996,7 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.DESCRIBE, include=connectors
             )
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
@@ -1025,7 +1030,7 @@ class ServoCLI(CLI):
                 return value
 
             all_metrics_by_name: Dict[str, Metric] = {}
-            results = context.servo.dispatch_event("metrics")
+            results = context.servo.dispatch_event_sync("metrics")
             for result in results:
                 for metric in result.value:
                     all_metrics_by_name[metric.name] = metric
@@ -1075,7 +1080,7 @@ class ServoCLI(CLI):
             if not connectors:
                 connectors = context.assembly.connectors
             # TODO: Limit the dispatch to the connectors that support the target metrics
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             )
            
@@ -1118,7 +1123,7 @@ class ServoCLI(CLI):
 
             # TODO: Should be modeled directly as an adjustment instead of jamming into Description
             description = Description(components=components)
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.ADJUST, description.opsani_dict()
             )
             for result in results:

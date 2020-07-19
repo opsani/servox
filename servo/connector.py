@@ -71,7 +71,7 @@ class Optimizer(BaseSettings):
     deployed under this domain name umbrella for easy access and autocompletion ergonomics.
     """
 
-    app_name: constr(regex=r"^[a-z\-]{3,64}$")
+    app_name: constr(regex=r"^[a-z\-\.0-9]{3,64}$")
     """
     The symbolic name of the application or servoce under optimization in a string of URL-safe characters between 3 and 64
     characters in length 
@@ -406,9 +406,31 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         )
 
     ##
-    # Event processing
+    # Event processing  
+      
+    def broadcast_event(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Broadcast an event asynchronously in a fire and forget manner.
 
-    async def dispatch_event_async(
+        Useful for dispatching notification events where you do not need
+        or care about the result.
+        """
+        return asyncio.create_task(
+            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+        )
+
+    async def dispatch_event(
         self,
         event: Union[Event, str],
         *args,
@@ -474,7 +496,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             after_args.insert(0, results)
             for connector in connectors:
                 # Fire and forget after handlers
-                asyncio.ensure_future(
+                asyncio.create_task(
                     connector.process_event(
                         event, Preposition.AFTER, results, *after_args, **kwargs
                     )
@@ -484,22 +506,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             return results[0] if results else None
 
         return results
-    
-    def dispatch_event(
-        self,
-        event: Union[Event, str],
-        *args,
-        first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
-        prepositions: Preposition = (
-            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
-        ),
-        **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
-        return asyncio.run(
-            self.dispatch_event_async(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
-        )
 
     def dispatch_event_sync(
         self,
@@ -514,60 +520,13 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         **kwargs,
     ) -> Union[EventResult, List[EventResult]]:
         """
-        Dispatches an event to active connectors for processing and returns the results.
-
-        Eventing can be used to notify other connectors of activities and state changes
-        driven by one connector or to facilitate loosely coupled cross-connector RPC 
-        communication.
-
-        :param first: When True, halt dispatch and return the result from the first connector that responds.
-        :param include: A list of specific connectors to dispatch the event to.
-        :param exclude: A list of specific connectors to exclude from event dispatch.
+        Wraps an event dispatched from a synchronous caller with
+        `asyncio.run` and returns the results.
         """
-        results: List[EventResult] = []
-        connectors = include if include is not None else self.__connectors__
-        event = get_event(event) if isinstance(event, str) else event
+        return asyncio.run(
+            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+        )
 
-        if exclude:
-            # NOTE: We filter by name to avoid recursive hell in Pydantic
-            excluded_names = list(map(lambda c: c.name, exclude))
-            connectors = list(
-                filter(lambda c: c.name not in excluded_names, connectors)
-            )
-
-        # Invoke the before event handlers
-        if prepositions & Preposition.BEFORE:
-            try:
-                for connector in connectors:
-                    connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
-            except CancelEventError as error:
-                # Cancelled by a before event handler. Unpack the result and return it
-                return [error.result]
-
-        # Invoke the on event handlers and gather results
-        if prepositions & Preposition.ON:
-            for connector in connectors:
-                connector_results = connector.process_event(
-                    event, Preposition.ON, *args, **kwargs
-                )
-                if connector_results is not None:
-                    results.extend(connector_results)
-                    if first:
-                        break
-
-        # Invoke the after event handlers
-        if prepositions & Preposition.AFTER:
-            after_args = list(args)
-            after_args.insert(0, results)
-            for connector in connectors:
-                connector.process_event(
-                    event, Preposition.AFTER, results, *args, **kwargs
-                )
-
-        if first:
-            return results[0] if results else None
-
-        return results
     
     async def process_event(
         self, event: Event, preposition: Preposition, *args, **kwargs
@@ -669,14 +628,14 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     ##
     # Subclass services
 
-    def api_client(self) -> httpx.Client:
+    def api_client(self) -> httpx.AsyncClient:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         headers = {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-        return httpx.Client(base_url=self.optimizer.api_url, headers=headers)
+        return httpx.AsyncClient(base_url=self.optimizer.api_url, headers=headers)
 
     @property
     def logger(self) -> logging.Logger:
