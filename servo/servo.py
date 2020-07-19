@@ -206,13 +206,13 @@ class Servo(Connector):
         super().__init__(*args, routes={}, **kwargs)
 
         # Ensure the routes refer to the same objects by identity
-        self.routes.update(routes)
+        self.routes.update(routes)        
 
-        # Dispatch the startup event
-        self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
+    def startup(self):
+        self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
 
     def shutdown(self):
-        self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON)
+        self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
     @property
     def connectors(self) -> List[Connector]:

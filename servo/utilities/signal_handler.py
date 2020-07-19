@@ -1,3 +1,4 @@
+import sys
 import signal
 from typing import Callable, Optional
 

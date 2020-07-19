@@ -361,7 +361,7 @@ class VegetaConnector(Connector):
             self.logger.info(f"DELAY: sleeping {control.delay} seconds")
             time.sleep(control.delay)
 
-        self.warmup_until = datetime.now() + timedelta(seconds=control.warmup)
+        self.warmup_until = datetime.now() + timedelta(seconds=control.warmup.total_seconds())
 
         number_of_urls = (
             1 if self.config.target else _number_of_lines_in_file(self.config.targets)
