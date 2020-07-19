@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 
 import semver
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, datetime_parse
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
@@ -110,7 +110,7 @@ class Duration(timedelta):
             return cls(value)
 
         # Parse into a timedelta with Pydantic parser
-        td = pydantic.datetime_parse.parse_duration(value)
+        td = datetime_parse.parse_duration(value)
         microseconds: float = td / timedelta(microseconds=1)
         return cls(microseconds=microseconds)
 
@@ -231,11 +231,16 @@ class Component(BaseModel):
 
 class Control(BaseModel):
     duration: Optional[Duration]
-    past: Duration = 0
-    warmup: Duration = 0
-    delay: Duration = 0
+    past: Duration = None
+    warmup: Duration = None
+    delay: Duration = None
     load: Optional[dict]
 
+    @validator('past', 'warmup', 'delay', always=True, pre=True)
+    def validate_durations(cls, value) -> Duration:
+        if value:
+            return value
+        return Duration(0)
 
 class Description(BaseModel):
     components: List[Component] = []

@@ -318,7 +318,7 @@ class VegetaConnector(Connector):
         return METRICS
 
     @on_event()
-    def check(self) -> List[Check]:
+    async def check(self) -> List[Check]:
         # Take the current config and run a 5 second check against it
         self.warmup_until = datetime.now()
         check_config = self.config.copy()
@@ -326,7 +326,7 @@ class VegetaConnector(Connector):
         check_config.reporting_interval = "1s"
 
         checks = []
-        exit_code, vegeta_cmd = self._run_vegeta(config=check_config)
+        exit_code, vegeta_cmd = await self._run_vegeta(config=check_config)
         checks.append(Check(
             name="Vegeta execution",
             success=(exit_code == 0),
@@ -357,11 +357,11 @@ class VegetaConnector(Connector):
         # Handle delay (if any)
         # TODO: Push the delay and warm-up into a reusable before filter
         # TODO: Use an event to signal the connector when warmup is complete
-        if control.delay > 0:
+        if control.delay:
             self.logger.info(f"DELAY: sleeping {control.delay} seconds")
             time.sleep(control.delay)
 
-        self.warmup_until = datetime.now() + timedelta(seconds=control.warmup.total_seconds())
+        self.warmup_until = datetime.now() + control.warmup
 
         number_of_urls = (
             1 if self.config.target else _number_of_lines_in_file(self.config.targets)

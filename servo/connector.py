@@ -483,7 +483,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                         break
             else:
                 group = asyncio.gather(
-                    *[ c.process_event(event, Preposition.ON, *args, **kwargs) for c in connectors ]
+                    *list(map(lambda c: c.process_event(event, Preposition.ON, *args, **kwargs), connectors))
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
@@ -492,15 +492,9 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
         # Invoke the after event handlers
         if prepositions & Preposition.AFTER:
-            after_args = list(args)
-            after_args.insert(0, results)
-            for connector in connectors:
-                # Fire and forget after handlers
-                asyncio.create_task(
-                    connector.process_event(
-                        event, Preposition.AFTER, results, *after_args, **kwargs
-                    )
-                )
+            await asyncio.gather(
+                *list(map(lambda c: c.process_event(event, Preposition.AFTER, results, *args, **kwargs), connectors))
+            )
 
         if first:
             return results[0] if results else None
