@@ -895,17 +895,11 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def run(
             context: Context,
-            interactive: bool = typer.Option(
-                False,
-                "--interactive",
-                "-i",
-                help="Run in interactive mode (examine and confirm commands)",
-            ),
         ) -> None:
             """
             Run the servo
             """
-            ServoRunner(context.servo, interactive=interactive).run_sync()
+            ServoRunner(context.servo).run()
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[Connector], event: str

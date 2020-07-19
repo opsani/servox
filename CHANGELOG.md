@@ -29,6 +29,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - The check command now supports a verbose and non-verbose modes for outputting multiple checks from a connector.
 - The version command can now output version data for connectors.
 - The connectors command now outputs names for displaying aliased configurations.
+- The servo now runs asynchronously on top of asyncio.
 
 ### Removed
 - The `durationpy` package has been removed in favor of a local implementation.
