@@ -150,7 +150,8 @@ subsystem and connectors which respond to the relevant events will automatically
 ### Understanding Events
 
 The servo is built around an event driven architecture and utilizes a lightweight eventing system to
-pass messages between connectors. Events are simple strings identifiers that are bound to a Python
+pass messages between connectors. Eventing is implemented in asynchronous Python on top of asyncio.
+Events are simple strings identifiers that are bound to a Python
 [inspect.Signature](https://docs.python.org/3/library/inspect.html#inspect.Signature) object. The
 signature is used when event handlers are registered to enforce a contract around the parameter
 and return types, method arity, etc.
@@ -185,7 +186,8 @@ The default events are available on the `servo.servo.Events` enumeration and inc
 Event handlers are easily registered via a set of method decorators available on the `servo.connector`
 module. Handlers are registered with a *preposition* which determines if it is invoked before, on,
 or after the event has been processed. Handlers are invoked when the servo or another connector dispatches 
-an event.
+an event. Event handlers can be implemented either synchronously or asynchronously depending on if 
+the method is a coroutined declared with the async prefix.
 
 ```python
 from servo.connector import Connector, EventResult, before_event, after_event, on_event
@@ -240,9 +242,9 @@ driven interaction.
 
 ```python
 class ExampleConnector(Connector):
-  def do_something(self) -> None:
+  async def do_something(self) -> None:
     # Gather metrics from other connectors
-    results: List[EventResult] = self.dispatch_event("metrics")
+    results: List[EventResult] = await self.dispatch_event("metrics")
     for result in results:
       print(f"Gathered metrics: {result.value}")
 ```
