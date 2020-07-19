@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, parse_obj_as
 from servo.connector import USER_AGENT, Optimizer
 from servo.servo import BaseServoConfiguration, Events, Servo
 from servo.types import Control, Description, Measurement
-from servo.utilities import SignalHandler
 
 
 class APICommand(str, Enum):
@@ -91,15 +90,9 @@ class ConnectorError(Exception):
 
 class ServoRunner:
     servo: Servo
-    interactive: bool
-    base_url: str
-    headers: Dict[str, str]
-    _stop_flag: bool
-    _signal_handler: SignalHandler
 
-    def __init__(self, servo: Servo, *, interactive: bool = False, **kwargs) -> None:
+    def __init__(self, servo: Servo) -> None:
         self.servo = servo
-        self.interactive = interactive
         super().__init__()
 
     @property
@@ -117,7 +110,6 @@ class ServoRunner:
     async def describe(self) -> Description:
         self.logger.info("Describing...")
 
-        # TODO: This message dispatch should go through a driver for in-process vs. subprocess
         aggregate_description = Description.construct()
         results: List[EventResult] = await self.servo.dispatch_event(Events.DESCRIBE)
         for result in results:
@@ -167,22 +159,8 @@ class ServoRunner:
         # TODO: Model a response class
         return {}
 
-    # --- Helpers -----------------------------------------------------------------
-
-    def delay(self):
-        if self.interactive:
-            print("Press <Enter> to continue...", end="")
-            sys.stdout.flush()
-            sys.stdin.readline()
-        elif self.delay:
-            time.sleep(1.0)
-
     @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
     async def post_event(self, event: APIEvent, param) -> Union[CommandResponse, Status]:
-        """
-        Send request to cloud service. Retry if it fails to connect.
-        """
-
         event_request = APIRequest(event=event, param=param)
         async with self.servo.api_client() as client:
             try:
@@ -266,70 +244,74 @@ class ServoRunner:
         except Exception as error:
             self.logger.exception(f"{cmd_response.command} command failed!")
             param = dict(status="failed", message=_exc_format(error))
-            sys.exit(2)
+            self.shutdown()
             await self.post_event(_event_for_command(cmd_response.command), param)
 
-    async def run(self) -> None:
-        self._stop_flag = False
-        self._signal_handler = SignalHandler(
-            stop_callback=self._stop_callback,
-            restart_callback=self._restart_callback,
-            terminate_callback=self._terminate_callback,
-        )
-
+    async def main(self) -> None:
         self.logger.info(
-            f"Servo starting with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
+            f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
+        self.logger.info("Broadcasting startup event...")
         self.servo.startup()
 
-        # announce
         self.logger.info("Saying HELLO.", end=" ")
-        self.delay()
         await self.post_event(APIEvent.HELLO, dict(agent=USER_AGENT))
 
-        while not self._stop_flag:
+        while True:
             try:
                 await self.exec_command()
             except Exception:
                 self.logger.exception("Exception encountered while executing command")
+    
+    async def shutdown(self, loop, signal=None):
+        if signal:
+            self.logger.info(f"Received exit signal {signal.name}...")
 
         try:
-            await self.post_event(APIEvent.GOODBYE, dict(reason=self.stop_flag))
+            reason = signal.name if signal else 'shutdown'
+            await self.post_event(APIEvent.GOODBYE, dict(reason=reason))
         except Exception as e:
             self.logger.exception(
-                f"Warning: failed to send GOODBYE: {e}. Exiting anyway"
+                f"Exception occurred during GOODBYE request: {e}"
             )
-        self.servo.shutdown()
         
-    def run_sync(self) -> None:
-        asyncio.run(self.run())
+        self.logger.info("Dispatching shutdown event...")
+        await self.servo.shutdown()
+        
+        tasks = [t for t in asyncio.all_tasks() if t is not
+                asyncio.current_task()]
 
-    def _stop_callback(self, sig_num: int) -> None:
-        self._stop_flag = "exit"
+        [task.cancel() for task in tasks]
 
-    def _restart_callback(self, sig_num: int) -> None:
-        self._stop_flag = "restart"
+        self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+        await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _terminate_callback(self, sig_num: int) -> None:
-        # determine signal name (best effort)
+        loop.stop()
+    
+    def handle_exception(self, loop, context):
+        # context["message"] will always be there; but context["exception"] may not
+        msg = context.get("exception", context["message"])
+        self.logger.exception(f"Caught exception: {msg}")
+        self.logger.info("Shutting down...")
+        asyncio.create_task(self.shutdown(loop))
+
+    def run(self) -> None:
+        loop = asyncio.get_event_loop()
+        
+        signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
+        for s in signals:
+            loop.add_signal_handler(
+                s, lambda s=s: asyncio.create_task(self.shutdown(loop, signal=s)))
+        
+        # Catch any unhandled async exceptions
+        loop.set_exception_handler(self.handle_exception)
+
         try:
-            sig_name = signal.Signals(sig_num).name
-        except ValueError:
-            sig_name = f"signal #{sig_num}"
-
-        # log signal
-        self.logger.info(
-            f'*** Servo stop requested by signal "{sig_name}". Sending GOODBYE'
-        )
-
-        # send GOODBYE event (best effort)
-        try:
-            asyncio.create_task(self.post_event(APIEvent.GOODBYE, dict(reason=sig_name)))
-        except Exception as e:
-            self.logger.exception(
-                f"Warning: failed to send GOODBYE: {e}. Exiting anyway"
-            )
-
+            loop.create_task(self.main())
+            loop.run_forever()
+        finally:
+            loop.close()
+            self.logger.info("Servo shutdown complete.")
 
 def _event_for_command(command: APICommand) -> Optional[APIEvent]:
     if cmd_response.command == APICommand.DESCRIBE:

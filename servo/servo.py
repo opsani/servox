@@ -209,10 +209,10 @@ class Servo(Connector):
         self.routes.update(routes)        
 
     def startup(self):
-        self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
+        return self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
 
     def shutdown(self):
-        self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
+        return self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
     @property
     def connectors(self) -> List[Connector]:
