@@ -514,8 +514,10 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         **kwargs,
     ) -> Union[EventResult, List[EventResult]]:
         """
-        Wraps an event dispatched from a synchronous caller with
-        `asyncio.run` and returns the results.
+        Wraps an event dispatched from a synchronous caller with `asyncio.run` and returns the results.
+
+        This interface exists primarily for use from the CLI. It cannot be invoked from within the
+        asyncio environment.
         """
         return asyncio.run(
             self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
