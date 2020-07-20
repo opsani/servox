@@ -6,13 +6,28 @@ from typing import Any, Callable, Dict, Optional, Type, TypeVar, List, Union
 from pydantic import BaseModel, validator
 from servo.utilities import join_to_series
 
+
 class Event(BaseModel):
+    """
+    The Event class defines a named event that can be dispatched and 
+    processed with before, on, and after handlers.
+    """
     name: str
     signature: Signature
 
     def __hash__(self):
         return hash((self.name, self.signature,))
 
+    def __str__(self):
+        return self.name
+    
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return self.__str__() == other
+        elif isinstance(other, Event):
+            return self.name == other.name and self.signature == other.signature
+        return super().__eq__(other)
+        
     class Config:
         arbitrary_types_allowed = True
 
@@ -34,6 +49,28 @@ class Preposition(Flag):
             return "after"
 
 
+class EventContext(BaseModel):
+    event: Event
+    preposition: Preposition
+    
+    def is_before() -> bool:
+        return self.preposition == Preposition.BEFORE
+
+    def is_on() -> bool:
+        return self.preposition == Preposition.ON
+    
+    def is_after() -> bool:
+        return self.preposition == Preposition.AFTER
+    
+    def __str__(self):
+        return f"{self.preposition}:{self.event.name}"
+    
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return other in (self.__str__(), self.event.name)
+        return super().__eq__(other)
+
+
 class EventHandler(BaseModel):
     event: Event
     preposition: Preposition
@@ -42,7 +79,7 @@ class EventHandler(BaseModel):
     handler: EventCallable
 
     def __str__(self):
-        return f"{self.preposition} {self.event}"
+        return f"{self.connector_type}({self.preposition}:{self.event}->{self.handler})"
 
 
 class EventResult(BaseModel):
@@ -69,10 +106,8 @@ class EventError(RuntimeError):
 class CancelEventError(EventError):
     result: EventResult
 
-
 ##
 # Event registry
-
 
 _events: Dict[str, Event] = {}
 
@@ -95,6 +130,9 @@ def get_event(name: str, default=...) -> Optional[Event]:
 
 
 def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
+    """
+    Create an event programmatically from a name and function signature.
+    """
     if _events.get(name, None):
         raise ValueError(f"Event '{name}' has already been created")
 
@@ -212,7 +250,7 @@ def event_handler(
             raise ValueError(f"Unknown event '{name}'")
 
         if preposition != Preposition.ON:
-            name = f"{preposition} {name}"
+            name = f"{preposition}:{name}"
         handler_signature = Signature.from_callable(fn)
 
         if preposition == Preposition.BEFORE:
