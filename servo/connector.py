@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import re
+from contextvars import ContextVar
 from inspect import Parameter, Signature
 from functools import reduce
 from pathlib import Path
@@ -41,13 +42,15 @@ from servo.events import (
     CancelEventError,
     Event,
     EventCallable,
+    EventContext,
     EventError,
     EventHandler,
     EventResult,
     Preposition,
     get_event,
 )
-from servo.types import Duration, License, Maturity, Version
+from servo.repeating import RepeatingMixin
+from servo.types import *
 from servo.utilities import join_to_series
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
@@ -259,6 +262,10 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
 _connector_subclasses: Set[Type["Connector"]] = set()
 _connector_event_bus = WeakKeyDictionary()
 
+# Context vars for asyncio tasks managed by run_event_handlers
+_connector_context_var = ContextVar('servo.connector', default=None)
+_event_context_var = ContextVar('servo.event', default=None)
+
 # NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
 _is_base_connector_class_defined = False
 
@@ -285,7 +292,7 @@ class ConnectorMetaclass(ModelMetaclass):
         return cls
 
 
-class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
+class Connector(BaseModel, abc.ABC, RepeatingMixin, metaclass=ConnectorMetaclass):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
@@ -466,9 +473,9 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
 
         # Invoke the before event handlers
         if prepositions & Preposition.BEFORE:
-            try:
+            try:                
                 for connector in connectors:
-                    await connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+                    await connector.run_event_handlers(event, Preposition.BEFORE, *args, **kwargs)
             except CancelEventError as error:
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
@@ -478,12 +485,12 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
             if first:
                 # A single responder has been requested
                 for connector in connectors:
-                    results = await connector.process_event(event, Preposition.ON, *args, **kwargs)
+                    results = await connector.run_event_handlers(event, Preposition.ON, *args, **kwargs)
                     if results:
                         break
             else:
                 group = asyncio.gather(
-                    *list(map(lambda c: c.process_event(event, Preposition.ON, *args, **kwargs), connectors))
+                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors))
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
@@ -493,7 +500,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         # Invoke the after event handlers
         if prepositions & Preposition.AFTER:
             await asyncio.gather(
-                *list(map(lambda c: c.process_event(event, Preposition.AFTER, results, *args, **kwargs), connectors))
+                *list(map(lambda c: c.run_event_handlers(event, Preposition.AFTER, results, *args, **kwargs), connectors))
             )
 
         if first:
@@ -516,63 +523,78 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """
         Wraps an event dispatched from a synchronous caller with `asyncio.run` and returns the results.
 
-        This interface exists primarily for use from the CLI. It cannot be invoked from within the
-        asyncio environment.
+        This interface exists primarily for use from the CLI. It cannot be invoked from within the asyncio environment.
         """
         return asyncio.run(
             self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
         )
 
-    
-    async def process_event(
+    async def run_event_handlers(
         self, event: Event, preposition: Preposition, *args, **kwargs
     ) -> Optional[List[EventResult]]:
         """
-        Process an event and return the results.
-        Returns None if the connector does not respond to the event.
+        Run handlers for the given event and preposition and and return the results or None if there are no handlers.
         """
         event_handlers = self.get_event_handlers(event, preposition)
         if len(event_handlers) == 0:
             return None
 
         results: List[EventResult] = []
-        for event_handler in event_handlers:
-            # NOTE: Explicit kwargs take precendence over those defined during handler declaration
-            handler_kwargs = event_handler.kwargs.copy()
-            handler_kwargs.update(kwargs)
-            try:
-                if asyncio.iscoroutinefunction(event_handler.handler):
-                    value = await event_handler.handler(self, *args, **kwargs)
-                else:
-                    value = event_handler.handler(self, *args, **kwargs)
-            except CancelEventError as error:
-                if preposition != Preposition.BEFORE:
-                    raise TypeError(
-                        f"Cannot cancel an event from an {preposition} handler"
-                    ) from error
+        try:
+            prev_connector_token = _connector_context_var.set(self)
+            prev_event_token = _event_context_var.set(EventContext(event=event, preposition=preposition))
+            for event_handler in event_handlers:
+                # NOTE: Explicit kwargs take precendence over those defined during handler declaration
+                handler_kwargs = event_handler.kwargs.copy()
+                handler_kwargs.update(kwargs)
+                try:
+                    if asyncio.iscoroutinefunction(event_handler.handler):
+                        value = await event_handler.handler(self, *args, **kwargs)
+                    else:
+                        value = event_handler.handler(self, *args, **kwargs)
+                except CancelEventError as error:
+                    if preposition != Preposition.BEFORE:
+                        raise TypeError(
+                            f"Cannot cancel an event from an {preposition} handler"
+                        ) from error
+                    
+                    # Annotate the exception and reraise to halt execution
+                    error.result = EventResult(
+                        connector=self,
+                        event=event,
+                        preposition=preposition,
+                        handler=event_handler,
+                        value=error,
+                    )
+                    raise error
+                except EventError as error:
+                    value = error
 
-                # Annotate the exception and reraise to halt execution
-                error.result = EventResult(
+                result = EventResult(
                     connector=self,
                     event=event,
                     preposition=preposition,
                     handler=event_handler,
-                    value=error,
+                    value=value,
                 )
-                raise error
-            except EventError as error:
-                value = error
-
-            result = EventResult(
-                connector=self,
-                event=event,
-                preposition=preposition,
-                handler=event_handler,
-                value=value,
-            )
-            results.append(result)
+                results.append(result)
+        finally:
+            _connector_context_var.reset(prev_connector_token)
+            _event_context_var.reset(prev_event_token)
 
         return results
+    
+    @property
+    def event_context(self) -> Optional[EventContext]:
+        """
+        Returns an object that describes the actively executing event context, if any.
+
+        The event context is helpful in introspecting concurrent runtime state without having to pass
+        around info across methods. The `EventContext` object can be compared to strings for convenience
+        and supports string comparison to both `event_name` and `preposition:event_name` constructs for
+        easily checking current state.
+        """
+        return _event_context_var.get()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -638,7 +660,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """Returns the logger"""
         return loguru.logger.bind(connector=self.name)
 
-
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
@@ -680,6 +701,7 @@ def metadata(
         return cls
 
     return decorator
+
 
 #####
 

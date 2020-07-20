@@ -18,7 +18,8 @@ from servo.connector import (
     Maturity,
     Optimizer,
     Version,
-    _connector_subclasses,    
+    _connector_subclasses,
+    EventContext
 )
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import Preposition, _events, event
@@ -53,7 +54,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("app_name",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^[a-z\\-\.0-9]{3,64}$"'
+            == 'string does not match regex "^[a-z\\-\\.0-9]{3,64}$"'
         )
 
     def test_token_validation(self) -> None:
@@ -1227,6 +1228,10 @@ class TestConnectorEvents:
         @event(handler=True)
         def example_event(self) -> None:
             return 12345
+        
+        @event(handler=True)
+        def get_event_context(self) -> EventContext:
+            return self.event_context
 
         class Config:
             extra = Extra.allow
@@ -1262,17 +1267,28 @@ class TestConnectorEvents:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["example_event"]
-        results = await connector.process_event(event, Preposition.ON)
+        results = await connector.run_event_handlers(event, Preposition.ON)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
+    
+    async def test_event_context_var(self) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        event = _events["get_event_context"]
+        results = await connector.run_event_handlers(event, Preposition.ON)
+        assert results is not None
+        result = results[0]
+        assert result.event.name == "get_event_context"
+        assert result.connector == connector        
+        assert result.value == EventContext(event=event, preposition=Preposition.ON)
 
     async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
-        result = await connector.process_event("unknown_event", Preposition.ON)
+        result = await connector.run_event_handlers("unknown_event", Preposition.ON)
         assert result is None
 
     def test_event_dispatch_standalone(self) -> None:
@@ -1301,3 +1317,12 @@ class TestConnectorEvents:
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
+    
+    def test_event_context_str_comparison(self) -> None:
+        assert _events is not None
+        event = _events["example_event"]
+        context = EventContext(event=event, preposition=Preposition.ON)
+        assert context == "example_event"
+        assert context == "on:example_event"
+        assert context != "before:example_event"
+        assert context != "after:example_event"

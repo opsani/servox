@@ -477,7 +477,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'before measure' event handler: encountered extra parameters (another and invalid)"
+        == "Invalid type annotation for 'before:measure' event handler: encountered extra parameters (another and invalid)"
     )
 
 
@@ -511,7 +511,7 @@ def test_registering_after_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'after measure' event handler: encountered extra parameters (another and invalid)"
+        == "Invalid type annotation for 'after:measure' event handler: encountered extra parameters (another and invalid)"
     )
 
 

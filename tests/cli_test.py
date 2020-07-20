@@ -111,7 +111,7 @@ def test_check(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 0
-    assert re.match("CONNECTOR\\s+STATUS", result.stdout)
+    assert re.search("CONNECTOR\\s+STATUS", result.stdout)
 
 @respx.mock
 def test_check_verbose(
@@ -121,7 +121,7 @@ def test_check_verbose(
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
     assert result.exit_code == 0    
-    assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
+    assert re.search("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
 
 
 def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:

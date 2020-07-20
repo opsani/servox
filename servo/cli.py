@@ -298,9 +298,6 @@ class CLI(typer.Typer):
             cli, *args, cls=cls, context_settings=context_settings, **kwargs
         )
 
-    # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
-    # TODO: probably put these on a Callbacks class or something
-    # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption
     @staticmethod
     def root_callback(
         ctx: Context,

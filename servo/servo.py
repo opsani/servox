@@ -4,6 +4,7 @@ import inspect
 import json
 import os
 import re
+from contextvars import ContextVar
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union
@@ -239,6 +240,11 @@ class Servo(Connector):
             )]
 
 
+# Context vars for asyncio tasks managed by ServoAssembly
+_assembly_context_var = ContextVar('servo.assembly', default=None)
+_servo_context_var = ContextVar('servo.servo', default=None)
+
+
 class ServoAssembly(BaseModel):
     """
     A Servo assembly models the runtime configuration of a Servo.
@@ -333,6 +339,10 @@ class ServoAssembly(BaseModel):
             config_model=ServoConfiguration,
             servo=servo,
         )
+
+        # Set the context vars
+        _assembly_context_var.set(assembly)
+        _servo_context_var.set(servo)
 
         return assembly, servo, ServoConfiguration
 

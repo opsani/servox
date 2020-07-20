@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Callable
 
 import semver
 from pydantic import BaseModel, validator, datetime_parse
@@ -58,6 +58,7 @@ Version = semver.VersionInfo
 
 
 Numeric = Union[float, int]
+NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 
 
 class Duration(timedelta):
