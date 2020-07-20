@@ -21,9 +21,9 @@ from servo.connector import (
     _connector_subclasses,
     EventContext
 )
+from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import Preposition, _events, event
-from servo.servo import BaseServoConfiguration
 from tests.test_helpers import *
 
 pytestmark = pytest.mark.asyncio

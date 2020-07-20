@@ -7,6 +7,7 @@ for pkg in {"servo", "servox"}:
     except importlib.metadata.PackageNotFoundError:
         pass
 
+import servo.assembly
 import servo.connector
 import servo.events
 import servo.types

@@ -27,7 +27,8 @@ from servo.events import (
     event,
     on_event,
 )
-from servo.servo import BaseServoConfiguration, Events, Servo, ServoAssembly
+from servo.assembly import BaseServoConfiguration, Assembly
+from servo.servo import Events, Servo
 from servo.types import Control, Measurement
 from tests.test_helpers import environment_overrides
 
@@ -88,7 +89,7 @@ class SecondTestServoConnector(Connector):
 
 
 @pytest.fixture()
-def assembly(servo_yaml: Path) -> ServoAssembly:
+def assembly(servo_yaml: Path) -> Assembly:
     config = {
         "connectors": ["first_test_servo", "second_test_servo"],
         "first_test_servo": {},
@@ -98,24 +99,24 @@ def assembly(servo_yaml: Path) -> ServoAssembly:
 
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+    assembly, servo, DynamicServoSettings = Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly
 
 
 @pytest.fixture()
-def servo(assembly: ServoAssembly) -> Servo:
+def servo(assembly: Assembly) -> Servo:
     return assembly.servo
 
 
 def test_all_connector_types() -> None:
-    c = ServoAssembly.construct().all_connector_types()
+    c = Assembly.construct().all_connector_types()
     assert FirstTestServoConnector in c
 
 
 async def test_servo_routes(servo: Servo) -> None:
-    first_connector = servo.routes["first_test_servo"]
+    first_connector = servo.get_connector("first_test_servo")
     assert first_connector.name == "first_test_servo"
     assert first_connector.__class__.name == "FirstTestServo"
     results = await servo.dispatch_event("this_is_an_event", include=[first_connector])
@@ -126,7 +127,7 @@ async def test_servo_routes(servo: Servo) -> None:
 def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> None:
     connector_ids = list(map(lambda c: id(c), servo.__connectors__))
     assert connector_ids
-    route_ids = list(map(lambda c: id(c), servo.routes.values()))
+    route_ids = list(map(lambda c: id(c), servo.connectors))
     assert route_ids
     assert connector_ids == (route_ids + [id(servo)])
 
@@ -171,7 +172,7 @@ async def test_dispatch_event_exclude(servo: Servo) -> None:
 
 
 async def test_before_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("measure", Preposition.BEFORE)[0]
     spy = mocker.spy(event_handler, "handler")
     await servo.dispatch_event("measure")
@@ -179,7 +180,7 @@ async def test_before_event(mocker, servo: servo) -> None:
 
 
 async def test_after_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     spy = mocker.spy(event_handler, "handler")
     await servo.dispatch_event("promote")
@@ -188,7 +189,7 @@ async def test_after_event(mocker, servo: servo) -> None:
 
 
 async def test_on_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     spy = mocker.spy(event_handler, "handler")
     await servo.dispatch_event("promote")
@@ -196,7 +197,7 @@ async def test_on_event(mocker, servo: servo) -> None:
 
 
 async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
@@ -224,7 +225,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
 
 
 async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
@@ -235,7 +236,7 @@ async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
 
 
 async def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
@@ -247,7 +248,7 @@ async def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
 
 
 async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     spy = mocker.spy(after_handler, "handler")
 
@@ -272,7 +273,7 @@ async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
 
 
 async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     before_spy = mocker.spy(before_handler, "handler")
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
@@ -286,7 +287,7 @@ async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
 
 
 async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     before_spy = mocker.spy(before_handler, "handler")
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
@@ -300,14 +301,14 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) 
 
 
 async def test_startup_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     servo.startup()
     await asyncio.sleep(0.1)
     assert connector.started_up == True
 
 
 async def test_shutdown_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+    connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
     servo.shutdown()
@@ -524,10 +525,10 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
     assert after_measure.__event_handler__.preposition == Preposition.AFTER
 
 
-class TestServoAssembly:
+class TestAssembly:
     def test_assemble_empty_config_active_connectors(self, servo_yaml: Path):
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         assert assembly.connectors == [servo]
@@ -541,7 +542,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         connector = servo.connectors[0]
@@ -560,7 +561,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
@@ -999,7 +1000,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoConfiguration = ServoAssembly.assemble(
+        assembly, servo, DynamicServoConfiguration = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
@@ -1062,7 +1063,7 @@ def test_generating_schema_with_test_connectors(
 ) -> None:
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+    assembly, servo, DynamicServoSettings = Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     DynamicServoSettings.schema()
@@ -1123,7 +1124,7 @@ class TestServoSettings:
 
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoConfiguration(connectors={"BaseServoConfiguration"},)
+            BaseServoConfiguration(connectors={"servo.servo.BaseServoConfiguration"},)
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (

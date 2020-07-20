@@ -22,16 +22,21 @@ from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 from typer.models import CommandFunctionType, Default, DefaultPlaceholder
 
-from servo.connector import Connector, Optimizer
+from servo.assembly import (
+    Assembly,
+    _create_config_model,
+    _create_config_model_from_routes,
+    _default_routes,
+)
+from servo.connector import (
+    Connector, 
+    Optimizer,
+    _connector_class_from_string
+)
 from servo.events import EventHandler, Preposition
 from servo.servo import (
     Events,
     Servo,
-    ServoAssembly,
-    _connector_class_from_string,
-    _create_config_model,
-    _create_config_model_from_routes,
-    _default_routes,
 )
 from servo.servo_runner import ServoRunner
 from servo.types import *
@@ -73,7 +78,7 @@ class Context(typer.Context):
     base_url: Optional[str] = None
 
     # Assembled servo
-    assembly: Optional[ServoAssembly] = None
+    assembly: Optional[Assembly] = None
     servo: Optional[Servo] = None
 
     # Active connector
@@ -103,7 +108,7 @@ class Context(typer.Context):
         *args,
         config_file: Optional[Path] = None,
         optimizer: Optional[Optimizer] = None,
-        assembly: Optional[ServoAssembly] = None,
+        assembly: Optional[Assembly] = None,
         servo: Optional[Servo] = None,
         connector: Optional[Connector] = None,
         section: Section = Section.COMMANDS,
@@ -395,7 +400,7 @@ class CLI(typer.Typer):
 
         # Assemble the Servo
         try:
-            assembly, servo, ServoConfiguration = ServoAssembly.assemble(
+            assembly, servo, ServoConfiguration = Assembly.assemble(
                 config_file=ctx.config_file, optimizer=optimizer
             )
         except ValidationError as error:
@@ -411,11 +416,11 @@ class CLI(typer.Typer):
         context: typer.Context, value: Optional[Union[str, List[str]]]
     ) -> Optional[Union[Connector, List[Connector]]]:
         """
-        Transforms a one or more connector key-paths into Connector instances
+        Transforms a one or more connector names into Connector instances
         """
         if value:
             if isinstance(value, str):
-                # Lookup by key
+                # Lookup by name
                 for connector in context.servo.connectors:
                     if connector.name == value:
                         return connector
@@ -626,7 +631,7 @@ class ServoCLI(CLI):
                 check = Check(
                     "Which connectors do you want to activate? ",
                     choices=list(
-                        map(lambda c: c.name, ServoAssembly.all_connector_types())
+                        map(lambda c: c.name, Assembly.all_connector_types())
                     ),
                     check=" √",
                     margin=2,
@@ -644,7 +649,7 @@ class ServoCLI(CLI):
                         None,
                         map(
                             lambda c: c.__default_name__ if c.name in result else None,
-                            ServoAssembly.all_connector_types(),
+                            Assembly.all_connector_types(),
                         ),
                     )
                 )
