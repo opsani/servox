@@ -9,13 +9,6 @@ __repeaters = WeakKeyDictionary()
 Every = Union[int, str, Duration]
 
 class RepeatingMixin:
-    # _repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
-
-    # def __new__(cls, *args, **kwargs):
-    #     instance = super().__new__(cls, *args, **kwargs)
-    #     instance._repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
-    #     return instance
-
     def __init__(self, *args, **kwargs) -> None:
         self._repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
 
