@@ -11,8 +11,9 @@ import httpx
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
+from servo.assembly import BaseServoConfiguration
 from servo.connector import USER_AGENT, Optimizer
-from servo.servo import BaseServoConfiguration, Events, Servo
+from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
 
 

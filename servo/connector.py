@@ -1,10 +1,10 @@
 import abc
 import asyncio
+import importlib
 import json
 import logging
 import re
 from contextvars import ContextVar
-from inspect import Parameter, Signature
 from functools import reduce
 from pathlib import Path
 from typing import (
@@ -646,6 +646,14 @@ class Connector(BaseModel, abc.ABC, RepeatingMixin, metaclass=ConnectorMetaclass
     ##
     # Subclass services
 
+    @property
+    def api_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.optimizer.token}",
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+        }
+
     def api_client(self) -> httpx.AsyncClient:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         headers = {
@@ -653,7 +661,11 @@ class Connector(BaseModel, abc.ABC, RepeatingMixin, metaclass=ConnectorMetaclass
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-        return httpx.AsyncClient(base_url=self.optimizer.api_url, headers=headers)
+        return httpx.AsyncClient(base_url=self.optimizer.api_url, headers=self.api_headers)
+    
+    def api_client_sync(self) -> httpx.Client:
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
+        return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
 
     @property
     def logger(self) -> logging.Logger:
@@ -663,12 +675,6 @@ class Connector(BaseModel, abc.ABC, RepeatingMixin, metaclass=ConnectorMetaclass
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
-
-
-def _name_for_connector_class(cls: Type[Connector]) -> str:
-    name = re.sub(r"Connector$", "", cls.__name__)
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-
 
 def metadata(
     name: Optional[str] = None,
@@ -701,6 +707,60 @@ def metadata(
         return cls
 
     return decorator
+
+##
+# Utility functions
+
+def _name_for_connector_class(cls: Type[Connector]) -> str:
+    name = re.sub(r"Connector$", "", cls.__name__)
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
+    if not isinstance(connector, str):
+        return None
+
+    # Check for an existing class in the namespace
+    # FIXME: This symbol lookup doesn't seem solid
+    connector_class = globals().get(connector, None)
+    try:
+        connector_class = (
+            eval(connector) if connector_class is None else connector_class
+        )
+    except Exception:
+        pass
+    
+    if _validate_class(connector_class):
+        return connector_class
+
+    # Check if the string is an identifier for a connector
+    for connector_class in _connector_subclasses:
+        if connector == connector_class.__default_name__ or connector in [
+            connector_class.__name__,
+            connector_class.__qualname__,
+        ]:
+            return connector_class
+
+    # Try to load it as a module path
+    if "." in connector:
+        module_path, class_name = connector.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        if hasattr(module, class_name):
+            connector_class = getattr(module, class_name)
+            if _validate_class(connector_class):
+                return connector_class
+
+    return None
+
+def _validate_class(connector: type) -> bool:
+    if connector is None or not isinstance(connector, type):
+        return False
+
+    if not issubclass(connector, Connector):
+        print("RAISING for ", connector)
+        raise TypeError(f"{connector.__name__} is not a Connector subclass")
+
+    return True
 
 
 #####

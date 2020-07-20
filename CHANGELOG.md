@@ -42,6 +42,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - Removed the 'Connector` suffix from the default connector name attribute and introduced `full_name`.
 - The `__config_key__` attribute has been renamed to `__default_name__`.
 - The identifier for connectors has been renamed to `name` for simplicitly and clarity.
+- The `ServoAssembly` class has been renamed to `Assembly`.
 
 ## [0.3.1] - 2020-07-16
 
