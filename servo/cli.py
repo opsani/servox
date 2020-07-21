@@ -1,9 +1,11 @@
+import asyncio
 import json
 import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
 from enum import Enum
+from functools import reduce
 from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
@@ -15,22 +17,26 @@ from bullet import Check, colors
 from devtools import pformat
 from loguru import logger
 from pydantic import ValidationError
-from pydantic.json import pydantic_encoder
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 from typer.models import CommandFunctionType, Default, DefaultPlaceholder
 
-from servo.connector import Connector, Optimizer
+from servo.assembly import (
+    Assembly,
+    _create_config_model,
+    _create_config_model_from_routes,
+    _default_routes,
+)
+from servo.connector import (
+    Connector, 
+    Optimizer,
+    _connector_class_from_string
+)
 from servo.events import EventHandler, Preposition
 from servo.servo import (
     Events,
     Servo,
-    ServoAssembly,
-    _connector_class_from_string,
-    _create_config_model,
-    _create_config_model_from_routes,
-    _default_routes,
 )
 from servo.servo_runner import ServoRunner
 from servo.types import *
@@ -39,6 +45,7 @@ from servo.utilities import PreservedScalarString
 # Add the devtools debug() function to the CLI if its available
 try:
     import builtins
+
     from devtools import debug
 except ImportError:
     pass
@@ -71,7 +78,7 @@ class Context(typer.Context):
     base_url: Optional[str] = None
 
     # Assembled servo
-    assembly: Optional[ServoAssembly] = None
+    assembly: Optional[Assembly] = None
     servo: Optional[Servo] = None
 
     # Active connector
@@ -101,7 +108,7 @@ class Context(typer.Context):
         *args,
         config_file: Optional[Path] = None,
         optimizer: Optional[Optimizer] = None,
-        assembly: Optional[ServoAssembly] = None,
+        assembly: Optional[Assembly] = None,
         servo: Optional[Servo] = None,
         connector: Optional[Connector] = None,
         section: Section = Section.COMMANDS,
@@ -296,9 +303,6 @@ class CLI(typer.Typer):
             cli, *args, cls=cls, context_settings=context_settings, **kwargs
         )
 
-    # TODO: servo_callback, optimizer_callback, connector_callback, config_callback
-    # TODO: probably put these on a Callbacks class or something
-    # TODO: Alias these options for reuse cli.OptimizerOption, cli.TokenOption, cli.ConfigFileOption
     @staticmethod
     def root_callback(
         ctx: Context,
@@ -359,8 +363,18 @@ class CLI(typer.Typer):
         ctx.base_url = base_url
 
         # TODO: This should be pluggable
-        if ctx.invoked_subcommand not in {"init", "schema", "generate", "validate", "version"}:
-            CLI.assemble_from_context(ctx)
+        if ctx.invoked_subcommand not in {
+            "init",
+            "schema",
+            "generate",
+            "validate",
+            "version",
+        }:
+            try:
+                CLI.assemble_from_context(ctx)
+            except ValidationError as error:
+                typer.echo(f"Invalid configuration: {error}", err=True)
+                raise typer.Exit(2)
 
     @staticmethod
     def assemble_from_context(ctx: Context):
@@ -386,7 +400,7 @@ class CLI(typer.Typer):
 
         # Assemble the Servo
         try:
-            assembly, servo, ServoConfiguration = ServoAssembly.assemble(
+            assembly, servo, ServoConfiguration = Assembly.assemble(
                 config_file=ctx.config_file, optimizer=optimizer
             )
         except ValidationError as error:
@@ -402,29 +416,29 @@ class CLI(typer.Typer):
         context: typer.Context, value: Optional[Union[str, List[str]]]
     ) -> Optional[Union[Connector, List[Connector]]]:
         """
-        Transforms a one or more connector key-paths into Connector instances
+        Transforms a one or more connector names into Connector instances
         """
         if value:
             if isinstance(value, str):
-                # Lookup by key
+                # Lookup by name
                 for connector in context.servo.connectors:
-                    if connector.config_key == value:
+                    if connector.name == value:
                         return connector
-                raise typer.BadParameter(f"no connector found for key '{value}'")
+                raise typer.BadParameter(f"no connector found named '{value}'")
             else:
                 connectors: List[Connector] = []
                 for key in value:
                     size = len(connectors)
                     for connector in context.servo.connectors:
-                        if connector.config_key == key:
+                        if connector.name == key:
                             connectors.append(connector)
                             break
                     if len(connectors) == size:
-                        raise typer.BadParameter(f"no connector found for key '{key}'")
+                        raise typer.BadParameter(f"no connector found named '{key}'")
                 return connectors
         else:
             return None
-
+    
     @staticmethod
     def connectors_type_callback(
         context: typer.Context, value: Optional[Union[str, List[str]]]
@@ -458,7 +472,7 @@ class CLI(typer.Typer):
         context: typer.Context, value: Optional[List[str]]
     ) -> Optional[Dict[str, Type[Connector]]]:
         """
-        Transforms a one or more connector key-paths into Connectors
+        Transforms a one or more connector descriptors into a dict of names to Connectors
         """
         if not value:
             return None
@@ -467,20 +481,37 @@ class CLI(typer.Typer):
         for key in value:
             if ":" in key:
                 # We have an alias descriptor
-                config_key, identifier = key.split(":", 2)
+                name, identifier = key.split(":", 2)
             else:
                 # Vanilla key-path or class name
-                config_key = None
+                name = None
                 identifier = key
 
             if connector_class := _connector_class_from_string(identifier):
-                if config_key is None:
-                    config_key = connector_class.__config_key__
-                routes[config_key] = connector_class
+                if name is None:
+                    name = connector_class.__default_name__
+                routes[name] = connector_class
             else:
-                raise typer.BadParameter(f"no connector found for key '{identifier}'")
+                raise typer.BadParameter(f"no connector found for identifier '{identifier}'")
 
         return routes
+    
+    @staticmethod
+    def duration_callback(
+        context: typer.Context, value: Optional[str]
+    ) -> Optional[Union[Connector, List[Connector]]]:
+        """
+        Transform a string into a Duration object.
+
+        Parses duration strings.
+        """
+        if not value:
+            return None
+        
+        try:
+            return Duration(value)
+        except ValueError as e:
+            raise typer.BadParameter(f"invalid duration parameter: {e}") from e
 
 
 class ConnectorCLI(CLI):
@@ -511,7 +542,7 @@ class ConnectorCLI(CLI):
                     context.connector = connector
 
         if name is None:
-            name = _command_name_from_config_key(connector_type.__config_key__)
+            name = _command_name_from_config_key(connector_type.__default_name__)
         if help is None:
             help = connector_type.description
         if isinstance(callback, DefaultPlaceholder):
@@ -599,7 +630,9 @@ class ServoCLI(CLI):
             if customize:
                 check = Check(
                     "Which connectors do you want to activate? ",
-                    choices=list(map(lambda c: c.name, ServoAssembly.all_connector_types())),
+                    choices=list(
+                        map(lambda c: c.name, Assembly.all_connector_types())
+                    ),
                     check=" √",
                     margin=2,
                     check_color=colors.bright(colors.foreground["green"]),
@@ -615,8 +648,8 @@ class ServoCLI(CLI):
                     filter(
                         None,
                         map(
-                            lambda c: c.__config_key__ if c.name in result else None,
-                            ServoAssembly.all_connector_types(),
+                            lambda c: c.__default_name__ if c.name in result else None,
+                            Assembly.all_connector_types(),
                         ),
                     )
                 )
@@ -643,7 +676,7 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = context.servo.dispatch_event(Events.COMPONENTS)
+            results = context.servo.dispatch_event_sync(Events.COMPONENTS)
             headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
             table = []
             for result in results:
@@ -685,7 +718,9 @@ class ServoCLI(CLI):
             """
             event_handlers: List[EventHandler] = []
             connectors = (
-                context.assembly.all_connector_types() if all else context.assembly.connectors
+                context.assembly.all_connector_types()
+                if all
+                else context.assembly.connectors
             )
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
@@ -729,7 +764,7 @@ class ServoCLI(CLI):
                 headers = ["CONNECTOR", "EVENTS"]
                 connector_types_by_name = dict(
                     map(
-                        lambda handler: (handler.connector_type.__name__, connector,),
+                        lambda handler: (handler.connector_type.name, connector,),
                         event_handlers,
                     )
                 )
@@ -743,7 +778,7 @@ class ServoCLI(CLI):
                                 filter(
                                     lambda h: h.event.name == event_name
                                     and h.preposition == preposition
-                                    and h.connector_type.__name__ == connector_name,
+                                    and h.connector_type.name == connector_name,
                                     event_handlers,
                                 )
                             )
@@ -771,7 +806,7 @@ class ServoCLI(CLI):
                                 list(
                                     set(
                                         map(
-                                            lambda handler: handler.connector_type.__name__,
+                                            lambda handler: handler.connector_type.name,
                                             handlers,
                                         )
                                     )
@@ -792,13 +827,13 @@ class ServoCLI(CLI):
             Display measurable metrics
             """
             metrics_to_connectors: Dict[str, tuple(str, Set[str])] = {}
-            results = context.servo.dispatch_event("metrics")
+            results = context.servo.dispatch_event_sync("metrics")
             for result in results:
                 for metric in result.value:
                     units_and_connectors = metrics_to_connectors.get(
                         metric.name, [metric.unit, set()]
                     )
-                    units_and_connectors[1].add(result.connector.__class__.__name__)
+                    units_and_connectors[1].add(result.connector.__class__.name)
                     metrics_to_connectors[metric.name] = units_and_connectors
 
             headers = ["METRIC", "UNIT", "CONNECTORS"]
@@ -829,16 +864,31 @@ class ServoCLI(CLI):
         ) -> None:
             """Manage connectors"""
             connectors = (
-                context.assembly.all_connector_types() if all else context.assembly.connectors
+                context.assembly.all_connector_types()
+                if all
+                else context.assembly.connectors
             )
-            headers = ["NAME", "VERSION", "DESCRIPTION"]
+            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
+            if all:
+                headers[0] = "DEFAULT NAME"
             table = []
-            for connector in connectors:
-                row = [connector.name, connector.version, connector.description]
+            connectors_by_type = {}
+            for c in connectors:
+                c_type = c.__class__ if isinstance(c, Connector) else c
+                c_list = connectors_by_type.get(c_type, [])
+                c_list.append(c)
+                connectors_by_type[c_type] = c_list
+            
+            for connector_type in connectors_by_type.keys():
+                if all:
+                    names = [connector_type.__default_name__]
+                else:
+                    names = list(map(lambda c: c.name, connectors_by_type[connector_type]))
+                row = ['\n'.join(names), connector_type.name, connector_type.version, connector_type.description]
                 if verbose:
-                    row += [connector.homepage, connector.maturity, connector.license]
+                    row += [connector_type.homepage, connector_type.maturity, connector_type.license]
                 table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
@@ -847,17 +897,11 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def run(
             context: Context,
-            interactive: bool = typer.Option(
-                False,
-                "--interactive",
-                "-i",
-                help="Run in interactive mode (examine and confirm commands)",
-            ),
         ) -> None:
             """
             Run the servo
             """
-            ServoRunner(context.servo, interactive=interactive).run()
+            ServoRunner(context.servo).run()
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[Connector], event: str
@@ -865,7 +909,7 @@ class ServoCLI(CLI):
             for connector in connectors:
                 if not connector.responds_to_event(event):
                     raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not support checks (at key '{connector.config_key}')"
+                        f"connectors of type '{connector.__class__.__name__}' do not support checks (name '{connector.name}')"
                     )
 
         @self.command(section=section)
@@ -873,8 +917,14 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                help="The connectors to check",
+                help="Connectors to check",
                 callback=self.connectors_instance_callback,
+            ),
+            verbose: bool = typer.Option(
+                False, "--verbose", "-v", help="Display verbose output"
+            ),
+            quiet: bool = typer.Option(
+                False, "--quiet", "-q", help="Do not echo generated output to stdout",
             ),
         ) -> None:
             """
@@ -888,18 +938,40 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.CHECK, include=connectors
             )
-            headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]
-            table = []
-            for result in results:
-                check: CheckResult = result.value
-                status = "√ PASSED" if check.success else "X FAILED"
-                row = [result.connector.name, check.name, status, check.comment]
-                table.append(row)
 
-            typer.echo(tabulate(table, headers, tablefmt="plain"))
+            table = []
+            ready = True
+            if verbose:
+                headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]                    
+                for result in results:
+                    checks: List[Check] = result.value                
+                    names, statuses, comments = [], [], []
+                    for check in checks:
+                        names.append(check.name)                
+                        statuses.append("√ PASSED" if check.success else "X FAILED")
+                        comments.append(check.comment)
+                        ready = ready and check.success
+                    row = [result.connector.name, "\n".join(names), "\n".join(statuses), "\n".join(comments)]
+                    table.append(row)
+            else:                    
+                headers = ["CONNECTOR", "STATUS"]
+                for result in results:
+                    checks: List[Check] = result.value                
+                    success = reduce(lambda success, c: success and c.success, checks)
+                    ready = ready and success
+                    status = "√ PASSED" if success else "X FAILED"
+                    row = [result.connector.name, status]
+                    table.append(row)
+                
+            # Output table and exit
+            if not quiet:
+                typer.echo(tabulate(table, headers, tablefmt="plain"))
+                
+            exit_code = 0 if ready else 1
+            raise typer.Exit(exit_code)
 
         @self.command(section=section)
         def describe(
@@ -920,7 +992,7 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.DESCRIBE, include=connectors
             )
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
@@ -954,7 +1026,7 @@ class ServoCLI(CLI):
                 return value
 
             all_metrics_by_name: Dict[str, Metric] = {}
-            results = context.servo.dispatch_event("metrics")
+            results = context.servo.dispatch_event_sync("metrics")
             for result in results:
                 for metric in result.value:
                     all_metrics_by_name[metric.name] = metric
@@ -979,34 +1051,49 @@ class ServoCLI(CLI):
         def measure(
             context: Context,
             metrics: Optional[List[str]] = typer.Argument(
-                None, help="The metrics to measure", callback=metrics_callback
+                None, help="Metrics to measure", callback=metrics_callback
+            ),
+            connectors: Optional[List[str]] = typer.Option(
+                None,
+                "--connectors",
+                "-c",
+                help="Connectors to measure from",
+                metavar="[CONNECTORS]...",
+                callback=self.connectors_instance_callback,
+            ),
+            duration: Optional[str] = typer.Option(
+                '1m',
+                "--duration",
+                "-d",
+                help="Duration of the measurement",
+                metavar="DURATION",
+                callback=self.duration_callback,
             ),
         ) -> None:
             """
             Capture measurements for one or more metrics
-            """
+            """            
+            if not connectors:
+                connectors = context.assembly.connectors
             # TODO: Limit the dispatch to the connectors that support the target metrics
-            aggregate_measurement = Measurement.construct()
-            results: List[EventResult] = context.servo.dispatch_event(
-                Events.MEASURE, metrics=metrics, control=Control()
+            results: List[EventResult] = context.servo.dispatch_event_sync(
+                Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             )
-            for result in results:
-                measurement = result.value
-                aggregate_measurement.readings.extend(measurement.readings)
-                aggregate_measurement.annotations.update(measurement.annotations)
-
+           
             metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
             headers = ["METRIC", "UNIT", "READINGS"]
             table = []
-            for reading in aggregate_measurement.readings:
-                if metric_names is None or reading.metric.name in metric_names:
-                    values = list(map(lambda r: f"{r[1]} @ {r[0]}", reading.values))
-                    row = [
-                        reading.metric.name,
-                        reading.metric.unit,
-                        "\n".join(values),
-                    ]
-                    table.append(row)
+            for result in results:
+                measurement = result.value
+                for reading in measurement.readings:
+                    if metric_names is None or reading.metric.name in metric_names:
+                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}]", reading.values))
+                        row = [
+                            reading.metric.name,
+                            reading.metric.unit,
+                            "\n".join(values),
+                        ]
+                        table.append(row)
 
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
@@ -1032,7 +1119,7 @@ class ServoCLI(CLI):
 
             # TODO: Should be modeled directly as an adjustment instead of jamming into Description
             description = Description(components=components)
-            results: List[EventResult] = context.servo.dispatch_event(
+            results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.ADJUST, description.opsani_dict()
             )
             for result in results:
@@ -1082,35 +1169,33 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            config = context.servo.config.dict(
-                exclude_unset=True, include=include
-            )
-            config_json = json.dumps(config, indent=2, default=pydantic_encoder)
-            config_dict = json.loads(config_json)
-            config_dict_str = pformat(config_dict)
-            config_yaml = yaml.dump(config_dict, indent=2, sort_keys=True)
+            export_options = dict(exclude_unset=True, include=include, indent=2)
 
             if format == ConfigOutputFormat.text:
                 pass
             else:
                 lexer = format.lexer()
                 if format == ConfigOutputFormat.yaml:
-                    data = config_yaml
+                    data = context.servo.config.yaml(sort_keys=True, **export_options)
                 elif format == ConfigOutputFormat.json:
-                    data = config_json
+                    data = context.servo.config.json(**export_options)
                 elif format == ConfigOutputFormat.dict:
-                    data = config_dict_str
-                elif format == ConfigOutputFormat.configmap:                    
+                    # NOTE: Round-trip through JSON to produce primitives
+                    config_dict = context.servo.config.json(**export_options)
+                    data = pformat(json.loads(config_dict))
+                elif format == ConfigOutputFormat.configmap:
                     configured_at = datetime.now(timezone.utc).isoformat()
                     connectors = []
                     for connector in context.servo.connectors:
-                        connectors.append({
-                            "name": connector.name,
-                            "description": connector.description,
-                            "version": str(connector.version),
-                            "url": str(connector.homepage),
-                            "config_key": connector.config_key,
-                        })
+                        connectors.append(
+                            {
+                                "name": connector.name,
+                                "type": connector.full_name,
+                                "description": connector.description,
+                                "version": str(connector.version),
+                                "url": str(connector.homepage),                                
+                            }
+                        )
                     connectors_json_str = json.dumps(connectors, indent=None)
 
                     configmap = {
@@ -1125,13 +1210,19 @@ class ServoCLI(CLI):
                             "annotations": {
                                 "servo.opsani.com/configured_at": configured_at,
                                 "servo.opsani.com/connectors": connectors_json_str,
-                            }
+                            },
                         },
                         "data": {
-                            "servo.yaml": PreservedScalarString(config_yaml)
-                        }
+                            "servo.yaml": PreservedScalarString(
+                                context.servo.config.yaml(
+                                    sort_keys=True, **export_options
+                                )
+                            )
+                        },
                     }
-                    data = yaml.dump(configmap, indent=2, sort_keys=False, explicit_start=True)
+                    data = yaml.dump(
+                        configmap, indent=2, sort_keys=False, explicit_start=True
+                    )
                 else:
                     raise RuntimeError(
                         "no handler configured for output format {format}"
@@ -1202,7 +1293,7 @@ class ServoCLI(CLI):
                 else:
                     CLI.assemble_from_context(context)
                     config_model = context.servo.config.__class__
-                
+
                 if format == SchemaOutputFormat.json:
                     output_data = config_model.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
@@ -1225,7 +1316,6 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                metavar="CONNECTORS",
                 help="Connectors to validate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
             file: Path = typer.Option(
@@ -1267,7 +1357,6 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                metavar="CONNECTORS",
                 help="Connectors to generate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
             file: Path = typer.Option(
@@ -1312,7 +1401,7 @@ class ServoCLI(CLI):
 
             # Build a settings model from our routes
             config_model = _create_config_model_from_routes(routes)
-            settings = config_model.generate()
+            config = config_model.generate()
 
             if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary
@@ -1327,27 +1416,21 @@ class ServoCLI(CLI):
                         connectors_dict[identifier] = identifier
 
                 if aliased:
-                    settings.connectors = connectors_dict
+                    config.connectors = connectors_dict
                 else:
                     # If there are no aliases just assign input values
-                    settings.connectors = connectors
+                    config.connectors = connectors
 
-            # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
-            schema = json.loads(
-                json.dumps(
-                    settings.dict(
-                        by_alias=True, exclude_unset=exclude_unset, exclude=exclude
-                    )
-                )
+            config_yaml = config.yaml(
+                by_alias=True, exclude_unset=exclude_unset, exclude=exclude
             )
             if file.exists() and force == False:
                 delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
                 if not delete:
                     raise typer.Abort()
-            config = yaml.dump(schema)
-            file.write_text(config)
+            file.write_text(config_yaml)
             if not quiet:
-                typer.echo(highlight(config, YamlLexer(), TerminalFormatter()))
+                typer.echo(highlight(config_yaml, YamlLexer(), TerminalFormatter()))
                 typer.echo(f"Generated {file}")
 
     def add_connector_commands(self) -> None:
@@ -1398,6 +1481,10 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def version(
             context: Context,
+            connector: Optional[str] = typer.Argument(
+                None,
+                help="Display version for a connector",
+            ),
             short: bool = typer.Option(
                 False, "--short", "-s", help="Display short version details",
             ),
@@ -1408,14 +1495,20 @@ class ServoCLI(CLI):
             """
             Display version
             """
-            # TODO: Update to work with specific connectors
+            if connector:
+                connector_class = _connector_class_from_string(connector)
+                if not connector_class:
+                    raise typer.BadParameter(f"no connector found for key '{identifier}'")
+            else:
+                connector_class = Servo
+            
             if short:
                 if format == VersionOutputFormat.text:
-                    typer.echo(f"{Servo.name} v{Servo.version}")
+                    typer.echo(f"{connector_class.full_name} v{connector_class.version}")
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": Servo.name,
-                        "version": str(Servo.version),
+                        "name": connector_class.full_name,
+                        "version": str(connector_class.version),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:
@@ -1424,20 +1517,20 @@ class ServoCLI(CLI):
                 if format == VersionOutputFormat.text:
                     typer.echo(
                         (
-                            f"{Servo.name} v{Servo.version} ({Servo.maturity})\n"
-                            f"{Servo.description}\n"
-                            f"{Servo.homepage}\n"
-                            f"Licensed under the terms of {Servo.license}"
+                            f"{connector_class.full_name} v{connector_class.version} ({connector_class.maturity})\n"
+                            f"{connector_class.description}\n"
+                            f"{connector_class.homepage}\n"
+                            f"Licensed under the terms of {connector_class.license}"
                         )
                     )
                 elif format == VersionOutputFormat.json:
                     version_info = {
-                        "name": Servo.name,
-                        "version": str(Servo.version),
-                        "maturity": str(Servo.maturity),
-                        "description": Servo.description,
-                        "homepage": Servo.homepage,
-                        "license": str(Servo.license),
+                        "name": connector_class.full_name,
+                        "version": str(connector_class.version),
+                        "maturity": str(connector_class.maturity),
+                        "description": connector_class.description,
+                        "homepage": connector_class.homepage,
+                        "license": str(connector_class.license),
                     }
                     typer.echo(json.dumps(version_info, indent=2))
                 else:

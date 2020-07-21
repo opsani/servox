@@ -1,9 +1,12 @@
 import abc
+import asyncio
+import importlib
+import json
 import logging
 import re
-from inspect import Parameter, Signature
+from contextvars import ContextVar
+from functools import reduce
 from pathlib import Path
-from weakref import WeakKeyDictionary
 from typing import (
     Any,
     Callable,
@@ -17,6 +20,7 @@ from typing import (
     Union,
     get_type_hints,
 )
+from weakref import WeakKeyDictionary
 
 import httpx
 import loguru
@@ -38,12 +42,15 @@ from servo.events import (
     CancelEventError,
     Event,
     EventCallable,
+    EventContext,
     EventError,
     EventHandler,
     EventResult,
     Preposition,
+    get_event,
 )
-from servo.types import License, Maturity, Version
+from servo.repeating import RepeatingMixin
+from servo.types import *
 from servo.utilities import join_to_series
 
 OPSANI_API_BASE_URL = "https://api.opsani.com/"
@@ -67,7 +74,7 @@ class Optimizer(BaseSettings):
     deployed under this domain name umbrella for easy access and autocompletion ergonomics.
     """
 
-    app_name: constr(regex=r"^[a-z\-]{3,64}$")
+    app_name: constr(regex=r"^[a-z\-\.0-9]{3,64}$")
     """
     The symbolic name of the application or servoce under optimization in a string of URL-safe characters between 3 and 64
     characters in length 
@@ -101,13 +108,15 @@ class Optimizer(BaseSettings):
         of the form `example.com/my-app` or `another.com/app-2`.
         """
         return f"{self.org_domain}/{self.app_name}"
-    
+
     @property
     def api_url(self) -> str:
         """
         Returns a complete URL for interacting with the optimizer API.
         """
-        return f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+        return (
+            f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+        )
 
     class Config:
         env_file = ".env"
@@ -120,6 +129,10 @@ class Optimizer(BaseSettings):
 
 
 DEFAULT_TITLE = "Connector Configuration Schema"
+DEFAULT_JSON_ENCODERS = {
+    # Serialize Duration as Golang duration strings (treated as a timedelta otherwise)
+    Duration: lambda d: f"{d}"
+}
 
 
 class BaseConfiguration(BaseSettings):
@@ -186,11 +199,55 @@ class BaseConfiguration(BaseSettings):
         for name, field in cls.__fields__.items():
             field.field_info.extra["env_names"] = {f"{prefix}{name}".upper()}
 
+    def yaml(
+        self,
+        *,
+        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        encoder: Optional[Callable[[Any], Any]] = None,
+        **dumps_kwargs: Any,
+    ) -> str:
+        """
+        Generate a YAML representation of the configuration.
+
+        Arguments are passed through to the Pydantic `BaseModel.json` method.
+        """
+        # NOTE: We have to serialize through JSON first (not all fields serialize directly to YAML)
+        config_json = self.json(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+            encoder=encoder,
+            **dumps_kwargs,
+        )
+        return yaml.dump(json.loads(config_json))
+
+    @staticmethod
+    def json_encoders(
+        encoders: Dict[Type[Any], Callable[..., Any]] = {}
+    ) -> Dict[Type[Any], Callable[..., Any]]:
+        """
+        Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes 
+        when `json_encoders` need to be customized. Encoders provided in the encoders argument 
+        are merged into the returned dict and take precedence over the defaults.
+        """
+        return {**DEFAULT_JSON_ENCODERS, **encoders}
+
     class Config:
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
         title = DEFAULT_TITLE
+        json_encoders = DEFAULT_JSON_ENCODERS
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
@@ -203,8 +260,11 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
 
 # Global registries
 _connector_subclasses: Set[Type["Connector"]] = set()
-_events: Dict[str, Event] = {}
 _connector_event_bus = WeakKeyDictionary()
+
+# Context vars for asyncio tasks managed by run_event_handlers
+_connector_context_var = ContextVar('servo.connector', default=None)
+_event_context_var = ContextVar('servo.event', default=None)
 
 # NOTE: Boolean flag to know if we can safely reference Connector from the metaclass
 _is_base_connector_class_defined = False
@@ -232,14 +292,18 @@ class ConnectorMetaclass(ModelMetaclass):
         return cls
 
 
-class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
+class Connector(BaseModel, abc.ABC, RepeatingMixin, metaclass=ConnectorMetaclass):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
 
     # Connector metadata
-    name: ClassVar[str] = None
+    name: str = None
     """Name of the connector, by default derived from the class name.
+    """
+
+    full_name: ClassVar[str] = None
+    """The full name of the connector for referencing it unambiguously.
     """
 
     version: ClassVar[Version] = None
@@ -278,10 +342,6 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     """Configuration for the connector set explicitly or loaded from a config file.
     """
 
-    config_key: Optional[str] = None
-    """Key-path to the root of the connector's configuration.
-    """
-
     ##
     # Configuration
 
@@ -298,14 +358,14 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         ), "version is not a semantic versioning descriptor"
         return v
 
-    @validator("config_key")
+    @validator("name")
     @classmethod
-    def validate_config_key(cls, v):
+    def validate_name(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
-        ), "key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
+        ), "names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
         return v
-    
+
     @classmethod
     def config_model(cls) -> Type["BaseConfiguration"]:
         """
@@ -321,51 +381,13 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
     ##
     # Events
 
-    @staticmethod
-    def events() -> List[Event]:
-        """
-        Return all registered events.
-        """
-        return list(_events.values())
-
-    @staticmethod
-    def get_event(name: str) -> Optional[Event]:
-        """
-        Retrieve an event by name or `None` if it does not exist.
-        """
-        return _events.get(name, None)
-
-    @staticmethod
-    def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
-        if _events.get(name, None):
-            raise ValueError(f"Event '{name}' has already been created")
-
-        signature = (
-            signature
-            if isinstance(signature, Signature)
-            else Signature.from_callable(signature)
-        )
-        if list(
-            filter(
-                lambda param: param.kind == Parameter.VAR_POSITIONAL,
-                signature.parameters.values(),
-            )
-        ):
-            raise TypeError(
-                f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
-            )
-
-        event = Event(name=name, signature=signature)
-        _events[name] = event
-        return event
-
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:
         """
         Returns True if the Connector processes the specified event (before, on, or after).
         """
         if isinstance(event, str):
-            event = _events.get(event)
+            event = get_event(event)
 
         handlers = list(
             filter(lambda handler: handler.event == event, cls.__event_handlers__)
@@ -380,7 +402,7 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         Retrieves the event handlers for the given event and preposition.
         """
         if isinstance(event, str):
-            event = _events.get(event)
+            event = get_event(event, None)
 
         return list(
             filter(
@@ -391,15 +413,37 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         )
 
     ##
-    # Event processing
-
-    def dispatch_event(
+    # Event processing  
+      
+    def broadcast_event(
         self,
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List['Connector']] = None,
-        exclude: Optional[List['Connector']] = None,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Broadcast an event asynchronously in a fire and forget manner.
+
+        Useful for dispatching notification events where you do not need
+        or care about the result.
+        """
+        return asyncio.create_task(
+            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+        )
+
+    async def dispatch_event(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -418,106 +462,149 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
         """
         results: List[EventResult] = []
         connectors = include if include is not None else self.__connectors__
-        event = _events[event] if isinstance(event, str) else event
+        event = get_event(event) if isinstance(event, str) else event
 
         if exclude:
-            # NOTE: We filter by key-paths to avoid recursive hell in Pydantic
-            # TODO: Is this necessary/correct? Should just be `config_key` ?
-            excluded_keypaths = list(map(lambda c: c.__config_key__, exclude))
+            # NOTE: We filter by name to avoid recursive hell in Pydantic
+            excluded_names = list(map(lambda c: c.name, exclude))
             connectors = list(
-                filter(lambda c: c.__config_key__ not in excluded_keypaths, connectors)
+                filter(lambda c: c.name not in excluded_names, connectors)
             )
 
         # Invoke the before event handlers
         if prepositions & Preposition.BEFORE:
-            try:
+            try:                
                 for connector in connectors:
-                    connector.process_event(event, Preposition.BEFORE, *args, **kwargs)
+                    await connector.run_event_handlers(event, Preposition.BEFORE, *args, **kwargs)
             except CancelEventError as error:
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
 
-        # Invoke the on event handlers and gather results        
+        # Invoke the on event handlers and gather results
         if prepositions & Preposition.ON:
-            for connector in connectors:
-                connector_results = connector.process_event(
-                    event, Preposition.ON, *args, **kwargs
-                )
-                if connector_results is not None:
-                    results.extend(connector_results)
-                    if first:
+            if first:
+                # A single responder has been requested
+                for connector in connectors:
+                    results = await connector.run_event_handlers(event, Preposition.ON, *args, **kwargs)
+                    if results:
                         break
+            else:
+                group = asyncio.gather(
+                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors))
+                )
+                results = await group
+                results = list(filter(lambda r: r is not None, results))
+                if results:
+                    results = reduce(lambda x, y: x+y, results)
 
         # Invoke the after event handlers
         if prepositions & Preposition.AFTER:
-            after_args = list(args)
-            after_args.insert(0, results)
-            for connector in connectors:
-                connector.process_event(
-                    event, Preposition.AFTER, results, *args, **kwargs
-                )
+            await asyncio.gather(
+                *list(map(lambda c: c.run_event_handlers(event, Preposition.AFTER, results, *args, **kwargs), connectors))
+            )
 
         if first:
             return results[0] if results else None
 
         return results
 
-    def process_event(
+    def dispatch_event_sync(
+        self,
+        event: Union[Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List["Connector"]] = None,
+        exclude: Optional[List["Connector"]] = None,
+        prepositions: Preposition = (
+            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+        ),
+        **kwargs,
+    ) -> Union[EventResult, List[EventResult]]:
+        """
+        Wraps an event dispatched from a synchronous caller with `asyncio.run` and returns the results.
+
+        This interface exists primarily for use from the CLI. It cannot be invoked from within the asyncio environment.
+        """
+        return asyncio.run(
+            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+        )
+
+    async def run_event_handlers(
         self, event: Event, preposition: Preposition, *args, **kwargs
     ) -> Optional[List[EventResult]]:
         """
-        Process an event and return the results.
-        Returns None if the connector does not respond to the event.
+        Run handlers for the given event and preposition and and return the results or None if there are no handlers.
         """
         event_handlers = self.get_event_handlers(event, preposition)
         if len(event_handlers) == 0:
             return None
 
         results: List[EventResult] = []
-        for event_handler in event_handlers:
-            # NOTE: Explicit kwargs take precendence over those defined during handler declaration
-            handler_kwargs = event_handler.kwargs.copy()
-            handler_kwargs.update(kwargs)
-            try:
-                value = event_handler.handler(self, *args, **kwargs)
-            except CancelEventError as error:
-                if preposition != Preposition.BEFORE:
-                    raise TypeError(
-                        f"Cannot cancel an event from an {preposition} handler"
-                    ) from error
+        try:
+            prev_connector_token = _connector_context_var.set(self)
+            prev_event_token = _event_context_var.set(EventContext(event=event, preposition=preposition))
+            for event_handler in event_handlers:
+                # NOTE: Explicit kwargs take precendence over those defined during handler declaration
+                handler_kwargs = event_handler.kwargs.copy()
+                handler_kwargs.update(kwargs)
+                try:
+                    if asyncio.iscoroutinefunction(event_handler.handler):
+                        value = await event_handler.handler(self, *args, **kwargs)
+                    else:
+                        value = event_handler.handler(self, *args, **kwargs)
+                except CancelEventError as error:
+                    if preposition != Preposition.BEFORE:
+                        raise TypeError(
+                            f"Cannot cancel an event from an {preposition} handler"
+                        ) from error
+                    
+                    # Annotate the exception and reraise to halt execution
+                    error.result = EventResult(
+                        connector=self,
+                        event=event,
+                        preposition=preposition,
+                        handler=event_handler,
+                        value=error,
+                    )
+                    raise error
+                except EventError as error:
+                    value = error
 
-                # Annotate the exception and reraise to halt execution
-                error.result = EventResult(
+                result = EventResult(
                     connector=self,
                     event=event,
                     preposition=preposition,
                     handler=event_handler,
-                    value=error,
+                    value=value,
                 )
-                raise error
-            except EventError as error:
-                value = error
-
-            result = EventResult(
-                connector=self,
-                event=event,
-                preposition=preposition,
-                handler=event_handler,
-                value=value,
-            )
-            results.append(result)
+                results.append(result)
+        finally:
+            _connector_context_var.reset(prev_connector_token)
+            _event_context_var.reset(prev_event_token)
 
         return results
+    
+    @property
+    def event_context(self) -> Optional[EventContext]:
+        """
+        Returns an object that describes the actively executing event context, if any.
+
+        The event context is helpful in introspecting concurrent runtime state without having to pass
+        around info across methods. The `EventContext` object can be compared to strings for convenience
+        and supports string comparison to both `event_name` and `preposition:event_name` constructs for
+        easily checking current state.
+        """
+        return _event_context_var.get()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
-        # TODO: Do I need this? I could just put it as a class var also!
-        cls.__config_key__ = _config_key_for_connector_class(cls)
 
-        cls.name = cls.__name__.replace("Connector", " Connector")
+        cls.name = cls.__name__.replace("Connector", "")
+        cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
+        cls.__default_name__ = _name_for_connector_class(cls)
 
         # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
@@ -531,60 +618,63 @@ class Connector(BaseModel, abc.ABC, metaclass=ConnectorMetaclass):
                 cls.__event_handlers__.append(handler)
 
     def __init__(
-        self, 
+        self,
         *,
-        config_key: Optional[str] = None,
-        __connectors__: List['Connector'] = None,
+        name: Optional[str] = None,
+        __connectors__: List["Connector"] = None,
         **kwargs,
     ):
-        config_key = (
-            config_key
-            if config_key is not None
-            else self.__class__.__config_key__
+        name = (
+            name if name is not None else self.__class__.__default_name__
         )
         super().__init__(
-            config_key=config_key, **kwargs,
+            name=name, **kwargs,
         )
-        
-        # NOTE: Connector references are held off the model so 
+
+        # NOTE: Connector references are held off the model so
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
 
     def __hash__(self):
-        return hash((self.name, self.config_key, id(self),))
-    
+        return hash((self.name, id(self),))
+
     @property
-    def __connectors__(self) -> List['Connector']:
+    def __connectors__(self) -> List["Connector"]:
         return _connector_event_bus[self]
-        
+
     ##
     # Subclass services
 
-    def api_client(self) -> httpx.Client:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""        
+    @property
+    def api_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.optimizer.token}",
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+        }
+
+    def api_client(self) -> httpx.AsyncClient:
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
         headers = {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-        return httpx.Client(base_url=self.optimizer.api_url, headers=headers)
+        return httpx.AsyncClient(base_url=self.optimizer.api_url, headers=self.api_headers)
+    
+    def api_client_sync(self) -> httpx.Client:
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
+        return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
 
     @property
     def logger(self) -> logging.Logger:
         """Returns the logger"""
-        return loguru.logger
-
+        return loguru.logger.bind(connector=self.name)
 
 _is_base_connector_class_defined = True
 EventResult.update_forward_refs(Connector=Connector)
 EventHandler.update_forward_refs(Connector=Connector)
-
-
-def _config_key_for_connector_class(cls: Type[Connector]) -> str:
-    name = re.sub(r"Connector$", "", cls.__name__)
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
-
 
 def metadata(
     name: Optional[str] = None,
@@ -618,315 +708,59 @@ def metadata(
 
     return decorator
 
+##
+# Utility functions
 
-def event(
-    name: Optional[str] = None, *, handler: bool = False
-) -> Callable[[EventCallable], EventCallable]:
-    """
-    Creates a new event using the signature of the decorated function.
-
-    Events must be defined before handlers can be registered using before_event, on_event, after_event, or
-    event_handler.
-
-    :param handler: When True, the decorated function implementation is registered as an on event handler.
-    """
-
-    def decorator(fn: EventCallable) -> EventCallable:
-        event_name = name if name else fn.__name__
-        Connector.create_event(event_name, fn)
-
-        if handler:
-            decorator = on_event(event_name)
-            return decorator(fn)
-        else:
-            return fn
-
-    return decorator
+def _name_for_connector_class(cls: Type[Connector]) -> str:
+    name = re.sub(r"Connector$", "", cls.__name__)
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
 
 
-def before_event(
-    event: Optional[str] = None, **kwargs
-) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run before the specified event.
+def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
+    if not isinstance(connector, str):
+        return None
 
-    Before event handlers require no arguments positional or keyword arguments and return `None`. Any arguments
-    provided via the `kwargs` parameter are passed through at invocation time. Before event handlers 
-    can cancel event propagation by raising `CancelEventError`. Canceled events are reported to the
-    event originator by attaching the `CancelEventError` instance to the `EventResult`.
-
-    :param event: The event or name of the event to run the handler before.
-    :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
-    """
-    return event_handler(event, Preposition.BEFORE, **kwargs)
-
-
-def on_event(
-    event: Optional[str] = None, **kwargs
-) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run on the specified event.
-
-    :param event: The event or name of the event to run the handler on.
-    :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
-    """
-    return event_handler(event, Preposition.ON, **kwargs)
-
-
-def after_event(
-    event: Optional[str] = None, **kwargs
-) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run after the specified event.
-
-    After event handlers are invoked with the event results as their first argument (type `List[EventResult]`)
-    and return `None`.
-
-    :param event: The event or name of the event to run the handler after.
-    :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
-    """
-    return event_handler(event, Preposition.AFTER, **kwargs)
-
-
-def event_handler(
-    event_name: Optional[str] = None,
-    preposition: Preposition = Preposition.ON,
-    **kwargs,
-) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler.
-
-    Event handlers are the foundational mechanism for connectors to provide functionality
-    to the servo assembly. As events occur during operation, handlers are invoked and the
-    results are aggregated and evalauted by the servo. Event handlers are registered for
-    a specific event preposition, enabling them to execute before, after, or during an event.
-
-    :param event: Specifies the event name. If not given, inferred from the name of the decorated handler function.
-    :param preposition: Specifies the sequencing of a handler in relation to the event.
-    :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
-    """
-
-    def decorator(fn: EventCallable) -> EventCallable:
-        name = event_name if event_name else fn.__name__
-        event = _events.get(name, None)
-        if event is None:
-            raise ValueError(f"Unknown event '{name}'")
-
-        if preposition != Preposition.ON:
-            name = f"{preposition} {name}"
-        handler_signature = Signature.from_callable(fn)
-
-        if preposition == Preposition.BEFORE:
-            before_handler_signature = Signature.from_callable(__before_handler)
-            _validate_handler_signature(
-                handler_signature,
-                event_signature=before_handler_signature,
-                handler_name=name,
-            )
-        elif preposition == Preposition.ON:
-            _validate_handler_signature(
-                handler_signature, event_signature=event.signature, handler_name=name
-            )
-        elif preposition == Preposition.AFTER:
-            after_handler_signature = Signature.from_callable(__after_handler)
-            _validate_handler_signature(
-                handler_signature,
-                event_signature=after_handler_signature,
-                handler_name=name,
-            )
-        else:
-            assert "Undefined preposition value"
-
-        # Annotate the function for processing later, see Connector.__init_subclass__
-        fn.__event_handler__ = EventHandler(
-            event=event, preposition=preposition, handler=fn, kwargs=kwargs
+    # Check for an existing class in the namespace
+    # FIXME: This symbol lookup doesn't seem solid
+    connector_class = globals().get(connector, None)
+    try:
+        connector_class = (
+            eval(connector) if connector_class is None else connector_class
         )
-        return fn
+    except Exception:
+        pass
+    
+    if _validate_class(connector_class):
+        return connector_class
 
-    return decorator
-
-
-def __before_handler(self) -> None:
-    pass
-
-
-def __after_handler(self, results: List[EventResult]) -> None:
-    pass
-
-
-def _validate_handler_signature(
-    handler_signature: Signature, *, event_signature: Signature, handler_name: str
-) -> None:
-    """
-    Validates that the given handler signature is compatible with the event signature. Validation
-    checks the parameter and return value types using annotations. The intent is to immediately
-    expose errors in event handlers rather than encountering them at runtime (which may take 
-    an arbitrary amount of time to trigger a given event). Raises a TypeError when an incompatibility 
-    is encountered.
-
-    :param handler_signature: The event handler signature to validate.
-    :param event_signature: The reference event signature to validate against.
-    :param handler_name: The name of the handler for inclusion in error messages & logs.
-    """
-
-    # Skip the work if the signatures are identical
-    if handler_signature == event_signature:
-        return
-
-    handler_parameters: Mapping[str, Parameter] = handler_signature.parameters
-    handler_positional_parameters = list(
-        filter(
-            lambda param: param.kind
-            in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL],
-            handler_parameters.values(),
-        )
-    )
-    handler_keyword_parameters = dict(
-        filter(
-            lambda item: item[1].kind
-            in [
-                Parameter.KEYWORD_ONLY,
-                Parameter.POSITIONAL_OR_KEYWORD,
-                Parameter.VAR_KEYWORD,
-            ],
-            handler_parameters.items(),
-        )
-    )
-
-    event_parameters: Mapping[str, Parameter] = event_signature.parameters
-    event_positional_parameters = list(
-        filter(
-            lambda param: param.kind
-            in [Parameter.POSITIONAL_ONLY, Parameter.VAR_POSITIONAL],
-            event_parameters.values(),
-        )
-    )
-    event_keyword_parameters = dict(
-        filter(
-            lambda item: item[1].kind
-            in [
-                Parameter.KEYWORD_ONLY,
-                Parameter.POSITIONAL_OR_KEYWORD,
-                Parameter.VAR_KEYWORD,
-            ],
-            event_parameters.items(),
-        )
-    )
-
-    # We assume instance methods
-    args = list(handler_parameters.keys())
-    first_arg = args.pop(0) if args else None
-    if first_arg != "self":
-        raise TypeError(
-            f"Invalid signature for '{handler_name}' event handler: {handler_signature}, \"self\" must be the first argument"
-        )
-
-    # Check return type annotation
-    if handler_signature.return_annotation != event_signature.return_annotation:
-        raise TypeError(
-            f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
-        )
-
-    # Check for extraneous positional parameters on the handler
-    handler_positional_only = list(
-        filter(
-            lambda param: param.kind == Parameter.POSITIONAL_ONLY,
-            handler_positional_parameters,
-        )
-    )
-    event_positional_only = list(
-        filter(
-            lambda param: param.kind == Parameter.POSITIONAL_ONLY,
-            event_positional_parameters,
-        )
-    )
-    if len(handler_positional_only) > len(event_positional_only):
-        extra_param_names = sorted(
-            list(
-                set(map(lambda p: p.name, handler_positional_only))
-                - set(map(lambda p: p.name, event_positional_only))
-            )
-        )
-        raise TypeError(
-            f"Invalid type annotation for '{handler_name}' event handler: encountered extra positional parameters ({join_to_series(extra_param_names)})"
-        )
-
-    # Check for extraneous keyword parameters on the handler
-    handler_keyword_nonvar = dict(
-        filter(
-            lambda item: item[1].kind != Parameter.VAR_KEYWORD,
-            handler_keyword_parameters.items(),
-        )
-    )
-    event_keyword_nonvar = dict(
-        filter(
-            lambda item: item[1].kind != Parameter.VAR_KEYWORD,
-            event_keyword_parameters.items(),
-        )
-    )
-    extraneous_keywords = sorted(
-        list(set(handler_keyword_nonvar.keys()) - set(event_keyword_nonvar.keys()))
-    )
-    if extraneous_keywords:
-        raise TypeError(
-            f"Invalid type annotation for '{handler_name}' event handler: encountered extra parameters ({join_to_series(extraneous_keywords)})"
-        )
-
-    # Iterate the event signature parameters and see if the handler's signature satisfies each one
-    for index, (parameter_name, event_parameter) in enumerate(event_parameters.items()):
-        if event_parameter.kind == Parameter.POSITIONAL_ONLY:
-            if index > len(handler_positional_parameters) - 1:
-                if handler_positional_parameters[-1].kind != Parameter.VAR_POSITIONAL:
-                    raise TypeError(
-                        f"Missing required positional parameter: '{parameter_name}'"
-                    )
-
-            handler_parameter = handler_positional_parameters[index]
-            if handler_parameter != Parameter.VAR_POSITIONAL:
-                # Compare types
-                if handler_parameter.annotation != event_parameter.annotation:
-                    raise TypeError(
-                        f"Incorrect type annotation for positional parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}"
-                    )
-
-                if (
-                    handler_parameter.return_annotation
-                    != event_parameter.return_annotation
-                ):
-                    raise TypeError(
-                        f"Incorrect return type annotation for positional parameter '{parameter_name}': expected {event_parameter.return_annotation}, but found {handler_parameter.return_annotation}"
-                    )
-
-        elif event_parameter.kind == Parameter.VAR_POSITIONAL:
-            # NOTE: This should never happen
-            raise TypeError(
-                "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
-            )
-
-        elif event_parameter.kind in [
-            Parameter.POSITIONAL_OR_KEYWORD,
-            Parameter.KEYWORD_ONLY,
+    # Check if the string is an identifier for a connector
+    for connector_class in _connector_subclasses:
+        if connector == connector_class.__default_name__ or connector in [
+            connector_class.__name__,
+            connector_class.__qualname__,
         ]:
-            if handler_parameter := handler_keyword_parameters.get(
-                parameter_name, None
-            ):
-                # We have the keyword arg, check the types
-                if handler_parameter.annotation != event_parameter.annotation:
-                    raise TypeError(
-                        f"Incorrect type annotation for parameter '{parameter_name}': expected {event_parameter.annotation}, but found {handler_parameter.annotation}"
-                    )
-            else:
-                # Check if the last parameter is a VAR_KEYWORD
-                if (
-                    list(handler_keyword_parameters.values())[-1].kind
-                    != Parameter.VAR_KEYWORD
-                ):
-                    raise TypeError(
-                        f"Missing required parameter: '{parameter_name}': expected signature: {event_signature}"
-                    )
+            return connector_class
 
-        else:
-            assert event_parameter.kind == Parameter.VAR_KEYWORD, event_parameter.kind
+    # Try to load it as a module path
+    if "." in connector:
+        module_path, class_name = connector.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        if hasattr(module, class_name):
+            connector_class = getattr(module, class_name)
+            if _validate_class(connector_class):
+                return connector_class
+
+    return None
+
+def _validate_class(connector: type) -> bool:
+    if connector is None or not isinstance(connector, type):
+        return False
+
+    if not issubclass(connector, Connector):
+        print("RAISING for ", connector)
+        raise TypeError(f"{connector.__name__} is not a Connector subclass")
+
+    return True
 
 
 #####

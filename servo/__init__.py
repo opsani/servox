@@ -7,6 +7,7 @@ for pkg in {"servo", "servox"}:
     except importlib.metadata.PackageNotFoundError:
         pass
 
+import servo.assembly
 import servo.connector
 import servo.events
 import servo.types
@@ -23,18 +24,20 @@ from .events import (
     Preposition,
     EventError,
     CancelEventError,
-)
-from .connector import (
-    Optimizer,
-    BaseConfiguration,
-    Connector,
-    metadata,
+    create_event,
     event,
     before_event,
     on_event,
     after_event,
     event_handler,
 )
+from .connector import (
+    Optimizer,
+    BaseConfiguration,
+    Connector,
+    metadata,
+)
 
-# Pull the types up to the top level
+# Pull the types & utilities up to the top level
 from .types import *
+from .utilities import *

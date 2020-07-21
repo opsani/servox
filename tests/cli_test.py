@@ -1,20 +1,21 @@
 import json
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 import yaml
+from freezegun import freeze_time
+import respx
 from typer import Typer
 from typer.testing import CliRunner
 
 import servo
 from servo.cli import CLI, Context, ServoCLI
 from servo.connector import BaseConfiguration, Optimizer
-from servo.servo import Servo
 from servo.connectors.vegeta import VegetaConnector
-from freezegun import freeze_time
+from servo.servo import Servo
+
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:
@@ -35,7 +36,7 @@ def servo_cli() -> ServoCLI:
 def vegeta_config_file(servo_yaml: Path) -> Path:
     config = {
         "connectors": ["vegeta"],
-        "vegeta": {"duration": 0, "rate": 0, "target": "https://opsani.com/"},
+        "vegeta": {"duration": "25m", "rate": 0, "target": "https://opsani.com/"},
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
@@ -64,7 +65,7 @@ def test_connectors(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.match("NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.match("NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_all(
@@ -72,7 +73,7 @@ def test_connectors_all(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors --all")
     assert result.exit_code == 0
-    assert re.match("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.search("^DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
@@ -84,7 +85,7 @@ def test_connectors_verbose(
     result = cli_runner.invoke(servo_cli, "connectors -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
+        "NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
         result.stdout,
     )
 
@@ -95,7 +96,7 @@ def test_connectors_all_verbose(
     result = cli_runner.invoke(servo_cli, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
+        "DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
     )
 
 
@@ -110,7 +111,17 @@ def test_check(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 0
-    assert re.match("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
+    assert re.search("CONNECTOR\\s+STATUS", result.stdout)
+
+@respx.mock
+def test_check_verbose(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
+    result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
+    assert request.called
+    assert result.exit_code == 0    
+    assert re.search("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
 
 
 def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
@@ -134,14 +145,16 @@ def test_show_components(
     assert result.exit_code == 0
     assert re.match("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
+
 def test_show_events_empty_config_file(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)    
+    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert "check    Servo\n" in result.stdout
     assert len(result.stdout.split("\n")) == 3
+
 
 def test_show_events_no_config_file(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
@@ -160,7 +173,7 @@ def test_show_events_all(
     result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
 
@@ -179,9 +192,9 @@ def test_show_events_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
-    assert not re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("measure\\s+Measure\n", result.stdout)
+    assert not re.search("before measure\\s+Measure", result.stdout)
+    assert not re.search("after measure\\s+Measure", result.stdout)
     assert len(result.stdout.split("\n")) > 3
 
 
@@ -192,8 +205,8 @@ def test_show_events_no_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_after_on(
@@ -205,8 +218,8 @@ def test_show_events_after_on(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_no_on_before(
@@ -218,9 +231,9 @@ def test_show_events_no_on_before(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert not re.search("^measure\\s+Measure\n", result.stdout)
+    assert re.search("before measure\\s+Measure", result.stdout)
+    assert re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_no_after(
@@ -232,9 +245,9 @@ def test_show_events_no_after(
     assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+MeasureConnector\n", result.stdout)
-    assert re.search("before measure\\s+MeasureConnector", result.stdout)
-    assert not re.search("after measure\\s+MeasureConnector", result.stdout)
+    assert re.search("measure\\s+Measure\n", result.stdout)
+    assert re.search("before measure\\s+Measure", result.stdout)
+    assert not re.search("after measure\\s+Measure", result.stdout)
 
 
 def test_show_events_by_connector(
@@ -246,8 +259,9 @@ def test_show_events_by_connector(
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
     assert re.search("Servo\\s+check\n", result.stdout)
+    debug(result.stdout)
     assert re.search(
-        "MeasureConnector\\s+before measure\n\\s+measure\n\\s+after measure",
+        "Measure\\s+before measure\n\\s+measure\n\\s+after measure",
         result.stdout,
         flags=re.MULTILINE,
     )
@@ -324,20 +338,20 @@ def test_config_yaml_file(
     assert result.exit_code == 0
     assert "connectors:" in path.read_text()
 
-@freeze_time('2020-01-01')
+
+@freeze_time("2020-01-01")
 def test_config_configmap_file(
     cli_runner: CliRunner,
     servo_cli: Typer,
     vegeta_config_file: Path,
     tmp_path: Path,
     optimizer_env: None,
-    mocker
+    mocker,
 ) -> None:
     mocker.patch.object(Servo, "version", "100.0.0")
     mocker.patch.object(VegetaConnector, "version", "100.0.0")
     path = tmp_path / "settings.yaml"
-    result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
-    assert result.exit_code == 0
+    cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     assert path.read_text() == (
         '---\n'
         'apiVersion: v1\n'
@@ -349,15 +363,15 @@ def test_config_configmap_file(
         '    app.kubernetes.io/version: 100.0.0\n'
         '  annotations:\n'
         "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
-        '    servo.opsani.com/connectors: \'[{"name": "Vegeta Connector", "description": "Vegeta\n'
-        '      load testing connector", "version": "100.0.0", "url": "https://github.com/opsani/vegeta-connector",\n'
-        '      "config_key": "vegeta"}]\'\n'
+        '    servo.opsani.com/connectors: \'[{"name": "vegeta", "type": "Vegeta Connector",\n'
+        '      "description": "Vegeta load testing connector", "version": "100.0.0", "url":\n'
+        '      "https://github.com/opsani/vegeta-connector"}]\'\n'
         'data:\n'
         '  servo.yaml: |\n'
         '    connectors:\n'
         '    - vegeta\n'
         '    vegeta:\n'
-        "      duration: '0'\n"
+        '      duration: 25m\n'
         "      rate: '0'\n"
         '      target: https://opsani.com/\n'
     )
@@ -534,7 +548,6 @@ class TestCommands:
 
     def test_schema_dict(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f dict")
-        debug(result.stderr, result.stdout)
         assert result.exit_code == 0
         dict = eval(result.stdout)
         assert dict["title"] == "Servo Configuration Schema"

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from inspect import Signature
@@ -8,22 +9,30 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
-from servo.connectors.vegeta import VegetaConnector
 from servo import __version__, connector
 from servo.connector import (
     Connector,
     Optimizer,
+)
+from servo.connectors.vegeta import VegetaConnector
+from servo.events import (
+    CancelEventError, 
+    EventError, 
+    EventResult, 
+    Preposition, 
+    _events,
     after_event,
     before_event,
+    create_event,
     event,
     on_event,
-    _events,
 )
-from servo.events import CancelEventError, EventError, EventResult, Preposition
-from servo.servo import BaseServoConfiguration, Events, Servo, ServoAssembly
+from servo.assembly import BaseServoConfiguration, Assembly
+from servo.servo import Events, Servo
 from servo.types import Control, Measurement
 from tests.test_helpers import environment_overrides
 
+pytestmark = pytest.mark.asyncio
 
 def test_version():
     assert __version__
@@ -80,7 +89,7 @@ class SecondTestServoConnector(Connector):
 
 
 @pytest.fixture()
-def assembly(servo_yaml: Path) -> ServoAssembly:
+def assembly(servo_yaml: Path) -> Assembly:
     config = {
         "connectors": ["first_test_servo", "second_test_servo"],
         "first_test_servo": {},
@@ -90,33 +99,35 @@ def assembly(servo_yaml: Path) -> ServoAssembly:
 
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+    assembly, servo, DynamicServoSettings = Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly
 
 
 @pytest.fixture()
-def servo(assembly: ServoAssembly) -> Servo:
+def servo(assembly: Assembly) -> Servo:
     return assembly.servo
 
 
 def test_all_connector_types() -> None:
-    c = ServoAssembly.construct().all_connector_types()
+    c = Assembly.construct().all_connector_types()
     assert FirstTestServoConnector in c
 
 
-def test_servo_routes(servo: Servo) -> None:
-    first_connector = servo.routes["first_test_servo"]
-    assert first_connector.name == "FirstTestServo Connector"
-    results = servo.dispatch_event("this_is_an_event", include=[first_connector])
+async def test_servo_routes(servo: Servo) -> None:
+    first_connector = servo.get_connector("first_test_servo")
+    assert first_connector.name == "first_test_servo"
+    assert first_connector.__class__.name == "FirstTestServo"
+    results = await servo.dispatch_event("this_is_an_event", include=[first_connector])
     assert len(results) == 1
     assert results[0].value == "this is the result"
+
 
 def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> None:
     connector_ids = list(map(lambda c: id(c), servo.__connectors__))
     assert connector_ids
-    route_ids = list(map(lambda c: id(c), servo.routes.values()))
+    route_ids = list(map(lambda c: id(c), servo.connectors))
     assert route_ids
     assert connector_ids == (route_ids + [id(servo)])
 
@@ -125,66 +136,68 @@ def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> Non
         subconnector_ids = list(map(lambda c: id(c), conn.__connectors__))
         assert subconnector_ids == connector_ids
 
-def test_dispatch_event(servo: Servo) -> None:
-    results = servo.dispatch_event("this_is_an_event")
+
+async def test_dispatch_event(servo: Servo) -> None:
+    results = await servo.dispatch_event("this_is_an_event")
     assert len(results) == 2
     assert results[0].value == "this is the result"
 
 
-def test_dispatch_event_first(servo: Servo) -> None:
-    result = servo.dispatch_event("this_is_an_event", first=True)
+async def test_dispatch_event_first(servo: Servo) -> None:
+    result = await servo.dispatch_event("this_is_an_event", first=True)
     assert isinstance(result, EventResult)
     assert result.value == "this is the result"
 
 
-def test_dispatch_event_include(servo: Servo) -> None:
+async def test_dispatch_event_include(servo: Servo) -> None:
     first_connector = servo.connectors[0]
-    assert first_connector.name == "FirstTestServo Connector"
-    results = servo.dispatch_event("this_is_an_event", include=[first_connector])
+    assert first_connector.name == "first_test_servo"
+    results = await servo.dispatch_event("this_is_an_event", include=[first_connector])
     assert len(results) == 1
     assert results[0].value == "this is the result"
 
 
-def test_dispatch_event_exclude(servo: Servo) -> None:
+async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert len(servo.connectors) == 2
     first_connector = servo.connectors[0]
-    assert first_connector.name == "FirstTestServo Connector"
+    assert first_connector.name == "first_test_servo"
     second_connector = servo.connectors[1]
-    assert second_connector.name == "SecondTestServo Connector"
+    assert second_connector.name == "second_test_servo"
     event_names = set(_events.keys())
     assert "this_is_an_event" in event_names
-    results = servo.dispatch_event("this_is_an_event", exclude=[first_connector])
+    results = await servo.dispatch_event("this_is_an_event", exclude=[first_connector])
     assert len(results) == 1
     assert results[0].value == "this is a different result"
     assert results[0].connector == second_connector
 
 
-def test_before_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_before_event(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("measure", Preposition.BEFORE)[0]
     spy = mocker.spy(event_handler, "handler")
-    servo.dispatch_event("measure")
+    await servo.dispatch_event("measure")
     spy.assert_called_once()
 
 
-def test_after_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_after_event(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     spy = mocker.spy(event_handler, "handler")
-    servo.dispatch_event("promote")
+    await servo.dispatch_event("promote")
+    await asyncio.sleep(0.1)
     spy.assert_called_once()
 
 
-def test_on_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_on_event(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     spy = mocker.spy(event_handler, "handler")
-    servo.dispatch_event("promote")
+    await servo.dispatch_event("promote")
     spy.assert_called_once()
 
 
-def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
@@ -194,7 +207,7 @@ def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     # Mock the before handler to throw a cancel exception
     mock = mocker.patch.object(before_handler, "handler")
     mock.side_effect = CancelEventError()
-    results = servo.dispatch_event("promote")
+    results = await servo.dispatch_event("promote")
 
     # Check that on and after callbacks were never called
     on_spy.assert_not_called()
@@ -211,30 +224,31 @@ def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     assert result.preposition == Preposition.BEFORE
 
 
-def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
     mock.side_effect = CancelEventError()
     with pytest.raises(TypeError) as error:
-        servo.dispatch_event("promote")
+        await servo.dispatch_event("promote")
     assert str(error.value) == "Cannot cancel an event from an on handler"
 
 
-def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+async def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
     mock.side_effect = CancelEventError()
     with pytest.raises(TypeError) as error:
-        servo.dispatch_event("promote")
+        await servo.dispatch_event("promote")
+        await asyncio.sleep(0.1)
     assert str(error.value) == "Cannot cancel an event from an after handler"
 
 
-def test_after_handlers_are_called_on_failure(mocker, servo: servo):
-    connector = servo.routes["first_test_servo"]
+async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     spy = mocker.spy(after_handler, "handler")
 
@@ -242,7 +256,8 @@ def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     mock = mocker.patch.object(on_handler, "handler")
     mock.side_effect = EventError()
-    results = servo.dispatch_event("promote")
+    results = await servo.dispatch_event("promote")
+    await asyncio.sleep(0.1)
 
     spy.assert_called_once()
 
@@ -257,50 +272,53 @@ def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     assert result.preposition == Preposition.ON
 
 
-def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     before_spy = mocker.spy(before_handler, "handler")
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     after_spy = mocker.spy(after_handler, "handler")
-    servo.dispatch_event("promote", prepositions=Preposition.ON)
+    await servo.dispatch_event("promote", prepositions=Preposition.ON)
     before_spy.assert_not_called()
     on_spy.assert_called_once()
     after_spy.assert_not_called()
 
 
-def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     before_handler = connector.get_event_handlers("promote", Preposition.BEFORE)[0]
     before_spy = mocker.spy(before_handler, "handler")
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     after_spy = mocker.spy(after_handler, "handler")
-    servo.dispatch_event("promote", prepositions=Preposition.ON | Preposition.BEFORE)
+    await servo.dispatch_event("promote", prepositions=Preposition.ON | Preposition.BEFORE)
     before_spy.assert_called_once()
     on_spy.assert_called_once()
     after_spy.assert_not_called()
 
 
-def test_startup_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_startup_event(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    servo.startup()
+    await asyncio.sleep(0.1)
     assert connector.started_up == True
 
 
-def test_shutdown_event(mocker, servo: servo) -> None:
-    connector = servo.routes["first_test_servo"]
+async def test_shutdown_event(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
     servo.shutdown()
+    await asyncio.sleep(0.1)
     on_spy.assert_called()
 
 
-def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
+async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
     with pytest.raises(KeyError) as error:
-        servo.dispatch_event("this_is_not_an_event", prepositions=Preposition.ON)
+        await servo.dispatch_event("this_is_not_an_event", prepositions=Preposition.ON)
     assert str(error.value) == "'this_is_not_an_event'"
 
 
@@ -310,14 +328,14 @@ def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
 
 def test_creating_event_programmatically(random_string: str) -> None:
     signature = Signature.from_callable(test_shutdown_event)
-    Connector.create_event(random_string, signature)
+    create_event(random_string, signature)
     event = _events[random_string]
     assert event.name == random_string
     assert event.signature == signature
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
-    Connector.create_event(random_string, test_shutdown_event)
+    create_event(random_string, test_shutdown_event)
     event = _events[random_string]
     assert event.name == random_string
     assert event.signature == Signature.from_callable(test_shutdown_event)
@@ -327,7 +345,7 @@ def test_redeclaring_an_existing_event_fails() -> None:
     with pytest.raises(ValueError) as error:
 
         class InvalidConnector:
-            @connector.event("adjust")
+            @event("adjust")
             def invalid_adjust(self) -> None:
                 pass
 
@@ -339,7 +357,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
     with pytest.raises(TypeError) as error:
 
         class InvalidConnector:
-            @connector.on_event("adjust")
+            @on_event("adjust")
             def invalid_adjust(self) -> None:
                 pass
 
@@ -353,7 +371,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 def test_registering_event_handler_fails_with_no_self() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("adjust")
+        @on_event("adjust")
         def invalid_adjust() -> None:
             pass
 
@@ -368,7 +386,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
     with pytest.raises(TypeError) as error:
 
         class InvalidConnector:
-            @connector.event("failio")
+            @event("failio")
             def invalid_event(self, *args) -> None:
                 pass
 
@@ -382,7 +400,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
 def test_registering_event_handler_with_missing_positional_param_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("adjust")
+        @on_event("adjust")
         def invalid_adjust(self) -> dict:
             pass
 
@@ -396,19 +414,19 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("measure")
+        @on_event("measure")
         def invalid_measure(self, *, control: Control = Control()) -> Measurement:
             pass
 
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: List[str] = None, control: servo.types.Control = Control(duration=None, past=0, warmup=0, delay=0, load=None)) -> servo.types.Measurement"
+        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: List[str] = None, control: servo.types.Control = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> servo.types.Measurement"
     )
 
 
 def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
-    @connector.on_event("measure")
+    @on_event("measure")
     def invalid_measure(self, *, control: Control = Control(), **kwargs) -> Measurement:
         pass
 
@@ -416,7 +434,7 @@ def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_
 def test_registering_event_handler_with_too_many_positional_params_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("startup")
+        @on_event("startup")
         def invalid_measure(self, invalid, /) -> None:
             pass
 
@@ -430,7 +448,7 @@ def test_registering_event_handler_with_too_many_positional_params_fails() -> No
 def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.on_event("startup")
+        @on_event("startup")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
 
@@ -442,7 +460,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
 
 
 def test_registering_before_handlers() -> None:
-    @connector.before_event("measure")
+    @before_event("measure")
     def before_measure(self) -> None:
         pass
 
@@ -453,19 +471,19 @@ def test_registering_before_handlers() -> None:
 def test_registering_before_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.before_event("measure")
+        @before_event("measure")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
 
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'before measure' event handler: encountered extra parameters (another and invalid)"
+        == "Invalid type annotation for 'before:measure' event handler: encountered extra parameters (another and invalid)"
     )
 
 
 def test_validation_of_before_handlers_ignores_kwargs() -> None:
-    @connector.before_event("measure")
+    @before_event("measure")
     def before_measure(self, **kwargs) -> None:
         pass
 
@@ -474,18 +492,18 @@ def test_validation_of_before_handlers_ignores_kwargs() -> None:
 
 
 def test_validation_of_after_handlers() -> None:
-    @connector.after_event("measure")
-    def after_event(self, results: List[EventResult]) -> None:
+    @after_event("measure")
+    def after_measure(self, results: List[EventResult]) -> None:
         pass
 
-    assert after_event.__event_handler__.event.name == "measure"
-    assert after_event.__event_handler__.preposition == Preposition.AFTER
+    assert after_measure.__event_handler__.event.name == "measure"
+    assert after_measure.__event_handler__.preposition == Preposition.AFTER
 
 
 def test_registering_after_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
 
-        @connector.after_event("measure")
+        @after_event("measure")
         def invalid_measure(
             self, results: List[EventResult], invalid: str, another: int
         ) -> None:
@@ -494,12 +512,12 @@ def test_registering_after_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'after measure' event handler: encountered extra parameters (another and invalid)"
+        == "Invalid type annotation for 'after:measure' event handler: encountered extra parameters (another and invalid)"
     )
 
 
 def test_validation_of_after_handlers_ignores_kwargs() -> None:
-    @connector.after_event("measure")
+    @after_event("measure")
     def after_measure(self, results: List[EventResult], **kwargs) -> None:
         pass
 
@@ -507,10 +525,10 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
     assert after_measure.__event_handler__.preposition == Preposition.AFTER
 
 
-class TestServoAssembly:
+class TestAssembly:
     def test_assemble_empty_config_active_connectors(self, servo_yaml: Path):
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         assert assembly.connectors == [servo]
@@ -524,7 +542,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         connector = servo.connectors[0]
@@ -543,7 +561,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+        assembly, servo, DynamicServoSettings = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
@@ -552,277 +570,420 @@ class TestServoAssembly:
         # Description on parent class can be squirrely
         assert schema["properties"]["description"]["env_names"] == ["SERVO_DESCRIPTION"]
         assert schema == {
-            "title": "Servo Configuration Schema",
-            "description": "Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0",
-            "type": "object",
-            "properties": {
-                "description": {
-                    "title": "Description",
-                    "description": "An optional annotation describing the configuration.",
-                    "env_names": ["SERVO_DESCRIPTION",],
-                    "type": "string",
-                },
-                "connectors": {
-                    "title": "Connectors",
-                    "description": (
-                        "An optional, explicit configuration of the active connectors.\n"
-                        "\n"
-                        "Configurable as either an array of connector identifiers (names or class) or\n"
-                        "a dictionary where the keys specify the key path to the connectors configuration\n"
-                        "and the values identify the connector (by name or class name)."
-                    ),
-                    "examples": [
-                        ["kubernetes", "prometheus",],
-                        {"staging_prom": "prometheus", "gateway_prom": "prometheus",},
+            'title': 'Servo Configuration Schema',
+            'description': 'Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0',
+            'type': 'object',
+            'properties': {
+                'description': {
+                    'title': 'Description',
+                    'description': 'An optional annotation describing the configuration.',
+                    'env_names': [
+                        'SERVO_DESCRIPTION',
                     ],
-                    "env_names": ["SERVO_CONNECTORS",],
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "string",},},
+                    'type': 'string',
+                },
+                'connectors': {
+                    'title': 'Connectors',
+                    'description': (
+                        'An optional, explicit configuration of the active connectors.\n'
+                        '\n'
+                        'Configurable as either an array of connector identifiers (names or class) or\n'
+                        'a dictionary where the keys specify the key path to the connectors configuration\n'
+                        'and the values identify the connector (by name or class name).'
+                    ),
+                    'examples': [
+                        [
+                            'kubernetes',
+                            'prometheus',
+                        ],
                         {
-                            "type": "object",
-                            "additionalProperties": {"type": "string",},
+                            'staging_prom': 'prometheus',
+                            'gateway_prom': 'prometheus',
+                        },
+                    ],
+                    'env_names': [
+                        'SERVO_CONNECTORS',
+                    ],
+                    'anyOf': [
+                        {
+                            'type': 'array',
+                            'items': {
+                                'type': 'string',
+                            },
+                        },
+                        {
+                            'type': 'object',
+                            'additionalProperties': {
+                                'type': 'string',
+                            },
                         },
                     ],
                 },
-                "other": {
-                    "title": "Other",
-                    "env_names": ["SERVO_OTHER",],
-                    "allOf": [{"$ref": "#/definitions/VegetaConfiguration__other",},],
+                'other': {
+                    'title': 'Other',
+                    'env_names': [
+                        'SERVO_OTHER',
+                    ],
+                    'allOf': [
+                        {
+                            '$ref': '#/definitions/VegetaConfiguration__other',
+                        },
+                    ],
                 },
-                "vegeta": {
-                    "title": "Vegeta",
-                    "env_names": ["SERVO_VEGETA",],
-                    "allOf": [{"$ref": "#/definitions/VegetaConfiguration",},],
+                'vegeta': {
+                    'title': 'Vegeta',
+                    'env_names': [
+                        'SERVO_VEGETA',
+                    ],
+                    'allOf': [
+                        {
+                            '$ref': '#/definitions/VegetaConfiguration',
+                        },
+                    ],
                 },
             },
-            "required": ["other", "vegeta",],
-            "additionalProperties": False,
-            "definitions": {
-                "TargetFormat": {
-                    "title": "TargetFormat",
-                    "description": "An enumeration.",
-                    "enum": ["http", "json",],
-                    "type": "string",
+            'required': [
+                'other',
+                'vegeta',
+            ],
+            'additionalProperties': False,
+            'definitions': {
+                'TargetFormat': {
+                    'title': 'TargetFormat',
+                    'description': 'An enumeration.',
+                    'enum': [
+                        'http',
+                        'json',
+                    ],
+                    'type': 'string',
                 },
-                "VegetaConfiguration__other": {
-                    "title": "Vegeta Connector Settings (at key-path other)",
-                    "description": "Configuration of the Vegeta connector",
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "title": "Description",
-                            "description": "An optional annotation describing the configuration.",
-                            "env_names": ["SERVO_OTHER_DESCRIPTION",],
-                            "type": "string",
+                'VegetaConfiguration__other': {
+                    'title': 'Vegeta Connector Settings (named other)',
+                    'description': 'Configuration of the Vegeta connector',
+                    'type': 'object',
+                    'properties': {
+                        'description': {
+                            'title': 'Description',
+                            'description': 'An optional annotation describing the configuration.',
+                            'env_names': [
+                                'SERVO_OTHER_DESCRIPTION',
+                            ],
+                            'type': 'string',
                         },
-                        "rate": {
-                            "title": "Rate",
-                            "description": (
-                                "Specifies the request rate per time unit to issue against the targets. Given in the forma"
-                                "t of request/time unit."
+                        'rate': {
+                            'title': 'Rate',
+                            'description': (
+                                'Specifies the request rate per time unit to issue against the targets. Given in the forma'
+                                't of request/time unit.'
                             ),
-                            "env_names": ["SERVO_OTHER_RATE",],
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_OTHER_RATE',
+                            ],
+                            'type': 'string',
                         },
-                        "duration": {
-                            "title": "Duration",
-                            "description": "Specifies the amount of time to issue requests to the targets.",
-                            "env_names": ["SERVO_OTHER_DURATION",],
-                            "type": "string",
+                        'duration': {
+                            'title': 'Duration',
+                            'description': 'Specifies the amount of time to issue requests to the targets.',
+                            'env_names': [
+                                'SERVO_OTHER_DURATION',
+                            ],
+                            'type': 'string',
+                            'format': 'duration',
+                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'examples': [
+                                '300ms',
+                                '5m',
+                                '2h45m',
+                                '72h3m0.5s',
+                            ],
                         },
-                        "format": {"$ref": "#/definitions/TargetFormat",},
-                        "target": {
-                            "title": "Target",
-                            "description": (
-                                "Specifies a single formatted Vegeta target to load. See the format option to learn about "
-                                "available target formats. This option is exclusive of the targets option and will provide"
-                                " a target to Vegeta via stdin."
+                        'format': {
+                            '$ref': '#/definitions/TargetFormat',
+                        },
+                        'target': {
+                            'title': 'Target',
+                            'description': (
+                                'Specifies a single formatted Vegeta target to load. See the format option to learn about '
+                                'available target formats. This option is exclusive of the targets option and will provide'
+                                ' a target to Vegeta via stdin.'
                             ),
-                            "env_names": ["SERVO_OTHER_TARGET",],
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_OTHER_TARGET',
+                            ],
+                            'type': 'string',
                         },
-                        "targets": {
-                            "title": "Targets",
-                            "description": (
-                                "Specifies the file from which to read targets. See the format option to learn about avail"
-                                "able target formats. This option is exclusive of the target option and will provide targe"
-                                "ts to via through a file on disk."
+                        'targets': {
+                            'title': 'Targets',
+                            'description': (
+                                'Specifies the file from which to read targets. See the format option to learn about avail'
+                                'able target formats. This option is exclusive of the target option and will provide targe'
+                                'ts to via through a file on disk.'
                             ),
-                            "env_names": ["SERVO_OTHER_TARGETS",],
-                            "format": "file-path",
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_OTHER_TARGETS',
+                            ],
+                            'format': 'file-path',
+                            'type': 'string',
                         },
-                        "connections": {
-                            "title": "Connections",
-                            "description": "Specifies the maximum number of idle open connections per target host.",
-                            "default": 10000,
-                            "env_names": ["SERVO_OTHER_CONNECTIONS",],
-                            "type": "integer",
+                        'connections': {
+                            'title': 'Connections',
+                            'description': 'Specifies the maximum number of idle open connections per target host.',
+                            'default': 10000,
+                            'env_names': [
+                                'SERVO_OTHER_CONNECTIONS',
+                            ],
+                            'type': 'integer',
                         },
-                        "workers": {
-                            "title": "Workers",
-                            "description": (
-                                "Specifies the initial number of workers used in the attack. The workers will automaticall"
-                                "y increase to achieve the target request rate, up to max-workers."
+                        'workers': {
+                            'title': 'Workers',
+                            'description': (
+                                'Specifies the initial number of workers used in the attack. The workers will automaticall'
+                                'y increase to achieve the target request rate, up to max-workers.'
                             ),
-                            "default": 10,
-                            "env_names": ["SERVO_OTHER_WORKERS",],
-                            "type": "integer",
+                            'default': 10,
+                            'env_names': [
+                                'SERVO_OTHER_WORKERS',
+                            ],
+                            'type': 'integer',
                         },
-                        "max_workers": {
-                            "title": "Max Workers",
-                            "description": (
-                                "The maximum number of workers used to sustain the attack. This can be used to control the"
-                                " concurrency of the attack to simulate a target number of clients."
+                        'max_workers': {
+                            'title': 'Max Workers',
+                            'description': (
+                                'The maximum number of workers used to sustain the attack. This can be used to control the'
+                                ' concurrency of the attack to simulate a target number of clients.'
                             ),
-                            "default": 18446744073709551615,
-                            "env_names": ["SERVO_OTHER_MAX_WORKERS",],
-                            "type": "integer",
+                            'default': 18446744073709551615,
+                            'env_names': [
+                                'SERVO_OTHER_MAX_WORKERS',
+                            ],
+                            'type': 'integer',
                         },
-                        "max_body": {
-                            "title": "Max Body",
-                            "description": (
-                                "Specifies the maximum number of bytes to capture from the body of each response. Remainin"
-                                "g unread bytes will be fully read but discarded."
+                        'max_body': {
+                            'title': 'Max Body',
+                            'description': (
+                                'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
+                                'g unread bytes will be fully read but discarded.'
                             ),
-                            "default": -1,
-                            "env_names": ["SERVO_OTHER_MAX_BODY",],
-                            "type": "integer",
+                            'default': -1,
+                            'env_names': [
+                                'SERVO_OTHER_MAX_BODY',
+                            ],
+                            'type': 'integer',
                         },
-                        "http2": {
-                            "title": "Http2",
-                            "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
-                            "default": True,
-                            "env_names": ["SERVO_OTHER_HTTP2",],
-                            "type": "boolean",
+                        'http2': {
+                            'title': 'Http2',
+                            'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                            'default': True,
+                            'env_names': [
+                                'SERVO_OTHER_HTTP2',
+                            ],
+                            'type': 'boolean',
                         },
-                        "keepalive": {
-                            "title": "Keepalive",
-                            "description": "Specifies whether to reuse TCP connections between HTTP requests.",
-                            "default": True,
-                            "env_names": ["SERVO_OTHER_KEEPALIVE",],
-                            "type": "boolean",
+                        'keepalive': {
+                            'title': 'Keepalive',
+                            'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                            'default': True,
+                            'env_names': [
+                                'SERVO_OTHER_KEEPALIVE',
+                            ],
+                            'type': 'boolean',
                         },
-                        "insecure": {
-                            "title": "Insecure",
-                            "description": "Specifies whether to ignore invalid server TLS certificates.",
-                            "default": False,
-                            "env_names": ["SERVO_OTHER_INSECURE",],
-                            "type": "boolean",
+                        'insecure': {
+                            'title': 'Insecure',
+                            'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                            'default': False,
+                            'env_names': [
+                                'SERVO_OTHER_INSECURE',
+                            ],
+                            'type': 'boolean',
+                        },
+                        'reporting_interval': {
+                            'title': 'Reporting Interval',
+                            'description': 'How often to report metrics during a measurement cycle.',
+                            'default': '15s',
+                            'env_names': [
+                                'SERVO_OTHER_REPORTING_INTERVAL',
+                            ],
+                            'type': 'string',
+                            'format': 'duration',
+                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'examples': [
+                                '300ms',
+                                '5m',
+                                '2h45m',
+                                '72h3m0.5s',
+                            ],
                         },
                     },
-                    "required": ["rate", "duration",],
-                    "additionalProperties": False,
+                    'required': [
+                        'rate',
+                        'duration',
+                    ],
+                    'additionalProperties': False,
                 },
-                "VegetaConfiguration": {
-                    "title": "Vegeta Connector Settings (at key-path vegeta)",
-                    "description": "Configuration of the Vegeta connector",
-                    "type": "object",
-                    "properties": {
-                        "description": {
-                            "title": "Description",
-                            "description": "An optional annotation describing the configuration.",
-                            "env_names": ["SERVO_VEGETA_DESCRIPTION",],
-                            "type": "string",
+                'VegetaConfiguration': {
+                    'title': 'Vegeta Connector Settings (named vegeta)',
+                    'description': 'Configuration of the Vegeta connector',
+                    'type': 'object',
+                    'properties': {
+                        'description': {
+                            'title': 'Description',
+                            'description': 'An optional annotation describing the configuration.',
+                            'env_names': [
+                                'SERVO_VEGETA_DESCRIPTION',
+                            ],
+                            'type': 'string',
                         },
-                        "rate": {
-                            "title": "Rate",
-                            "description": (
-                                "Specifies the request rate per time unit to issue against the targets. Given in the forma"
-                                "t of request/time unit."
+                        'rate': {
+                            'title': 'Rate',
+                            'description': (
+                                'Specifies the request rate per time unit to issue against the targets. Given in the forma'
+                                't of request/time unit.'
                             ),
-                            "env_names": ["SERVO_VEGETA_RATE",],
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_VEGETA_RATE',
+                            ],
+                            'type': 'string',
                         },
-                        "duration": {
-                            "title": "Duration",
-                            "description": "Specifies the amount of time to issue requests to the targets.",
-                            "env_names": ["SERVO_VEGETA_DURATION",],
-                            "type": "string",
+                        'duration': {
+                            'title': 'Duration',
+                            'description': 'Specifies the amount of time to issue requests to the targets.',
+                            'env_names': [
+                                'SERVO_VEGETA_DURATION',
+                            ],
+                            'type': 'string',
+                            'format': 'duration',
+                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'examples': [
+                                '300ms',
+                                '5m',
+                                '2h45m',
+                                '72h3m0.5s',
+                            ],
                         },
-                        "format": {"$ref": "#/definitions/TargetFormat",},
-                        "target": {
-                            "title": "Target",
-                            "description": (
-                                "Specifies a single formatted Vegeta target to load. See the format option to learn about "
-                                "available target formats. This option is exclusive of the targets option and will provide"
-                                " a target to Vegeta via stdin."
+                        'format': {
+                            '$ref': '#/definitions/TargetFormat',
+                        },
+                        'target': {
+                            'title': 'Target',
+                            'description': (
+                                'Specifies a single formatted Vegeta target to load. See the format option to learn about '
+                                'available target formats. This option is exclusive of the targets option and will provide'
+                                ' a target to Vegeta via stdin.'
                             ),
-                            "env_names": ["SERVO_VEGETA_TARGET",],
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_VEGETA_TARGET',
+                            ],
+                            'type': 'string',
                         },
-                        "targets": {
-                            "title": "Targets",
-                            "description": (
-                                "Specifies the file from which to read targets. See the format option to learn about avail"
-                                "able target formats. This option is exclusive of the target option and will provide targe"
-                                "ts to via through a file on disk."
+                        'targets': {
+                            'title': 'Targets',
+                            'description': (
+                                'Specifies the file from which to read targets. See the format option to learn about avail'
+                                'able target formats. This option is exclusive of the target option and will provide targe'
+                                'ts to via through a file on disk.'
                             ),
-                            "env_names": ["SERVO_VEGETA_TARGETS",],
-                            "format": "file-path",
-                            "type": "string",
+                            'env_names': [
+                                'SERVO_VEGETA_TARGETS',
+                            ],
+                            'format': 'file-path',
+                            'type': 'string',
                         },
-                        "connections": {
-                            "title": "Connections",
-                            "description": "Specifies the maximum number of idle open connections per target host.",
-                            "default": 10000,
-                            "env_names": ["SERVO_VEGETA_CONNECTIONS",],
-                            "type": "integer",
+                        'connections': {
+                            'title': 'Connections',
+                            'description': 'Specifies the maximum number of idle open connections per target host.',
+                            'default': 10000,
+                            'env_names': [
+                                'SERVO_VEGETA_CONNECTIONS',
+                            ],
+                            'type': 'integer',
                         },
-                        "workers": {
-                            "title": "Workers",
-                            "description": (
-                                "Specifies the initial number of workers used in the attack. The workers will automaticall"
-                                "y increase to achieve the target request rate, up to max-workers."
+                        'workers': {
+                            'title': 'Workers',
+                            'description': (
+                                'Specifies the initial number of workers used in the attack. The workers will automaticall'
+                                'y increase to achieve the target request rate, up to max-workers.'
                             ),
-                            "default": 10,
-                            "env_names": ["SERVO_VEGETA_WORKERS",],
-                            "type": "integer",
+                            'default': 10,
+                            'env_names': [
+                                'SERVO_VEGETA_WORKERS',
+                            ],
+                            'type': 'integer',
                         },
-                        "max_workers": {
-                            "title": "Max Workers",
-                            "description": (
-                                "The maximum number of workers used to sustain the attack. This can be used to control the"
-                                " concurrency of the attack to simulate a target number of clients."
+                        'max_workers': {
+                            'title': 'Max Workers',
+                            'description': (
+                                'The maximum number of workers used to sustain the attack. This can be used to control the'
+                                ' concurrency of the attack to simulate a target number of clients.'
                             ),
-                            "default": 18446744073709551615,
-                            "env_names": ["SERVO_VEGETA_MAX_WORKERS",],
-                            "type": "integer",
+                            'default': 18446744073709551615,
+                            'env_names': [
+                                'SERVO_VEGETA_MAX_WORKERS',
+                            ],
+                            'type': 'integer',
                         },
-                        "max_body": {
-                            "title": "Max Body",
-                            "description": (
-                                "Specifies the maximum number of bytes to capture from the body of each response. Remainin"
-                                "g unread bytes will be fully read but discarded."
+                        'max_body': {
+                            'title': 'Max Body',
+                            'description': (
+                                'Specifies the maximum number of bytes to capture from the body of each response. Remainin'
+                                'g unread bytes will be fully read but discarded.'
                             ),
-                            "default": -1,
-                            "env_names": ["SERVO_VEGETA_MAX_BODY",],
-                            "type": "integer",
+                            'default': -1,
+                            'env_names': [
+                                'SERVO_VEGETA_MAX_BODY',
+                            ],
+                            'type': 'integer',
                         },
-                        "http2": {
-                            "title": "Http2",
-                            "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
-                            "default": True,
-                            "env_names": ["SERVO_VEGETA_HTTP2",],
-                            "type": "boolean",
+                        'http2': {
+                            'title': 'Http2',
+                            'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
+                            'default': True,
+                            'env_names': [
+                                'SERVO_VEGETA_HTTP2',
+                            ],
+                            'type': 'boolean',
                         },
-                        "keepalive": {
-                            "title": "Keepalive",
-                            "description": "Specifies whether to reuse TCP connections between HTTP requests.",
-                            "default": True,
-                            "env_names": ["SERVO_VEGETA_KEEPALIVE",],
-                            "type": "boolean",
+                        'keepalive': {
+                            'title': 'Keepalive',
+                            'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
+                            'default': True,
+                            'env_names': [
+                                'SERVO_VEGETA_KEEPALIVE',
+                            ],
+                            'type': 'boolean',
                         },
-                        "insecure": {
-                            "title": "Insecure",
-                            "description": "Specifies whether to ignore invalid server TLS certificates.",
-                            "default": False,
-                            "env_names": ["SERVO_VEGETA_INSECURE",],
-                            "type": "boolean",
+                        'insecure': {
+                            'title': 'Insecure',
+                            'description': 'Specifies whether to ignore invalid server TLS certificates.',
+                            'default': False,
+                            'env_names': [
+                                'SERVO_VEGETA_INSECURE',
+                            ],
+                            'type': 'boolean',
+                        },
+                        'reporting_interval': {
+                            'title': 'Reporting Interval',
+                            'description': 'How often to report metrics during a measurement cycle.',
+                            'default': '15s',
+                            'env_names': [
+                                'SERVO_VEGETA_REPORTING_INTERVAL',
+                            ],
+                            'type': 'string',
+                            'format': 'duration',
+                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'examples': [
+                                '300ms',
+                                '5m',
+                                '2h45m',
+                                '72h3m0.5s',
+                            ],
                         },
                     },
-                    "required": ["rate", "duration",],
-                    "additionalProperties": False,
+                    'required': [
+                        'rate',
+                        'duration',
+                    ],
+                    'additionalProperties': False,
                 },
             },
         }
@@ -839,7 +1000,7 @@ class TestServoAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly, servo, DynamicServoConfiguration = ServoAssembly.assemble(
+        assembly, servo, DynamicServoConfiguration = Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
@@ -902,7 +1063,7 @@ def test_generating_schema_with_test_connectors(
 ) -> None:
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly, servo, DynamicServoSettings = ServoAssembly.assemble(
+    assembly, servo, DynamicServoSettings = Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     DynamicServoSettings.schema()
@@ -963,7 +1124,7 @@ class TestServoSettings:
 
     def test_connectors_rejects_invalid_connector_set_class_name_elements(self):
         with pytest.raises(ValidationError) as e:
-            BaseServoConfiguration(connectors={"BaseServoConfiguration"},)
+            BaseServoConfiguration(connectors={"servo.servo.BaseServoConfiguration"},)
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
@@ -983,7 +1144,7 @@ class TestServoSettings:
         s = BaseServoConfiguration(connectors={"alias": "VegetaConnector"},)
         assert s.connectors == {"alias": "VegetaConnector"}
 
-    def test_connectors_allows_dict_with_explicit_map_to_default_config_key(self):
+    def test_connectors_allows_dict_with_explicit_map_to_default_name(self):
         s = BaseServoConfiguration(connectors={"vegeta": "VegetaConnector"},)
         assert s.connectors == {"vegeta": "VegetaConnector"}
 
@@ -998,7 +1159,7 @@ class TestServoSettings:
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'Key "vegeta" is reserved by `VegetaConnector`'
+            == 'Name "vegeta" is reserved by `VegetaConnector`'
         )
 
     @pytest.fixture(autouse=True, scope="session")
@@ -1014,7 +1175,7 @@ class TestServoSettings:
             BaseServoConfiguration(connectors={"connectors": "VegetaConnector"},)
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
-        assert e.value.errors()[0]["msg"] == 'Key "connectors" is reserved'
+        assert e.value.errors()[0]["msg"] == 'Name "connectors" is reserved'
 
     def test_connectors_forbids_dict_with_invalid_key(self):
         with pytest.raises(ValidationError) as e:
@@ -1023,7 +1184,7 @@ class TestServoSettings:
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'Key "This Is Not Valid" is not valid: key paths may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+            == '"This Is Not Valid" is not a valid connector name: names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
         )
 
     def test_connectors_rejects_invalid_connector_dict_values(self):
