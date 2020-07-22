@@ -234,9 +234,15 @@ class Servo(Connector):
         self.connectors.extend(connectors)  
 
     def startup(self):
+        """
+        Notifies all connectors that the servo is starting up.
+        """
         return self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
 
     def shutdown(self):
+        """
+        Notifies all connectors that the servo is shutting down.
+        """
         return self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
     def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[Connector, List[Connector]]]:
@@ -283,7 +289,6 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
         return connectors
     elif isinstance(connectors, str):
         if _connector_class_from_string(connectors) is None:
-            print(f"sdasdsadsa: {connectors.__class__}", connectors)
             raise ValueError(f"Invalid connectors value: {connectors}")
         return connectors
     elif isinstance(connectors, type) and issubclass(connectors, Connector):

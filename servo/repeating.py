@@ -3,9 +3,8 @@ from typing import Union, Callable, Optional, List, Dict
 from servo.types import Duration, NoneCallable
 from servo.utilities import values_for_keys
 from datetime import timedelta
-from weakref import WeakKeyDictionary, WeakValueDictionary
+from weakref import WeakValueDictionary
 
-__repeaters = WeakKeyDictionary()
 Every = Union[int, str, Duration]
 
 class RepeatingMixin:
