@@ -8,6 +8,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from servo.configuration import Optimizer
 from servo.cli import ServoCLI
 # Force the test connectors to load early
 from tests.test_helpers import StubBaseConfiguration
@@ -42,6 +43,10 @@ def optimizer_env() -> None:
     os.environ.pop("OPSANI_OPTIMIZER", None)
     os.environ.pop("OPSANI_TOKEN", None)
 
+
+@pytest.fixture()
+def optimizer() -> Optimizer:
+    return Optimizer(id="dev.opsani.com/servox", token="123456789")
 
 @pytest.fixture()
 def servo_yaml(tmp_path: Path) -> Path:

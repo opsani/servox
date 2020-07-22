@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union, Callable, TypeVar
+from typing import Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 import semver
 from pydantic import BaseModel, validator, datetime_parse
@@ -189,6 +189,8 @@ class DataPoint(BaseModel):
 class TimeSeries(BaseModel):
     metric: Metric
     values: List[Tuple[datetime, Numeric]]
+    annotation: Optional[str]
+    id: Optional[str]
 
     def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)

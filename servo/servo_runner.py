@@ -8,79 +8,22 @@ from typing import Any, Dict, List, Optional, Union
 
 import backoff
 import httpx
+import loguru
+
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
+from servo import api
 from servo.assembly import BaseServoConfiguration
-from servo.connector import USER_AGENT, Optimizer
+from servo.configuration import Optimizer
+from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
 
 
-class APICommand(str, Enum):
-    DESCRIBE = "DESCRIBE"
-    MEASURE = "MEASURE"
-    ADJUST = "ADJUST"
-    SLEEP = "SLEEP"
-
-
-class APIEvent(str, Enum):
-    HELLO = "HELLO"
-    GOODBYE = "GOODBYE"
-    DESCRIPTION = "DESCRIPTION"
-    WHATS_NEXT = "WHATS_NEXT"
-    ADJUSTMENT = "ADJUSTMENT"
-    MEASUREMENT = "MEASUREMENT"
-
-
-class APIRequest(BaseModel):
-    event: APIEvent
-    param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
-
-    class Config:
-        json_encoders = {
-            APIEvent: lambda v: str(v),
-        }
-
-
-class Status(BaseModel):
-    status: str
-    message: Optional[str]
-
-
-class SleepResponse(BaseModel):
-    pass
-
-
-# SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
-
-# Instructions from servo on what to measure
-class MeasureParams(BaseModel):
-    metrics: List[str]
-    control: Control
-
-
-class CommandResponse(BaseModel):
-    command: APICommand = Field(alias="cmd",)
-    param: Optional[
-        Union[MeasureParams, Dict[str, Any]]
-    ]  # TODO: Switch to a union of supported types
-
-    class Config:
-        json_encoders = {
-            APICommand: lambda v: str(v),
-        }
-
-
-class StatusMessage(BaseModel):
-    status: str
-    message: Optional[str]
-
-
 # TODO: Review and expand all the error classes
 class ConnectorError(Exception):
-    """E
-    xception indicating that a connector failed
+    """Exception indicating that a connector failed
     """
 
     def __init__(self, *args, status="failed", reason="unknown"):
@@ -120,7 +63,7 @@ class ServoRunner:
 
         return aggregate_description
 
-    async def measure(self, param: MeasureParams) -> Measurement:
+    async def measure(self, param: api.MeasureParams) -> Measurement:
         self.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
         self.logger.trace(pformat(param))
 
@@ -161,8 +104,8 @@ class ServoRunner:
         return {}
 
     @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
-    async def post_event(self, event: APIEvent, param) -> Union[CommandResponse, Status]:
-        event_request = APIRequest(event=event, param=param)
+    async def post_event(self, event: api.Event, param) -> Union[api.CommandResponse, api.Status]:
+        event_request = api.Request(event=event, param=param)
         async with self.servo.api_client() as client:
             try:
                 response = await client.post("servo", data=event_request.json())
@@ -174,33 +117,33 @@ class ServoRunner:
                 self.logger.trace(pformat(event_request))
                 raise error
 
-        return parse_obj_as(Union[CommandResponse, Status], response.json())
+        return parse_obj_as(Union[api.CommandResponse, api.Status], response.json())
 
     async def exec_command(self):
-        cmd_response = await self.post_event(APIEvent.WHATS_NEXT, None)
+        cmd_response = await self.post_event(api.Event.WHATS_NEXT, None)
         self.logger.debug(f"What's Next? => {cmd_response.command}")
         self.logger.trace(pformat(cmd_response))
 
         try:
-            if cmd_response.command == APICommand.DESCRIBE:
+            if cmd_response.command == api.Command.DESCRIBE:
                 description = await self.describe()
                 self.logger.info(
                     f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
                 )
                 self.logger.trace(pformat(description))
                 param = dict(descriptor=description.opsani_dict(), status="ok")
-                await self.post_event(APIEvent.DESCRIPTION, param)
+                await self.post_event(api.Event.DESCRIPTION, param)
 
-            elif cmd_response.command == APICommand.MEASURE:
+            elif cmd_response.command == api.Command.MEASURE:
                 measurement = await self.measure(cmd_response.param)
                 self.logger.info(
                     f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
                 )
                 self.logger.trace(pformat(measurement))
                 param = measurement.opsani_dict()
-                await self.post_event(APIEvent.MEASUREMENT, param)
+                await self.post_event(api.Event.MEASUREMENT, param)
 
-            elif cmd_response.command == APICommand.ADJUST:
+            elif cmd_response.command == api.Command.ADJUST:
                 # # TODO: This needs to be modeled
                 # oc"{'cmd': 'ADJUST', 'param': {'state': {'application': {'components': {'web': {'settings': {'cpu': {'value': 0.225}, 'mem': {'value': 0.1}}}}}}, 'control': {}}}"
 
@@ -228,9 +171,9 @@ class ServoRunner:
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
 
-                await self.post_event(APIEvent.ADJUSTMENT, adjustment)
+                await self.post_event(api.Event.ADJUSTMENT, adjustment)
 
-            elif cmd_response.command == APICommand.SLEEP:
+            elif cmd_response.command == api.Command.SLEEP:
                 if (
                     not self.interactive
                 ):  # ignore sleep request when interactive - let user decide
@@ -256,7 +199,7 @@ class ServoRunner:
         self.servo.startup()
 
         self.logger.info("Saying HELLO.", end=" ")
-        await self.post_event(APIEvent.HELLO, dict(agent=USER_AGENT))
+        await self.post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
 
         while True:
             try:
@@ -270,7 +213,7 @@ class ServoRunner:
 
         try:
             reason = signal.name if signal else 'shutdown'
-            await self.post_event(APIEvent.GOODBYE, dict(reason=reason))
+            await self.post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception as e:
             self.logger.exception(
                 f"Exception occurred during GOODBYE request: {e}"
@@ -297,6 +240,11 @@ class ServoRunner:
         asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
+        # Setup logging
+        handler = ProgressHandler(self.servo)
+        loguru.logger.add(handler)
+
+        # Setup async event loop
         loop = asyncio.get_event_loop()
         
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
@@ -304,7 +252,6 @@ class ServoRunner:
             loop.add_signal_handler(
                 s, lambda s=s: asyncio.create_task(self.shutdown(loop, signal=s)))
         
-        # Catch any unhandled async exceptions
         loop.set_exception_handler(self.handle_exception)
 
         try:
@@ -314,13 +261,14 @@ class ServoRunner:
             loop.close()
             self.logger.info("Servo shutdown complete.")
 
-def _event_for_command(command: APICommand) -> Optional[APIEvent]:
-    if cmd_response.command == APICommand.DESCRIBE:
-        return APIEvent.DESCRIPTION
-    elif cmd_response.command == APICommand.MEASURE:
-        return APIEvent.MEASUREMENT
-    elif cmd_response.command == APICommand.ADJUST:
-        return APIEvent.ADJUSTMENT
+
+def _event_for_command(command: api.Command) -> Optional[api.Event]:
+    if cmd_response.command == api.Command.DESCRIBE:
+        return api.Event.DESCRIPTION
+    elif cmd_response.command == api.Command.MEASURE:
+        return api.Event.MEASUREMENT
+    elif cmd_response.command == api.Command.ADJUST:
+        return api.Event.ADJUSTMENT
     else:
         return None
 

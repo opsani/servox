@@ -3,18 +3,35 @@ from typing import Union, Callable, Optional, List, Dict
 from servo.types import Duration, NoneCallable
 from servo.utilities import values_for_keys
 from datetime import timedelta
-from weakref import WeakValueDictionary
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 Every = Union[int, str, Duration]
 
-class RepeatingMixin:
+_repeating_tasks_registry = WeakKeyDictionary()
+
+class Mixin:
+    def __init_subclass__(cls, **kwargs):        
+        super().__init_subclass__(**kwargs)
+        
+        repeaters = {}
+        for name, method in cls.__dict__.items():
+            if repeat_params := getattr(method, "__repeating__", None):
+                # name, duration = values_for_keys(repeat_params, "name", "duration")
+                # self.start_repeating_task(name, duration, method)
+                repeaters[method] = repeat_params
+        
+        cls.__repeaters__ = repeaters
+
     def __init__(self, *args, **kwargs) -> None:
-        self._repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
+        super().__init__(*args, **kwargs)
+        repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
+        _repeating_tasks_registry[self] = repeating_tasks
+        #self._repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
 
         # Start tasks for any methods decorated via `repeating`
-        method_names = [func for func in dir(self) if callable(getattr(self, func))]
-        for method_name in method_names:
-            method = getattr(self, method_name)
+        # TODO: This should not be calling the func...
+        # method_names = [func for func in dir(self) if callable(getattr(self, func))]
+        for method, repeat_params in self.__class__.__repeaters__.items():
             if repeat_params := getattr(method, "__repeating__", None):
                 name, duration = values_for_keys(repeat_params, "name", "duration")
                 self.start_repeating_task(name, duration, method)
@@ -38,7 +55,7 @@ class RepeatingMixin:
                 await asyncio.sleep(every / timedelta(microseconds=1))
         
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
-        self._repeating_tasks[name] = asyncio_task
+        self.repeating_tasks[name] = asyncio_task
         return asyncio_task
     
     def cancel_repeating_task(self, name: str) -> Optional[bool]:
@@ -50,7 +67,7 @@ class RepeatingMixin:
 
         Note that cancellation is not guaranteed (see asyncio.Task docs: https://docs.python.org/3/library/asyncio-task.html#asyncio.Task.cancel)
         """
-        if task := self._repeating_tasks.get(name):
+        if task := self.repeating_tasks.get(name):
             if task.cancelled():
                 return False
             task.cancel()
@@ -59,14 +76,18 @@ class RepeatingMixin:
 
     @property
     def repeating_tasks(self) -> List[asyncio.Task]:
-        return self._repeating_tasks
+        tasks = _repeating_tasks_registry.get(self, None)
+        if tasks is None:
+            tasks = {}
+            _repeating_tasks_registry[self] = tasks
+        return tasks
 
 
 def repeating(every: Every, *, name=None) -> Callable[[NoneCallable], NoneCallable]:
     """
     Decorates a function for repeated execution on the given duration.
 
-    Note that the decorated function must be a method on a subclass of `RepeatingMixin` or
+    Note that the decorated function must be a method on a subclass of `servo.repeating.Mixin` or
     the decoration will have no effect.
     """
 

@@ -11,7 +11,7 @@ from servo.connector import (
     _connector_subclasses,    
 )
 from servo import Duration
-from servo.repeating import RepeatingMixin, repeating
+from servo.repeating import Mixin, repeating
 
 pytestmark = pytest.mark.asyncio
 
@@ -25,7 +25,6 @@ class RepeatingConnector(Connector):
 
 @pytest.fixture(autouse=True)
 async def cleanup_tasks() -> None:
-    RepeatingMixin._repeating_tasks = {}
     yield
     tasks = [t for t in asyncio.all_tasks() if t is not
             asyncio.current_task()]
@@ -41,22 +40,22 @@ async def cleanup_tasks() -> None:
         "1ns"
     ]
 )
-async def test_start_repeating_task(mocker, every):
+async def test_start_repeating_task(mocker, optimizer: Optimizer, every):
     connector = RepeatingConnector.construct()
     spy = mocker.spy(connector, "run_me")
     connector.start_repeating_task("report_progress", every, connector.run_me)
     await asyncio.sleep(0.0001)
     spy.assert_called()
 
-async def test_start_repeating_lambda_task(mocker):
+async def test_start_repeating_lambda_task(mocker, optimizer: Optimizer):
     connector = RepeatingConnector.construct()
     spy = mocker.spy(connector, "run_me")
     connector.start_repeating_task("report_progress", 0.1, lambda: connector.run_me())
     await asyncio.sleep(0.001)
     spy.assert_called_once()
 
-async def test_start_repeating_task_name_already_exists():
-    connector = RepeatingConnector.construct()
+async def test_start_repeating_task_name_already_exists(optimizer: Optimizer):
+    connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task("report_progress", 0.1, lambda: connector.run_me())
     assert task
     task.cancel()
@@ -64,20 +63,20 @@ async def test_start_repeating_task_name_already_exists():
         connector.start_repeating_task("report_progress", 0.1, lambda: connector.run_me())
     assert "repeating task already exists named 'report_progress'" in str(e.value)
 
-async def test_cancel_repeating_task():
-    connector = RepeatingConnector.construct()
+async def test_cancel_repeating_task(optimizer: Optimizer):
+    connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task("report_progress", 0.1, lambda: connector.run_me())
     connector.cancel_repeating_task("report_progress")
     await asyncio.sleep(0.001)
     assert task.cancelled()
 
-async def test_cancel_repeating_task_name_doesnt_exist():
-    connector = RepeatingConnector.construct()
+async def test_cancel_repeating_task_name_doesnt_exist(optimizer: Optimizer):
+    connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     result = connector.cancel_repeating_task("report_progress")
     assert result == None
 
-async def test_cancel_repeating_task_already_cancelled():
-    connector = RepeatingConnector.construct()
+async def test_cancel_repeating_task_already_cancelled(optimizer: Optimizer):
+    connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task("report_progress", 0.001, lambda: connector.run_me())
     await asyncio.sleep(0.002)
     connector.cancel_repeating_task("report_progress")
@@ -85,8 +84,8 @@ async def test_cancel_repeating_task_already_cancelled():
     result = connector.cancel_repeating_task("report_progress")
     assert result == False
 
-async def test_start_repeating_task_for_done_task(mocker):
-    connector = RepeatingConnector.construct()
+async def test_start_repeating_task_for_done_task(optimizer: Optimizer):
+    connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task = connector.start_repeating_task("report_progress", 0.0001, connector.run_me)
     await asyncio.sleep(0.0001)
     task.cancel()
@@ -95,8 +94,8 @@ async def test_start_repeating_task_for_done_task(mocker):
     task = connector.start_repeating_task("report_progress", 0.0001, connector.run_me)
     assert task
 
-async def test_repeating_task_decorator(mocker):
-    class RepeatedDecorator(RepeatingMixin):
+async def test_repeating_task_decorator():
+    class RepeatedDecorator(Mixin):
         def __init__(self):
             self.called = False
 

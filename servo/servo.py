@@ -16,7 +16,7 @@ from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
 
 import servo
-from servo import connector
+from servo import api, connector
 from servo.connector import (
     BaseConfiguration,
     Connector,
@@ -38,7 +38,7 @@ _servo_context_var = ContextVar("servo.Servo.current", default=None)
 
 class Events(str, Enum):
     """
-    Events is an enumeration of the names of events defined by the servo.
+    Events is an enumeration of the names of standard events defined by the servo.
     """
 
     # Lifecycle events
@@ -181,7 +181,9 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"
 
+
 _servo_context_var = ContextVar('servo.servo', default=None)
+
 
 @connector.metadata(
     description="Continuous Optimization Orchestrator",
@@ -205,7 +207,7 @@ class Servo(Connector):
     and are instead built through the `Assembly.assemble` method.
     """
 
-    config: 'BaseServoConfiguration'
+    config: BaseServoConfiguration
     """Configuration for the Servo.
 
     Note that the Servo configuration is built dynamically at Servo assembly time.
@@ -271,10 +273,8 @@ class Servo(Connector):
 
     @on_event()
     async def check(self) -> List[Check]:
-        from servo.servo_runner import APIEvent, APIRequest
-
         async with self.api_client() as client:
-            event_request = APIRequest(event=APIEvent.HELLO)
+            event_request = api.Request(event=api.Event.HELLO)
             response = await client.post("servo", data=event_request.json())
             success = (response.status_code == httpx.codes.OK)
             return [Check(
