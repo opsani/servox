@@ -18,8 +18,11 @@ def run_cli():
 
     # NOTE: We load connectors here because waiting until assembly
     # is too late for registering CLI commands
-    for connector in ConnectorLoader().load():
-        logger.debug(f"Loaded {connector.__qualname__}")
+    try:
+        for connector in ConnectorLoader().load():
+            logger.debug(f"Loaded {connector.__qualname__}")
+    except Exception as error:
+        logger.exception("failed loading connectors via discovery", backtrace=True, diagnose=True)
 
     cli = ServoCLI()
     cli()
