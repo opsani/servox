@@ -1,4 +1,5 @@
 import abc
+import time
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
@@ -20,6 +21,17 @@ class Command(str, Enum):
     ADJUST = "ADJUST"
     SLEEP = "SLEEP"
 
+    @property
+    def response_event(self) -> str:
+        if self == Command.DESCRIBE:
+            return Event.DESCRIPTION
+        elif self == Command.MEASURE:
+            return Event.MEASUREMENT
+        elif self == Command.ADJUST:
+            return Event.ADJUSTMENT
+        else:
+            return None
+
 
 class Event(str, Enum):
     HELLO = "HELLO"
@@ -31,7 +43,7 @@ class Event(str, Enum):
 
 
 class Request(BaseModel):
-    event: Event
+    event: Union[Event, str] # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
     class Config:
@@ -95,17 +107,17 @@ class Mixin:
     def api_client_sync(self) -> httpx.Client:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
-
-    ##
-    # TODO: This probably becomes progress_request
-    def report_progress(self,
+    
+    def progress_request(self,
         operation: str, 
         progress: Numeric, 
         started_at: datetime,
         message: Optional[str],
         *,
-        time_remaining: Optional[Union[Numeric, Duration]],
-        logs: List[str],
+        connector: Optional[str] = None,
+        event_context: Optional['EventContext'] = None,
+        time_remaining: Optional[Union[Numeric, Duration]] = None,
+        logs: Optional[List[str]] = None,
     ) -> None:
         def set_if(d: Dict, k: str, v: Any):
             if v is not None: d[k] = v
@@ -115,7 +127,7 @@ class Mixin:
             progress = progress * 100
         
         # Calculate runtime
-        runtime = Duration(started_at - time.now())
+        runtime = Duration(datetime.now() - started_at)
 
         # Produce human readable and remaining time in seconds values (if given)
         if time_remaining:
@@ -129,17 +141,52 @@ class Mixin:
         else:
             time_remaining_in_seconds = None
 
-        # SERVER: {"progress": 66, "operation": "MEASURE", "nfy": "progress", "tstamp": "2020-07-22 03:38:18"}
         params = dict(
             connector=self.name, 
             operation=operation,
             progress=progress,
-            runtime=runtime, 
+            runtime=str(runtime), 
             runtime_in_seconds=runtime.total_seconds()
         )
-        set_if(params, 'time_remaining', str(time_remaining))
-        set_if(params, 'time_remaining_in_seconds', str(time_remaining_in_seconds))
+        set_if(params, 'connector', connector)
+        set_if(params, 'event', str(event_context))
+        set_if(params, 'time_remaining', str(time_remaining) if time_remaining else None)
+        set_if(params, 'time_remaining_in_seconds', str(time_remaining_in_seconds) if time_remaining_in_seconds else None)
         set_if(params, 'message', message)
         set_if(params, 'logs', logs)
+        
+        return (operation, params)
 
-        # rsp = request(operation, param, retries=1, backoff=False)
+    
+    # NOTE: Opsani API primitive
+    @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
+    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
+        event_request = Request(event=event, param=param)
+        self.logger.trace(event_request)
+        async with self.api_client() as client:
+            try:
+                response = await client.post("servo", data=event_request.json())
+                response.raise_for_status()
+            except httpx.HTTPError as error:
+                self.logger.exception(
+                    f"HTTP error encountered while posting {event.value} event"
+                )
+                self.logger.trace(pformat(event_request))
+                raise error
+
+        return parse_obj_as(Union[CommandResponse, Status], response.json())
+    
+    def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
+        event_request = Request(event=event, param=param)
+        with self.servo.api_client_sync() as client:
+            try:
+                response = client.post("servo", data=event_request.json())
+                response.raise_for_status()
+            except httpx.HTTPError as error:
+                self.logger.exception(
+                    f"HTTP error encountered while posting {event.value} event"
+                )
+                self.logger.trace(pformat(event_request))
+                raise error
+
+        return parse_obj_as(Union[CommandResponse, Status], response.json())

@@ -24,6 +24,7 @@ from servo.connector import (
 from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import Preposition, _events, event
+from servo.logging import ProgressHandler
 from tests.test_helpers import *
 
 pytestmark = pytest.mark.asyncio
@@ -1231,7 +1232,7 @@ class TestConnectorEvents:
         
         @event(handler=True)
         def get_event_context(self) -> EventContext:
-            return self.event_context
+            return self.current_event
 
         class Config:
             extra = Extra.allow
@@ -1282,8 +1283,11 @@ class TestConnectorEvents:
         assert results is not None
         result = results[0]
         assert result.event.name == "get_event_context"
-        assert result.connector == connector        
-        assert result.value == EventContext(event=event, preposition=Preposition.ON)
+        assert result.connector == connector
+        assert result.value 
+        assert result.value.event == event
+        assert result.value.preposition == Preposition.ON
+        assert result.value.created_at.replace(microsecond=0) == result.value.created_at.replace(microsecond=0)
 
     async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()

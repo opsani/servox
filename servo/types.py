@@ -149,15 +149,16 @@ class DurationProgress(BaseModel):
     def is_completed(self) -> bool:
         return self.progress() >= 100
 
+    @property
     def progress(self) -> float:
-        return min(100.0, 100.0 * (self.elapsed()) / self.duration)
+        return min(100.0, 100.0 * (self.elapsed / self.duration))
 
-    def elapsed(self) -> timedelta:
-        return datetime.now() - self.started_at
+    @property
+    def elapsed(self) -> Duration:
+        return Duration(datetime.now() - self.started_at)
 
     def annotate(self, str_to_annotate: str) -> str:
-        elapsed = timedelta_to_duration_str(self.elapsed())
-        return f"{self.progress():.2f}% complete, {elapsed} elapsed - {str_to_annotate}"
+        return f"{self.progress:.2f}% complete, {self.elapsed} elapsed - {str_to_annotate}"
 
 
 class Unit(str, Enum):

@@ -1,16 +1,19 @@
+import asyncio
 import logging
 import sys
-from weakref import WeakKeyDictionary
+from datetime import datetime
 from pathlib import Path
+from weakref import WeakKeyDictionary
 
 import httpx
-import loguru
+from loguru import logger
+from servo.types import Duration
 
 class Mixin:
     @property
     def logger(self) -> logging.Logger:
         """Returns the logger"""
-        return loguru.logger.bind(connector=self.name)
+        return logger.bind(connector=self.name)
 
 # logging configuration
 CONNECTOR_FORMAT = (
@@ -52,20 +55,60 @@ handlers.append(
     }
 )
 
-loguru.logger.configure(handlers=handlers)
+
+logger.configure(handlers=handlers)
+
 
 class ProgressHandler(logging.Handler):
-    def __init__(self, connector: 'Connector', **kwargs) -> None:
-        self.connector = connector
+    def __init__(self, connector: 'Connector', **kwargs) -> None:        
         super().__init__(**kwargs)
+        self.connector = connector
+        self.queue = asyncio.Queue()
 
-    def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover
-        # TODO: Call back to the connector class
+        asyncio.get_event_loop().create_task(self.run())
+    
+    async def run(self) -> None:
+        while True:
+            record, event_context = await self.queue.get()
+            await self._emit_async(record, event_context)
+
+    def emit(self, record: logging.LogRecord) -> None:
         if progress := record.extra.get("progress", None):
-            debug(self.format(record))
-            # TODO: Include timestamp, connector name, type, version, message, line
-            try:
-                with self.connector.api_client_sync() as client:
-                    client.post(f"http://localhost:8080?progress={progress}")
-            except Exception as e:
-                debug(e)
+            with logger.catch(message="an exception occurred while reporting progress logging"):
+                event_context = self.connector.current_event
+                asyncio.get_event_loop().call_soon_threadsafe(self.queue.put_nowait, (record, event_context))
+
+    async def _emit_async(self, record: logging.LogRecord, event_context: 'EventContext') -> None:        
+        with logger.catch(message="an exception occurred while reporting progress logging", reraise=True):            
+            progress = record.extra.get("progress", None)
+            if not progress:
+                logger.warning("declining request to report progress on a record without a progress attribute")
+                return
+
+            connector = record.extra.get("connector", None)
+            if not connector:
+                logger.warning("declining request to report progress for record without a connector attribute")
+                return
+
+            operation = record.extra.get("operation", None)
+            if not operation:
+                if not event_context:
+                    logger.warning("declining request to report progress for record without an operation parameter or inferrable value from event context")
+                    return
+                operation = event_context.operation()
+
+            started_at = record.extra.get("started_at", event_context.created_at)
+            if not started_at:
+                logger.warning("declining request to report progress for record without a started_at parameter or inferrable value from event context")
+                return
+            event = record.extra.get("event", str())
+
+            request = self.connector.progress_request(
+                operation=operation,
+                progress=progress,
+                connector=connector,
+                event_context=event_context,
+                started_at=started_at,
+                message=record.msg,
+            )
+            await self.connector._post_event(*request)

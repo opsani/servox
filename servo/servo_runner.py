@@ -32,7 +32,7 @@ class ConnectorError(Exception):
         super().__init__(*args)
 
 
-class ServoRunner:
+class ServoRunner(api.Mixin):
     servo: Servo
 
     def __init__(self, servo: Servo) -> None:
@@ -103,24 +103,8 @@ class ServoRunner:
         # TODO: Model a response class
         return {}
 
-    @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
-    async def post_event(self, event: api.Event, param) -> Union[api.CommandResponse, api.Status]:
-        event_request = api.Request(event=event, param=param)
-        async with self.servo.api_client() as client:
-            try:
-                response = await client.post("servo", data=event_request.json())
-                response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(
-                    f"HTTP error encountered while posting {event.value} event"
-                )
-                self.logger.trace(pformat(event_request))
-                raise error
-
-        return parse_obj_as(Union[api.CommandResponse, api.Status], response.json())
-
     async def exec_command(self):
-        cmd_response = await self.post_event(api.Event.WHATS_NEXT, None)
+        cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
         self.logger.debug(f"What's Next? => {cmd_response.command}")
         self.logger.trace(pformat(cmd_response))
 
@@ -132,7 +116,7 @@ class ServoRunner:
                 )
                 self.logger.trace(pformat(description))
                 param = dict(descriptor=description.opsani_dict(), status="ok")
-                await self.post_event(api.Event.DESCRIPTION, param)
+                await self._post_event(api.Event.DESCRIPTION, param)
 
             elif cmd_response.command == api.Command.MEASURE:
                 measurement = await self.measure(cmd_response.param)
@@ -141,7 +125,7 @@ class ServoRunner:
                 )
                 self.logger.trace(pformat(measurement))
                 param = measurement.opsani_dict()
-                await self.post_event(api.Event.MEASUREMENT, param)
+                await self._post_event(api.Event.MEASUREMENT, param)
 
             elif cmd_response.command == api.Command.ADJUST:
                 # # TODO: This needs to be modeled
@@ -171,12 +155,9 @@ class ServoRunner:
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
 
-                await self.post_event(api.Event.ADJUSTMENT, adjustment)
+                await self._post_event(api.Event.ADJUSTMENT, adjustment)
 
             elif cmd_response.command == api.Command.SLEEP:
-                if (
-                    not self.interactive
-                ):  # ignore sleep request when interactive - let user decide
                     # TODO: Model this
                     duration = int(cmd_response.param.get("duration", 120))
                     self.logger.info(f"Sleeping {duration} sec.")
@@ -188,8 +169,8 @@ class ServoRunner:
         except Exception as error:
             self.logger.exception(f"{cmd_response.command} command failed!")
             param = dict(status="failed", message=_exc_format(error))
-            self.shutdown()
-            await self.post_event(_event_for_command(cmd_response.command), param)
+            self.shutdown(asyncio.get_event_loop())
+            await self._post_event(cmd_response.command.response_event, param)
 
     async def main(self) -> None:
         self.logger.info(
@@ -199,7 +180,7 @@ class ServoRunner:
         self.servo.startup()
 
         self.logger.info("Saying HELLO.", end=" ")
-        await self.post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
+        await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
 
         while True:
             try:
@@ -213,7 +194,7 @@ class ServoRunner:
 
         try:
             reason = signal.name if signal else 'shutdown'
-            await self.post_event(api.Event.GOODBYE, dict(reason=reason))
+            await self._post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception as e:
             self.logger.exception(
                 f"Exception occurred during GOODBYE request: {e}"
@@ -240,12 +221,13 @@ class ServoRunner:
         asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
-        # Setup logging
-        handler = ProgressHandler(self.servo)
-        loguru.logger.add(handler)
-
         # Setup async event loop
         loop = asyncio.get_event_loop()
+
+        # Setup logging
+        handler = ProgressHandler(self.servo)
+        loop.create_task(handler.run())
+        loguru.logger.add(handler)        
         
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
         for s in signals:
@@ -260,18 +242,6 @@ class ServoRunner:
         finally:
             loop.close()
             self.logger.info("Servo shutdown complete.")
-
-
-def _event_for_command(command: api.Command) -> Optional[api.Event]:
-    if cmd_response.command == api.Command.DESCRIBE:
-        return api.Event.DESCRIPTION
-    elif cmd_response.command == api.Command.MEASURE:
-        return api.Event.MEASUREMENT
-    elif cmd_response.command == api.Command.ADJUST:
-        return api.Event.ADJUSTMENT
-    else:
-        return None
-
 
 def _exc_format(e):
     if type(e) is Exception:  # if it's just an Exception

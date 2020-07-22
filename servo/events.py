@@ -56,6 +56,11 @@ class Preposition(Flag):
 class EventContext(BaseModel):
     event: Event
     preposition: Preposition
+    created_at: datetime = None
+    
+    @validator("created_at", pre=True, always=True)
+    def set_created_at_now(cls, v):
+        return v or datetime.now()
     
     def is_before() -> bool:
         return self.preposition == Preposition.BEFORE
@@ -73,6 +78,18 @@ class EventContext(BaseModel):
         if isinstance(other, str):
             return other in (self.__str__(), self.event.name)
         return super().__eq__(other)
+    
+    # FIXME: This should be aligned with `servo.api.Command.response_event` somehow
+    def operation(self) -> str:
+        event_name = self.event.name.upper()
+        if event_name == "DESCRIBE":
+            return "DESCRIPTION"
+        elif event_name == "MEASURE":
+            return "MEASUREMENT"
+        elif event_name == "ADJUST":
+            return "ADJUSTMENT"
+        else:
+            return None
 
 
 class EventHandler(BaseModel):
@@ -740,7 +757,7 @@ class Mixin:
         return results
     
     @property
-    def event_context(self) -> Optional[EventContext]:
+    def current_event(self) -> Optional[EventContext]:
         """
         Returns an object that describes the actively executing event context, if any.
 

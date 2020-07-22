@@ -422,7 +422,7 @@ class VegetaConnector(Connector):
 
                         self.vegeta_reports.append(vegeta_report)
                         summary = self._summarize_report(vegeta_report)
-                        self.logger.info(progress.annotate(summary))
+                        self.logger.info(progress.annotate(summary), progress=progress.progress)
                     else:
                         self.logger.debug(
                             f"Vegeta metrics excluded (warmup in effect): {metrics}"
