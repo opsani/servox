@@ -1,8 +1,12 @@
+import asyncio
+from functools import reduce
 import time
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Literal, Optional, Tuple
 
 import httpx
-from pydantic import AnyHttpUrl, validator
+import httpcore._exceptions
+from pydantic import BaseModel, AnyHttpUrl, root_validator, validator
 
 from servo import (
     BaseConfiguration,
@@ -18,7 +22,11 @@ from servo import (
     Unit,
     metadata,
     on_event,
+    DataPoint,
+    TimeSeries,
 )
+from servo.utilities import join_to_series
+
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
@@ -26,7 +34,7 @@ API_PATH = "/api/v1"
 
 class PrometheusMetric(Metric):
     query: str
-    period: Duration
+    step: Duration = "1m"
 
 
 class PrometheusConfiguration(BaseConfiguration):
@@ -42,23 +50,48 @@ class PrometheusConfiguration(BaseConfiguration):
                     "throughput",
                     Unit.REQUESTS_PER_SECOND,
                     query="rate(http_requests_total[1s])[3m]",
-                    period="1m",
+                    step="1m",
                 ),
                 PrometheusMetric(
-                    "error_rate", Unit.PERCENTAGE, query="rate(errors)", period="1m"
+                    "error_rate", Unit.PERCENTAGE, query="rate(errors)", step="1m"
                 ),
             ],
             **kwargs,
         )
 
     @classmethod
-    @validator("base_url")
-    def coerce_duration(cls, base_url) -> str:
+    @validator("base_url", allow_reuse=True)    
+    def rstrip_base_url(cls, base_url):
         return base_url.rstrip("/")
 
     @property
     def api_url(self) -> str:
-        return f"{self.base_url}{API_PATH}/"
+        return f"{self.base_url}{API_PATH}"
+
+
+class PrometheusRequest(BaseModel):
+    base_url: AnyHttpUrl
+    metric: PrometheusMetric
+    start: datetime
+    end: datetime
+    
+    @property
+    def query(self) -> str:
+        return self.metric.query
+    
+    @property
+    def step(self) -> Duration:
+        return self.metric.step 
+
+    @property
+    def url(self) -> str:
+        return "".join(self.base_url.rstrip("/") + 
+            "/query_range" +
+            f"?query={self.query}" +
+            f"&start={self.start.timestamp()}" +
+            f"&end={self.end.timestamp()}" +
+            f"&step={self.metric.step}"
+        )
 
 
 @metadata(
@@ -73,16 +106,13 @@ class PrometheusConnector(Connector):
 
     @on_event()
     def check(self) -> List[Check]:
-        start, end = time.time() - 600, time.time()
+        start, end = datetime.now() - datetime.timedelta(minutes=10), datetime.now()
         checks = []
         for metric in self.config.metrics:
-            m_values = self._query_prom(metric, start, end)
-            self.logger.debug(
-                "Initial value for metric %s: %s" % (metric.query, m_values)
-            )
+            self._query_prom(metric, start, end)
             checks.append(
                 Check(
-                    name=f'Check query: {metric.query}',
+                    name=f'Run query: {metric.query}',
                     success=True,
                 )
             )
@@ -92,132 +122,77 @@ class PrometheusConnector(Connector):
     @on_event()
     def describe(self) -> Description:
         return Description(metrics=self.config.metrics)
-        # TODO: Should this sample the current values?
 
+    @property
     @on_event()
     def metrics(self) -> List[Metric]:
         return self.config.metrics
 
     @on_event()
-    def measure(
+    async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
+        if metrics:
+            metrics__ = list(filter(lambda m: m.name in metrics, self.metrics))
+        else:
+            metrics__ = self.metrics
+        measuring_names = list(map(lambda m: m.name, metrics__))
+        self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {join_to_series(measuring_names)}")
 
-        # TODO: This becomes a pre-filter on the event -- probably a "before_event *" to bind to anything
-        # execute pre_cmd, if any
-        # pre_cmd = cfg.get('pre_cmd')
-        # if pre_cmd:
-        #     self._run_command(pre_cmd, pre=True)
-
-        # TODO: This warmup becomes a filter also
+        # TODO: The warmup becomes before_event() for measure
         # TODO: Before filters need to get the same input as the main action
-        # try:
-        #     warmup = int(self.input_data["control"]["warmup"])
-        # except:
-        #     warmup = 0
+        start = datetime.now() + control.warmup
+        end = start + control.duration
 
-        # try:
-        #     duration = int(self.input_data["control"]["duration"])
-        # except:
-        #     raise Exception('Control configuration is missing "duration"')
-
-        # delay = int(self.input_data["control"].get("delay", 0))
-
-        # TODO: This whole thing becomes a before filter
-        start = time.time() + control.warmup
-        # sleep
-        debug(control)
-        t_sleep = control.warmup + control.duration + control.delay
+        sleep_duration = Duration(control.warmup + control.duration + control.delay)
         self.logger.debug(
-            "Sleeping for %d seconds (%d warmup + %d duration)"
-            % (t_sleep, control.warmup, control.duration)
+            f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
         )
-        time.sleep(t_sleep)
+        #await asyncio.sleep(sleep_duration.total_seconds())
 
-        metrics = self.gather_metrics(metrics, start, start + control.duration)
-        annotations = {
-            # 'prometheus_base_url': base_url,
-        }
+        # Capture the measurements
+        readings = await asyncio.gather(
+            *list(map(lambda m: self._query_prom(m, start, end), metrics__))
+        )                
+        all_readings = reduce(lambda x, y: x+y, readings)
+        measurement = Measurement(readings=all_readings)
+        return measurement
 
-        return (metrics, annotations)
-
-    def _get_metric_named(self, name: str) -> Optional[PrometheusMetric]:
-        for metric in self.config.metrics:
-            if metric.name == name:
-                return metric
-
-        raise ValueError(f"Unknown metric named '{name}' -- aborting")
-
-    def gather_metrics(self, metric_names: List[str], start, end):
-        metrics = {}
-        for metric_name in metric_names:
-            metric = _get_metric_named(metric_name)  # TODO: This can be tighter
-            m_values = self._query_prom(metric, start, end,)
-            self.logger.debug(
-                "Initial value for metric %s: %s" % (metric.query, m_values)
-            )
-
-            metrics.update(
-                {metric_name: {"values": m_values, "annotation": metric.query,}}
-            )
-        # TODO: This is gonna return time series
-        debug(metrics)
-        return metrics
-
-    def _query_prom(
-        self, metric: PrometheusMetric, start: float, end: float
-    ) -> List[dict]:
-        debug(start, end)
-        # TODO" Tigthen this up...
-        url = "%squery_range?query=%s&start=%s&end=%s&step=%i" % (
-            self.config.api_url,
-            metric.query,
-            start,
-            end,
-            60,  # TODO: metric.period
-        )
-
-        self.logger.info(f"Getting url: {url}")
-        with self.api_client() as client:
+    async def _query_prom(
+        self, metric: PrometheusMetric, start: datetime, end: datetime
+    ) -> List[TimeSeries]:
+        prometheus_request = PrometheusRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
+        
+        self.logger.info(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
+        async with self.api_client() as client:
             try:
-                response = client.get(url)
+                response = await client.get(prometheus_request.url)
                 response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(f"HTTP error encountered during GET {url}")
-                raise error
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
+                self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
+                return error
 
         data = response.json()
-        self.logger.info(f"Got response data: {data}")
+        self.logger.debug(f"Got response data: {data}")
 
-        # TODO: Turn this assert into an exception
-        assert (
-            "status" in data and data["status"] == "success"
-        ), "Prometheus server did not return status success"
-
-        # TODO: This is total insanity that needs t be modeled before we all go crazy
-        # TODO: Marshall this data into a Pydantic model that it makes sense...
-
-        insts = []
-        for i in data["data"]["result"]:
-            metric = i["metric"].copy()
-            if "__name__" in metric:
-                del metric["__name__"]
-            metric_id = "   ".join(
-                map(lambda m: ":".join(m), sorted(metric.items(), key=lambda m: m[0]))
+        if "status" not in data or data["status"] != "success":
+            return []
+    
+        readings = []
+        for result_dict in data["data"]["result"]:
+            m_ = result_dict["metric"].copy()
+            # NOTE: Unpack "metrics" subdict and pack into a string
+            if "__name__" in m_:
+                del m_["__name__"]
+            instance = m_.get("instance")
+            job = m_.get("job")
+            annotation = " ".join(map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0])))
+            readings.append(
+                TimeSeries(
+                    metric=metric,
+                    annotation=annotation,
+                    values=result_dict["values"],
+                    id=f"{{instance={instance},job={job}}}"
+                )
             )
-            values = []
-            for item in i["values"]:
-                try:
-                    if "." in item[1]:
-                        d = float(item[1])
-                    elif item[1] == "NaN":
-                        continue
-                    else:
-                        d = int(item[1])
-                except ValueError:
-                    continue
-                values.append((item[0], d))
-            insts.append(dict(id=metric_id, data=list(values)))
-
-        debug(insts)
-        return insts or []
+        return readings

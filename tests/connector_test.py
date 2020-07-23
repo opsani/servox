@@ -1330,3 +1330,17 @@ class TestConnectorEvents:
         assert context == "on:example_event"
         assert context != "before:example_event"
         assert context != "after:example_event"
+
+async def test_logging() -> None:
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    handler = ProgressHandler(connector)
+    print(handler)
+    connector.logger.add(handler)
+    connector.logger.info("First", progress=0)
+    await asyncio.sleep(0.00001)
+    connector.logger.info("Second", progress=25.0)
+    await asyncio.sleep(0.00001)
+    connector.logger.info("Third", progress=50)
+    await asyncio.sleep(0.00001)
+    connector.logger.info("Fourth", progress=100.0)
+

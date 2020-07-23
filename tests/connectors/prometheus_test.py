@@ -1,28 +1,32 @@
 from datetime import timedelta
 
-from pydantic import ValidationError
+from pydantic import ValidationError, AnyHttpUrl
 
-from servo.connectors.prometheus import PrometheusConfiguration, PrometheusMetric
+from servo.connectors.prometheus import (
+    PrometheusConfiguration, 
+    PrometheusConnector, 
+    PrometheusMetric, 
+    PrometheusRequest
+)
 from servo.types import *
-
+from freezegun import freeze_time
 
 class TestPrometheusMetric:
-    def test_accepts_period_as_duration(self):
+    def test_accepts_step_as_duration(self):
         metric = PrometheusMetric(
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE,
             query="throughput",
-            period="45m",
+            step="45m",
         )
-        assert metric.period == timedelta(seconds=2700)  # 45 mins
+        assert metric.step == timedelta(seconds=2700)  # 45 mins
 
-    def test_accepts_period_as_integer_of_seconds(self):
+    def test_accepts_step_as_integer_of_seconds(self):
         metric = PrometheusMetric(
-            name="test", unit=Unit.REQUESTS_PER_MINUTE, query="throughput", period=180,
+            name="test", unit=Unit.REQUESTS_PER_MINUTE, query="throughput", step=180,
         )
-        assert metric.period
-        debug(metric.period)
-        assert metric.period == timedelta(seconds=180)
+        assert metric.step
+        assert metric.step == timedelta(seconds=180)
 
     # Query
     def test_query_required(self):
@@ -47,7 +51,6 @@ class TestPrometheusMetric:
 
 
 class TestPrometheusConfiguration:
-    # URL
     def test_url_required(self):
         try:
             PrometheusConfiguration(base_url=None)
@@ -90,7 +93,7 @@ class TestPrometheusConfiguration:
             base_url="http://prometheus.default.svc.cluster.local:9090", metrics=[]
         )
         assert (
-            config.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1/"
+            config.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
         )
 
     # Metrics
@@ -108,26 +111,46 @@ class TestPrometheusConfiguration:
     def test_generate_default_config(self):
         config = PrometheusConfiguration.generate()
         assert config.yaml() == (
-            "base_url: http://prometheus:9090\n"
-            "description: Update the base_url and metrics to match your Prometheus configuration\n"
-            "metrics:\n"
-            "- name: throughput\n"
-            "  period: 1m\n"
-            "  query: rate(http_requests_total[1s])[3m]\n"
-            "  unit: rps\n"
-            "- name: error_rate\n"
-            "  period: 1m\n"
-            "  query: rate(errors)\n"
+            'base_url: http://prometheus:9090\n'
+            'description: Update the base_url and metrics to match your Prometheus configuration\n'
+            'metrics:\n'
+            '- name: throughput\n'
+            '  query: rate(http_requests_total[1s])[3m]\n'
+            '  step: 1m\n'
+            '  unit: rps\n'
+            '- name: error_rate\n'
+            '  query: rate(errors)\n'
+            '  step: 1m\n'
             "  unit: '%'\n"
         )
 
 
-# TODO: Add support for before and after filters that enable warmup and settlement
-# TODO: Progress logging
-# TODO: Async/Cancellation -> Dispatch events async
-# TODO: What is the right name for the `period` attribute?
-# TODO: Reporting interval...
+class TestPrometheusRequest:
+    @freeze_time("2020-01-01")
+    def test_url(self):
+        request = PrometheusRequest(
+            base_url="http://prometheus.default.svc.cluster.local:9090/api/v1/",
+            start=datetime.now(),
+            end=datetime.now() + Duration("36h"),
+            metric=PrometheusMetric("go_memstats_heap_inuse_bytes", Unit.BYTES, query="go_memstats_heap_inuse_bytes"),
+            )
+        assert request.url == "http://prometheus.default.svc.cluster.local:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
 
+    @freeze_time("2020-01-01")
+    def test_other_url(self):
+        request = PrometheusRequest(
+            base_url="http://localhost:9090/api/v1/",
+            start=datetime.now(),
+            end=datetime.now() + Duration("36h"),
+            metric=PrometheusMetric("go_memstats_heap_inuse_bytes", Unit.BYTES, query="go_memstats_heap_inuse_bytes"),
+            )
+        assert request.url == "http://localhost:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
+
+
+# TODO: Add support for before and after filters that enable warmup and settlement
+# TODO: Reporting interval...
+# def run_servo
+#     - Microenvironment that spins up a loop, handles signals and cancellation
 
 class TestPrometheusConnector:
     def test_describe(self):
@@ -138,15 +161,19 @@ class TestPrometheusConnector:
 
     def test_check_fails_with_invalid_query(self):
         pass
+        # mock
 
     def test_check_fails_if_unreachable(self):
         pass
+    # mock
 
     def test_check_fails_with_invalid_query(self):
         pass
+        # mockss
 
 
 class TestPrometheusCLI:
+    # TODO: I can make these a helper that intercepts the event dispatch
     def test_metrics(self):
         pass
 
@@ -160,3 +187,6 @@ class TestPrometheusCLI:
 # TODO: Annotate with pydantic and run prometheus locally for smoke tests
 class TestPrometheusIntegration:
     pass
+
+# Marshall against this fixture
+# Got response data: {'status': 'success', 'data': {'resultType': 'matrix', 'result': [{'metric': {'__name__': 'go_memstats_gc_sys_bytes', 'instance': 'localhost:9090', 'job': 'prometheus'}, 'values': [[1595142421.024, '3594504'], [1595142481.024, '3594504']]}]}}

@@ -3,6 +3,8 @@ import json
 import shlex
 import subprocess
 import sys
+import textwrap
+
 from datetime import datetime, timezone
 from enum import Enum
 from functools import reduce
@@ -1069,6 +1071,12 @@ class ServoCLI(CLI):
                 metavar="DURATION",
                 callback=self.duration_callback,
             ),
+            verbose: bool = typer.Option(
+                False,
+                "--verbose",
+                "-v",
+                help="Display verbose output",
+            ),
         ) -> None:
             """
             Capture measurements for one or more metrics
@@ -1085,13 +1093,21 @@ class ServoCLI(CLI):
             table = []
             for result in results:
                 measurement = result.value
+                if not measurement:
+                    continue
                 for reading in measurement.readings:
                     if metric_names is None or reading.metric.name in metric_names:
-                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}]", reading.values))
+                        annotation = f" {{{reading.annotation}}}" if hasattr(reading, "annotation") else ""
+                        if not verbose:
+                            annotation = textwrap.shorten(annotation, 20, placeholder="")
+                            # annotation[:20] + (annotation[20:] and '...')
+                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}{{{annotation}}}]", reading.values))
+                        values = textwrap.wrap
                         row = [
+                            # textwrap.wrap(reading.metric.name + reading.id, width=15),
                             reading.metric.name,
                             reading.metric.unit,
-                            "\n".join(values),
+                            "\n".join(values),                            
                         ]
                         table.append(row)
 

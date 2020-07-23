@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import semver
 from pydantic import BaseModel, validator, datetime_parse
@@ -162,6 +162,7 @@ class DurationProgress(BaseModel):
 
 
 class Unit(str, Enum):
+    BYTES = "bytes"
     REQUESTS_PER_MINUTE = "rpm"
     REQUESTS_PER_SECOND = "rps"
     PERCENTAGE = "%"
