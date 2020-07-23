@@ -1101,8 +1101,7 @@ class ServoCLI(CLI):
                         if not verbose:
                             annotation = textwrap.shorten(annotation, 20, placeholder="")
                             # annotation[:20] + (annotation[20:] and '...')
-                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}{{{annotation}}}]", reading.values))
-                        values = textwrap.wrap
+                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}{reading.id}]", reading.values))
                         row = [
                             # textwrap.wrap(reading.metric.name + reading.id, width=15),
                             reading.metric.name,
