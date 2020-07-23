@@ -148,7 +148,7 @@ class PrometheusConnector(Connector):
         self.logger.debug(
             f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
         )
-        #await asyncio.sleep(sleep_duration.total_seconds())
+        await asyncio.sleep(sleep_duration.total_seconds())
 
         # Capture the measurements
         readings = await asyncio.gather(
