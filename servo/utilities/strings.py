@@ -1,11 +1,11 @@
-from typing import Iterable
+from typing import Sequence
 
 
 def join_to_series(
-    items: Iterable[str], *, conjunction: str = "and", oxford_comma: bool = True
+    items: Sequence[str], *, conjunction: str = "and", oxford_comma: bool = True
 ) -> str:
     """
-    Concatenate any number of strings into a series suitable for use in English output.
+    Concatenate a sequence of strings into a series suitable for use in English output.
 
     Items are joined using a comma and a configurable conjunction, defaulting to 'and'.
     """
@@ -21,3 +21,8 @@ def join_to_series(
         last_item = items[-1]
         delimiter = "," if oxford_comma else ""
         return f"{series}{delimiter} {conjunction} {last_item}"
+
+
+def commandify(module_path: str) -> str:
+    # foo.bar.this_key => this-key
+    return module_path.split(".", 1)[-1].replace("_", "-").lower()

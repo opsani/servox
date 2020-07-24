@@ -734,10 +734,10 @@ class TestCLIFoundation:
 
 
 def test_command_name_for_nested_connectors() -> None:
-    from servo.cli import _command_name_from_config_key
+    from servo.cli import commandify
 
-    assert _command_name_from_config_key("fake") == "fake"
-    assert _command_name_from_config_key("another_fake") == "another-fake"
+    assert commandify("fake") == "fake"
+    assert commandify("another_fake") == "another-fake"
 
 
 def test_ordering_of_ops_commands(servo_cli: CLI, cli_runner: CliRunner) -> None:

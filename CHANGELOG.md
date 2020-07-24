@@ -30,6 +30,7 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - The version command can now output version data for connectors.
 - The connectors command now outputs names for displaying aliased configurations.
 - The servo now runs asynchronously on top of asyncio.
+- Added start-up banner to run command.
 
 ### Removed
 - The `durationpy` package has been removed in favor of a local implementation.

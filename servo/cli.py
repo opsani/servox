@@ -42,7 +42,7 @@ from servo.servo import (
 )
 from servo.servo_runner import ServoRunner
 from servo.types import *
-from servo.utilities import PreservedScalarString
+from servo.utilities import PreservedScalarString, commandify
 
 # Add the devtools debug() function to the CLI if its available
 try:
@@ -544,7 +544,7 @@ class ConnectorCLI(CLI):
                     context.connector = connector
 
         if name is None:
-            name = _command_name_from_config_key(connector_type.__default_name__)
+            name = commandify(connector_type.__default_name__)
         if help is None:
             help = connector_type.description
         if isinstance(callback, DefaultPlaceholder):
@@ -903,7 +903,7 @@ class ServoCLI(CLI):
             """
             Run the servo
             """
-            ServoRunner(context.servo).run()
+            ServoRunner(context.assembly).run()
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[Connector], event: str
@@ -1560,7 +1560,3 @@ def _run(args: Union[str, List[str]], **kwargs) -> None:
     if process.returncode != 0:
         sys.exit(process.returncode)
 
-
-def _command_name_from_config_key(config_key: str) -> str:
-    # foo.bar.this_key => this-key
-    return config_key.split(".", 1)[-1].replace("_", "-").lower()

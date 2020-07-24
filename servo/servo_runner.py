@@ -9,17 +9,18 @@ from typing import Any, Dict, List, Optional, Union
 import backoff
 import httpx
 import loguru
+import typer
 
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
 from servo import api
-from servo.assembly import BaseServoConfiguration
+from servo.assembly import Assembly, BaseServoConfiguration
 from servo.configuration import Optimizer
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
-
+from servo.utilities import commandify
 
 # TODO: Review and expand all the error classes
 class ConnectorError(Exception):
@@ -33,15 +34,19 @@ class ConnectorError(Exception):
 
 
 class ServoRunner(api.Mixin):
-    servo: Servo
+    assembly: Assembly
 
-    def __init__(self, servo: Servo) -> None:
-        self.servo = servo
+    def __init__(self, assembly: Assembly) -> None:
+        self.assembly = assembly
         super().__init__()
 
     @property
     def optimizer(self) -> Optimizer:
         return self.servo.optimizer
+    
+    @property
+    def servo(self) -> Servo:
+        return self.assembly.servo
 
     @property
     def configuration(self) -> BaseServoConfiguration:
@@ -50,6 +55,41 @@ class ServoRunner(api.Mixin):
     @property
     def logger(self) -> Logger:
         return self.servo.logger
+    
+    def display_banner(self) -> None:
+        banner = (
+            "   _____                      _  __\n"
+            "  / ___/___  ______   ______ | |/ /\n"
+            "  \__ \/ _ \/ ___/ | / / __ \|   /\n"
+            " ___/ /  __/ /   | |/ / /_/ /   |\n"
+            "/____/\___/_/    |___/\____/_/|_|"
+        )
+        typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
+                
+        name_st = typer.style("name", fg=typer.colors.CYAN, bold=False)
+        version_st = typer.style("version", fg=typer.colors.WHITE, bold=True)
+        types = Assembly.all_connector_types()
+        types.remove(Servo)
+        
+        names = []
+        for c in types:
+            name = typer.style(commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False)
+            version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
+            names.append(f"{name}-{version}")
+        version = typer.style(f"v{Servo.version}", fg=typer.colors.WHITE, bold=True)
+        codename = typer.style("the awakening", fg=typer.colors.MAGENTA, bold=False)
+        initialized = typer.style("initialized", fg=typer.colors.BRIGHT_GREEN, bold=True)        
+        
+        typer.secho(f"{version} \"{codename}\" {initialized}")
+        typer.secho()
+        typer.secho(f"connectors:  {', '.join(sorted(names))}")
+        typer.secho(f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}")
+        id = typer.style(self.optimizer.id, bold=True, fg=typer.colors.WHITE)        
+        typer.secho(f"optimizer:   {id}")
+        if self.optimizer.base_url != "https://api.opsani.com/":
+            base_url = typer.style(f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED)
+            typer.secho(f"base url: {base_url}")
+        typer.secho()
 
     async def describe(self) -> Description:
         self.logger.info("Describing...")
@@ -169,7 +209,7 @@ class ServoRunner(api.Mixin):
         except Exception as error:
             self.logger.exception(f"{cmd_response.command} command failed!")
             param = dict(status="failed", message=_exc_format(error))
-            self.shutdown(asyncio.get_event_loop())
+            await self.shutdown(asyncio.get_event_loop())
             await self._post_event(cmd_response.command.response_event, param)
 
     async def main(self) -> None:
@@ -221,6 +261,8 @@ class ServoRunner(api.Mixin):
         asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
+        self.display_banner()
+
         # Setup async event loop
         loop = asyncio.get_event_loop()
 
