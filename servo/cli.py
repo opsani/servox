@@ -12,11 +12,12 @@ from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
 
+import bullet
 import click
 import timeago
 import typer
 import yaml
-from bullet import Check, colors
+
 from devtools import pformat
 from loguru import logger
 from pydantic import ValidationError
@@ -605,45 +606,60 @@ class ServoCLI(CLI):
         # TODO: Options for Docker Compose and Kubernetes?
 
         @self.command(section=Section.ASSEMBLY)
-        def init(context: Context) -> None:
+        def init(
+            context: Context,
+            dotenv: bool = typer.Option(
+                True,
+                help="Generate .env file",
+            ),
+        ) -> None:
             """
             Initialize a servo assembly
             """
-            dotenv_file = Path(".env")
-            write_dotenv = True
-            if dotenv_file.exists():
-                write_dotenv = typer.confirm(
-                    f"File '{dotenv_file}' already exists. Overwrite it?"
-                )
+            if dotenv:
+                dotenv_file = Path(".env")
+                write_dotenv = True
+                if dotenv_file.exists():
+                    write_dotenv = typer.confirm(
+                        f"File '{dotenv_file}' already exists. Overwrite it?"
+                    )
 
-            if write_dotenv:
-                optimizer = typer.prompt(
-                    "Opsani optimizer? (format: dev.opsani.con/app-name)",
-                    default=context.optimizer,
-                )
-                token = typer.prompt("API token?", default=context.token)
-                dotenv_file.write_text(
-                    f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\n"
-                )
-                typer.echo(".env file initialized")
+                if write_dotenv:
+                    optimizer = typer.prompt(
+                        "Opsani optimizer? (format: dev.opsani.con/app-name)",
+                        default=context.optimizer,
+                    )
+                    optimizer != context.optimizer or typer.echo()
+                    token = typer.prompt("API token?", default=context.token)
+                    token != context.token or typer.echo()
+                    dotenv_file.write_text(
+                        f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\n"
+                    )
+                    typer.echo(".env file initialized")
 
             customize = typer.confirm(
                 f"Generating servo.yaml. Do you want to select the connectors?"
             )
             if customize:
-                check = Check(
-                    "Which connectors do you want to activate? ",
+                types = Assembly.all_connector_types()
+                types.remove(Servo)
+                
+                check = bullet.Check(
+                    "\nWhich connectors do you want to activate? ",                    
                     choices=list(
-                        map(lambda c: c.name, Assembly.all_connector_types())
+                        map(lambda c: c.name, types)
                     ),
                     check=" √",
-                    margin=2,
-                    check_color=colors.bright(colors.foreground["green"]),
-                    check_on_switch=colors.bright(colors.foreground["green"]),
-                    background_color=colors.background["black"],
-                    background_on_switch=colors.background["white"],
-                    word_color=colors.foreground["white"],
-                    word_on_switch=colors.foreground["black"],
+                    indent=0,
+                    margin=4,
+                    align=4,
+                    pad_right = 4,
+                    check_color=bullet.colors.bright(bullet.colors.foreground["green"]),
+                    check_on_switch=bullet.colors.bright(bullet.colors.foreground["black"]),
+                    background_color=bullet.colors.background["black"],
+                    background_on_switch=bullet.colors.background["white"],
+                    word_color=bullet.colors.foreground["white"],
+                    word_on_switch=bullet.colors.foreground["black"],
                 )
 
                 result = check.launch()
