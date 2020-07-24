@@ -15,6 +15,11 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2020-07-24
+
+### Fixed
+- The `respx` mocking library was in the main project dependencies instead of dev dependencies.
+
 ## [0.4.0] - 2020-07-24
 
 The headline feature of this release is the adoption of asyncio
