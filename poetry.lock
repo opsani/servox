@@ -1179,6 +1179,14 @@ docs = ["sphinx", "zope.component", "sybil", "twisted", "mock", "django (<2)", "
 test = ["pytest (>=3.6)", "pytest-cov", "pytest-django", "zope.component", "sybil", "twisted", "mock", "django (<2)", "django"]
 
 [[package]]
+category = "main"
+description = "A very simple python library, used to format datetime with `*** time ago` statement. eg: \"3 hours ago\"."
+name = "timeago"
+optional = false
+python-versions = "*"
+version = "1.0.14"
+
+[[package]]
 category = "dev"
 description = "Python Library for Tom's Obvious, Minimal Language"
 name = "toml"
@@ -1309,7 +1317,7 @@ version = "1.0.1"
 dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [metadata]
-content-hash = "94f7d43f4da26b500b1dea01fe3f00fcf94617bba6471e5c4ca8197c2d4c0428"
+content-hash = "726bb94a6f5058b7d0dcb8aedee6058cf4bee36e2706ae3bc0b179bec0f9d344"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1831,6 +1839,9 @@ tabulate = [
 testfixtures = [
     {file = "testfixtures-6.14.1-py2.py3-none-any.whl", hash = "sha256:30566e24a1b34e4d3f8c13abf62557d01eeb4480bcb8f1745467bfb0d415a7d9"},
     {file = "testfixtures-6.14.1.tar.gz", hash = "sha256:58d2b3146d93bc5ddb0cd24e0ccacb13e29bdb61e5c81235c58f7b8ee4470366"},
+]
+timeago = [
+    {file = "timeago-1.0.14.tar.gz", hash = "sha256:4308d0123a21c778e0ac66fb68e09c15ab6a006e152f8840902575b48aac373d"},
 ]
 toml = [
     {file = "toml-0.10.1-py2.py3-none-any.whl", hash = "sha256:bda89d5935c2eac546d648028b9901107a595863cb36bae0c73ac804a9b4ce88"},

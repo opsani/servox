@@ -175,6 +175,9 @@ class Metric(BaseModel):
 
     def __init__(self, name: str, unit: Unit, **kwargs) -> None:
         super().__init__(name=name, unit=unit, **kwargs)
+    
+    def __hash__(self):
+        return hash((self.name, self.unit,))
 
 
 class DataPoint(BaseModel):
@@ -192,11 +195,14 @@ class TimeSeries(BaseModel):
     metric: Metric
     values: List[Tuple[datetime, Numeric]]
     annotation: Optional[str]
-    id: Optional[str]
+    id: Optional[str] # TODO: source, id, context
+    metadata: Optional[Dict[str, str]]
 
     def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)
 
+Reading = Union[DataPoint, TimeSeries]
+Readings = List[Reading]
 
 class SettingType(str, Enum):
     RANGE = "range"
@@ -248,6 +254,7 @@ class Control(BaseModel):
             return value
         return Duration(0)
 
+
 class Description(BaseModel):
     components: List[Component] = []
     metrics: List[Metric] = []
@@ -260,7 +267,6 @@ class Description(BaseModel):
             dict["measurement"]["metrics"][metric.name] = {"unit": metric.unit.value}
         return dict
 
-Readings = List[Union[DataPoint, TimeSeries]]
 
 class Measurement(BaseModel):
     readings: Readings = []

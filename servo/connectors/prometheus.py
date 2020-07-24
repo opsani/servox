@@ -153,7 +153,7 @@ class PrometheusConnector(Connector):
         # Capture the measurements
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))
-        )                
+        )
         all_readings = reduce(lambda x, y: x+y, readings)
         measurement = Measurement(readings=all_readings)
         return measurement
@@ -170,7 +170,7 @@ class PrometheusConnector(Connector):
                 response.raise_for_status()
             except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
                 self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
-                return error
+                return []
 
         data = response.json()
         self.logger.debug(f"Got response data: {data}")
@@ -192,7 +192,8 @@ class PrometheusConnector(Connector):
                     metric=metric,
                     annotation=annotation,
                     values=result_dict["values"],
-                    id=f"{{instance={instance},job={job}}}"
+                    id=f"{{instance={instance},job={job}}}",
+                    metadata=dict(instance=instance, job=job)
                 )
             )
         return readings

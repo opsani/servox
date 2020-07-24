@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
 
 import click
+import timeago
 import typer
 import yaml
 from bullet import Check, colors
@@ -1077,39 +1078,61 @@ class ServoCLI(CLI):
                 "-v",
                 help="Display verbose output",
             ),
+            humanize: bool = typer.Option(
+                True,
+                help="Display human readable output for units",
+            ),
         ) -> None:
             """
             Capture measurements for one or more metrics
             """            
             if not connectors:
-                connectors = context.assembly.connectors
+                connectors = list(filter(lambda c: c.responds_to_event(Events.MEASURE), context.assembly.connectors))
             # TODO: Limit the dispatch to the connectors that support the target metrics
             results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             )
-           
-            metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
-            headers = ["METRIC", "UNIT", "READINGS"]
-            table = []
+            
+            aggregated_by_metric: Dict[Metric, Dict[str, Dict[Connector, List[Tuple[Numeric, Reading]]]]] = {}
             for result in results:
                 measurement = result.value
                 if not measurement:
                     continue
-                for reading in measurement.readings:
-                    if metric_names is None or reading.metric.name in metric_names:
-                        annotation = f" {{{reading.annotation}}}" if hasattr(reading, "annotation") else ""
-                        if not verbose:
-                            annotation = textwrap.shorten(annotation, 20, placeholder="")
-                            # annotation[:20] + (annotation[20:] and '...')
-                        values = list(map(lambda r: f"{r[1]:.2f} @ {r[0]:%Y-%m-%d %H:%M:%S%z} [{result.connector.name}{reading.id}]", reading.values))
-                        row = [
-                            # textwrap.wrap(reading.metric.name + reading.id, width=15),
-                            reading.metric.name,
-                            reading.metric.unit,
-                            "\n".join(values),                            
-                        ]
-                        table.append(row)
+                for reading in measurement.readings: # List[TimeSeries]
+                    metric = reading.metric
+                    
+                    metric_to_timestamp = aggregated_by_metric.get(metric, {})
+                    for value_tuple in reading.values: # List[Tuple[datetime, Numeric]]
+                        time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
+                        timestamp_to_connector = metric_to_timestamp.get(time_key, {})
+                        values = timestamp_to_connector.get(result.connector, [])
+                        values.append((value_tuple[1], reading))
+                        timestamp_to_connector[result.connector] = values
+                        metric_to_timestamp[time_key] = timestamp_to_connector
 
+                    aggregated_by_metric[metric] = metric_to_timestamp
+            
+            # Print the table            
+            def attribute_connector(connector, reading) -> str:
+                return f"[{connector.name}{reading.id or ''}]" if len(connectors) > 1 else ""
+
+            headers = ["METRIC", "UNIT", "READINGS"]
+            table = []
+            for metric in sorted(aggregated_by_metric.keys(), key=lambda m: m.name):
+                readings_column = []
+                timestamp_to_connectors = aggregated_by_metric[metric]
+                for timestamp in sorted(timestamp_to_connectors.keys()):
+                    for connector, values in timestamp_to_connectors[timestamp].items(): # Dict[Connector, Tuple[Numeric, Reading]]
+                        readings_column.extend(
+                            list(map(lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}", values))
+                        )
+
+                row = [
+                    metric.name,
+                    metric.unit,
+                    "\n".join(readings_column),                            
+                ]
+                table.append(row)
             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         @self.command(section=section)
