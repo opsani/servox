@@ -162,7 +162,7 @@ class Assembly(BaseModel):
     @classmethod
     def all_connector_types(cls) -> Set[Type[Connector]]:
         """Return a set of all connector types in the assembly excluding the Servo"""
-        return _connector_subclasses
+        return _connector_subclasses.copy()
 
     @property
     def connectors(self) -> List[Connector]:
