@@ -15,7 +15,10 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.4.0] - 2020-07-24
+
+The headline feature of this release is the adoption of asyncio
+as a core part of the architecture.
 
 ### Fixed
 - Docker image builds now correctly support excluding development dependencies via the `SERVO_ENV` build argument.
