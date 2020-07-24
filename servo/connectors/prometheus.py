@@ -154,7 +154,7 @@ class PrometheusConnector(Connector):
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))
         )
-        all_readings = reduce(lambda x, y: x+y, readings)
+        all_readings = reduce(lambda x, y: x+y, readings) if readings else []
         measurement = Measurement(readings=all_readings)
         return measurement
 

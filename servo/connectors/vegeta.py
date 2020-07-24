@@ -379,7 +379,7 @@ class VegetaConnector(Connector):
             f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports"
         )
         readings = (
-            self._time_series_readings_from_vegeta_reports()
+            self._time_series_readings_from_vegeta_reports(metrics)
             if self.vegeta_reports
             else []
         )
@@ -496,10 +496,13 @@ class VegetaConnector(Connector):
         return vegeta_cmd
 
     # helper:  take the time series metrics gathered during the attack and map them into OCO format
-    def _time_series_readings_from_vegeta_reports(self) -> List[TimeSeries]:
+    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[Metric]]) -> List[TimeSeries]:
         readings = []
 
         for metric in METRICS:
+            if metrics and metric not in metrics:
+                continue
+
             if metric.name in ("throughput", "error_rate",):
                 key = metric.name
             elif metric.name.startswith("latency_"):

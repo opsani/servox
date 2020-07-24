@@ -1104,12 +1104,29 @@ class ServoCLI(CLI):
             """            
             if not connectors:
                 connectors = list(filter(lambda c: c.responds_to_event(Events.MEASURE), context.assembly.connectors))
-            # TODO: Limit the dispatch to the connectors that support the target metrics
+            
+            # TODO: Test combination of metrics + connector options
+            if metrics:
+                # Filter target connectors by metrics
+                results: List[EventResult] = context.servo.dispatch_event_sync(
+                    Events.METRICS, include=connectors
+                )
+                for result in results:
+                    result_metrics: List[Metric] = result.value
+                    metric_names: Set[str] = set(map(lambda m: m.name, result_metrics))
+                    if not metric_names | set(metrics):
+                        connectors.remove(result.connector)
+            
+            # Capture the measurements
             results: List[EventResult] = context.servo.dispatch_event_sync(
                 Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             )
-            
-            aggregated_by_metric: Dict[Metric, Dict[str, Dict[Connector, List[Tuple[Numeric, Reading]]]]] = {}
+
+            # FIXME: The data that is crossing connector boundaries needs to be validated
+            aggregated_by_metric: Dict[Metric, Dict[str, Dict[Connector, List[Tuple[Numeric, Reading]]]]] = {}                       
+            metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
+            headers = ["METRIC", "UNIT", "READINGS"]
+            table = []
             for result in results:
                 measurement = result.value
                 if not measurement:
