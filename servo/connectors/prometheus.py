@@ -58,9 +58,9 @@ class PrometheusConfiguration(BaseConfiguration):
             ],
             **kwargs,
         )
-
+    
+    @validator("base_url", allow_reuse=True)
     @classmethod
-    @validator("base_url", allow_reuse=True)    
     def rstrip_base_url(cls, base_url):
         return base_url.rstrip("/")
 

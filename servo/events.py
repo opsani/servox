@@ -1,4 +1,5 @@
 import asyncio
+from contextvars import ContextVar
 from datetime import datetime
 from enum import Flag, auto
 from functools import reduce
@@ -58,17 +59,19 @@ class EventContext(BaseModel):
     preposition: Preposition
     created_at: datetime = None
     
+    
     @validator("created_at", pre=True, always=True)
+    @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
     
-    def is_before() -> bool:
+    def is_before(self) -> bool:
         return self.preposition == Preposition.BEFORE
 
-    def is_on() -> bool:
+    def is_on(self) -> bool:
         return self.preposition == Preposition.ON
     
-    def is_after() -> bool:
+    def is_after(self) -> bool:
         return self.preposition == Preposition.AFTER
     
     def __str__(self):
@@ -114,8 +117,9 @@ class EventResult(BaseModel):
     connector: "Connector"
     created_at: datetime = None
     value: Any
-
+    
     @validator("created_at", pre=True, always=True)
+    @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
 
@@ -489,7 +493,6 @@ def _validate_handler_signature(
 
 
 # Context vars for asyncio tasks managed by run_event_handlers
-from contextvars import ContextVar
 _event_context_var = ContextVar('servo.event', default=None)
 _connector_context_var = ContextVar('servo.connector', default=None)
 _connector_event_bus = WeakKeyDictionary()

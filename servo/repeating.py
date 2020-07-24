@@ -16,8 +16,6 @@ class Mixin:
         repeaters = {}
         for name, method in cls.__dict__.items():
             if repeat_params := getattr(method, "__repeating__", None):
-                # name, duration = values_for_keys(repeat_params, "name", "duration")
-                # self.start_repeating_task(name, duration, method)
                 repeaters[method] = repeat_params
         
         cls.__repeaters__ = repeaters
@@ -26,11 +24,8 @@ class Mixin:
         super().__init__(*args, **kwargs)
         repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
         _repeating_tasks_registry[self] = repeating_tasks
-        #self._repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
 
         # Start tasks for any methods decorated via `repeating`
-        # TODO: This should not be calling the func...
-        # method_names = [func for func in dir(self) if callable(getattr(self, func))]
         for method, repeat_params in self.__class__.__repeaters__.items():
             if repeat_params := getattr(method, "__repeating__", None):
                 name, duration = values_for_keys(repeat_params, "name", "duration")

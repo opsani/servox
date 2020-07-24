@@ -71,6 +71,7 @@ class Latencies(BaseModel):
     min: int
 
     @validator("*")
+    @classmethod
     def convert_nanoseconds_to_milliseconds(cls, latency):
         # Convert Nanonsecond -> Millisecond
         return (latency * 0.000001) if latency is not None else -1
@@ -99,10 +100,12 @@ class VegetaReport(BaseModel):
     errors: List[str]
 
     @validator("throughput")
+    @classmethod
     def convert_throughput_to_rpm(cls, throughput: float) -> float:
         return throughput * 60
 
     @validator("error_rate", always=True, pre=True)
+    @classmethod
     def calculate_error_rate_from_success(cls, v, values: Dict[str, Any]) -> float:
         success_rate = values["success"]
         return 100 - (

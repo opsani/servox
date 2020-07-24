@@ -242,6 +242,7 @@ class Control(BaseModel):
     load: Optional[dict]
 
     @validator('past', 'warmup', 'delay', always=True, pre=True)
+    @classmethod
     def validate_durations(cls, value) -> Duration:
         if value:
             return value
@@ -294,6 +295,7 @@ class Check(BaseModel):
     created_at: datetime = None
 
     @validator("created_at", pre=True, always=True)
+    @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
 

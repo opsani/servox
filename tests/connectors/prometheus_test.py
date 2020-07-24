@@ -65,7 +65,7 @@ class TestPrometheusConfiguration:
         config = PrometheusConfiguration(
             base_url="http://prometheus.io/some/path/", metrics=[]
         )
-        assert config.base_url == "http://prometheus.io/some/path/"
+        assert config.base_url == "http://prometheus.io/some/path"
 
     def test_supports_localhost_url(self):
         config = PrometheusConfiguration(base_url="http://localhost:9090", metrics=[])
