@@ -40,7 +40,7 @@ from servo.servo import (
     Events,
     Servo,
 )
-from servo.servo_runner import ServoRunner
+from servo.runner import Runner
 from servo.types import *
 from servo.utilities import PreservedScalarString, commandify
 
@@ -903,7 +903,7 @@ class ServoCLI(CLI):
             """
             Run the servo
             """
-            ServoRunner(context.assembly).run()
+            Runner(context.assembly).run()
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[Connector], event: str

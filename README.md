@@ -414,7 +414,7 @@ The following is a non-exhaustive list of work in progress on the road to shippi
 * [ ] Create connectors for vegeta, k8s, and prometheus
 * [ ] Build config classes for all connectors
 * [ ] Package builds
-* [ ] Implement testing API for exercising API dependent components (e.g. `ServoRunner`)
+* [ ] Implement testing API for exercising API dependent components (e.g. `servo.Runner`)
 * [ ] Produce config fixtures from existing projects
 * [ ] Include servo-exec in core library
 * [ ] Encoders

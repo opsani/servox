@@ -17,23 +17,14 @@ from pydantic import BaseModel, Field, parse_obj_as
 from servo import api
 from servo.assembly import Assembly, BaseServoConfiguration
 from servo.configuration import Optimizer
+from servo.errors import ConnectorError
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
 from servo.utilities import commandify
 
-# TODO: Review and expand all the error classes
-class ConnectorError(Exception):
-    """Exception indicating that a connector failed
-    """
 
-    def __init__(self, *args, status="failed", reason="unknown"):
-        self.status = status
-        self.reason = reason
-        super().__init__(*args)
-
-
-class ServoRunner(api.Mixin):
+class Runner(api.Mixin):
     assembly: Assembly
 
     def __init__(self, assembly: Assembly) -> None:

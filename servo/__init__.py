@@ -9,6 +9,7 @@ for pkg in {"servo", "servox"}:
 
 import servo.assembly
 import servo.connector
+import servo.errors
 import servo.events
 import servo.types
 import servo.cli
@@ -22,8 +23,6 @@ from .events import (
     EventHandler,
     EventResult, 
     Preposition,
-    EventError,
-    CancelEventError,
     create_event,
     event,
     before_event,
@@ -38,6 +37,7 @@ from .connector import (
     metadata,
 )
 
-# Pull the types & utilities up to the top level
+# Pull the errors, types & utilities up to the top level
+from .errors import *
 from .types import *
 from .utilities import *
