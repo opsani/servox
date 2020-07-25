@@ -171,6 +171,24 @@ async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert results[0].connector == second_connector
 
 
+def test_get_event_handlers_all(servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    event_handlers = connector.get_event_handlers("promote")
+    assert len(event_handlers) == 3
+    assert list(map(lambda h: f"{h.preposition}:{h.event}", event_handlers)) == ['before:promote', 'on:promote', 'after:promote']
+
+from servo.events import event_handler, get_event
+
+async def test_add_event_handler_programmatically(mocker, servo: servo) -> None:
+    async def fn(self, results: List[EventResult]) -> None:
+        print("Test!")
+    event = get_event("measure")
+    event_handler = FirstTestServoConnector.add_event_handler(event, Preposition.AFTER, fn)
+    spy = mocker.spy(event_handler, "handler")
+    await servo.dispatch_event("measure")
+    spy.assert_called_once()
+
+
 async def test_before_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("measure", Preposition.BEFORE)[0]

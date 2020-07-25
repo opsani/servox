@@ -1,6 +1,6 @@
 from datetime import datetime
 from importlib.metadata import version 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import backoff
 import httpx
@@ -15,14 +15,6 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
-# TODO: Move into the events core
-# TODO: Event.from_str() ??
-def event_from_str(event_id: str) -> EventContext:
-    preposition, event_name = event_id.split(":", 1)
-    return EventContext(
-        preposition=preposition, 
-        event=get_event(event_name)
-    )
 
 class BackoffConfig(BaseModel):
     """
@@ -44,19 +36,19 @@ class WebhookRequestBody(BaseModel):
 class Webhook(BaseModel):
     name: Optional[str] = Field(
         description="A unique name identifying the webhook.",
-    ),
+    )
     description: Optional[str] = Field(
         description="Optional free-form text describing the context or purpose of the webhook.",
-    ),
+    )
     events: List[EventContext] = Field(
         description="A list of events that the webhook is listening for.",
-    ),
+    )
     url: AnyHttpUrl = Field(
         description="An HTTP, HTTPS, or HTTP/2 endpoint listening for webhooks event requests.",
-    ),
+    )
     secret: SecretStr = Field(
         description="A secret string value used to produce an HMAC digest for verifying webhook authenticity.",
-    ),
+    )
     headers: Dict[str, str] = Field(
         {},
         description="A dictionary of supplemental HTTP headers to include in webhook requests.",
@@ -68,22 +60,20 @@ class Webhook(BaseModel):
     @classmethod
     def validate_events(cls, value) -> List[EventContext]:
         if isinstance(value, str):
-            return [event_from_str(value)]
+            if event_context := EventContext.from_str(value):
+                return [event_context]
+            raise ValueError(f"Invalid value for events")
         elif isinstance(value, (list, set, tuple)):
             events = []
             for e in value:
-                if isinstance(e, EventContext):
-                    events.append(e)
-                elif isinstance(e, str):
-                    events.append(event_from_str(e))
-                else:
-                    raise ValueError(f"invalid value of type '{e.__class__}'")
-            return events
-            
-        return value
+                event = EventContext.from_str(e)
+                if not event:
+                    raise ValueError(f"Invalid value for events")
+                events.append(event)
+        return events
 
 class Configuration(servo.BaseConfiguration):
-    webhooks: List[Webhook]
+    webhooks: List[Webhook] = []
 
     @classmethod
     def generate(cls, **kwargs) -> "Configuration":
@@ -115,6 +105,8 @@ class Configuration(servo.BaseConfiguration):
 )
 class Connector(servo.Connector):
     config: Configuration
+    name: str = "servo-webhooks"
+    __default_name__ = "servo-webhooks"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -122,21 +114,14 @@ class Connector(servo.Connector):
     
     def _register_event_handlers(self) -> None:
         for webhook in self.config.webhooks:
-            debug("webhook", webhook)
             for event in webhook.events:
-                debug(event)
                 if event.preposition == Preposition.BEFORE:
                     self._add_before_event_webhook_handler(webhook, event)
                 elif event.preposition == Preposition.AFTER:
                     self._add_after_event_webhook_handler(webhook, event)
                 else:
                     raise ValueError(f"Unsupported Preposition value given for webhook: '{event.preposition}'")
-                # debug(event.preposition)
-                # fn = event_handler(event.event.name, event.preposition)(fn)
-                # debug(fn, event.preposition)
-                # handler = fn.__event_handler__
-                # debug(handler, event.preposition, handler.preposition)
-                # self.__class__.__event_handlers__.append(handler)
+
     def _add_before_event_webhook_handler(self, webhook: Webhook, event: EventContext) -> None:
         async def __before_handler(self) -> None:
             headers = {
@@ -149,7 +134,7 @@ class Connector(servo.Connector):
         self.add_event_handler(event.event, event.preposition, __before_handler)
         
     def _add_after_event_webhook_handler(self, webhook: Webhook, event: EventContext) -> None:
-        async def __after_handler(self, results: List[EventResult]) -> None:
+        async def __after_handler(self, results: List[EventResult], **kwargs) -> None:
             print(results)
             headers = {
                 "Content-Type": "application/json",
@@ -168,14 +153,6 @@ class Connector(servo.Connector):
                 created_at=datetime.now(),
                 results=outbound_results
             )
-            # class Result(BaseModel):
-            #     connector: str
-            #     value: Any
-
-            # class WebhookRequestBody(BaseModel):
-            #     event: str
-            #     created_at: datetime
-            #     results: List[Result]
 
             json_body = body.json()
             debug(json_body)
@@ -184,6 +161,9 @@ class Connector(servo.Connector):
                 success = (response.status_code == httpx.codes.OK)
 
         self.add_event_handler(event.event, event.preposition, __after_handler)
+
+
+Connector.__default_name__ = "servo-webhooks"
 
 class CLI(servo.cli.ConnectorCLI):
     pass

@@ -1284,8 +1284,9 @@ class TestConnectorEvents:
         result = results[0]
         assert result.event.name == "get_event_context"
         assert result.connector == connector
-        assert result.value 
+        assert result.value
         assert result.value.event == event
+        assert result.value.preposition is not None
         assert result.value.preposition == Preposition.ON
         assert result.value.created_at.replace(microsecond=0) == result.value.created_at.replace(microsecond=0)
 

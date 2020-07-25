@@ -120,3 +120,31 @@ class TestCLI:
 #   sigExpected = str(event["headers"]["X-Hub-Signature"].replace("sha1=", ""))
 #   sigCalculated = str(hmac.new(secret_value, event["body"], hashlib.sha1).hexdigest())
 #   return hmac.compare_digest(sigCalculated, sigExpected)
+
+def test_generate():
+    config = Configuration.generate()
+    debug(config.yaml())
+    #debug(config.dict(exclude={"webhooks": {'events': {'__all__': {'signature'} }}}))
+
+from servo.events import EventContext
+
+@pytest.mark.parametrize(
+    "event_str,found,resolved",
+    [
+        ("before:measure", True, "before:measure"),
+        ("on:measure", True, "on:measure"),
+        ("measure", True, "on:measure"),
+        ("after:measure", True, "after:measure"),
+        ("invalid:adjust", False, None),
+        ("before:invalid", False, None),
+        ("BEFORE:adjust", False, None),
+        ("before:MEASURE", False, None),
+        ("", False, None),
+        ("nothing", False, None),
+    ]
+)
+def test_from_str(event_str: str, found: bool, resolved: str):
+    ec = EventContext.from_str(event_str)
+    assert bool(ec) == found
+    assert (ec.__str__() if ec else None) == resolved
+    

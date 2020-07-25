@@ -259,7 +259,6 @@ def test_show_events_by_connector(
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
     assert re.search("Servo\\s+check\n", result.stdout)
-    debug(result.stdout)
     assert re.search(
         "Measure\\s+before measure\n\\s+measure\n\\s+after measure",
         result.stdout,

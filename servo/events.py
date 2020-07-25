@@ -7,9 +7,12 @@ from inspect import Parameter, Signature
 from typing import Any, Callable, Dict, Optional, Type, TypeVar, List, Union
 from weakref import WeakKeyDictionary
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, root_validator, validator
 from pydantic.main import ModelMetaclass
 from servo.utilities import join_to_series
+
+
+_signature_cache: Dict[str, Signature] = {}
 
 
 class Event(BaseModel):
@@ -18,7 +21,15 @@ class Event(BaseModel):
     processed with before, on, and after handlers.
     """
     name: str
-    signature: Signature
+
+    def __init__(self, name: str, signature: Signature, *args, **kwargs):
+        _signature_cache[name] = signature
+        super().__init__(name=name, *args, **kwargs)
+
+    @property
+    def signature(self) -> Signature:
+        # Hide signature from Pydantic
+        return _signature_cache[self.name]
 
     def __hash__(self):
         return hash((self.name, self.signature,))
@@ -44,6 +55,22 @@ class Preposition(Flag):
     BEFORE = auto()
     ON = auto()
     AFTER = auto()
+    ALL = BEFORE | ON | AFTER
+
+        
+    @classmethod
+    def from_str(cls, prep: str) -> "Preposition":
+        if not isinstance(prep, str):
+            return prep
+
+        if prep == "before":
+            return Preposition.BEFORE
+        elif prep == "on":
+            return Preposition.ON
+        elif prep == "after":
+            return Preposition.AFTER
+        else:
+            raise ValueError(f"unsupported value for Preposition '{prep}'")
 
     def __str__(self):
         if self == Preposition.BEFORE:
@@ -58,7 +85,34 @@ class EventContext(BaseModel):
     event: Event
     preposition: Preposition
     created_at: datetime = None
-    
+
+    @classmethod # Usable as a validator
+    def from_str(cls, event_str) -> Optional['EventContext']:
+        if event := get_event(event_str, None):
+            return EventContext(
+                preposition=Preposition.ON, 
+                event=event
+            )
+
+        components = event_str.split(":", 1)
+        if len(components) < 2:
+            return None
+        preposition, event_name = components
+        if not (preposition or event_name):
+            return None
+        
+        if preposition not in ("before", "on", "after"):
+            return None
+
+        event = get_event(event_name, None)
+        if not event:
+            return None
+
+        debug(preposition, Preposition.from_str(preposition))
+        return EventContext(
+            preposition=Preposition.from_str(preposition), 
+            event=event
+        )
     
     @validator("created_at", pre=True, always=True)
     @classmethod
@@ -274,7 +328,6 @@ def event_handler(
         event = _events.get(name, None)
         if event is None:
             raise ValueError(f"Unknown event '{name}'")
-
         if preposition != Preposition.ON:
             name = f"{preposition}:{name}"
         handler_signature = Signature.from_callable(fn)
@@ -568,7 +621,7 @@ class Mixin:
 
     @classmethod
     def get_event_handlers(
-        cls, event: Union[Event, str], preposition: Preposition = Preposition.ON
+        cls, event: Union[Event, str], preposition: Preposition = Preposition.ALL
     ) -> List[EventHandler]:
         """
         Retrieves the event handlers for the given event and preposition.
@@ -579,10 +632,27 @@ class Mixin:
         return list(
             filter(
                 lambda handler: handler.event == event
-                and handler.preposition == preposition,
+                and handler.preposition & preposition,
                 cls.__event_handlers__,
             )
         )
+
+    @classmethod
+    def add_event_handler(
+        cls, event: Event, preposition: Preposition, callable: EventCallable, **kwargs
+    ) -> EventHandler:
+        """
+        Programmatically creates and adds an event handler to the receiving class.
+
+        This method is functionally equivalent to using the decorators to add
+        event handlers at import time.
+        """
+        # Reuse the existing decorator and as would be done in __init__
+        d_callable = event_handler(event.name, preposition, **kwargs)(callable)
+        handler = d_callable.__event_handler__
+        handler.connector_type = cls
+        cls.__event_handlers__.append(handler)
+        return handler
 
     @property
     def __connectors__(self) -> List["Connector"]:
