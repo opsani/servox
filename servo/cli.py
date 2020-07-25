@@ -626,7 +626,7 @@ class ServoCLI(CLI):
 
                 if write_dotenv:
                     optimizer = typer.prompt(
-                        "Opsani optimizer? (format: dev.opsani.con/app-name)",
+                        "Opsani optimizer? (format: dev.opsani.com/app-name)",
                         default=context.optimizer,
                     )
                     optimizer != context.optimizer or typer.echo()
