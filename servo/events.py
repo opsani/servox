@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 from contextvars import ContextVar
 from datetime import datetime
@@ -128,7 +129,10 @@ class EventContext(BaseModel):
         return self.preposition == Preposition.AFTER
     
     def __str__(self):
-        return f"{self.preposition}:{self.event.name}"
+        if self.preposition == Preposition.ON:
+            return self.event.name
+        else:
+            return f"{self.preposition}:{self.event.name}"
     
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
@@ -146,6 +150,27 @@ class EventContext(BaseModel):
             return "ADJUSTMENT"
         else:
             return None
+
+
+def validate_event_contexts(
+    cls, 
+    value: Union[str, EventContext, Sequence[Union[str, EventContext]]],
+    field: ModelField) -> List[EventContext]:
+    """
+    A Pydantic validator function that validates and returns a list of EventContext
+    objects from a singular or sequence of objects that identify valid event contexts.
+    """
+    if isinstance(value, str):
+        if event_context := EventContext.from_str(value):
+            return [event_context]
+        raise ValueError(f"Invalid value for {field.name}")
+    elif isinstance(value, EventContext):
+        return [value]
+    elif isinstance(value, (list, set, tuple)):
+        events = []
+        for e in value:
+            events.extend(validate_event_contexts(cls, e, field))
+    return events
 
 
 class EventHandler(BaseModel):

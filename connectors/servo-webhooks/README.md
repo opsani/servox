@@ -22,19 +22,16 @@ via the `webhooks` CLI subcommand (see usage below).
 webhooks:
   - name: my_measure_handler # Optional. Name of the webhook.    
     description: Store measurement info into Elastic Search. # Optional: Textual description of the webhook
-    event: after:measure # Required. Format: `(before|after):[EVENT_NAME]`
-    target: https://example.com/webhooks # Required. Format: [URL]
+    events:
+    - after:measure # Required. Format: `(before|after):[EVENT_NAME]`
+    url: https://example.com/webhooks # Required. Format: [URL]
+    secret: s3cr3t # Required. Secret value for computing webhook signatures
     headers: # Optional, Dict[str, str]
       - name: x-some-header
         value: some value
-    authentication: # Optional
-      bearer_token: "123456789" # TODO: Some mechanism for managing secrets
-      basic:
-        username: my-user-name
-        password: password # TODO: Some mechanism for managing secrets
     backoff: # Optional. Setting to `false` disables retries.
-      retries: 3
-      timeout: 5m
+      max_tries: 3
+      max_time: 5m
 ```
 
 A starting point configuration can be added to your servo assembly via: `servo generate --defaults webhooks`.
@@ -64,6 +61,25 @@ For convenience, servo-webhooks is included in the default servox assembly [Dock
 ### Implementing Webhook Responders
 
 TODO: Content type, etc. headers. Include connector version, other event metadata. Schema versioning.
+
+### Validating Webhook Signatures
+
+All webhook requests are sent with a `X-Servo-Signature` header. This value of this header is a hex
+string representation of an HMAC SHA1 digest computed over the body of the request using the value of 
+the `secret` key from the webhook configuration. The signature can be easily verified to validate the 
+authenticity and integrity of the webhook payload. HMAC computation is supported on all major platforms
+and in the standard library of most modern programming languages.
+
+An example of computing an HMAC SHA1 digest from a webhook request in Python looks like this:
+
+```python
+secret = "super secret authentication code"
+expected_signature = request.headers["x-servo-signature"]
+body = request.read()
+signature = str(hmac.new(secret.encode(), body, hashlib.sha1).hexdigest())
+assert signature == expected_signature
+```
+
 
 ### Cancelling an Event via a Webhook
 

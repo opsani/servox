@@ -1,20 +1,40 @@
+from __future__ import annotations
+import hmac
+import hashlib
 from datetime import datetime
 from importlib.metadata import version 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Sequence
 
 import backoff
 import httpx
-from pydantic import AnyHttpUrl, BaseModel, SecretStr, validator, Field
+from pydantic import AnyHttpUrl, BaseModel, Field, SecretStr, validator
 
 import servo
 from servo import metadata, License, Maturity, Duration
-from servo.events import EventContext, EventResult, Preposition, get_event, event_handler
+from servo.events import (
+    EventContext, 
+    EventResult, 
+    Preposition, 
+    get_event, 
+    event_handler, 
+    validate_event_contexts
+)
+
 
 try:
     __version__ = version("servo-webhooks")
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.0.0"
 
+
+SUCCESS_STATUS_CODES = (
+    httpx.codes.OK, 
+    httpx.codes.CREATED, 
+    httpx.codes.ACCEPTED, 
+    httpx.codes.NO_CONTENT, 
+    httpx.codes.ALREADY_REPORTED
+)
+CONTENT_TYPE = "application/vnd.opsani.servo-webhooks+json"
 
 class BackoffConfig(BaseModel):
     """
@@ -24,14 +44,6 @@ class BackoffConfig(BaseModel):
     max_time: Duration = '3m'
     max_tries: int = 12
 
-class Result(BaseModel):
-    connector: str
-    value: Any
-
-class WebhookRequestBody(BaseModel):
-    event: str
-    created_at: datetime
-    results: List[Result]
 
 class Webhook(BaseModel):
     name: Optional[str] = Field(
@@ -55,22 +67,8 @@ class Webhook(BaseModel):
     )
     backoff: BackoffConfig = BackoffConfig()
 
-    # TODO: Move into the events core
-    @validator("events", pre=True)
-    @classmethod
-    def validate_events(cls, value) -> List[EventContext]:
-        if isinstance(value, str):
-            if event_context := EventContext.from_str(value):
-                return [event_context]
-            raise ValueError(f"Invalid value for events")
-        elif isinstance(value, (list, set, tuple)):
-            events = []
-            for e in value:
-                event = EventContext.from_str(e)
-                if not event:
-                    raise ValueError(f"Invalid value for events")
-                events.append(event)
-        return events
+    # Map strings from config into EventContext objects
+    _validate_events = validator("events", pre=True, allow_reuse=True)(validate_event_contexts)
 
 class Configuration(servo.BaseConfiguration):
     webhooks: List[Webhook] = []
@@ -95,8 +93,22 @@ class Configuration(servo.BaseConfiguration):
     def __init__(self, webhooks: List[Webhook], *args, **kwargs) -> None:
         super().__init__(webhooks=webhooks, *args, **kwargs)
 
+
+class Result(BaseModel):
+    """Models an EventResult webhook representation"""
+    connector: str
+    value: Any
+
+
+class RequestBody(BaseModel):
+    """Models the JSON body of a webhook request containing event results"""
+    event: str
+    created_at: datetime
+    results: List[Result]
+
+
 @metadata(
-    name="Webhooks",
+    name=("servo-webhooks", "webhooks"),
     description="Dispatch servo events via HTTP webhooks",
     version=__version__,
     homepage="https://github.com/opsani/servo-webhooks",
@@ -105,8 +117,6 @@ class Configuration(servo.BaseConfiguration):
 )
 class Connector(servo.Connector):
     config: Configuration
-    name: str = "servo-webhooks"
-    __default_name__ = "servo-webhooks"
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -124,9 +134,7 @@ class Connector(servo.Connector):
 
     def _add_before_event_webhook_handler(self, webhook: Webhook, event: EventContext) -> None:
         async def __before_handler(self) -> None:
-            headers = {
-                "Content-Type": "application/json",
-            }
+            headers = {**webhook.headers, **{ "Content-Type": CONTENT_TYPE }}
             async with httpx.AsyncClient(headers=headers) as client:
                 response = await client.post(webhook.url, data=dict(foo="bar"))
                 success = (response.status_code == httpx.codes.OK)
@@ -135,10 +143,7 @@ class Connector(servo.Connector):
         
     def _add_after_event_webhook_handler(self, webhook: Webhook, event: EventContext) -> None:
         async def __after_handler(self, results: List[EventResult], **kwargs) -> None:
-            print(results)
-            headers = {
-                "Content-Type": "application/json",
-            }
+            headers = {**webhook.headers, **{ "Content-Type": CONTENT_TYPE }}
 
             outbound_results = []
             for result in results:
@@ -148,22 +153,27 @@ class Connector(servo.Connector):
                         value=result.value
                     )
                 )
-            body = WebhookRequestBody(
+            body = RequestBody(
                 event=str(event),
                 created_at=datetime.now(),
                 results=outbound_results
             )
-
+            
             json_body = body.json()
-            debug(json_body)
+            headers["X-Servo-Signature"] = self._signature_for_webhook_body(webhook, json_body)
             async with httpx.AsyncClient(headers=headers) as client:
-                response = await client.post(webhook.url, data=dict(foo="bar"))
-                success = (response.status_code == httpx.codes.OK)
+                response = await client.post(webhook.url, data=json_body, headers=headers)
+                success = (response.status_code in SUCCESS_STATUS_CODES)
+                if success:                    
+                    self.logger.success(f"posted webhook for '{event}' event to '{webhook.url}' ({response.status_code} {response.reason_phrase})")
+                else:
+                    self.logger.error(f"failed posted webhook for '{event}' event to '{webhook.url}' ({response.status_code} {response.reason_phrase}): {response.text}")
 
         self.add_event_handler(event.event, event.preposition, __after_handler)
 
-
-Connector.__default_name__ = "servo-webhooks"
+    def _signature_for_webhook_body(self, webhook: Webhook, body: str) -> str:
+        secret_bytes = webhook.secret.get_secret_value().encode()
+        return str(hmac.new(secret_bytes, body.encode(), hashlib.sha1).hexdigest())
 
 class CLI(servo.cli.ConnectorCLI):
     pass
