@@ -9,6 +9,7 @@ from typing import (
     Optional,
     Set,
     Type,
+    Tuple,
     get_type_hints,
 )
 
@@ -108,6 +109,12 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
         assert isinstance(
             cls.version, Version
         ), "version is not a semantic versioning descriptor"
+        
+        if not cls.__default_name__:
+            if name := _name_for_connector_class(cls):
+                cls.__default_name__ = name
+            else:
+                raise ValueError(f"A default connector name could not be constructed for class '{cls}'")
         return v
 
     @validator("name")
@@ -162,9 +169,10 @@ EventHandler.update_forward_refs(Connector=Connector)
 
 
 def metadata(
-    name: Optional[str] = None,
+    name: Optional[Union[str, Tuple[str, str]]] = None,
     description: Optional[str] = None,
     version: Optional[Version] = None,
+    *,
     homepage: Optional[HttpUrl] = None,
     license: Optional[License] = None,
     maturity: Optional[Maturity] = None,
@@ -176,7 +184,12 @@ def metadata(
             raise TypeError("Metadata can only be attached to Connector subclasses")
 
         if name:
-            cls.name = name
+            if isinstance(name, tuple):
+                if len(name) != 2:
+                    raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
+                cls.name, cls.__default_name__ = name
+            else:
+                cls.name = name
         if description:
             cls.description = description
         if version:
@@ -196,9 +209,15 @@ def metadata(
 ##
 # Utility functions
 
-def _name_for_connector_class(cls: Type[Connector]) -> str:
-    name = re.sub(r"Connector$", "", cls.__name__)
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+def _name_for_connector_class(cls: Type[Connector]) -> Optional[str]:
+    for name in (cls.name, cls.__name__):
+        if not name:
+            continue
+        name = re.sub(r"Connector$", "", name)
+        name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        if name != "":
+            return name
+    return None
 
 
 def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:

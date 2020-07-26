@@ -22,6 +22,8 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 changing the logging levels, performing timed logging around methods, and attaching backtraces.
 - Log messages are now annotated with the event context when logging occurs during an event
 handler.
+- The metadata decorator now accepts a tuple for the `name` parameter for providing an explicit
+default name for connectors of the decorated type, overriding the name inference.
 
 ## [0.4.2] - 2020-07-24
 
