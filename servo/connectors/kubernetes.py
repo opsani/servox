@@ -1,5 +1,7 @@
+
 from __future__ import print_function, annotations
 
+import asyncio
 import copy
 import errno
 import importlib
@@ -9,12 +11,14 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterable
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import yaml
-from pydantic import Extra
+from pydantic import BaseModel, Extra, validator
 
 from servo import (
+    BaseConfiguration,
+    Connector,
     Check,
     Component,
     Description,
@@ -22,12 +26,14 @@ from servo import (
     Maturity,
     Setting,
     connector,
-    on_event
+    on_event,
+    get_hash
 )
 
 json_enc = json.JSONEncoder(separators=(",", ":")).encode
 
 
+# TODO: Move these into errors module...
 class AdjustError(Exception):
     """base class for error exceptions defined by drivers.
     """
@@ -68,181 +74,6 @@ def import_encoder_base():
         )
 
 
-# === compute hash of arbitrary data struct
-# (copied inline from skopos/.../plugins/spec_hash_helper.py)
-import hashlib
-
-
-# TODO: Why do we need this?
-def _dbg(*data):
-    with open("/skopos/plugins/dbg.log", "a") as f:
-        print(data, file=f)
-
-
-def get_hash(data):
-    """md5 hash of Python data. This is limited to scalars that are convertible to string and container
-    structures (list, dict) containing such scalars. Some data items are not distinguishable, if they have
-    the same representation as a string, e.g., hash(b'None') == hash('None') == hash(None)"""
-    # _dbg("get_hash", data)
-    hasher = hashlib.md5()
-    dump_container(data, hasher.update)
-    return hasher.hexdigest()
-
-
-def dump_container(c, func):
-    """stream the contents of a container as a string through a function
-    in a repeatable order, suitable, e.g., for hashing
-    """
-    #
-    if isinstance(c, dict):  # dict
-        func("{".encode("utf-8"))
-        for k in sorted(c):  # for all repeatable
-            func("{}:".format(k).encode("utf-8"))
-            dump_container(c[k], func)
-            func(",".encode("utf-8"))
-        func("}".encode("utf-8"))
-    elif isinstance(c, list):  # list
-        func("[".encode("utf-8"))
-        for k in c:  # for all repeatable
-            dump_container(k, func)
-            func(",".encode("utf-8"))
-        func("]".encode("utf-8"))
-    else:  # everything else
-        if isinstance(c, type(b"")):
-            pass  # already a stream, keep as is
-        elif isinstance(c, str):
-            # encode to stream explicitly here to avoid implicit encoding to ascii
-            c = c.encode("utf-8")
-        else:
-            c = str(c).encode("utf-8")  # convert to string (e.g., if integer)
-        func(c)  # simple value, string or convertible-to-string
-
-
-# ===
-
-
-def kubectl(namespace, *args):
-    cmd_args = ["kubectl"]
-    if not bool(int(os.environ.get("OPTUNE_USE_DEFAULT_NAMESPACE", "0"))):
-        cmd_args.append("--namespace=" + namespace)
-    # append conditional args as provided by env vars
-    if os.getenv("OPTUNE_K8S_SERVER") is not None:
-        cmd_args.append("--server=" + os.getenv("OPTUNE_K8S_SERVER"))
-    if os.getenv("OPTUNE_K8S_TOKEN") is not None:
-        cmd_args.append("--token=" + os.getenv("OPTUNE_K8S_TOKEN"))
-    if bool(os.getenv("OPTUNE_K8S_SKIP_TLS_VERIFY", False)):
-        cmd_args.append("--insecure-skip-tls-verify=true")
-    dbg_txt = "DEBUG: ns='{}', env='{}', r='{}', args='{}'".format(
-        namespace,
-        os.environ.get("OPTUNE_USE_DEFAULT_NAMESPACE", "???"),
-        cmd_args,
-        list(args),
-    )
-    if args[0] == "patch":
-        print(dbg_txt, file=sys.stderr)
-    else:
-        dbg_log(dbg_txt)
-    return cmd_args + list(args)
-
-
-def k_get(namespace, qry):
-    """run kubectl get and return parsed json output"""
-    if not isinstance(qry, list):
-        qry = [qry]
-    # this will raise exception if it fails:
-    output = subprocess.check_output(kubectl(namespace, "get", "--output=json", *qry))
-    output = output.decode("utf-8")
-    output = json.loads(output)
-    return output
-
-
-def k_patch(namespace, typ, obj, patchstr):
-    """run kubectl patch and return parsed json output"""
-
-    # this will raise exception if it fails:
-    cmd = kubectl(namespace, "patch", "--output=json", typ, obj, "-p", patchstr)
-    output = subprocess.check_output(cmd)
-    output = output.decode("utf-8")
-    output = json.loads(output)
-    return output
-
-
-def read_desc():
-    """load the user-defined descriptor, returning a dictionary of the contents under the k8s top-level key, if any"""
-    # TODO: Eliminate this
-    try:
-        f = open(DESC_FILE)
-        desc = yaml.safe_load(f)
-    except IOError as e:
-        if e.errno == errno.ENOENT:
-            raise ConfigError("configuration file {} does not exist".format(DESC_FILE))
-        raise ConfigError(
-            "cannot read configuration from {}: {}".format(DESC_FILE, e.strerror)
-        )
-    except yaml.error.YAMLError as e:
-        raise ConfigError("syntax error in {}: {}".format(DESC_FILE, str(e)))
-
-    refer_tip = "You can refer to a sample configuration in README.md."
-    assert bool(desc), "Configuration file is empty."
-    driver_key = "kubernetes"
-
-    # TODO: Everything below gets ported to settings class
-    if os.environ.get("OPTUNE_USE_DRIVER_NAME", False):
-        driver_key = os.path.basename(__file__)
-    assert driver_key in desc and desc[driver_key], (
-        "No configuration were defined for K8s driver in config file {}. "
-        'Please set up configuration for deployments under key "{}". '
-        "{}".format(DESC_FILE, refer_tip, driver_key)
-    )
-    desc = desc[driver_key]
-
-    assert (
-        "application" in desc and desc["application"]
-    ), 'Section "application" was not defined in a configuration file. {}'.format(
-        refer_tip
-    )
-    assert (
-        "components" in desc["application"]
-        and desc["application"]["components"] is not None
-    ), 'Section "components" was not defined in a configuration file section "application". {}'.format(
-        refer_tip
-    )
-    assert desc["application"]["components"], (
-        "No components were defined in a configuration file. "
-        "Please define at least one component. {}".format(refer_tip)
-    )
-
-    comps = desc["application"]["components"]
-    replicas_tracker = {}
-    for name, comp in comps.items():
-        settings = comp.get("settings", {})
-        if "replicas" in settings:
-            dep_name = name.split("/")[0]  # if no '/', this just gets the whole name
-            replicas_tracker.setdefault(dep_name, 0)
-            replicas_tracker[dep_name] += 1
-
-    if len(replicas_tracker) < sum(replicas_tracker.values()):
-        rotten_deps = map(
-            lambda d: d[0], filter(lambda c: c[1] > 1, replicas_tracker.items())
-        )
-        raise Exception(
-            'Some components have more than one setting "replicas" defined. Specifically: {}. '
-            'Please, keep only one "replicas" per deployment.'.format(
-                ", ".join(rotten_deps)
-            )
-        )
-
-    return desc
-
-
-def numval(v, minv, maxv, step=1.0, pinn=None):
-    """shortcut for creating linear setting descriptions"""
-    ret = {"value": v, "min": minv, "max": maxv, "step": step, "type": "range"}
-    if pinn is not None:
-        ret["pinned"] = pinn == True
-    return ret
-
-
 def cpuunits(s):
     """convert a string for CPU resource (with optional unit suffix) into a number"""
     if s[-1] == "m":  # there are no units other than 'm' (millicpu)
@@ -275,16 +106,6 @@ def memunits(s):
         if s.endswith(u):
             return float(s[: -len(u)]) * m
     return float(s)
-
-
-def check_setting(name, settings):
-    assert isinstance(
-        settings, Iterable
-    ), 'Object "settings" passed to check_setting() is not iterable.'
-    assert name not in settings, (
-        'Setting "{}" has been define more than once. '
-        "Please, check other config sections for setting duplicates.".format(name)
-    )
 
 
 def encoder_setting_name(setting_name, encoder_config):
@@ -354,312 +175,86 @@ def isenumsetting(s):
 def issetting(s):
     return isinstance(s, dict) and (israngesetting(s) or isenumsetting(s))
 
-
-def get_rsrc(desc_settings, cont_resources, sn):
-    rn = RESOURCE_MAP[sn]
-    selector = desc_settings.get(sn, {}).get("selector", "both")
-    if selector == "request":
-        val = cont_resources.get("requests", {}).get(rn)
-        if val is None:
-            val = cont_resources.get("limits", {}).get(rn)
-            if val is not None:
-                Adjust.print_json_error(
-                    error="warning",
-                    cl=None,
-                    message='Using the non-selected value "limit" for resource "{}" as the selected value is not set'.format(
-                        sn
-                    ),
-                )
-            else:
-                val = "0"
-    else:
-        val = cont_resources.get("limits", {}).get(rn)
-        if val is None:
-            val = cont_resources.get("requests", {}).get(rn)
-            if val is not None:
-                if selector == "limit":
-                    Adjust.print_json_error(
-                        error="warning",
-                        cl=None,
-                        message='Using the non-selected value "request" for resource "{}" as the selected value is not set'.format(
-                            sn
-                        ),
-                    )
-                # else: don't print warning for 'both'
-            else:
-                val = "0"
-    return val
+# TODO: Moves into a utility class...
 
 
-def raw_query(appname, desc):
-    """
-    Read the list of deployments in a namespace and fill in data into desc.
-    Both the input 'desc' and the return value are in the 'settings query response' format.
-    NOTE only 'cpu', 'memory' and 'replicas' settings are filled in even if not present in desc.
-    Other settings must have a description in 'desc' to be returned.
-    """
-    desc = copy.deepcopy(desc)
+# ===
 
-    app = desc["application"]
-    comps = app["components"]
+class Kubectl:
+    def __init__(self, 
+        config: KubernetesConfiguration,
+        logger: Logger,
+    ) -> None:
+        self.config = config
+        self.logger = logger
 
-    cfg = desc.pop(
-        "control", {}
-    )  # FIXME TODO - query doesn't receive data from remote, only the local cfg can be used; where in the data should the "control" section really be?? note, [userdata][deployment] sub-keys for specifying the 'reference' app means we have to have that 'reference' as a single deployment and it has to be excluded from enumeration as an 'adjustable' component, using the whitelist.
-    refapp = cfg.get("userdata", {}).get("deployment", None)
-    mon_data = {}
-    if refapp:
-        d2 = desc.copy()
-        c2 = copy.deepcopy(cfg)
-        c2["userdata"].pop("deployment", None)
-        d2["control"] = c2
-        if (
-            len(comps) != 1
-        ):  # 'reference app' works only with single-component (due to the use of deployment name as 'component name' and having both apps in the same namespace)
-            raise AdjustError(
-                "operation with reference app not possible when multiple components are defined",
-                status="aborted",
-                reason="ref-app-unavailable",
-            )
-        refcomps = {refapp: comps[list(comps.keys())[0]]}
-        d2["application"] = {
-            "components": refcomps
-        }  # single component, renamed (so we pick the 'reference deployment' in the same namespace)
-        try:
-            refqry, _ = raw_query(appname, d2)
-        except AdjustError as e:
-            raise AdjustError(str(e), status="aborted", reason="ref-app-unavailable")
-        # let other exceptions go unchanged
+    # TODO: Becomes __call__
+    def kubectl(self, namespace, *args):
+        cmd_args = ["kubectl"]
 
-        # TODO: maybe something better than a sum is needed here, some multi-component scale events could end up modifying scale counts without changing the overall sum
-        replicas_sum = sum(
-            (
-                c["settings"]["replicas"]["value"]
-                for c in refqry["application"]["components"].values()
-            )
+        if self.config.namespace:
+            cmd_args.append("--namespace=" + self.config.namespace)
+        
+        # append conditional args as provided by env vars
+        if self.config.server:
+            cmd_args.append("--server=" + self.config.server)
+
+        if self.config.token is not None:
+            cmd_args.append("--token=" + self.config.server)
+
+        if self.config.insecure_skip_tls_verify:
+            cmd_args.append("--insecure-skip-tls-verify=true")
+
+        dbg_txt = "DEBUG: ns='{}', env='{}', r='{}', args='{}'".format(
+            namespace,
+            os.environ.get("OPTUNE_USE_DEFAULT_NAMESPACE", "???"),
+            cmd_args,
+            list(args),
         )
-        refqry = refqry["monitoring"]  # we don't need other data from refqry any more
-        mon_data = {
-            "ref_spec_id": refqry["spec_id"],
-            "ref_version_id": refqry["version_id"],
-            "ref_runtime_count": replicas_sum,
-        }
-        if refqry.get("runtime_id"):
-            mon_data["ref_runtime_id"] = refqry["runtime_id"]
+        self.logger.debug(dbg_txt)
 
-    deployments = k_get(appname, DEPLOYMENT)
-    # note d["Kind"] should be "List"
-    deps_list = deployments["items"]
-    if (
-        not deps_list
-    ):  # NOTE we don't distinguish the case when the namespace doesn't exist at all or is just empty (k8s will return an empty list whether or not it exists)
-        raise AdjustError(
-            "application '{}' does not exist or has no components".format(appname),
-            status="aborted",
-            reason="app-unavailable",
-        )  # NOTE not a documented 'reason'
-    deps_dict = {dep["metadata"]["name"]: dep for dep in deps_list}
-    raw_specs = {}
-    imgs = {}
-    runtime_ids = {}
-    # ?? TODO: is it possible to have an item in 'd' with "kind" other than "Deployment"? (likely no)
-    #          is it possible to have replicas == 0 (and how do we represent that, if at all)
-    for full_comp_name in comps.keys():
-        dep_name = full_comp_name
-        cont_name = None
-        if "/" in dep_name:
-            dep_name, cont_name = full_comp_name.split("/")
-        assert dep_name in deps_dict, (
-            'Could not find deployment "{}" defined for component "{}" in namespace "{}".'
-            "".format(dep_name, full_comp_name, appname)
-        )
-        dep = deps_dict[dep_name]
-        conts = dep["spec"]["template"]["spec"]["containers"]
-        if cont_name is not None:
-            contsd = {c["name"]: c for c in conts}
-            assert cont_name in contsd, (
-                'Could not find container with name "{}" in deployment "{}" '
-                'for component "{}" in namespace "{}".'
-                "".format(cont_name, dep_name, full_comp_name, appname)
-            )
-            cont = contsd[cont_name]
+        # TODO: What is this about?
+        if args[0] == "patch":
+            print(dbg_txt, file=sys.stderr)
         else:
-            cont = conts[0]
+            dbg_log(dbg_txt)
 
-        # skip if excluded by label
-        try:
-            if bool(
-                int(dep["metadata"].get("labels", {}).get(EXCLUDE_LABEL, "0"))
-            ):  # string value of 1 (non-0)
-                continue
-        except ValueError as e:  # int() is the only thing that should trigger exceptions here
-            # TODO add warning to annotations to be returned
-            print(
-                "failed to parse exclude label for deployment {}: {}: {}; ignored".format(
-                    dep_name, type(e).__name__, str(e)
-                ),
-                file=sys.stderr,
-            )
-            # pass # fall through, ignore unparseable label
-
-        # selector for pods, NOTE this relies on having a equality-based label selector,
-        # k8s seems to support other types, I don't know what's being used in practice.
-        try:
-            sel = dep["spec"]["selector"]["matchLabels"]
-        except KeyError:
-            raise AdjustError(
-                "only deployments with matchLabels selector are supported, found selector: {}".format(
-                    repr(dep["spec"].get("selector", {}))
-                ),
-                status="aborted",
-                reason="app-unavailable",
-            )  # NOTE not a documented 'reason'
-        # convert to string suitable for 'kubect -l labelsel'
-        sel = ",".join(("{}={}".format(k, v) for k, v in sel.items()))
-
-        # list of pods, for runtime_id
-        try:
-            pods = k_get(appname, ["-l", sel, "pods"])
-            pods = pods["items"]
-            runtime_ids[dep_name] = [pod["metadata"]["uid"] for pod in pods]
-        except subprocess.CalledProcessError as e:
-            Adjust.print_json_error(
-                error="warning",
-                cl="CalledProcessError",
-                message="Unable to retrieve pods: {}. Output: {}".format(e, e.output),
-            )
-
-        # extract deployment settings
-        # NOTE: generation, resourceVersion and uid can help detect changes
-        # (also, to check PG's k8s code in oco)
-        replicas = dep["spec"]["replicas"]
-        tmplt_spec = dep["spec"]["template"]["spec"]
-        raw_specs[dep_name] = tmplt_spec  # save for later, used to checksum all specs
-
-        # name, env, resources (limits { cpu, memory }, requests { cpu, memory })
-        # FIXME: what to do if there's no mem reserve or limits defined? (a namespace can have a default mem limit, but that's not necessarily set, either)
-        # (for now, we give the limit as 0, treated as 'unlimited' - AFAIK)
-        imgs[full_comp_name] = cont["image"]  # FIXME, is this always defined?
-        comp = comps[full_comp_name] = comps[full_comp_name] or {}
-        settings = comp["settings"] = comp.setdefault("settings", {}) or {}
-        read_mem = not settings or "mem" in settings
-        read_cpu = not settings or "cpu" in settings
-        read_replicas = not settings or "replicas" in settings
-        res = cont.get("resources")
-        if res:
-            if read_mem:
-                mem_val = get_rsrc(desc_settings=settings, cont_resources=res, sn="mem")
-                # (value, min, max, step) all in GiB
-                settings["mem"] = numval(
-                    v=memunits(mem_val) / Gi,
-                    minv=(settings.get("mem") or {}).get("min", MEM_STEP / Gi),
-                    maxv=(settings.get("mem") or {}).get("max", MAX_MEM / Gi),
-                    step=(settings.get("mem") or {}).get("step", MEM_STEP / Gi),
-                    pinn=(settings.get("mem") or {}).get("pinned", None),
-                )
-            if read_cpu:
-                cpu_val = get_rsrc(desc_settings=settings, cont_resources=res, sn="cpu")
-                # (value, min, max, step), all in CPU cores
-                settings["cpu"] = numval(
-                    v=cpuunits(cpu_val),
-                    minv=(settings.get("cpu") or {}).get("min", CPU_STEP),
-                    maxv=(settings.get("cpu") or {}).get("max", MAX_CPU),
-                    step=(settings.get("cpu") or {}).get("step", CPU_STEP),
-                    pinn=(settings.get("cpu") or {}).get("pinned", None),
-                )
-            # TODO: adjust min/max to include current values, (e.g., increase mem_max to at least current if current > max)
-        # set replicas: FIXME: can't actually be set for each container (the pod as a whole is replicated); for now we have no way of expressing this limitation in the setting descriptions
-        # note: setting min=max=current replicas, since there is no way to know what is allowed; use override descriptor to loosen range
-        if read_replicas:
-            settings["replicas"] = numval(
-                v=replicas,
-                minv=(settings.get("replicas") or {}).get("min", replicas),
-                maxv=(settings.get("replicas") or {}).get("max", replicas),
-                step=(settings.get("replicas") or {}).get("step", 1),
-                pinn=(settings.get("replicas") or {}).get("pinned", None),
-            )
-
-        # current settings of custom env vars (NB: type conv needed for numeric values!)
-        cont_env_list = cont.get("env", [])
-        # include only vars for which the keys 'name' and 'value' are defined
-        cont_env_dict = {
-            i["name"]: i["value"] for i in cont_env_list if "name" in i and "value" in i
-        }
-
-        env = comp.get("env")
-        if env:
-            for en, ev in env.items():
-                check_setting(en, settings)
-                assert isinstance(
-                    ev, dict
-                ), 'Setting "{}" in section "env" of a config file is not a dictionary.'
-                if "encoder" in ev:
-                    for name, setting in describe_encoder(
-                        cont_env_dict.get(en),
-                        ev["encoder"],
-                        exception_context="an environment variable {}" "".format(en),
-                    ):
-                        check_setting(name, settings)
-                        settings[name] = setting
-                if issetting(ev):
-                    defval = ev.pop("default", None)
-                    val = cont_env_dict.get(en, defval)
-                    val = (
-                        float(val)
-                        if israngesetting(ev) and isinstance(val, (int, str))
-                        else val
-                    )
-                    assert val is not None, (
-                        'Environment variable "{}" does not have a current value defined and '
-                        "neither it has a default value specified in a config file. "
-                        "Please, set current value for this variable or adjust the "
-                        "configuration file to include its default value."
-                        "".format(en)
-                    )
-                    val = {**ev, "value": val}
-                    settings[en] = val
-            # Remove section "env" from final descriptor
-            del comp["env"]
-
-        command = comp.get("command")
-        if command:
-            if command.get("encoder"):
-                for name, setting in describe_encoder(
-                    cont.get("command", []),
-                    command["encoder"],
-                    exception_context="a command section",
-                ):
-                    check_setting(name, settings)
-                    settings[name] = setting
-                # Remove section "command" from final descriptor
-            del comp["command"]
-
-    if runtime_ids:
-        mon_data["runtime_id"] = get_hash(runtime_ids)
-
-    # app state data
-    # (NOTE we strip the component names because our (single-component) 'reference' app will necessarily have a different component name)
-    # this should be resolved by complete re-work, if we are to support 'reference' app in a way that allows multiple components
-    raw_specs = [raw_specs[k] for k in sorted(raw_specs.keys())]
-    imgs = [imgs[k] for k in sorted(imgs.keys())]
-    mon_data.update(
-        {
-            "spec_id": get_hash(raw_specs),
-            "version_id": get_hash(imgs),
-            # "runtime_count": replicas_sum
-        }
-    )
-
-    desc["monitoring"] = mon_data
-
-    return desc, deps_list
+        return cmd_args + list(args)
 
 
-# DEBUG:
-def ydump(fn, data):
-    f = open(fn, "w")
-    yaml.dump(data, f)
-    f.close()
+    async def k_get(self, namespace, qry):
+        """run kubectl get and return parsed json output"""
+        if not isinstance(qry, list):
+            qry = [qry]
+
+        # TODO: Replace with asyncio
+        # this will raise exception if it fails:
+        # output = subprocess.check_output(self.kubectl(namespace, "get", "--output=json", *qry))
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            *self.kubectl(namespace, "get", "--output=json", *qry),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout_data, stderr_data = await proc.communicate()
+        await proc.wait()
+        debug(stdout_data)
+        output = stdout_data.decode("utf-8")
+        output = json.loads(output)
+        return output
+
+
+    async def k_patch(self, namespace, typ, obj, patchstr):
+        """run kubectl patch and return parsed json output"""
+
+        # TODO: Replace with asyncio
+        # this will raise exception if it fails:
+        cmd = self.kubectl(namespace, "patch", "--output=json", typ, obj, "-p", patchstr)
+        output = subprocess.check_output(cmd)
+        output = output.decode("utf-8")
+        output = json.loads(output)
+        return output
+
+
 
 
 def dbg_log(*args):
@@ -669,10 +264,6 @@ def dbg_log(*args):
     # if os.getenv("TDR_DEBUG_LOG"):
     #     print(*args, file=sys.stderr)
 
-
-def query(appname, desc):
-    r, _ = raw_query(appname, desc)
-    return r
 
 
 class Waiter(object):
@@ -859,7 +450,14 @@ def _value(x):
         return x["value"]
     return x
 
+class AppState(BaseModel):
+    components: List[Component]
+    monitoring: Dict[str, str]
 
+class DeploymentState:
+    pass
+
+# TODO: This is actually doing the adjust...
 def update(appname, desc, data, print_progress):
 
     # TODO: Seems like a config element?
@@ -1107,7 +705,11 @@ def update(appname, desc, data, print_progress):
 
 
 class KubernetesConfiguration(connector.BaseConfiguration):
-    namespace: Optional[str]
+    namespace: str
+    server: Optional[str]
+    token: Optional[str]
+    insecure_skip_tls_verify: bool = False
+    components: List[Component]
 
     @classmethod
     def generate(cls, **kwargs) -> "KubernetesConfiguration":
@@ -1117,11 +719,9 @@ class KubernetesConfiguration(connector.BaseConfiguration):
             **kwargs
         )
 
+    # TODO: Temporary...
     class Config:
-        # We are the base root of pluggable configuration
-        # so we ignore any extra fields so you can turn connectors on and off
         extra = Extra.allow
-
 
 @connector.metadata(
     description="Kubernetes adjust connector",
@@ -1132,60 +732,37 @@ class KubernetesConfiguration(connector.BaseConfiguration):
 )
 class KubernetesConnector(connector.Connector):
     config: KubernetesConfiguration
-    progress: float = 0.0
-
-    def print_progress(
-        self, message=None, msg_index=None, stage=None, stageprogress=None
-    ):
-
-        data = dict(
-            progress=self.progress,
-            message=message if (message is not None) else self.progress_message,
-        )
-
-        if msg_index is not None:
-            data["msg_index"] = msg_index
-        if stage is not None:
-            data["stage"] = stage
-        if stageprogress is not None:
-            data["stageprogress"] = stageprogress
-
-        from devtools import pformat
-
-        # print(json.dumps(data), flush=True)
-        self.logger.info(pformat(json))
-        # Schedule the next progress upd
-
-    def _progress(self, progress, message):
-        """adapter for the default base class implementation of progress message"""
-        self.progress = progress
-        self.print_progress(message=message)
 
     @on_event()
-    def describe(self) -> Description:
-        try:
-            desc = read_desc()
-        except ConfigError as e:
-            raise AdjustError(
-                str(e), reason="unknown"
-            )  # maybe we should introduce reason=config (or even a different status class, instead of 'failed')
-        desc.pop("driver", None)
-        #        namespace = os.environ.get('OPTUNE_NAMESPACE', desc.get('namespace', self.app_id))
-        # TODO: Replace the namespace
-        namespace = "default"
-        result = query(namespace, desc)
-        components = descriptor_to_components(result["application"]["components"])
-        return Description(components=components)
+    async def describe(self) -> Description:
+        # from kubernetes import client, config
+        # import kubernetes.client
+        # from kubernetes.client.rest import ApiException
+
+        # self.logger.info(f"Listing deployments in namespace {self.config.namespace}:")
+        # configuration = kubernetes.client.Configuration()
+        # configuration.host = "http://localhost:8080"
+
+        # # Enter a context with an instance of the API kubernetes.client
+        # with kubernetes.client.ApiClient(configuration) as api_client:
+        #     # Create an instance of the API class
+        #     api_instance = kubernetes.client.AppsV1Api(api_client)
+        #     ret = api_instance.list_namespaced_deployment(self.config.namespace)
+        #     debug(ret)
+        debug(self.config)
+        namespace = self.config.namespace
+        result = await self.raw_query(namespace, self.config.components)
+        debug(result)
+        return Description(components=self.config.components)
 
     @on_event()
     def components(self) -> Description:
-        desc = read_desc()
-        return descriptor_to_components(desc["application"]["components"])
+        return self.config.components
 
     @on_event()
     def adjust(self, data: dict) -> dict:
         try:
-            desc = read_desc()
+            desc = self.read_desc()
             # debug(desc)
         except ConfigError as e:
             raise AdjustError(
@@ -1208,18 +785,265 @@ class KubernetesConnector(connector.Connector):
 
         return [Check(name="Connect to Kubernetes", success=True, comment="")]
 
+    ####
+    # Ported methods from global module namespace
+    
+    async def raw_query(self, appname: str, _components: List[Component]):
+        """
+        Read the list of deployments in a namespace and fill in data into desc.
+        Both the input 'desc' and the return value are in the 'settings query response' format.
+        NOTE only 'cpu', 'memory' and 'replicas' settings are filled in even if not present in desc.
+        Other settings must have a description in 'desc' to be returned.
+        """        
 
-def descriptor_to_components(descriptor: dict) -> List[Component]:
-    components = []
-    for component_name in descriptor:
-        settings = []
-        for setting_name in descriptor[component_name]["settings"]:
-            setting_values = descriptor[component_name]["settings"][setting_name]
-            # FIXME: Temporary hack
-            if not setting_values.get("type", None):
-                setting_values["type"] = "range"
-            setting = Setting(name=setting_name, **setting_values)
-            settings.append(setting)
-        component = Component(name=component_name, settings=settings)
-        components.append(component)
-    return components
+        # desc = copy.deepcopy(desc)
+
+        # app = desc["application"]
+        # comps = app["components"]
+
+        monitoring = {}
+
+        # TODO: Model will have components, deployments, 
+        
+        kubectl = Kubectl(self.config, self.logger)
+        deployments = await kubectl.k_get(appname, DEPLOYMENT)
+        deps_list = deployments["items"]
+        if not deps_list:
+            # NOTE we don't distinguish the case when the namespace doesn't exist at all or is just empty (k8s will return an empty list whether or not it exists)
+            raise AdjustError(
+                f"No deployments found in namespace '{appname}'",
+                status="aborted",
+                reason="app-unavailable",
+            )  # NOTE not a documented 'reason'
+        deployments_by_name = {dep["metadata"]["name"]: dep for dep in deps_list}
+
+        # TODO: Move to a model
+        # NOTE: These three are used for hashing
+        raw_specs = {}
+        images = {}
+        runtime_ids = {}
+        components = _components.copy()
+
+        for component in components:
+            deployment_name = component.name
+            container_name = None
+            if "/" in deployment_name:
+                deployment_name, container_name = component.name.split("/")
+            if not deployment_name in deployments_by_name:
+                raise ValueError(f'Could not find deployment "{dep_name}" defined for component "{full_comp_name}" in namespace "{appname}".')
+            deployment = deployments_by_name[deployment_name]
+
+            # Containers
+            containers = deployment["spec"]["template"]["spec"]["containers"]
+            if container_name is not None:
+                container = next(filter(lambda c: c["name"] == container_name, containers))
+                if not container:
+                    raise ValueError('Could not find container with name "{}" in deployment "{}" '
+                    'for component "{}" in namespace "{}".'
+                    "".format(cont_name, dep_name, full_comp_name, appname))
+            else:
+                container = containers[0]
+
+            # skip if excluded by label
+            try:
+                if bool(
+                    int(deployment["metadata"].get("labels", {}).get(EXCLUDE_LABEL, "0"))
+                ):  # string value of 1 (non-0)
+                    self.logger.debug(f"Skipping component {deployment_name}: excluded by label")
+                    continue
+            except ValueError as e:  # int() is the only thing that should trigger exceptions here
+                # TODO add warning to annotations to be returned
+                self.logger.warning(
+                    "failed to parse exclude label for deployment {}: {}: {}; ignored".format(
+                        deployment_name, type(e).__name__, str(e)
+                    ),
+                    file=sys.stderr,
+                )
+                # pass # fall through, ignore unparseable label
+
+            # selector for pods, NOTE this relies on having a equality-based label selector,
+            # k8s seems to support other types, I don't know what's being used in practice.
+            try:
+                match_label_selectors = deployment["spec"]["selector"]["matchLabels"]
+            except KeyError:
+                # TODO: inconsistent errors
+                raise AdjustError(
+                    "only deployments with matchLabels selector are supported, found selector: {}".format(
+                        repr(deployment["spec"].get("selector", {}))
+                    ),
+                    status="aborted",
+                    reason="app-unavailable",
+                )  # NOTE not a documented 'reason'
+            # convert to string suitable for 'kubect -l labelsel'
+            selector_args = ",".join(("{}={}".format(k, v) for k, v in match_label_selectors.items()))
+
+            # list of pods, for runtime_id
+            try:
+                pods = await kubectl.k_get(appname, ["-l", selector_args, "pods"])
+                runtime_ids[deployment_name] = [pod["metadata"]["uid"] for pod in pods["items"]]
+            except subprocess.CalledProcessError as e:
+                Adjust.print_json_error(
+                    error="warning",
+                    cl="CalledProcessError",
+                    message="Unable to retrieve pods: {}. Output: {}".format(e, e.output),
+                )
+
+            # extract deployment settings
+            # NOTE: generation, resourceVersion and uid can help detect changes
+            # (also, to check PG's k8s code in oco)
+            replicas = deployment["spec"]["replicas"]
+            raw_specs[deployment_name] = deployment["spec"]["template"]["spec"]  # save for later, used to checksum all specs
+            
+            # TODO: Move to model...
+            def get_setting_in_component(setting_name: str, component: Componet) -> Optional[Setting]:
+                for setting in component.settings:
+                    if setting.name == setting_name:
+                        return setting
+                return None
+
+            # name, env, resources (limits { cpu, memory }, requests { cpu, memory })
+            # FIXME: what to do if there's no mem reserve or limits defined? (a namespace can have a default mem limit, but that's not necessarily set, either)
+            # (for now, we give the limit as 0, treated as 'unlimited' - AFAIK)
+            images[deployment_name] = container["image"]  # FIXME, is this always defined?
+            cpu_setting = get_setting_in_component("cpu", component)
+            mem_setting = get_setting_in_component("mem", component)
+            replicas_setting = get_setting_in_component("replicas", component)
+
+            container_resources = container.get("resources")
+            # TODO: Push all of these defaults into the model.
+            if container_resources:
+                if mem_setting:
+                    mem_val = self.get_rsrc(mem_setting, container_resources, "mem")
+                    mem_setting.value = (memunits(mem_val) / Gi)
+                    mem_setting.min = (mem_setting.min or MEM_STEP / Gi)
+                    mem_setting.max = (mem_setting.max or MAX_MEM / Gi)
+                    mem_setting.step = (mem_setting.step or MEM_STEP / Gi)
+                    mem_setting.pinned = (mem_setting.pinned or None)
+
+                if cpu_setting:
+                    cpu_val = self.get_rsrc(cpu_setting, container_resources, "cpu")
+                    debug(cpu_val)
+                    cpu_setting.value = cpuunits(cpu_val)
+                    cpu_setting.min = (cpu_setting.min or CPU_STEP)
+                    cpu_setting.max = (cpu_setting.max or MAX_CPU)
+                    cpu_setting.step = (cpu_setting.step or CPU_STEP)
+                    cpu_setting.pinned = (cpu_setting.pinned or None)
+                # TODO: adjust min/max to include current values, (e.g., increase mem_max to at least current if current > max)
+            # set replicas: FIXME: can't actually be set for each container (the pod as a whole is replicated); for now we have no way of expressing this limitation in the setting descriptions
+            # note: setting min=max=current replicas, since there is no way to know what is allowed; use override descriptor to loosen range
+            if replicas_setting:
+                replicas_setting.value = replicas
+                replicas_setting.min = (replicas_setting.min or replicas)
+                replicas_setting.max = (replicas_setting.max or replicas)
+                replicas_setting.step = (replicas_setting.step or 1)
+                replicas_setting.pinned = (replicas_setting.pinned or None)
+
+            # current settings of custom env vars (NB: type conv needed for numeric values!)
+            cont_env_list = container.get("env", [])
+            # include only vars for which the keys 'name' and 'value' are defined
+            cont_env_dict = {
+                i["name"]: i["value"] for i in cont_env_list if "name" in i and "value" in i
+            }
+
+            # TODO: Break into a method...
+            # TODO: This is broken atm
+            env = component.env
+            if env:
+                for en, ev in env.items():
+                    assert isinstance(
+                        ev, dict
+                    ), 'Setting "{}" in section "env" of a config file is not a dictionary.'
+                    if "encoder" in ev:
+                        for name, setting in describe_encoder(
+                            cont_env_dict.get(en),
+                            ev["encoder"],
+                            exception_context="an environment variable {}" "".format(en),
+                        ):
+                            settings[name] = setting
+                    if issetting(ev):
+                        defval = ev.pop("default", None)
+                        val = cont_env_dict.get(en, defval)
+                        val = (
+                            float(val)
+                            if israngesetting(ev) and isinstance(val, (int, str))
+                            else val
+                        )
+                        assert val is not None, (
+                            'Environment variable "{}" does not have a current value defined and '
+                            "neither it has a default value specified in a config file. "
+                            "Please, set current value for this variable or adjust the "
+                            "configuration file to include its default value."
+                            "".format(en)
+                        )
+                        val = {**ev, "value": val}
+                        settings[en] = val
+
+            # TODO: Must be added to model...
+            # command = comp.get("command")
+            # if command:
+            #     if command.get("encoder"):
+            #         for name, setting in describe_encoder(
+            #             cont.get("command", []),
+            #             command["encoder"],
+            #             exception_context="a command section",
+            #         ):
+            #             settings[name] = setting
+            #         # Remove section "command" from final descriptor
+            #     del comp["command"]
+
+        if runtime_ids:
+            monitoring["runtime_id"] = get_hash(runtime_ids)
+
+        # app state data
+        # (NOTE we strip the component names because our (single-component) 'reference' app will necessarily have a different component name)
+        # this should be resolved by complete re-work, if we are to support 'reference' app in a way that allows multiple components
+        raw_specs = [raw_specs[k] for k in sorted(raw_specs.keys())]
+        images = [images[k] for k in sorted(images.keys())]
+        monitoring.update(
+            {
+                "spec_id": get_hash(raw_specs),
+                "version_id": get_hash(images),
+                # "runtime_count": replicas_sum
+            }
+        )
+
+        return AppState(
+            components=components,
+            monitoring=monitoring
+        )
+    
+    def get_rsrc(self, setting, cont_resources, sn):
+        rn = RESOURCE_MAP[sn]
+        selector = setting.selector or "both"
+        if selector == "request":
+            val = cont_resources.get("requests", {}).get(rn)
+            if val is None:
+                val = cont_resources.get("limits", {}).get(rn)
+                if val is not None:
+                    Adjust.print_json_error(
+                        error="warning",
+                        cl=None,
+                        message='Using the non-selected value "limit" for resource "{}" as the selected value is not set'.format(
+                            sn
+                        ),
+                    )
+                else:
+                    val = "0"
+        else:
+            val = cont_resources.get("limits", {}).get(rn)
+            if val is None:
+                val = cont_resources.get("requests", {}).get(rn)
+                if val is not None:
+                    if selector == "limit":
+                        Adjust.print_json_error(
+                            error="warning",
+                            cl=None,
+                            message='Using the non-selected value "request" for resource "{}" as the selected value is not set'.format(
+                                sn
+                            ),
+                        )
+                    # else: don't print warning for 'both'
+                else:
+                    val = "0"
+        return val
+

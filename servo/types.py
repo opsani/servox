@@ -216,6 +216,8 @@ class Setting(BaseModel):
     max: Numeric
     step: Numeric
     value: Optional[Union[Numeric, str]]
+    pinned: bool = False
+    selector: Optional[str]
 
     def __str__(self):
         if self.type == SettingType.RANGE:
@@ -227,6 +229,8 @@ class Setting(BaseModel):
 class Component(BaseModel):
     name: str
     settings: List[Setting]
+
+    env: Optional[Dict[str, str]]
 
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)

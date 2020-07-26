@@ -198,7 +198,7 @@ class Runner(api.Mixin):
 
         except Exception as error:
             self.logger.exception(f"{cmd_response.command} command failed!")
-            param = dict(status="failed", message=_exc_format(error))
+            param = dict(status="failed", message=str(error))
             await self.shutdown(asyncio.get_event_loop())
             await self._post_event(cmd_response.command.response_event, param)
 
@@ -274,8 +274,3 @@ class Runner(api.Mixin):
         finally:
             loop.close()
             self.logger.info("Servo shutdown complete.")
-
-def _exc_format(e):
-    if type(e) is Exception:  # if it's just an Exception
-        return str(e)  # print only the message but not the type
-    return "{type(e).__name__}: {e}"
