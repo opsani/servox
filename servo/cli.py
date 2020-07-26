@@ -8,7 +8,6 @@ import textwrap
 from datetime import datetime, timezone
 from enum import Enum
 from functools import reduce
-from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
 
@@ -19,7 +18,6 @@ import typer
 import yaml
 
 from devtools import pformat
-from loguru import logger
 from pydantic import ValidationError
 from pygments import highlight
 from pygments.formatters import TerminalFormatter
@@ -38,6 +36,7 @@ from servo.connector import (
     _connector_class_from_string
 )
 from servo.events import EventHandler, Preposition
+from servo.logging import logger, set_level as set_log_level
 from servo.servo import (
     Events,
     Servo,
@@ -65,6 +64,14 @@ class Section(str, Enum):
     COMMANDS = "Commands"
     OTHER = "Other Commands"
 
+class LogLevel(str, Enum):
+    TRACE = "TRACE"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    SUCCESS = "SUCCESS"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 class Context(typer.Context):
     """
@@ -251,7 +258,7 @@ class CLI(typer.Typer):
         )
 
     @property
-    def logger(self) -> Logger:
+    def logger(self) -> 'Logger':
         return logger
 
     def command(
@@ -359,12 +366,21 @@ class CLI(typer.Typer):
             resolve_path=True,
             help="Servo configuration file",
         ),
+        log_level: LogLevel = typer.Option(
+            LogLevel.INFO,
+            "--log-level",
+            "-l",
+            envvar="SERVO_LOG_LEVEL",
+            show_envvar=True,
+            help="Set the log level",
+        )        
     ):
         ctx.config_file = config_file
         ctx.optimizer = optimizer
         ctx.token = token
         ctx.token_file = token_file
         ctx.base_url = base_url
+        set_log_level(log_level)
 
         # TODO: This should be pluggable
         if ctx.invoked_subcommand not in {
@@ -633,7 +649,7 @@ class ServoCLI(CLI):
                     token = typer.prompt("API token?", default=context.token)
                     token != context.token or typer.echo()
                     dotenv_file.write_text(
-                        f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\n"
+                        f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\nSERVO_LOG_LEVEL=DEBUG\n"
                     )
                     typer.echo(".env file initialized")
 

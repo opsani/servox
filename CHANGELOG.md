@@ -15,6 +15,14 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- The capabilities of the logging module have been significantly enhanced with supporting for
+changing the logging levels, performing timed logging around methods, and attaching backtraces.
+- Log messages are now annotated with the event context when logging occurs during an event
+handler.
+
 ## [0.4.2] - 2020-07-24
 
 ### Fixed

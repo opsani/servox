@@ -108,7 +108,6 @@ class EventContext(BaseModel):
         if not event:
             return None
 
-        debug(preposition, Preposition.from_str(preposition))
         return EventContext(
             preposition=Preposition.from_str(preposition), 
             event=event
@@ -153,7 +152,7 @@ class EventHandler(BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["Connector"]]
+    connector_type: Optional[Type["Connector"]] # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):

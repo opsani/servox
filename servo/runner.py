@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import backoff
 import httpx
-import loguru
 import typer
 
 from devtools import pformat
@@ -241,6 +240,7 @@ class Runner(api.Mixin):
 
         self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
+        await self.logger.complete()
 
         loop.stop()
     
@@ -258,9 +258,8 @@ class Runner(api.Mixin):
         loop = asyncio.get_event_loop()
 
         # Setup logging
-        handler = ProgressHandler(self.servo)
-        loop.create_task(handler.run())
-        loguru.logger.add(handler)        
+        progress_handler = ProgressHandler(self.servo.report_progress, self.logger.warning)
+        self.logger.add_handler(progress_handler, catch=True)
         
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
         for s in signals:

@@ -27,8 +27,6 @@ from servo.events import Preposition, _events, event
 from servo.logging import ProgressHandler
 from tests.test_helpers import *
 
-pytestmark = pytest.mark.asyncio
-
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456")

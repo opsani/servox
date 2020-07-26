@@ -109,6 +109,11 @@ class Mixin:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
     
+    # TODO: Clean this up...
+    async def report_progress(self, **kwargs):
+        request = self.progress_request(**kwargs)
+        return await self._post_event(*request)
+
     def progress_request(self,
         operation: str, 
         progress: Numeric, 

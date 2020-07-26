@@ -24,6 +24,12 @@ else:
     builtins.debug = debug
 
 
+# Set asyncio as a default marker across the suite
+def pytest_collection_modifyitems(items):
+    for item in items:
+        item.add_marker('asyncio')
+
+
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
