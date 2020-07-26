@@ -1,11 +1,13 @@
 import asyncio
 import json
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+import respx
 import yaml
+from freezegun import freeze_time
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
@@ -24,7 +26,7 @@ from servo.connector import (
 from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import Preposition, _events, event
-from servo.logging import ProgressHandler
+from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
 
 class TestOptimizer:
@@ -1330,16 +1332,39 @@ class TestConnectorEvents:
         assert context != "before:example_event"
         assert context != "after:example_event"
 
+@respx.mock
 async def test_logging() -> None:
+    request = respx.post("https://api.opsani.com/accounts/example.com/applications/my-app/servo", content={"status": "ok"})
     connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    handler = ProgressHandler(connector)
-    print(handler)
-    connector.logger.add(handler)
-    connector.logger.info("First", progress=0)
+    handler = ProgressHandler(connector.report_progress, lambda m: print(m))
+    connector.logger.add(handler.sink)
+    args = dict(operation="ADJUST", started_at=datetime.now())
+    connector.logger.info("First", progress=0, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Second", progress=25.0)
+    connector.logger.info("Second", progress=25.0, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Third", progress=50)
+    connector.logger.info("Third", progress=50, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Fourth", progress=100.0)
+    connector.logger.info("Fourth", progress=100.0, **args)
+    await asyncio.sleep(0.00001)
 
+    await connector.logger.complete()
+    await asyncio.gather(*handler.tasks)
+    reset_to_defaults()
+    assert request.called
+    assert request.stats.call_count == 3
+    request.stats.call_args.args[0].read()
+    last_progress_report = json.loads(request.stats.call_args.args[0].content)
+    assert last_progress_report["param"]["progress"] == 100.0
+
+def test_report_progress_numeric() -> None:
+    pass
+
+def test_report_progress_duration() -> None:
+    pass
+
+# TODO: int progress, float progress
+# TODO: int time_remaining, float time_remaining, duration
+# TODO: paramtrize all of these, mock the response
+# TODO: float of < 1, float of < 100
+# TODO: no time remaining given

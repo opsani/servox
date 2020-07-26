@@ -167,19 +167,19 @@ class TestProgressHandler:
         logger.critical("Test...", progress=50, connector=None)
         await logger.complete()
         progress_reporter.assert_not_called()
-        error_reporter.assert_called_once_with("declining request to report progress for record without a connector attribute")
+        assert "declining request to report progress for record without a connector attribute"  in error_reporter.call_args.args[0]
     
     async def test_error_no_operation(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo")
         await logger.complete()
         progress_reporter.assert_not_called()
-        error_reporter.assert_called_once_with("declining request to report progress for record without an operation parameter or inferrable value from event context")
+        assert "declining request to report progress for record without an operation parameter or inferrable value from event context" in error_reporter.call_args.args[0]
     
     async def test_error_no_started_at(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo", operation="hacking")
         await logger.complete()
         progress_reporter.assert_not_called()
-        error_reporter.assert_called_once_with("declining request to report progress for record without a started_at parameter or inferrable value from event context")
+        assert "declining request to report progress for record without a started_at parameter or inferrable value from event context" in error_reporter.call_args.args[0]
     
     async def test_success(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo", operation="hacking", started_at=datetime.now())

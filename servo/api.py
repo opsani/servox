@@ -111,8 +111,11 @@ class Mixin:
     
     # TODO: Clean this up...
     async def report_progress(self, **kwargs):
-        request = self.progress_request(**kwargs)
-        return await self._post_event(*request)
+        try:
+            request = self.progress_request(**kwargs)
+            return await self._post_event(*request)
+        except Exception as e:
+            debug(e)
 
     def progress_request(self,
         operation: str, 
@@ -165,7 +168,7 @@ class Mixin:
 
     
     # NOTE: Opsani API primitive
-    @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
+    # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
     async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
         self.logger.trace(event_request)
@@ -175,7 +178,7 @@ class Mixin:
                 response.raise_for_status()
             except httpx.HTTPError as error:
                 self.logger.exception(
-                    f"HTTP error encountered while posting {event.value} event"
+                    f"HTTP error encountered while posting {event} event"
                 )
                 self.logger.trace(pformat(event_request))
                 raise error

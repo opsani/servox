@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import json
 import os
@@ -382,7 +383,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected <class 'dict'>, but found None"
+        == "Invalid return type annotation for 'adjust' event handler: expected dict, but found None"
     )
 
 
@@ -396,7 +397,7 @@ def test_registering_event_handler_fails_with_no_self() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid signature for 'adjust' event handler: () -> None, \"self\" must be the first argument"
+        == "Invalid signature for 'adjust' event handler: () -> 'None', \"self\" must be the first argument"
     )
 
 
@@ -425,7 +426,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'data': expected signature: (self, data: dict) -> dict"
+        == "Missing required parameter: 'data': expected signature: (self, data: 'dict') -> 'dict'"
     )
 
 
@@ -439,7 +440,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: List[str] = None, control: servo.types.Control = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> servo.types.Measurement"
+        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'Measurement'"
     )
 
 

@@ -6,6 +6,7 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+from weakref import WeakSet
 
 import httpx
 import loguru
@@ -58,26 +59,32 @@ class ProgressHandler:
     ) -> None:
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
+        self._tasks = WeakSet()
+    
+    @property
+    def tasks(self) -> Set[asyncio.Task]:
+        return self._tasks.copy()
     
     async def sink(self, message: str) -> None:
         """
         An asynchronous loguru sink handling the progress reporting.
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
         """
-        extra = message.record["extra"]
+        record = message.record
+        extra = record["extra"]
         progress = extra.get("progress", None)
         if not progress:
             return
 
         connector = extra.get("connector", None)
         if not connector:
-            return await self._report_error("declining request to report progress for record without a connector attribute")
+            return await self._report_error("declining request to report progress for record without a connector attribute", record)
 
         event_context: EventContext = _event_context_var.get()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:
-                return await self._report_error("declining request to report progress for record without an operation parameter or inferrable value from event context")
+                return await self._report_error("declining request to report progress for record without an operation parameter or inferrable value from event context", record)
             operation = event_context.operation()
 
         started_at = extra.get("started_at", None)
@@ -85,7 +92,7 @@ class ProgressHandler:
             if event_context:
                 started_at = event_context.created_at
             else:
-                return await self._report_error("declining request to report progress for record without a started_at parameter or inferrable value from event context")
+                return await self._report_error("declining request to report progress for record without a started_at parameter or inferrable value from event context", record)
 
         return await self._report_progress(
             operation=operation,
@@ -102,17 +109,18 @@ class ProgressHandler:
         """
         if self._progress_reporter:
             if asyncio.iscoroutinefunction(self._progress_reporter):
-                await self._progress_reporter(**kwargs)
+                self._tasks.add(asyncio.create_task(self._progress_reporter(**kwargs)))
             else:
                 self._progress_reporter(**kwargs)
 
-    async def _report_error(self, message: str) -> None:
+    async def _report_error(self, message: str, record) -> None:
         """
         Report an error message about rocessing a log message annotated with a `progress` attribute.
         """
+        message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:
             if asyncio.iscoroutinefunction(self._error_reporter):
-                await self._error_reporter(message)
+                self._tasks.add(asyncio.create_task(self._error_reporter(message)))
             else:
                 self._error_reporter(message)
 

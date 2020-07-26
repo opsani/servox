@@ -136,7 +136,7 @@ class EventContext(BaseModel):
     
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
-            return other in (self.__str__(), self.event.name)
+            return other in (self.__str__(), f"on:{self.event.name}")
         return super().__eq__(other)
     
     # FIXME: This should be aligned with `servo.api.Command.response_event` somehow
@@ -463,9 +463,10 @@ def _validate_handler_signature(
 
     # Check return type annotation
     if handler_signature.return_annotation != event_signature.return_annotation:
-        raise TypeError(
-            f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
-        )
+        error_message = f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
+        if isinstance(event_signature.return_annotation, str) and not isinstance(handler_signature.return_annotation, str):
+            error_message += "\nThe type annotations captured from the module defining the event handler are not string encoded. Add `from __future__ import annotations` to the top of the module implementation."
+        raise TypeError(error_message)
 
     # Check for extraneous positional parameters on the handler
     handler_positional_only = list(

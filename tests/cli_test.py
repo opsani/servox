@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import os
 import re
@@ -774,7 +775,7 @@ def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
     dotenv = Path(".env")
     assert (
         dotenv.read_text()
-        == "OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789\n"
+        == "OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789\nSERVO_LOG_LEVEL=DEBUG\n"
     )
     servo_yaml = Path("servo.yaml")
     assert servo_yaml.read_text() is not None

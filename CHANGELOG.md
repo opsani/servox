@@ -24,6 +24,7 @@ changing the logging levels, performing timed logging around methods, and attach
 handler.
 - The metadata decorator now accepts a tuple for the `name` parameter for providing an explicit
 default name for connectors of the decorated type, overriding the name inference.
+- Progress can be automatically reported to the Opsani API by annotating log messages with a "progress" key.
 
 ## [0.4.2] - 2020-07-24
 

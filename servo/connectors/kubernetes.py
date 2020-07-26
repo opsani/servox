@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, annotations
 
 import copy
 import errno
@@ -663,8 +663,8 @@ def ydump(fn, data):
 
 
 def dbg_log(*args):
+    # TODO: Eliminate this
     from loguru import logger
-
     logger.debug(args)
     # if os.getenv("TDR_DEBUG_LOG"):
     #     print(*args, file=sys.stderr)
