@@ -33,7 +33,8 @@ from servo import (
     cli,
     metadata,
     on_event,
-    values_for_keys
+    values_for_keys,
+    value_for_key_path,
 )
 
 ###
@@ -112,17 +113,6 @@ class VegetaReport(BaseModel):
         return 100 - (
             success_rate * 100
         )  # Fraction of success inverted into % of error
-
-    # TODO: Generalize object for key path
-    def get(self, key: str) -> Any:
-        if hasattr(self, key):
-            return getattr(self, key)
-        elif "." in key:
-            parent_key, child_key = key.split(".", 2)
-            child = self.get(parent_key).dict(by_alias=True)
-            return child[child_key]
-        else:
-            raise ValueError(f"unknown key '{key}'")
 
 
 class VegetaConfiguration(BaseConfiguration):
@@ -496,7 +486,6 @@ class VegetaConnector(Connector):
         )
         return vegeta_cmd
 
-    # helper:  take the time series metrics gathered during the attack and map them into OCO format
     def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[Metric]]) -> List[TimeSeries]:
         readings = []
 
@@ -513,7 +502,8 @@ class VegetaConnector(Connector):
 
             values: List[Tuple(datetime, Numeric)] = []
             for report in self.vegeta_reports:
-                values.append((report.end, report.get(key),))
+                value = value_for_key_path(report.dict(by_alias=True), key)
+                values.append((report.end, value,))
 
             readings.append(TimeSeries(metric, values))
 
