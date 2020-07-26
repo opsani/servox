@@ -70,9 +70,12 @@ def timedelta_from_duration_str(duration: str) -> timedelta:
         ns - nanoseconds
         us - microseconds
         ms - millisecond
-        s - second
-        m - minute
-        h - hour
+        s  - second
+        m  - minute
+        h  - hour
+        w  - week
+        mm - month
+        y  - year
     """
     return timedelta(microseconds=microseconds_from_duration_str(duration))
 
@@ -88,9 +91,12 @@ def timedelta_to_duration_str(delta: timedelta, extended: bool = False) -> str:
         ns - nanoseconds
         us - microseconds
         ms - millisecond
-        s - second
-        m - minute
-        h - hour
+        s  - second
+        m  - minute
+        h  - hour
+        w  - week
+        mm - month
+        y  - year
     """
 
     total_seconds = delta.total_seconds()
