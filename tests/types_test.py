@@ -48,6 +48,12 @@ class TestDuration:
     def test_str(self) -> None:
         duration = Duration("5h37m15s")
         assert duration.__str__() == "5h37m15s"
+    
+    def test_parse_extended(self) -> None:
+        duration = Duration("2y4mm3d8h24m")
+        assert duration.__str__() == "2y4mm3d8h24m"
+        assert duration.total_seconds() == 73729440.0
+        assert Duration(73729440.0).__str__() == "2y4mm3d8h24m"
 
     def test_pydantic_schema(self) -> None:
         model = create_model("duration_model", duration=(Duration, ...))
@@ -56,6 +62,6 @@ class TestDuration:
             "title": "Duration",
             "type": "string",
             "format": "duration",
-            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+            "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }

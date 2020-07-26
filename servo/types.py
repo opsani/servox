@@ -101,7 +101,7 @@ class Duration(timedelta):
         field_schema.update(
             type="string",
             format="duration",
-            pattern="([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
+            pattern="([\d\.]+y)?([\d\.]+mm)?(([\d\.]+w)?[\d\.]+d)?([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
             examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
         )
 
@@ -116,7 +116,7 @@ class Duration(timedelta):
         return cls(microseconds=microseconds)
 
     def __str__(self):
-        return timedelta_to_duration_str(self)
+        return timedelta_to_duration_str(self, extended=True)
 
     def __repr__(self):
         return f"Duration('{self}' {super().__str__()})"

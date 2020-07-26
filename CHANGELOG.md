@@ -26,6 +26,9 @@ handler.
 default name for connectors of the decorated type, overriding the name inference.
 - Progress can be automatically reported to the Opsani API by annotating log messages with a "progress" key.
 
+### Changed
+- Enable parsing of extended Golang duration strings in `Duration` (days, weeks, months, years).
+
 ## [0.4.2] - 2020-07-24
 
 ### Fixed
