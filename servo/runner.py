@@ -203,6 +203,10 @@ class Runner(api.Mixin):
             await self._post_event(cmd_response.command.response_event, param)
 
     async def main(self) -> None:
+        # Setup logging
+        self.progress_handler = ProgressHandler(self.servo.report_progress, self.logger.warning)
+        self.logger.add(self.progress_handler.sink, catch=True)
+
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
@@ -240,8 +244,10 @@ class Runner(api.Mixin):
 
         self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
+        
+        self.logger.info("Servo shutdown complete.")
         await self.logger.complete()
-
+        
         loop.stop()
     
     def handle_exception(self, loop, context):
@@ -256,10 +262,6 @@ class Runner(api.Mixin):
 
         # Setup async event loop
         loop = asyncio.get_event_loop()
-
-        # Setup logging
-        progress_handler = ProgressHandler(self.servo.report_progress, self.logger.warning)
-        self.logger.add_handler(progress_handler, catch=True)
         
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
         for s in signals:
@@ -272,5 +274,4 @@ class Runner(api.Mixin):
             loop.create_task(self.main())
             loop.run_forever()
         finally:
-            loop.close()
-            self.logger.info("Servo shutdown complete.")
+            loop.close()            
