@@ -199,11 +199,11 @@ version = "4.4.2"
 
 [[package]]
 category = "main"
-description = "Dev tools for python"
+description = "Python's missing debug print command and other development tools."
 name = "devtools"
 optional = false
-python-versions = ">=3.5"
-version = "0.5.1"
+python-versions = ">=3.6"
+version = "0.6"
 
 [package.extras]
 pygments = ["Pygments (>=2.2.0)"]
@@ -1317,7 +1317,7 @@ version = "1.0.1"
 dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [metadata]
-content-hash = "bc766ab3aced975fe3d77cbbb2875003aca7a7689f7b875256c1ae33beda731e"
+content-hash = "84c0db25cfcf8685027ee600db0bef7f41662bd3d4c43fa33ded586d8e17c472"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1430,8 +1430,8 @@ decorator = [
     {file = "decorator-4.4.2.tar.gz", hash = "sha256:e3a62f0520172440ca0dcc823749319382e377f37f140a0b99ef45fecb84bfe7"},
 ]
 devtools = [
-    {file = "devtools-0.5.1-py35.py36-none-any.whl", hash = "sha256:7a1f7db6ade0a71840ca4014d75dd72390aed2ef04e39e2b2445af7b3a3f4679"},
-    {file = "devtools-0.5.1.tar.gz", hash = "sha256:51ca8d2e15b8a862875a4837db2bafbc6cda409c069e960aec3f4bbd91fe9c08"},
+    {file = "devtools-0.6-py3-none-any.whl", hash = "sha256:bba4886df5adbcedafa2ec0e5fb2c255a82ce94ec822a12aa16f1f104e9eed36"},
+    {file = "devtools-0.6.tar.gz", hash = "sha256:3f2d4eb2de2a8501c41330524414b495d7bbf3066384b3cec5fa784a0d07099b"},
 ]
 docutils = [
     {file = "docutils-0.16-py2.py3-none-any.whl", hash = "sha256:0c5b78adfbf7762415433f5515cd5c9e762339e23369dbe8000d84a4bf4ab3af"},
