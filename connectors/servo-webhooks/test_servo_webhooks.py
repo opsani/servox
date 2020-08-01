@@ -7,7 +7,7 @@ import pytest
 import servo
 from servo import BaseConfiguration, Metric, Unit, on_event
 from servo.events import EventContext
-from servo_webhooks import CLI, Configuration, Connector, Webhook, __version__
+from servo_webhooks import CLI, WebhooksConfiguration, WebhooksConnector, Webhook, __version__
 import respx
 
 pytestmark = pytest.mark.asyncio
@@ -26,8 +26,8 @@ def test_version():
 @respx.mock
 async def test_webhook() -> None:
     webhook = Webhook(url="http://localhost:8080/webhook", events="before:measure", secret="testing")
-    config = Configuration([webhook])
-    connector = Connector(config=config)
+    config = WebhooksConfiguration([webhook])
+    connector = WebhooksConnector(config=config)
 
     request = respx.post("http://localhost:8080/webhook", status_code=200)
     await connector.dispatch_event("measure")
@@ -36,8 +36,8 @@ async def test_webhook() -> None:
 @respx.mock
 async def test_webhooks() -> None:
     webhook = Webhook(url="http://localhost:8080/webhook", events=["before:measure", "after:adjust"], secret="test")
-    config = Configuration([webhook])
-    connector = Connector(config=config)
+    config = WebhooksConfiguration([webhook])
+    connector = WebhooksConnector(config=config)
 
     request = respx.post("http://localhost:8080/webhook", status_code=200)
     await connector.dispatch_event("measure")
@@ -54,8 +54,8 @@ def test_headers_are_added_to_requests() -> None:
 @respx.mock
 async def test_after_metrics_webhook() -> None:
     webhook = Webhook(url="http://localhost:8080/webhook", events=["after:metrics"], secret="w00t")
-    config = Configuration([webhook])
-    connector = Connector(config=config)
+    config = WebhooksConfiguration([webhook])
+    connector = WebhooksConnector(config=config)
 
     request = respx.post("http://localhost:8080/webhook", status_code=200)
     provider = WebhookEventConnector(config=BaseConfiguration())
@@ -89,8 +89,8 @@ def test_request_schema() -> None:
 @respx.mock
 async def test_hmac_signature() -> None:    
     webhook = Webhook(url="http://localhost:8080/webhook", events="after:measure", secret="testing")
-    config = Configuration([webhook])
-    connector = Connector(config=config)
+    config = WebhooksConfiguration([webhook])
+    connector = WebhooksConnector(config=config)
 
     info = {}
     def match_and_mock(request, response):
@@ -132,7 +132,7 @@ class TestCLI:
 # TODO: Test generate
 
 def test_generate():
-    config = Configuration.generate()
+    config = WebhooksConfiguration.generate()
     debug(config.yaml())
     #debug(config.dict(exclude={"webhooks": {'events': {'__all__': {'signature'} }}}))
 

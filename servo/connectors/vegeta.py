@@ -18,7 +18,7 @@ from servo import (
     HTTP_METHODS,
     BaseConfiguration,
     Check,
-    Connector,
+    BaseConnector,
     Control,
     Description,
     Duration,
@@ -295,7 +295,7 @@ class VegetaConfiguration(BaseConfiguration):
     license=License.APACHE2,
     maturity=Maturity.STABLE,
 )
-class VegetaConnector(Connector):
+class VegetaConnector(BaseConnector):
     config: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []
     warmup_until: Optional[datetime] = None

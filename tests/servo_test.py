@@ -12,7 +12,7 @@ from pydantic import Extra, ValidationError
 
 from servo import __version__, connector
 from servo.connector import (
-    Connector,
+    BaseConnector,
     Optimizer,
 )
 from servo.connectors.vegeta import VegetaConnector
@@ -39,7 +39,7 @@ def test_version():
     assert __version__
 
 
-class FirstTestServoConnector(Connector):
+class FirstTestServoConnector(BaseConnector):
     started_up: bool = False
 
     @event(handler=True)
@@ -79,7 +79,7 @@ class FirstTestServoConnector(Connector):
         extra = Extra.allow
 
 
-class SecondTestServoConnector(Connector):
+class SecondTestServoConnector(BaseConnector):
     @on_event()
     def this_is_an_event(self) -> str:
         return "this is a different result"
@@ -708,7 +708,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -825,7 +828,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -872,7 +878,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -989,7 +998,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -1118,10 +1130,10 @@ class TestServoSettings:
         assert s.connectors is None
 
     def test_connectors_allows_set_of_classes(self):
-        class FooConnector(Connector):
+        class FooConnector(BaseConnector):
             pass
 
-        class BarConnector(Connector):
+        class BarConnector(BaseConnector):
             pass
 
         s = BaseServoConfiguration(connectors={FooConnector, BarConnector},)

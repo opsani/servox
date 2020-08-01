@@ -16,7 +16,8 @@ asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.11.2"
 
 [tool.poetry.plugins."servo.connectors"]
-"servo-webhooks" = "servo_webhooks:Connector"
+"servo-webhooks" = "servo_webhooks:WebhooksConnector"
+
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"

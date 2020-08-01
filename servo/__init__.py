@@ -33,7 +33,7 @@ from .events import (
 from .connector import (
     Optimizer,
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     metadata,
 )
 

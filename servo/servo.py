@@ -20,7 +20,7 @@ import servo
 from servo import api, connector
 from servo.connector import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     ConnectorLoader,
     License,
     Maturity,
@@ -193,7 +193,7 @@ _servo_context_var = ContextVar('servo.servo', default=None)
     license=License.APACHE2,
     version=servo.__version__,
 )
-class Servo(Connector):
+class Servo(BaseConnector):
     """
     A connector that interacts with the Opsani API to perform optimization.
 
@@ -216,7 +216,7 @@ class Servo(Connector):
     connector.
     """
 
-    connectors: List[Connector]
+    connectors: List[BaseConnector]
     """
     The active connectors in the servo.
     """
@@ -230,7 +230,7 @@ class Servo(Connector):
         """
         return _servo_context_var.get()
 
-    def __init__(self, *args, connectors: List[Connector], **kwargs) -> None:
+    def __init__(self, *args, connectors: List[BaseConnector], **kwargs) -> None:
         super().__init__(*args, connectors=[], **kwargs)
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
@@ -248,7 +248,7 @@ class Servo(Connector):
         """
         return self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
-    def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[Connector, List[Connector]]]:
+    def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[BaseConnector, List[BaseConnector]]]:
         """
         Returns one or more connectors by name.
 
@@ -292,7 +292,7 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
         if _connector_class_from_string(connectors) is None:
             raise ValueError(f"Invalid connectors value: {connectors}")
         return connectors
-    elif isinstance(connectors, type) and issubclass(connectors, Connector):
+    elif isinstance(connectors, type) and issubclass(connectors, BaseConnector):
         return connectors.__name__
     elif isinstance(connectors, (list, tuple, set)):
         connectors_list: List[str] = []
@@ -322,7 +322,7 @@ def _reserved_keys() -> List[str]:
     return reserved_keys
 
 
-def _default_routes() -> Dict[str, Type[Connector]]:
+def _default_routes() -> Dict[str, Type[BaseConnector]]:
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:
@@ -330,7 +330,7 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     return routes
 
 
-def _routes_for_connectors_descriptor(connectors) -> Dict[str, Connector]:
+def _routes_for_connectors_descriptor(connectors) -> Dict[str, BaseConnector]:
     if connectors is None:
         # None indicates that all available connectors should be activated
         return None
@@ -370,7 +370,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, Connector]:
 
             # Validate the name
             try:
-                Connector.validate_name(name)
+                BaseConnector.validate_name(name)
             except AssertionError as e:
                 raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
 

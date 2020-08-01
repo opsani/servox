@@ -31,7 +31,7 @@ from servo.assembly import (
     _default_routes,
 )
 from servo.connector import (
-    Connector, 
+    BaseConnector, 
     Optimizer,
     _connector_class_from_string
 )
@@ -93,7 +93,7 @@ class Context(typer.Context):
     servo: Optional[Servo] = None
 
     # Active connector
-    connector: Optional[Connector] = None
+    connector: Optional[BaseConnector] = None
 
     # NOTE: Section defaults generally only apply to Groups (see notes below)
     section: Section = Section.COMMANDS
@@ -121,7 +121,7 @@ class Context(typer.Context):
         optimizer: Optional[Optimizer] = None,
         assembly: Optional[Assembly] = None,
         servo: Optional[Servo] = None,
-        connector: Optional[Connector] = None,
+        connector: Optional[BaseConnector] = None,
         section: Section = Section.COMMANDS,
         token: Optional[str] = None,
         token_file: Optional[Path] = None,
@@ -400,7 +400,7 @@ class CLI(typer.Typer):
     def assemble_from_context(ctx: Context):
         if ctx.optimizer is None:
             raise typer.BadParameter("An optimizer must be specified")
-
+        
         # Resolve token
         if ctx.token is None and ctx.token_file is None:
             raise typer.BadParameter(
@@ -434,7 +434,7 @@ class CLI(typer.Typer):
     @staticmethod
     def connectors_instance_callback(
         context: typer.Context, value: Optional[Union[str, List[str]]]
-    ) -> Optional[Union[Connector, List[Connector]]]:
+    ) -> Optional[Union[BaseConnector, List[BaseConnector]]]:
         """
         Transforms a one or more connector names into Connector instances
         """
@@ -446,7 +446,7 @@ class CLI(typer.Typer):
                         return connector
                 raise typer.BadParameter(f"no connector found named '{value}'")
             else:
-                connectors: List[Connector] = []
+                connectors: List[BaseConnector] = []
                 for key in value:
                     size = len(connectors)
                     for connector in context.servo.connectors:
@@ -462,7 +462,7 @@ class CLI(typer.Typer):
     @staticmethod
     def connectors_type_callback(
         context: typer.Context, value: Optional[Union[str, List[str]]]
-    ) -> Optional[Union[Type[Connector], List[Type[Connector]]]]:
+    ) -> Optional[Union[Type[BaseConnector], List[Type[BaseConnector]]]]:
         """
         Transforms a one or more connector key-paths into Connector types
         """
@@ -475,7 +475,7 @@ class CLI(typer.Typer):
                         f"no Connector type found for key '{value}'"
                     )
             else:
-                connectors: List[Connector] = []
+                connectors: List[BaseConnector] = []
                 for key in value:
                     if connector := _connector_class_from_string(key):
                         connectors.append(connector)
@@ -490,14 +490,14 @@ class CLI(typer.Typer):
     @staticmethod
     def connector_routes_callback(
         context: typer.Context, value: Optional[List[str]]
-    ) -> Optional[Dict[str, Type[Connector]]]:
+    ) -> Optional[Dict[str, Type[BaseConnector]]]:
         """
         Transforms a one or more connector descriptors into a dict of names to Connectors
         """
         if not value:
             return None
 
-        routes: Dict[str, Type[Connector]] = {}
+        routes: Dict[str, Type[BaseConnector]] = {}
         for key in value:
             if ":" in key:
                 # We have an alias descriptor
@@ -519,7 +519,7 @@ class CLI(typer.Typer):
     @staticmethod
     def duration_callback(
         context: typer.Context, value: Optional[str]
-    ) -> Optional[Union[Connector, List[Connector]]]:
+    ) -> Optional[Union[BaseConnector, List[BaseConnector]]]:
         """
         Transform a string into a Duration object.
 
@@ -535,14 +535,14 @@ class CLI(typer.Typer):
 
 
 class ConnectorCLI(CLI):
-    connector_type: Type[Connector]
+    connector_type: Type[BaseConnector]
 
     # CLI registry
     __clis__: Set["CLI"] = set()
 
     def __init__(
         self,
-        connector_type: Type[Connector],
+        connector_type: Type[BaseConnector],
         *args,
         name: Optional[str] = None,
         help: Optional[str] = None,
@@ -911,7 +911,7 @@ class ServoCLI(CLI):
             table = []
             connectors_by_type = {}
             for c in connectors:
-                c_type = c.__class__ if isinstance(c, Connector) else c
+                c_type = c.__class__ if isinstance(c, BaseConnector) else c
                 c_list = connectors_by_type.get(c_type, [])
                 c_list.append(c)
                 connectors_by_type[c_type] = c_list
@@ -939,7 +939,7 @@ class ServoCLI(CLI):
             Runner(context.assembly).run()
 
         def validate_connectors_respond_to_event(
-            connectors: Iterable[Connector], event: str
+            connectors: Iterable[BaseConnector], event: str
         ) -> None:
             for connector in connectors:
                 if not connector.responds_to_event(event):
@@ -1139,7 +1139,7 @@ class ServoCLI(CLI):
             )
 
             # FIXME: The data that is crossing connector boundaries needs to be validated
-            aggregated_by_metric: Dict[Metric, Dict[str, Dict[Connector, List[Tuple[Numeric, Reading]]]]] = {}                       
+            aggregated_by_metric: Dict[Metric, Dict[str, Dict[BaseConnector, List[Tuple[Numeric, Reading]]]]] = {}                       
             metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
             headers = ["METRIC", "UNIT", "READINGS"]
             table = []
@@ -1171,7 +1171,7 @@ class ServoCLI(CLI):
                 readings_column = []
                 timestamp_to_connectors = aggregated_by_metric[metric]
                 for timestamp in sorted(timestamp_to_connectors.keys()):
-                    for connector, values in timestamp_to_connectors[timestamp].items(): # Dict[Connector, Tuple[Numeric, Reading]]
+                    for connector, values in timestamp_to_connectors[timestamp].items(): # Dict[BaseConnector, Tuple[Numeric, Reading]]
                         readings_column.extend(
                             list(map(lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}", values))
                         )
@@ -1369,9 +1369,9 @@ class ServoCLI(CLI):
             else:
 
                 if connector:
-                    if isinstance(connector, Connector):
+                    if isinstance(connector, BaseConnector):
                         config_model = connector.config.__class__
-                    elif issubclass(connector, Connector):
+                    elif issubclass(connector, BaseConnector):
                         config_model = connector.config_model()
                     else:
                         raise typer.BadParameter(

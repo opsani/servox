@@ -15,7 +15,7 @@ from servo import Duration
 from servo.cli import ServoCLI
 from servo.connector import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     License,
     Maturity,
     Optimizer,
@@ -97,13 +97,13 @@ class TestMaturity:
 
 class TestConnector:
     def test_subclass_registration(self) -> None:
-        class RegisterMe(Connector):
+        class RegisterMe(BaseConnector):
             pass
 
         assert RegisterMe in _connector_subclasses
 
     def test_default_name(self) -> None:
-        class TestConnector(Connector):
+        class TestConnector(BaseConnector):
             pass
 
         assert TestConnector.name == "Test"
@@ -111,13 +111,13 @@ class TestConnector:
         assert TestConnector.__default_name__ == "test"
 
     def test_default_version(self) -> None:
-        class TestConnector(Connector):
+        class TestConnector(BaseConnector):
             pass
 
         assert TestConnector.version == "0.0.0"
 
     def test_default_name(self) -> None:
-        class FancyConnector(Connector):
+        class FancyConnector(BaseConnector):
             pass
 
         c = FancyConnector(config=BaseConfiguration())
@@ -144,7 +144,7 @@ class TestBaseConfiguration:
             "env_names": {"SOME_DURATION",},
             "type": "string",
             "format": "duration",
-            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+            "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }
 
@@ -537,7 +537,7 @@ def test_init_vegeta_connector_no_settings() -> None:
 
 
 def test_init_connector_no_version_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -551,7 +551,7 @@ def test_init_connector_no_version_raises() -> None:
 
 
 def test_init_connector_invalid_version_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -565,7 +565,7 @@ def test_init_connector_invalid_version_raises() -> None:
 
 
 def test_init_connector_parses_version_string() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     FakeConnector.version = "0.5.0"
@@ -578,7 +578,7 @@ def test_init_connector_parses_version_string() -> None:
 
 
 def test_init_connector_no_name_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -707,7 +707,7 @@ def test_vegeta_cli_schema_json(
                 "env_names": ["VEGETA_DURATION",],
                 "type": "string",
                 "format": "duration",
-                "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
                 "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
             },
             "format": {"$ref": "#/definitions/TargetFormat",},
@@ -797,7 +797,7 @@ def test_vegeta_cli_schema_json(
                 "env_names": ["VEGETA_REPORTING_INTERVAL",],
                 "type": "string",
                 "format": "duration",
-                "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
                 "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
             },
         },
@@ -1225,7 +1225,7 @@ def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
 
 
 class TestConnectorEvents:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         @event(handler=True)
         def example_event(self) -> None:
             return 12345

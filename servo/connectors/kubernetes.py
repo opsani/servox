@@ -7,7 +7,6 @@ import errno
 import importlib
 import json
 import os
-import subprocess
 import sys
 import time
 from collections.abc import Iterable
@@ -18,7 +17,7 @@ from pydantic import BaseModel, Extra, validator
 
 from servo import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     Check,
     Component,
     Description,
@@ -406,6 +405,20 @@ class KubernetesConfiguration(connector.BaseConfiguration):
         return cls(
             namespace="default",
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            components=[
+                Component(
+                    name="app",
+                    settings=[
+                        Setting(
+                            name="cpu",
+                            type="range",
+                            min="0.125",
+                            max="4.0",
+                            step="0.125",
+                        )
+                    ]
+                )
+            ],
             **kwargs
         )
 
@@ -420,7 +433,7 @@ class KubernetesConfiguration(connector.BaseConfiguration):
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class KubernetesConnector(connector.Connector):
+class KubernetesConnector(connector.BaseConnector):
     config: KubernetesConfiguration
 
     @on_event()

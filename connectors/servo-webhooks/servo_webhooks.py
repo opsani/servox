@@ -45,7 +45,7 @@ class BackoffConfig(BaseModel):
     max_tries: int = 12
 
 
-class Webhook(BaseModel):
+class Webhook(servo.BaseConfiguration):
     name: Optional[str] = Field(
         description="A unique name identifying the webhook.",
     )
@@ -70,7 +70,7 @@ class Webhook(BaseModel):
     # Map strings from config into EventContext objects
     _validate_events = validator("events", pre=True, allow_reuse=True)(validate_event_contexts)
 
-class Configuration(servo.BaseConfiguration):
+class WebhooksConfiguration(servo.BaseConfiguration):
     webhooks: List[Webhook] = []
 
     @classmethod
@@ -115,8 +115,8 @@ class RequestBody(BaseModel):
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class Connector(servo.Connector):
-    config: Configuration
+class WebhooksConnector(servo.BaseConnector):
+    config: WebhooksConfiguration
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)

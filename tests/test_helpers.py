@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Type, Union
 import yaml
 from pydantic.json import pydantic_encoder
 
-from servo.connector import BaseConfiguration, Connector
+from servo.connector import BaseConfiguration, BaseConnector
 from servo.events import before_event, on_event, after_event
 from servo.servo import Events, connector
 from servo.types import Measurement
@@ -22,7 +22,7 @@ class StubBaseConfiguration(BaseConfiguration):
         return cls(**kwargs)
 
 
-class MeasureConnector(Connector):
+class MeasureConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @before_event(Events.MEASURE)
@@ -38,7 +38,7 @@ class MeasureConnector(Connector):
         pass
 
 
-class AdjustConnector(Connector):
+class AdjustConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @on_event()

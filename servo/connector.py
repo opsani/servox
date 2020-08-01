@@ -39,11 +39,11 @@ from servo.types import *
 from servo.utilities import join_to_series
 
 
-_connector_subclasses: Set[Type["Connector"]] = set()
+_connector_subclasses: Set[Type["BaseConnector"]] = set()
 
 
 # NOTE: Initialize mixins first to control initialization graph
-class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseModel, abc.ABC, metaclass=events.Metaclass):
+class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseModel, abc.ABC, metaclass=events.Metaclass):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
@@ -141,7 +141,7 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
-
+        
         cls.name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
@@ -164,8 +164,8 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
         return hash((self.name, id(self),))
 
 
-EventResult.update_forward_refs(Connector=Connector)
-EventHandler.update_forward_refs(Connector=Connector)
+EventResult.update_forward_refs(Connector=BaseConnector)
+EventHandler.update_forward_refs(Connector=BaseConnector)
 
 
 def metadata(
@@ -180,14 +180,14 @@ def metadata(
     """Decorate a Connector class with metadata"""
 
     def decorator(cls):
-        if not issubclass(cls, Connector):
+        if not issubclass(cls, BaseConnector):
             raise TypeError("Metadata can only be attached to Connector subclasses")
 
         if name:
             if isinstance(name, tuple):
                 if len(name) != 2:
                     raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
-                cls.name, cls.__default_name__ = name
+                cls.name, cls.__default_name__ = name                
             else:
                 cls.name = name
         if description:
@@ -209,7 +209,7 @@ def metadata(
 ##
 # Utility functions
 
-def _name_for_connector_class(cls: Type[Connector]) -> Optional[str]:
+def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
     for name in (cls.name, cls.__name__):
         if not name:
             continue
@@ -220,7 +220,7 @@ def _name_for_connector_class(cls: Type[Connector]) -> Optional[str]:
     return None
 
 
-def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
+def _connector_class_from_string(connector: str) -> Optional[Type[BaseConnector]]:
     if not isinstance(connector, str):
         return None
 
@@ -260,7 +260,7 @@ def _validate_class(connector: type) -> bool:
     if connector is None or not isinstance(connector, type):
         return False
 
-    if not issubclass(connector, Connector):
+    if not issubclass(connector, BaseConnector):
         raise TypeError(f"{connector.__name__} is not a Connector subclass")
 
     return True

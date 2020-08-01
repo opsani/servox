@@ -190,10 +190,10 @@ an event. Event handlers can be implemented either synchronously or asynchronous
 the method is a coroutined declared with the async prefix.
 
 ```python
-from servo.connector import Connector, EventResult, before_event, after_event, on_event
+from servo.connector import BaseConnector, EventResult, before_event, after_event, on_event
 from servo.types import Metric, Unit
 
-class SomeConnector(Connector):
+class SomeConnector(BaseConnector):
   @before_event('measure')
   def notify_before_measure(self) -> None:
     self.logger.info("We are about to measure...")
@@ -218,9 +218,9 @@ Events can be created either programmatically via the `Connector.create_event()`
 declaratively via the `event()` decorator:
 
 ```python
-from servo.connector import Connector, event
+from servo.connector import BaseConnector, event
 
-class AnotherConnector(Connector):
+class AnotherConnector(BaseConnector):
   @event(name='load_test', handler=True)
   def run_load_test(self, url: str, duration: int = 60) -> str:
     return "Do something..."
@@ -241,7 +241,7 @@ assembled, an event bus is transparently established between the connectors to f
 driven interaction.
 
 ```python
-class ExampleConnector(Connector):
+class ExampleConnector(BaseConnector):
   async def do_something(self) -> None:
     # Gather metrics from other connectors
     results: List[EventResult] = await self.dispatch_event("metrics")
