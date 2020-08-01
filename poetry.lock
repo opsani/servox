@@ -35,6 +35,7 @@ version = "0.13.0"
 reference = "9aefec8dd301bf8c4a4e03a22fb4ec64c2b479cf"
 type = "git"
 url = "https://github.com/Martiusweb/asynctest.git"
+
 [[package]]
 category = "dev"
 description = "Atomic file writes."
@@ -646,6 +647,19 @@ websocket-client = ">=0.32.0,<0.40.0 || >0.40.0,<0.41.0 || >=0.43.0"
 
 [package.extras]
 adal = ["adal (>=1.0.2)"]
+
+[[package]]
+category = "dev"
+description = "A Kubernetes integration test framework in Python."
+name = "kubetest"
+optional = false
+python-versions = ">=3.6"
+version = "0.8.1"
+
+[package.dependencies]
+kubernetes = "*"
+pytest = "*"
+pyyaml = ">=4.2b1"
 
 [[package]]
 category = "main"
@@ -1335,7 +1349,7 @@ version = "1.0.1"
 dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [metadata]
-content-hash = "8381dd00f489e2dede48583a50d138c0a5b574df0baed41d9b35ad699eebef51"
+content-hash = "6108548e6c609ab51d1a15443aabef1bf942d1687b5b4fabdb6b073e0b3f4ee7"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1585,6 +1599,10 @@ jsonschema = [
 kubernetes = [
     {file = "kubernetes-11.0.0-py3-none-any.whl", hash = "sha256:4af81201520977139a143f96123fb789fa351879df37f122916b9b6ed050bbaf"},
     {file = "kubernetes-11.0.0.tar.gz", hash = "sha256:1a2472f8b01bc6aa87e3a34781f859bded5a5c8ff791a53d889a8bd6cc550430"},
+]
+kubetest = [
+    {file = "kubetest-0.8.1-py2.py3-none-any.whl", hash = "sha256:b0848afb2f262a6bd09b7a0dc7693bc10e06dfe59e63b4c653b5f8a2265c4f4f"},
+    {file = "kubetest-0.8.1.tar.gz", hash = "sha256:3b2c2850ffd2a4c277a2e95a3a8e75c25dfe42ae7cd85b17582d347c815956cc"},
 ]
 loguru = [
     {file = "loguru-0.5.1-py3-none-any.whl", hash = "sha256:e5d362a43cd2fc2da63551d79a6830619c4d5b3a8b976515748026f92f351b61"},

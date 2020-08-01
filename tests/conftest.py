@@ -24,10 +24,34 @@ else:
     builtins.debug = debug
 
 
-# Set asyncio as a default marker across the suite
-def pytest_collection_modifyitems(items):
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--integration", action="store_true", default=False, help="run integration tests"
+    )
+    parser.addoption(
+        "--system", action="store_true", default=False, help="run system tests"
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "integration: marks integration tests with outside dependencies")    
+    config.addinivalue_line("markers", "system: marks system tests with end to end dependencies")
+
+
+def pytest_collection_modifyitems(config, items):
+    skip_itegration = pytest.mark.skip(reason="add --integration option to run integration tests")
+    skip_system = pytest.mark.skip(reason="add --system to run system tests")
+    
     for item in items:
+        # Set asyncio as a default marker across the suite
         item.add_marker('asyncio')
+
+        # Skip slow/sensitive integration & system tests by default
+        if "integration" in item.keywords and not config.getoption("--integration"):
+            item.add_marker(skip_itegration)
+        if "system" in item.keywords and not config.getoption("--system"):
+            item.add_marker(skip_system)
 
 
 @pytest.fixture()
