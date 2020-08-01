@@ -164,8 +164,8 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         return hash((self.name, id(self),))
 
 
-EventResult.update_forward_refs(Connector=BaseConnector)
-EventHandler.update_forward_refs(Connector=BaseConnector)
+EventResult.update_forward_refs(BaseConnector=BaseConnector)
+EventHandler.update_forward_refs(BaseConnector=BaseConnector)
 
 
 def metadata(

@@ -177,7 +177,7 @@ class EventHandler(BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["Connector"]] # NOTE: Optional due to decorator
+    connector_type: Optional[Type['BaseConnector']] # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -192,7 +192,7 @@ class EventResult(BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "Connector"
+    connector: BaseConnector
     created_at: datetime = None
     value: Any
     
@@ -619,7 +619,7 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List["Connector"] = None,
+        __connectors__: List[BaseConnector] = None,
         **kwargs,
     ):
         super().__init__(
@@ -680,7 +680,7 @@ class Mixin:
         return handler
 
     @property
-    def __connectors__(self) -> List["Connector"]:
+    def __connectors__(self) -> List[BaseConnector]:
         return _connector_event_bus[self]
       
     def broadcast_event(
@@ -688,8 +688,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
+        include: Optional[List[BaseConnector]] = None,
+        exclude: Optional[List[BaseConnector]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -710,8 +710,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
+        include: Optional[List[BaseConnector]] = None,
+        exclude: Optional[List[BaseConnector]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -781,8 +781,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
+        include: Optional[List[BaseConnector]] = None,
+        exclude: Optional[List[BaseConnector]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),

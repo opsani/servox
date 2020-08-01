@@ -11,7 +11,7 @@ from pydantic import BaseModel, AnyHttpUrl, root_validator, validator
 
 from servo import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     Control,
     Check,
     Description,
@@ -102,7 +102,7 @@ class PrometheusRequest(BaseModel):
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class PrometheusConnector(Connector):
+class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
