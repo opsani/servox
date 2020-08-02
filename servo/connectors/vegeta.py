@@ -383,54 +383,40 @@ class VegetaConnector(BaseConnector):
 
     async def _run_vegeta(
         self, *, config: Optional[VegetaConfiguration] = None
-    ) -> (int, str):
+    ) -> Tuple[int, str]:
         config = config if config else self.config
         vegeta_cmd = self._build_vegeta_command(config)
-        self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+        ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
+        progress = DurationProgress(config.duration)
+        
+        async def process_stdout(output: str) -> None:
+            json_report = ansi_escape.sub("", output)
+            vegeta_report = VegetaReport(**json.loads(json_report))
 
-        report_proc = await asyncio.create_subprocess_shell(
+            if datetime.now() > self.warmup_until:
+                if not progress.is_started():
+                    progress.start()
+
+                self.vegeta_reports.append(vegeta_report)
+                summary = self._summarize_report(vegeta_report)
+                self.logger.info(progress.annotate(summary), progress=progress.progress)
+            else:
+                self.logger.debug(
+                    f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
+                )
+        
+        self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+        exit_code = await self.stream_subprocess_output(
             vegeta_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stdout_callback=process_stdout,
+            stderr_callback=lambda m: self.logger.error(f"Vegeta stderr: {m}")
         )
 
-        # track progress against our load test duration
-        progress = DurationProgress(config.duration)
-
-        # loop and poll our process pipe to gather report data
-        # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
-        ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
-        while True:
-            data = await report_proc.stdout.readline()
-            if not data:
-                break
-            else:
-                output = data.decode('ascii').rstrip()
-                if output:
-                    json_report = ansi_escape.sub("", output)
-                    vegeta_report = VegetaReport(**json.loads(json_report))
-
-                    if datetime.now() > self.warmup_until:
-                        if not progress.is_started():
-                            progress.start()
-
-                        self.vegeta_reports.append(vegeta_report)
-                        summary = self._summarize_report(vegeta_report)
-                        self.logger.info(progress.annotate(summary), progress=progress.progress)
-                    else:
-                        self.logger.debug(
-                            f"Vegeta metrics excluded (warmup in effect): {metrics}"
-                        )
-
-        stdout, stderr = await report_proc.communicate()
-        exit_code = report_proc.returncode
-        if exit_code != 0:
-            error = stderr.decode().strip()
-            self.logger.error(
-                f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}: error: {error}"
-            )
-
         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
+        if exit_code != 0:
+            self.logger.error(
+                f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
+            )        
 
         return exit_code, vegeta_cmd
 
