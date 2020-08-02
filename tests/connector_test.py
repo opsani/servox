@@ -21,11 +21,10 @@ from servo.connector import (
     Optimizer,
     Version,
     _connector_subclasses,
-    EventContext
 )
 from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import Preposition, _events, event
+from servo.events import EventContext, Preposition, _events, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
 
@@ -1368,3 +1367,29 @@ def test_report_progress_duration() -> None:
 # TODO: paramtrize all of these, mock the response
 # TODO: float of < 1, float of < 100
 # TODO: no time remaining given
+
+async def test_stream_subprocess_output():
+    output = []
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    status_code = await connector.stream_subprocess_output("cd ~/ && echo test", stdout_callback=lambda m: output.append(m))
+    assert status_code == 0
+    assert output == ["test"]
+
+async def test_run_subprocess():
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    status_code, stdout, stderr = await connector.run_subprocess("cd ~/ && echo test")
+    assert status_code == 0
+    assert stdout == ["test"]
+    assert stderr == []
+
+async def test_run_subprocess_timeout():
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    with pytest.raises(asyncio.TimeoutError) as e:
+        await connector.stream_subprocess_output("sleep 60.0", timeout=0.0001)
+    assert e
+
+async def test_run_subprocess_timeout():
+    output = []
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    await connector.stream_subprocess_output("echo 'test'", stdout_callback=lambda m: output.append(m), timeout=10.0)
+    assert output == ['test']

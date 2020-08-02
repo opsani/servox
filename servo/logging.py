@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from weakref import WeakSet
 
-import httpx
 import loguru
 from servo.events import EventContext, _event_context_var
 from servo.types import Duration

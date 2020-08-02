@@ -25,9 +25,12 @@ handler.
 - The metadata decorator now accepts a tuple for the `name` parameter for providing an explicit
 default name for connectors of the decorated type, overriding the name inference.
 - Progress can be automatically reported to the Opsani API by annotating log messages with a "progress" key.
+- Introduced general utilities for executing subprocesses including streaming output, timeouts, etc.
+- Added integration testing infrastructure for testing the servo in Docker, Minikube, and EKS.
 
 ### Changed
 - Enable parsing of extended Golang duration strings in `Duration` (days, weeks, months, years).
+- The base connector class has been renamed from `Connector` to `BaseConnector` to align with other inheritance patterns in the library.
 
 ## [0.4.2] - 2020-07-24
 

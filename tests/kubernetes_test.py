@@ -1,18 +1,24 @@
-import asyncio
-from asyncio.streams import StreamReader
+import sys
+
 from pathlib import Path
+from typing import Optional
+
 import pytest
-
-import logging
-from typing import Dict, List, Optional, Tuple, Union
-
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from kubetest import condition, response, utils
 from servo.logging import logger
+from servo.utilities import stream_subprocess_shell
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+
+@pytest.fixture
+def kubeconfig() -> str:
+    config_path = Path(__file__).parents[0] / 'kubeconfig'
+    if not config_path.exists():
+        raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
+    return str(config_path)
 
 @pytest.mark.applymanifests('manifests', files=[
     'nginx.yaml'
@@ -86,66 +92,64 @@ def test_prometheus(kube) -> None:
     response = pod.http_proxy_get('/')
     assert "Prometheus Time Series Collection and Processing Server" in response.data
 
-async def stream_subprocess_shell(
-    cmd: str,
-    *,
-    cwd: Path = Path.cwd(), 
-    env: Optional[Dict[str, str]] = None,
-    print_output: bool = True,
-    log_output: bool = True,
-) -> Tuple[Optional[int], List[str], List[str]]:
-    """
-    Create an asynchronous subprocess shell and stream its output.
+# TODO: Move into test helpers and conftest
+from typing import Awaitable, Callable, List
+from servo.utilities import SubprocessResult, Timeout
 
-    Returns the exit code and two lists of strings containing output 
-    from stdout and stderr, respectively.
-    """
-    proc = await asyncio.create_subprocess_shell(
-        cmd,
-        cwd=cwd,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout_list: List[str] = []
-    stderr_list: List[str] = []
-    try:
-        await asyncio.wait([
-            _process_stream(proc.stdout, stdout_list, print_output=print_output, log_output=log_output), 
-            _process_stream(proc.stderr, stderr_list, print_output=print_output, log_output=log_output)
-        ])
-        return_code = proc.returncode
-    except Exception:
-        proc.terminate()
-        return_code = -1
+class SubprocessTestHelper:    
+    async def shell(
+        self,
+        cmd: str,
+        *,
+        timeout: Timeout = None,
+        print_output: bool = False,
+        log_output: bool = True,
+        **kwargs,        
+    ) -> SubprocessResult:
+        stdout: List[str] = []
+        stderr: List[str] = []
+
+        def create_output_callback(name: str, output: List[str]) -> Callable[[str], Awaitable[None]]:
+            async def output_callback(msg: str) -> None:
+                output.append(msg)
+                m = f"[{name}] {msg}"
+                if print_output:
+                    print(m)
+                if log_output:
+                    logger.debug(m)
+
+            return output_callback
+        
+        print(f"\n❯ Executing `{cmd}`")
+        return_code = await stream_subprocess_shell(
+            cmd,
+            timeout=timeout,
+            stdout_callback=create_output_callback("stdout", stdout),
+            stderr_callback=create_output_callback("stderr", stderr),
+        )
+        return SubprocessResult(return_code, stdout, stderr)
+
+    async def __call__(
+        self,
+        cmd: str,
+        *,
+        timeout: Timeout = None,
+        print_output: bool = False,
+        log_output: bool = True,
+        **kwargs,        
+    ) -> SubprocessResult:
+        return await self.shell(cmd, timeout=timeout, print_output=print_output, log_output=log_output, **kwargs)
     
-    return return_code, stdout_list, stderr_list
+@pytest.fixture()
+async def subprocess() -> SubprocessTestHelper:
+    return SubprocessTestHelper()
 
-async def _process_stream(
-    stream: StreamReader, 
-    output_list: Optional[List[str]] = None,
-    *,
-    print_output: bool = True,
-    log_output: bool = True,
-) -> None:
-    while True:
-        line = await stream.readline()
-        if line:
-            line = line.decode('utf-8')
-            if output_list is not None:
-                output_list.append(line)
-            if log_output:
-                logger.debug(f"command output: {line}")
-            if print_output:
-                print(line, end='')
-        else:
-            break
-
-async def build_docker_image(tag: str = "servox:latest", *, preamble: Optional[str] = None) -> str:
+async def build_docker_image(tag: str = "servox:latest", *, preamble: Optional[str] = None, **kwargs) -> str:
     root_path = Path(__file__).parents[1]
-    exit_code, stdout, stderr = await stream_subprocess_shell(
-        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
-        print_output=False
+    subprocess = SubprocessTestHelper()
+    exit_code, stdout, stderr = await subprocess(
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",        
+        **kwargs,
     )
     if exit_code != 0:
         error = '\n'.join(stderr)
@@ -161,21 +165,39 @@ async def servo_image() -> str:
 async def minikube_servo_image(servo_image: str) -> str:
     return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
 
-async def test_build_and_run_servo_image(servo_image: str) -> None:
-    exit_code, stdout, stderr = await stream_subprocess_shell(
+async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
+    exit_code, stdout, stderr = await subprocess(
         f"docker run --rm -i {servo_image} servo --help",
-        print_output=False
+        print_output=True
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "Operational Commands" in str(stdout)
 
-
-async def test_run_servo_on_kubernetes(kube, minikube_servo_image: str) -> None:
-    command = (f'eval $(minikube -p minikube docker-env) && kubectl --context=minikube run servo --rm --attach --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
+async def test_run_servo_on_minikube(kube, minikube_servo_image: str, kubeconfig, subprocess) -> None:
+    command = (f'eval $(minikube -p minikube docker-env) && kubectl --kubeconfig={kubeconfig} --context=minikube run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
                ' servo --optimizer example.com/app --token 123456 version')
-    exit_code, stdout, stderr = await stream_subprocess_shell(
+    exit_code, stdout, stderr = await subprocess(
         command,
-        print_output=False,
+        print_output=True,
+        timeout=20
+    )
+    assert exit_code == 0, f"servo image execution failed: {stderr}"
+    assert "https://opsani.com/" in "".join(stdout)
+
+async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> None:
+    ecr_image = "207598546954.dkr.ecr.us-west-2.amazonaws.com/servox-integration-tests:latest"
+    command = (
+        f"docker tag {servo_image} {ecr_image}"
+        f" && docker push {ecr_image}"
+    )
+    exit_code, stdout, stderr = await subprocess(command, print_output=True)
+    assert exit_code == 0, f"image publishing failed: {stderr}"
+
+    command = (f'kubectl --kubeconfig={kubeconfig} --context=servox-integration-tests run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
+               ' servo --optimizer example.com/app --token 123456 version')
+    exit_code, stdout, stderr = await subprocess(
+        command,
+        print_output=True,
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "https://opsani.com/" in "".join(stdout)
