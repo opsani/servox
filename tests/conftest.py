@@ -3,6 +3,7 @@ import os
 import random
 import string
 from pathlib import Path
+from typing import Optional
 
 import pytest
 import yaml
@@ -11,7 +12,7 @@ from typer.testing import CliRunner
 from servo.configuration import Optimizer
 from servo.cli import ServoCLI
 # Force the test connectors to load early
-from tests.test_helpers import StubBaseConfiguration
+from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 
 # Add the devtools debug() function globally in tests
 try:
@@ -114,3 +115,38 @@ def run_in_clean_environment() -> None:
 def random_string() -> str:
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
+
+
+@pytest.fixture
+def kubeconfig() -> str:
+    config_path = Path(__file__).parents[0] / 'kubeconfig'
+    if not config_path.exists():
+        raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
+    return str(config_path)
+
+
+@pytest.fixture()
+async def subprocess() -> SubprocessTestHelper:
+    return SubprocessTestHelper()
+
+
+async def build_docker_image(tag: str = "servox:latest", *, preamble: Optional[str] = None, **kwargs) -> str:
+    root_path = Path(__file__).parents[1]
+    subprocess = SubprocessTestHelper()
+    exit_code, stdout, stderr = await subprocess(
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",        
+        **kwargs,
+    )
+    if exit_code != 0:
+        error = '\n'.join(stderr)
+        raise RuntimeError(f"Docker build failed with exit code {exit_code}: error: {error}")
+    
+    return tag
+
+@pytest.fixture()
+async def servo_image() -> str:
+    return await build_docker_image()
+
+@pytest.fixture()
+async def minikube_servo_image(servo_image: str) -> str:
+    return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")

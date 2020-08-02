@@ -8,17 +8,8 @@ from kubernetes import client
 from kubernetes.client.rest import ApiException
 
 from kubetest import condition, response, utils
-from servo.logging import logger
-from servo.utilities import stream_subprocess_shell
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
-
-@pytest.fixture
-def kubeconfig() -> str:
-    config_path = Path(__file__).parents[0] / 'kubeconfig'
-    if not config_path.exists():
-        raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
-    return str(config_path)
 
 @pytest.mark.applymanifests('manifests', files=[
     'nginx.yaml'
@@ -74,7 +65,6 @@ def test_co_http_and_envoy(kube):
     response = pod.http_proxy_get('/stats/prometheus')
     assert "envoy_http_downstream_cx_length_ms_count" in response.data
 
-
 @pytest.mark.applymanifests('manifests', files=["prometheus.yaml"])
 def test_prometheus(kube) -> None:
     kube.wait_for_registered(timeout=30)
@@ -91,79 +81,6 @@ def test_prometheus(kube) -> None:
     pod.name = pod.name + ":9090"
     response = pod.http_proxy_get('/')
     assert "Prometheus Time Series Collection and Processing Server" in response.data
-
-# TODO: Move into test helpers and conftest
-from typing import Awaitable, Callable, List
-from servo.utilities import SubprocessResult, Timeout
-
-class SubprocessTestHelper:    
-    async def shell(
-        self,
-        cmd: str,
-        *,
-        timeout: Timeout = None,
-        print_output: bool = False,
-        log_output: bool = True,
-        **kwargs,        
-    ) -> SubprocessResult:
-        stdout: List[str] = []
-        stderr: List[str] = []
-
-        def create_output_callback(name: str, output: List[str]) -> Callable[[str], Awaitable[None]]:
-            async def output_callback(msg: str) -> None:
-                output.append(msg)
-                m = f"[{name}] {msg}"
-                if print_output:
-                    print(m)
-                if log_output:
-                    logger.debug(m)
-
-            return output_callback
-        
-        print(f"\n❯ Executing `{cmd}`")
-        return_code = await stream_subprocess_shell(
-            cmd,
-            timeout=timeout,
-            stdout_callback=create_output_callback("stdout", stdout),
-            stderr_callback=create_output_callback("stderr", stderr),
-        )
-        return SubprocessResult(return_code, stdout, stderr)
-
-    async def __call__(
-        self,
-        cmd: str,
-        *,
-        timeout: Timeout = None,
-        print_output: bool = False,
-        log_output: bool = True,
-        **kwargs,        
-    ) -> SubprocessResult:
-        return await self.shell(cmd, timeout=timeout, print_output=print_output, log_output=log_output, **kwargs)
-    
-@pytest.fixture()
-async def subprocess() -> SubprocessTestHelper:
-    return SubprocessTestHelper()
-
-async def build_docker_image(tag: str = "servox:latest", *, preamble: Optional[str] = None, **kwargs) -> str:
-    root_path = Path(__file__).parents[1]
-    subprocess = SubprocessTestHelper()
-    exit_code, stdout, stderr = await subprocess(
-        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",        
-        **kwargs,
-    )
-    if exit_code != 0:
-        error = '\n'.join(stderr)
-        raise RuntimeError(f"Docker build failed with exit code {exit_code}: error: {error}")
-    
-    return tag
-
-@pytest.fixture()
-async def servo_image() -> str:
-    return await build_docker_image()
-
-@pytest.fixture()
-async def minikube_servo_image(servo_image: str) -> str:
-    return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
 
 async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     exit_code, stdout, stderr = await subprocess(
@@ -209,6 +126,7 @@ def test_deploy_servo_cohttp_vegeta_measure() -> None:
 def test_deploy_servo_cohttp_vegeta_adjust() -> None:
     pass
     # Make servo adjust co-http memory, report in JSON
+
 # TODO: Tests to write...
 # 1. Servo creates canary on start
 # canary gets deleted on stop

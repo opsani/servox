@@ -3,16 +3,17 @@ import json
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional, Type, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 
 import yaml
 from pydantic.json import pydantic_encoder
 
 from servo.connector import BaseConfiguration, BaseConnector
 from servo.events import before_event, on_event, after_event
+from servo.logging import logger
 from servo.servo import Events, connector
 from servo.types import Measurement
-
+from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
@@ -108,3 +109,48 @@ def json_key_path(json_str: str, key_path: str) -> Any:
     """
     obj = json.loads(json_str)
     return dict_key_path(obj, key_path)
+
+
+class SubprocessTestHelper:    
+    async def shell(
+        self,
+        cmd: str,
+        *,
+        timeout: Timeout = None,
+        print_output: bool = False,
+        log_output: bool = True,
+        **kwargs,        
+    ) -> SubprocessResult:
+        stdout: List[str] = []
+        stderr: List[str] = []
+
+        def create_output_callback(name: str, output: List[str]) -> Callable[[str], Awaitable[None]]:
+            async def output_callback(msg: str) -> None:
+                output.append(msg)
+                m = f"[{name}] {msg}"
+                if print_output:
+                    print(m)
+                if log_output:
+                    logger.debug(m)
+
+            return output_callback
+        
+        print(f"\n❯ Executing `{cmd}`")
+        return_code = await stream_subprocess_shell(
+            cmd,
+            timeout=timeout,
+            stdout_callback=create_output_callback("stdout", stdout),
+            stderr_callback=create_output_callback("stderr", stderr),
+        )
+        return SubprocessResult(return_code, stdout, stderr)
+
+    async def __call__(
+        self,
+        cmd: str,
+        *,
+        timeout: Timeout = None,
+        print_output: bool = False,
+        log_output: bool = True,
+        **kwargs,        
+    ) -> SubprocessResult:
+        return await self.shell(cmd, timeout=timeout, print_output=print_output, log_output=log_output, **kwargs)

@@ -20,7 +20,7 @@ __all__ = (
 _DEFAULT_LIMIT = 2 ** 16  # 64 KiB
 
 
-# Type definition for streamin output callbacks.
+# Type definition for streaming output callbacks.
 # Must accept a single string positional argument and returns nothing. Optionally asynchronous.
 OutputStreamCallback = TypeVar("OutputStreamCallback", bound=Callable[[str], Union[None, Awaitable[None]]])
 
