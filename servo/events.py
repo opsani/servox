@@ -5,10 +5,11 @@ from datetime import datetime
 from enum import Flag, auto
 from functools import reduce
 from inspect import Parameter, Signature
-from typing import Any, Callable, Dict, Optional, Type, TypeVar, List, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Type, TypeVar, List, Union
 from weakref import WeakKeyDictionary
 
-from pydantic import BaseModel, root_validator, validator
+from pydantic import BaseModel, validator
+from pydantic.fields import ModelField
 from pydantic.main import ModelMetaclass
 from servo.utilities import join_to_series
 
@@ -140,7 +141,7 @@ class EventContext(BaseModel):
         return super().__eq__(other)
     
     # FIXME: This should be aligned with `servo.api.Command.response_event` somehow
-    def operation(self) -> str:
+    def operation(self) -> Optional[str]:
         event_name = self.event.name.upper()
         if event_name == "DESCRIBE":
             return "DESCRIPTION"
@@ -694,7 +695,7 @@ class Mixin:
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
         **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
+    ) -> asyncio.Task:
         """
         Broadcast an event asynchronously in a fire and forget manner.
 
@@ -716,7 +717,7 @@ class Mixin:
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
         **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
+    ) -> Union[Optional[EventResult], List[EventResult]]:
         """
         Dispatches an event to active connectors for processing and returns the results.
 
