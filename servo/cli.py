@@ -626,7 +626,7 @@ class ServoCLI(CLI):
 
                 if write_dotenv:
                     optimizer = typer.prompt(
-                        "Opsani optimizer? (format: dev.opsani.con/app-name)",
+                        "Opsani optimizer? (format: dev.opsani.com/app-name)",
                         default=context.optimizer,
                     )
                     optimizer != context.optimizer or typer.echo()
@@ -643,9 +643,9 @@ class ServoCLI(CLI):
             if customize:
                 types = Assembly.all_connector_types()
                 types.remove(Servo)
-                
+
                 check = bullet.Check(
-                    "\nWhich connectors do you want to activate? ",                    
+                    "\nWhich connectors do you want to activate? [space to (de)select]",
                     choices=list(
                         map(lambda c: c.name, types)
                     ),
