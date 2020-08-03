@@ -80,7 +80,7 @@ class _EventDefinitions:
         pass
 
     @event(Events.COMPONENTS)
-    def components(self) -> Description:
+    def components(self) -> List[Component]:
         pass
 
     # Operational events

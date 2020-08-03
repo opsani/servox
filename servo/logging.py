@@ -6,9 +6,11 @@ import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
 from weakref import WeakSet
 
 import loguru
+from loguru import logger
 from servo.events import EventContext, _event_context_var
 from servo.types import Duration
 
@@ -16,12 +18,14 @@ __all__ = (
     "Mixin",
     "Filter",
     "ProgressHandler",
+    "Logger",
     "logger",
     "log_execution",
     "log_execution_time",
     "reset_to_defaults",
     "set_level"
 )
+
 
 class Mixin:
     @property
@@ -62,9 +66,9 @@ class ProgressHandler:
     
     @property
     def tasks(self) -> Set[asyncio.Task]:
-        return self._tasks.copy()
+        return cast(Set[asyncio.Task], self._tasks.copy())
     
-    async def sink(self, message: str) -> None:
+    async def sink(self, message: loguru.Message) -> None:
         """
         An asynchronous loguru sink handling the progress reporting.
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
@@ -79,7 +83,7 @@ class ProgressHandler:
         if not connector:
             return await self._report_error("declining request to report progress for record without a connector attribute", record)
 
-        event_context: EventContext = _event_context_var.get()
+        event_context: Optional[EventContext] = _event_context_var.get()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:

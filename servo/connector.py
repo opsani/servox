@@ -1,7 +1,7 @@
+from __future__ import annotations
 import asyncio
 import abc
 import importlib
-from logging import Logger
 import re
 from pathlib import Path
 from pkg_resources import EntryPoint, iter_entry_points
@@ -17,6 +17,7 @@ from typing import (
     get_type_hints,
 )
 
+import loguru
 from pydantic import (
     BaseModel,
     HttpUrl,
@@ -171,7 +172,7 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         *,
         env: Optional[Dict[str, str]] = None,
         timeout: Timeout = None,
-        logger: Optional[Logger] = ...,
+        logger: Optional['Logger'] = ...,
         stdin: Union[int, IO[Any], None] = None,
         **kwargs
     ) -> SubprocessResult:
@@ -191,7 +192,7 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
         :return: A named tuple value of the exit status and two string lists of standard output and standard error.
         """
-        logger_: Optional[Logger] = self.logger if logger == ... else logger
+        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
         try:
             start = time.time()
             if logger_:
@@ -277,11 +278,11 @@ EventHandler.update_forward_refs(BaseConnector=BaseConnector)
 def metadata(
     name: Optional[Union[str, Tuple[str, str]]] = None,
     description: Optional[str] = None,
-    version: Optional[Version] = None,
+    version: Optional[Union[str, Version]] = None,
     *,
-    homepage: Optional[HttpUrl] = None,
-    license: Optional[License] = None,
-    maturity: Optional[Maturity] = None,
+    homepage: Optional[Union[str, HttpUrl]] = None,
+    license: Optional[Union[str, License]] = None,
+    maturity: Optional[Union[str, Maturity]] = None,
 ):
     """Decorate a Connector class with metadata"""
 
@@ -305,9 +306,9 @@ def metadata(
         if homepage:
             cls.homepage = homepage
         if license:
-            cls.license = license
+            cls.license = license if isinstance(license, License) else License.from_str(license)
         if maturity:
-            cls.maturity = maturity
+            cls.maturity = maturity if isinstance(maturity, Maturity) else Maturity.from_str(maturity)
         return cls
 
     return decorator

@@ -3,7 +3,6 @@ import json
 import shlex
 import subprocess
 import sys
-import textwrap
 
 from datetime import datetime, timezone
 from enum import Enum

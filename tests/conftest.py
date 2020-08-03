@@ -130,11 +130,18 @@ async def subprocess() -> SubprocessTestHelper:
     return SubprocessTestHelper()
 
 
-async def build_docker_image(tag: str = "servox:latest", *, preamble: Optional[str] = None, **kwargs) -> str:
+async def build_docker_image(
+    tag: str = "servox:latest", 
+    *, 
+    preamble: Optional[str] = None, 
+    print_output: bool = True, 
+    **kwargs
+) -> str:
     root_path = Path(__file__).parents[1]
     subprocess = SubprocessTestHelper()
     exit_code, stdout, stderr = await subprocess(
-        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",        
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
+        print_output=print_output,
         **kwargs,
     )
     if exit_code != 0:
