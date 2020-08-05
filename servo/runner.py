@@ -1,14 +1,12 @@
+from __future__ import annotations
 import asyncio
 import signal
-import sys
-import time
-from enum import Enum
-from logging import Logger
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
 import httpx
 import typer
+import loguru
 
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
@@ -39,11 +37,11 @@ class Runner(api.Mixin):
         return self.assembly.servo
 
     @property
-    def configuration(self) -> BaseServoConfiguration:
-        return self.servo.configuration
+    def config(self) -> BaseServoConfiguration:
+        return self.servo.config
 
     @property
-    def logger(self) -> Logger:
+    def logger(self) -> loguru.Logger:
         return self.servo.logger
     
     def display_banner(self) -> None:
@@ -56,8 +54,6 @@ class Runner(api.Mixin):
         )
         typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
                 
-        name_st = typer.style("name", fg=typer.colors.CYAN, bold=False)
-        version_st = typer.style("version", fg=typer.colors.WHITE, bold=True)
         types = Assembly.all_connector_types()
         types.remove(Servo)
         

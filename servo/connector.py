@@ -172,7 +172,7 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         *,
         env: Optional[Dict[str, str]] = None,
         timeout: Timeout = None,
-        logger: Optional['Logger'] = ...,
+        logger: Optional[loguru.Logger] = ...,
         stdin: Union[int, IO[Any], None] = None,
         **kwargs
     ) -> SubprocessResult:
@@ -224,7 +224,7 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         env: Optional[Dict[str, str]] = None,
         timeout: Timeout = None,        
         stdin: Union[int, IO[Any], None] = None,
-        logger: Optional[Logger] = ...,
+        logger: Optional[loguru.Logger] = ...,
         **kwargs
     ) -> int:
         """
@@ -245,7 +245,7 @@ class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, Bas
         :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
         :return: The exit status of the subprocess.
         """
-        logger_: Optional[Logger] = self.logger if logger == ... else logger
+        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
         try:
             start = time.time()
             if logger_:

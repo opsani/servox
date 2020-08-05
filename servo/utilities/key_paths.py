@@ -8,7 +8,6 @@ def values_for_keys(obj: dict, *keys: Union[List[str], Tuple[str]]) -> List[Any]
     return list(map(obj.get, *keys))
 
 def value_for_key_path(obj: dict, key_path: str) -> Any:
-    debug(obj, key_path)
     if hasattr(obj, key_path):    
         return getattr(obj, key_path)
     elif key_path in obj:

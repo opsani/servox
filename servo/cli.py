@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import reduce
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Set, Type, Union
+from typing import Any, Callable, Iterable, List, Optional, Set, Type, Tuple, Union
 
 import bullet
 import click
@@ -34,7 +34,7 @@ from servo.connector import (
     Optimizer,
     _connector_class_from_string
 )
-from servo.events import EventHandler, Preposition
+from servo.events import EventHandler, EventResult, Preposition
 from servo.logging import logger, set_level as set_log_level
 from servo.servo import (
     Events,

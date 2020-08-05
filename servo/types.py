@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
 from pydantic import BaseModel, validator, datetime_parse
@@ -147,7 +147,7 @@ class DurationProgress(BaseModel):
         return self.started_at is not None
 
     def is_completed(self) -> bool:
-        return self.progress() >= 100
+        return self.progress >= 100
 
     @property
     def progress(self) -> float:
@@ -208,6 +208,17 @@ class SettingType(str, Enum):
     RANGE = "range"
     ENUM = "enum"
 
+@runtime_checkable
+class HumanReadable(Protocol):
+    """
+    HumanReadable is a protocol that declares the `human_readable` method for objects
+    that can be represented as a human readable string for user output.
+    """
+    def human_readable(**kwargs) -> str:
+        """
+        Return a human readable representation of the object.
+        """
+        ...
 
 class Setting(BaseModel):
     name: str
@@ -217,13 +228,31 @@ class Setting(BaseModel):
     step: Numeric
     value: Optional[Union[Numeric, str]]
     pinned: bool = False
-    selector: Optional[str]
+    # selector: Optional[str]
 
     def __str__(self):
         if self.type == SettingType.RANGE:
             return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
 
         return f"{self.name} ({self.type})"
+    
+    @property
+    def human_readable_value(self, **kwargs) -> str:
+        """
+        Return a human readable representation of the value for use in output.
+
+        The default implementation calls the `human_readable` method on the value
+        property if one exists, else coerces the value into a string. Subclasses
+        can provide arbitrary implementations to directly control the representation.
+        """
+        if isinstance(self.value, HumanReadable):
+            return cast(HumanReadable, self.value).human_readable(**kwargs)
+        return str(self.value)
+    
+    def opsani_dict(self) -> dict:
+        return {
+            self.name: self.dict(exclude={"name"}, exclude_unset=True)
+        }
 
 
 class Component(BaseModel):
@@ -231,24 +260,26 @@ class Component(BaseModel):
     settings: List[Setting]
 
     env: Optional[Dict[str, str]]
+    command: Optional[dict] # TODO: This needs to be modeled but not sure what attribugtes
 
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)
 
+    def get_setting(self, name: str) -> Optional[Setting]:
+        return next(filter(lambda m: m.name == name, self.settings), None)
+
     def opsani_dict(self) -> dict:
         settings_dict = {"settings": {}}
         for setting in self.settings:
-            settings_dict["settings"][setting.name] = setting.dict(
-                exclude={"name"}, exclude_unset=True
-            )
+            settings_dict["settings"].update(setting.opsani_dict())
         return {self.name: settings_dict}
 
 
 class Control(BaseModel):
     duration: Optional[Duration]
-    past: Duration = None
-    warmup: Duration = None
-    delay: Duration = None
+    past: Duration = cast(Duration, None)
+    warmup: Duration = cast(Duration, None)
+    delay: Duration = cast(Duration, None)
     load: Optional[dict]
 
     @validator('past', 'warmup', 'delay', always=True, pre=True)
@@ -262,6 +293,26 @@ class Control(BaseModel):
 class Description(BaseModel):
     components: List[Component] = []
     metrics: List[Metric] = []
+
+    def get_component(self, name: str) -> Optional[Component]:
+        return next(filter(lambda m: m.name == name, self.components), None)
+    
+    def get_setting(self, name: str) -> Optional[Setting]:
+        """
+        Gets a settings from a fully qualified name (`component_name.setting_name`).
+
+        Raises:
+            ValueError: Raised if the name is not fully qualified.
+        """
+        if not "." in name:
+            raise ValueError("name must include component name and setting name")
+        component_name, setting_name = name.split(".", 1)
+        if component := self.get_component(component_name):
+            return component.get_setting(setting_name)
+        return None
+
+    def get_metric(self, name: str) -> Optional[Metric]:
+        return next(filter(lambda m: m.name == name, self.metrics), None)
 
     def opsani_dict(self) -> dict:
         dict = {"application": {"components": {}}, "measurement": {"metrics": {}}}
@@ -308,6 +359,19 @@ class Check(BaseModel):
     @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
+
+
+class Adjustment(BaseModel):
+    component_name: str
+    setting_name: str
+    value: Union[str, Numeric]
+
+    @property
+    def selector(self) -> str:
+        """
+        Returns a fully qualified string identifier for accessing the referenced resource.
+        """
+        return f"{self.component_name}.{self.setting_name}"
 
 
 # Common output formats
