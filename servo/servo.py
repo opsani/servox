@@ -1,37 +1,26 @@
 from __future__ import annotations
 import abc
-import contextlib
 import inspect
-import json
-import os
-import re
 from contextvars import ContextVar
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union, Sequence
+from typing import Dict, Iterable, List, Optional, Type, Union, Sequence
 
 import httpx
-import yaml
-from pydantic import BaseModel, Extra, Field, create_model, validator
-from pydantic.json import pydantic_encoder
-from pydantic.schema import schema as pydantic_schema
+from pydantic import Extra, Field, validator
 
 import servo
 from servo import api, connector
 from servo.connector import (
     BaseConfiguration,
     BaseConnector,
-    ConnectorLoader,
     License,
     Maturity,
-    Optimizer,
     _connector_subclasses,
     _connector_class_from_string,
     _validate_class
 )
 from servo.events import Preposition, event, on_event
-from servo.types import Check, Control, Description, Measurement, Metric
-from servo.utilities import join_to_series
+from servo.types import Check, Component, Control, Description, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -68,43 +57,43 @@ class _EventDefinitions:
     # Lifecycle events
     @event(Events.STARTUP)
     def startup(self) -> None:
-        pass
+        ...
 
     @event(Events.SHUTDOWN)
     def shutdown(self) -> None:
-        pass
+        ...
 
     # Informational events
     @event(Events.METRICS)
     def metrics(self) -> List[Metric]:
-        pass
+        ...
 
     @event(Events.COMPONENTS)
     def components(self) -> List[Component]:
-        pass
+        ...
 
     # Operational events
     @event(Events.MEASURE)
     def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-        pass
+        ...
 
     @event(Events.CHECK)
     def check(self) -> List[Check]:
-        pass
+        ...
 
     @event(Events.DESCRIBE)
     def describe(self) -> Description:
-        pass
+        ...
 
     @event(Events.ADJUST)
     def adjust(self, data: dict) -> dict:
-        pass
+        ...
 
     @event(Events.PROMOTE)
     def promote(self) -> None:
-        pass
+        ...
 
 
 class BaseServoConfiguration(BaseConfiguration, abc.ABC):
