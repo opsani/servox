@@ -26,6 +26,7 @@ kubernetes = "^11.0.0"
 jsonschema = "^3.2.0"
 timeago = "^1.0.14"
 servo-webhooks = {path = "connectors/servo-webhooks"}
+kubernetes_asyncio = "^11.3.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.4.3"

@@ -1,17 +1,11 @@
 from __future__ import annotations, print_function
 
 import asyncio
-from datetime import datetime
-import json
-import os
-
-from kubetest.objects import namespace
-from servo import kubernetes
 import sys
 import time
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, Extra, Field, FilePath, validator
+from pydantic import BaseModel, ByteSize, Extra, Field, FilePath, validator
 
 from servo import (
     Adjustment,
@@ -27,9 +21,14 @@ from servo import (
     on_event,
     get_hash
 )
-
-json_enc = json.JSONEncoder(separators=(",", ":")).encode
-
+from kubernetes_asyncio import client, config, watch
+from kubernetes_asyncio.client.api_client import ApiClient
+import abc
+import enum
+import loguru
+from loguru import logger as default_logger
+from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
+from contextlib import asynccontextmanager
 
 # TODO: Move these into errors module...
 class AdjustError(Exception):
@@ -42,179 +41,13 @@ class AdjustError(Exception):
         super().__init__(*args)
 
 
-# === constants
+# TODO: Determine if we need this
 EXCLUDE_LABEL = "optune.ai/exclude"
-Gi = 1024 * 1024 * 1024
-MEM_STEP = 128 * 1024 * 1024  # minimal useful increment in mem limit/reserve, bytes
-CPU_STEP = 0.0125  # 1.25% of a core (even though 1 millicore is the highest resolution supported by k8s)
-MAX_MEM = 4 * Gi  # bytes, may be overridden to higher limit
-MAX_CPU = 4.0  # cores
-
-# the k8s obj to which we make queries/updates:
-DEPLOYMENT = "deployment"
-# DEPLOYMENT = "deployment.v1.apps"  # new, not supported in 1.8 (it has v1beta1)
-RESOURCE_MAP = {"mem": "memory", "cpu": "cpu"}
-
-# TODO: Class Millicpu? 2000m == 2 == 2.0
-def cpuunits(s):
-    """convert a string for CPU resource (with optional unit suffix) into a number"""
-    if s[-1] == "m":  # there are no units other than 'm' (millicpu)
-        return float(s[:-1]) / 1000.0
-    return float(s)
-
-
-# valid mem units: E, P, T, G, M, K, Ei, Pi, Ti, Gi, Mi, Ki
-# nb: 'm' suffix found after setting 0.7Gi
-mumap = {
-    "E": 1000 ** 6,
-    "P": 1000 ** 5,
-    "T": 1000 ** 4,
-    "G": 1000 ** 3,
-    "M": 1000 ** 2,
-    "K": 1000,
-    "m": 1000 ** -1,
-    "Ei": 1024 ** 6,
-    "Pi": 1024 ** 5,
-    "Ti": 1024 ** 4,
-    "Gi": 1024 ** 3,
-    "Mi": 1024 ** 2,
-    "Ki": 1024,
-}
-
-
-def memunits(s):
-    """convert a string for memory resource (with optional unit suffix) into a number"""
-    for u, m in mumap.items():
-        if s.endswith(u):
-            return float(s[: -len(u)]) * m
-    return float(s)
-
-# def islookinglikerangesetting(s):
-#     return "min" in s or "max" in s or "step" in s
-
-
-# def islookinglikeenumsetting(s):
-#     return "values" in s
-
-
-# def israngesetting(s):
-#     return s.get("type") == "range" or islookinglikerangesetting(s)
-
-
-# def isenumsetting(s):
-#     return s.get("type") == "enum" or islookinglikeenumsetting(s)
-
-
-# def issetting(s):
-#     return isinstance(s, dict) and (israngesetting(s) or isenumsetting(s))
-# ===
-
-class Kubectl:
-    def __init__(self, 
-        config: KubernetesConfiguration,
-        logger: Logger,
-    ) -> None:
-        self.config = config
-        self.logger = logger
-
-    def kubectl(self, namespace, *args):
-        cmd_args = ["kubectl"]
-
-        if self.config.namespace:
-            cmd_args.append("--namespace=" + self.config.namespace)
-        
-        # append conditional args as provided by env vars
-        if self.config.server:
-            cmd_args.append("--server=" + self.config.server)
-
-        if self.config.token is not None:
-            cmd_args.append("--token=" + self.config.server)
-
-        if self.config.insecure_skip_tls_verify:
-            cmd_args.append("--insecure-skip-tls-verify=true")
-
-        dbg_txt = "DEBUG: ns='{}', env='{}', r='{}', args='{}'".format(
-            namespace,
-            os.environ.get("OPTUNE_USE_DEFAULT_NAMESPACE", "???"),
-            cmd_args,
-            list(args),
-        )
-        self.logger.debug(dbg_txt)
-        return cmd_args + list(args)
-
-    async def k_get(self, namespace, qry):
-        """run kubectl get and return parsed json output"""
-        if not isinstance(qry, list):
-            qry = [qry]
-
-        proc = await asyncio.subprocess.create_subprocess_exec(
-            *self.kubectl(namespace, "get", "--output=json", *qry),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout_data, stderr_data = await proc.communicate()
-        await proc.wait()
-        
-        output = stdout_data.decode("utf-8")
-        output = json.loads(output)
-        return output
-
-
-    async def k_patch(self, namespace, typ, obj, patchstr):
-        """run kubectl patch and return parsed json output"""
-        cmd = self.kubectl(namespace, "patch", "--output=json", typ, obj, "-p", patchstr)
-        proc = await asyncio.subprocess.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout_data, stderr_data = await proc.communicate()
-        await proc.wait()
-
-        output = stdout_data.decode("utf-8")
-        output = json.loads(output)
-        return output
-
-
-
-
-def dbg_log(*args):
-    # TODO: Eliminate this
-    from loguru import logger
-    logger.debug(args)
-    # if os.getenv("TDR_DEBUG_LOG"):
-    #     print(*args, file=sys.stderr)
-
-
-# TODO: Replace
-class Waiter(object):
-    """an object for use to poll and wait for a condition;
-    use:
-        w = Waiter(max_time, delay)
-        while w.wait():
-            if test_condition(): break
-        if w.expired:
-            raise Hell
-    """
-
-    def __init__(self, timeout, delay=1):
-        self.timefn = time.time  # change that on windows to time.clock
-        self.start = self.timefn()
-        self.end = self.start + timeout
-        self.delay = delay
-        self.expired = False
-
-    def wait(self):
-        time.sleep(self.delay)  # TODO: add support for increasing delay over time
-        self.expired = self.end < self.timefn()
-        return not self.expired
 
 # TODO: This is some kind of progress watcher... WaitCondition?
 def test_dep_generation(dep, g):
     """ check if the deployment status indicates it has been updated to the given generation number"""
     return dep["status"]["observedGeneration"] == g
-
-# TODO: Test cases will be: change memory, change cpu, change replica count. 
 
 def test_dep_progress(dep):
     """check if the deployment object 'dep' has reached final successful status
@@ -283,7 +116,7 @@ def test_dep_progress(dep):
 # FIXME: cpu request above 0.05 fails for 2 replicas on minikube. Not understood. (NOTE also that setting cpu_limit without specifying request causes request to be set to the same value, except if limit is very low - in that case, request isn't set at all)
 
 
-
+# TODO: This has behavior that removes request/limit if it exists
 def set_rsrc(cp, sn, sv, sel="both"):
     rn = RESOURCE_MAP[sn]
     if sn == "mem":
@@ -305,23 +138,6 @@ def set_rsrc(cp, sn, sv, sel="both"):
         cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
         cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
 
-
-def _value(x):
-    if isinstance(x, dict) and "value" in x:
-        return x["value"]
-    return x
-
-class AppState(BaseModel):
-    components: List[Component]
-    deployments: list #dict
-    monitoring: Dict[str, str]
-
-    def get_component(self, name: str) -> Optional[Component]:
-        return next(filter(lambda c: c.name == name, self.components))
-    
-    def get_deployment(self, name: str) -> Optional[dict]:
-        return next(filter(lambda d: d["metadata"]["name"] == name, self.deployments))
-
 class KubernetesConfiguration(BaseConfiguration):
     kubeconfig: Optional[FilePath] = Field(
         description="Path to the kubeconfig file. If `None`, use the default from the environment.",
@@ -335,18 +151,6 @@ class KubernetesConfiguration(BaseConfiguration):
     )
     deployments: List[Component] = Field(
         description="The deployments and adjustable settings to optimize.",
-    )
-
-    # TODO: Eliminate in favor of kubeconfig
-    server: Optional[str] = Field(
-        description="",
-    )
-    token: Optional[str] = Field(
-        description="",
-    )
-    insecure_skip_tls_verify: bool = Field(
-        False,
-        description="Disable TLS verification to connect with self-signed certificates.",
     )
 
     @classmethod
@@ -370,18 +174,6 @@ class KubernetesConfiguration(BaseConfiguration):
             ],
             **kwargs
         )
-
-    # TODO: Temporary...
-    class Config:
-        extra = Extra.allow
-
-from kubernetes_asyncio import client, config
-from kubernetes_asyncio.client.api_client import ApiClient
-import abc
-import loguru
-from loguru import logger as default_logger
-from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
-from contextlib import asynccontextmanager
 
 def selector_string(selectors: Mapping[str, str]) -> str:
     """Create a selector string from the given dictionary of selectors.
@@ -613,10 +405,6 @@ class KubernetesModel(abc.ABC):
             True if in the ready state; False otherwise.
         """
 
-    class Config:
-        extra = Extra.allow
-        arbitrary_types_allowed = True
-
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
 
@@ -795,22 +583,7 @@ class Container:
             The Container resource requirements.
         """
         return self.obj.resources
-
-    async def get_logs(self) -> str:
-        """Get all the logs for the Container.
-
-        Returns:
-            The Container logs.
-        """
-        async with ApiClient() as api:
-            api_client = client.CoreV1Api(api)
-            logs = await api_client.read_namespaced_pod_log(
-                name=self.pod.name,
-                namespace=self.pod.namespace,
-                container=self.obj.name,
-            )
-            return cast(str, logs)
-
+        
     def __str__(self) -> str:
         return str(self.obj)
 
@@ -1182,10 +955,7 @@ class Deployment(KubernetesModel):
         """
         Return a list of Container objects from the underlying pod template spec.
         """
-        # response.spec.template.spec.containers[0].resources.limits["memory"] = "2G"
-        # spec.template.containers[].resources has our limits & requests
         return list(map(lambda c: Container(c, None), self.obj.spec.template.spec.containers))
-
 
     def get_container(self, name: str) -> Container:
         """
@@ -1198,7 +968,6 @@ class Deployment(KubernetesModel):
         """
         Returns the number of desired pods.
         """
-        debug("READER")
         return self.obj.spec.replicas
     
     @replicas.setter
@@ -1206,46 +975,60 @@ class Deployment(KubernetesModel):
         """
         Sets the number of desired pods.
         """
-        debug("SETTING replicas to ", replicas)
         self.obj.spec.replicas = replicas
-        debug(self.obj.spec.replicas)
 
-import enum
+
 class ResourceConstraint(enum.Enum):
+    """
+    The ResourceConstraint enumeration determines how optimization values are applied
+    to the cpu and memory resource requests & limits of a container.
+    """
     request = "request"
     limit = "limit"
     both = "both"
 
+
 class Resource(Setting):
+    """
+    Resource is a class that models Kubernetes specific Setting objects that are subject
+    to request and limit configuration.
+    """
     constraint: ResourceConstraint = ResourceConstraint.both
 
-# TODO: Add support for units handling (str and repr)...
+
 class CPU(Resource):
     """
     The CPU class models a Kubernetes CPU resource.
     """
     pass
 
-# TODO: Fold into above? 2000m == 2 == 2.0
+# TODO: Fold into above? 2000m == 2 == 2.0... validator and human_readable
 # def cpuunits(s):
 #     """convert a string for CPU resource (with optional unit suffix) into a number"""
 #     if s[-1] == "m":  # there are no units other than 'm' (millicpu)
 #         return float(s[:-1]) / 1000.0
 #     return float(s)
 
-from pydantic import ByteSize
 class Memory(Resource):
     """
     The Memory class models a Kubernetes Memory resource.
     """
     value: ByteSize
 
+    @property
+    def gibibytes(self) -> float:
+        return float(self.value) / Gi
+
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
-        o_dict["memory"]["value"] = float(self.value) / Gi
+        o_dict["memory"]["value"] = self.gibibytes
         return o_dict
 
 class Replicas(Setting):
+    """
+    The Replicas class models a Kubernetes setting that specifies the number of
+    desired Pods running in a Deployment.
+    """
     value: int
 
 class Adjustable(BaseModel):
@@ -1272,11 +1055,15 @@ class Adjustable(BaseModel):
     def apply_adjustment(self, adjustment: Adjustment) -> None:
         name = adjustment.setting_name
         if name in ("cpu", "memory"):
-            # TODO: Add handling for limit/request constraints
-            self.container.resources.requests[name] = adjustment.value
-            self.container.resources.limits[name] = adjustment.value
+            resource = getattr(self, name)
+            if resource.constraint in (ResourceConstraint.request, ResourceConstraint.both):
+                self.container.resources.requests[name] = adjustment.value
+            if resource.constraint in (ResourceConstraint.limit, ResourceConstraint.both):
+                self.container.resources.limits[name] = adjustment.value
+
         elif adjustment.setting_name == "replicas":
             self.deployment.replicas = int(float(adjustment.value))
+            
         else:
             raise RuntimeError(f"adjustment of Kubernetes setting '{adjustment.setting_name}' is not supported")
     
@@ -1345,6 +1132,7 @@ class KubernetesState(BaseModel):
             pods = await deployment.get_pods()
             runtime_ids[deployment_name] = [pod.uid for pod in pods]
         
+        # Compute checksums for change detection
         spec_id = get_hash([pod_tmpl_specs[k] for k in sorted(pod_tmpl_specs.keys())])
         runtime_id = get_hash(runtime_ids)
         version_id = get_hash([images[k] for k in sorted(images.keys())])
@@ -1376,7 +1164,18 @@ class KubernetesState(BaseModel):
         patches = list(map(lambda a: a.deployment.patch(), changed))
         tasks = await asyncio.gather(*patches)
 
-        # TODO: Wire in watch/wait for the adjustments
+        # TODO: Wire in watch/wait for the adjustments=
+        async with client.ApiClient() as api:
+            v1 = client.CoreV1Api(api)
+            async with watch.Watch().stream(v1.list_namespaced_pod, "default") as stream:
+                async for event in stream:
+                    evt, obj = event['type'], event['object']
+                    print("{} pod {} in NS {}".format(evt, obj.metadata.name, obj.metadata.namespace))
+
+        # async with Pod.preferred_client() as api_client:
+        # TODO: Start watching as soon as we come online.
+        # TODO: Use a queue to allow 
+        #     pod_list: client.V1PodList = await api_client.list_namespaced_pod(
 
     class Config:
         arbitrary_types_allowed = True
@@ -1411,11 +1210,6 @@ class KubernetesConnector(BaseConnector):
         await config.load_kube_config()
         state = await KubernetesState.read(self.config)
         await state.apply_adjustments(adjustments)
-
-        # app_state = await self.raw_query(self.config.namespace, self.config.deployments)
-        # debug(app_state, adjustments)
-        # r = await self.update(self.config.namespace, app_state, adjustments)
-        # debug(r)
         # TODO: Unwind this crap: return status and reason
         return { "status": "ok" }
 
