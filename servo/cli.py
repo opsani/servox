@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import reduce
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Set, Type, Tuple, Union
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Set, Type, Tuple, Union
 
 import bullet
 import click
@@ -710,14 +710,13 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = context.servo.dispatch_event_sync(Events.COMPONENTS)
+            results = sync(context.servo.dispatch_event(Events.COMPONENTS))
             headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
             table = []
             for result in results:
-                result.value
                 for component in result.value:
                     settings_list = sorted(
-                        list(map(lambda s: s.__str__(), component.settings))
+                        list(map(lambda s: s.human_readable_value, component.settings))
                     )
                     row = [
                         component.name,
@@ -860,8 +859,8 @@ class ServoCLI(CLI):
             """
             Display measurable metrics
             """
-            metrics_to_connectors: Dict[str, tuple(str, Set[str])] = {}
-            results = context.servo.dispatch_event_sync("metrics")
+            metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
+            results = sync(context.servo.dispatch_event("metrics"))
             for result in results:
                 for metric in result.value:
                     units_and_connectors = metrics_to_connectors.get(
@@ -935,7 +934,10 @@ class ServoCLI(CLI):
             """
             Run the servo
             """
-            Runner(context.assembly).run()
+            if context.assembly:
+                Runner(context.assembly).run()
+            else:
+                raise typer.Abort("failed to assemble servo")
 
         def validate_connectors_respond_to_event(
             connectors: Iterable[BaseConnector], event: str
@@ -972,9 +974,9 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event_sync(
+            results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.CHECK, include=connectors
-            )
+            ))
 
             table = []
             ready = True
@@ -1026,9 +1028,9 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[EventResult] = context.servo.dispatch_event_sync(
+            results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.DESCRIBE, include=connectors
-            )
+            ))
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
             table = []
             for result in results:
@@ -1060,7 +1062,7 @@ class ServoCLI(CLI):
                 return value
 
             all_metrics_by_name: Dict[str, Metric] = {}
-            results = context.servo.dispatch_event_sync("metrics")
+            results = sync(context.servo.dispatch_event("metrics"))
             for result in results:
                 for metric in result.value:
                     all_metrics_by_name[metric.name] = metric
@@ -1123,9 +1125,9 @@ class ServoCLI(CLI):
             # TODO: Test combination of metrics + connector options
             if metrics:
                 # Filter target connectors by metrics
-                results: List[EventResult] = context.servo.dispatch_event_sync(
+                results: List[EventResult] = sync(context.servo.dispatch_event(
                     Events.METRICS, include=connectors
-                )
+                ))
                 for result in results:
                     result_metrics: List[Metric] = result.value
                     metric_names: Set[str] = set(map(lambda m: m.name, result_metrics))
@@ -1133,9 +1135,9 @@ class ServoCLI(CLI):
                         connectors.remove(result.connector)
             
             # Capture the measurements
-            results: List[EventResult] = context.servo.dispatch_event_sync(
+            results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
-            )
+            ))
 
             # FIXME: The data that is crossing connector boundaries needs to be validated
             aggregated_by_metric: Dict[Metric, Dict[str, Dict[BaseConnector, List[Tuple[Numeric, Reading]]]]] = {}                       
@@ -1205,9 +1207,9 @@ class ServoCLI(CLI):
 
             # TODO: Should be modeled directly as an adjustment instead of jamming into Description
             description = Description(components=components)
-            results: List[EventResult] = context.servo.dispatch_event_sync(
+            results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.ADJUST, description.opsani_dict()
-            )
+            ))
             for result in results:
                 adjustment = result.value
                 status = adjustment.get("status", "undefined")
@@ -1631,3 +1633,16 @@ def _run(args: Union[str, List[str]], **kwargs) -> None:
     if process.returncode != 0:
         sys.exit(process.returncode)
 
+def sync(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
+    """
+    Run the asyncio event loop until Future is complete.
+
+    This function is a convenience alias for `asyncio.get_event_loop().run_until_complete`.
+
+    Returns:
+        Any: The Future's result.
+
+    Raises:
+        Exception: 
+    """
+    return asyncio.get_event_loop().run_until_complete(future)

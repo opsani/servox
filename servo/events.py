@@ -777,27 +777,6 @@ class Mixin:
 
         return results
 
-    def dispatch_event_sync(
-        self,
-        event: Union[Event, str],
-        *args,
-        first: bool = False,
-        include: Optional[List[BaseConnector]] = None,
-        exclude: Optional[List[BaseConnector]] = None,
-        prepositions: Preposition = (
-            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
-        ),
-        **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
-        """
-        Wraps an event dispatched from a synchronous caller with `asyncio.run` and returns the results.
-
-        This interface exists primarily for use from the CLI. It cannot be invoked from within the asyncio environment.
-        """
-        return asyncio.run(
-            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
-        )
-
     async def run_event_handlers(
         self, event: Event, preposition: Preposition, *args, **kwargs
     ) -> Optional[List[EventResult]]:
