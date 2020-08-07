@@ -1,8 +1,6 @@
 from __future__ import annotations, print_function
 
 import asyncio
-import sys
-import time
 from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, ByteSize, Extra, Field, FilePath, validator
@@ -30,19 +28,10 @@ from loguru import logger as default_logger
 from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
 
-# TODO: Move these into errors module...
-class AdjustError(Exception):
-    """base class for error exceptions defined by drivers.
-    """
 
-    def __init__(self, *args, status="failed", reason="unknown"):
-        self.status = status
-        self.reason = reason
-        super().__init__(*args)
+# Gibibyte is the base unit of Kubernetes memory
+GiB = 1024 * 1024 * 1024
 
-
-# TODO: Determine if we need this
-EXCLUDE_LABEL = "optune.ai/exclude"
 
 # TODO: This is some kind of progress watcher... WaitCondition?
 def test_dep_generation(dep, g):
@@ -109,18 +98,15 @@ def test_dep_progress(dep):
     return (progress, "")
 
 
-# FIXME: observed a patch trigger spontaneous reduction in replica count! (happened when update was attempted without replica count changes and 2nd replica was not schedulable according to k8s)
 # NOTE: update of 'observedGeneration' does not mean that the 'deployment' object is done updating; also checking readyReplicas or availableReplicas in status does not help (these numbers may be for OLD replicas, if the new replicas cannot be started at all). We check for a 'Progressing' condition with a specific 'reason' code as an indication that the deployment is fully updated.
-# The 'kubectl rollout status' command relies only on the deployment object - therefore info in it should be sufficient to track progress.
 # ? do we need to use --to-revision with the undo command?
-# FIXME: cpu request above 0.05 fails for 2 replicas on minikube. Not understood. (NOTE also that setting cpu_limit without specifying request causes request to be set to the same value, except if limit is very low - in that case, request isn't set at all)
 
 
 # TODO: This has behavior that removes request/limit if it exists
 def set_rsrc(cp, sn, sv, sel="both"):
     rn = RESOURCE_MAP[sn]
     if sn == "mem":
-        sv = str(round(sv, 3)) + "Gi"  # internal memory representation is in GiB
+        sv = str(round(sv, 3)) + "GiB"  # internal memory representation is in GiB
     else:
         sv = str(round(sv, 3))
 
@@ -138,80 +124,7 @@ def set_rsrc(cp, sn, sv, sel="both"):
         cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
         cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
 
-class KubernetesConfiguration(BaseConfiguration):
-    kubeconfig: Optional[FilePath] = Field(
-        description="Path to the kubeconfig file. If `None`, use the default from the environment.",
-    )
-    context: Optional[str] = Field(
-        description="The name of the kubeconfig context to use."
-    )
-    namespace: str = Field(
-        "default",
-        description="The Kubernetes namespace where the target deployments are running.",
-    )
-    deployments: List[Component] = Field(
-        description="The deployments and adjustable settings to optimize.",
-    )
 
-    @classmethod
-    def generate(cls, **kwargs) -> "KubernetesConfiguration":
-        return cls(
-            namespace="default",
-            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
-            deployments=[
-                Component(
-                    name="app",
-                    settings=[
-                        Setting(
-                            name="cpu",
-                            type="range",
-                            min="0.125",
-                            max="4.0",
-                            step="0.125",
-                        )
-                    ]
-                )
-            ],
-            **kwargs
-        )
-
-def selector_string(selectors: Mapping[str, str]) -> str:
-    """Create a selector string from the given dictionary of selectors.
-
-    Args:
-        selectors: The selectors to stringify.
-
-    Returns:
-        The selector string for the given dictionary.
-    """
-    return ','.join([f'{k}={v}' for k, v in selectors.items()])
-
-
-def selector_kwargs(
-    fields: Mapping[str, str] = None,
-    labels: Mapping[str, str] = None,
-) -> Dict[str, str]:
-    """Create a dictionary of kwargs for Kubernetes object selectors.
-
-    Args:
-        fields: A mapping of fields used to restrict the returned collection of
-            Objects to only those which match these field selectors. By default,
-            no restricting is done.
-        labels: A mapping of labels used to restrict the returned collection of
-            Objects to only those which match these label selectors. By default,
-            no restricting is done.
-
-    Returns:
-        A dictionary that can be used as kwargs for many Kubernetes API calls for
-        label and field selectors.
-    """
-    kwargs = {}
-    if fields is not None:
-        kwargs['field_selector'] = selector_string(fields)
-    if labels is not None:
-        kwargs['label_selector'] = selector_string(labels)
-
-    return kwargs
 
 
 @runtime_checkable
@@ -232,6 +145,7 @@ class KubernetesObj(Protocol):
     @property
     def metadata(self) -> client.V1ObjectMeta:
         ...
+
 
 class KubernetesModel(abc.ABC):
     """
@@ -504,13 +418,13 @@ class Namespace(KubernetesModel):
                 name=self.name,
             )
 
-    def is_ready(self) -> bool:
+    async def is_ready(self) -> bool:
         """Check if the Namespace is in the ready state.
 
         Returns:
             True if in the ready state; False otherwise.
         """
-        self.refresh()
+        await self.refresh()
 
         status = self.obj.status
         if status is None:
@@ -592,7 +506,7 @@ class Container:
 
 
 class Pod(KubernetesModel):
-    """Kubetest wrapper around a Kubernetes `Pod`_ API Object.
+    """Wrapper around a Kubernetes `Pod`_ API Object.
 
     The actual ``kubernetes.client.V1Pod`` instance that this
     wraps can be accessed via the ``obj`` instance member.
@@ -894,13 +808,13 @@ class Deployment(KubernetesModel):
                 namespace=self.namespace,
             )
 
-    def is_ready(self) -> bool:
+    async def is_ready(self) -> bool:
         """Check if the Deployment is in the ready state.
 
         Returns:
             True if in the ready state; False otherwise.
         """
-        self.refresh()
+        await self.refresh()
 
         # if there is no status, the deployment is definitely not ready
         status = self.obj.status
@@ -996,18 +910,53 @@ class Resource(Setting):
     constraint: ResourceConstraint = ResourceConstraint.both
 
 
+class Millicore(int):
+    """
+    The Millicore class represents one one-hundreth of a vCPU or hyperthread in Kubernetes.
+    """
+    @classmethod
+    def __get_validators__(cls) -> 'CallableGenerator':
+        yield cls.validate
+    
+    @classmethod
+    def validate(cls, v: StrIntFloat) -> 'Millicore':
+        if isinstance(v, str):
+            if v[-1] == "m":
+                return cls(int(v[:-1]))
+            else:
+                return cls(int(float(v) * 1000))
+        elif isinstance(v, (int, float)):
+            return cls(int(v * 1000))
+        else:
+            raise ValueError("could not parse millicore value")
+            
+    def __str__(self) -> str:
+        return f'{int(self)}m'
+    
+    def __float__(self) -> float:
+        return self / 1000.0
+    
+    def __eq__(self, other) -> bool:
+        if isinstance(other, str):
+            return str(self) == other
+        elif isinstance(other, float):
+            return float(self) == other
+        return super().__eq__(other)
+
+    def human_readable(self) -> str:
+        return str(self)
+
 class CPU(Resource):
     """
-    The CPU class models a Kubernetes CPU resource.
+    The CPU class models a Kubernetes CPU resource in Millicore units.
     """
-    pass
+    value: Millicore
 
-# TODO: Fold into above? 2000m == 2 == 2.0... validator and human_readable
-# def cpuunits(s):
-#     """convert a string for CPU resource (with optional unit suffix) into a number"""
-#     if s[-1] == "m":  # there are no units other than 'm' (millicpu)
-#         return float(s[:-1]) / 1000.0
-#     return float(s)
+    def opsani_dict(self) -> dict:
+        o_dict = super().opsani_dict()
+        o_dict["cpu"]["value"] = float(self.value)
+        return o_dict
+
 
 class Memory(Resource):
     """
@@ -1017,12 +966,13 @@ class Memory(Resource):
 
     @property
     def gibibytes(self) -> float:
-        return float(self.value) / Gi
+        return float(self.value) / GiB
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
         o_dict["memory"]["value"] = self.gibibytes
         return o_dict
+
 
 class Replicas(Setting):
     """
@@ -1030,6 +980,7 @@ class Replicas(Setting):
     desired Pods running in a Deployment.
     """
     value: int
+
 
 class Adjustable(BaseModel):
     name: str
@@ -1053,6 +1004,8 @@ class Adjustable(BaseModel):
         )
     
     def apply_adjustment(self, adjustment: Adjustment) -> None:
+        # TODO: The original driver code modifies the ranges if they are above or below
+
         name = adjustment.setting_name
         if name in ("cpu", "memory"):
             resource = getattr(self, name)
@@ -1155,6 +1108,7 @@ class KubernetesState(BaseModel):
 
     async def apply_adjustments(self, adjustments: List[Adjustment]) -> None:
         changed = set()
+        debug("WTF: ", adjustments)
 
         for adjustment in adjustments:
             adjustable = self.get_adjustable(adjustment.component_name)
@@ -1162,7 +1116,10 @@ class KubernetesState(BaseModel):
             changed.add(adjustable)
         
         patches = list(map(lambda a: a.deployment.patch(), changed))
-        tasks = await asyncio.gather(*patches)
+        results = await asyncio.gather(*patches)
+        debug("Results from patches: ", results)
+
+        # TODO: For each one of the modified deployments, we need to watch observedGeneration to progress
 
         # TODO: Wire in watch/wait for the adjustments=
         async with client.ApiClient() as api:
@@ -1177,8 +1134,211 @@ class KubernetesState(BaseModel):
         # TODO: Use a queue to allow 
         #     pod_list: client.V1PodList = await api_client.list_namespaced_pod(
 
+        return
+        # wait for update to complete (and print progress)
+            # timeout default is set to be slightly higher than the default K8s timeout (so we let k8s detect progress stall first)
+        #     try:
+        #         await self.wait_for_update(
+        #             namespace,
+        #             n,
+        #             patch_r["metadata"]["generation"],
+        #             patched_count,
+        #             len(patchlst),
+        #             cfg.get("timeout", 630),
+        #         )
+        #     except AdjustError as e:
+        #         if e.reason != "start-failed":  # not undo-able
+        #             raise
+        #         onfail = cfg.get(
+        #             "on_fail", "keep"
+        #         )  # valid values: keep, destroy, rollback (destroy == scale-to-zero, not supported)
+        #         if onfail == "rollback":
+        #             try:
+        #                 # TODO: This has to be ported
+        #                 subprocess.call(
+        #                     kubectl(appname, "rollout", "undo", DEPLOYMENT + "/" + n)
+        #                 )
+        #                 print("UNDONE", file=sys.stderr)
+        #             except subprocess.CalledProcessError:
+        #                 # progress msg with warning TODO
+        #                 print("undo for {} failed: {}".format(n, e), file=sys.stderr)
+        #         raise
+        #     patched_count = patched_count + 1
+
+        # # spec_id and version_id should be tested without settlement_time, too - TODO
+
+        # # post-adjust settlement, if enabled
+        # testdata0 = await self.raw_query(namespace, app_state.components)
+        # settlement_time = cfg.get("settlement", 0)
+        # mon0 = testdata0.monitoring
+
+        # if "ref_version_id" in mon0 and mon0["version_id"] != mon0["ref_version_id"]:
+        #     raise AdjustError(
+        #         "application version does not match reference version",
+        #         status="aborted",
+        #         reason="version-mismatch",
+        #     )
+
+        # # aborted status reasons that aren't supported: ref-app-inconsistent, ref-app-unavailable
+
+        # # TODO: This response needs to be modeled
+        # if not settlement_time:
+        #     return {"monitoring": mon0, "status": "ok", "reason": "success"}
+
+        # # TODO: adjust progress accounting when there is settlement_time!=0
+
+        # # wait and watch the app, checking for changes
+        # # TODO: Port this...
+        # w = Waiter(
+        #     settlement_time, delay=min(settlement_time, 30)
+        # )  # NOTE: delay between tests may be made longer than the delay between progress reports
+        # while w.wait():
+        #     testdata = raw_query(namespace, app_state.components)
+        #     mon = testdata.monitoring
+        #     # compare to initial mon data set
+        #     if mon["runtime_id"] != mon0["runtime_id"]:  # restart detected
+        #         # TODO: allow limited number of restarts? (and how to distinguish from rejected/unstable??)
+        #         raise AdjustError(
+        #             "component(s) restart detected",
+        #             status="transient-failure",
+        #             reason="app-restart",
+        #         )
+        #     # TODO: what to do with version change?
+        #     #        if mon["version_id"] != mon0["version_id"]:
+        #     #            raise AdjustError("application was modified unexpectedly during settlement", status="transient-failure", reason="app-update")
+        #     if mon["spec_id"] != mon0["spec_id"]:
+        #         raise AdjustError(
+        #             "application configuration was modified unexpectedly during settlement",
+        #             status="transient-failure",
+        #             reason="app-update",
+        #         )
+        #     if mon["ref_spec_id"] != mon0["ref_spec_id"]:
+        #         raise AdjustError(
+        #             "reference application configuration was modified unexpectedly during settlement",
+        #             status="transient-failure",
+        #             reason="ref-app-update",
+        #         )
+        #     if mon["ref_runtime_count"] != mon0["ref_runtime_count"]:
+        #         raise AdjustError("", status="transient-failure", reason="ref-app-scale")
+
     class Config:
         arbitrary_types_allowed = True
+
+
+def __todo_encoders():
+    # TODO: This is broken atm. Bake ENV support into core
+    # TODO: This has dynamic keys to kill off.
+    env = component.env
+    if env:
+        for en, ev in env.items():
+            assert isinstance(
+                ev, dict
+            ), 'Setting "{}" in section "env" of a config file is not a dictionary.'
+            if "encoder" in ev:
+                for name, setting in describe_encoder(
+                    cont_env_dict.get(en),
+                    ev["encoder"],
+                    exception_context="an environment variable {}" "".format(en),
+                ):
+                    settings[name] = setting
+            if issetting(ev):
+                defval = ev.pop("default", None)
+                val = cont_env_dict.get(en, defval)
+                val = (
+                    float(val)
+                    if israngesetting(ev) and isinstance(val, (int, str))
+                    else val
+                )
+                assert val is not None, (
+                    'Environment variable "{}" does not have a current value defined and '
+                    "neither it has a default value specified in a config file. "
+                    "Please, set current value for this variable or adjust the "
+                    "configuration file to include its default value."
+                    "".format(en)
+                )
+                val = {**ev, "value": val}
+                settings[en] = val
+
+            # TODO: Must be added to model...
+            # command = comp.get("command")
+            # if command:
+            #     if command.get("encoder"):
+            #         for name, setting in describe_encoder(
+            #             cont.get("command", []),
+            #             command["encoder"],
+            #             exception_context="a command section",
+            #         ):
+            #             settings[name] = setting
+            #         # Remove section "command" from final descriptor
+            #     del comp["command"]
+
+
+             # TODO: Port this
+            # command = component.command
+            # if command:
+            #     if command.get("encoder"):
+            #         cont_patch["command"], encoded_settings = encode_encoder(
+            #             settings, command["encoder"], expected_type=list
+            #         )
+
+            #         # Prevent encoded settings from further processing
+            #         for setting in encoded_settings:
+            #             del settings[setting]
+
+            # env = component.env
+            # if env:
+            #     for en, ev in env.items():
+            #         if ev.get("encoder"):
+            #             val, encoded_settings = encode_encoder(
+            #                 settings, ev["encoder"], expected_type=str
+            #             )
+            #             patch_env = cont_patch.setdefault("env", [])
+            #             patch_env.append({"name": en, "value": val})
+
+            #             # Prevent encoded settings from further processing
+            #             for setting in encoded_settings:
+            #                 del settings[setting]
+            #         elif issetting(ev):
+            #             patch_env = cont_patch.setdefault("env", [])
+            #             patch_env.append({"name": en, "value": str(settings[en]["value"])})
+            #             del settings[en]
+
+class KubernetesConfiguration(BaseConfiguration):
+    kubeconfig: Optional[FilePath] = Field(
+        description="Path to the kubeconfig file. If `None`, use the default from the environment.",
+    )
+    context: Optional[str] = Field(
+        description="The name of the kubeconfig context to use."
+    )
+    namespace: str = Field(
+        "default",
+        description="The Kubernetes namespace where the target deployments are running.",
+    )
+    deployments: List[Component] = Field(
+        description="The deployments and adjustable settings to optimize.",
+    )
+
+    @classmethod
+    def generate(cls, **kwargs) -> "KubernetesConfiguration":
+        return cls(
+            namespace="default",
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            deployments=[
+                Component(
+                    name="app",
+                    settings=[
+                        Setting(
+                            name="cpu",
+                            type="range",
+                            min="0.125",
+                            max="4.0",
+                            step="0.125",
+                        )
+                    ]
+                )
+            ],
+            **kwargs
+        )
 
 
 @connector.metadata(
@@ -1203,10 +1363,20 @@ class KubernetesConnector(BaseConnector):
         return self.config.deployments
 
     @on_event()
-    async def adjust(self, data: dict) -> dict:
+    async def adjust(self, adjustments: List[Adjustment]) -> dict:
         # TODO: What we will want to do is pass in updated settings + component ready to go
         # TODO: change the return value... can it just be none?
-        adjustments = descriptor_to_adjustments(data["application"]["components"])
+        # TODO: Handle this adjust_on stuff
+        # adjust_on = desc.get("adjust_on", False)
+
+        # if adjust_on:
+        #     try:
+        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
+        #     except:
+        #         should_adjust = False
+        #     if not should_adjust:
+        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
+
         await config.load_kube_config()
         state = await KubernetesState.read(self.config)
         await state.apply_adjustments(adjustments)
@@ -1224,505 +1394,6 @@ class KubernetesConnector(BaseConnector):
             )]
 
         return [Check(name="Connect to Kubernetes", success=True, comment="")]
-
-    ####
-    # Ported methods from global module namespace
-    
-    async def raw_query(self, appname: str, _components: List[Component]):
-        """
-        Read the list of deployments in a namespace and fill in data into desc.
-        Both the input 'desc' and the return value are in the 'settings query response' format.
-        NOTE only 'cpu', 'memory' and 'replicas' settings are filled in even if not present in desc.
-        Other settings must have a description in 'desc' to be returned.
-        """        
-
-        # desc = copy.deepcopy(desc)
-
-        # app = desc["application"]
-        # comps = app["components"]
-
-        monitoring = {}
-        
-        kubectl = Kubectl(self.config, self.logger)
-        deployments = await kubectl.k_get(appname, DEPLOYMENT)
-        deps_list = deployments["items"]
-        if not deps_list:
-            # NOTE we don't distinguish the case when the namespace doesn't exist at all or is just empty (k8s will return an empty list whether or not it exists)
-            raise AdjustError(
-                f"No deployments found in namespace '{appname}'",
-                status="aborted", 
-                reason="app-unavailable",
-            )  # NOTE not a documented 'reason'
-        deployments_by_name = {dep["metadata"]["name"]: dep for dep in deps_list}
-
-        raw_specs = {}
-        images = {}
-        runtime_ids = {}
-        components = _components.copy()
-
-        for component in components:
-            deployment_name = component.name
-            container_name = None
-            if "/" in deployment_name:
-                deployment_name, container_name = component.name.split("/")
-            if not deployment_name in deployments_by_name:
-                raise ValueError(f'Could not find deployment "{dep_name}" defined for component "{full_comp_name}" in namespace "{appname}".')
-            deployment = deployments_by_name[deployment_name]
-
-            # Containers
-            containers = deployment["spec"]["template"]["spec"]["containers"]
-            if container_name is not None:
-                container = next(filter(lambda c: c["name"] == container_name, containers))
-                if not container:
-                    raise ValueError('Could not find container with name "{}" in deployment "{}" '
-                    'for component "{}" in namespace "{}".'
-                    "".format(cont_name, dep_name, full_comp_name, appname))
-            else:
-                container = containers[0]
-
-            # skip if excluded by label
-            try:
-                if bool(
-                    int(deployment["metadata"].get("labels", {}).get(EXCLUDE_LABEL, "0"))
-                ):  # string value of 1 (non-0)
-                    self.logger.debug(f"Skipping component {deployment_name}: excluded by label")
-                    continue
-            except ValueError as e:  # int() is the only thing that should trigger exceptions here
-                # TODO add warning to annotations to be returned
-                self.logger.warning(
-                    "failed to parse exclude label for deployment {}: {}: {}; ignored".format(
-                        deployment_name, type(e).__name__, str(e)
-                    ),
-                    file=sys.stderr,
-                )
-                # pass # fall through, ignore unparseable label
-
-            # selector for pods, NOTE this relies on having a equality-based label selector,
-            # k8s seems to support other types, I don't know what's being used in practice.
-            try:
-                match_label_selectors = deployment["spec"]["selector"]["matchLabels"]
-            except KeyError:
-                # TODO: inconsistent errors
-                raise AdjustError(
-                    "only deployments with matchLabels selector are supported, found selector: {}".format(
-                        repr(deployment["spec"].get("selector", {}))
-                    ),
-                    status="aborted",
-                    reason="app-unavailable",
-                )  # NOTE not a documented 'reason'
-            # convert to string suitable for 'kubect -l labelsel'
-            selector_args = ",".join(("{}={}".format(k, v) for k, v in match_label_selectors.items()))
-
-            # list of pods, for runtime_id
-            try:
-                pods = await kubectl.k_get(appname, ["-l", selector_args, "pods"])
-                runtime_ids[deployment_name] = [pod["metadata"]["uid"] for pod in pods["items"]]
-            except subprocess.CalledProcessError as e:
-                Adjust.print_json_error(
-                    error="warning",
-                    cl="CalledProcessError",
-                    message="Unable to retrieve pods: {}. Output: {}".format(e, e.output),
-                )
-
-            # extract deployment settings
-            # NOTE: generation, resourceVersion and uid can help detect changes
-            # (also, to check PG's k8s code in oco)
-            replicas = deployment["spec"]["replicas"]
-            raw_specs[deployment_name] = deployment["spec"]["template"]["spec"]  # save for later, used to checksum all specs
-
-            # name, env, resources (limits { cpu, memory }, requests { cpu, memory })
-            # FIXME: what to do if there's no mem reserve or limits defined? (a namespace can have a default mem limit, but that's not necessarily set, either)
-            # (for now, we give the limit as 0, treated as 'unlimited' - AFAIK)
-            images[deployment_name] = container["image"]  # FIXME, is this always defined?
-            cpu_setting = component.get_setting("cpu")
-            mem_setting = component.get_setting("mem")
-            replicas_setting = component.get_setting("replicas")
-
-            container_resources = container.get("resources")
-            # TODO: Push all of these defaults into the model.
-            if container_resources:
-                if mem_setting:
-                    mem_val = self.get_rsrc(mem_setting, container_resources, "mem")
-                    mem_setting.value = (memunits(mem_val) / Gi)
-                    mem_setting.min = (mem_setting.min or MEM_STEP / Gi)
-                    mem_setting.max = (mem_setting.max or MAX_MEM / Gi)
-                    mem_setting.step = (mem_setting.step or MEM_STEP / Gi)
-                    mem_setting.pinned = (mem_setting.pinned or None)
-
-                if cpu_setting:
-                    cpu_val = self.get_rsrc(cpu_setting, container_resources, "cpu")
-                    cpu_setting.value = cpuunits(cpu_val)
-                    cpu_setting.min = (cpu_setting.min or CPU_STEP)
-                    cpu_setting.max = (cpu_setting.max or MAX_CPU)
-                    cpu_setting.step = (cpu_setting.step or CPU_STEP)
-                    cpu_setting.pinned = (cpu_setting.pinned or None)
-                # TODO: adjust min/max to include current values, (e.g., increase mem_max to at least current if current > max)
-            # set replicas: FIXME: can't actually be set for each container (the pod as a whole is replicated); for now we have no way of expressing this limitation in the setting descriptions
-            # note: setting min=max=current replicas, since there is no way to know what is allowed; use override descriptor to loosen range
-            if replicas_setting:
-                replicas_setting.value = replicas
-                replicas_setting.min = (replicas_setting.min or replicas)
-                replicas_setting.max = (replicas_setting.max or replicas)
-                replicas_setting.step = (replicas_setting.step or 1)
-                replicas_setting.pinned = (replicas_setting.pinned or None)
-
-            # current settings of custom env vars (NB: type conv needed for numeric values!)
-            cont_env_list = container.get("env", [])
-            # include only vars for which the keys 'name' and 'value' are defined
-            cont_env_dict = {
-                i["name"]: i["value"] for i in cont_env_list if "name" in i and "value" in i
-            }
-
-            # TODO: This is broken atm. Bake ENV support into core
-            # TODO: This has dynamic keys to kill off.
-            env = component.env
-            if env:
-                for en, ev in env.items():
-                    assert isinstance(
-                        ev, dict
-                    ), 'Setting "{}" in section "env" of a config file is not a dictionary.'
-                    if "encoder" in ev:
-                        for name, setting in describe_encoder(
-                            cont_env_dict.get(en),
-                            ev["encoder"],
-                            exception_context="an environment variable {}" "".format(en),
-                        ):
-                            settings[name] = setting
-                    if issetting(ev):
-                        defval = ev.pop("default", None)
-                        val = cont_env_dict.get(en, defval)
-                        val = (
-                            float(val)
-                            if israngesetting(ev) and isinstance(val, (int, str))
-                            else val
-                        )
-                        assert val is not None, (
-                            'Environment variable "{}" does not have a current value defined and '
-                            "neither it has a default value specified in a config file. "
-                            "Please, set current value for this variable or adjust the "
-                            "configuration file to include its default value."
-                            "".format(en)
-                        )
-                        val = {**ev, "value": val}
-                        settings[en] = val
-
-            # TODO: Must be added to model...
-            # command = comp.get("command")
-            # if command:
-            #     if command.get("encoder"):
-            #         for name, setting in describe_encoder(
-            #             cont.get("command", []),
-            #             command["encoder"],
-            #             exception_context="a command section",
-            #         ):
-            #             settings[name] = setting
-            #         # Remove section "command" from final descriptor
-            #     del comp["command"]
-
-        if runtime_ids:
-            monitoring["runtime_id"] = get_hash(runtime_ids)
-
-        # app state data
-        # (NOTE we strip the component names because our (single-component) 'reference' app will necessarily have a different component name)
-        # this should be resolved by complete re-work, if we are to support 'reference' app in a way that allows multiple components
-        raw_specs = [raw_specs[k] for k in sorted(raw_specs.keys())]
-        images = [images[k] for k in sorted(images.keys())]
-        monitoring.update(
-            {
-                "spec_id": get_hash(raw_specs),
-                "version_id": get_hash(images),
-                # "runtime_count": replicas_sum
-            }
-        )
-
-        return AppState(
-            components=components,
-            deployments=deps_list,
-            monitoring=monitoring
-        )
-    
-    def get_rsrc(self, setting, cont_resources, sn):
-        rn = RESOURCE_MAP[sn]
-        selector = setting.selector or "both"
-        if selector == "request":
-            val = cont_resources.get("requests", {}).get(rn)
-            if val is None:
-                val = cont_resources.get("limits", {}).get(rn)
-                if val is not None:
-                    Adjust.print_json_error(
-                        error="warning",
-                        cl=None,
-                        message='Using the non-selected value "limit" for resource "{}" as the selected value is not set'.format(
-                            sn
-                        ),
-                    )
-                else:
-                    val = "0"
-        else:
-            val = cont_resources.get("limits", {}).get(rn)
-            if val is None:
-                val = cont_resources.get("requests", {}).get(rn)
-                if val is not None:
-                    if selector == "limit":
-                        Adjust.print_json_error(
-                            error="warning",
-                            cl=None,
-                            message='Using the non-selected value "request" for resource "{}" as the selected value is not set'.format(
-                                sn
-                            ),
-                        )
-                    # else: don't print warning for 'both'
-                else:
-                    val = "0"
-        return val
-
-    async def update(self, namespace: str, app_state: AppState, adjustments: List[Component]):
-
-        # TODO: Needs to be ported
-        # adjust_on = desc.get("adjust_on", False)
-
-        # if adjust_on:
-        #     try:
-        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
-        #     except:
-        #         should_adjust = False
-        #     if not should_adjust:
-        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
-
-        # NOTE: we'll need the raw k8s api data to see the container names (setting names for a single-container
-        #       pod will include only the deployment(=pod) name, not the container name)
-        # _, raw = raw_query(appname, desc)
-
-        # convert k8s list of deployments into map
-        # raw = {dep["metadata"]["name"]: dep for dep in raw}
-
-        patchlst = {}
-        # FIXME: NB: app-wide settings not supported
-        
-        cfg = {}
-        # cfg = data.get("control", {})
-
-        # FIXME: off-spec; step-down in data if a 'state' key is provided at the top.
-        # if "state" in data:
-        #     data = data["state"]
-
-        for component in adjustments:
-            if not component.settings:
-                continue
-            patches = {}
-            replicas = None
-            current_state = app_state.get_component(component.name)
-
-            # find deployment name and container name, and verify it's existence
-            container_name = None
-            deployment_name = component.name
-            if "/" in deployment_name:
-                deployment_name, container_name = comp_name.split("/", 1)
-            deployment = app_state.get_deployment(deployment_name)
-            if not deployment:
-                debug(app_state.deployments)
-                raise AdjustError(
-                    'Cannot find deployment with name "{}" for component "{}" in namespace "{}"'.format(deployment_name, component.name, namespace),
-                    status="failed",
-                    reason="unknown",
-                )  # FIXME 'reason' code (either bad config or invalid input to update())
-            container_name = (
-                container_name
-                or deployment["spec"]["template"]["spec"]["containers"][0]["name"]
-            )  # chk for KeyError FIXME
-            available_containers = set(
-                c["name"] for c in deployment["spec"]["template"]["spec"]["containers"]
-            )
-            if container_name not in available_containers:
-                raise AdjustError(
-                    'Could not find container with name "{}" in deployment "{}" '
-                    'for component "{}" in namespace "{}".'.format(
-                        container_name, deployment_name, component.name, namespace
-                    ),
-                    status="failed",
-                    reason="unknown",
-                )  # see note above
-
-            cont_patch = patches.setdefault(container_name, {})
-
-            # TODO: Port this
-            command = component.command
-            if command:
-                if command.get("encoder"):
-                    cont_patch["command"], encoded_settings = encode_encoder(
-                        settings, command["encoder"], expected_type=list
-                    )
-
-                    # Prevent encoded settings from further processing
-                    for setting in encoded_settings:
-                        del settings[setting]
-
-            env = component.env
-            if env:
-                for en, ev in env.items():
-                    if ev.get("encoder"):
-                        val, encoded_settings = encode_encoder(
-                            settings, ev["encoder"], expected_type=str
-                        )
-                        patch_env = cont_patch.setdefault("env", [])
-                        patch_env.append({"name": en, "value": val})
-
-                        # Prevent encoded settings from further processing
-                        for setting in encoded_settings:
-                            del settings[setting]
-                    elif issetting(ev):
-                        patch_env = cont_patch.setdefault("env", [])
-                        patch_env.append({"name": en, "value": str(settings[en]["value"])})
-                        del settings[en]
-
-            # Settings and env vars
-            # for name, value in settings.items():
-            for setting in component.settings:
-                name = setting.name
-                value = _value(
-                    setting.value
-                )  # compatibility: allow a scalar, but also work with {"value": {anything}}
-                cont_patch = patches.setdefault(container_name, {})
-                if setting.name in ("mem", "cpu"):
-                    set_rsrc(
-                        cont_patch,
-                        name,
-                        value,
-                        setting.selector or "both",
-                    )
-                    continue
-                elif name == "replicas":
-                    replicas = int(value)
-
-            patch = patchlst.setdefault(deployment_name, {})
-            if patches:  # convert to array
-                cp = (
-                    patch.setdefault("spec", {})
-                    .setdefault("template", {})
-                    .setdefault("spec", {})
-                    .setdefault("containers", [])
-                )
-                for n, v in patches.items():
-                    v["name"] = n
-                    cp.append(v)
-            if replicas is not None:
-                patch.setdefault("spec", {})["replicas"] = replicas
-
-        if not patchlst:
-            raise Exception(
-                "No components were defiend in a configuration file. Cannot proceed with an adjustment."
-            )
-
-        # NOTE: optimization possible: apply all patches first, then wait for them to complete (significant if making many changes at once!)
-
-        # NOTE: it seems there's no way to update multiple resources with one 'patch' command
-        #       (though -f accepts a directory, not sure how -f=dir works; maybe all listed resources
-        #        get the *same* patch from the cmd line - not what we want)
-
-        # execute patch commands
-        patched_count = 0
-        for n, v in patchlst.items():
-            # ydump("tst_before_output_{}.yaml".format(n), k_get(appname, DEPLOYMENT + "/" + n))
-            # run: kubectl patch deployment[.v1.apps] $n -p "{jsondata}"
-            patchstr = json_enc(v)
-            try:
-                kubectl = Kubectl(self.config, self.logger)
-                patch_r = await kubectl.k_patch(namespace, DEPLOYMENT, n, patchstr)
-            except Exception as e:  # TODO: limit to expected errors
-                raise AdjustError(str(e), status="failed", reason="adjust-failed")
-            p, _ = test_dep_progress(patch_r)
-            if test_dep_generation(patch_r, patch_r["metadata"]["generation"]) and p == 1.0:
-                # patch made no changes, skip wait_for_update:
-                patched_count = patched_count + 1
-                continue
-
-            # ydump("tst_patch_output_{}.yaml".format(n), patch_r)
-
-            # wait for update to complete (and print progress)
-            # timeout default is set to be slightly higher than the default K8s timeout (so we let k8s detect progress stall first)
-            try:
-                await self.wait_for_update(
-                    namespace,
-                    n,
-                    patch_r["metadata"]["generation"],
-                    patched_count,
-                    len(patchlst),
-                    cfg.get("timeout", 630),
-                )
-            except AdjustError as e:
-                if e.reason != "start-failed":  # not undo-able
-                    raise
-                onfail = cfg.get(
-                    "on_fail", "keep"
-                )  # valid values: keep, destroy, rollback (destroy == scale-to-zero, not supported)
-                if onfail == "rollback":
-                    try:
-                        # TODO: This has to be ported
-                        subprocess.call(
-                            kubectl(appname, "rollout", "undo", DEPLOYMENT + "/" + n)
-                        )
-                        print("UNDONE", file=sys.stderr)
-                    except subprocess.CalledProcessError:
-                        # progress msg with warning TODO
-                        print("undo for {} failed: {}".format(n, e), file=sys.stderr)
-                raise
-            patched_count = patched_count + 1
-
-        # spec_id and version_id should be tested without settlement_time, too - TODO
-
-        # post-adjust settlement, if enabled
-        testdata0 = await self.raw_query(namespace, app_state.components)
-        settlement_time = cfg.get("settlement", 0)
-        mon0 = testdata0.monitoring
-
-        if "ref_version_id" in mon0 and mon0["version_id"] != mon0["ref_version_id"]:
-            raise AdjustError(
-                "application version does not match reference version",
-                status="aborted",
-                reason="version-mismatch",
-            )
-
-        # aborted status reasons that aren't supported: ref-app-inconsistent, ref-app-unavailable
-
-        # TODO: This response needs to be modeled
-        if not settlement_time:
-            return {"monitoring": mon0, "status": "ok", "reason": "success"}
-
-        # TODO: adjust progress accounting when there is settlement_time!=0
-
-        # wait and watch the app, checking for changes
-        # TODO: Port this...
-        w = Waiter(
-            settlement_time, delay=min(settlement_time, 30)
-        )  # NOTE: delay between tests may be made longer than the delay between progress reports
-        while w.wait():
-            testdata = raw_query(namespace, app_state.components)
-            mon = testdata.monitoring
-            # compare to initial mon data set
-            if mon["runtime_id"] != mon0["runtime_id"]:  # restart detected
-                # TODO: allow limited number of restarts? (and how to distinguish from rejected/unstable??)
-                raise AdjustError(
-                    "component(s) restart detected",
-                    status="transient-failure",
-                    reason="app-restart",
-                )
-            # TODO: what to do with version change?
-            #        if mon["version_id"] != mon0["version_id"]:
-            #            raise AdjustError("application was modified unexpectedly during settlement", status="transient-failure", reason="app-update")
-            if mon["spec_id"] != mon0["spec_id"]:
-                raise AdjustError(
-                    "application configuration was modified unexpectedly during settlement",
-                    status="transient-failure",
-                    reason="app-update",
-                )
-            if mon["ref_spec_id"] != mon0["ref_spec_id"]:
-                raise AdjustError(
-                    "reference application configuration was modified unexpectedly during settlement",
-                    status="transient-failure",
-                    reason="ref-app-update",
-                )
-            if mon["ref_runtime_count"] != mon0["ref_runtime_count"]:
-                raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
     async def wait_for_update(
         self,
@@ -1796,29 +1467,41 @@ class KubernetesConnector(BaseConnector):
             reason="start-failed",
         )
 
-def descriptor_to_components(descriptor: dict) -> List[Component]:
-    components = []
-    for component_name in descriptor:
-        settings = []
-        for setting_name in descriptor[component_name]["settings"]:
-            setting_values = descriptor[component_name]["settings"][setting_name]
-            # FIXME: Temporary hack
-            if not setting_values.get("type", None):
-                setting_values["type"] = "range"
-            setting = Setting(name=setting_name, min=1, max=4, step=1, **setting_values)
-            settings.append(setting)
-        component = Component(name=component_name, settings=settings)
-        components.append(component)
-    return components
 
-def descriptor_to_adjustments(descriptor: dict) -> List[Adjustment]:
-    adjustments = []
-    for component_name in descriptor:
-        for setting_name, attrs in descriptor[component_name]["settings"].items():
-            adjustment = Adjustment(
-                component_name=component_name, 
-                setting_name=setting_name,
-                value=attrs["value"]
-            )
-            adjustments.append(adjustment)
-    return adjustments
+def selector_string(selectors: Mapping[str, str]) -> str:
+    """Create a selector string from the given dictionary of selectors.
+
+    Args:
+        selectors: The selectors to stringify.
+
+    Returns:
+        The selector string for the given dictionary.
+    """
+    return ','.join([f'{k}={v}' for k, v in selectors.items()])
+
+
+def selector_kwargs(
+    fields: Mapping[str, str] = None,
+    labels: Mapping[str, str] = None,
+) -> Dict[str, str]:
+    """Create a dictionary of kwargs for Kubernetes object selectors.
+
+    Args:
+        fields: A mapping of fields used to restrict the returned collection of
+            Objects to only those which match these field selectors. By default,
+            no restricting is done.
+        labels: A mapping of labels used to restrict the returned collection of
+            Objects to only those which match these label selectors. By default,
+            no restricting is done.
+
+    Returns:
+        A dictionary that can be used as kwargs for many Kubernetes API calls for
+        label and field selectors.
+    """
+    kwargs = {}
+    if fields is not None:
+        kwargs['field_selector'] = selector_string(fields)
+    if labels is not None:
+        kwargs['label_selector'] = selector_string(labels)
+
+    return kwargs

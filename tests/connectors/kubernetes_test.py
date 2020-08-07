@@ -1,5 +1,4 @@
 import asyncio
-from servo.kubernetes import Deployment
 from kubetest.objects import namespace
 import pytest
 
@@ -28,9 +27,11 @@ async def test_measure(config):
     connector = KubernetesConnector(config=config)
     description = await connector.measure()
 
+from servo.api import descriptor_to_adjustments
 async def test_adjust(config, adjustment):
     connector = KubernetesConnector(config=config)
-    description = await connector.adjust(adjustment)
+    description = await connector.adjust(descriptor_to_adjustments(adjustment))
+    debug(description)
 
 # TODO: Test the input units for CPU and memory
 # TODO: Put a co-http deployment live. Create a config and describe it.
@@ -40,7 +41,28 @@ async def test_adjust(config, adjustment):
 # Version ID checks
 # Timeouts, Encoders, refresh, ready
 # Add watch, test create, read, delete, patch
-# TODO: settlement time, recovery behavior, "adjust_on"?, restart detection, EXCLUDE_LABEL
+# TODO: settlement time, recovery behavior (rollback, delete), "adjust_on"?, restart detection, EXCLUDE_LABEL
+# TODO: wait/watch tests with conditionals...
+# TODO: Test cases will be: change memory, change cpu, change replica count. 
+# Test setting limit and request independently
+# Detect scheduling error
+
+from servo.connectors.kubernetes import Millicore
+import pydantic
+
+def test_millicpu():
+    class Model(pydantic.BaseModel):
+        cpu: Millicore
+
+    assert Model(cpu=0.1).cpu == 100
+    assert Model(cpu=0.5).cpu == 500
+    assert Model(cpu=1).cpu == 1000
+    assert Model(cpu="100m").cpu == 100
+    assert str(Model(cpu=1.5).cpu) == "1500m"
+    assert float(Model(cpu=1.5).cpu) == 1.5
+    assert Model(cpu=0.1).cpu == "100m"
+    assert Model(cpu="100m").cpu == 0.1
+
 
 @pytest.fixture
 def config() -> KubernetesConfiguration:
