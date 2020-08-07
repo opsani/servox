@@ -1,9 +1,7 @@
 from __future__ import annotations
-import os
 import asyncio
 import json
 import re
-import time
 from datetime import datetime, timedelta
 from enum import Enum
 from io import StringIO
@@ -338,7 +336,7 @@ class VegetaConnector(BaseConnector):
             success = (vegeta_report.error_rate < 5.0)
             checks.append(Check(
                 name="Error rate < 5.0%",
-                success=False,
+                success=success,
                 comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
             ))
 
@@ -348,12 +346,6 @@ class VegetaConnector(BaseConnector):
     async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-        # Handle delay (if any)
-        # TODO: Push the delay and warm-up into a reusable before filter
-        # TODO: Use an event to signal the connector when warmup is complete
-        if control.delay:
-            self.logger.info(f"DELAY: sleeping {control.delay} seconds")
-            time.sleep(control.delay)
 
         self.warmup_until = datetime.now() + control.warmup
 
@@ -364,7 +356,7 @@ class VegetaConnector(BaseConnector):
         self.logger.info(summary)
 
         # Run the load generation
-        exit_code, command = await self._run_vegeta()
+        await self._run_vegeta()
 
         self.logger.info(
             f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports"
