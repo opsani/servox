@@ -20,7 +20,7 @@ from servo.connector import (
     _validate_class
 )
 from servo.events import Preposition, event, on_event
-from servo.types import Check, Component, Control, Description, Measurement, Metric
+from servo.types import Adjustment, Check, Component, Control, Description, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -56,43 +56,43 @@ class _EventDefinitions:
 
     # Lifecycle events
     @event(Events.STARTUP)
-    def startup(self) -> None:
+    async def startup(self) -> None:
         ...
 
     @event(Events.SHUTDOWN)
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
         ...
 
     # Informational events
     @event(Events.METRICS)
-    def metrics(self) -> List[Metric]:
+    async def metrics(self) -> List[Metric]:
         ...
 
     @event(Events.COMPONENTS)
-    def components(self) -> List[Component]:
+    async def components(self) -> List[Component]:
         ...
 
     # Operational events
     @event(Events.MEASURE)
-    def measure(
+    async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
         ...
 
     @event(Events.CHECK)
-    def check(self) -> List[Check]:
+    async def check(self) -> List[Check]:
         ...
 
     @event(Events.DESCRIBE)
-    def describe(self) -> Description:
+    async def describe(self) -> Description:
         ...
 
     @event(Events.ADJUST)
-    def adjust(self, data: dict) -> dict:
+    async def adjust(self, adjustments: List[Adjustment]) -> dict:
         ...
 
     @event(Events.PROMOTE)
-    def promote(self) -> None:
+    async def promote(self) -> None:
         ...
 
 

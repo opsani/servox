@@ -1,8 +1,10 @@
 import asyncio
+from inspect import Signature, iscoroutinefunction
 import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Coroutine
 
 import pytest
 import respx
@@ -24,7 +26,7 @@ from servo.connector import (
 )
 from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import EventContext, Preposition, _events, event
+from servo.events import EventContext, Preposition, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
 
@@ -1222,15 +1224,15 @@ def test_vegeta_cli_version_short(servo_cli: ServoCLI, cli_runner: CliRunner) ->
 def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
     pass
 
-
+from contextlib import asynccontextmanager
 class TestConnectorEvents:
     class FakeConnector(BaseConnector):
         @event(handler=True)
-        def example_event(self) -> None:
+        async def example_event(self) -> int:
             return 12345
         
         @event(handler=True)
-        def get_event_context(self) -> EventContext:
+        async def get_event_context(self) -> Optional[EventContext]:
             return self.current_event
 
         class Config:
@@ -1238,8 +1240,61 @@ class TestConnectorEvents:
 
     class AnotherFakeConnector(FakeConnector):
         @event(handler=True)
-        def another_example_event(self) -> str:
+        async def another_example_event(self) -> str:
             return "example_event"
+        
+        @event()
+        async def wrapped_event(self) -> int:
+            self._enter()
+            yield
+            self._exit()
+        
+        @on_event("wrapped_event")
+        async def async_wrapped_event(self) -> int:
+            return 13
+        
+        def _enter(self) -> None:
+            pass
+        
+        def _exit(self) -> None:
+            pass
+
+    def test_assert_on_non_async_event(self):
+        with pytest.raises(ValueError) as e:
+            class NonAsyncEvent(TestConnectorEvents.FakeConnector):
+                @event()
+                def invalid_event(self):
+                    pass
+        assert e
+        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+
+    async def test_register_non_generator_method(self):
+        with pytest.raises(ValueError) as e:
+            class NonGeneratorEvent(TestConnectorEvents.FakeConnector):
+                @event()
+                async def invalid_event(self):
+                    print("We don't yield and are not a stub")
+        assert e
+        assert str(e.value).startswith("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")
+
+    def test_create_event_non_async_method(self):
+        def foo():
+            pass
+        with pytest.raises(ValueError) as e:
+            create_event("foo", foo)
+        assert e
+        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+
+    async def test_on_handler_context_manager(self, mocker):
+        event = _events["wrapped_event"]
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.AnotherFakeConnector(config=config)
+        _enter = mocker.spy(connector, "_enter")
+        _exit = mocker.spy(connector, "_exit")
+        results = await connector.run_event_handlers(event, Preposition.ON)
+        assert results[0].value == 13
+        _enter.assert_called_once()
+        _exit.assert_called_once()
 
     def test_event_registration(self) -> None:
         assert _events is not None
@@ -1292,8 +1347,10 @@ class TestConnectorEvents:
     async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
-        result = await connector.run_event_handlers("unknown_event", Preposition.ON)
-        assert result is None
+        with pytest.raises(ValueError) as e:
+            await connector.run_event_handlers("unknown_event", Preposition.ON)
+        assert e
+        assert str(e.value) == "event must be an Event object, got str"
 
     def test_event_dispatch_standalone(self) -> None:
         config = BaseConfiguration.construct()
@@ -1308,7 +1365,7 @@ class TestConnectorEvents:
         assert result.connector == connector
         assert result.value == 12345
 
-    async def test_event_dispatch_standalone(self) -> None:
+    async def test_event_dispatch_to_peer(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         fake_connector = TestConnectorEvents.AnotherFakeConnector(
@@ -1316,6 +1373,20 @@ class TestConnectorEvents:
         )
         # Dispatch to peer
         results = await fake_connector.dispatch_event("example_event")
+        assert results is not None
+        result = results[0]
+        assert result.event.name == "example_event"
+        assert result.connector == connector
+        assert result.value == 12345
+    
+    async def test_event_dispatch_standard(self) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        fake_connector = TestConnectorEvents.AnotherFakeConnector(
+            config=config, __connectors__=[connector]
+        )
+        # Dispatch to peer
+        results = await fake_connector.dispatch_event("promote")
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"

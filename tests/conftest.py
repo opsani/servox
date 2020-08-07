@@ -9,11 +9,6 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from servo.configuration import Optimizer
-from servo.cli import ServoCLI
-# Force the test connectors to load early
-from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
-
 # Add the devtools debug() function globally in tests
 try:
     import builtins
@@ -24,6 +19,10 @@ except ImportError:
 else:
     builtins.debug = debug
 
+from servo.configuration import Optimizer
+from servo.cli import ServoCLI
+# Force the test connectors to load early
+from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 
 
 def pytest_addoption(parser):

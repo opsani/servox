@@ -1,12 +1,15 @@
 from __future__ import annotations
 import asyncio
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Flag, auto
 from functools import reduce
-from inspect import Parameter, Signature
-from typing import Any, Callable, Dict, Optional, Sequence, Type, TypeVar, List, Union
+from inspect import Parameter, Signature, iscoroutinefunction
+import inspect
+from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, Optional, Sequence, Type, TypeVar, List, Union
 from weakref import WeakKeyDictionary
+from loguru import logger
 
 from pydantic import BaseModel, validator
 from pydantic.fields import ModelField
@@ -16,13 +19,13 @@ from servo.utilities import join_to_series
 
 _signature_cache: Dict[str, Signature] = {}
 
-
 class Event(BaseModel):
     """
     The Event class defines a named event that can be dispatched and 
     processed with before, on, and after handlers.
     """
     name: str
+    on_handler_context_manager: Callable[[None], AsyncContextManager]
 
     def __init__(self, name: str, signature: Signature, *args, **kwargs):
         _signature_cache[name] = signature
@@ -234,12 +237,51 @@ def get_event(name: str, default=...) -> Optional[Event]:
         return _events.get(name, default)
 
 
-def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
+def create_event(
+    name: str, 
+    signature: Union[Callable[[Any], Awaitable], Signature],
+) -> Event:
     """
     Create an event programmatically from a name and function signature.
     """
     if _events.get(name, None):
         raise ValueError(f"Event '{name}' has already been created")
+
+    def _default_context_manager() -> AsyncContextManager:
+        # Simply yield to the on event handler
+        async def fn(self) -> None:
+            yield
+        
+        return asynccontextmanager(fn)
+    
+    if callable(signature):
+        if inspect.isasyncgenfunction(signature):
+            # We have an async generator function defining setup/teardown activities, wrap into a context manager
+            # This is useful for shared behaviors like startup delays, settlement times, etc.
+            on_handler_context_manager = asynccontextmanager(signature)
+
+        elif not iscoroutinefunction(signature):
+            raise ValueError(f"events must be async: add `async` prefix to your function declaration and await as necessary ({signature})")
+
+        else:
+            # Sanity check callables that don't yield are stubs
+            # We expect the last line to be 'pass' or '...' for stub code
+            try:
+                lines = inspect.getsourcelines(signature)
+                last = lines[0][-1]
+                if not last.strip() in ("pass", "..."):
+                    raise ValueError("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")                
+                
+                # use the default since our input doesn't yield
+                on_handler_context_manager = _default_context_manager()
+
+            except OSError as error:
+                logger.warning(f"unable to inspect event declaration for '{name}': dropping event body and proceeding")
+                on_handler_context_manager = _default_context_manager()
+
+    else:
+        # Signatures are opaque from introspection
+        on_handler_context_manager = _default_context_manager()
 
     signature = (
         signature
@@ -256,7 +298,7 @@ def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
             f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
         )
 
-    event = Event(name=name, signature=signature)
+    event = Event(name=name, signature=signature, on_handler_context_manager=on_handler_context_manager)
     _events[name] = event
     return event
 
@@ -275,7 +317,13 @@ def event(
 
     def decorator(fn: EventCallable) -> EventCallable:
         event_name = name if name else fn.__name__
-        create_event(event_name, fn)
+        if handler:
+            # If the method body is a handler, pass the signature directly into `create_event`
+            # as we are going to pass the method body into `on_event`
+            signature = Signature.from_callable(fn)
+            create_event(event_name, signature)
+        else:
+            create_event(event_name, fn)
 
         if handler:
             decorator = on_event(event_name)
@@ -781,10 +829,13 @@ class Mixin:
         self, event: Event, preposition: Preposition, *args, **kwargs
     ) -> Optional[List[EventResult]]:
         """
-        Run handlers for the given event and preposition and and return the results or None if there are no handlers.
+        Run handlers for the given event and preposition and return the results or None if there are no handlers.
         """
+        if not isinstance(event, Event):
+            raise ValueError(f"event must be an Event object, got {event.__class__.__name__}")
+
         event_handlers = self.get_event_handlers(event, preposition)
-        if len(event_handlers) == 0:
+        if not event_handlers:
             return None
 
         results: List[EventResult] = []
@@ -796,10 +847,12 @@ class Mixin:
                 handler_kwargs = event_handler.kwargs.copy()
                 handler_kwargs.update(kwargs)
                 try:
-                    if asyncio.iscoroutinefunction(event_handler.handler):
-                        value = await event_handler.handler(self, *args, **kwargs)
-                    else:
-                        value = event_handler.handler(self, *args, **kwargs)
+                    async with event.on_handler_context_manager(self):
+                        if asyncio.iscoroutinefunction(event_handler.handler):
+                            value = await event_handler.handler(self, *args, **kwargs)
+                        else:
+                            value = event_handler.handler(self, *args, **kwargs)
+
                 except CancelEventError as error:
                     if preposition != Preposition.BEFORE:
                         raise TypeError(

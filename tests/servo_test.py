@@ -43,7 +43,7 @@ class FirstTestServoConnector(BaseConnector):
     started_up: bool = False
 
     @event(handler=True)
-    def this_is_an_event(self) -> str:
+    async def this_is_an_event(self) -> str:
         return "this is the result"
 
     @after_event(Events.ADJUST)
@@ -85,7 +85,7 @@ class SecondTestServoConnector(BaseConnector):
         return "this is a different result"
 
     @event(handler=True)
-    def another_event(self) -> None:
+    async def another_event(self) -> None:
         pass
 
 
@@ -344,9 +344,11 @@ async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None
 ##
 # Test event handlers
 
+async def test_event():
+    ...
 
 def test_creating_event_programmatically(random_string: str) -> None:
-    signature = Signature.from_callable(test_shutdown_event)
+    signature = Signature.from_callable(test_event)
     create_event(random_string, signature)
     event = _events[random_string]
     assert event.name == random_string
@@ -354,10 +356,10 @@ def test_creating_event_programmatically(random_string: str) -> None:
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
-    create_event(random_string, test_shutdown_event)
+    create_event(random_string, test_event)
     event = _events[random_string]
     assert event.name == random_string
-    assert event.signature == Signature.from_callable(test_shutdown_event)
+    assert event.signature == Signature.from_callable(test_event)
 
 
 def test_redeclaring_an_existing_event_fails() -> None:
@@ -406,7 +408,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
 
         class InvalidConnector:
             @event("failio")
-            def invalid_event(self, *args) -> None:
+            async def invalid_event(self, *args) -> None:
                 pass
 
     assert error

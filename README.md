@@ -220,16 +220,46 @@ declaratively via the `event()` decorator:
 ```python
 from servo.connector import BaseConnector, event
 
-class AnotherConnector(BaseConnector):
-  @event(name='load_test', handler=True)
-  def run_load_test(self, url: str, duration: int = 60) -> str:
-    return "Do something..."
+class EventExample(BaseConnector):
+  @event()
+  async def trace(self, url: str) -> str:
+    ...
 ```
 
-The `event` decorator uses the parameter and return type signature of the decorated method to 
-define the signature requirements for any on event handler defined against the event. In this
-example, the `handler=True` keyword argument is provided to created the event **and** register
-the decorated method as an on event handler for the new event.
+The `event` decorator uses the parameters and return type of the decorated method to 
+define the signature requirements for on event handlers registered against the event.
+The body of the decorated method must be `...`, `pass`, or an async generator that defines
+setup and tear-down behavior for on event handlers.
+
+The body of the decorated method can be used to define setup and tear-down activities around
+on event handlers. This allows for common set-up and tear-down functionality to be defined by
+the event creator. This is achieved by implementing the body of the decorated method as an
+async generator that yields control to the on event handler:
+
+```python
+from servo.connector import BaseConnector, event
+
+class SetupAndTearDownExample(BaseConnector):
+  @event()
+  async def trace(self, url: str) -> str:
+    print("Entering event handler...")
+    yield
+    print("Exited event handler.")
+```
+
+The event decorator can also be used to create an event and register a handler for the
+event at the same time. In this example, the `handler=True` keyword argument is provided to 
+created the event **and** register the decorated method as an on event handler for the new event.
+
+
+```python
+from servo.connector import BaseConnector, event
+
+class AnotherConnector(BaseConnector):
+  @event('load_test', handler=True)
+  async def run_load_test(self, url: str, duration: int = 60) -> str:
+    return "Do something..."
+```
 
 Once an event is created, the connector can dispatch against it to notify other connectors of
 changes in state or to request data from them.
