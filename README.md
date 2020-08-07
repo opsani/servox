@@ -437,18 +437,6 @@ Pre-built images are built using BuildKit and can be used as the basis for very 
 ❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
 ```
 
-### Work in Progress
-
-The following is a non-exhaustive list of work in progress on the road to shipping v2.0.0
-
-* [ ] Create connectors for vegeta, k8s, and prometheus
-* [ ] Build config classes for all connectors
-* [ ] Package builds
-* [ ] Implement testing API for exercising API dependent components (e.g. `servo.Runner`)
-* [ ] Produce config fixtures from existing projects
-* [ ] Include servo-exec in core library
-* [ ] Encoders
-
 ## Testing
 
 Tests are implemented using [Pytest](https://docs.pytest.org/en/stable/) and live in the `tests` subdirectory. Tests can be executed directly via the `pyenv` CLI
