@@ -1,13 +1,12 @@
 from __future__ import annotations
 import asyncio
 from functools import reduce
-import time
-from datetime import datetime
-from typing import List, Literal, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import List
 
 import httpx
 import httpcore._exceptions
-from pydantic import BaseModel, AnyHttpUrl, root_validator, validator
+from pydantic import BaseModel, AnyHttpUrl, validator
 
 from servo import (
     BaseConfiguration,
@@ -23,7 +22,6 @@ from servo import (
     Unit,
     metadata,
     on_event,
-    DataPoint,
     TimeSeries,
 )
 from servo.utilities import join_to_series
@@ -107,7 +105,7 @@ class PrometheusConnector(BaseConnector):
 
     @on_event()
     def check(self) -> List[Check]:
-        start, end = datetime.now() - datetime.timedelta(minutes=10), datetime.now()
+        start, end = datetime.now() - timedelta(minutes=10), datetime.now()
         checks = []
         for metric in self.config.metrics:
             self._query_prom(metric, start, end)
@@ -140,12 +138,10 @@ class PrometheusConnector(BaseConnector):
         measuring_names = list(map(lambda m: m.name, metrics__))
         self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {join_to_series(measuring_names)}")
 
-        # TODO: The warmup becomes before_event() for measure
-        # TODO: Before filters need to get the same input as the main action
         start = datetime.now() + control.warmup
         end = start + control.duration
 
-        sleep_duration = Duration(control.warmup + control.duration + control.delay)
+        sleep_duration = Duration(control.warmup + control.duration)
         self.logger.debug(
             f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
         )

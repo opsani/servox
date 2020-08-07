@@ -1,5 +1,6 @@
 from __future__ import annotations
 import abc
+import asyncio
 import inspect
 from contextvars import ContextVar
 from enum import Enum
@@ -77,7 +78,9 @@ class _EventDefinitions:
     async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-        ...
+        if control.delay:
+            await asyncio.sleep(control.delay.total_seconds())
+        yield
 
     @event(Events.CHECK)
     async def check(self) -> List[Check]:
