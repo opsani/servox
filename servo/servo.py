@@ -91,7 +91,7 @@ class _EventDefinitions:
         ...
 
     @event(Events.ADJUST)
-    async def adjust(self, adjustments: List[Adjustment]) -> dict:
+    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
         ...
 
     @event(Events.PROMOTE)

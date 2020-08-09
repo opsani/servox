@@ -4,14 +4,11 @@ import yaml
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Type, Union
 from pydantic import (
-    BaseModel,
     BaseSettings,
     Extra,
     Field,
     HttpUrl,
     constr,
-    root_validator,
-    validator,
 )
 from servo.types import Duration
 

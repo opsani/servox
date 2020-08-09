@@ -4,13 +4,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-import backoff
 from devtools import pformat
 import httpx
 from pydantic import BaseModel, Field, parse_obj_as
 
-from servo.configuration import Optimizer
-from servo.types import Control, Description, Duration, Measurement, Numeric
+from servo.types import Adjustment, Control, Duration, Numeric
 
 
 USER_AGENT = "github.com/opsani/servox"
@@ -199,3 +197,15 @@ class Mixin:
                 raise error
 
         return parse_obj_as(Union[CommandResponse, Status], response.json())
+
+def descriptor_to_adjustments(descriptor: dict) -> List[Adjustment]:
+    adjustments = []
+    for component_name, component in descriptor["application"]["components"].items():
+        for setting_name, attrs in component["settings"].items():
+            adjustment = Adjustment(
+                component_name=component_name, 
+                setting_name=setting_name,
+                value=attrs["value"]
+            )
+            adjustments.append(adjustment)
+    return adjustments

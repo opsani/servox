@@ -1,17 +1,22 @@
 from __future__ import annotations, print_function
 
+import abc
 import asyncio
+import enum
 from typing import List, Optional, Dict, Any
 
-from pydantic import BaseModel, ByteSize, Extra, Field, FilePath, validator
+from pydantic import BaseModel, ByteSize, Field, FilePath
 
 from servo import (
     Adjustment,
+    BaseChecks,
     BaseConfiguration,
     BaseConnector,
     Check,
     Component,
+    Control,
     Description,
+    Duration,
     License,
     Maturity,
     Setting,
@@ -19,87 +24,12 @@ from servo import (
     on_event,
     get_hash
 )
-from kubernetes_asyncio import client, config, watch
+from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watch
 from kubernetes_asyncio.client.api_client import ApiClient
-import abc
-import enum
 import loguru
 from loguru import logger as default_logger
 from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
-
-
-# Gibibyte is the base unit of Kubernetes memory
-GiB = 1024 * 1024 * 1024
-
-
-# TODO: This is some kind of progress watcher... WaitCondition?
-def test_dep_generation(dep, g):
-    """ check if the deployment status indicates it has been updated to the given generation number"""
-    return dep["status"]["observedGeneration"] == g
-
-def test_dep_progress(dep):
-    """check if the deployment object 'dep' has reached final successful status
-    ('dep' should be the data returned by 'kubectl get deployment' or the equivalent API call, e.g.,
-    GET /apis/(....)/namespaces/:ns/deployments/my-deployment-name).
-    This tests the conditions[] array and the replica counts and converts the data to a simplified status, as follows:
-    - if the deployment appears to be in progress and k8s is still waiting for updates from the controlled objects (replicasets and their pods),
-      return a tuple (x, ""), where x is the fraction of the updated instances (0.0 .. 1.0, excluding 1.0).
-    - if the deployment has completed, return (1.0, "")
-    - if the deployment has stalled or failed, return (x, "(errormsg)"), with an indication of the
-      detected failure (NOTE: in k8s, the 'stall' is never final and could be unblocked by change
-      of resources or other modifications of the cluster not related to the deployment in question,
-      but we assume that the system is operating under stable conditions and there won't be anyone
-      or anything that can unblock such a stall)
-    """
-    dbg_log("test_dep_progress:")
-    spec_replicas = dep["spec"]["replicas"]  # this is what we expect as target
-    dep_status = dep["status"]
-    for co in dep_status["conditions"]:
-        dbg_log(
-            "... condition type {}, reason {}, status {}, message {}".format(
-                co.get("type"), co.get("reason"), co.get("status"), co.get("message")
-            )
-        )
-        if co["type"] == "Progressing":
-            if co["status"] == "True" and co["reason"] == "NewReplicaSetAvailable":
-                # if the replica set was updated, test the replica counts
-                if (
-                    dep_status.get("updatedReplicas", None) == spec_replicas
-                ):  # update complete, check other counts
-                    if (
-                        dep_status.get("availableReplicas", None) == spec_replicas
-                        and dep_status.get("readyReplicas", None) == spec_replicas
-                    ):
-                        return (1.0, "")  # done
-            elif co["status"] == "False":  # failed
-                return (
-                    dep_status.get("updatedReplicas", 0) / spec_replicas,
-                    co["reason"] + ", " + co.get("message", ""),
-                )
-            # otherwise, assume in-progress
-        elif co["type"] == "ReplicaFailure":
-            # note if this status is found, we report failure early here, before k8s times out
-            return (
-                dep_status.get("updatedReplicas", 0) / spec_replicas,
-                co["reason"] + ", " + co.get("message", ""),
-            )
-
-    # no errors and not complete yet, assume in-progress
-    # (NOTE if "Progressing" condition isn't found, but updated replicas is good, we will return 100% progress; in this case check that other counts are correct, as well!
-    progress = dep_status.get("updatedReplicas", 0) / spec_replicas
-    if progress == 1.0:
-        if (
-            dep_status.get("availableReplicas", None) == spec_replicas
-            and dep_status.get("readyReplicas", None) == spec_replicas
-        ):
-            return (1.0, "")  # all good
-        progress = 0.99  # available/ready counts aren't there - don't report 100%, wait loop will contiune until ready or time out
-    return (progress, "")
-
-
-# NOTE: update of 'observedGeneration' does not mean that the 'deployment' object is done updating; also checking readyReplicas or availableReplicas in status does not help (these numbers may be for OLD replicas, if the new replicas cannot be started at all). We check for a 'Progressing' condition with a specific 'reason' code as an indication that the deployment is fully updated.
-# ? do we need to use --to-revision with the undo command?
 
 
 # TODO: This has behavior that removes request/limit if it exists
@@ -123,8 +53,6 @@ def set_rsrc(cp, sn, sv, sel="both"):
     else:  # both
         cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
         cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
-
-
 
 
 @runtime_checkable
@@ -708,6 +636,7 @@ class Pod(KubernetesModel):
         """
         return self.obj.metadata.uid
 
+
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
 
@@ -807,32 +736,8 @@ class Deployment(KubernetesModel):
                 name=self.name,
                 namespace=self.namespace,
             )
-
-    async def is_ready(self) -> bool:
-        """Check if the Deployment is in the ready state.
-
-        Returns:
-            True if in the ready state; False otherwise.
-        """
-        await self.refresh()
-
-        # if there is no status, the deployment is definitely not ready
-        status = self.obj.status
-        if status is None:
-            return False
-
-        # check the status for the number of total replicas and compare
-        # it to the number of ready replicas. if the numbers are
-        # equal, the deployment is ready; otherwise it is not ready.
-        total = status.replicas
-        ready = status.ready_replicas
-
-        if total is None:
-            return False
-
-        return total == ready
-
-    async def status(self) -> client.V1DeploymentStatus:
+    
+    async def get_status(self) -> client.V1DeploymentStatus:
         """Get the status of the Deployment.
 
         Returns:
@@ -861,9 +766,65 @@ class Deployment(KubernetesModel):
             )
 
         pods = [Pod(p) for p in pod_list.items]
-        self.logger.debug(f'pods: {pods}')
         return pods
     
+    @property
+    def status(self) -> client.V1DeploymentStatus:
+        """Return the status of the Deployment.
+
+        Returns:
+            The status of the Deployment.
+        """
+        return cast(client.V1DeploymentStatus, self.obj.status)
+
+    @property
+    def resource_version(self) -> str:
+        """
+        Returns the resource version of the Deployment.
+        """
+        return self.obj.metadata.resource_version
+    
+    @property
+    def observed_generation(self) -> str:
+        """
+        Returns the observed generation of the Deployment status.
+
+        The generation is observed by the deployment controller.
+        """
+        return self.obj.status.observed_generation
+    
+    @property
+    def is_ready(self) -> bool:
+        """Check if the Deployment is in the ready state.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        # if there is no status, the deployment is definitely not ready
+        status = self.obj.status
+        if status is None:
+            return False
+
+        # check the status for the number of total replicas and compare
+        # it to the number of ready replicas. if the numbers are
+        # equal, the deployment is ready; otherwise it is not ready.
+        total = status.replicas
+        ready = status.ready_replicas
+
+        if total is None:
+            return False
+
+        return total == ready
+    
+    # TODO: Determine if we want this...
+    def is_complete(self, target_generation: int) -> bool:
+        # Kubernetes marks a Deployment as complete when it has the following characteristics:
+
+        # All of the replicas associated with the Deployment have been updated to the latest version you've specified, meaning any updates you've requested have been completed.
+        # All of the replicas associated with the Deployment are available.
+        # No old replicas for the Deployment are running.
+        ...
+
     @property
     def containers(self) -> List[Container]:
         """
@@ -880,16 +841,23 @@ class Deployment(KubernetesModel):
     @property
     def replicas(self) -> int:
         """
-        Returns the number of desired pods.
+        Return the number of desired pods.
         """
         return self.obj.spec.replicas
     
     @replicas.setter
     def replicas(self, replicas: int) -> None:
         """
-        Sets the number of desired pods.
+        Set the number of desired pods.
         """
         self.obj.spec.replicas = replicas
+    
+    @property
+    def label_selector(self) -> str:
+        """
+        Return a string for matching the Deployment in Kubernetes API calls.
+        """
+        return selector_string(self.obj.spec.selector.match_labels)
 
 
 class ResourceConstraint(enum.Enum):
@@ -916,10 +884,19 @@ class Millicore(int):
     """
     @classmethod
     def __get_validators__(cls) -> 'CallableGenerator':
-        yield cls.validate
+        yield cls.parse
     
     @classmethod
-    def validate(cls, v: StrIntFloat) -> 'Millicore':
+    def parse(cls, v: StrIntFloat) -> 'Millicore':
+        """
+        Parse an input value into Millicore units.
+
+        Returns:
+            The input value in Millicore units.
+
+        Raises:
+            ValueError: Raised if the input cannot be parsed.
+        """
         if isinstance(v, str):
             if v[-1] == "m":
                 return cls(int(v[:-1]))
@@ -946,6 +923,7 @@ class Millicore(int):
     def human_readable(self) -> str:
         return str(self)
 
+
 class CPU(Resource):
     """
     The CPU class models a Kubernetes CPU resource in Millicore units.
@@ -958,11 +936,28 @@ class CPU(Resource):
         return o_dict
 
 
+# Gibibyte is the base unit of Kubernetes memory
+GiB = 1024 * 1024 * 1024
+
+
+class ShortByteSize(ByteSize):
+    """Kubernetes omits the 'B' suffix for some reason"""
+    @classmethod
+    def validate(cls, v: StrIntFloat) -> 'ShortByteSize':
+        if isinstance(v, str):            
+            try:
+                return super().validate(v)
+            except:
+                # Append the byte suffix and retry parsing
+                return super().validate(v + "b")
+        return super().validate(v)
+
+
 class Memory(Resource):
     """
     The Memory class models a Kubernetes Memory resource.
     """
-    value: ByteSize
+    value: ShortByteSize
 
     @property
     def gibibytes(self) -> float:
@@ -1003,30 +998,176 @@ class Adjustable(BaseModel):
             ]
         )
     
-    def apply_adjustment(self, adjustment: Adjustment) -> None:
-        # TODO: The original driver code modifies the ranges if they are above or below
+    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+        """
+        Adjust a setting on the underlying Deployment or Container.
+        """
+        # TODO: The Adjustment needs to marshal value appropriately on ingress
+        def _qualify(value, unit):
+            if unit == "memory":
+                return f"{value}Gi"
+            elif unit == "cpu":
+                return str(Millicore.parse(value))
+            elif unit == "replicas":
+                return int(value)
+            return value
 
         name = adjustment.setting_name
         if name in ("cpu", "memory"):
             resource = getattr(self, name)
+            debug("Adjusting resource", resource)
+            value = _qualify(adjustment.value, name)
             if resource.constraint in (ResourceConstraint.request, ResourceConstraint.both):
-                self.container.resources.requests[name] = adjustment.value
+                debug("!!! Setting request to", value)
+                self.container.resources.requests[name] = value
             if resource.constraint in (ResourceConstraint.limit, ResourceConstraint.both):
-                self.container.resources.limits[name] = adjustment.value
+                self.container.resources.limits[name] = value
+                debug("!!! Setting limit to", value)
 
         elif adjustment.setting_name == "replicas":
             self.deployment.replicas = int(float(adjustment.value))
             
         else:
-            raise RuntimeError(f"adjustment of Kubernetes setting '{adjustment.setting_name}' is not supported")
+            raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
     
+    async def apply(self) -> None:
+        """
+        Apply changes asynchronously and wait for them to roll out to the cluster.
+
+        Kubernetes deployments orchestrate a number of underlying resources. Awaiting the
+        outcome of a deployment change requires observation of the `resource_version` which
+        indicates if a given patch actually changed the resource, the `observed_generation`
+        which is a value managed by the deployments controller and indicates the effective 
+        version of the deployment exclusive of insignificant changes that do not affect runtime
+        (such as label updates), and the `conditions` of the deployment status which reflect
+        state at a particular point in time. How these elements change during a rollout is 
+        dependent on the deployment strategy in effect and its constraints (max unavailable, 
+        surge, etc).
+
+        The logic implemented by this method is as follows:
+            - Capture the `resource_version` and `observed_generation`.
+            - Patch the underlying Deployment object via the Kubernetes API.
+            - Check that `resource_version` has been incremented or return because nothing has changed.
+            - Create a Kubernetes Watch on the Deployment targeted by label selector and resource version.
+            - Observe events streamed via the watch.
+            - Look for the Deployment to report a Status Condition of `"Progressing"`.
+            - Wait for the `observed_generation` to increment indicating that the Deployment is applying our changes.
+            - Track the value of the `available_replicas`, `ready_replicas`, `unavailable_replicas`, 
+                and `updated_replicas` attributes of the Deployment Status until `available_replicas`,
+                `ready_replicas`, and `updated_replicas` are all equal to the value of the `replicas` attribute of
+                the Deployment and `unavailable_replicas` is `None`. Return success.
+            - Raise an error upon expiration of an adjustment timeout or encountering a Deployment Status Condition
+                where `type=Progressing` and `status=False`.
+
+        This method abstracts the details of adjusting a Deployment and returns once the desired
+        changes have been fully rolled out to the cluster or an error has been encountered.
+
+        See https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+
+        # The resource_version attribute lets us efficiently watch for changes
+        # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
+        """
+        
+        # Resource version lets us track any change. Observed generation only increments
+        # when the deployment controller sees a significant change that requires rollout
+        resource_version = self.deployment.resource_version
+        observed_generation = self.deployment.status.observed_generation
+        desired_replicas = self.deployment.replicas
+
+        # Patch the Deployment via the Kubernetes API
+        await self.deployment.patch()
+
+        # Return fast if nothing was changed
+        if self.deployment.resource_version == resource_version:
+            self.logger.info(f"adjustments applied to Deployment '{self.deployment.name}' made no changes, continuing")
+            return
+                
+        # Create a Kubernetes watch against the deployment under optimization to track changes
+        self.logger.info("Using label_selector=", self.deployment.label_selector, "resource_version=", resource_version)
+        async with client.ApiClient() as api:
+            v1 = client.AppsV1Api(api)
+            async with watch.Watch().stream(
+                v1.list_namespaced_deployment,
+                self.deployment.namespace,
+                label_selector=self.deployment.label_selector,
+                # resource_version=resource_version, # FIXME: The resource version might be expired and fail the watch. Decide if we care
+            ) as stream:
+                async for event in stream:
+                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                    event_type, deployment = event['type'], event['object']
+                    status: client.V1DeploymentStatus = deployment.status
+                    
+                    self.logger.debug(f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}")
+
+                    if event_type == 'ERROR':
+                        stream.stop()
+                        raise RuntimeError(str(deployment))                    
+
+                    # Check that the conditions aren't reporting a failure
+                    self._check_conditions(status.conditions)
+
+                    # Early events in the watch may be against previous generation
+                    if status.observed_generation == observed_generation:
+                        self.logger.debug("observed generation has not changed, continuing watch")
+                        continue
+                    
+                    # Check the replica counts. Once available, updated, and ready match
+                    # our expected count and the unavailable count is zero we are rolled out
+                    if status.unavailable_replicas:
+                        self.logger.debug("found unavailable replicas, continuing watch", status.unavailable_replicas)
+                        continue
+                    
+                    replica_counts = [status.replicas, status.available_replicas, status.ready_replicas, status.updated_replicas]
+                    if replica_counts.count(desired_replicas) == len(replica_counts):
+                        # We are done: all the counts match. Stop the watch and return
+                        self.logger.info("adjustment applied successfully", status)
+                        stream.stop()
+                        return
+    
+    def _check_conditions(self, conditions: List[client.V1DeploymentCondition]):
+        for condition in conditions:
+            if condition.type == "Available":                            
+                if condition.status == "True":
+                    # If we hit on this and have not raised yet we are good to go
+                    break                        
+                elif condition.status == "False":
+                    # TODO: Is this an error?
+                    self.logger.error(f"Condition.status == 'False': {condition}")
+                elif condition.status == "Unknown":
+                    # TODO: Guessing we just log this
+                    self.logger.debug(f"Condition.status == 'Unknown': {condition}")
+                else:
+                    raise RuntimeError(f"encountered unexpected Condition status '{condition.status}'")
+
+            elif condition.type == "ReplicaFailure":
+                # TODO: Create a specific error type
+                raise RuntimeError("ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'")
+
+            elif condition.type == "Progressing":
+                if condition.status in ("True", "Unknown"):
+                    # Still working
+                    self.logger.debug("Deployment update is progressing", condition)
+                    break
+                if condition.status == "False":
+                    # TODO: Create specific error type
+                    raise RuntimeError("ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'")
+                else:
+                    raise AssertionError(f"unknown deployment status condition: {condition.status}")
+    
+    @property
+    def logger(self) -> loguru.Logger:
+        return default_logger
+
     def __hash__(self):
         return hash((self.name, id(self),))
+    
+    @property
+    def logger(self) -> loguru.Logger:
+        return default_logger
 
     class Config:
         arbitrary_types_allowed = True
 
-# TODO: Fold in logger
 class KubernetesState(BaseModel):
     """
     Models the state of resources under optimization in a Kubernetes cluster.
@@ -1042,6 +1183,9 @@ class KubernetesState(BaseModel):
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
+        # TODO: Need to find the right home for this... (and specify the config file being loaded)
+        await kubernetes_asyncio_config.load_kube_config()
+
         namespace = await Namespace.read(config.namespace)
         adjustables = []
         images = {}
@@ -1099,42 +1243,53 @@ class KubernetesState(BaseModel):
         )
     
     def to_description(self) -> Description:
+        """
+        Return a representation of the current state as a Description object.
+
+        Description objects are used to report state to the Opsani API in order
+        to synchronize with the Optimizer service.
+
+        Returns:
+            A Description of the current state.
+        """
         return Description(
             components=list(map(lambda a: a.to_component(), self.adjustables))
         )
     
     def get_adjustable(self, name: str) -> Adjustable:
+        """
+        Find and return an adjustable by name.
+        """
         return next(filter(lambda a: a.name == name, self.adjustables))
 
-    async def apply_adjustments(self, adjustments: List[Adjustment]) -> None:
-        changed = set()
-        debug("WTF: ", adjustments)
-
+    async def apply(self, adjustments: List[Adjustment]) -> None:
+        """
+        ...
+        """
+        # Exit early if there is nothing to do
+        if not adjustments:
+            return
+        
+        # Adjust settings on the local data model
         for adjustment in adjustments:
             adjustable = self.get_adjustable(adjustment.component_name)
-            adjustable.apply_adjustment(adjustment)
-            changed.add(adjustable)
+            adjustable.adjust(adjustment)
         
-        patches = list(map(lambda a: a.deployment.patch(), changed))
-        results = await asyncio.gather(*patches)
-        debug("Results from patches: ", results)
+        # Apply the changes to Kubernetes and wait for the results
+        await asyncio.gather(
+            *list(map(lambda a: a.apply(), self.adjustables))
+        )
 
-        # TODO: For each one of the modified deployments, we need to watch observedGeneration to progress
-
-        # TODO: Wire in watch/wait for the adjustments=
-        async with client.ApiClient() as api:
-            v1 = client.CoreV1Api(api)
-            async with watch.Watch().stream(v1.list_namespaced_pod, "default") as stream:
-                async for event in stream:
-                    evt, obj = event['type'], event['object']
-                    print("{} pod {} in NS {}".format(evt, obj.metadata.name, obj.metadata.namespace))
-
-        # async with Pod.preferred_client() as api_client:
-        # TODO: Start watching as soon as we come online.
-        # TODO: Use a queue to allow 
-        #     pod_list: client.V1PodList = await api_client.list_namespaced_pod(
+        # TODO: Run sanity checks to look for out of band changes
+        # TODO: Figure out how to do progress...
+        # TODO: Rollout undo support
 
         return
+    
+    @property
+    def logger(self) -> loguru.Logger:
+        return default_logger
+
         # wait for update to complete (and print progress)
             # timeout default is set to be slightly higher than the default K8s timeout (so we let k8s detect progress stall first)
         #     try:
@@ -1178,14 +1333,13 @@ class KubernetesState(BaseModel):
         #         status="aborted",
         #         reason="version-mismatch",
         #     )
-
+        
+        # TODO: What are these status reasons??
         # # aborted status reasons that aren't supported: ref-app-inconsistent, ref-app-unavailable
 
         # # TODO: This response needs to be modeled
         # if not settlement_time:
         #     return {"monitoring": mon0, "status": "ok", "reason": "success"}
-
-        # # TODO: adjust progress accounting when there is settlement_time!=0
 
         # # wait and watch the app, checking for changes
         # # TODO: Port this...
@@ -1223,6 +1377,155 @@ class KubernetesState(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class KubernetesConfiguration(BaseConfiguration):
+    kubeconfig: Optional[FilePath] = Field(
+        description="Path to the kubeconfig file. If `None`, use the default from the environment.",
+    )
+    context: Optional[str] = Field(
+        description="Name of the kubeconfig context to use."
+    )
+    namespace: str = Field(
+        "default",
+        description="Kubernetes namespace where the target deployments are running.",
+    )
+    deployments: List[Component] = Field(
+        description="The deployments and adjustable settings to optimize.",
+    )
+    settlement_time: Duration = Field(
+        0,
+        description="Duration to observe the application after an adjust to ensure the deployment is stable."
+    )
+
+    @classmethod
+    def generate(cls, **kwargs) -> "KubernetesConfiguration":
+        return cls(
+            namespace="default",
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            deployments=[
+                Component(
+                    name="app",
+                    settings=[
+                        Setting(
+                            name="cpu",
+                            type="range",
+                            min="0.125",
+                            max="4.0",
+                            step="0.125",
+                        )
+                    ]
+                )
+            ],
+            **kwargs
+        )
+
+
+class KubernetesChecks(BaseChecks):
+    config: KubernetesConfiguration
+
+    async def check_connectivity(self) -> Check:
+        try:
+            await KubernetesState.read(self.config)
+        except Exception as e:
+            return Check(
+                name="Connect to Kubernetes", success=False, comment=str(e)
+            )
+
+        return Check(name="Connect to Kubernetes", success=True, comment="")
+    
+    # TODO: Verify the connectivity & permissions
+    # TODO: Check the Deployments exist
+    # TODO: Check that the Deployment is available
+    # TODO: What other unhealthy conditions?
+
+    # def check_access(self) -> Check:
+    #     ...
+    
+    # def check_deployment_exists(self) -> Check:
+    #     ...
+    
+    # def check_deployment_is_available(self) -> Check:
+    #     ...
+
+
+@connector.metadata(
+    description="Kubernetes adjust connector",
+    version="1.5.0",
+    homepage="https://github.com/opsani/kubernetes-connector",
+    license=License.APACHE2,
+    maturity=Maturity.EXPERIMENTAL,
+)
+class KubernetesConnector(BaseConnector):
+    config: KubernetesConfiguration
+
+    @on_event()
+    async def describe(self) -> Description:        
+        state = await KubernetesState.read(self.config)
+        return state.to_description()
+
+    @on_event()
+    def components(self) -> List[Component]:
+        return self.config.deployments
+
+    @on_event()
+    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
+        # TODO: Handle this adjust_on stuff
+        # adjust_on = desc.get("adjust_on", False)
+
+        # if adjust_on:
+        #     try:
+        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
+        #     except:
+        #         should_adjust = False
+        #     if not should_adjust:
+        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
+
+        state = await KubernetesState.read(self.config)
+        await state.apply(adjustments)
+
+    @on_event()
+    async def check(self) -> List[Check]:
+        return await KubernetesChecks.run(self.config)
+
+
+def selector_string(selectors: Mapping[str, str]) -> str:
+    """Create a selector string from the given dictionary of selectors.
+
+    Args:
+        selectors: The selectors to stringify.
+
+    Returns:
+        The selector string for the given dictionary.
+    """
+    return ','.join([f'{k}={v}' for k, v in selectors.items()])
+
+
+def selector_kwargs(
+    fields: Mapping[str, str] = None,
+    labels: Mapping[str, str] = None,
+) -> Dict[str, str]:
+    """Create a dictionary of kwargs for Kubernetes object selectors.
+
+    Args:
+        fields: A mapping of fields used to restrict the returned collection of
+            Objects to only those which match these field selectors. By default,
+            no restricting is done.
+        labels: A mapping of labels used to restrict the returned collection of
+            Objects to only those which match these label selectors. By default,
+            no restricting is done.
+
+    Returns:
+        A dictionary that can be used as kwargs for many Kubernetes API calls for
+        label and field selectors.
+    """
+    kwargs = {}
+    if fields is not None:
+        kwargs['field_selector'] = selector_string(fields)
+    if labels is not None:
+        kwargs['label_selector'] = selector_string(labels)
+
+    return kwargs
 
 
 def __todo_encoders():
@@ -1302,206 +1605,3 @@ def __todo_encoders():
             #             patch_env = cont_patch.setdefault("env", [])
             #             patch_env.append({"name": en, "value": str(settings[en]["value"])})
             #             del settings[en]
-
-class KubernetesConfiguration(BaseConfiguration):
-    kubeconfig: Optional[FilePath] = Field(
-        description="Path to the kubeconfig file. If `None`, use the default from the environment.",
-    )
-    context: Optional[str] = Field(
-        description="The name of the kubeconfig context to use."
-    )
-    namespace: str = Field(
-        "default",
-        description="The Kubernetes namespace where the target deployments are running.",
-    )
-    deployments: List[Component] = Field(
-        description="The deployments and adjustable settings to optimize.",
-    )
-
-    @classmethod
-    def generate(cls, **kwargs) -> "KubernetesConfiguration":
-        return cls(
-            namespace="default",
-            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
-            deployments=[
-                Component(
-                    name="app",
-                    settings=[
-                        Setting(
-                            name="cpu",
-                            type="range",
-                            min="0.125",
-                            max="4.0",
-                            step="0.125",
-                        )
-                    ]
-                )
-            ],
-            **kwargs
-        )
-
-
-@connector.metadata(
-    description="Kubernetes adjust connector",
-    version="1.5.0",
-    homepage="https://github.com/opsani/kubernetes-connector",
-    license=License.APACHE2,
-    maturity=Maturity.EXPERIMENTAL,
-)
-class KubernetesConnector(BaseConnector):
-    config: KubernetesConfiguration
-
-    @on_event()
-    async def describe(self) -> Description:
-        # TODO: Need to find the right home for this... (and specify the config file being loaded)
-        await config.load_kube_config()
-        state = await KubernetesState.read(self.config)
-        return state.to_description()
-
-    @on_event()
-    def components(self) -> List[Component]:
-        return self.config.deployments
-
-    @on_event()
-    async def adjust(self, adjustments: List[Adjustment]) -> dict:
-        # TODO: What we will want to do is pass in updated settings + component ready to go
-        # TODO: change the return value... can it just be none?
-        # TODO: Handle this adjust_on stuff
-        # adjust_on = desc.get("adjust_on", False)
-
-        # if adjust_on:
-        #     try:
-        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
-        #     except:
-        #         should_adjust = False
-        #     if not should_adjust:
-        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
-
-        await config.load_kube_config()
-        state = await KubernetesState.read(self.config)
-        await state.apply_adjustments(adjustments)
-        # TODO: Unwind this crap: return status and reason
-        return { "status": "ok" }
-
-    @on_event()
-    def check(self) -> List[Check]:
-        # TODO: Verify the connectivity & permissions
-        try:
-            self.describe()
-        except Exception as e:
-            return [Check(
-                name="Connect to Kubernetes", success=False, comment=str(e)
-            )]
-
-        return [Check(name="Connect to Kubernetes", success=True, comment="")]
-
-    async def wait_for_update(
-        self,
-        appname, obj, patch_gen, c=0, t=1, wait_for_progress=40
-    ):
-        """wait for a patch to take effect. appname is the namespace, obj is the deployment name, patch_gen is the object generation immediately after the patch was applied (should be a k8s obj with "kind":"Deployment")"""
-        wait_for_gen = 5  # time to wait for object update ('observedGeneration')
-        # wait_for_progress = 40 # time to wait for rollout to complete
-
-        part = 1.0 / float(t)
-        m = "updating {}".format(obj)
-
-        dbg_log("waiting for update: deployment {}, generation {}".format(obj, patch_gen))
-
-        # NOTE: best to implement this with a 'watch', not using an API poll!
-
-        # ?watch=1 & resourceVersion = metadata[resourceVersion], timeoutSeconds=t,
-        # --raw=''
-        # GET /apis/apps/v1/namespaces/{namespace}/deployments
-
-        # w = Waiter(wait_for_gen, 2)
-        # while w.wait():
-        while True:
-            # NOTE: no progress prints here, this wait should be short
-            kubectl = Kubectl(self.config, self.logger)
-            r = await kubectl.k_get(appname, DEPLOYMENT + "/" + obj)
-            # ydump("tst_wait{}_output_{}.yaml".format(rc,obj),r) ; rc = rc+1
-
-            if test_dep_generation(r, patch_gen):
-                break
-            
-            await asyncio.sleep(2)
-
-        # if w.expired:
-        #     raise AdjustError(
-        #         "update of {} failed, timed out waiting for k8s object update".format(obj),
-        #         status="failed",
-        #         reason="adjust-failed",
-        #     )
-
-        dbg_log("waiting for progress: deployment {}, generation {}".format(obj, patch_gen))
-
-        p = 0.0  #
-
-        m = "waiting for progress from k8s {}".format(obj)
-
-        # w = Waiter(wait_for_progress, 2)
-        c = float(c)
-        err = "(wait skipped)"
-        # while w.wait():
-        while True:
-            kubectl = Kubectl(self.config, self.logger)
-            r = await kubectl.k_get(appname, DEPLOYMENT + "/" + obj)
-            # print_progress(int((c + p) * part * 100), m)
-            progress = int((c + p) * part * 100)
-            self.logger.info("Awaiting adjustment to take effect...", progress=progress)
-            p, err = test_dep_progress(r)
-            if p == 1.0:
-                return  # all done
-            if err:
-                break
-
-            await asyncio.sleep(2)
-
-        # loop ended, timed out:
-        raise AdjustError(
-            "update of {} failed: timed out waiting for replicas to come up, status: {}".format(
-                obj, err
-            ),
-            status="failed",
-            reason="start-failed",
-        )
-
-
-def selector_string(selectors: Mapping[str, str]) -> str:
-    """Create a selector string from the given dictionary of selectors.
-
-    Args:
-        selectors: The selectors to stringify.
-
-    Returns:
-        The selector string for the given dictionary.
-    """
-    return ','.join([f'{k}={v}' for k, v in selectors.items()])
-
-
-def selector_kwargs(
-    fields: Mapping[str, str] = None,
-    labels: Mapping[str, str] = None,
-) -> Dict[str, str]:
-    """Create a dictionary of kwargs for Kubernetes object selectors.
-
-    Args:
-        fields: A mapping of fields used to restrict the returned collection of
-            Objects to only those which match these field selectors. By default,
-            no restricting is done.
-        labels: A mapping of labels used to restrict the returned collection of
-            Objects to only those which match these label selectors. By default,
-            no restricting is done.
-
-    Returns:
-        A dictionary that can be used as kwargs for many Kubernetes API calls for
-        label and field selectors.
-    """
-    kwargs = {}
-    if fields is not None:
-        kwargs['field_selector'] = selector_string(fields)
-    if labels is not None:
-        kwargs['label_selector'] = selector_string(labels)
-
-    return kwargs

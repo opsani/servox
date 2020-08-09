@@ -37,7 +37,7 @@ from .connector import (
     metadata,
 )
 
-# Pull the errors, types & utilities up to the top level
+from .checks import *
 from .errors import *
 from .types import *
 from .utilities import *

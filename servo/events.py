@@ -742,6 +742,7 @@ class Mixin:
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
+        return_exceptions: bool = False,
         **kwargs,
     ) -> asyncio.Task:
         """
@@ -751,7 +752,16 @@ class Mixin:
         or care about the result.
         """
         return asyncio.create_task(
-            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+            self.dispatch_event(
+                event, 
+                *args, 
+                first=first, 
+                include=include, 
+                exclude=exclude, 
+                prepositions=prepositions, 
+                return_exceptions=return_exceptions,
+                **kwargs
+            )
         )
 
     async def dispatch_event(
@@ -764,6 +774,7 @@ class Mixin:
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
+        return_exceptions: bool = False,
         **kwargs,
     ) -> Union[Optional[EventResult], List[EventResult]]:
         """
@@ -776,6 +787,7 @@ class Mixin:
         :param first: When True, halt dispatch and return the result from the first connector that responds.
         :param include: A list of specific connectors to dispatch the event to.
         :param exclude: A list of specific connectors to exclude from event dispatch.
+        :param return_exceptions: When True, exceptions returned by on event handlers are returned as results.
         """
         results: List[EventResult] = []
         connectors = include if include is not None else self.__connectors__
@@ -807,7 +819,8 @@ class Mixin:
                         break
             else:
                 group = asyncio.gather(
-                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors))
+                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors)),
+                    return_exceptions=return_exceptions,
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
@@ -826,7 +839,12 @@ class Mixin:
         return results
 
     async def run_event_handlers(
-        self, event: Event, preposition: Preposition, *args, **kwargs
+        self, 
+        event: Event, 
+        preposition: Preposition, 
+        *args, 
+        return_exceptions: bool = False,
+        **kwargs
     ) -> Optional[List[EventResult]]:
         """
         Run handlers for the given event and preposition and return the results or None if there are no handlers.
@@ -868,8 +886,15 @@ class Mixin:
                         value=error,
                     )
                     raise error
+                
                 except EventError as error:
                     value = error
+                
+                except Exception as error:
+                    if return_exceptions:
+                        value = error
+                    else:
+                        raise error
 
                 # TODO: Annotate the responses to verify that they are of the correct types
                 # TODO: Should have warning logs and options/way to retrieve bad results for debugging

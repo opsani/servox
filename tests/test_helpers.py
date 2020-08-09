@@ -43,7 +43,7 @@ class AdjustConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @on_event()
-    def adjust(self, *args, **kwargs) -> dict:
+    def adjust(self, *args, **kwargs) -> None:
         pass
 
 

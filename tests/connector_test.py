@@ -845,7 +845,6 @@ def test_vegeta_cli_check(
     optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "check vegeta")
-    debug(result.stderr)
     assert result.exit_code == 0
 
 
@@ -858,7 +857,6 @@ def test_vegeta_cli_measure(
     optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "measure vegeta")
-    debug(result.stderr)
     assert result.exit_code == 0
 
 
@@ -1352,13 +1350,13 @@ class TestConnectorEvents:
         assert e
         assert str(e.value) == "event must be an Event object, got str"
 
-    def test_event_dispatch_standalone(self) -> None:
+    async def test_event_dispatch_standalone(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["example_event"]
 
         # Dispatch back to self
-        results = connector.dispatch_event(event)
+        results = await connector.dispatch_event(event)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"
@@ -1373,20 +1371,6 @@ class TestConnectorEvents:
         )
         # Dispatch to peer
         results = await fake_connector.dispatch_event("example_event")
-        assert results is not None
-        result = results[0]
-        assert result.event.name == "example_event"
-        assert result.connector == connector
-        assert result.value == 12345
-    
-    async def test_event_dispatch_standard(self) -> None:
-        config = BaseConfiguration.construct()
-        connector = TestConnectorEvents.FakeConnector(config=config)
-        fake_connector = TestConnectorEvents.AnotherFakeConnector(
-            config=config, __connectors__=[connector]
-        )
-        # Dispatch to peer
-        results = await fake_connector.dispatch_event("promote")
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"

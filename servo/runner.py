@@ -12,12 +12,13 @@ from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
 from servo import api
+from servo.api import descriptor_to_adjustments
 from servo.assembly import Assembly, BaseServoConfiguration
 from servo.configuration import Optimizer
 from servo.errors import ConnectorError
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
-from servo.types import Control, Description, Measurement
+from servo.types import Adjustment, Control, Description, Measurement
 from servo.utilities import commandify
 
 
@@ -104,30 +105,12 @@ class Runner(api.Mixin):
 
         return aggregate_measurement
 
-    async def adjust(self, param) -> dict:
+    async def adjust(self, adjustments: List[Adjustment], control: Control) -> None:
         self.logger.info("Adjusting...")
-        self.logger.trace(pformat(param))
-
-        results: List[EventResult] = await self.servo.dispatch_event(Events.ADJUST, param)
-        for result in results:
-            # TODO: Should be modeled
-            adjustment = result.value
-            status = adjustment.get("status", "undefined")
-
-            if status == "ok":
-                self.logger.info(f"{result.connector.name} - Adjustment completed")
-                return adjustment
-            else:
-                raise ConnectorError(
-                    'Adjustment driver failed with status "{}" and message:\n{}'.format(
-                        status, str(adjustment.get("message", "undefined"))
-                    ),
-                    status=status,
-                    reason=adjustment.get("reason", "undefined"),
-                )
-
-        # TODO: Model a response class
-        return {}
+        self.logger.trace(pformat(adjustments))
+        
+        await self.servo.dispatch_event(Events.ADJUST, adjustments)
+        self.logger.info(f"Adjustment completed")        
 
     async def exec_command(self):
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
@@ -154,24 +137,15 @@ class Runner(api.Mixin):
                 await self._post_event(api.Event.MEASUREMENT, param)
 
             elif cmd_response.command == api.Command.ADJUST:
-                # # TODO: This needs to be modeled
-                # oc"{'cmd': 'ADJUST', 'param': {'state': {'application': {'components': {'web': {'settings': {'cpu': {'value': 0.225}, 'mem': {'value': 0.1}}}}}}, 'control': {}}}"
+                adjustments = descriptor_to_adjustments(cmd_response.param["state"])
+                control = Control(**cmd_response.param.get("control", {}))
+                await self.adjust(adjustments, control)
 
-                # TODO: Why do we do this nonsense??
-                # create a new dict based on p['state'] (with its top level key
-                # 'application') which also includes a top-level 'control' key, and
-                # pass this to adjust()
-                new_dict = cmd_response.param["state"].copy()
-                new_dict["control"] = cmd_response.param.get("control", {})
-                adjustment = await self.adjust(new_dict)
+                # TODO: Model a response class ("Adjusted"?) -- map errors to the response
+                # If no errors, report state matching the request
+                reply = { "status": "ok", "state": cmd_response.param["state"] }
 
-                # TODO: What works like this and why?
-                if (
-                    "state" not in adjustment
-                ):  # if driver didn't return state, assume it is what was requested
-                    adjustment["state"] = cmd_response.param["state"]
-
-                components_dict = adjustment["state"]["application"]["components"]
+                components_dict = cmd_response.param["state"]["application"]["components"]
                 components_count = len(components_dict)
                 settings_count = sum(
                     len(components_dict[component]["settings"])
@@ -181,7 +155,7 @@ class Runner(api.Mixin):
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
 
-                await self._post_event(api.Event.ADJUSTMENT, adjustment)
+                await self._post_event(api.Event.ADJUSTMENT, reply)
 
             elif cmd_response.command == api.Command.SLEEP:
                     # TODO: Model this
@@ -194,6 +168,7 @@ class Runner(api.Mixin):
 
         except Exception as error:
             self.logger.exception(f"{cmd_response.command} command failed!")
+            self.logger.exception(error)
             param = dict(status="failed", message=str(error))
             await self.shutdown(asyncio.get_event_loop())
             await self._post_event(cmd_response.command.response_event, param)

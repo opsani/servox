@@ -351,6 +351,7 @@ class Measurement(BaseModel):
 class Check(BaseModel):
     name: str
     description: Optional[str]
+    required: bool = True
     success: bool
     comment: Optional[str]
     created_at: datetime = None
