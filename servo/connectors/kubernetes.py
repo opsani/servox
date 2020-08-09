@@ -3,6 +3,7 @@ from __future__ import annotations, print_function
 import abc
 import asyncio
 import enum
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
@@ -25,6 +26,7 @@ from servo import (
     get_hash
 )
 from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watch
+from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from kubernetes_asyncio.client.api_client import ApiClient
 import loguru
 from loguru import logger as default_logger
@@ -1183,14 +1185,22 @@ class KubernetesState(BaseModel):
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
-        # TODO: Need to find the right home for this... (and specify the config file being loaded)
-        await kubernetes_asyncio_config.load_kube_config()
+        # TODO: Need to find the right home for this...
+        config_file = Path(config.kubeconfig or KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
+        if config_file.exists():
+            await kubernetes_asyncio_config.load_kube_config(
+                config_file=str(config_file),
+                context=config.context,
+            )
+        else:
+            # TODO: should be a logger
+            debug("WARNING: kubeconfig doesn't exist")
 
         namespace = await Namespace.read(config.namespace)
         adjustables = []
         images = {}
         runtime_ids = {}
-        pod_tmpl_specs = {}        
+        pod_tmpl_specs = {}
 
         for component in config.deployments:
             deployment_name = component.name
