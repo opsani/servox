@@ -3,6 +3,7 @@ from __future__ import annotations, print_function
 import abc
 import asyncio
 import enum
+import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -1192,9 +1193,10 @@ class KubernetesState(BaseModel):
                 config_file=str(config_file),
                 context=config.context,
             )
+        elif os.getenv('KUBERNETES_SERVICE_HOST'):
+            kubernetes_asyncio_config.load_incluster_config()
         else:
-            # TODO: should be a logger
-            debug("WARNING: kubeconfig doesn't exist")
+            raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
 
         namespace = await Namespace.read(config.namespace)
         adjustables = []
