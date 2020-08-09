@@ -19,3 +19,11 @@ services:
         source: ${OPSANI_TOKEN_FILE:-/dev/null}
         target: /servo/opsani.token
         read_only: true
+      - type: bind
+        source: ${HOME}/.kube
+        target: /root/.kube
+        read_only: true
+      - type: bind
+        source: ${HOME}/.aws
+        target: /root/.aws
+        read_only: true
