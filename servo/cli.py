@@ -416,7 +416,7 @@ class CLI(typer.Typer):
             raise typer.BadParameter("--token and --token-file cannot both be given")
 
         if ctx.token_file is not None and ctx.token_file.exists():
-            ctx.token = ctx.token_file.read_text()
+            ctx.token = ctx.token_file.read_text().strip()
 
         if len(ctx.token) == 0 or ctx.token.isspace():
             raise typer.BadParameter("token cannot be blank")
