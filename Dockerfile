@@ -25,6 +25,10 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y kubectl
 
+# Install AWS IAM Authenticator
+RUN curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.7/2020-07-08/bin/linux/amd64/aws-iam-authenticator \
+  && chmod +x /usr/local/bin/aws-iam-authenticator
+
 # Install Vegeta
 RUN wget -q "https://github.com/tsenart/vegeta/releases/download/v$VEGETA_VERSION/vegeta-$VEGETA_VERSION-linux-amd64.tar.gz" -O /tmp/vegeta.tar.gz \
  && cd bin \
