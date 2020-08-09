@@ -346,7 +346,6 @@ class VegetaConnector(BaseConnector):
     async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-
         self.warmup_until = datetime.now() + control.warmup
 
         number_of_urls = (
@@ -464,11 +463,11 @@ class VegetaConnector(BaseConnector):
         )
         return vegeta_cmd
 
-    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[Metric]]) -> List[TimeSeries]:
+    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[str]]) -> List[TimeSeries]:
         readings = []
 
         for metric in METRICS:
-            if metrics and metric not in metrics:
+            if metrics and metric.name not in metrics:
                 continue
 
             if metric.name in ("throughput", "error_rate",):

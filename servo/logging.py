@@ -100,7 +100,7 @@ class ProgressHandler:
         return await self._report_progress(
             operation=operation,
             progress=progress,
-            connector=connector,
+            connector=connector.name,
             event_context=event_context,
             started_at=started_at,
             message=message
