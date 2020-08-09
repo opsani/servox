@@ -995,8 +995,8 @@ class ServoCLI(CLI):
             else:                    
                 headers = ["CONNECTOR", "STATUS"]
                 for result in results:
-                    checks: List[Check] = result.value                
-                    success = reduce(lambda success, c: success and c.success, checks)
+                    checks: List[Check] = result.value
+                    success = reduce(lambda success, c: success and c.success, checks, True)
                     ready = ready and success
                     status = "√ PASSED" if success else "X FAILED"
                     row = [result.connector.name, status]
