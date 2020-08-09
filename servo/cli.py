@@ -397,6 +397,12 @@ class CLI(typer.Typer):
 
     @staticmethod
     def assemble_from_context(ctx: Context):
+        if ctx.config_file is None:
+            raise typer.BadParameter("Config file must be specified")
+        
+        if not ctx.config_file.exists():
+            raise typer.BadParameter(f"Config file '{ctx.config_file}' does not exist")
+
         if ctx.optimizer is None:
             raise typer.BadParameter("An optimizer must be specified")
         

@@ -91,29 +91,24 @@ class Assembly(BaseModel):
         **kwargs,
     ) -> ("Assembly", Servo, Type[BaseServoConfiguration]):
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
-
+        
         _discover_connectors()
-        ServoConfiguration, routes = _create_config_model(
-            config_file=config_file, env=env
-        )
 
         # Build our Servo configuration from the config file + environment
-        if config_file.exists():
-            config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-            if not (config is None or isinstance(config, dict)):
-                raise ValueError(
-                    f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
-                )
-            config = {} if config is None else config
-            servo_config = ServoConfiguration.parse_obj(config)
-        else:
-            # If we do not have a config file, build a minimal configuration
-            # NOTE: This configuration is likely incomplete/invalid due to required
-            # settings on the connectors not being fully configured
-            args = kwargs.copy()
-            for name, connector_type in routes.items():
-                args[name] = connector_type.config_model().construct()
-            servo_config = ServoConfiguration.construct(**args)
+        if not config_file.exists():
+            raise FileNotFoundError(f"config file '{config_file}' does not exist")
+        
+        ServoConfiguration, routes = _create_config_model(
+            config_file=config_file, env=env
+        )        
+
+        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+        if not (config is None or isinstance(config, dict)):
+            raise ValueError(
+                f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
+            )
+        config = {} if config is None else config
+        servo_config = ServoConfiguration.parse_obj(config)
 
         # Initialize all active connectors
         connectors: List[BaseConnector] = []
