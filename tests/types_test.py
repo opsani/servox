@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from pydantic import create_model
 
-from servo.types import Duration
+from servo.types import Adjustment, Component, Duration
 
 
 class TestDuration:
@@ -65,3 +65,10 @@ class TestDuration:
             "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }
+
+def test_adjustment_str() -> None:
+    adjustment = Adjustment(component_name="web", setting_name="cpu", value=1.25)
+    assert adjustment.__str__() == "web.cpu=1.25"
+    assert str(adjustment) == "web.cpu=1.25"
+    assert f"adjustment=({adjustment})" == "adjustment=(web.cpu=1.25)"
+    assert f"[adjustments=({', '.join(list(map(str, [adjustment])))})]" == "[adjustments=(web.cpu=1.25)]"

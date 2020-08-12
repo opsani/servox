@@ -170,7 +170,7 @@ def validate_event_contexts(
         raise ValueError(f"Invalid value for {field.name}")
     elif isinstance(value, EventContext):
         return [value]
-    elif isinstance(value, (list, set, tuple)):
+    elif isinstance(value, Sequence):
         events = []
         for e in value:
             events.extend(validate_event_contexts(cls, e, field))
