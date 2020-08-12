@@ -1018,14 +1018,11 @@ class Adjustable(BaseModel):
         name = adjustment.setting_name
         if name in ("cpu", "memory"):
             resource = getattr(self, name)
-            debug("Adjusting resource", resource)
             value = _qualify(adjustment.value, name)
             if resource.constraint in (ResourceConstraint.request, ResourceConstraint.both):
-                debug("!!! Setting request to", value)
                 self.container.resources.requests[name] = value
             if resource.constraint in (ResourceConstraint.limit, ResourceConstraint.both):
                 self.container.resources.limits[name] = value
-                debug("!!! Setting limit to", value)
 
         elif adjustment.setting_name == "replicas":
             self.deployment.replicas = int(float(adjustment.value))
