@@ -373,6 +373,9 @@ class Adjustment(BaseModel):
         Returns a fully qualified string identifier for accessing the referenced resource.
         """
         return f"{self.component_name}.{self.setting_name}"
+    
+    def __str__(self) -> str:
+        return f"{self.component_name}.{self.setting_name}={self.value}"
 
 
 # Common output formats
