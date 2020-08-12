@@ -654,7 +654,7 @@ class ServoCLI(CLI):
                     token = typer.prompt("API token?", default=context.token)
                     token != context.token or typer.echo()
                     dotenv_file.write_text(
-                        f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\nSERVO_LOG_LEVEL=DEBUG\n"
+                        f"export OPSANI_OPTIMIZER={optimizer}\nexport OPSANI_TOKEN={token}\nexport SERVO_LOG_LEVEL=DEBUG\n"
                     )
                     typer.echo(".env file initialized")
 
