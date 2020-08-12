@@ -1133,12 +1133,9 @@ class Adjustable(BaseModel):
                 if condition.status == "True":
                     # If we hit on this and have not raised yet we are good to go
                     break                        
-                elif condition.status == "False":
-                    # TODO: Is this an error?
-                    self.logger.error(f"Condition.status == 'False': {condition}")
-                elif condition.status == "Unknown":
-                    # TODO: Guessing we just log this
-                    self.logger.debug(f"Condition.status == 'Unknown': {condition}")
+                elif condition.status in ("False", "Unknown"):
+                    # Condition has not yet been met, log status and continue monitoring
+                    self.logger.debug(f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}")
                 else:
                     raise RuntimeError(f"encountered unexpected Condition status '{condition.status}'")
 
