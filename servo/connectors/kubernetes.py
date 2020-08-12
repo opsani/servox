@@ -1083,7 +1083,7 @@ class Adjustable(BaseModel):
             return
                 
         # Create a Kubernetes watch against the deployment under optimization to track changes
-        self.logger.info("Using label_selector=", self.deployment.label_selector, "resource_version=", resource_version)
+        self.logger.info(f"Using label_selector={self.deployment.label_selector}, resource_version={resource_version}")
         async with client.ApiClient() as api:
             v1 = client.AppsV1Api(api)
             async with watch.Watch().stream(
@@ -1157,10 +1157,6 @@ class Adjustable(BaseModel):
 
     def __hash__(self):
         return hash((self.name, id(self),))
-    
-    @property
-    def logger(self) -> loguru.Logger:
-        return default_logger
 
     class Config:
         arbitrary_types_allowed = True
@@ -1213,7 +1209,7 @@ class KubernetesState(BaseModel):
             pod_tmpl_specs[deployment_name] = deployment.obj.spec.template.spec
             images[deployment_name] = container.image
 
-            # TODO: Needs to respect the constraint... (maybe... container.get_resource("cpu", constraint), set_resource("cpu", value, constraint))
+            # TODO: Needs to respect the constraint (limit vs. request)... (maybe... container.get_resource("cpu", constraint), set_resource("cpu", value, constraint))
             cpu_setting = next(filter(lambda c: c.name == "cpu", component.settings))
             cpu_setting.value = container.resources.limits["cpu"]
             mem_setting = next(filter(lambda c: c.name == "memory", component.settings))
@@ -1275,6 +1271,8 @@ class KubernetesState(BaseModel):
         # Exit early if there is nothing to do
         if not adjustments:
             return
+        
+        self.logger.info(f"Applying {len(adjustments)} Kubernetes adjustments: {adjustments}")
         
         # Adjust settings on the local data model
         for adjustment in adjustments:

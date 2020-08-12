@@ -106,11 +106,11 @@ class Runner(api.Mixin):
         return aggregate_measurement
 
     async def adjust(self, adjustments: List[Adjustment], control: Control) -> None:
-        self.logger.info("Adjusting...")
+        self.logger.info(f"Adjusting... ({adjustments}")
         self.logger.trace(pformat(adjustments))
         
         await self.servo.dispatch_event(Events.ADJUST, adjustments)
-        self.logger.info(f"Adjustment completed")        
+        self.logger.info(f"Adjustment completed ({adjustments})")
 
     async def exec_command(self):
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
