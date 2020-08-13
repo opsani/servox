@@ -1,0 +1,205 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opsani-servo-config
+data:
+  servo.yaml: |
+    kubernetes:
+      namespace: default
+      settlement_duration: 15s # 5m
+      deployments:
+        - name: web/main
+          canary: true
+          settings:
+            - name: cpu
+              min: 0.125
+              max: 1.0
+              step: 0.125
+              value: 1.0
+              type: range
+            - name: memory
+              min: 0.125
+              max: 3.0
+              step: 0.125
+              value: 3.0
+              type: range
+            - name: replicas
+              min: 1
+              max: 4
+              step: 1
+              value: 3
+              type: range
+    prometheus:
+      base_url: http://prometheus.opsani-monitoring.svc:9090
+      metrics:
+        # NOTE: Include `OR on() vector(0)` to ensure that zero values are produced instead of null to avoid upstream exceptions when reporting to oco when data isn't found
+        - name: main_instance_count
+          query: sum(envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role!="tuning"}) OR on() vector(0)
+          unit: count
+          # period: 60
+        - name: tuning_instance_count
+          query: envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role="tuning"} OR on() vector(0)
+          unit: count
+          # period: 60
+
+        - name: pod_request_rate
+          query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        - name: total_request_rate
+          query: sum(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
+          unit: rps
+          # period: 60
+        - name: main_request_rate
+          query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role!="tuning"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        - name: tuning_request_rate
+          query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role="tuning"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+
+        - name: main_success_rate
+          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        - name: tuning_success_rate
+          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        
+        - name: main_error_rate
+          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        - name: tuning_error_rate
+          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
+          unit: rps
+          # period: 60
+        
+        - name: main_p90_latency
+          #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m]))) OR on() vector(0)
+          query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m])) OR on() vector(0)
+          unit: ms
+          # period: 60
+        - name: tuning_p90_latency
+          #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m]))) OR on() vector(0)
+          query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m])) OR on() vector(0)
+          unit: ms
+          # period: 60
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsani-servo
+  labels:
+    comp: opsani-servo
+    app: servo
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate  
+  selector:
+    matchLabels:
+      comp: opsani-servo
+  template:
+    metadata:
+      labels:
+        comp: opsani-servo
+    spec:
+      serviceAccountName: opsani-servo
+      volumes:
+      - name: token
+        secret:
+          secretName: opsani-servo-token
+          items:
+          - key: token
+            path: opsani.token
+      - name: config
+        configMap:
+          name: opsani-servo-config
+          items:
+          - key: servo.yaml
+            path: servo.yaml
+      containers:
+      - name: main
+        image: opsani/servox:webhooks-and-canaries
+        imagePullPolicy: Always
+        env:
+        - name: OPSANI_OPTIMIZER
+          value: dev.opsani.com/blake.watters-k8s-live
+        - name: SERVO_LOG_LEVEL
+          value: DEBUG        
+        - name: POD_NAME
+          valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        volumeMounts:
+        - name: token
+          mountPath: /servo/opsani.token
+          subPath: opsani.token
+          readOnly: true
+        - name: config
+          mountPath: /servo/servo.yaml
+          subPath: servo.yaml
+          readOnly: true
+        resources:
+          limits:
+            cpu: 250m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: opsani-servo-token
+  namespace: default
+type: Opaque
+data:
+  token: MDU4MDA2YWFiODFmMWE0ZmM2OTI5ZjY4MjhlMjA5ZDUwNTU4Yjk2ZTc4MWRhZTY3MTc3OGM5Cg==
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opsani-servo
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: opsani-servo
+rules:
+  # - apiGroups: [ apps, extensions ]
+  #   resources: [ deployments ]
+  #   verbs: [ get, list, watch, create, update, patch, delete ]
+  # - apiGroups: [ '' ]
+  #   resources: [ pods ]
+  #   verbs: [ get, list , watch, create, update, patch, delete ]
+  # - apiGroups: [ apps ]
+  #   resources: [ replicasets ]
+  #   verbs: [ get, list ]
+- apiGroups: ["apps","extensions"]
+  resources: ["deployments","replicasets","PodDisruptionBudget"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "pods/logs", "pods/status", "namespaces"]
+  verbs: ["create", "delete", "get", "list", "watch" ]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: opsani-servo
+subjects:
+- kind: ServiceAccount
+  name: opsani-servo
+roleRef:
+  kind: Role
+  name: opsani-servo
+  apiGroup: rbac.authorization.k8s.io
