@@ -142,7 +142,7 @@ class PrometheusConnector(BaseConnector):
         end = start + control.duration
 
         sleep_duration = Duration(control.warmup + control.duration)
-        self.logger.debug(
+        self.logger.info(
             f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
         )
         await asyncio.sleep(sleep_duration.total_seconds())
@@ -170,7 +170,7 @@ class PrometheusConnector(BaseConnector):
                 return []
 
         data = response.json()
-        self.logger.debug(f"Got response data: {data}")
+        self.logger.debug(f"Got response data for metric {metric}: {data}")
 
         if "status" not in data or data["status"] != "success":
             return []

@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
 from pydantic import BaseModel, Extra, validator, datetime_parse
@@ -197,7 +197,7 @@ class TimeSeries(BaseModel):
     values: List[Tuple[datetime, Numeric]]
     annotation: Optional[str]
     id: Optional[str] # TODO: source, id, context
-    metadata: Optional[Dict[str, str]]
+    metadata: Optional[Dict[str, Any]]
 
     def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)

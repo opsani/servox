@@ -1554,21 +1554,7 @@ class KubernetesState(BaseModel):
             if "/" in deployment_name:
                 deployment_name, container_name = component.name.split("/")
 
-            # Abstract away the difference between a Pod and Deployment target                        
             deployment = await Deployment.read(deployment_name, namespace.name)
-            # if component.canary:
-            #     try:
-            #         canary = await deployment.get_canary_pod()
-            #     except client.exceptions.ApiException as e:
-            #         if e.status != 404 or e.reason != 'Not Found':
-            #             raise
-            #         canary = await deployment.ensure_canary_pod()
-
-            #     default_logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'")
-            #     target = canary
-            # else:
-            #     target = deployment
-
             if container_name:
                 container = deployment.get_container(container_name)
             else:
