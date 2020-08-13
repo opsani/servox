@@ -163,6 +163,7 @@ class DurationProgress(BaseModel):
 
 class Unit(str, Enum):
     BYTES = "bytes"
+    COUNT = "count" # TODO: Maybe this is "int" or something?
     REQUESTS_PER_MINUTE = "rpm"
     REQUESTS_PER_SECOND = "rps"
     PERCENTAGE = "%"
