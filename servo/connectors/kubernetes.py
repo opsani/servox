@@ -1067,6 +1067,82 @@ class Deployment(KubernetesModel):
         Return a string for matching the Deployment in Kubernetes API calls.
         """
         return selector_string(self.obj.spec.selector.match_labels)
+    
+    ##
+    # Canary support
+
+    @property
+    def canary_pod_name(self) -> str:
+        # TODO: This should be derived from the deployment name...
+        return "opsani-tuning"
+
+    async def get_canary_pod(self) -> Pod:
+        return await Pod.read(self.canary_pod_name, self.namespace)
+
+    async def create_canary_pod(self) -> Pod:
+        # TODO: Option to raise rather than delete?
+        # Delete any pre-existing canary debris
+        canary_pod_name = self.canary_pod_name
+        namespace = self.namespace
+        timeout = 20 # TODO: Move into config
+
+        try:
+            canary = await self.get_canary_pod()
+            if canary:
+                self.logger.warning(f"Found existing canary Pod '{canary_pod_name}' in namespace '{namespace}': deleting...")
+                await canary.delete()
+
+                await canary.wait_until_deleted(timeout=timeout)
+                self.logger.info(f"Successfully deleted unexpected canary Pod '{canary_pod_name}' in namespace '{namespace}'")
+        except client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != 'Not Found':
+                raise
+        
+        # Setup the canary Pod
+        # target_deployment = await Deployment.read(component.name, namespace)
+        pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
+        pod_obj.metadata.name = canary_pod_name
+        pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
+        pod_obj.metadata.labels['opsani_role'] = 'tuning'
+        canary_pod = Pod(obj=pod_obj)
+        canary_pod.namespace = namespace
+        
+        # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
+        SERVO_POD_NAME = os.environ.get('POD_NAME')
+        SERVO_POD_NAMESPACE = os.environ.get('POD_NAMESPACE')
+        if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
+            servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
+            pod_controller = next(iter(ow for ow in servo_pod.obj.metadata.owner_references if ow.controller))
+
+            # TODO: Create a ReplicaSet class...
+            async with ApiClient() as api:
+                api_client = client.AppsV1Api(api)
+
+                servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
+                rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
+                # deployment info persists thru updates. only remove servo pod if deployment is deleted
+                servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
+
+            canary_pod.obj.metadata.owner_references = [ client.V1OwnerReference(
+                api_version=servo_dep.api_version,
+                block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
+                controller=True, # Ensures the pod will not be adopted by another controller
+                kind='Deployment',
+                name=servo_dep.metadata.name,
+                uid=servo_dep.metadata.uid
+            ) ]
+
+        # Create the Pod and wait for it to get ready
+        self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")
+        self.logger.debug(canary_pod)
+        await canary_pod.create()
+
+        self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
+        await canary_pod.wait_until_ready(timeout=timeout)
+
+        # TODO: Add settlement time. Check for unexpected changes to version, etc.    
+
+        return canary_pod
 
 
 class ResourceConstraint(enum.Enum):
@@ -1708,73 +1784,17 @@ class KubernetesConnector(BaseConnector):
         await self.config.load_kubeconfig()
 
         # Handle canaries
-        # TODO: This should be derived from the deployment name...
-        canary_pod_name = "opsani-tuning"
+        # TODO: Namespace should be overrideable per deployment
         namespace = self.config.namespace
-        timeout = 20 # TODO: Move to config
 
         # Provision canary if necessary
         for component in self.config.deployments:
             if not component.canary:
                 continue
 
-            # Delete any pre-existing canary debris
-            try:
-                canary = await Pod.read(canary_pod_name, namespace)
-                if canary:
-                    self.logger.warning(f"Found existing canary Pod '{canary_pod_name}' in namespace '{namespace}': deleting...")
-                    await canary.delete()
-
-                    # TODO: add timeout to the config
-                    await canary.wait_until_deleted(timeout=timeout)
-                    self.logger.info(f"Successfully deleted unexpected canary Pod '{canary_pod_name}' in namespace '{namespace}'")
-            except client.exceptions.ApiException as e:
-                if e.status != 404 or e.reason != 'Not Found':
-                    raise
-            
-            # Setup the canary Pod
-            target_deployment = await Deployment.read(component.name, namespace)
-            pod_obj = client.V1Pod(metadata=target_deployment.obj.spec.template.metadata, spec=target_deployment.obj.spec.template.spec)
-            pod_obj.metadata.name = canary_pod_name
-            pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = component.name
-            pod_obj.metadata.labels['opsani_role'] = 'tuning'
-            canary_pod = Pod(obj=pod_obj)
-            canary_pod.namespace = namespace
-            
-            # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
-            SERVO_POD_NAME = os.environ.get('POD_NAME')
-            SERVO_POD_NAMESPACE = os.environ.get('POD_NAMESPACE')
-            if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
-                servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
-                pod_controller = next(iter(ow for ow in servo_pod.obj.metadata.owner_references if ow.controller))
-
-                # TODO: Create a ReplicaSet class...
-                async with ApiClient() as api:
-                    api_client = client.AppsV1Api(api)
-
-                    servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
-                    rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
-                    # deployment info persists thru updates. only remove servo pod if deployment is deleted
-                    servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
-
-                canary_pod.obj.metadata.owner_references = [ client.V1OwnerReference(
-                    api_version=servo_dep.api_version,
-                    block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
-                    controller=True, # Ensures the pod will not be adopted by another controller
-                    kind='Deployment',
-                    name=servo_dep.metadata.name,
-                    uid=servo_dep.metadata.uid
-                ) ]
-
-            # Create the Pod and wait for it to get ready
-            self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")
-            self.logger.debug(canary_pod)
-            await canary_pod.create()
-
-            self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
-            await canary_pod.wait_until_ready(timeout=timeout)
-
-            # TODO: Add settlement time. Check for unexpected changes to version, etc.
+            deployment = await Deployment.read(component.name, namespace)
+            canary = await deployment.create_canary_pod()
+            self.logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'") 
 
     @on_event()
     async def describe(self) -> Description:        
