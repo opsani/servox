@@ -169,7 +169,7 @@ async def wait_for_condition(
         await asyncio.sleep(interval)
 
     end = time.time()
-    default_logger.info(f'wait completed (total={end-start:.2f}s) {condition}')
+    default_logger.info(f'wait completed (total={end-start}s) {condition}')
 
 
 @runtime_checkable
