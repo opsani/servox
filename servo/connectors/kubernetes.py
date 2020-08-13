@@ -1371,7 +1371,6 @@ class Adjustable(BaseModel):
         elif adjustment.setting_name == "replicas":
             if self.canary and self.deployment.replicas != value:
                 self.logger.warning(f"rejected attempt to adjust replicas in canary mode: pin or remove replicas setting to avoid this warning")
-                self.deployment.replicas = 1
             else:
                 self.deployment.replicas = value
             
@@ -1382,7 +1381,7 @@ class Adjustable(BaseModel):
         """
         TODO: add docs...
         """
-        if self.canary:
+        if self.canary:            
             await self.deployment.ensure_canary_pod()
         else:
             await self.apply_to_deployment()
@@ -1641,8 +1640,11 @@ class KubernetesState(BaseModel):
             adjustable.adjust(adjustment)
         
         # Apply the changes to Kubernetes and wait for the results
-        await asyncio.gather(
-            *list(map(lambda a: a.apply(), self.adjustables))
+        await asyncio.wait_for(
+            asyncio.gather(
+                *list(map(lambda a: a.apply(), self.adjustables))
+            ),
+            timeout=30.0
         )
 
         # TODO: Run sanity checks to look for out of band changes
