@@ -1637,6 +1637,7 @@ class KubernetesState(BaseModel):
         # Adjust settings on the local data model
         for adjustment in adjustments:
             adjustable = self.get_adjustable(adjustment.component_name)
+            self.logger.trace(f"adjusting {adjustment.component_name}: {adjustment}")
             adjustable.adjust(adjustment)
         
         # Apply the changes to Kubernetes and wait for the results
