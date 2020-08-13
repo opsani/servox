@@ -1,11 +1,13 @@
 import asyncio
 from kubetest.objects import namespace
 import pytest
+import json
+import yaml
 
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client.api_client import ApiClient
 
-from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesConnector
+from servo.connectors.kubernetes import CPU, Memory, Replicas, DeploymentComponent, KubernetesConfiguration, KubernetesConnector, Replicas
 from servo.types import Component, Setting
 
 class TestKubernetesConfiguration:
@@ -85,6 +87,44 @@ async def test_apply_restart_strategy():
 # did not affect the deployment
 # Handle: CreateContainerError
 
+def test_proposed_config(canary_config) -> None:    
+    dep = DeploymentComponent(
+        name="co-http",
+        container="main",
+        namespace="web-apps",
+        cpu=CPU(
+            min="100m",
+            max="800m",
+            step="125m",
+            value="300m",
+        ),
+        memory=Memory(
+            min="0.1 GiB",
+            max="0.8 GiB",
+            step="125 MiB",
+            value="500 MiB",
+        ),
+        replicas=Replicas(
+            min=1,
+            max=2,
+            step=1,
+            value=1,
+        ),
+        settings=[
+        ]
+    )
+    dep_json = dep.json(by_alias=True, exclude_defaults=False, exclude_unset=False, exclude_none=False)
+    debug(dep_json)
+    dep_yaml = yaml.dump(json.loads(dep_json))
+    debug(dep_yaml)
+    
+## 
+# Canary Tests
+async def test_create_canary(canary_config, adjustment):
+    connector = KubernetesConnector(config=canary_config)
+    description = await connector.startup()
+    debug(description)
+
 from servo.connectors.kubernetes import KubernetesChecks
 
 async def test_checks(config: KubernetesConfiguration):
@@ -106,6 +146,12 @@ def test_millicpu():
     assert Model(cpu=0.1).cpu == "100m"
     assert Model(cpu="100m").cpu == 0.1
 
+@pytest.fixture
+def canary_config(config) -> KubernetesConfiguration:
+    canary_config = config.copy()
+    for dep in canary_config.deployments:
+        dep.canary = True
+    return canary_config
 
 @pytest.fixture
 def config() -> KubernetesConfiguration:

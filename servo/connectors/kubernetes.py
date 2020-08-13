@@ -4,9 +4,11 @@ import abc
 import asyncio
 import enum
 import os
+from servo.types import Numeric
 import time
 from pathlib import Path
 from typing import Callable, List, Optional, Dict, Any, Tuple
+from kubetest.objects import namespace
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
 
@@ -334,10 +336,10 @@ class KubernetesModel(abc.ABC):
                 via the kubetest client.
         """
     
-    # @abc.abstractmethod
-    # async def patch(self) -> None:
-    #     """Partially update the underlying Kubernetes resource in the cluster.
-    #     """
+    @abc.abstractmethod
+    async def patch(self) -> None:
+        """Partially update the underlying Kubernetes resource in the cluster.
+        """
 
     @abc.abstractmethod
     async def delete(self, options: client.V1DeleteOptions) -> client.V1Status:
@@ -514,6 +516,16 @@ class Namespace(KubernetesModel):
             self.obj = await api_client.create_namespace(
                 body=self.obj,
             )
+    
+    async def patch(self) -> None:
+        """
+        TODO: Add docs....
+        """
+        async with self.api_client() as api_client:
+            await api_client.patch_namespace(
+                name=self.name,
+                body=self.obj,
+            )
 
     async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
         """Delete the Namespace.
@@ -676,13 +688,26 @@ class Pod(KubernetesModel):
             namespace = self.namespace
 
         self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
-        self.logger.debug(f'pod: {self.obj}')
+        self.logger.trace(f'pod: {self.obj}')
 
         async with self.api_client() as api_client:
             self.obj = await api_client.create_namespaced_pod(
             namespace=namespace,
             body=self.obj,
         )
+    
+    async def patch(self) -> None:
+        """
+        TODO: Add docs....
+        """
+        self.logger.info(f'patching pod "{self.name}"')
+        self.logger.trace(f'pod: {self.obj}')
+        async with self.api_client() as api_client:
+            await api_client.patch_namespaced_pod(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
 
     async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
         """Delete the Pod.
@@ -702,7 +727,7 @@ class Pod(KubernetesModel):
 
         self.logger.info(f'deleting pod "{self.name}"')
         self.logger.debug(f'delete options: {options}')
-        self.logger.debug(f'pod: {self.obj}')
+        self.logger.trace(f'pod: {self.obj}')
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_pod(
@@ -768,18 +793,34 @@ class Pod(KubernetesModel):
 
         # return the status of the pod
         return cast(client.V1PodStatus, self.obj.status)
+    
 
-    def get_containers(self) -> List[Container]:
+    @property
+    def containers(self) -> List[Container]:
+        """
+        Return a list of Container objects from the underlying pod template spec.
+        """
+        return list(map(lambda c: Container(c, None), self.obj.spec.containers))
+
+    def get_container(self, name: str) -> Container:
+        """
+        Return the container with the given name.
+        """
+        return next(filter(lambda c: c.name == name, self.containers))
+
+
+    async def get_containers(self) -> List[Container]:
         """Get the Pod's containers.
 
         Returns:
             A list of containers that belong to the Pod.
         """
         self.logger.info(f'getting containers for pod "{self.name}"')
-        self.refresh()
+        await self.refresh()
 
         return [Container(c, self) for c in self.obj.spec.containers]
 
+    # TODO: Rename `find_container` ??
     def get_container(self, name: str) -> Union[Container, None]:
         """Get a container in the Pod by name.
 
@@ -790,10 +831,7 @@ class Pod(KubernetesModel):
             Container: The Pod's Container with the matching name. If
             no container with the given name is found, ``None`` is returned.
         """
-        for c in self.get_containers():
-            if c.obj.name == name:
-                return c
-        return None
+        return next(filter(lambda c: c.name == name, self.containers))
 
     async def get_restart_count(self) -> int:
         """Get the total number of Container restarts for the Pod.
@@ -928,7 +966,7 @@ class Deployment(KubernetesModel):
 
         self.logger.info(f'deleting deployment "{self.name}"')
         self.logger.debug(f'delete options: {options}')
-        self.logger.debug(f'deployment: {self.obj}')
+        self.logger.trace(f'deployment: {self.obj}')
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_deployment(
@@ -1073,32 +1111,51 @@ class Deployment(KubernetesModel):
 
     @property
     def canary_pod_name(self) -> str:
-        # TODO: This should be derived from the deployment name...
-        return "opsani-tuning"
+        """
+        Return the name of canary Pod for this Deployment.
+        """
+        return f"{self.name}-canary"
 
     async def get_canary_pod(self) -> Pod:
+        """
+        Retrieve the canary Pod for this Deployment (if any).
+
+        Will raise a Kubernetes API exception if not found.
+        """
         return await Pod.read(self.canary_pod_name, self.namespace)
+    
 
-    async def create_canary_pod(self) -> Pod:
-        # TODO: Option to raise rather than delete?
-        # Delete any pre-existing canary debris
-        canary_pod_name = self.canary_pod_name
-        namespace = self.namespace
-        timeout = 20 # TODO: Move into config
-
+    async def delete_canary_pod(self, *, raise_if_not_found: bool = True, timeout: Numeric = 20) -> Optional[Pod]:
+        """
+        Delete the canary Pod.
+        """
         try:
             canary = await self.get_canary_pod()
-            if canary:
-                self.logger.warning(f"Found existing canary Pod '{canary_pod_name}' in namespace '{namespace}': deleting...")
-                await canary.delete()
-
-                await canary.wait_until_deleted(timeout=timeout)
-                self.logger.info(f"Successfully deleted unexpected canary Pod '{canary_pod_name}' in namespace '{namespace}'")
+            self.logger.warning(f"Deleting canary Pod '{canary.name}' in namespace '{canary.namespace}'...")
+            await canary.delete()
+            await canary.wait_until_deleted(timeout=timeout)
+            self.logger.info(f"Deleted canary Pod '{canary.name}' in namespace '{canary.namespace}'.")
+            return canary
         except client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != 'Not Found':
+            if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
                 raise
         
-        # Setup the canary Pod
+        return None
+
+
+    async def ensure_canary_pod(self, *, timeout: Numeric = 20) -> Pod:
+        """
+        Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
+
+        TODO: docs...
+        """
+        canary_pod_name = self.canary_pod_name
+        namespace = self.namespace
+        
+        # Delete any pre-existing canary debris
+        await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
+        
+        # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
         pod_obj.metadata.name = canary_pod_name
         pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
@@ -1133,7 +1190,7 @@ class Deployment(KubernetesModel):
 
         # Create the Pod and wait for it to get ready
         self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")
-        self.logger.debug(canary_pod)
+        # self.logger.debug(canary_pod)
         await canary_pod.create()
 
         self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
@@ -1273,57 +1330,60 @@ class Replicas(Setting):
     # type = SettingType.RANGE
 
 
+# TODO: The Adjustment needs to marshal value appropriately on ingress
+def _qualify(value, unit):
+    if unit == "memory":
+        return f"{value}Gi"
+    elif unit == "cpu":
+        return str(Millicore.parse(value))
+    elif unit == "replicas":
+        return int(float(value))
+    return value
+
+
 class Adjustable(BaseModel):
     name: str
     deployment: Deployment
     container: Container
+    canary: bool = False
 
     # Resources
+    # TODO: This crap moves back to the DeploymentComponent
     cpu: CPU
     memory: Memory
     replicas: Replicas
     env: Dict[str, str] = {}
-
-    def to_component(self) -> Component:
-        return Component(
-            name=self.name,
-            settings=[
-                self.cpu,
-                self.memory,
-                self.replicas
-            ]
-        )
     
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
-        Adjust a setting on the underlying Deployment or Container.
+        Adjust a setting on the underlying Deployment/Pod or Container.
         """
-        # TODO: The Adjustment needs to marshal value appropriately on ingress
-        def _qualify(value, unit):
-            if unit == "memory":
-                return f"{value}Gi"
-            elif unit == "cpu":
-                return str(Millicore.parse(value))
-            elif unit == "replicas":
-                return int(value)
-            return value
 
         name = adjustment.setting_name
+        value = _qualify(adjustment.value, name)
         if name in ("cpu", "memory"):
-            resource = getattr(self, name)
-            value = _qualify(adjustment.value, name)
+            resource = getattr(self, name)            
             if resource.constraint in (ResourceConstraint.request, ResourceConstraint.both):
                 self.container.resources.requests[name] = value
             if resource.constraint in (ResourceConstraint.limit, ResourceConstraint.both):
                 self.container.resources.limits[name] = value
 
         elif adjustment.setting_name == "replicas":
-            self.deployment.replicas = int(float(adjustment.value))
+            self.deployment.replicas = value
             
         else:
             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
     
     async def apply(self) -> None:
+        """
+        TODO: add docs...
+        """
+        if self.canary:
+            await self.deployment.ensure_canary_pod()
+        else:
+            await self.apply_to_deployment()
+
+    async def apply_to_deployment(self) -> None:
         """
         Apply changes asynchronously and wait for them to roll out to the cluster.
 
@@ -1444,15 +1504,26 @@ class Adjustable(BaseModel):
                 else:
                     raise AssertionError(f"unknown deployment status condition: {condition.status}")
     
+    def to_component(self) -> Component:
+        return Component(
+            name=self.name,
+            settings=[
+                self.cpu,
+                self.memory,
+                self.replicas
+            ]
+        )
+    
     @property
     def logger(self) -> loguru.Logger:
         return default_logger
 
     def __hash__(self):
-        return hash((self.name, id(self),))
+        return hash((self.name, id(self),))    
 
     class Config:
         arbitrary_types_allowed = True
+
 
 class KubernetesState(BaseModel):
     """
@@ -1469,7 +1540,7 @@ class KubernetesState(BaseModel):
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
-        config.load_kubeconfig()
+        await config.load_kubeconfig()
 
         namespace = await Namespace.read(config.namespace)
         adjustables = []
@@ -1482,8 +1553,22 @@ class KubernetesState(BaseModel):
             container_name = None
             if "/" in deployment_name:
                 deployment_name, container_name = component.name.split("/")
-            
+
+            # Abstract away the difference between a Pod and Deployment target                        
             deployment = await Deployment.read(deployment_name, namespace.name)
+            # if component.canary:
+            #     try:
+            #         canary = await deployment.get_canary_pod()
+            #     except client.exceptions.ApiException as e:
+            #         if e.status != 404 or e.reason != 'Not Found':
+            #             raise
+            #         canary = await deployment.ensure_canary_pod()
+
+            #     default_logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'")
+            #     target = canary
+            # else:
+            #     target = deployment
+
             if container_name:
                 container = deployment.get_container(container_name)
             else:
@@ -1493,7 +1578,7 @@ class KubernetesState(BaseModel):
             images[deployment_name] = container.image
 
             # TODO: Needs to respect the constraint (limit vs. request)... (maybe... container.get_resource("cpu", constraint), set_resource("cpu", value, constraint))
-            # TODO: These just become direct property assignments once DeploymentComponent is live
+            # TODO: These just become direct property assignments once DeploymentComponent is live (!!! maybe not -- need to support pods)
             cpu_setting = next(filter(lambda c: c.name == "cpu", component.settings))
             cpu_setting.value = container.resources.limits["cpu"]
             mem_setting = next(filter(lambda c: c.name == "memory", component.settings))
@@ -1504,6 +1589,7 @@ class KubernetesState(BaseModel):
             adjustables.append(
                 Adjustable(
                     name=component.name,
+                    canary=component.canary,
                     deployment=deployment,
                     container=container,
                     cpu=CPU.parse_obj(cpu_setting.dict()),
@@ -1556,7 +1642,8 @@ class KubernetesState(BaseModel):
         if not adjustments:
             return
         
-        self.logger.info(f"Applying {len(adjustments)} Kubernetes adjustments: {adjustments}")
+        summary = f"[{', '.join(list(map(str, adjustments)))}]"
+        self.logger.info(f"Applying {len(adjustments)} Kubernetes adjustments: {summary}")
         
         # Adjust settings on the local data model
         for adjustment in adjustments:
@@ -1779,21 +1866,8 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     async def startup(self) -> None:
-        # Ensure we are ready to talk to Kuberenetes API
+        # Ensure we are ready to talk to Kubernetes API
         await self.config.load_kubeconfig()
-
-        # Handle canaries
-        # TODO: Namespace should be overrideable per deployment
-        namespace = self.config.namespace
-
-        # Provision canary if necessary
-        for component in self.config.deployments:
-            if not component.canary:
-                continue
-
-            deployment = await Deployment.read(component.name, namespace)
-            canary = await deployment.create_canary_pod()
-            self.logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'")
 
     @on_event()
     async def describe(self) -> Description:        
