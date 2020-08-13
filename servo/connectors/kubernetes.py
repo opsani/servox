@@ -1137,6 +1137,7 @@ class Deployment(KubernetesModel):
             self.logger.info(f"Deleted canary Pod '{canary.name}' in namespace '{canary.namespace}'.")
             return canary
         except client.exceptions.ApiException as e:
+            self.logger.debug(f"failed loading canary pod: {e}")
             if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
                 raise
         
