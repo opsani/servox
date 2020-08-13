@@ -1695,7 +1695,7 @@ class KubernetesConfiguration(BaseConfiguration):
     deployments: List[Component] = Field(
         description="The deployments and adjustable settings to optimize.",
     )
-    settlement_time: Duration = Field(
+    settlement_duration: Duration = Field(
         0,
         description="Duration to observe the application after an adjust to ensure the deployment is stable."
     )
@@ -1793,7 +1793,7 @@ class KubernetesConnector(BaseConnector):
 
             deployment = await Deployment.read(component.name, namespace)
             canary = await deployment.create_canary_pod()
-            self.logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'") 
+            self.logger.info(f"Created canary Pod for Deployment '{canary.name}' in namespace '{canary.namespace}'")
 
     @on_event()
     async def describe(self) -> Description:        
@@ -1819,6 +1819,13 @@ class KubernetesConnector(BaseConnector):
 
         state = await KubernetesState.read(self.config)
         await state.apply(adjustments)
+
+        # TODO: Move this into event declaration??
+        settlement_duration = self.config.settlement_duration
+        if settlement_duration:
+            self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")
+            await asyncio.sleep(settlement_duration.total_seconds())
+            self.logger.info(f"Settlement duration of {settlement_duration} expired, continuing...")
 
     @on_event()
     async def check(self) -> List[Check]:
