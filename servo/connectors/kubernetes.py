@@ -248,7 +248,7 @@ class KubernetesModel(abc.ABC):
         return self._logger
 
     @property
-    def version(self) -> str:
+    def api_version(self) -> str:
         """The API version of the Kubernetes object (`obj.apiVersion``)."""
         return self.obj.api_version
 
@@ -280,18 +280,18 @@ class KubernetesModel(abc.ABC):
         Raises:
             ValueError: The API version is not supported.
         """
-        c = self.api_clients.get(self.version)
+        c = self.api_clients.get(self.api_version)
         # If we didn't find the client in the api_clients dict, use the
         # preferred version.
         if c is None:
             self.logger.warning(
-                f'unknown version ({self.version}), falling back to preferred version'
+                f'unknown version ({self.api_version}), falling back to preferred version'
             )
             c = self.api_clients.get('preferred')
             if c is None:
                 raise ValueError(
                     'unknown version specified and no preferred version '
-                    f'defined for resource ({self.version})'
+                    f'defined for resource ({self.api_version})'
                 )
         # If we did find it, initialize that client version.
         async with ApiClient() as api:
@@ -1158,36 +1158,39 @@ class Deployment(KubernetesModel):
         await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
         
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
+        self.logger.debug(f"building new canary")
         pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
         pod_obj.metadata.name = canary_pod_name
         pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
         pod_obj.metadata.labels['opsani_role'] = 'tuning'
         canary_pod = Pod(obj=pod_obj)
         canary_pod.namespace = namespace
+        self.logger.debug(f"initialized new canary: {canary_pod}")
         
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get('POD_NAME')
         SERVO_POD_NAMESPACE = os.environ.get('POD_NAMESPACE')
         if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
+            self.logger.debug(f"running within Kubernetes, registering as Pod controller... (pod={SERVO_POD_NAME}, namespace={SERVO_POD_NAMESPACE})")
             servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
             pod_controller = next(iter(ow for ow in servo_pod.obj.metadata.owner_references if ow.controller))
 
-            # TODO: Create a ReplicaSet class...
-            async with ApiClient() as api:
-                api_client = client.AppsV1Api(api)
+            # # TODO: Create a ReplicaSet class...
+            # async with ApiClient() as api:
+            #     api_client = client.AppsV1Api(api)
 
-                servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
-                rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
-                # deployment info persists thru updates. only remove servo pod if deployment is deleted
-                servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
+            #     servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
+            #     rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
+            #     # deployment info persists thru updates. only remove servo pod if deployment is deleted
+            #     servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
 
             canary_pod.obj.metadata.owner_references = [ client.V1OwnerReference(
-                api_version=servo_dep.api_version,
+                api_version=self.api_version,
                 block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
                 controller=True, # Ensures the pod will not be adopted by another controller
                 kind='Deployment',
-                name=servo_dep.metadata.name,
-                uid=servo_dep.metadata.uid
+                name=self.obj.metadata.name,
+                uid=self.obj.metadata.uid
             ) ]
 
         # Create the Pod and wait for it to get ready
