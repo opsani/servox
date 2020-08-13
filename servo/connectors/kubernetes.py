@@ -1641,12 +1641,16 @@ class KubernetesState(BaseModel):
             adjustable.adjust(adjustment)
         
         # Apply the changes to Kubernetes and wait for the results
-        await asyncio.wait_for(
-            asyncio.gather(
-                *list(map(lambda a: a.apply(), self.adjustables))
-            ),
-            timeout=30.0
-        )
+        if self.adjustables:
+            self.logger.debug(f"apply adjustments to {len(self.adjustables)} adjustables")
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *list(map(lambda a: a.apply(), self.adjustables))
+                ),
+                timeout=30.0
+            )
+        else:
+            self.log.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
         # TODO: Figure out how to do progress...
