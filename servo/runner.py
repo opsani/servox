@@ -168,8 +168,7 @@ class Runner(api.Mixin):
                 raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
         except Exception as error:
-            self.logger.exception(f"{cmd_response.command} command failed!")
-            self.logger.exception(error)
+            self.logger.exception(f"{cmd_response.command} command failed: {error}")
             param = dict(status="failed", message=str(error))
             await self.shutdown(asyncio.get_event_loop())
             await self._post_event(cmd_response.command.response_event, param)

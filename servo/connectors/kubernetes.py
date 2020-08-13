@@ -22,6 +22,7 @@ from servo import (
     Control,
     Description,
     Duration,
+    DurationProgress,
     License,
     Maturity,
     Setting,
@@ -168,7 +169,7 @@ async def wait_for_condition(
         await asyncio.sleep(interval)
 
     end = time.time()
-    default_logger.info(f'wait completed (total={end-start}s) {condition}')
+    default_logger.info(f'wait completed (total={end-start:.2f}s) {condition}')
 
 
 @runtime_checkable
@@ -1899,9 +1900,11 @@ class KubernetesConnector(BaseConnector):
         # TODO: Move this into event declaration??
         settlement_duration = self.config.settlement_duration
         if settlement_duration:
-            self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")
-            await asyncio.sleep(settlement_duration.total_seconds())
-            self.logger.info(f"Settlement duration of {settlement_duration} expired, continuing...")
+            self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")            
+            progress = DurationProgress(settlement_duration)
+            progress_logger = lambda p: self.logger.info("allowing application to settle", progress=p.progress)
+            await progress.watch(progress_logger)
+            self.logger.info(f"Settlement duration of {settlement_duration} expired, resuming.")
 
     @on_event()
     async def check(self) -> List[Check]:

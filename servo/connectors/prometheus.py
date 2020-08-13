@@ -23,6 +23,7 @@ from servo import (
     metadata,
     on_event,
     TimeSeries,
+    DurationProgress,
 )
 from servo.utilities import join_to_series
 
@@ -145,10 +146,12 @@ class PrometheusConnector(BaseConnector):
         self.logger.info(
             f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
         )
-        await asyncio.sleep(sleep_duration.total_seconds())
+
+        progress = DurationProgress(sleep_duration)
+        notifier = lambda p: self.logger.info(f"sleeping for {sleep_duration} ({p.progress}% complete, {p.elapsed} elapsed)", progress=p.progress)
+        await progress.watch(notifier)
 
         # Capture the measurements
-
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))

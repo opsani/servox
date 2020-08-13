@@ -1,9 +1,10 @@
 from __future__ import annotations
+import asyncio
 
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
 from pydantic import BaseModel, Extra, validator, datetime_parse
@@ -148,6 +149,23 @@ class DurationProgress(BaseModel):
 
     def is_completed(self) -> bool:
         return self.progress >= 100
+    
+    async def watch(
+        self, 
+        notify: Callable[['DurationProgress'], Union[None, Awaitable[None]]],
+        every: Duration = Duration("5s"), 
+        ) -> None:
+        async def async_notifier() -> None:
+            if asyncio.iscoroutinefunction(notify):
+                await notify(self)
+            else:
+                notify(self)
+
+        while True:
+            if self.is_completed():
+                break            
+            await async_notifier()
+            await asyncio.sleep(every.total_seconds())
 
     @property
     def progress(self) -> float:
