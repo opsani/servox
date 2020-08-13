@@ -690,7 +690,7 @@ class Pod(KubernetesModel):
         self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
         self.logger.trace(f'pod: {self.obj}')
 
-        async with self.api_client() as api_client:
+        async with self.preferred_client() as api_client:
             self.obj = await api_client.create_namespaced_pod(
             namespace=namespace,
             body=self.obj,
