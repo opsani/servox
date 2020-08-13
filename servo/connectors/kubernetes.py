@@ -1369,7 +1369,11 @@ class Adjustable(BaseModel):
                 self.container.resources.limits[name] = value
 
         elif adjustment.setting_name == "replicas":
-            self.deployment.replicas = value
+            if self.canary and self.deployment.replicas != value:
+                self.logger.warning(f"rejected attempt to adjust replicas in canary mode: pin or remove replicas setting to avoid this warning")
+                self.deployment.replicas = 1
+            else:
+                self.deployment.replicas = value
             
         else:
             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
