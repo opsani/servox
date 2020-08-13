@@ -148,6 +148,8 @@ class PrometheusConnector(BaseConnector):
         await asyncio.sleep(sleep_duration.total_seconds())
 
         # Capture the measurements
+
+        self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))
         )
@@ -160,7 +162,7 @@ class PrometheusConnector(BaseConnector):
     ) -> List[TimeSeries]:
         prometheus_request = PrometheusRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
         
-        self.logger.info(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
+        self.logger.trace(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
         async with self.api_client() as client:
             try:
                 response = await client.get(prometheus_request.url)
