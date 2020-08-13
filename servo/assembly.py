@@ -1,41 +1,29 @@
-import abc
-import importlib
 import json
 import os
 import re
 from contextvars import ContextVar
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
-import httpx
 import yaml
-from pydantic import BaseModel, Extra, Field, create_model, validator
+from pydantic import BaseModel, create_model
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
 
-import servo
-from servo import connector
 from servo.connector import (
     BaseConfiguration,
     BaseConnector,
     ConnectorLoader,
-    License,
-    Maturity,
     Optimizer,
-    _connector_class_from_string,
     _connector_subclasses,
 )
 from servo.servo import (
     Servo,
     BaseServoConfiguration, 
     _default_routes, 
-    _normalize_connectors,
     _routes_for_connectors_descriptor,
     _servo_context_var
 )
-from servo.events import Preposition, event, on_event
-from servo.types import Check, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
 
@@ -89,7 +77,7 @@ class Assembly(BaseModel):
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> ("Assembly", Servo, Type[BaseServoConfiguration]):
+    ) -> Tuple["Assembly", Servo, Type[BaseServoConfiguration]]:
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
         
         _discover_connectors()
@@ -97,7 +85,7 @@ class Assembly(BaseModel):
         # Build our Servo configuration from the config file + environment
         if not config_file.exists():
             raise FileNotFoundError(f"config file '{config_file}' does not exist")
-        
+
         ServoConfiguration, routes = _create_config_model(
             config_file=config_file, env=env
         )        
