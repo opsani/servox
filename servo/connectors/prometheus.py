@@ -170,7 +170,7 @@ class PrometheusConnector(BaseConnector):
                 return []
 
         data = response.json()
-        self.logger.debug(f"Got response data for metric {metric}: {data}")
+        self.logger.trace(f"Got response data for metric {metric}: {data}")
 
         if "status" not in data or data["status"] != "success":
             return []
