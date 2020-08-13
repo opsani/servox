@@ -1099,7 +1099,6 @@ class Deployment(KubernetesModel):
                 raise
         
         # Setup the canary Pod
-        # target_deployment = await Deployment.read(component.name, namespace)
         pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
         pod_obj.metadata.name = canary_pod_name
         pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
@@ -1214,11 +1213,11 @@ class CPU(Resource):
     The CPU class models a Kubernetes CPU resource in Millicore units.
     """
     value: Millicore
-    min: Millicore
-    max: Millicore
-    step: Millicore
-    name = "cpu"
-    type = SettingType.RANGE
+    # min: Millicore
+    # max: Millicore
+    # step: Millicore
+    # name = "cpu"
+    # type = SettingType.RANGE
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
@@ -1248,11 +1247,11 @@ class Memory(Resource):
     The Memory class models a Kubernetes Memory resource.
     """
     value: ShortByteSize
-    min: ShortByteSize
-    max: ShortByteSize
-    step: ShortByteSize
-    name = "memory"
-    type = SettingType.RANGE
+    # min: ShortByteSize
+    # max: ShortByteSize
+    # step: ShortByteSize
+    # name = "memory"
+    # type = SettingType.RANGE
 
     @property
     def gibibytes(self) -> float:
@@ -1270,8 +1269,8 @@ class Replicas(Setting):
     desired Pods running in a Deployment.
     """
     value: int
-    name = "replicas"
-    type = SettingType.RANGE
+    # name = "replicas"
+    # type = SettingType.RANGE
 
 
 class Adjustable(BaseModel):
@@ -1470,7 +1469,6 @@ class KubernetesState(BaseModel):
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
-        # TODO: Need to find the right home for this...
         config.load_kubeconfig()
 
         namespace = await Namespace.read(config.namespace)
@@ -1495,6 +1493,7 @@ class KubernetesState(BaseModel):
             images[deployment_name] = container.image
 
             # TODO: Needs to respect the constraint (limit vs. request)... (maybe... container.get_resource("cpu", constraint), set_resource("cpu", value, constraint))
+            # TODO: These just become direct property assignments once DeploymentComponent is live
             cpu_setting = next(filter(lambda c: c.name == "cpu", component.settings))
             cpu_setting.value = container.resources.limits["cpu"]
             mem_setting = next(filter(lambda c: c.name == "memory", component.settings))
