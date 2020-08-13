@@ -4,8 +4,9 @@ import abc
 import asyncio
 import enum
 import os
+import time
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Callable, List, Optional, Dict, Any, Tuple
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
 
@@ -22,6 +23,7 @@ from servo import (
     License,
     Maturity,
     Setting,
+    SettingType,
     connector,
     on_event,
     get_hash
@@ -56,6 +58,115 @@ def set_rsrc(cp, sn, sv, sel="both"):
     else:  # both
         cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
         cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
+
+
+class Condition:
+    """A Condition is a convenience wrapper around a function and its arguments
+    which allows the function to be called at a later time.
+
+    The function is called in the ``check`` method, which resolves the result to
+    a boolean value, thus the condition function should return a boolean or
+    something that ultimately resolves to a Truthy or Falsey value.
+
+    Args:
+        name: The name of the condition to make it easier to identify.
+        fn: The condition function that will be checked.
+        *args: Any arguments for the condition function.
+        **kwargs: Any keyword arguments for the condition function.
+
+    Attributes:
+        name (str): The name of the Condition.
+        fn (callable): The condition function that will be checked.
+        args (tuple): Arguments for the checking function.
+        kwargs (dict): Keyword arguments for the checking function.
+        last_check (bool): Holds the state of the last condition check.
+
+    Raises:
+        ValueError: The given ``fn`` is not callable.
+    """
+
+    def __init__(self, name: str, fn: Callable, *args, **kwargs) -> None:
+        if not callable(fn):
+            raise ValueError('The Condition function must be callable')
+
+        self.name = name
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+
+        # last check holds the state of the last check.
+        self.last_check = False
+
+    def __str__(self) -> str:
+        return f'<Condition (name: {self.name}, met: {self.last_check})>'
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    async def check(self) -> bool:
+        """Check that the condition was met.
+
+        Returns:
+            True if the condition was met; False otherwise.
+        """
+        self.last_check = bool(await self.fn(*self.args, **self.kwargs))
+        return self.last_check
+
+
+async def wait_for_condition(
+        condition: Condition,
+        timeout: int = None,
+        interval: Union[int, float] = 1,
+        fail_on_api_error: bool = True,
+) -> None:
+    """Wait for a condition to be met.
+
+    Args:
+        condition: The Condition to wait for.
+        timeout: The maximum time to wait, in seconds, for the condition to be met.
+            If unspecified, this function will wait indefinitely. If specified and
+            the timeout is met or exceeded, a TimeoutError will be raised.
+        interval: The time, in seconds, to wait before re-checking the condition.
+        fail_on_api_error: Fail the condition checks if a Kubernetes API error is
+            incurred. An API error can be raised for a number of reasons, including
+            a Pod being restarted and temporarily unavailable. Disabling this will
+            cause those errors to be ignored, allowing the check to continue until
+            timeout or resolution. (default: True).
+
+    Raises:
+        TimeoutError: The specified timeout was exceeded.
+    """
+    default_logger.info(f'waiting for condition: {condition}')
+
+    # define the maximum time to wait. once this is met, we should
+    # stop waiting.
+    max_time = None
+    if timeout is not None:
+        max_time = time.time() + timeout
+
+    # start the wait block
+    start = time.time()
+    while True:
+        if max_time and time.time() >= max_time:
+            raise TimeoutError(
+                f'timed out ({timeout}s) while waiting for condition {condition}'
+            )
+
+        # check if the condition is met and break out if it is
+        try:
+            if await condition.check():
+                break
+        except client.exceptions.ApiException as e:
+            default_logger.warning(f'got api exception while waiting: {e}')
+            if fail_on_api_error:
+                raise
+
+        # if the condition is not met, sleep for the interval
+        # to re-check later
+        await asyncio.sleep(interval)
+
+    end = time.time()
+    default_logger.info(f'wait completed (total={end-start}s) {condition}')
 
 
 @runtime_checkable
@@ -146,13 +257,18 @@ class KubernetesModel(abc.ABC):
 
     @name.setter
     def name(self, name: str):
-        """Set the name of the Kubernetes objects (``obj.metadata.name``)."""
+        """Set the name of the Kubernetes object (``obj.metadata.name``)."""
         self.obj.metadata.name = name
 
     @property
     def namespace(self) -> str:
         """The namespace of the Kubernetes object (``obj.metadata.namespace``)."""
         return cast(str, self.obj.metadata.namespace)
+    
+    @namespace.setter
+    def namespace(self, namespace: str):
+        """Set the namespace of the Kubernetes object (``obj.metadata.namespace``)."""
+        self.obj.metadata.namespace = namespace
 
     @asynccontextmanager
     async def api_client(self) -> Generator[Any]:
@@ -249,6 +365,85 @@ class KubernetesModel(abc.ABC):
         Returns:
             True if in the ready state; False otherwise.
         """
+    
+    # TODO: Add Duration support
+    async def wait_until_ready(
+            self,
+            timeout: int = None,
+            interval: Union[int, float] = 1,
+            fail_on_api_error: bool = False,
+    ) -> None:
+        """Wait until the resource is in the ready state.
+
+        Args:
+            timeout: The maximum time to wait, in seconds, for the resource
+                to reach the ready state. If unspecified, this will wait
+                indefinitely. If specified and the timeout is met or exceeded,
+                a TimeoutError will be raised.
+            interval: The time, in seconds, to wait before re-checking if the
+                object is ready.
+            fail_on_api_error: Fail if an API error is raised. An API error can
+                be raised for a number of reasons, such as 'resource not found',
+                which could be the case when a resource is just being started or
+                restarted. When waiting for readiness we generally do not want to
+                fail on these conditions.
+
+        Raises:
+             TimeoutError: The specified timeout was exceeded.
+        """
+        ready_condition = Condition(
+            'api object ready',
+            self.is_ready,
+        )
+
+        await wait_for_condition(
+            condition=ready_condition,
+            timeout=timeout,
+            interval=interval,
+            fail_on_api_error=fail_on_api_error,
+        )
+    
+    # TODO: Add Duration support
+    async def wait_until_deleted(self, timeout: int = None, interval: Union[int, float] = 1) -> None:
+        """Wait until the resource is deleted from the cluster.
+
+        Args:
+            timeout: The maximum time to wait, in seconds, for the resource to
+                be deleted from the cluster. If unspecified, this will wait
+                indefinitely. If specified and the timeout is met or exceeded,
+                a TimeoutError will be raised.
+            interval: The time, in seconds, to wait before re-checking if the
+                object has been deleted.
+
+        Raises:
+            TimeoutError: The specified timeout was exceeded.
+        """
+        async def deleted_fn():
+            try:
+                await self.refresh()
+            except client.exceptions.ApiException as e:
+                # If we can no longer find the deployment, it is deleted.
+                # If we get any other exception, raise it.
+                if e.status == 404 and e.reason == 'Not Found':
+                    return True
+                else:
+                    self.logger.error('error refreshing object state')
+                    raise e
+            else:
+                # The object was still found, so it has not been deleted
+                return False
+
+        delete_condition = Condition(
+            'api object deleted',
+            deleted_fn
+        )
+
+        await wait_for_condition(
+            condition=delete_condition,
+            timeout=timeout,
+            interval=interval,
+        )
+
 
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
@@ -483,7 +678,8 @@ class Pod(KubernetesModel):
         self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
         self.logger.debug(f'pod: {self.obj}')
 
-        self.obj = await self.api_client.create_namespaced_pod(
+        async with self.api_client() as api_client:
+            self.obj = await api_client.create_namespaced_pod(
             namespace=namespace,
             body=self.obj,
         )
@@ -508,18 +704,20 @@ class Pod(KubernetesModel):
         self.logger.debug(f'delete options: {options}')
         self.logger.debug(f'pod: {self.obj}')
 
-        return await self.api_client.delete_namespaced_pod(
-            name=self.name,
-            namespace=self.namespace,
-            body=options,
-        )
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_pod(
+                name=self.name,
+                namespace=self.namespace,
+                body=options,
+            )
 
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Pod resource."""
-        self.obj = await self.api_client.read_namespaced_pod_status(
-            name=self.name,
-            namespace=self.namespace,
-        )
+        async with self.api_client() as api_client:
+            self.obj = await api_client.read_namespaced_pod_status(
+                name=self.name,
+                namespace=self.namespace,
+            )
 
     async def is_ready(self) -> bool:
         """Check if the Pod is in the ready state.
@@ -541,6 +739,13 @@ class Pod(KubernetesModel):
         if phase.lower() != 'running':
             return False
 
+        # TODO: Check for Ready and ContainersReady (Check if below logic matches)
+        # 'Returns bool indicating pod readiness'
+        # cont_stats = pod.status.container_statuses
+        # conts_ready = cont_stats and len(cont_stats) >= len(pod.spec.containers) and all([cs.ready for cs in pod.status.container_statuses])
+        # rdy_conditions = [] if not pod.status.conditions else [con for con in pod.status.conditions if con.type in ['Ready', 'ContainersReady']]
+        # pod_ready = len(rdy_conditions) > 1 and all([con.status == 'True' for con in rdy_conditions])
+        # return conts_ready and pod_ready
         for cond in status.conditions:
             # we only care about the condition type 'ready'
             if cond.type.lower() != 'ready':
@@ -703,7 +908,7 @@ class Deployment(KubernetesModel):
                 name=self.name,
                 namespace=self.namespace,
                 body=self.obj,
-            )            
+            )
 
     async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
         """Delete the Deployment.
@@ -796,13 +1001,14 @@ class Deployment(KubernetesModel):
         """
         return self.obj.status.observed_generation
     
-    @property
-    def is_ready(self) -> bool:
+    async def is_ready(self) -> bool:
         """Check if the Deployment is in the ready state.
 
         Returns:
             True if in the ready state; False otherwise.
         """
+        await self.refresh()
+
         # if there is no status, the deployment is definitely not ready
         status = self.obj.status
         if status is None:
@@ -932,6 +1138,11 @@ class CPU(Resource):
     The CPU class models a Kubernetes CPU resource in Millicore units.
     """
     value: Millicore
+    min: Millicore
+    max: Millicore
+    step: Millicore
+    name = "cpu"
+    type = SettingType.RANGE
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
@@ -961,6 +1172,11 @@ class Memory(Resource):
     The Memory class models a Kubernetes Memory resource.
     """
     value: ShortByteSize
+    min: ShortByteSize
+    max: ShortByteSize
+    step: ShortByteSize
+    name = "memory"
+    type = SettingType.RANGE
 
     @property
     def gibibytes(self) -> float:
@@ -978,6 +1194,8 @@ class Replicas(Setting):
     desired Pods running in a Deployment.
     """
     value: int
+    name = "replicas"
+    type = SettingType.RANGE
 
 
 class Adjustable(BaseModel):
@@ -1177,16 +1395,7 @@ class KubernetesState(BaseModel):
         Read the state of all components under optimization from the cluster and return an object representation.
         """
         # TODO: Need to find the right home for this...
-        config_file = Path(config.kubeconfig or KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
-        if config_file.exists():
-            await kubernetes_asyncio_config.load_kube_config(
-                config_file=str(config_file),
-                context=config.context,
-            )
-        elif os.getenv('KUBERNETES_SERVICE_HOST'):
-            kubernetes_asyncio_config.load_incluster_config()
-        else:
-            raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
+        config.load_kubeconfig()
 
         namespace = await Namespace.read(config.namespace)
         adjustables = []
@@ -1383,6 +1592,20 @@ class KubernetesState(BaseModel):
         arbitrary_types_allowed = True
 
 
+# NOTE: This class is not yet live
+class DeploymentComponent(Component):
+    """
+    The DeploymentComponent class models an optimizable Kubernetes Deployment.
+    """
+    namespace: str = "default"
+    container: str = "main" # TODO: Is this a Kubernetes naming or Opsani?
+    canary: bool = False
+    memory: Memory
+    replicas: Replicas
+    settings: List[Setting]
+
+
+
 class KubernetesConfiguration(BaseConfiguration):
     kubeconfig: Optional[FilePath] = Field(
         description="Path to the kubeconfig file. If `None`, use the default from the environment.",
@@ -1423,6 +1646,22 @@ class KubernetesConfiguration(BaseConfiguration):
             ],
             **kwargs
         )
+    
+    # TODO: This might not be the right home for this method...
+    async def load_kubeconfig(self) -> None:
+        """
+        Asynchronously load the Kubernetes configuration
+        """
+        config_file = Path(self.kubeconfig or KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
+        if config_file.exists():
+            await kubernetes_asyncio_config.load_kube_config(
+                config_file=str(config_file),
+                context=self.context,
+            )
+        elif os.getenv('KUBERNETES_SERVICE_HOST'):
+            kubernetes_asyncio_config.load_incluster_config()
+        else:
+            raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
 
 
 class KubernetesChecks(BaseChecks):
@@ -1464,6 +1703,80 @@ class KubernetesConnector(BaseConnector):
     config: KubernetesConfiguration
 
     @on_event()
+    async def startup(self) -> None:
+        # Ensure we are ready to talk to Kuberenetes API
+        await self.config.load_kubeconfig()
+
+        # Handle canaries
+        # TODO: This should be derived from the deployment name...
+        canary_pod_name = "opsani-tuning"
+        namespace = self.config.namespace
+        timeout = 20 # TODO: Move to config
+
+        # Provision canary if necessary
+        for component in self.config.deployments:
+            if not component.canary:
+                continue
+
+            # Delete any pre-existing canary debris
+            try:
+                canary = await Pod.read(canary_pod_name, namespace)
+                if canary:
+                    self.logger.warning(f"Found existing canary Pod '{canary_pod_name}' in namespace '{namespace}': deleting...")
+                    await canary.delete()
+
+                    # TODO: add timeout to the config
+                    await canary.wait_until_deleted(timeout=timeout)
+                    self.logger.info(f"Successfully deleted unexpected canary Pod '{canary_pod_name}' in namespace '{namespace}'")
+            except client.exceptions.ApiException as e:
+                if e.status != 404 or e.reason != 'Not Found':
+                    raise
+            
+            # Setup the canary Pod
+            target_deployment = await Deployment.read(component.name, namespace)
+            pod_obj = client.V1Pod(metadata=target_deployment.obj.spec.template.metadata, spec=target_deployment.obj.spec.template.spec)
+            pod_obj.metadata.name = canary_pod_name
+            pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = component.name
+            pod_obj.metadata.labels['opsani_role'] = 'tuning'
+            canary_pod = Pod(obj=pod_obj)
+            canary_pod.namespace = namespace
+            
+            # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
+            SERVO_POD_NAME = os.environ.get('POD_NAME')
+            SERVO_POD_NAMESPACE = os.environ.get('POD_NAMESPACE')
+            if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
+                servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
+                pod_controller = next(iter(ow for ow in servo_pod.obj.metadata.owner_references if ow.controller))
+
+                # TODO: Create a ReplicaSet class...
+                async with ApiClient() as api:
+                    api_client = client.AppsV1Api(api)
+
+                    servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
+                    rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
+                    # deployment info persists thru updates. only remove servo pod if deployment is deleted
+                    servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
+
+                canary_pod.obj.metadata.owner_references = [ client.V1OwnerReference(
+                    api_version=servo_dep.api_version,
+                    block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
+                    controller=True, # Ensures the pod will not be adopted by another controller
+                    kind='Deployment',
+                    name=servo_dep.metadata.name,
+                    uid=servo_dep.metadata.uid
+                ) ]
+
+            # Create the Pod and wait for it to get ready
+            self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")
+            self.logger.debug(canary_pod)
+            await canary_pod.create()
+
+            self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
+            await canary_pod.wait_until_ready(timeout=timeout)
+
+            # TODO: Add settlement time. Check for unexpected changes to version, etc.
+
+    @on_event()
     async def describe(self) -> Description:        
         state = await KubernetesState.read(self.config)
         return state.to_description()
@@ -1474,7 +1787,7 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
-        # TODO: Handle this adjust_on stuff
+        # TODO: Handle this adjust_on stuff (Do we even need this???)
         # adjust_on = desc.get("adjust_on", False)
 
         # if adjust_on:

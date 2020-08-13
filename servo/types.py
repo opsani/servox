@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
-from pydantic import BaseModel, validator, datetime_parse
+from pydantic import BaseModel, Extra, validator, datetime_parse
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
@@ -259,8 +259,10 @@ class Component(BaseModel):
     name: str
     settings: List[Setting]
 
+    # TODO: These probably move to DeploymentComponent inside KubernetesConnector
     env: Optional[Dict[str, str]]
     command: Optional[dict] # TODO: This needs to be modeled but not sure what attribugtes
+    canary: bool = False
 
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)
@@ -288,6 +290,9 @@ class Control(BaseModel):
         if value:
             return value
         return Duration(0)
+    
+    class Config:
+        extra = Extra.allow
 
 
 class Description(BaseModel):
