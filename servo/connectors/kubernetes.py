@@ -1148,9 +1148,10 @@ class Deployment(KubernetesModel):
         Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
 
         TODO: docs...
-        """
+        """        
         canary_pod_name = self.canary_pod_name
         namespace = self.namespace
+        self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' in namespace '{namespace}'")
         
         # Delete any pre-existing canary debris
         await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
@@ -1650,7 +1651,7 @@ class KubernetesState(BaseModel):
                 timeout=30.0
             )
         else:
-            self.log.warning(f"failed to apply adjustments: no adjustables")
+            self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
         # TODO: Figure out how to do progress...

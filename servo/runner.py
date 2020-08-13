@@ -227,7 +227,10 @@ class Runner(api.Mixin):
         msg = context.get("exception", context["message"])
         self.logger.exception(f"Caught exception: {msg}")
         self.logger.info("Shutting down...")
-        asyncio.create_task(self.shutdown(loop))
+        try:
+            asyncio.create_task(self.shutdown(loop))
+        except RuntimeError as e:
+            self.logger.error(f"failed trying to schedule shutdown: {e}")
 
     def run(self) -> None:
         self.display_banner()

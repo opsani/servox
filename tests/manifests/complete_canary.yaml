@@ -30,6 +30,7 @@ data:
               step: 1
               value: 3
               type: range
+              pinned: true
     prometheus:
       base_url: http://prometheus.opsani-monitoring.svc:9090
       metrics:
