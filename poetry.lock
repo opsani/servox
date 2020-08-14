@@ -127,7 +127,7 @@ description = "Beautiful Python prompts made simple."
 name = "bullet"
 optional = false
 python-versions = "*"
-version = "2.1.0"
+version = "2.2.0"
 
 [[package]]
 category = "main"
@@ -1362,8 +1362,8 @@ black = [
     {file = "black-19.10b0.tar.gz", hash = "sha256:c2edb73a08e9e0e6f65a0e6af18b059b8b1cdd5bef997d7a0b181df93dc81539"},
 ]
 bullet = [
-    {file = "bullet-2.1.0-py3-none-any.whl", hash = "sha256:7fc493c1c375a735a7cdb0bd9d6538336ba3085ef1426823a1cd43bebcdfe856"},
-    {file = "bullet-2.1.0.tar.gz", hash = "sha256:ee38418aab6ad282bfc3594b8afa2594c012927641f7b2100e18b448c4cb3f1b"},
+    {file = "bullet-2.2.0-py3-none-any.whl", hash = "sha256:d22528deb914ce3ff20a4a000fa5ba37179697f384a0748f90691de8a74cf006"},
+    {file = "bullet-2.2.0.tar.gz", hash = "sha256:dfa0fa81810ad1a9e688815ca04f24af87ff5cdbe803b42fa634b1f50fc9d887"},
 ]
 cachetools = [
     {file = "cachetools-4.1.1-py3-none-any.whl", hash = "sha256:513d4ff98dd27f85743a8dc0e92f55ddb1b49e060c2d5961512855cda2c01a98"},
