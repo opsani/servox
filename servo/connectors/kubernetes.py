@@ -35,10 +35,12 @@ from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watc
 from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from kubernetes_asyncio.client.api_client import ApiClient
 import loguru
-from loguru import logger as default_logger
+from loguru import logger
 from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
 
+# Create a top-level logger for classes that aren't yet passing the connector logger instance around
+default_logger = logger.bind(component="kubernetes")
 
 # TODO: This has behavior that removes request/limit if it exists
 def set_rsrc(cp, sn, sv, sel="both"):
@@ -169,7 +171,7 @@ async def wait_for_condition(
 
         # if the condition is not met, sleep for the interval
         # to re-check later
-        self.logger.debug(f"sleeping for {interval} waiting on condition {condition}")
+        default_logger.debug(f"sleeping for {interval} waiting on condition {condition}")
         await asyncio.sleep(interval)
 
     end = time.time()
