@@ -1,8 +1,10 @@
 from __future__ import annotations, print_function
 
 import abc
+from abc import abstractclassmethod, abstractmethod
 import asyncio
 import enum
+import itertools
 import os
 
 from pydantic.types import StrictInt, constr
@@ -1245,7 +1247,7 @@ class Deployment(KubernetesModel):
             canary_pod.obj.metadata.owner_references = [
                 client.V1OwnerReference(
                     api_version=self.api_version,
-                    block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
+                    block_owner_deletion=True,
                     controller=True, # Ensures the pod will not be adopted by another controller
                     kind='Deployment',
                     name=servo_dep.metadata.name,
@@ -1428,48 +1430,116 @@ def _qualify(value, unit):
     return value
 
 
-class Adjustable(BaseModel): # Optimization?
+class BaseOptimization(abc.ABC, BaseModel):
+    """
+    BaseOptimization is the base class for concrete implementations of optimization strategies.
+    """
     name: str
-    deployment: Deployment
-    container: Container
-    canary: bool = False # TODO: This changes into strategy
 
     # Resources
-    # TODO: This crap moves back to the DeploymentComponent
     cpu: CPU
     memory: Memory
     replicas: Replicas
-    
+    # TODO: add env and command
+
+    @abstractclassmethod
+    async def create(cls, config: DeploymentConfiguration, *args, **kwargs) -> None:
+        """
+        """
+        ...
+
+    # def __init__(self, config: DeploymentConfiguration, *args, **kwargs) -> None:
+    #     super().__init__(*args, **kwargs)
+
+    @abstractmethod
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
         Adjust a setting on the underlying Deployment/Pod or Container.
         """
+        ...
+    
+    @abstractmethod
+    async def apply(self) -> None:
+        """
+        Apply the adjusted settings to the cluster.
+        """
+        ...
 
+    @abstractmethod
+    def to_components(self) -> List[Component]:
+        """
+        Return a list of Component representations of the Optimization.
+        """
+        ...
+    
+    @property
+    def logger(self) -> loguru.Logger:
+        return default_logger
+
+    def __hash__(self):
+        return hash((self.name, id(self),))    
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class DeploymentOptimization(BaseOptimization):
+    deployment: Deployment
+    container: Container
+
+    @classmethod
+    async def create(cls, config: DeploymentConfiguration) -> 'DeploymentOptimization':
+        deployment = await Deployment.read(config.name, config.namespace)
+
+        replicas = config.replicas.copy()
+        replicas.value = deployment.replicas
+
+        # FIXME: Currently only supporting one container
+        for container_config in config.containers:
+            container = deployment.get_container(container_config.name)
+
+            cpu = container_config.cpu.copy()
+            cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
+            memory = container_config.memory.copy()
+            memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
+
+            return cls(
+                name=f"{deployment.name}/{container.name}",
+                deployment=deployment,
+                container=container,
+                cpu=cpu,
+                memory=memory,
+                replicas=replicas,
+            )
+
+
+    def to_components(self) -> List[Component]:
+        return [
+            Component(
+                name=self.name,
+                settings=[
+                    self.cpu,
+                    self.memory,
+                    self.replicas
+                ]
+            )
+        ]
+
+    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
         if name in ("cpu", "memory"):
             resource = getattr(self, name)
             self.container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
+            resource.value = value # TODO: Cleanup this duplication...
 
         elif adjustment.setting_name == "replicas":
-            if self.canary and self.deployment.replicas != value:
-                self.logger.warning(f"rejected attempt to adjust replicas in canary mode: pin or remove replicas setting to avoid this warning")
-            else:
-                self.deployment.replicas = value
+            self.deployment.replicas = value
             
         else:
             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
-    
-    async def apply(self) -> None:
-        """
-        TODO: add docs...
-        """
-        if self.canary:            
-            await self.deployment.ensure_canary_pod()
-        else:
-            await self.apply_to_deployment()
 
-    async def apply_to_deployment(self) -> None:
+    async def apply(self) -> None:
         """
         Apply changes asynchronously and wait for them to roll out to the cluster.
 
@@ -1589,35 +1659,103 @@ class Adjustable(BaseModel): # Optimization?
                     raise RuntimeError("ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'")
                 else:
                     raise AssertionError(f"unknown deployment status condition: {condition.status}")
-    
-    def to_component(self) -> Component:
-        return Component(
-            name=self.name,
-            settings=[
-                self.cpu,
-                self.memory,
-                self.replicas
-            ]
-        )
-    
-    @property
-    def logger(self) -> loguru.Logger:
-        return default_logger
-
-    def __hash__(self):
-        return hash((self.name, id(self),))    
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
-class KubernetesState(BaseModel):
+class CanaryOptimization(BaseOptimization):
+    """
+    """
+    target_deployment: Deployment
+    target_container: Container
+    canary_pod: Optional[Pod]
+    canary_container: Optional[Container]
+
+    @classmethod
+    async def create(cls, config: DeploymentConfiguration) -> 'CanaryOptimization':
+        deployment = await Deployment.read(config.name, config.namespace)
+
+        # TODO: Figure out how to handle replicas
+        replicas = config.replicas.copy()
+        replicas.value = deployment.replicas
+
+        # Create the canary Pod
+        canary = await deployment.ensure_canary_pod()
+
+        # FIXME: Currently only supporting one container
+        for container_config in config.containers:
+            deployment_container = deployment.get_container(container_config.name)
+            canary_container = canary.get_container(container_config.name)
+
+            cpu = container_config.cpu.copy()
+            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
+            memory = container_config.memory.copy()
+            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
+
+            return cls(
+                name=f"{deployment.name}/{deployment_container.name}-canary",
+                target_deployment=deployment,
+                target_container=deployment_container,
+                canary_pod=canary,
+                canary_container=canary_container,
+                cpu=cpu,
+                memory=memory,
+                replicas=replicas,
+            )
+
+    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+        name = adjustment.setting_name
+        value = _qualify(adjustment.value, name)
+        if name in ("cpu", "memory"):
+            resource = getattr(self, name)
+            self.canary_container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
+            resource.value = value # TODO: Cleanup this duplication...
+
+        elif adjustment.setting_name == "replicas":
+            if adjustment.value not in (0, 1):
+                self.logger.warning(f"rejected attempt to adjust replica count for canary to {adjustment.value}: pin or remove replicas setting to avoid this warning")
+            
+        else:
+            raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
+
+    async def apply(self) -> None:
+        self.canary_pod = await self.target_deployment.ensure_canary_pod()
+
+    def to_components(self) -> List[Component]:
+        # Return the parent and the canary
+        cpu = self.cpu.copy(update={ "pinned": True })
+        cpu.value = self.target_container.get_resource_requirements("cpu", first=True)
+
+        memory = self.memory.copy(update={ "pinned": True })
+        memory.value = self.target_container.get_resource_requirements("memory", first=True)
+
+        replicas = self.replicas.copy(update={ "pinned": True })
+        replicas.value = self.target_deployment.replicas
+        return [
+            Component(
+                name=f"{self.target_deployment.name}/{self.target_container.name}",
+                settings=[
+                    cpu,
+                    memory,
+                    replicas,
+                ]
+            ),            
+            Component(
+                name=self.name,
+                settings=[
+                    self.cpu,
+                    self.memory,
+                    self.replicas.copy(update={ "value": 1 }) # TODO: This might be wrong...
+                ]
+            )
+        ]
+
+
+class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
     """
     Models the state of resources under optimization in a Kubernetes cluster.
     """
     config: KubernetesConfiguration
     namespace: Namespace
-    adjustables: List[Adjustable]
+    optimizations: List[BaseOptimization]
     runtime_id: str
     spec_id: str
     version_id: str
@@ -1630,43 +1768,30 @@ class KubernetesState(BaseModel):
         await config.load_kubeconfig()
 
         namespace = await Namespace.read(config.namespace)
-        adjustables = []
+        optimizations: List[BaseOptimization] = []
         images = {}
         runtime_ids = {}
         pod_tmpl_specs = {}
 
         for deployment_config in config.deployments:
-            deployment = await Deployment.read(deployment_config.name, namespace.name)
-            pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
+            if deployment_config.strategy == OptimizationStrategy.DEFAULT:
+                optimization = await DeploymentOptimization.create(deployment_config)
+            elif deployment_config.strategy == OptimizationStrategy.CANARY:
+                optimization = await CanaryOptimization.create(deployment_config)
+            else:
+                raise ValueError(f"unknown optimization strategy: {deployment_config.strategy}")
 
-            replicas = deployment_config.replicas.copy()
-            replicas.value = deployment.replicas
+            optimizations.append(optimization)
 
-            for container_config in deployment_config.containers:
-                container = deployment.get_container(container_config.name)
-                        
-                images[container.name] = container.image
+            # TODO: restore this
+            # pods = await optimization.deployment.get_pods()
+            # runtime_ids[deployment.name] = [pod.uid for pod in pods]
 
-                # TODO: This state can be held on the deployment/container models
-                cpu = container_config.cpu.copy()
-                cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
-                memory = container_config.memory.copy()
-                memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
-
-                adjustables.append(
-                    Adjustable(
-                        name=f"{deployment.name}/{container.name}",
-                        canary=deployment_config.strategy == OptimizationStrategy.CANARY,
-                        deployment=deployment,
-                        container=container,
-                        cpu=cpu,
-                        memory=memory,
-                        replicas=replicas,
-                    )
-                )
-
-                pods = await deployment.get_pods()
-                runtime_ids[deployment.name] = [pod.uid for pod in pods]
+            # TODO: restore this
+            # pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
+            
+            # TODO: restore this
+            #     images[container.name] = container.image
         
         # Compute checksums for change detection
         spec_id = get_hash([pod_tmpl_specs[k] for k in sorted(pod_tmpl_specs.keys())])
@@ -1676,7 +1801,7 @@ class KubernetesState(BaseModel):
         return KubernetesState(
             config=config,
             namespace=namespace,
-            adjustables=adjustables,
+            optimizations=optimizations,
             spec_id=spec_id,
             runtime_id=runtime_id,
             version_id=version_id,
@@ -1691,20 +1816,21 @@ class KubernetesState(BaseModel):
 
         Returns:
             A Description of the current state.
-        """
+        """                
+        components = list(map(lambda a: a.to_components(), self.optimizations))
         return Description(
-            components=list(map(lambda a: a.to_component(), self.adjustables))
+            components=list(itertools.chain(*components))
         )
     
-    def get_adjustable(self, name: str) -> Adjustable:
+    def find_optimization(self, name: str) -> Optional[BaseOptimization]:
         """
-        Find and return an adjustable by name.
+        Find and return an optimization by name.
         """
-        return next(filter(lambda a: a.name == name, self.adjustables))
+        return next(filter(lambda a: a.name == name, self.optimizations), None)
 
     async def apply(self, adjustments: List[Adjustment]) -> None:
         """
-        ...
+        Apply a sequence of adjustments and wait for them to take effect on the cluster.
         """
         # Exit early if there is nothing to do
         if not adjustments:
@@ -1715,18 +1841,20 @@ class KubernetesState(BaseModel):
         
         # Adjust settings on the local data model
         for adjustment in adjustments:
-            adjustable = self.get_adjustable(adjustment.component_name)
-            self.logger.trace(f"adjusting {adjustment.component_name}: {adjustment}")
-            adjustable.adjust(adjustment)
+            if adjustable := self.find_optimization(adjustment.component_name):
+                self.logger.trace(f"adjusting {adjustment.component_name}: {adjustment}")
+                adjustable.adjust(adjustment)
+            else:
+                self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
         
         # Apply the changes to Kubernetes and wait for the results
         timeout = Duration("5m30s") # TODO: Move to config
-        if self.adjustables:
-            self.logger.debug(f"waiting for adjustments to take effect on {len(self.adjustables)} adjustables")
+        if self.optimizations:
+            self.logger.debug(f"waiting for adjustments to take effect on {len(self.optimizations)} optimizations")
             try:
                 await asyncio.wait_for(
                     asyncio.gather(
-                        *list(map(lambda a: a.apply(), self.adjustables))
+                        *list(map(lambda a: a.apply(), self.optimizations))
                     ),
                     timeout=timeout.total_seconds()
                 )
@@ -1738,7 +1866,7 @@ class KubernetesState(BaseModel):
                     self.logger.info(f"adjustment failed: rolling back deployments...")
                     await asyncio.wait_for(
                         asyncio.gather(
-                            *list(map(lambda a: a.deployment.rollback(), self.adjustables))
+                            *list(map(lambda a: a.deployment.rollback(), self.optimizations))
                         ),
                         timeout=timeout.total_seconds()
                     )
@@ -1746,7 +1874,7 @@ class KubernetesState(BaseModel):
                     self.logger.info(f"adjustment failed: destroying deployments...")
                     await asyncio.wait_for(
                         asyncio.gather(
-                            *list(map(lambda a: a.deployment.delete(), self.adjustables))
+                            *list(map(lambda a: a.deployment.delete(), self.optimizations))
                         ),
                         timeout=timeout.total_seconds()
                     )
