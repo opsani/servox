@@ -20,7 +20,7 @@ def run_cli():
     try:
         for connector in ConnectorLoader().load():
             logger.debug(f"Loaded {connector.__qualname__}")
-    except Exception as error:
+    except Exception:
         logger.exception("failed loading connectors via discovery", backtrace=True, diagnose=True)
 
     cli = ServoCLI()

@@ -161,7 +161,7 @@ def _format(record: dict) -> str:
         
         extra["component"] = component
 
-    return DEFAULT_FORMAT + "\n"
+    return DEFAULT_FORMAT + "\n{exception}"
 
 
 DEFAULT_FILTER = Filter("INFO")

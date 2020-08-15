@@ -170,7 +170,7 @@ class PrometheusConnector(BaseConnector):
             try:
                 response = await client.get(prometheus_request.url)
                 response.raise_for_status()
-            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                 self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
                 return []
 

@@ -167,7 +167,7 @@ class Runner(api.Mixin):
             else:
                 raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
-        except Exception as error:
+        except Exception as error:            
             self.logger.exception(f"{cmd_response.command} command failed: {error}")
             param = dict(status="failed", message=str(error))
             await self.shutdown(asyncio.get_event_loop())
@@ -200,10 +200,10 @@ class Runner(api.Mixin):
         try:
             reason = signal.name if signal else 'shutdown'
             await self._post_event(api.Event.GOODBYE, dict(reason=reason))
-        except Exception as e:
+        except Exception:
             self.logger.exception(
-                f"Exception occurred during GOODBYE request: {e}"
-            )
+                f"Exception occurred during GOODBYE request",
+            backtrace=True, diagnose=True)
         
         self.logger.info("Dispatching shutdown event...")
         await self.servo.shutdown()
@@ -224,12 +224,13 @@ class Runner(api.Mixin):
     def handle_exception(self, loop, context):
         # context["message"] will always be there; but context["exception"] may not
         msg = context.get("exception", context["message"])
-        self.logger.exception(f"Caught exception: {msg}")
-        self.logger.info("Shutting down...")
-        try:
-            asyncio.create_task(self.shutdown(loop))
-        except RuntimeError as e:
-            self.logger.error(f"failed trying to schedule shutdown: {e}")
+        self.logger.opt(exception=msg).exception(f"Caught exception: {msg}")
+        if not loop.is_closed():
+            self.logger.info("Shutting down...")
+            try:
+                asyncio.create_task(self.shutdown(loop))
+            except RuntimeError as e:
+                self.logger.error(f"failed trying to schedule shutdown: {e}")
 
     def run(self) -> None:
         self.display_banner()

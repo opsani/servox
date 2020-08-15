@@ -174,12 +174,12 @@ class Mixin:
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(
+            except httpx.HTTPError:
+                self.logger.error(
                     f"HTTP error encountered while posting {event} event"
                 )
                 self.logger.trace(pformat(event_request))
-                raise error
+                raise
 
         return parse_obj_as(Union[CommandResponse, Status], response.json())
     
@@ -189,12 +189,12 @@ class Mixin:
             try:
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(
+            except httpx.HTTPError:
+                self.logger.error(
                     f"HTTP error encountered while posting {event.value} event"
                 )
                 self.logger.trace(pformat(event_request))
-                raise error
+                raise
 
         return parse_obj_as(Union[CommandResponse, Status], response.json())
 
