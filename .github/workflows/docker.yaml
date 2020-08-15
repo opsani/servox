@@ -8,6 +8,10 @@ jobs:
     steps:
     - name: Checkout repo
       uses: actions/checkout@v2
+    - name: Extract branch name
+      shell: bash
+      run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+      id: extract_branch
     - name: Build and push Docker images
       uses: docker/build-push-action@v1
       env:
@@ -18,5 +22,5 @@ jobs:
         repository: opsani/servox
         tag_with_ref: true
         add_git_labels: true
-        cache_froms: opsani/servox:latest
+        cache_froms: opsani/servox:${{ steps.extract_branch.outputs.branch }}, opsani/servox:latest
         build_args: BUILDKIT_INLINE_CACHE=1,SERVO_ENV=development
