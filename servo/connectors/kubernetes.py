@@ -42,30 +42,9 @@ from loguru import logger
 from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
 
+
 # Create a top-level logger for classes that aren't yet passing the connector logger instance around
 default_logger = logger.bind(component="kubernetes")
-
-# TODO: This has behavior that removes request/limit if it exists
-def set_rsrc(cp, sn, sv, sel="both"):
-    rn = RESOURCE_MAP[sn]
-    if sn == "mem":
-        sv = str(round(sv, 3)) + "GiB"  # internal memory representation is in GiB
-    else:
-        sv = str(round(sv, 3))
-
-    if sel == "request":
-        cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
-        cp["resources"].setdefault("limits", {})[
-            rn
-        ] = None  # Remove corresponding limit if exists
-    elif sel == "limit":
-        cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
-        cp["resources"].setdefault("requests", {})[
-            rn
-        ] = None  # Remove corresponding request if exists
-    else:  # both
-        cp.setdefault("resources", {}).setdefault("requests", {})[rn] = sv
-        cp.setdefault("resources", {}).setdefault("limits", {})[rn] = sv
 
 
 class Condition:
@@ -873,20 +852,12 @@ class Pod(KubernetesModel):
         # return the status of the pod
         return cast(client.V1PodStatus, self.obj.status)
     
-
     @property
     def containers(self) -> List[Container]:
         """
         Return a list of Container objects from the underlying pod template spec.
         """
-        return list(map(lambda c: Container(c, None), self.obj.spec.containers))
-
-    def get_container(self, name: str) -> Container:
-        """
-        Return the container with the given name.
-        """
-        return next(filter(lambda c: c.name == name, self.containers))
-
+        return list(map(lambda c: Container(c, self), self.obj.spec.containers))
 
     async def get_containers(self) -> List[Container]:
         """Get the Pod's containers.
@@ -897,7 +868,7 @@ class Pod(KubernetesModel):
         self.logger.info(f'getting containers for pod "{self.name}"')
         await self.refresh()
 
-        return [Container(c, self) for c in self.obj.spec.containers]
+        return self.containers
 
     # TODO: Rename `find_container` ??
     def get_container(self, name: str) -> Union[Container, None]:
@@ -1058,6 +1029,15 @@ class Deployment(KubernetesModel):
         """Refresh the underlying Kubernetes Deployment resource."""
         async with self.api_client() as api_client:
             self.obj = await api_client.read_namespaced_deployment_status(
+                name=self.name,
+                namespace=self.namespace,
+            )
+    
+    async def rollback(self) -> None:
+        """Roll back an unstable Deployment revision to a previous version."""
+        # create_namespaced_deployment_rollback
+        async with self.api_client() as api_client:
+            self.obj = await api_client.create_namespaced_deployment_rollback(
                 name=self.name,
                 namespace=self.namespace,
             )
@@ -1469,7 +1449,6 @@ class Adjustable(BaseModel): # Optimization?
         value = _qualify(adjustment.value, name)
         if name in ("cpu", "memory"):
             resource = getattr(self, name)
-            debug(f"setting value {value} on container {name} for resource requirements {resource.constraint.requirements}")
             self.container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
 
         elif adjustment.setting_name == "replicas":
@@ -1636,6 +1615,7 @@ class KubernetesState(BaseModel):
     """
     Models the state of resources under optimization in a Kubernetes cluster.
     """
+    config: KubernetesConfiguration
     namespace: Namespace
     adjustables: List[Adjustable]
     runtime_id: str
@@ -1694,6 +1674,7 @@ class KubernetesState(BaseModel):
         version_id = get_hash([images[k] for k in sorted(images.keys())])
 
         return KubernetesState(
+            config=config,
             namespace=namespace,
             adjustables=adjustables,
             spec_id=spec_id,
@@ -1739,7 +1720,7 @@ class KubernetesState(BaseModel):
             adjustable.adjust(adjustment)
         
         # Apply the changes to Kubernetes and wait for the results
-        timeout = Duration("1m30s")
+        timeout = Duration("5m30s") # TODO: Move to config
         if self.adjustables:
             self.logger.debug(f"waiting for adjustments to take effect on {len(self.adjustables)} adjustables")
             try:
@@ -1751,15 +1732,33 @@ class KubernetesState(BaseModel):
                 )
             except asyncio.exceptions.TimeoutError:
                 self.logger.error(f"timed out after {timeout} waiting for adjustments to apply")
-                raise
+                
+                # TODO: All this needs to be intelligent about the strategy
+                if self.config.on_failure == FailureMode.ROLLBACK:
+                    self.logger.info(f"adjustment failed: rolling back deployments...")
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *list(map(lambda a: a.deployment.rollback(), self.adjustables))
+                        ),
+                        timeout=timeout.total_seconds()
+                    )
+                elif self.config.on_failure == FailureMode.DESTROY:
+                    self.logger.info(f"adjustment failed: destroying deployments...")
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *list(map(lambda a: a.deployment.delete(), self.adjustables))
+                        ),
+                        timeout=timeout.total_seconds()
+                    )
+                elif self.config.on_failure == FailureMode.IGNORE:
+                    self.logger.info(f"adjustment failed: ignoring and continuing...")
+                elif self.config.on_failure == FailureMode.CRASH:
+                    raise
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
         # TODO: Figure out how to do progress...
-        # TODO: Rollout undo support
-
-        return
     
     @property
     def logger(self) -> loguru.Logger:
@@ -1952,6 +1951,7 @@ class FailureMode(str, enum.Enum):
     ROLLBACK = "rollback"
     DESTROY = "destroy"
     IGNORE = "ignore"
+    CRASH = "crash"
 
     @classmethod
     def options(cls) -> List[str]:
@@ -2033,6 +2033,9 @@ class KubernetesConfiguration(BaseConfiguration):
             raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
 
 
+KubernetesState.update_forward_refs()
+
+
 class KubernetesChecks(BaseChecks):
     config: KubernetesConfiguration
 
@@ -2083,7 +2086,7 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     def components(self) -> List[Component]:
-        return self.config.deployments
+        return list(map(lambda d: d.to_component(), self.config.deployments))
 
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
@@ -2108,7 +2111,7 @@ class KubernetesConnector(BaseConnector):
             progress = DurationProgress(settlement)
             progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle", False), progress=p.progress)
             await progress.watch(progress_logger)
-            self.logger.info(f"Settlement duration of {settlement} expired, resuming.")
+            self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
 
     @on_event()
     async def check(self) -> List[Check]:
