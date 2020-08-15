@@ -295,7 +295,6 @@ class Setting(BaseModel):
     step: Numeric
     value: Optional[Union[Numeric, str]]
     pinned: bool = False
-    # selector: Optional[str]
 
     def __str__(self):
         if self.type == SettingType.RANGE:
@@ -318,7 +317,7 @@ class Setting(BaseModel):
     
     def opsani_dict(self) -> dict:
         return {
-            self.name: self.dict(exclude={"name"}, exclude_unset=True)
+            self.name: self.dict(include={"type", "min", "max", "step", "pinned", "value"})
         }
 
 
@@ -328,7 +327,7 @@ class Component(BaseModel):
 
     # TODO: These probably move to DeploymentComponent inside KubernetesConnector
     env: Optional[Dict[str, str]]
-    command: Optional[dict] # TODO: This needs to be modeled but not sure what attribugtes
+    command: Optional[dict] # TODO: This needs to be modeled but not sure what attributes
     canary: bool = False
 
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:

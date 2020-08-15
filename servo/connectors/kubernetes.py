@@ -4,6 +4,8 @@ import abc
 import asyncio
 import enum
 import os
+
+from pydantic.types import StrictInt, constr
 from servo.types import Numeric
 import time
 from pathlib import Path
@@ -28,6 +30,7 @@ from servo import (
     Setting,
     SettingType,
     connector,
+    join_to_series,
     on_event,
     get_hash
 )
@@ -174,7 +177,7 @@ async def wait_for_condition(
         await asyncio.sleep(interval)
 
     end = time.time()
-    default_logger.info(f'wait completed (total={end-start}s) {condition}')
+    default_logger.info(f'wait completed (total={Duration(end-start)}) {condition}')
 
 
 @runtime_checkable
@@ -641,6 +644,73 @@ class Container:
             The Container resource requirements.
         """
         return self.obj.resources
+    
+    def get_resource_requirements(self, name: str, *requirements: str, first: bool = False) -> Union[str, Tuple[str]]:
+        """
+        Retrieve resource requirement values for the Container.
+
+        This method retrieves one or more resource requirement values with a non-exceptional,
+        cascading fallback behavior. It is useful for retrieving available requirements from a
+        resource that you do not know the configuration of. Requirements are read and returned in
+        input order. Values can be retrieved as a strictly ordered tuple or a single value can
+        be returned by setting the `first` argument to `True`. When retrieving a single value, values are
+        evaluated in input order and the first requirement that contains a string value is returned.
+
+        Warnings are logged when requested requested requirements are not populated.
+
+        A `ValueError` exception is raised if no value was found for any of the given requirements.
+
+        Args:
+            name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
+            requirements: An array of requirements to from the Deployment. When omitted, defaults to ("limit", "requests").
+            first: When True, a single value is returned for the first requirement to return a value
+        
+        Returns:
+            A tuple of resource requirement strings or `None` values in input order or a single string when `first` is True.
+        
+        Raises:
+            ValueError: Raised if no value was found for any of the given requirements.
+        """
+        if not requirements:
+            requirements = ("limits", "requests")
+        values: List[Union[str, None]] = []
+        
+        for requirement in requirements:
+            if not hasattr(self.resources, requirement):
+                raise ValueError(f"unknown resource requirement '{requirement}'")
+            requirement_dict: Dict[str, str] = getattr(self.resources, requirement)
+            if name in requirement_dict:
+                value = requirement_dict[name]
+                if first:
+                    return value
+                else:
+                    values.append(value)
+            else:
+                default_logger.warning("requirement '{requirement}' is not set for resource '{name}'")
+                values.append(None)
+            
+        if not values:
+            raise ValueError(f"no requirements were found for resource '{name}''")
+        return tuple(values)
+    
+    def set_resource_requirements(self, name: str, value: Union[str, Tuple[str]], *requirements: str, clear_others: bool = False) -> None:
+        """
+        Set the value for one or more resource requirements on the underlying Container.
+
+        Args:
+            clear_others: When True, any requirements not specified in the input arguments are removed.
+        """
+        if not requirements:
+            requirements = ("limits", "requests")
+
+        for requirement in list(self.resources.to_dict().keys()):
+            req_dict = getattr(self.resources, requirement)
+            if requirement in requirements:                
+                req_dict[name] = value
+            else:
+                if clear_others:
+                    req_dict[name] = None
+
         
     def __str__(self) -> str:
         return str(self.obj)
@@ -1224,6 +1294,14 @@ class ResourceConstraint(enum.Enum):
     limit = "limit"
     both = "both"
 
+    @property
+    def requirements(self) -> List[str]:
+        # FIXME: there's a hack here to pluralize the terms because config/runtime have an impedance mismatch. clean it up
+        if self == ResourceConstraint.both:
+            return ["limits", "requests"]
+        else:
+            return [self.value + 's']
+
 
 class Resource(Setting):
     """
@@ -1231,6 +1309,9 @@ class Resource(Setting):
     to request and limit configuration.
     """
     constraint: ResourceConstraint = ResourceConstraint.both
+
+    class Config:
+        validate_assignment = True
 
 
 class Millicore(int):
@@ -1283,16 +1364,21 @@ class CPU(Resource):
     """
     The CPU class models a Kubernetes CPU resource in Millicore units.
     """
-    value: Millicore
-    # min: Millicore
-    # max: Millicore
-    # step: Millicore
-    # name = "cpu"
-    # type = SettingType.RANGE
+    value: Optional[Millicore]
+    min: Millicore
+    max: Millicore
+    step: Millicore
+    name = "cpu"
+    type = SettingType.RANGE
+
+    # TODO: Don't allow value outside of range
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
-        o_dict["cpu"]["value"] = float(self.value)
+        
+        # normalize values into floats (see Millicore __float__)
+        for field in ("min", "max", "step", "value"):
+            o_dict["cpu"][field] = float(getattr(self, field))
         return o_dict
 
 
@@ -1310,6 +1396,8 @@ class ShortByteSize(ByteSize):
             except:
                 # Append the byte suffix and retry parsing
                 return super().validate(v + "b")
+        elif isinstance(v, float):
+            v = v * GiB
         return super().validate(v)
 
 
@@ -1317,20 +1405,19 @@ class Memory(Resource):
     """
     The Memory class models a Kubernetes Memory resource.
     """
-    value: ShortByteSize
-    # min: ShortByteSize
-    # max: ShortByteSize
-    # step: ShortByteSize
-    # name = "memory"
-    # type = SettingType.RANGE
-
-    @property
-    def gibibytes(self) -> float:
-        return float(self.value) / GiB
+    value: Optional[ShortByteSize]
+    min: ShortByteSize
+    max: ShortByteSize
+    step: ShortByteSize
+    name = "memory"
+    type = SettingType.RANGE
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
-        o_dict["memory"]["value"] = self.gibibytes
+
+        # normalize values into floating point Gibibyte units
+        for field in ("min", "max", "step", "value"):
+            o_dict["memory"][field] = float(getattr(self, field)) / GiB
         return o_dict
 
 
@@ -1339,9 +1426,15 @@ class Replicas(Setting):
     The Replicas class models a Kubernetes setting that specifies the number of
     desired Pods running in a Deployment.
     """
-    value: int
-    # name = "replicas"
-    # type = SettingType.RANGE
+    value: Optional[StrictInt]
+    min: StrictInt
+    max: StrictInt
+    step: StrictInt = StrictInt(1)
+    name = "replicas"
+    type = SettingType.RANGE
+
+    class Config:
+        validate_assignment = True
 
 
 # TODO: The Adjustment needs to marshal value appropriately on ingress
@@ -1355,18 +1448,17 @@ def _qualify(value, unit):
     return value
 
 
-class Adjustable(BaseModel):
+class Adjustable(BaseModel): # Optimization?
     name: str
     deployment: Deployment
     container: Container
-    canary: bool = False
+    canary: bool = False # TODO: This changes into strategy
 
     # Resources
     # TODO: This crap moves back to the DeploymentComponent
     cpu: CPU
     memory: Memory
     replicas: Replicas
-    env: Dict[str, str] = {}
     
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
@@ -1376,11 +1468,9 @@ class Adjustable(BaseModel):
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
         if name in ("cpu", "memory"):
-            resource = getattr(self, name)            
-            if resource.constraint in (ResourceConstraint.request, ResourceConstraint.both):
-                self.container.resources.requests[name] = value
-            if resource.constraint in (ResourceConstraint.limit, ResourceConstraint.both):
-                self.container.resources.limits[name] = value
+            resource = getattr(self, name)
+            debug(f"setting value {value} on container {name} for resource requirements {resource.constraint.requirements}")
+            self.container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
 
         elif adjustment.setting_name == "replicas":
             if self.canary and self.deployment.replicas != value:
@@ -1565,44 +1655,38 @@ class KubernetesState(BaseModel):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for component in config.deployments:
-            deployment_name = component.name
-            container_name = None
-            if "/" in deployment_name:
-                deployment_name, container_name = component.name.split("/")
+        for deployment_config in config.deployments:
+            deployment = await Deployment.read(deployment_config.name, namespace.name)
+            pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
 
-            deployment = await Deployment.read(deployment_name, namespace.name)
-            if container_name:
-                container = deployment.get_container(container_name)
-            else:
-                container = deployment.containers[0]
-            
-            pod_tmpl_specs[deployment_name] = deployment.obj.spec.template.spec
-            images[deployment_name] = container.image
+            replicas = deployment_config.replicas.copy()
+            replicas.value = deployment.replicas
 
-            # TODO: Needs to respect the constraint (limit vs. request)... (maybe... container.get_resource("cpu", constraint), set_resource("cpu", value, constraint))
-            # TODO: These just become direct property assignments once DeploymentComponent is live (!!! maybe not -- need to support pods)
-            cpu_setting = next(filter(lambda c: c.name == "cpu", component.settings))
-            cpu_setting.value = container.resources.limits["cpu"]
-            mem_setting = next(filter(lambda c: c.name == "memory", component.settings))
-            mem_setting.value = container.resources.limits["memory"]
-            replicas_setting = next(filter(lambda c: c.name == "replicas", component.settings))
-            replicas_setting.value = deployment.replicas
+            for container_config in deployment_config.containers:
+                container = deployment.get_container(container_config.name)
+                        
+                images[container.name] = container.image
 
-            adjustables.append(
-                Adjustable(
-                    name=component.name,
-                    canary=component.canary,
-                    deployment=deployment,
-                    container=container,
-                    cpu=CPU.parse_obj(cpu_setting.dict()),
-                    memory=Memory.parse_obj(mem_setting.dict()),
-                    replicas=Replicas.parse_obj(replicas_setting.dict()),
+                # TODO: This state can be held on the deployment/container models
+                cpu = container_config.cpu.copy()
+                cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
+                memory = container_config.memory.copy()
+                memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
+
+                adjustables.append(
+                    Adjustable(
+                        name=f"{deployment.name}/{container.name}",
+                        canary=deployment_config.strategy == OptimizationStrategy.CANARY,
+                        deployment=deployment,
+                        container=container,
+                        cpu=cpu,
+                        memory=memory,
+                        replicas=replicas,
+                    )
                 )
-            )
 
-            pods = await deployment.get_pods()
-            runtime_ids[deployment_name] = [pod.uid for pod in pods]
+                pods = await deployment.get_pods()
+                runtime_ids[deployment.name] = [pod.uid for pod in pods]
         
         # Compute checksums for change detection
         spec_id = get_hash([pod_tmpl_specs[k] for k in sorted(pod_tmpl_specs.keys())])
@@ -1770,18 +1854,111 @@ class KubernetesState(BaseModel):
         arbitrary_types_allowed = True
 
 
-# NOTE: This class is not yet live
-class DeploymentComponent(Component):
-    """
-    The DeploymentComponent class models an optimizable Kubernetes Deployment.
-    """
-    namespace: str = "default"
-    container: str = "main" # TODO: Is this a Kubernetes naming or Opsani?
-    canary: bool = False
-    memory: Memory
-    replicas: Replicas
-    settings: List[Setting]
+DNSSubdomainName = constr(strip_whitespace=True, min_length=1, max_length=253, regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$")
+"""
+DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
 
+Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+    * contain no more than 253 characters
+    * contain only lowercase alphanumeric characters, '-' or '.'
+    * start with an alphanumeric character
+    * end with an alphanumeric character
+
+See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+"""
+
+
+DNSLabelName = constr(strip_whitespace=True, min_length=1, max_length=63, regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$")
+"""
+DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
+
+Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+    * contain at most 63 characters
+    * contain only lowercase alphanumeric characters or '-'
+    * start with an alphanumeric character
+    * end with an alphanumeric character
+
+See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
+"""
+
+
+ContainerTagName = constr(strip_whitespace=True, min_length=1, max_length=128, regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$") # NOTE: This regex is not a full validation
+"""
+ContainerTagName models the name of a container referenced in a Kubernetes manifest.
+
+Valid container tags must:
+    * be valid ASCII and may contain lowercase and uppercase letters, digits, underscores, periods and dashes. 
+    * not start with a period or a dash
+    * may contain a maximum of 128 characters
+"""
+
+
+class EnvironmentConfiguration(BaseConfiguration):
+    ...
+
+class CommandConfiguration(BaseConfiguration):
+    ...
+
+class ContainerConfiguration(BaseConfiguration):
+    """
+    The ContainerConfiguration class models the configuration of an optimizable container within a Kubernetes Deployment.
+    """
+    name: ContainerTagName
+    command: Optional[str] # TODO: create model...
+    cpu: CPU
+    memory: Memory
+    env: Optional[List[str]] # TODO: create model...
+
+
+class OptimizationStrategy(str, enum.Enum):
+    """
+    OptimizationStrategy is an enumeration of the possible ways to perform optimization on a Kubernetes Deployment.
+    """
+    DEFAULT = "default"
+    """The default strategy directly applies adjustments to the target Deployment and its containers.
+    """
+
+    CANARY = "canary"
+    """The canary strategy creates a servo managed standalone canary Pod based on the target Deployment and makes
+    adjustments to it instead of the Deployment itself.
+    """
+
+
+class DeploymentConfiguration(BaseConfiguration):
+    """
+    The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
+    """
+    name: DNSSubdomainName
+    namespace: DNSSubdomainName = DNSSubdomainName("default")
+    containers: List[ContainerConfiguration]
+    strategy: OptimizationStrategy = OptimizationStrategy.DEFAULT
+    replicas: Replicas
+
+    def to_component(self) -> Component:
+        """
+        Return a representation of the Deployment as a Servo Component.
+
+        This method is used to serialize Kubernetes Deployment configurations for exchange with the Opsani API.
+        """
+        # TODO: Map self 
+        ...
+
+
+class FailureMode(str, enum.Enum):
+    """
+    The FailureMode enumeration defines how to handle a failed adjustment of a Kubernetes resource.
+    """
+
+    ROLLBACK = "rollback"
+    DESTROY = "destroy"
+    IGNORE = "ignore"
+
+    @classmethod
+    def options(cls) -> List[str]:
+        """
+        Return a list of strings that identifies all failure mode configuration options.
+        """
+        return list(map(lambda mode: mode.value, cls.__members__.values()))
 
 
 class KubernetesConfiguration(BaseConfiguration):
@@ -1795,13 +1972,17 @@ class KubernetesConfiguration(BaseConfiguration):
         "default",
         description="Kubernetes namespace where the target deployments are running.",
     )
-    deployments: List[Component] = Field(
-        description="The deployments and adjustable settings to optimize.",
-    )
-    settlement_duration: Duration = Field(
+    settlement: Duration = Field(
         0,
         description="Duration to observe the application after an adjust to ensure the deployment is stable."
     )
+    on_failure: FailureMode = Field(
+        FailureMode.ROLLBACK,
+        description=f"How to handle a failed adjustment. Options are: {join_to_series(list(FailureMode.__members__.values()))}"
+    )    
+    deployments: List[DeploymentConfiguration] = Field(
+        description="Deployments to be optimized.",
+    )    
 
     @classmethod
     def generate(cls, **kwargs) -> "KubernetesConfiguration":
@@ -1809,15 +1990,25 @@ class KubernetesConfiguration(BaseConfiguration):
             namespace="default",
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             deployments=[
-                Component(
+                DeploymentConfiguration(
                     name="app",
-                    settings=[
-                        Setting(
-                            name="cpu",
-                            type="range",
-                            min="0.125",
-                            max="4.0",
-                            step="0.125",
+                    replicas=Replicas(
+                        min=1,
+                        max=2,
+                    ),
+                    containers=[
+                        ContainerConfiguration(
+                            name="opsani/co-http:latest",
+                            cpu=CPU(
+                                min="250m",
+                                max="4000m",
+                                step="125m"
+                            ),
+                            memory=Memory(
+                                min="256 MiB",
+                                max="4.0 GiB",
+                                step="128 MiB"
+                            )
                         )
                     ]
                 )
@@ -1911,13 +2102,13 @@ class KubernetesConnector(BaseConnector):
         await state.apply(adjustments)
 
         # TODO: Move this into event declaration??
-        settlement_duration = self.config.settlement_duration
-        if settlement_duration:
-            self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")            
-            progress = DurationProgress(settlement_duration)
+        settlement = self.config.settlement
+        if settlement:
+            self.logger.info(f"Settlement duration of {settlement} requested, sleeping...")            
+            progress = DurationProgress(settlement)
             progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle", False), progress=p.progress)
             await progress.watch(progress_logger)
-            self.logger.info(f"Settlement duration of {settlement_duration} expired, resuming.")
+            self.logger.info(f"Settlement duration of {settlement} expired, resuming.")
 
     @on_event()
     async def check(self) -> List[Check]:

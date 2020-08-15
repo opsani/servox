@@ -185,7 +185,7 @@ class Runner(api.Mixin):
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
         self.logger.info("Broadcasting startup event...")
-        self.servo.startup()
+        await self.servo.startup()
 
         self.logger.info("Saying HELLO.", end=" ")
         await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))

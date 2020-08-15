@@ -1,5 +1,6 @@
 import asyncio
 from kubetest.objects import namespace
+from pydantic.error_wrappers import ValidationError
 import pytest
 import json
 import yaml
@@ -7,14 +8,390 @@ import yaml
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client.api_client import ApiClient
 
-from servo.connectors.kubernetes import CPU, Memory, Replicas, DeploymentComponent, KubernetesConfiguration, KubernetesConnector, Replicas
-from servo.types import Component, Setting
+from servo.connectors.kubernetes import CPU, Deployment, ResourceConstraint, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName
+from servo.types import Component, Setting, SettingType
+from pydantic import BaseModel
+from typing import Type
+
+class TestDNSSubdomainName:
+    @pytest.fixture
+    def model(self) -> Type[BaseModel]:
+        class Model(BaseModel):
+            name: DNSSubdomainName
+        return Model
+
+    def test_cannot_be_blank(self, model) -> None:
+        valid_name = "ab"
+        invalid_name = ""
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': 'ensure this value has at least 1 characters',
+            'type': 'value_error.any_str.min_length',
+            'ctx': {
+                'limit_value': 1,
+            },
+        } in e.value.errors()
+    
+    def test_handles_uppercase_chars(self, model) -> None:
+        valid_name = "ABCD"
+        assert model(name=valid_name)
+    
+    def test_cannot_be_longer_than_253_chars(self, model) -> None:
+        valid_name = "a" * 253
+        invalid_name = valid_name + "b"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': 'ensure this value has at most 253 characters',
+            'type': 'value_error.any_str.max_length',
+            'ctx': {
+                'limit_value': 253,
+            },
+        } in e.value.errors()
+
+    
+    def test_can_only_contain_alphanumerics_hyphens_and_dots(self, model) -> None:
+        valid_name = "abcd1234.-sss"
+        invalid_name = "abcd1234.-sss_$%!"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e        
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSSubdomainName.regex.pattern,
+            },
+        } in e.value.errors()
+    
+    def test_must_start_with_alphanumeric_character(self, model) -> None:
+        valid_name = "abcd"
+        invalid_name = "-abcd"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSSubdomainName.regex.pattern,
+            },
+        } in e.value.errors()
+    
+    def test_must_end_with_alphanumeric_character(self, model) -> None:
+        valid_name = "abcd"
+        invalid_name = "abcd-"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSSubdomainName.regex.pattern,
+            },
+        } in e.value.errors()
+
+
+class TestDNSLabelName:
+    @pytest.fixture
+    def model(self) -> Type[BaseModel]:
+        class Model(BaseModel):
+            name: DNSLabelName
+        return Model
+
+    def test_cannot_be_blank(self, model) -> None:
+        valid_name = "ab"
+        invalid_name = ""
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': 'ensure this value has at least 1 characters',
+            'type': 'value_error.any_str.min_length',
+            'ctx': {
+                'limit_value': 1,
+            },
+        } in e.value.errors()
+    
+    def test_handles_uppercase_chars(self, model) -> None:
+        valid_name = "ABCD"
+        assert model(name=valid_name)
+    
+    def test_cannot_be_longer_than_63_chars(self, model) -> None:
+        valid_name = "a" * 63
+        invalid_name = valid_name + "b"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': 'ensure this value has at most 63 characters',
+            'type': 'value_error.any_str.max_length',
+            'ctx': {
+                'limit_value': 63,
+            },
+        } in e.value.errors()
+
+    
+    def test_can_only_contain_alphanumerics_and_hyphens(self, model) -> None:
+        valid_name = "abcd1234-sss"
+        invalid_name = "abcd1234.-sss_$%!"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e        
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSLabelName.regex.pattern,
+            },
+        } in e.value.errors()
+    
+    def test_must_start_with_alphanumeric_character(self, model) -> None:
+        valid_name = "abcd"
+        invalid_name = "-abcd"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSLabelName.regex.pattern,
+            },
+        } in e.value.errors()
+    
+    def test_must_end_with_alphanumeric_character(self, model) -> None:
+        valid_name = "abcd"
+        invalid_name = "abcd-"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            'type': 'value_error.str.regex',
+            'ctx': {
+                'pattern': DNSLabelName.regex.pattern,
+            },
+        } in e.value.errors()
+
+class TestContainerTagName:
+    @pytest.fixture
+    def model(self) -> Type[BaseModel]:
+        class Model(BaseModel):
+            name: ContainerTagName
+        return Model
+
+    def test_cant_be_more_than_128_characters(self, model) -> None:
+        valid_name = "a" * 128
+        invalid_name = valid_name + "b"
+
+        assert model(name=valid_name)
+        with pytest.raises(ValidationError) as e:
+            model(name=invalid_name)
+        assert e
+        assert {
+            'loc': ('name',),
+            'msg': 'ensure this value has at most 128 characters',
+            'type': 'value_error.any_str.max_length',
+            'ctx': {
+                'limit_value': 128,
+            },
+        } in e.value.errors()
+    
+    @pytest.mark.parametrize(
+        "tag_name,valid",
+        [
+            ("image/tag:v1.0.0", True),
+            ("123.123.123.123:123/image/tag:v1.0.0", True),
+            ("your-domain.com/image/tag", True),
+            ("your-domain.com/image/tag:v1.1.1-patch1", True),
+            ("image/tag", True),
+            ("image", True),
+            ("image:v1.1.1-patch", True),
+            ("ubuntu@sha256:45b23dee08af5e43a7fea6c4cf9c25ccf269ee113168c19722f87876677c5cb2", True),
+            ("-", False),
+            (".", False),
+        ]
+    )
+    def test_tags(self, model, tag_name, valid) -> None:
+        if valid:
+            assert model(name=tag_name)
+        else:
+            with pytest.raises(ValidationError) as e:
+                model(name=tag_name)
+            assert e
+            assert {
+                'loc': ('name',),
+                'msg': f'string does not match regex "{ContainerTagName.regex.pattern}"',
+                'type': 'value_error.str.regex',
+                'ctx': {
+                    'pattern': ContainerTagName.regex.pattern,
+                },
+            } in e.value.errors()
+
+class TestEnvironmentConfiguration:
+    pass
+
+class TestCommandConfiguration:
+    pass
 
 class TestKubernetesConfiguration:
     pass
 
 class TestKubernetesConnector:
     pass
+
+class TestContainerConfiguration:
+    pass
+
+class TestDeploymentConfiguration:
+    pass
+
+    def test_inheritance_of_default_namespace(self) -> None:
+        ...
+    
+
+class TestReplicas:
+    @pytest.fixture
+    def replicas(self) -> Replicas:
+        return Replicas(min=1, max=4)
+
+    def test_parsing(self, replicas) -> None:
+        assert {
+            'name': 'replicas',
+            'type': SettingType.RANGE,
+            'min': 1,
+            'max': 4,
+            'step': 1,
+            'value': None,
+            'pinned': False,
+        } == replicas.dict()
+    
+    def test_to_opsani_dict(self, replicas) -> None:
+        replicas.value = "3"
+        assert cpu.opsani_dict() == {
+            'cpu': {
+                'max': 4.0, 
+                'min': 0.1, 
+                'step': 0.125, 
+                'value': 3.0,
+                'type': SettingType.RANGE,
+                'pinned': False
+            }
+        }
+
+class TestCPU:
+    @pytest.fixture
+    def cpu(self) -> CPU:
+        return CPU(min="100m", max=4, step="125m")
+
+    def test_parsing(self, cpu) -> None:        
+        assert {
+            'name': 'cpu',
+            'type': SettingType.RANGE,
+            'min': 100,
+            'max': 4000,
+            'step': 125,
+            'value': None,
+            'pinned': False,
+            'constraint': ResourceConstraint.both,
+        } == cpu.dict()
+    
+    def test_to_opsani_dict(self, cpu) -> None:
+        cpu.value = "3"
+        assert cpu.opsani_dict() == {
+            'cpu': {
+                'max': 4.0, 
+                'min': 0.1, 
+                'step': 0.125, 
+                'value': 3.0,
+                'type': SettingType.RANGE,
+                'pinned': False
+            }
+        }
+    
+    def test_validates_value_in_range(self, cpu) -> None:
+        ...
+
+class TestMemory:
+    @pytest.fixture
+    def memory(self) -> Memory:
+        return Memory(min="128 MiB", max="4.0 GiB", step="0.25 GiB")
+
+    def test_parsing(self, memory) -> None:
+        assert {
+            'name': 'memory',
+            'type': SettingType.RANGE,
+            'min': 134217728,
+            'max': 4294967296,
+            'step': 268435456,
+            'value': None,
+            'pinned': False,
+            'constraint': ResourceConstraint.both,
+        } == memory.dict()
+    
+    def test_to_opsani_dict(self, memory) -> None:
+        memory.value = "3.0 GiB"
+        assert memory.opsani_dict() == {
+            'memory': {
+                'max': 4.0, 
+                'min': 0.125, 
+                'step': 0.25, 
+                'value': 3.0,
+                'type': SettingType.RANGE,
+                'pinned': False
+            }
+        }
+    
+    def test_handling_float_input(self) -> None:
+        memory = Memory(min=0.5, max=4.0, step=0.125, value="3.0 GiB")
+        assert memory.opsani_dict() == {
+            'memory': {
+                'max': 4.0, 
+                'min': 0.5, 
+                'step': 0.125, 
+                'value': 3.0,
+                'type': SettingType.RANGE,
+                'pinned': False
+            }
+        }
+    
+    def test_validates_value_in_range(self, cpu) -> None:
+        ...
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:
@@ -30,10 +407,24 @@ async def test_measure(config):
     description = await connector.measure()
 
 from servo.api import descriptor_to_adjustments
-async def test_adjust(config, adjustment):
+async def test_adjust(config, adjustment):    
     connector = KubernetesConnector(config=config)
+
     description = await connector.adjust(descriptor_to_adjustments(adjustment))
     debug(description)
+
+def test_config():
+    debug(KubernetesConfiguration.generate())
+
+async def test_read_pod(config, adjustment):
+    connector = KubernetesConnector(config=config)
+    await config.load_kubeconfig()
+    # dep = await Deployment.read("opsani-servo", "default")
+    # debug(dep)
+    pod = await Pod.read("web-canary", "default")
+    debug(pod)
+    # description = await connector.adjust(descriptor_to_adjustments(adjustment))
+    # debug(description)
 
 async def test_apply_no_changes():
     # resource_version stays the same and early exits
@@ -150,7 +541,7 @@ def test_millicpu():
 def canary_config(config) -> KubernetesConfiguration:
     canary_config = config.copy()
     for dep in canary_config.deployments:
-        dep.canary = True
+        dep.strategy = "canary"
     return canary_config
 
 @pytest.fixture
@@ -158,30 +549,26 @@ def config() -> KubernetesConfiguration:
     return KubernetesConfiguration(
         namespace="default",
         deployments=[
-            Component(
+            DeploymentConfiguration(
                 name="co-http-deployment",
-                settings=[
-                    Setting(
-                        name="cpu",
-                        min=0.1,
-                        max=0.8,
-                        step=0.125,
-                        type="range"
-                    ),
-                    Setting(
-                        name="memory",
-                        min=0.1,
-                        max=0.8,
-                        step=0.125,
-                        type="range"
-                    ),
-                    Setting(
-                        name="replicas",
-                        min=1,
-                        max=2,
-                        step=1,
-                        type="range"
-                    ),
+                replicas=Replicas(
+                    min=1,
+                    max=2,
+                ),
+                containers=[
+                    ContainerConfiguration(
+                        name="opsani/co-http:latest",
+                        cpu=CPU(
+                            min="100m",
+                            max="800m",
+                            step="125m"
+                        ),
+                        memory=Memory(
+                            min="100 MiB",
+                            max="0.8 GiB",
+                            step="128 MiB"
+                        )
+                    )
                 ]
             )
         ]
