@@ -138,6 +138,9 @@ class Duration(timedelta):
 
 
 class DurationProgress(BaseModel):
+    """
+    DurationProgress objects track progress across a fixed time duration.
+    """
     duration: Duration
     started_at: Optional[datetime]
 
@@ -145,15 +148,29 @@ class DurationProgress(BaseModel):
         super().__init__(duration=duration, **kwargs)
 
     def start(self) -> None:
+        """
+        Start progress tracking.
+
+        The current time when `start` is called is used as the starting point to track progress.
+
+        Raises:
+            AssertionError: Raised if the object has already been started.
+        """
         assert not self.started
         self.started_at = datetime.now()
 
     @property
     def started(self) -> bool:
+        """
+        Return a boolean value that indicates if progress tracking has started.
+        """
         return self.started_at is not None
 
     @property
     def finished(self) -> bool:
+        """
+        Return a boolean value that indicates if the duration has elapsed and progress is 100%.
+        """
         return self.progress >= 100
     
     async def watch(
@@ -161,11 +178,21 @@ class DurationProgress(BaseModel):
         notify: Callable[['DurationProgress'], Union[None, Awaitable[None]]],
         every: Duration = Duration("5s"), 
         ) -> None:
+        """
+        Asynchronously watch progress tracking and invoke a callback to periodically report on progress.
+
+        Args:
+            notify: An (optionally asynchronous) callable object to periodically invoke for progress reporting.
+            every: The Duration to periodically invoke the notify callback to report progress.
+        """
         async def async_notifier() -> None:
             if asyncio.iscoroutinefunction(notify):
                 await notify(self)
             else:
                 notify(self)
+
+        if not self.started:
+            self.start()
 
         while True:
             if self.finished:
@@ -175,13 +202,24 @@ class DurationProgress(BaseModel):
 
     @property
     def progress(self) -> float:
+        """Completion progress percentage as a floating point value from 0.0 to 100.0"""
         return min(100.0, 100.0 * (self.elapsed / self.duration)) if self.started else 0.0
 
     @property
     def elapsed(self) -> Duration:
+        """Total time elapsed since progress tracking was started as a Duration value."""
         return Duration(datetime.now() - self.started_at) if self.started else Duration(0)
 
     def annotate(self, str_to_annotate: str) -> str:
+        """
+        Annotate an input string with details about progress status.
+
+        Args:
+            str_to_annotate: The string to annotate with progress status.
+        
+        Returns:
+            A new string annotated with progress status info.
+        """
         return f"{self.progress:.2f}% complete, {self.elapsed} elapsed - {str_to_annotate}"
 
 

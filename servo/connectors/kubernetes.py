@@ -1908,7 +1908,7 @@ class KubernetesConnector(BaseConnector):
         if settlement_duration:
             self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")            
             progress = DurationProgress(settlement_duration)
-            progress_logger = lambda p: self.logger.info("allowing application to settle", progress=p.progress)
+            progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle"), progress=p.progress)
             await progress.watch(progress_logger)
             self.logger.info(f"Settlement duration of {settlement_duration} expired, resuming.")
 
