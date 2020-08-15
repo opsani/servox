@@ -210,7 +210,7 @@ class DurationProgress(BaseModel):
         """Total time elapsed since progress tracking was started as a Duration value."""
         return Duration(datetime.now() - self.started_at) if self.started else Duration(0)
 
-    def annotate(self, str_to_annotate: str) -> str:
+    def annotate(self, str_to_annotate: str, prefix=True) -> str:
         """
         Annotate an input string with details about progress status.
 
@@ -220,7 +220,11 @@ class DurationProgress(BaseModel):
         Returns:
             A new string annotated with progress status info.
         """
-        return f"{self.progress:.2f}% complete, {self.elapsed} elapsed - {str_to_annotate}"
+        status = f"{self.progress:.2f}% complete, {self.elapsed} elapsed"
+        if prefix:
+            return f"{status} - {str_to_annotate}"
+        else:
+            return f"{str_to_annotate} - {status}"
 
 
 class Unit(str, Enum):

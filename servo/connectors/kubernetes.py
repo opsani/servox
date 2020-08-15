@@ -1156,7 +1156,9 @@ class Deployment(KubernetesModel):
         self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' in namespace '{namespace}'")
         
         # Delete any pre-existing canary debris
+        self.logger.debug("deleting canary if necessary")
         await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
+        self.logger.debug("back from canary delete")
         
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new canary")
@@ -1908,7 +1910,7 @@ class KubernetesConnector(BaseConnector):
         if settlement_duration:
             self.logger.info(f"Settlement duration of {settlement_duration} requested, sleeping...")            
             progress = DurationProgress(settlement_duration)
-            progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle"), progress=p.progress)
+            progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle", False), progress=p.progress)
             await progress.watch(progress_logger)
             self.logger.info(f"Settlement duration of {settlement_duration} expired, resuming.")
 
