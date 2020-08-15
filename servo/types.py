@@ -196,9 +196,9 @@ class DurationProgress(BaseModel):
 
         while True:
             if self.finished:
-                break            
-            await async_notifier()
+                break
             await asyncio.sleep(every.total_seconds())
+            await async_notifier()
 
     @property
     def progress(self) -> float:
