@@ -92,6 +92,10 @@ class Duration(timedelta):
         return timedelta.__new__(
             cls, seconds=seconds, microseconds=microseconds, **kwargs
         )
+    
+    def __init__(self, duration: Union[str, timedelta, Numeric] = 0, **kwargs) -> None:
+        # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
+        ...
 
     @classmethod
     def __get_validators__(cls):
@@ -102,7 +106,7 @@ class Duration(timedelta):
         field_schema.update(
             type="string",
             format="duration",
-            pattern="([\d\.]+y)?([\d\.]+mm)?(([\d\.]+w)?[\d\.]+d)?([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
+            pattern="([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
         )
 
@@ -164,14 +168,14 @@ class DurationProgress(BaseModel):
                 notify(self)
 
         while True:
-            if self.completed:
+            if self.finished:
                 break            
             await async_notifier()
             await asyncio.sleep(every.total_seconds())
 
     @property
     def progress(self) -> float:
-        return min(100.0, 100.0 * (self.elapsed / self.duration))
+        return min(100.0, 100.0 * (self.elapsed / self.duration)) if self.started else 0.0
 
     @property
     def elapsed(self) -> Duration:
