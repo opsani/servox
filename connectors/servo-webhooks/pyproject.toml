@@ -7,7 +7,7 @@ authors = ["Blake Watters <blake@opsani.com>"]
 [tool.poetry.dependencies]
 python = "^3.8"
 httpx = "^0.13.3"
-servox = "^0.4.2"
+servox = "^0.5.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

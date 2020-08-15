@@ -64,7 +64,7 @@ class Runner(api.Mixin):
             version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
             names.append(f"{name}-{version}")
         version = typer.style(f"v{Servo.version}", fg=typer.colors.WHITE, bold=True)
-        codename = typer.style("the awakening", fg=typer.colors.MAGENTA, bold=False)
+        codename = typer.style("woke up like this", fg=typer.colors.MAGENTA, bold=False)
         initialized = typer.style("initialized", fg=typer.colors.BRIGHT_GREEN, bold=True)        
         
         typer.secho(f"{version} \"{codename}\" {initialized}")
