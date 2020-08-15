@@ -165,13 +165,12 @@ async def wait_for_condition(
             if await condition.check():
                 break
         except client.exceptions.ApiException as e:
-            default_logger.warning(f'got api exception while waiting: {e}')
+            default_logger.warning(f'encountered API exception while waiting: {e}')
             if fail_on_api_error:
                 raise
 
         # if the condition is not met, sleep for the interval
         # to re-check later
-        default_logger.debug(f"sleeping for {interval} waiting on condition {condition}")
         await asyncio.sleep(interval)
 
     end = time.time()
@@ -678,10 +677,11 @@ class Pod(KubernetesModel):
             name: The name of the Pod to read.
             namespace: The namespace to read the Pod from.
         """
+        default_logger.info(f'reading pod "{name}" in namespace "{namespace}"')
+
         async with cls.preferred_client() as api_client:
-            debug(f"Loading Pod {name} in namespace {namespace}")
             obj = await api_client.read_namespaced_pod_status(name, namespace)
-            debug("Loaded Pod object", obj)
+            default_logger.trace("pod: ", obj)
             return Pod(obj)
 
     async def create(self, namespace: str = None) -> None:
@@ -735,7 +735,7 @@ class Pod(KubernetesModel):
             options = client.V1DeleteOptions()
 
         self.logger.info(f'deleting pod "{self.name}"')
-        self.logger.debug(f'delete options: {options}')
+        self.logger.trace(f'delete options: {options}')
         self.logger.trace(f'pod: {self.obj}')
 
         async with self.api_client() as api_client:
@@ -1138,22 +1138,17 @@ class Deployment(KubernetesModel):
         """
         Delete the canary Pod.
         """
-        self.logger.info("Entering delete_canary_pod....")
         try:
-            self.logger.info(f"Reading canary pod...")
             canary = await self.get_canary_pod()
-            debug("READ CANARY: ", canary)
-            self.logger.warning(f"Deleting canary Pod '{canary.name}' in namespace '{canary.namespace}'...")
+            self.logger.warning(f"Deleting canary Pod '{canary.name}' from namespace '{canary.namespace}'...")
             await canary.delete()
             await canary.wait_until_deleted(timeout=timeout)
-            self.logger.info(f"Deleted canary Pod '{canary.name}' in namespace '{canary.namespace}'.")
+            self.logger.info(f"Deleted canary Pod '{canary.name}' from namespace '{canary.namespace}'.")
             return canary
         except client.exceptions.ApiException as e:
-            self.logger.debug(f"failed loading canary pod: {e}")
             if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
                 raise
         
-        self.logger.info("Exiting delete_canary_pod....")
         return None
 
 
@@ -1168,9 +1163,8 @@ class Deployment(KubernetesModel):
         self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' in namespace '{namespace}'")
         
         # Delete any pre-existing canary debris
-        self.logger.debug("deleting canary if necessary")
+        self.logger.trace("deleting pre-existing canary pod (if any)")
         await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
-        self.logger.debug("back from canary delete")
         
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new canary")
@@ -1211,13 +1205,12 @@ class Deployment(KubernetesModel):
 
         # Create the Pod and wait for it to get ready
         self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")
-        # self.logger.debug(canary_pod)
         await canary_pod.create()
 
         self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
         await canary_pod.wait_until_ready(timeout=timeout)
 
-        # TODO: Add settlement time. Check for unexpected changes to version, etc.    
+        # TODO: Check for unexpected changes to version, etc.    
 
         return canary_pod
 
