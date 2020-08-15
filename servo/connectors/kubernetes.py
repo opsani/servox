@@ -676,8 +676,11 @@ class Pod(KubernetesModel):
             name: The name of the Pod to read.
             namespace: The namespace to read the POd from.
         """
+        debug("Starting to read Pod", name, namespace)
         async with cls.preferred_client() as api_client:
+            debug("Got preffered client", api_client)
             obj = await api_client.read_namespaced_pod(name, namespace)
+            debug("Loaded Pod object", obj)
             return Pod(obj)
 
     async def create(self, namespace: str = None) -> None:
