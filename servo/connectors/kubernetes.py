@@ -1130,6 +1130,7 @@ class Deployment(KubernetesModel):
         """
         Delete the canary Pod.
         """
+        self.logger.info("Entering delete_canary_pod....")
         try:
             canary = await self.get_canary_pod()
             self.logger.warning(f"Deleting canary Pod '{canary.name}' in namespace '{canary.namespace}'...")
@@ -1142,6 +1143,7 @@ class Deployment(KubernetesModel):
             if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
                 raise
         
+        self.logger.info("Exiting delete_canary_pod....")
         return None
 
 

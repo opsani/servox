@@ -169,11 +169,13 @@ class Mixin:
     # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
     async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
-        self.logger.trace(event_request)
+        self.logger.trace(f"POST event request: {pformat(event_request)}")
         async with self.api_client() as client:
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
+                response_json = response.json()
+                self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {pformat(response_json)}")
             except httpx.HTTPError:
                 self.logger.error(
                     f"HTTP error encountered while posting {event} event"
@@ -181,7 +183,7 @@ class Mixin:
                 self.logger.trace(pformat(event_request))
                 raise
 
-        return parse_obj_as(Union[CommandResponse, Status], response.json())
+        return parse_obj_as(Union[CommandResponse, Status], response_json)
     
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)

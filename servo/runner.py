@@ -18,8 +18,8 @@ from servo.configuration import Optimizer
 from servo.errors import ConnectorError
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
-from servo.types import Adjustment, Control, Description, Measurement
-from servo.utilities import commandify
+from servo.types import Adjustment, Control, Duration, Description, Measurement
+from servo.utilities import commandify, value_for_key_path
 
 
 class Runner(api.Mixin):
@@ -160,9 +160,12 @@ class Runner(api.Mixin):
 
             elif cmd_response.command == api.Command.SLEEP:
                     # TODO: Model this
-                    duration = int(cmd_response.param.get("duration", 120))
-                    self.logger.info(f"Sleeping {duration} sec.")
-                    await asyncio.sleep(duration)
+                    duration = Duration(cmd_response.param.get("duration", 120))
+                    status = value_for_key_path(cmd_response.param, "data.status", None)
+                    reason = value_for_key_path(cmd_response.param, "data.reason", "unknown reason")
+                    msg = f"{status}: {reason}" if status else f"{reason}"
+                    self.logger.info(f"Sleeping for {duration} ({msg}).")
+                    await asyncio.sleep(duration.total_seconds())
 
             else:
                 raise ValueError(f"Unknown command '{cmd_response.command.value}'")

@@ -224,7 +224,7 @@ class DurationProgress(BaseModel):
         if prefix:
             return f"{status} - {str_to_annotate}"
         else:
-            return f"{str_to_annotate} - {status}"
+            return f"{str_to_annotate} ({status})"
 
 
 class Unit(str, Enum):
