@@ -112,7 +112,10 @@ class Condition:
         Returns:
             True if the condition was met; False otherwise.
         """
-        self.last_check = bool(await self.fn(*self.args, **self.kwargs))
+        if asyncio.iscoroutinefunction(self.fn):
+            self.last_check = bool(await self.fn(*self.args, **self.kwargs))
+        else:
+            self.last_check = bool(self.fn(*self.args, **self.kwargs))
         return self.last_check
 
 
@@ -166,6 +169,7 @@ async def wait_for_condition(
 
         # if the condition is not met, sleep for the interval
         # to re-check later
+        self.logger.debug(f"sleeping for {interval} waiting on condition {condition}")
         await asyncio.sleep(interval)
 
     end = time.time()
