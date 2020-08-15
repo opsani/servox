@@ -228,17 +228,17 @@ class Servo(BaseConnector):
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)  
 
-    def startup(self):
+    async def startup(self):
         """
         Notifies all connectors that the servo is starting up.
         """
-        return self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
+        await self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
 
-    def shutdown(self):
+    async def shutdown(self):
         """
         Notifies all connectors that the servo is shutting down.
         """
-        return self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
+        await self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
     def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[BaseConnector, List[BaseConnector]]]:
         """
