@@ -1126,7 +1126,7 @@ class Deployment(KubernetesModel):
         Retrieve the canary Pod for this Deployment (if any).
 
         Will raise a Kubernetes API exception if not found.
-        """
+        """        
         return await Pod.read(self.canary_pod_name, self.namespace)
     
 
@@ -1136,7 +1136,9 @@ class Deployment(KubernetesModel):
         """
         self.logger.info("Entering delete_canary_pod....")
         try:
+            self.logger.info(f"Reading canary pod...")
             canary = await self.get_canary_pod()
+            debug("READ CANARY: ", canary)
             self.logger.warning(f"Deleting canary Pod '{canary.name}' in namespace '{canary.namespace}'...")
             await canary.delete()
             await canary.wait_until_deleted(timeout=timeout)
