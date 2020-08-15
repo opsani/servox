@@ -141,13 +141,15 @@ class DurationProgress(BaseModel):
         super().__init__(duration=duration, **kwargs)
 
     def start(self) -> None:
-        assert not self.is_started()
+        assert not self.started
         self.started_at = datetime.now()
 
-    def is_started(self) -> bool:
+    @property
+    def started(self) -> bool:
         return self.started_at is not None
 
-    def is_completed(self) -> bool:
+    @property
+    def finished(self) -> bool:
         return self.progress >= 100
     
     async def watch(
@@ -162,7 +164,7 @@ class DurationProgress(BaseModel):
                 notify(self)
 
         while True:
-            if self.is_completed():
+            if self.completed:
                 break            
             await async_notifier()
             await asyncio.sleep(every.total_seconds())
@@ -173,7 +175,7 @@ class DurationProgress(BaseModel):
 
     @property
     def elapsed(self) -> Duration:
-        return Duration(datetime.now() - self.started_at)
+        return Duration(datetime.now() - self.started_at) if self.started else Duration(0)
 
     def annotate(self, str_to_annotate: str) -> str:
         return f"{self.progress:.2f}% complete, {self.elapsed} elapsed - {str_to_annotate}"

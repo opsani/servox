@@ -1177,22 +1177,23 @@ class Deployment(KubernetesModel):
             pod_controller = next(iter(ow for ow in servo_pod.obj.metadata.owner_references if ow.controller))
 
             # # TODO: Create a ReplicaSet class...
-            # async with ApiClient() as api:
-            #     api_client = client.AppsV1Api(api)
+            async with ApiClient() as api:
+                api_client = client.AppsV1Api(api)
 
-            #     servo_rs = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
-            #     rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
-            #     # deployment info persists thru updates. only remove servo pod if deployment is deleted
-            #     servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
+                servo_rs: client.V1ReplicaSet = await api_client.read_namespaced_replica_set(name=pod_controller.name, namespace=SERVO_POD_NAMESPACE) # still ephemeral
+                rs_controller = next(iter(ow for ow in servo_rs.metadata.owner_references if ow.controller))
+                servo_dep: client.V1Deployment = await api_client.read_namespaced_deployment(name=rs_controller.name, namespace=SERVO_POD_NAMESPACE)
 
-            canary_pod.obj.metadata.owner_references = [ client.V1OwnerReference(
-                api_version=self.api_version,
-                block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
-                controller=True, # Ensures the pod will not be adopted by another controller
-                kind='Deployment',
-                name=self.obj.metadata.name,
-                uid=self.obj.metadata.uid
-            ) ]
+            canary_pod.obj.metadata.owner_references = [
+                client.V1OwnerReference(
+                    api_version=self.api_version,
+                    block_owner_deletion=False, # TODO will setting this to true cause issues or assist in waiting for cleanup?
+                    controller=True, # Ensures the pod will not be adopted by another controller
+                    kind='Deployment',
+                    name=servo_dep.metadata.name,
+                    uid=servo_dep.metadata.uid
+                ) 
+            ]
 
         # Create the Pod and wait for it to get ready
         self.logger.info(f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'")

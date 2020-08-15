@@ -385,7 +385,7 @@ class VegetaConnector(BaseConnector):
             vegeta_report = VegetaReport(**json.loads(json_report))
 
             if datetime.now() > self.warmup_until:
-                if not progress.is_started():
+                if not progress.started:
                     progress.start()
 
                 self.vegeta_reports.append(vegeta_report)
