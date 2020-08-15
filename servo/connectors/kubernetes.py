@@ -1648,14 +1648,19 @@ class KubernetesState(BaseModel):
             adjustable.adjust(adjustment)
         
         # Apply the changes to Kubernetes and wait for the results
+        timeout = Duration("1m30s")
         if self.adjustables:
-            self.logger.debug(f"apply adjustments to {len(self.adjustables)} adjustables")
-            await asyncio.wait_for(
-                asyncio.gather(
-                    *list(map(lambda a: a.apply(), self.adjustables))
-                ),
-                timeout=30.0
-            )
+            self.logger.debug(f"waiting for adjustments to take effect on {len(self.adjustables)} adjustables")
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        *list(map(lambda a: a.apply(), self.adjustables))
+                    ),
+                    timeout=timeout.total_seconds()
+                )
+            except asyncio.exceptions.TimeoutError:
+                self.logger.error(f"timed out after {timeout} waiting for adjustments to apply")
+                raise
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
