@@ -6,6 +6,7 @@ import asyncio
 import enum
 import itertools
 import os
+from pydantic.main import Extra
 
 from pydantic.types import StrictInt, constr
 from servo.types import Numeric
@@ -646,7 +647,8 @@ class Container:
         Args:
             name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
             requirements: An array of requirements to from the Deployment. When omitted, defaults to ("limit", "requests").
-            first: When True, a single value is returned for the first requirement to return a value
+            first: When True, a single value is returned for the first requirement to return a value.
+            default_sentinel: A default value to return when respource requirements could not be found.
         
         Returns:
             A tuple of resource requirement strings or `None` values in input order or a single string when `first` is True.
@@ -693,10 +695,13 @@ class Container:
 
         for requirement in list(self.resources.to_dict().keys()):
             req_dict = getattr(self.resources, requirement)
-            if requirement in requirements:                
+            debug(req_dict)
+            if requirement in requirements:
+                debug(f"setting {name} to {value} on", req_dict)
                 req_dict[name] = value
             else:
                 if clear_others:
+                    debug("clearing out value for ", name)
                     req_dict[name] = None
 
         
@@ -1446,9 +1451,9 @@ class BaseOptimization(abc.ABC, BaseModel):
     name: str
 
     # Resources
-    cpu: CPU
-    memory: Memory
-    replicas: Replicas
+    # cpu: CPU
+    # memory: Memory
+    # replicas: Replicas
     # TODO: add env and command
 
     @abstractclassmethod
@@ -1493,7 +1498,13 @@ class BaseOptimization(abc.ABC, BaseModel):
 
 
 class DeploymentOptimization(BaseOptimization):
+    """
+    The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
+    Deployment and its associated containers.
+    """
+    deployment_config: DeploymentConfiguration
     deployment: Deployment
+    container_config: ContainerConfiguration
     container: Container
 
     @classmethod
@@ -1506,21 +1517,64 @@ class DeploymentOptimization(BaseOptimization):
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
             container = deployment.get_container(container_config.name)
-
-            cpu = container_config.cpu.copy()
-            cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=0)
-            memory = container_config.memory.copy()
-            memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=0)
-
             return cls(
                 name=f"{deployment.name}/{container.name}",
+                deployment_config=config,
                 deployment=deployment,
+                container_config=container_config,
                 container=container,
-                cpu=cpu,
-                memory=memory,
-                replicas=replicas,
             )
 
+    @property
+    def cpu(self) -> CPU:
+        """
+        Return the current CPU setting for the optimization.
+        """
+        cpu = self.container_config.cpu.copy()
+        cpu.value = self.container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
+        return cpu
+    
+    # @cpu.setter
+    # def cpu(self, value) -> None:
+    #     """
+    #     Set the CPU setting for the optimization.
+    #     """
+    #     debug("$$$ SETTING CPU", value)
+    #     self.container.set_resource_requirements("cpu", value, *self.container_config.cpu.constraint.requirements, clear_others=True)
+    
+    @property
+    def memory(self) -> Memory:
+        """
+        Return the current Memory setting for the optimization.
+        """
+        memory = self.container_config.memory.copy()
+        memory.value = self.container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
+        return memory
+    
+    # @memory.setter
+    # def memory(self, value) -> None:
+    #     """
+    #     Set the Memory setting for the optimization.
+    #     """
+    #     debug("$$$ SETTING MEMORY", value)
+    #     self.container.set_resource_requirements("memory", value, *self.container_config.memory.constraint.requirements, clear_others=True)
+
+    @property
+    def replicas(self) -> Replicas:
+        """
+        Return the current Replicas setting for the optimization.
+        """
+        replicas = self.deployment_config.replicas.copy()
+        replicas.value = self.deployment.replicas
+        return replicas
+    
+    # @replicas.setter
+    # def replicas(self, value) -> None:
+    #     """
+    #     Set the Replicas setting for the optimization.
+    #     """
+    #     debug("$$$ SETTING REPLICAS", value)
+    #     self.deployment.replicas = value
 
     def to_components(self) -> List[Component]:
         return [
@@ -1535,12 +1589,15 @@ class DeploymentOptimization(BaseOptimization):
         ]
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+        debug("ADJUSTING: ", adjustment)
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
         if name in ("cpu", "memory"):
-            resource = getattr(self, name)
-            self.container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
-            resource.value = value # TODO: Cleanup this duplication...
+            # resource = getattr(self, name)
+            debug("&&& Before: ", self.container.get_resource_requirements(name, first=True))
+            self.container.set_resource_requirements(name, value, *["limit", "request"], clear_others=True)
+            debug("&&& After: ", self.container.get_resource_requirements(name, first=True))
+            # resource.value = value # TODO: Cleanup this duplication...
 
         elif adjustment.setting_name == "replicas":
             self.deployment.replicas = value
@@ -1674,70 +1731,147 @@ class CanaryOptimization(BaseOptimization):
     """
     """
     target_deployment: Deployment
+    target_deployment_config: DeploymentConfiguration    
+
     target_container: Container
-    canary_pod: Optional[Pod]
-    canary_container: Optional[Container]
+    target_container_config: ContainerConfiguration
+
+    canary_pod: Pod
+    canary_container: Container
 
     @classmethod
     async def create(cls, config: DeploymentConfiguration) -> 'CanaryOptimization':
         deployment = await Deployment.read(config.name, config.namespace)
 
-        # TODO: Figure out how to handle replicas
-        replicas = config.replicas.copy()
-        replicas.value = deployment.replicas
-
         # Create the canary Pod
-        canary = await deployment.ensure_canary_pod()
+        canary_pod = await deployment.ensure_canary_pod()
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            deployment_container = deployment.get_container(container_config.name)
-            canary_container = canary.get_container(container_config.name)
-
-            cpu = container_config.cpu.copy()
-            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=0)
-            memory = container_config.memory.copy()
-            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=0)
+            target_container = deployment.get_container(container_config.name)
+            canary_container = canary_pod.get_container(container_config.name)
 
             return cls(
-                name=f"{deployment.name}/{deployment_container.name}-canary",
+                name=f"{deployment.name}/{canary_container.name}-canary",
+                target_deployment_config=config,
                 target_deployment=deployment,
-                target_container=deployment_container,
-                canary_pod=canary,
+                target_container_config=container_config,
+                target_container=target_container,
+                canary_pod=canary_pod,
                 canary_container=canary_container,
-                cpu=cpu,
-                memory=memory,
-                replicas=replicas,
             )
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
-        if name in ("cpu", "memory"):
-            resource = getattr(self, name)
-            self.canary_container.set_resource_requirements(name, value, *resource.constraint.requirements, clear_others=True)
-            resource.value = value # TODO: Cleanup this duplication...
 
-        elif adjustment.setting_name == "replicas":
-            if adjustment.value not in (0, 1):
-                self.logger.warning(f"rejected attempt to adjust replica count for canary to {adjustment.value}: pin or remove replicas setting to avoid this warning")
-            
+        if name in ("cpu", "memory"):
+            self.canary_container.set_resource_requirements(name, value, *self.target_container_config.cpu.constraint.requirements, clear_others=True)
+        
+        elif name == "replicas":
+            default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
+
         else:
-            raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
+             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{name}'")
 
     async def apply(self) -> None:
-        self.canary_pod = await self.target_deployment.ensure_canary_pod()
+        debug("applying resource requirements: ", self.canary_container.resources)
+
+        # FIXME: This is not going to fly for long...
+        # pod_obj.spec.containers = [container.obj]
+        # debug("BEFORE: ", pod_obj.spec.containers[0].resources, container.resources)
+        # pod_obj.spec.containers[0].resources = container.resources
+        # debug("AFTER: ", pod_obj.spec.containers[0].resources)
+
+        import copy
+
+        dep_copy = copy.copy(self.target_deployment)
+        dep_copy.obj.spec.resources = self.canary_container.resources
+        debug("&^*&^*&^creating ", dep_copy)
+
+
+        self.canary = await dep_copy.ensure_canary_pod()
+
+    @property
+    def cpu(self) -> CPU:
+        """
+        Return the current CPU setting for the optimization.
+        """
+        cpu = self.target_container_config.cpu.copy()
+        cpu.value = self.canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
+        return cpu
+    
+    # @cpu.setter
+    # def cpu(self, value) -> None:
+    #     """
+    #     Set the CPU setting for the optimization.
+    #     """
+    #     self.container.set_resource_requirements("cpu", value, *self.container_config.cpu.constraint.requirements, clear_others=True)
+    
+    @property
+    def memory(self) -> Memory:
+        """
+        Return the current Memory setting for the optimization.
+        """
+        memory = self.target_container_config.memory.copy()
+        memory.value = self.canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
+        return memory
+    
+    # @memory.setter
+    # def memory(self, value) -> None:
+    #     """
+    #     Set the Memory setting for the optimization.
+    #     """
+    #     self.container.set_resource_requirements("memory", value, *self.container_config.memory.constraint.requirements, clear_others=True)
+
+    @property
+    def replicas(self) -> Replicas:
+        """
+        Return the current Replicas setting for the optimization.
+        """
+        return Replicas(            
+            min=0,
+            max=1,
+            value=1,
+        )
+    
+    # @replicas.setter
+    # def replicas(self, value) -> None:
+    #     """
+    #     Set the Replicas setting for the optimization.
+    #     """
+    #     # if adjustment.value not in (0, 1):
+    #     default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.pod.name}"')
 
     def to_components(self) -> List[Component]:
         # Return the parent and the canary
-        cpu = self.cpu.copy(update={ "pinned": True })
-        cpu.value = self.target_container.get_resource_requirements("cpu", first=True, default=None)
+        # container = self.target_deployment.containers[0]
+        # cpu = self.cpu.copy(update={ "pinned": True })
+        # cpu.value = container.get_resource_requirements("cpu", first=True)
+        # memory = self.memory.copy(update={ "pinned": True })
+        # memory.value = container.get_resource_requirements("memory", first=True)
 
-        memory = self.memory.copy(update={ "pinned": True })
-        memory.value = self.target_container.get_resource_requirements("memory", first=True, default=None)
+        # replicas = self.replicas.copy(update={ "pinned": True })
+        # replicas.value = self.deployment.replicas
 
-        replicas = self.replicas.copy(update={ "pinned": True })
-        replicas.value = self.target_deployment.replicas
+        cpu = self.target_container_config.cpu.copy()
+        debug(cpu)
+        if value := self.target_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None):
+            debug(value)
+            cpu.value = value
+
+        memory = self.target_container_config.memory.copy()
+        if value := self.target_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None):
+            memory.value = value
+
+        replicas = Replicas(            
+            min=0,
+            max=1,
+            value=1,
+            pinned=True,
+        )
+
+        
         return [
             Component(
                 name=f"{self.target_deployment.name}/{self.target_container.name}",
@@ -1746,16 +1880,20 @@ class CanaryOptimization(BaseOptimization):
                     memory,
                     replicas,
                 ]
-            ),            
+            ),
             Component(
                 name=self.name,
                 settings=[
                     self.cpu,
                     self.memory,
-                    self.replicas.copy(update={ "value": 1 }) # TODO: This might be wrong...
+                    self.replicas,
                 ]
             )
         ]
+    
+    class Config:
+        arbitrary_types_allowed = True
+        extra = Extra.allow
 
 
 class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
@@ -2070,14 +2208,8 @@ class DeploymentConfiguration(BaseConfiguration):
     strategy: OptimizationStrategy = OptimizationStrategy.DEFAULT
     replicas: Replicas
 
-    def to_component(self) -> Component:
-        """
-        Return a representation of the Deployment as a Servo Component.
 
-        This method is used to serialize Kubernetes Deployment configurations for exchange with the Opsani API.
-        """
-        # TODO: Map self 
-        ...
+CanaryOptimization.update_forward_refs()
 
 
 class FailureMode(str, enum.Enum):
@@ -2153,6 +2285,8 @@ class KubernetesConfiguration(BaseConfiguration):
             **kwargs
         )
     
+    # TODO: Add a validator that will set the default for deployments if not defined
+    
     # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:
         """
@@ -2171,7 +2305,7 @@ class KubernetesConfiguration(BaseConfiguration):
 
 
 KubernetesState.update_forward_refs()
-
+DeploymentOptimization.update_forward_refs()
 
 class KubernetesChecks(BaseChecks):
     config: KubernetesConfiguration
