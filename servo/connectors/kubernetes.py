@@ -628,7 +628,7 @@ class Container:
             The Container resource requirements.
         """
         return self.obj.resources
-    
+
     def get_resource_requirements(self, name: str, *requirements: str, first: bool = False, default: Any = _DEFAULT_SENTINEL) -> Union[str, Tuple[str]]:
         """
         Retrieve resource requirement values for the Container.
@@ -679,8 +679,8 @@ class Container:
                 default_logger.debug(f"no resource requirements found. returning default value: {default}")
                 return default
             else:
-                raise ValueError(f"no requirements were found for resource '{name}''")
-
+                raise ValueError(f"no requirements were found for resource '{name}' ")
+        
         return tuple(values)
     
     def set_resource_requirements(self, name: str, value: Union[str, Tuple[str]], *requirements: str, clear_others: bool = False) -> None:
@@ -1236,9 +1236,12 @@ class Deployment(KubernetesModel):
         pod_obj.metadata.name = canary_pod_name
         pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
         pod_obj.metadata.labels['opsani_role'] = 'tuning'
+
         canary_pod = Pod(obj=pod_obj)
         canary_pod.namespace = namespace
-        self.logger.trace(f"initialized new canary: {canary_pod}")
+        self.logger.debug(f"initialized new canary: {canary_pod}")
+
+        # TODO: Attach envoy proxy
         
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get('POD_NAME')
@@ -1274,7 +1277,10 @@ class Deployment(KubernetesModel):
         self.logger.info(f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready...")
         await canary_pod.wait_until_ready(timeout=timeout)
 
-        # TODO: Check for unexpected changes to version, etc.    
+        # TODO: Check for unexpected changes to version, etc.
+
+        await canary_pod.refresh()
+        await canary_pod.get_containers()
 
         return canary_pod
 
@@ -1787,6 +1793,7 @@ class CanaryOptimization(BaseOptimization):
 
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.obj.spec.resources = self.canary_container.resources
+        dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
         debug("&^*&^*&^creating ", dep_copy)
 
 
