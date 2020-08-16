@@ -1045,13 +1045,14 @@ class ServoCLI(CLI):
                 for component in description.components:
                     for setting in component.settings:
                         components_column.append(
-                            f"{component.name}.{setting.name}={setting.value}"
+                            f"{component.name}.{setting.name}={setting.human_readable_value}"
                         )
 
                 metrics_column = []
                 for metric in description.metrics:
                     metrics_column.append(f"{metric.name} ({metric.unit})")
 
+                name = result.connector.name
                 row = [
                     result.connector.name,
                     "\n".join(components_column),
@@ -1202,34 +1203,33 @@ class ServoCLI(CLI):
             """
             Adjust settings for one or more components
             """
-            components: List[Component] = []
+            adjustments: List[Adjustment] = []
             for descriptor in settings:
+                # TODO: These splits need test coverage
                 component_name, setting_descriptor = descriptor.split(".", 1)
                 setting_name, value = setting_descriptor.split("=", 1)
-                # TODO: This setting object is incomplete annd needs to be modeled
-                setting = Setting.construct(name=setting_name, value=float(value))
-                component = Component(name=component_name, settings=[setting])
-                components.append(component)
+                adjustment = Adjustment(
+                    component_name=component_name, 
+                    setting_name=setting_name,
+                    value=value
+                )
+                adjustments.append(adjustment)
 
-            # TODO: Should be modeled directly as an adjustment instead of jamming into Description
-            description = Description(components=components)
+            
             results: List[EventResult] = sync(context.servo.dispatch_event(
-                Events.ADJUST, description.opsani_dict()
+                Events.ADJUST, adjustments
             ))
             for result in results:
-                adjustment = result.value
-                status = adjustment.get("status", "undefined")
+                outcome = result.value
 
-                if status == "ok":
-                    self.logger.info(f"{result.connector.name} - Adjustment completed")
-                else:
-                    raise ConnectorError(
-                        'Adjustment driver failed with status "{}" and message:\n{}'.format(
-                            status, str(adjustment.get("message", "undefined"))
-                        ),
-                        status=status,
-                        reason=adjustment.get("reason", "undefined"),
+                if isinstance(outcome, Exception):
+                    message = str(outcome.get("message", "undefined"))
+                    raise ConnectorError(                        
+                        f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
                     )
+                else:
+                    self.logger.info(f"{result.connector.name} - Adjustment completed")
+                    
 
         @self.command(section=section, hidden=True)
         def promote() -> None:

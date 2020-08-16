@@ -3,9 +3,13 @@ from __future__ import annotations, print_function
 import abc
 from abc import abstractclassmethod, abstractmethod
 import asyncio
+import copy
 import enum
 import itertools
 import os
+import traceback
+import sys
+
 from pydantic.main import Extra
 
 from pydantic.types import StrictInt, constr
@@ -1239,7 +1243,7 @@ class Deployment(KubernetesModel):
 
         canary_pod = Pod(obj=pod_obj)
         canary_pod.namespace = namespace
-        self.logger.debug(f"initialized new canary: {canary_pod}")
+        self.logger.trace(f"initialized new canary: {canary_pod}")
 
         # TODO: Attach envoy proxy
         
@@ -1455,6 +1459,7 @@ class BaseOptimization(abc.ABC, BaseModel):
     BaseOptimization is the base class for concrete implementations of optimization strategies.
     """
     name: str
+    timeout: Duration# = Duration("7m")
 
     # Resources
     # cpu: CPU
@@ -1463,13 +1468,10 @@ class BaseOptimization(abc.ABC, BaseModel):
     # TODO: add env and command
 
     @abstractclassmethod
-    async def create(cls, config: DeploymentConfiguration, *args, **kwargs) -> None:
+    async def create(cls, config: DeploymentConfiguration, *args, **kwargs) -> BaseOptimization:
         """
         """
         ...
-
-    # def __init__(self, config: DeploymentConfiguration, *args, **kwargs) -> None:
-    #     super().__init__(*args, **kwargs)
 
     @abstractmethod
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
@@ -1481,14 +1483,46 @@ class BaseOptimization(abc.ABC, BaseModel):
     @abstractmethod
     async def apply(self) -> None:
         """
-        Apply the adjusted settings to the cluster.
+        Apply the adjusted settings to the Kubernetes cluster.
         """
         ...
+    
+    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
+        """
+        Handle an operational failure in accordance with the failure mode configured by the operator.
+
+        Well executed error handling requires context and strategic thinking. The servo base library
+        provides a rich set of primitives and patterns for approaching error handling but ultimately
+        the experience is reliant on the connector developer who has knowledge of the essential context
+        and understands the user needs and expectations.
+
+        The implementation provided in this method only handles the most general cases (e.g. crashing,
+        ignoring, and reporting) and is expected to be implemented in subclasses.
+
+        Returns:
+            A boolean value that indicates if the error was handled.
+
+        Raises:
+            NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
+                must filter failure modes before calling the superclass implementation.
+        """
+        if mode == FailureMode.CRASH:
+            raise RuntimeError("an unrecoverable failure occurred while interacting with Kubernetes")
+        
+        elif mode == FailureMode.IGNORE:
+            self.logger.warning(f"ignoring runtime error and continuing: {error}")
+            self.logger.opt(exception=error).debug("ignoring Kubernetes error")
+            return True
+
+        else:
+            raise NotImplementedError(f"missing error handler for failure mode '{mode}'")
 
     @abstractmethod
     def to_components(self) -> List[Component]:
         """
         Return a list of Component representations of the Optimization.
+
+        Components are the canonical representation of optimizations in the Opsani API.
         """
         ...
     
@@ -1514,7 +1548,7 @@ class DeploymentOptimization(BaseOptimization):
     container: Container
 
     @classmethod
-    async def create(cls, config: DeploymentConfiguration) -> 'DeploymentOptimization':
+    async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'DeploymentOptimization':
         deployment = await Deployment.read(config.name, config.namespace)
 
         replicas = config.replicas.copy()
@@ -1529,6 +1563,7 @@ class DeploymentOptimization(BaseOptimization):
                 deployment=deployment,
                 container_config=container_config,
                 container=container,
+                **kwargs
             )
 
     @property
@@ -1582,6 +1617,30 @@ class DeploymentOptimization(BaseOptimization):
     #     debug("$$$ SETTING REPLICAS", value)
     #     self.deployment.replicas = value
 
+    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
+        if mode == FailureMode.ROLLBACK:
+            self.logger.info(f"adjustment failed: rolling back deployments...")
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *list(map(lambda a: a.deployment.rollback(), self.optimizations))
+                ),
+                timeout=self.timeout.total_seconds()
+            )
+            return True
+
+        elif mode == FailureMode.DESTROY:
+            self.logger.info(f"adjustment failed: destroying deployments...")
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *list(map(lambda a: a.deployment.delete(), self.optimizations))
+                ),
+                timeout=self.timeout.total_seconds()
+            )
+            return True
+
+        else:
+            return await super().handle_error(error, mode)
+
     def to_components(self) -> List[Component]:
         return [
             Component(
@@ -1628,7 +1687,7 @@ class DeploymentOptimization(BaseOptimization):
         The logic implemented by this method is as follows:
             - Capture the `resource_version` and `observed_generation`.
             - Patch the underlying Deployment object via the Kubernetes API.
-            - Check that `resource_version` has been incremented or return because nothing has changed.
+            - Check that `resource_version` has been incremented or return early if nothing has changed.
             - Create a Kubernetes Watch on the Deployment targeted by label selector and resource version.
             - Observe events streamed via the watch.
             - Look for the Deployment to report a Status Condition of `"Progressing"`.
@@ -1746,7 +1805,7 @@ class CanaryOptimization(BaseOptimization):
     canary_container: Container
 
     @classmethod
-    async def create(cls, config: DeploymentConfiguration) -> 'CanaryOptimization':
+    async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'CanaryOptimization':
         deployment = await Deployment.read(config.name, config.namespace)
 
         # Create the canary Pod
@@ -1765,6 +1824,7 @@ class CanaryOptimization(BaseOptimization):
                 target_container=target_container,
                 canary_pod=canary_pod,
                 canary_container=canary_container,
+                **kwargs
             )
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
@@ -1781,21 +1841,16 @@ class CanaryOptimization(BaseOptimization):
              raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{name}'")
 
     async def apply(self) -> None:
-        debug("applying resource requirements: ", self.canary_container.resources)
-
         # FIXME: This is not going to fly for long...
         # pod_obj.spec.containers = [container.obj]
         # debug("BEFORE: ", pod_obj.spec.containers[0].resources, container.resources)
         # pod_obj.spec.containers[0].resources = container.resources
         # debug("AFTER: ", pod_obj.spec.containers[0].resources)
 
-        import copy
-
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.obj.spec.resources = self.canary_container.resources
         dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
         debug("&^*&^*&^creating ", dep_copy)
-
 
         self.canary = await dep_copy.ensure_canary_pod()
 
@@ -1851,23 +1906,12 @@ class CanaryOptimization(BaseOptimization):
     #     default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.pod.name}"')
 
     def to_components(self) -> List[Component]:
-        # Return the parent and the canary
-        # container = self.target_deployment.containers[0]
-        # cpu = self.cpu.copy(update={ "pinned": True })
-        # cpu.value = container.get_resource_requirements("cpu", first=True)
-        # memory = self.memory.copy(update={ "pinned": True })
-        # memory.value = container.get_resource_requirements("memory", first=True)
-
-        # replicas = self.replicas.copy(update={ "pinned": True })
-        # replicas.value = self.deployment.replicas
-
-        cpu = self.target_container_config.cpu.copy()
-        debug(cpu)
+        # Return the target and the canary
+        cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None):
-            debug(value)
             cpu.value = value
 
-        memory = self.target_container_config.memory.copy()
+        memory = self.target_container_config.memory.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None):
             memory.value = value
 
@@ -1898,12 +1942,28 @@ class CanaryOptimization(BaseOptimization):
             )
         ]
     
+    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
+        if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
+            if mode == FailureMode.ROLLBACK:
+                self.logger.warning(f"cannot rollback a canary Pod: falling back to destroy: {error}")
+                self.logger.opt(exception=error).exception("")
+            
+            self.logger.info(f"adjustment failed: destroying canary")
+            await asyncio.wait_for(
+                self.canary_pod.delete(),
+                timeout=self.timeout.total_seconds()
+            )
+            return True
+
+        else:
+            return await super().handle_error(error, mode)
+    
     class Config:
         arbitrary_types_allowed = True
         extra = Extra.allow
 
 
-class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
+class KubernetesOptimizations(BaseModel):
     """
     Models the state of resources under optimization in a Kubernetes cluster.
     """
@@ -1915,7 +1975,7 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
     version_id: str
 
     @classmethod
-    async def read(cls, config: KubernetesConfiguration) -> 'KubernetesState':
+    async def create(cls, config: KubernetesConfiguration) -> 'KubernetesOptimizations':
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
@@ -1929,30 +1989,30 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
 
         for deployment_config in config.deployments:
             if deployment_config.strategy == OptimizationStrategy.DEFAULT:
-                optimization = await DeploymentOptimization.create(deployment_config)
+                optimization = await DeploymentOptimization.create(deployment_config, timeout=config.timeout)
+                deployment = optimization.deployment
+                container = optimization.container
             elif deployment_config.strategy == OptimizationStrategy.CANARY:
-                optimization = await CanaryOptimization.create(deployment_config)
+                optimization = await CanaryOptimization.create(deployment_config, timeout=config.timeout)
+                deployment = optimization.target_deployment
+                container = optimization.target_container
             else:
                 raise ValueError(f"unknown optimization strategy: {deployment_config.strategy}")
 
             optimizations.append(optimization)
 
-            # TODO: restore this
-            # pods = await optimization.deployment.get_pods()
-            # runtime_ids[deployment.name] = [pod.uid for pod in pods]
-
-            # TODO: restore this
-            # pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
-            
-            # TODO: restore this
-            #     images[container.name] = container.image
+            # compile artifacts for checksum calculation
+            pods = await deployment.get_pods()
+            runtime_ids[optimization.name] = [pod.uid for pod in pods]
+            pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
+            images[container.name] = container.image
         
         # Compute checksums for change detection
         spec_id = get_hash([pod_tmpl_specs[k] for k in sorted(pod_tmpl_specs.keys())])
         runtime_id = get_hash(runtime_ids)
         version_id = get_hash([images[k] for k in sorted(images.keys())])
 
-        return KubernetesState(
+        return KubernetesOptimizations(
             config=config,
             namespace=namespace,
             optimizations=optimizations,
@@ -1960,6 +2020,16 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
             runtime_id=runtime_id,
             version_id=version_id,
         )
+    
+    def to_components(self) -> List[Component]:
+        """
+        Return a list of Component objects modeling the state of local optimization activities.
+
+        Components are the canonical representation of systems under optimization. They
+        are used for data exchange with the Opsani API
+        """
+        components = list(map(lambda opt: opt.to_components(), self.optimizations))
+        return list(itertools.chain(*components))
     
     def to_description(self) -> Description:
         """
@@ -1970,10 +2040,9 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
 
         Returns:
             A Description of the current state.
-        """                
-        components = list(map(lambda a: a.to_components(), self.optimizations))
+        """                        
         return Description(
-            components=list(itertools.chain(*components))
+            components=self.to_components()
         )
     
     def find_optimization(self, name: str) -> Optional[BaseOptimization]:
@@ -1988,6 +2057,7 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
         """
         # Exit early if there is nothing to do
         if not adjustments:
+            self.logger.debug("early exiting from adjust: no adjustments")
             return
         
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
@@ -2002,134 +2072,39 @@ class KubernetesState(BaseModel): # TODO: KubernetesOptimizations
                 self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
         
         # Apply the changes to Kubernetes and wait for the results
-        timeout = Duration("5m30s") # TODO: Move to config
+        timeout = self.config.timeout
         if self.optimizations:
             self.logger.debug(f"waiting for adjustments to take effect on {len(self.optimizations)} optimizations")
             try:
-                await asyncio.wait_for(
+                results = await asyncio.wait_for(
                     asyncio.gather(
-                        *list(map(lambda a: a.apply(), self.optimizations))
+                        *list(map(lambda a: a.apply(), self.optimizations)),
+                        return_exceptions=True
                     ),
                     timeout=timeout.total_seconds()
                 )
-            except asyncio.exceptions.TimeoutError:
+
+                for result in results:
+                    if isinstance(result, Exception):
+                        for optimization in self.optimizations:
+                            if await optimization.handle_error(result, self.config.on_failure):
+                                # Stop error propogation once it has been handled
+                                break
+
+            except asyncio.exceptions.TimeoutError as error:
                 self.logger.error(f"timed out after {timeout} waiting for adjustments to apply")
-                
-                # TODO: All this needs to be intelligent about the strategy
-                if self.config.on_failure == FailureMode.ROLLBACK:
-                    self.logger.info(f"adjustment failed: rolling back deployments...")
-                    await asyncio.wait_for(
-                        asyncio.gather(
-                            *list(map(lambda a: a.deployment.rollback(), self.optimizations))
-                        ),
-                        timeout=timeout.total_seconds()
-                    )
-                elif self.config.on_failure == FailureMode.DESTROY:
-                    self.logger.info(f"adjustment failed: destroying deployments...")
-                    await asyncio.wait_for(
-                        asyncio.gather(
-                            *list(map(lambda a: a.deployment.delete(), self.optimizations))
-                        ),
-                        timeout=timeout.total_seconds()
-                    )
-                elif self.config.on_failure == FailureMode.IGNORE:
-                    self.logger.info(f"adjustment failed: ignoring and continuing...")
-                elif self.config.on_failure == FailureMode.CRASH:
-                    raise
+                for optimization in self.optimizations:
+                    if await optimization.handle_error(error, self.config.on_failure):
+                        # Stop error propogation once it has been handled
+                        break
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
-        # TODO: Figure out how to do progress...
     
     @property
     def logger(self) -> loguru.Logger:
         return default_logger
-
-        # wait for update to complete (and print progress)
-            # timeout default is set to be slightly higher than the default K8s timeout (so we let k8s detect progress stall first)
-        #     try:
-        #         await self.wait_for_update(
-        #             namespace,
-        #             n,
-        #             patch_r["metadata"]["generation"],
-        #             patched_count,
-        #             len(patchlst),
-        #             cfg.get("timeout", 630),
-        #         )
-        #     except AdjustError as e:
-        #         if e.reason != "start-failed":  # not undo-able
-        #             raise
-        #         onfail = cfg.get(
-        #             "on_fail", "keep"
-        #         )  # valid values: keep, destroy, rollback (destroy == scale-to-zero, not supported)
-        #         if onfail == "rollback":
-        #             try:
-        #                 # TODO: This has to be ported
-        #                 subprocess.call(
-        #                     kubectl(appname, "rollout", "undo", DEPLOYMENT + "/" + n)
-        #                 )
-        #                 print("UNDONE", file=sys.stderr)
-        #             except subprocess.CalledProcessError:
-        #                 # progress msg with warning TODO
-        #                 print("undo for {} failed: {}".format(n, e), file=sys.stderr)
-        #         raise
-        #     patched_count = patched_count + 1
-
-        # # spec_id and version_id should be tested without settlement_time, too - TODO
-
-        # # post-adjust settlement, if enabled
-        # testdata0 = await self.raw_query(namespace, app_state.components)
-        # settlement_time = cfg.get("settlement", 0)
-        # mon0 = testdata0.monitoring
-
-        # if "ref_version_id" in mon0 and mon0["version_id"] != mon0["ref_version_id"]:
-        #     raise AdjustError(
-        #         "application version does not match reference version",
-        #         status="aborted",
-        #         reason="version-mismatch",
-        #     )
-        
-        # TODO: What are these status reasons??
-        # # aborted status reasons that aren't supported: ref-app-inconsistent, ref-app-unavailable
-
-        # # TODO: This response needs to be modeled
-        # if not settlement_time:
-        #     return {"monitoring": mon0, "status": "ok", "reason": "success"}
-
-        # # wait and watch the app, checking for changes
-        # # TODO: Port this...
-        # w = Waiter(
-        #     settlement_time, delay=min(settlement_time, 30)
-        # )  # NOTE: delay between tests may be made longer than the delay between progress reports
-        # while w.wait():
-        #     testdata = raw_query(namespace, app_state.components)
-        #     mon = testdata.monitoring
-        #     # compare to initial mon data set
-        #     if mon["runtime_id"] != mon0["runtime_id"]:  # restart detected
-        #         # TODO: allow limited number of restarts? (and how to distinguish from rejected/unstable??)
-        #         raise AdjustError(
-        #             "component(s) restart detected",
-        #             status="transient-failure",
-        #             reason="app-restart",
-        #         )
-        #     # TODO: what to do with version change?
-        #     #        if mon["version_id"] != mon0["version_id"]:
-        #     #            raise AdjustError("application was modified unexpectedly during settlement", status="transient-failure", reason="app-update")
-        #     if mon["spec_id"] != mon0["spec_id"]:
-        #         raise AdjustError(
-        #             "application configuration was modified unexpectedly during settlement",
-        #             status="transient-failure",
-        #             reason="app-update",
-        #         )
-        #     if mon["ref_spec_id"] != mon0["ref_spec_id"]:
-        #         raise AdjustError(
-        #             "reference application configuration was modified unexpectedly during settlement",
-        #             status="transient-failure",
-        #             reason="ref-app-update",
-        #         )
-        #     if mon["ref_runtime_count"] != mon0["ref_runtime_count"]:
-        #         raise AdjustError("", status="transient-failure", reason="ref-app-scale")
 
     class Config:
         arbitrary_types_allowed = True
@@ -2177,8 +2152,10 @@ Valid container tags must:
 class EnvironmentConfiguration(BaseConfiguration):
     ...
 
+
 class CommandConfiguration(BaseConfiguration):
     ...
+
 
 class ContainerConfiguration(BaseConfiguration):
     """
@@ -2255,10 +2232,14 @@ class KubernetesConfiguration(BaseConfiguration):
     on_failure: FailureMode = Field(
         FailureMode.ROLLBACK,
         description=f"How to handle a failed adjustment. Options are: {join_to_series(list(FailureMode.__members__.values()))}"
+    )
+    timeout: Duration = Field(
+        "5m",
+        description="Time interval to wait before considering Kubernetes operations to have failed."
     )    
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",
-    )    
+    )
 
     @classmethod
     def generate(cls, **kwargs) -> "KubernetesConfiguration":
@@ -2293,7 +2274,6 @@ class KubernetesConfiguration(BaseConfiguration):
         )
     
     # TODO: Add a validator that will set the default for deployments if not defined
-    
     # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:
         """
@@ -2311,7 +2291,7 @@ class KubernetesConfiguration(BaseConfiguration):
             raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
 
 
-KubernetesState.update_forward_refs()
+KubernetesOptimizations.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
 
 class KubernetesChecks(BaseChecks):
@@ -2319,7 +2299,7 @@ class KubernetesChecks(BaseChecks):
 
     async def check_connectivity(self) -> Check:
         try:
-            await KubernetesState.read(self.config)
+            await KubernetesOptimizations.create(self.config)
         except Exception as e:
             return Check(
                 name="Connect to Kubernetes", success=False, comment=str(e)
@@ -2359,12 +2339,14 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     async def describe(self) -> Description:        
-        state = await KubernetesState.read(self.config)
+        state = await KubernetesOptimizations.create(self.config)
         return state.to_description()
 
     @on_event()
-    def components(self) -> List[Component]:
-        return list(map(lambda d: d.to_component(), self.config.deployments))
+    async def components(self) -> List[Component]:
+        state = await KubernetesOptimizations.create(self.config)
+        return state.to_components()
+        
 
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
@@ -2379,7 +2361,7 @@ class KubernetesConnector(BaseConnector):
         #     if not should_adjust:
         #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
 
-        state = await KubernetesState.read(self.config)
+        state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
         # TODO: Move this into event declaration??
