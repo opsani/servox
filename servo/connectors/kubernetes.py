@@ -560,6 +560,8 @@ class Namespace(KubernetesModel):
 
         return status.phase.lower() == 'active'
 
+_DEFAULT_SENTINEL = object()
+
 class Container:
     """Kubetest wrapper around a Kubernetes `Container`_ API Object.
 
@@ -626,7 +628,7 @@ class Container:
         """
         return self.obj.resources
     
-    def get_resource_requirements(self, name: str, *requirements: str, first: bool = False) -> Union[str, Tuple[str]]:
+    def get_resource_requirements(self, name: str, *requirements: str, first: bool = False, default: Any = _DEFAULT_SENTINEL) -> Union[str, Tuple[str]]:
         """
         Retrieve resource requirement values for the Container.
 
@@ -660,18 +662,22 @@ class Container:
             if not hasattr(self.resources, requirement):
                 raise ValueError(f"unknown resource requirement '{requirement}'")
             requirement_dict: Dict[str, str] = getattr(self.resources, requirement)
-            if name in requirement_dict:
+            if requirement_dict and name in requirement_dict:
                 value = requirement_dict[name]
                 if first:
                     return value
                 else:
                     values.append(value)
             else:
-                default_logger.warning("requirement '{requirement}' is not set for resource '{name}'")
+                default_logger.warning(f"requirement '{requirement}' is not set for resource '{name}'")
                 values.append(None)
             
-        if not values:
-            raise ValueError(f"no requirements were found for resource '{name}''")
+        if not any(values):
+            if default is not _DEFAULT_SENTINEL:
+                return default
+            else:
+                raise ValueError(f"no requirements were found for resource '{name}''")
+
         return tuple(values)
     
     def set_resource_requirements(self, name: str, value: Union[str, Tuple[str]], *requirements: str, clear_others: bool = False) -> None:
@@ -1360,7 +1366,8 @@ class CPU(Resource):
         
         # normalize values into floats (see Millicore __float__)
         for field in ("min", "max", "step", "value"):
-            o_dict["cpu"][field] = float(getattr(self, field))
+            value = getattr(self, field)
+            o_dict["cpu"][field] = float(value) if value is not None else None
         return o_dict
 
 
@@ -1399,7 +1406,8 @@ class Memory(Resource):
 
         # normalize values into floating point Gibibyte units
         for field in ("min", "max", "step", "value"):
-            o_dict["memory"][field] = float(getattr(self, field)) / GiB
+            value = getattr(self, field)
+            o_dict["memory"][field] = float(value) / GiB if value is not None else None
         return o_dict
 
 
@@ -1686,9 +1694,9 @@ class CanaryOptimization(BaseOptimization):
             canary_container = canary.get_container(container_config.name)
 
             cpu = container_config.cpu.copy()
-            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
+            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
             memory = container_config.memory.copy()
-            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
+            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
 
             return cls(
                 name=f"{deployment.name}/{deployment_container.name}-canary",
@@ -1722,10 +1730,10 @@ class CanaryOptimization(BaseOptimization):
     def to_components(self) -> List[Component]:
         # Return the parent and the canary
         cpu = self.cpu.copy(update={ "pinned": True })
-        cpu.value = self.target_container.get_resource_requirements("cpu", first=True)
+        cpu.value = self.target_container.get_resource_requirements("cpu", first=True, default=None)
 
         memory = self.memory.copy(update={ "pinned": True })
-        memory.value = self.target_container.get_resource_requirements("memory", first=True)
+        memory.value = self.target_container.get_resource_requirements("memory", first=True, default=None)
 
         replicas = self.replicas.copy(update={ "pinned": True })
         replicas.value = self.target_deployment.replicas
