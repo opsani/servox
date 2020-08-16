@@ -1850,7 +1850,6 @@ class CanaryOptimization(BaseOptimization):
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.obj.spec.resources = self.canary_container.resources
         dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
-        debug("&^*&^*&^creating ", dep_copy)
 
         self.canary = await dep_copy.ensure_canary_pod()
 
