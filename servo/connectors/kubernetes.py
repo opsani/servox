@@ -674,6 +674,7 @@ class Container:
             
         if not any(values):
             if default is not _DEFAULT_SENTINEL:
+                default_logger.debug(f"no resource requirements found. returning default value: {default}")
                 return default
             else:
                 raise ValueError(f"no requirements were found for resource '{name}''")
@@ -1218,7 +1219,7 @@ class Deployment(KubernetesModel):
         """        
         canary_pod_name = self.canary_pod_name
         namespace = self.namespace
-        self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' in namespace '{namespace}'")
+        self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'")
         
         # Delete any pre-existing canary debris
         self.logger.trace("deleting pre-existing canary pod (if any)")
@@ -1507,9 +1508,9 @@ class DeploymentOptimization(BaseOptimization):
             container = deployment.get_container(container_config.name)
 
             cpu = container_config.cpu.copy()
-            cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True)
+            cpu.value = container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=0)
             memory = container_config.memory.copy()
-            memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True)
+            memory.value = container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=0)
 
             return cls(
                 name=f"{deployment.name}/{container.name}",
@@ -1694,9 +1695,9 @@ class CanaryOptimization(BaseOptimization):
             canary_container = canary.get_container(container_config.name)
 
             cpu = container_config.cpu.copy()
-            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
+            cpu.value = canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=0)
             memory = container_config.memory.copy()
-            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
+            memory.value = canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=0)
 
             return cls(
                 name=f"{deployment.name}/{deployment_container.name}-canary",
