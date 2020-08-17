@@ -1534,7 +1534,7 @@ class Replicas(Setting):
 # TODO: The Adjustment needs to marshal value appropriately on ingress
 def _qualify(value, unit):
     if unit == "memory":
-        return f"{value}Gi" if value.isnumeric() else value
+        return f"{value}Gi"# if value.isnumeric() else value
     elif unit == "cpu":
         return str(Millicore.parse(value))
     elif unit == "replicas":
