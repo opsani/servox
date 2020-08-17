@@ -16,7 +16,7 @@ from pydantic.types import StrictInt, constr
 from servo.types import Numeric
 import time
 from pathlib import Path
-from typing import Callable, List, Optional, Dict, Any, Tuple
+from typing import Callable, List, Optional, Dict, Any, Sequence, Tuple
 from kubetest.objects import namespace
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
@@ -164,6 +164,64 @@ async def wait_for_condition(
 
     end = time.time()
     default_logger.info(f'wait completed (total={Duration(end-start)}) {condition}')
+
+
+class ResourceRequirements(enum.Flag):
+    """
+    The ResourceRequirement enumeration determines how optimization values are submitted to the
+    Kubernetes scheduler to allocate core compute resources. Requests establish the lower bounds 
+    of the CPU and memory necessary for an application to execute while Limits define the upper
+    bounds for resources that can be consumed by a given Pod. The Opsani engine can determine 
+    optimal values for these settings by identifying performant, low cost configurations that meet
+    target SLOs and/or maximizing performance while identifying the point of diminishing returns
+    on further resourcing.
+    """
+    request = enum.auto()
+    limit = enum.auto()
+    compute = request | limit
+
+    @property
+    def flag(self) -> bool:
+        """
+        Return a boolean value that indicates if the requirements are an individual flag value.
+
+        The implementation relies on the Python `enum.Flag` modeling of individual members of
+        the flag enumeration as values that are powers of two (1, 2, 4, 8, …), while combinations 
+        of flags are not.
+        """
+        value = self.value
+        return bool((value & (value - 1) == 0) and value != 0)
+    
+    @property
+    def flags(self) -> bool:
+        """
+        Return a boolean value that indicates if the requirements are a compoud set of flag values.
+        """
+        return self.flag is False
+
+    @property    
+    def resources_key(self) -> str:
+        """
+        Return a string value for accessing resource requirements within a Kubernetes Container representation.
+        """
+        if self == ResourceRequirements.request:
+            return "requests"
+        elif self == ResourceRequirements.limit:
+            return "limits"
+        else:
+            raise NotImplementedError(f"missing key implementation for resource requirement \"{self}\"")
+
+
+class Resource(Setting):
+    """
+    Resource is a class that models Kubernetes specific Setting objects that are subject
+    to request and limit configuration.
+    """
+    requirements: ResourceRequirements = ResourceRequirements.compute
+
+    class Config:
+        validate_assignment = True
+
 
 
 @runtime_checkable
@@ -633,80 +691,134 @@ class Container:
         """
         return self.obj.resources
 
-    def get_resource_requirements(self, name: str, *requirements: str, first: bool = False, default: Any = _DEFAULT_SENTINEL) -> Union[str, Tuple[str]]:
+    @resources.setter
+    def resources(self, resources: client.V1ResourceRequirements) -> None:
+        """
+        Set the resource requirements for the Container.
+
+        Args:
+            resources: The resource requirements to set.
+        """
+        self.obj.resources = resources
+
+    def get_resource_requirements(
+        self, 
+        name: str, 
+        requirements: ResourceRequirements = ResourceRequirements.compute, 
+        *,
+        first: bool = False, 
+        reverse: bool = False,
+        default: Optional[str] = None
+    ) -> Union[str, Tuple[str], None]:
         """
         Retrieve resource requirement values for the Container.
 
         This method retrieves one or more resource requirement values with a non-exceptional,
         cascading fallback behavior. It is useful for retrieving available requirements from a
-        resource that you do not know the configuration of. Requirements are read and returned in
-        input order. Values can be retrieved as a strictly ordered tuple or a single value can
-        be returned by setting the `first` argument to `True`. When retrieving a single value, values are
-        evaluated in input order and the first requirement that contains a string value is returned.
-
-        Warnings are logged when requested requested requirements are not populated.
-
-        A `ValueError` exception is raised if no value was found for any of the given requirements.
+        resource that you do not know the configuration of. Requirements are read and returned in        
+        declaration order in the `ResourceRequirements` enumeration. Values can be retrieved as a 
+        tuple collection or a single value can be returned by setting the `first` argument to `True`. 
+        Values are evaluated in `ResourceRequirements` declaration order and the first requirement 
+        that contains a string value is returned. Evaluation order can be reversed via the 
+        `reverse=True` argument. This is useful is you want to retrieve the limit if one exists or
+        else fallback to the request value.
 
         Args:
             name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
-            requirements: An array of requirements to from the Deployment. When omitted, defaults to ("limit", "requests").
+            requirements: A `ResourceRequirements` flag enumeration specifying the requirements to retrieve.
+                Multiple values can be retrieved by using a bitwise or (`|`) operator. Defaults to 
+                `ResourceRequirements.compute` which is equal to `ResourceRequirements.request | ResourceRequirements.limit`.
             first: When True, a single value is returned for the first requirement to return a value.
-            default_sentinel: A default value to return when respource requirements could not be found.
+            reverse: When True, the `ResourceRequirements` enumeration evaluated in reverse order.
+            default: A default value to return when a resource requirement could not be found.
         
         Returns:
-            A tuple of resource requirement strings or `None` values in input order or a single string when `first` is True.
-        
-        Raises:
-            ValueError: Raised if no value was found for any of the given requirements.
+            A tuple of resource requirement strings or `None` values in input order or a singular, optional string 
+            value when `first` is True.
         """
-        if not requirements:
-            requirements = ("limits", "requests")
         values: List[Union[str, None]] = []
-        
-        for requirement in requirements:
-            if not hasattr(self.resources, requirement):
-                raise ValueError(f"unknown resource requirement '{requirement}'")
-            requirement_dict: Dict[str, str] = getattr(self.resources, requirement)
-            if requirement_dict and name in requirement_dict:
-                value = requirement_dict[name]
-                if first:
-                    return value
+        found_requirements = False
+        members = (
+            reversed(ResourceRequirements) if reverse else list(ResourceRequirements)
+        )
+
+        # iterate all members of the enumeration to support bitwise combinations
+        for member in members:
+            # skip named combinations of flags
+            if member.flags:
+                continue
+
+            if requirements & member:
+                if not hasattr(self.resources, member.resources_key):
+                    raise ValueError(f"unknown resource requirement '{member}'")
+                
+                requirement_dict: Dict[str, str] = getattr(self.resources, member.resources_key)
+                if requirement_dict and name in requirement_dict:
+                    value = requirement_dict[name]
+                    found_requirements = True
+
+                    if first:
+                        return value
+                    else:
+                        values.append(value)
+                
                 else:
-                    values.append(value)
-            else:
-                default_logger.warning(f"requirement '{requirement}' is not set for resource '{name}'")
-                values.append(None)
-            
-        if not any(values):
-            if default is not _DEFAULT_SENTINEL:
+                    default_logger.warning(f"requirement '{member}' is not set for resource '{name}'")
+                    values.append(default)
+
+        if not found_requirements:
+            if first:
+                # code path only accessible on nothing found due to early exit
                 default_logger.debug(f"no resource requirements found. returning default value: {default}")
                 return default
             else:
-                raise ValueError(f"no requirements were found for resource '{name}' ")
+                default_logger.debug(f"no resource requirements found. returning default values: {values}")
         
         return tuple(values)
     
-    def set_resource_requirements(self, name: str, value: Union[str, Tuple[str]], *requirements: str, clear_others: bool = False) -> None:
+    def set_resource_requirements(
+        self, 
+        name: str, 
+        value: Union[str, Sequence[str]], 
+        requirements: ResourceRequirements = ResourceRequirements.compute, 
+        *,
+        default: Optional[str] = None,
+        clear_others: bool = False
+    ) -> None:
         """
         Set the value for one or more resource requirements on the underlying Container.
 
         Args:
-            clear_others: When True, any requirements not specified in the input arguments are removed.
+            name: The resource to set requirements for (e.g. "cpu" or "memory").
+            value: The string value or tuple of string values to assign to the resources. Values are 
+                assigned in declaration order of members of the `ResourceRequirements` enumeration.
+            default: The default value to assign for resource requirements not explicitly defined
+                by the value argument. Defaults to `None`.
+            clear_others: When True, any requirements not specified in the input arguments are cleared.
         """
-        if not requirements:
-            requirements = ("limits", "requests")
 
-        for requirement in list(self.resources.to_dict().keys()):
-            req_dict = getattr(self.resources, requirement)
-            debug(req_dict)
-            if requirement in requirements:
-                debug(f"setting {name} to {value} on", req_dict)
-                req_dict[name] = value
+        values = (
+            [value] if isinstance(value, str) else list(value)
+        )
+        for requirement in list(ResourceRequirements):
+            # skip named combinations of flags
+            if requirement.flags:
+                continue
+
+            if not hasattr(self.resources, requirement.resources_key):
+                raise ValueError(f"unknown resource requirement '{requirement}'")            
+                
+            req_dict: Dict[str, str] = getattr(self.resources, requirement.resources_key)
+            if requirement & requirements:
+                req_value = (
+                    values.pop(0) if len(values) else default
+                )
+                req_dict[name] = req_value
+
             else:
                 if clear_others:
-                    debug("clearing out value for ", name)
-                    req_dict[name] = None
+                    default_logger.debug(f"clearing resource requirement: '{requirement}'")
+                    req_dict.pop(name, None)
 
         
     def __str__(self) -> str:
@@ -1053,11 +1165,12 @@ class Deployment(KubernetesModel):
     
     async def rollback(self) -> None:
         """Roll back an unstable Deployment revision to a previous version."""
-        # create_namespaced_deployment_rollback
-        async with self.api_client() as api_client:
+        async with ApiClient() as api:
+            api_client = client.ExtensionsV1beta1Api(api)
             self.obj = await api_client.create_namespaced_deployment_rollback(
                 name=self.name,
                 namespace=self.namespace,
+                body=self.obj,
             )
     
     async def get_status(self) -> client.V1DeploymentStatus:
@@ -1289,35 +1402,6 @@ class Deployment(KubernetesModel):
         return canary_pod
 
 
-class ResourceConstraint(enum.Enum):
-    """
-    The ResourceConstraint enumeration determines how optimization values are applied
-    to the cpu and memory resource requests & limits of a container.
-    """
-    request = "request"
-    limit = "limit"
-    both = "both"
-
-    @property
-    def requirements(self) -> List[str]:
-        # FIXME: there's a hack here to pluralize the terms because config/runtime have an impedance mismatch. clean it up
-        if self == ResourceConstraint.both:
-            return ["limits", "requests"]
-        else:
-            return [self.value + 's']
-
-
-class Resource(Setting):
-    """
-    Resource is a class that models Kubernetes specific Setting objects that are subject
-    to request and limit configuration.
-    """
-    constraint: ResourceConstraint = ResourceConstraint.both
-
-    class Config:
-        validate_assignment = True
-
-
 class Millicore(int):
     """
     The Millicore class represents one one-hundreth of a vCPU or hyperthread in Kubernetes.
@@ -1446,7 +1530,7 @@ class Replicas(Setting):
 # TODO: The Adjustment needs to marshal value appropriately on ingress
 def _qualify(value, unit):
     if unit == "memory":
-        return f"{value}Gi"
+        return f"{value}Gi" if value.isnumeric() else value
     elif unit == "cpu":
         return str(Millicore.parse(value))
     elif unit == "replicas":
@@ -1459,7 +1543,7 @@ class BaseOptimization(abc.ABC, BaseModel):
     BaseOptimization is the base class for concrete implementations of optimization strategies.
     """
     name: str
-    timeout: Duration# = Duration("7m")
+    timeout: Duration
 
     # Resources
     # cpu: CPU
@@ -1474,7 +1558,7 @@ class BaseOptimization(abc.ABC, BaseModel):
         ...
 
     @abstractmethod
-    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+    async def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
         Adjust a setting on the underlying Deployment/Pod or Container.
         """
@@ -1496,8 +1580,9 @@ class BaseOptimization(abc.ABC, BaseModel):
         the experience is reliant on the connector developer who has knowledge of the essential context
         and understands the user needs and expectations.
 
-        The implementation provided in this method only handles the most general cases (e.g. crashing,
-        ignoring, and reporting) and is expected to be implemented in subclasses.
+        The error handling implementation provided in this method handles the general cases out of the
+        box and relies on abstract methods (see below) to implement more advanced behaviors such as
+        rollback and tear-down.
 
         Returns:
             A boolean value that indicates if the error was handled.
@@ -1511,11 +1596,40 @@ class BaseOptimization(abc.ABC, BaseModel):
         
         elif mode == FailureMode.IGNORE:
             self.logger.warning(f"ignoring runtime error and continuing: {error}")
-            self.logger.opt(exception=error).debug("ignoring Kubernetes error")
+            self.logger.opt(exception=error).exception("ignoring Kubernetes error")
+            return True
+        
+        elif mode == FailureMode.ROLLBACK:
+            await self.rollback(error)
+            return True
+
+        elif mode == FailureMode.DESTROY:
+            await self.destroy(error)
             return True
 
         else:
             raise NotImplementedError(f"missing error handler for failure mode '{mode}'")
+    
+    @abstractmethod
+    async def rollback(self, error: Optional[Exception] = None) -> None:
+        """
+        Asynchronously roll back the Optimization to a previous known
+        good state.
+
+        Args:
+            error: An optional exception that contextualizes the cause of the rollback.
+        """
+        ...
+    
+    @abstractmethod
+    async def destroy(self, error: Optional[Exception] = None) -> None:
+        """
+        Asynchronously destroy the Optimization.
+
+        Args:
+            error: An optional exception that contextualizes the cause of the destruction.
+        """
+        ...
 
     @abstractmethod
     def to_components(self) -> List[Component]:
@@ -1572,16 +1686,8 @@ class DeploymentOptimization(BaseOptimization):
         Return the current CPU setting for the optimization.
         """
         cpu = self.container_config.cpu.copy()
-        cpu.value = self.container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
+        cpu.value = self.container.get_resource_requirements("cpu", first=True)
         return cpu
-    
-    # @cpu.setter
-    # def cpu(self, value) -> None:
-    #     """
-    #     Set the CPU setting for the optimization.
-    #     """
-    #     debug("$$$ SETTING CPU", value)
-    #     self.container.set_resource_requirements("cpu", value, *self.container_config.cpu.constraint.requirements, clear_others=True)
     
     @property
     def memory(self) -> Memory:
@@ -1589,16 +1695,8 @@ class DeploymentOptimization(BaseOptimization):
         Return the current Memory setting for the optimization.
         """
         memory = self.container_config.memory.copy()
-        memory.value = self.container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
+        memory.value = self.container.get_resource_requirements("memory", first=True)
         return memory
-    
-    # @memory.setter
-    # def memory(self, value) -> None:
-    #     """
-    #     Set the Memory setting for the optimization.
-    #     """
-    #     debug("$$$ SETTING MEMORY", value)
-    #     self.container.set_resource_requirements("memory", value, *self.container_config.memory.constraint.requirements, clear_others=True)
 
     @property
     def replicas(self) -> Replicas:
@@ -1609,37 +1707,35 @@ class DeploymentOptimization(BaseOptimization):
         replicas.value = self.deployment.replicas
         return replicas
     
-    # @replicas.setter
-    # def replicas(self, value) -> None:
-    #     """
-    #     Set the Replicas setting for the optimization.
-    #     """
-    #     debug("$$$ SETTING REPLICAS", value)
-    #     self.deployment.replicas = value
+    async def rollback(self, error: Optional[Exception] = None) -> None:
+        """
+        Initiates an asynchronous rollback to a previous version of the Deployment.
 
-    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
-        if mode == FailureMode.ROLLBACK:
-            self.logger.info(f"adjustment failed: rolling back deployments...")
-            await asyncio.wait_for(
-                asyncio.gather(
-                    *list(map(lambda a: a.deployment.rollback(), self.optimizations))
-                ),
-                timeout=self.timeout.total_seconds()
-            )
-            return True
+        Args:
+            error: An optional error that triggered the rollback.
+        """
+        self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
+        await asyncio.wait_for(
+            asyncio.gather(
+                self.deployment.rollback()
+            ),
+            timeout=self.timeout.total_seconds()
+        )
+    
+    async def destroy(self, error: Optional[Exception] = None) -> None:
+        """
+        Initiates the asynchronous deletion of the Deployment under optimization.
 
-        elif mode == FailureMode.DESTROY:
-            self.logger.info(f"adjustment failed: destroying deployments...")
-            await asyncio.wait_for(
-                asyncio.gather(
-                    *list(map(lambda a: a.deployment.delete(), self.optimizations))
-                ),
-                timeout=self.timeout.total_seconds()
-            )
-            return True
-
-        else:
-            return await super().handle_error(error, mode)
+        Args:
+            error: An optional error that triggered the destruction.
+        """
+        self.logger.info(f"adjustment failed: destroying deployment...")
+        await asyncio.wait_for(
+            asyncio.gather(
+                self.deployment.delete()
+            ),
+            timeout=self.timeout.total_seconds()
+        )
 
     def to_components(self) -> List[Component]:
         return [
@@ -1654,18 +1750,21 @@ class DeploymentOptimization(BaseOptimization):
         ]
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
-        debug("ADJUSTING: ", adjustment)
+        """
+        Adjust the settings on the Deployment or a component Container.
+
+        Adjustments do not take effect on the cluster until the `apply` method is invoked
+        to enable aggregation of related adjustments and asynchronous application.
+        """
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
+        self.logger.trace(f"adjusting {name} to {value}")
         if name in ("cpu", "memory"):
-            # resource = getattr(self, name)
-            debug("&&& Before: ", self.container.get_resource_requirements(name, first=True))
-            self.container.set_resource_requirements(name, value, *["limit", "request"], clear_others=True)
-            debug("&&& After: ", self.container.get_resource_requirements(name, first=True))
-            # resource.value = value # TODO: Cleanup this duplication...
+            requirements = getattr(self.container_config, name).requirements
+            self.container.set_resource_requirements(name, value, requirements, clear_others=True)
 
         elif adjustment.setting_name == "replicas":
-            self.deployment.replicas = value
+            self.deployment.replicas = int(value)
             
         else:
             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
@@ -1681,7 +1780,7 @@ class DeploymentOptimization(BaseOptimization):
         version of the deployment exclusive of insignificant changes that do not affect runtime
         (such as label updates), and the `conditions` of the deployment status which reflect
         state at a particular point in time. How these elements change during a rollout is 
-        dependent on the deployment strategy in effect and its constraints (max unavailable, 
+        dependent on the deployment strategy in effect and its requirementss (max unavailable, 
         surge, etc).
 
         The logic implemented by this method is as follows:
@@ -1832,7 +1931,8 @@ class CanaryOptimization(BaseOptimization):
         value = _qualify(adjustment.value, name)
 
         if name in ("cpu", "memory"):
-            self.canary_container.set_resource_requirements(name, value, *self.target_container_config.cpu.constraint.requirements, clear_others=True)
+            requirements = getattr(self.target_container_config, name).requirements
+            self.canary_container.set_resource_requirements(name, value, requirements, clear_others=True)
         
         elif name == "replicas":
             default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
@@ -1859,15 +1959,8 @@ class CanaryOptimization(BaseOptimization):
         Return the current CPU setting for the optimization.
         """
         cpu = self.target_container_config.cpu.copy()
-        cpu.value = self.canary_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None)
+        cpu.value = self.canary_container.get_resource_requirements("cpu", first=True)
         return cpu
-    
-    # @cpu.setter
-    # def cpu(self, value) -> None:
-    #     """
-    #     Set the CPU setting for the optimization.
-    #     """
-    #     self.container.set_resource_requirements("cpu", value, *self.container_config.cpu.constraint.requirements, clear_others=True)
     
     @property
     def memory(self) -> Memory:
@@ -1875,15 +1968,8 @@ class CanaryOptimization(BaseOptimization):
         Return the current Memory setting for the optimization.
         """
         memory = self.target_container_config.memory.copy()
-        memory.value = self.canary_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None)
+        memory.value = self.canary_container.get_resource_requirements("memory", first=True)
         return memory
-    
-    # @memory.setter
-    # def memory(self, value) -> None:
-    #     """
-    #     Set the Memory setting for the optimization.
-    #     """
-    #     self.container.set_resource_requirements("memory", value, *self.container_config.memory.constraint.requirements, clear_others=True)
 
     @property
     def replicas(self) -> Replicas:
@@ -1895,23 +1981,15 @@ class CanaryOptimization(BaseOptimization):
             max=1,
             value=1,
         )
-    
-    # @replicas.setter
-    # def replicas(self, value) -> None:
-    #     """
-    #     Set the Replicas setting for the optimization.
-    #     """
-    #     # if adjustment.value not in (0, 1):
-    #     default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.pod.name}"')
 
     def to_components(self) -> List[Component]:
         # Return the target and the canary
         cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
-        if value := self.target_container.get_resource_requirements("cpu", *cpu.constraint.requirements, first=True, default=None):
+        if value := self.target_container.get_resource_requirements("cpu", first=True):
             cpu.value = value
 
         memory = self.target_container_config.memory.copy(update={ "pinned": True })
-        if value := self.target_container.get_resource_requirements("memory", *memory.constraint.requirements, first=True, default=None):
+        if value := self.target_container.get_resource_requirements("memory", first=True):
             memory.value = value
 
         replicas = Replicas(            
@@ -1920,7 +1998,6 @@ class CanaryOptimization(BaseOptimization):
             value=1,
             pinned=True,
         )
-
         
         return [
             Component(
@@ -2064,11 +2141,15 @@ class KubernetesOptimizations(BaseModel):
         
         # Adjust settings on the local data model
         for adjustment in adjustments:
+            debug("looking up", adjustment.component_name)
+            debug(self.optimizations)
             if adjustable := self.find_optimization(adjustment.component_name):
-                self.logger.trace(f"adjusting {adjustment.component_name}: {adjustment}")
+                self.logger.info(f"adjusting {adjustment.component_name}: {adjustment}")
                 adjustable.adjust(adjustment)
+                
             else:
                 self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
+        
         
         # Apply the changes to Kubernetes and wait for the results
         timeout = self.config.timeout

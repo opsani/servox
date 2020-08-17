@@ -7,7 +7,7 @@ data:
   servo.yaml: |
     kubernetes:
       namespace: default
-      settlement: 15s # 5m
+      settlement: 5m
       deployments:
         - name: web
           strategy: canary
@@ -20,7 +20,7 @@ data:
           - name: main
             cpu:
               min: 125m
-              max: 1.0
+              max: 3.0
               step: 0.125
             memory:
               min: 125 MiB
