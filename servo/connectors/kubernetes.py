@@ -1319,7 +1319,7 @@ class Deployment(KubernetesModel):
         return await Pod.read(self.canary_pod_name, self.namespace)
     
 
-    async def delete_canary_pod(self, *, raise_if_not_found: bool = True, timeout: Numeric = 20) -> Optional[Pod]:
+    async def delete_canary_pod(self, *, raise_if_not_found: bool = True, timeout: Numeric = 600) -> Optional[Pod]:
         """
         Delete the canary Pod.
         """
@@ -1337,7 +1337,7 @@ class Deployment(KubernetesModel):
         return None
 
 
-    async def ensure_canary_pod(self, *, timeout: Numeric = 20) -> Pod:
+    async def ensure_canary_pod(self, *, timeout: Numeric = 600) -> Pod:
         """
         Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
 
@@ -2051,9 +2051,8 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.warning(f"cannot rollback a canary Pod: falling back to destroy: {error}")
                 self.logger.opt(exception=error).exception("")
             
-            self.logger.info(f"adjustment failed: destroying canary")
             await asyncio.wait_for(
-                self.canary_pod.delete(),
+                self.destroy(),
                 timeout=self.timeout.total_seconds()
             )
             return True
