@@ -16,7 +16,7 @@ from pydantic.types import StrictInt, constr
 from servo.types import Numeric
 import time
 from pathlib import Path
-from typing import Callable, List, Optional, Dict, Any, Sequence, Tuple
+from typing import Callable, Collection, List, Optional, Dict, Any, Sequence, Tuple
 from kubetest.objects import namespace
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
@@ -2286,20 +2286,6 @@ class OptimizationStrategy(str, enum.Enum):
     """
 
 
-class DeploymentConfiguration(BaseConfiguration):
-    """
-    The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
-    """
-    name: DNSSubdomainName
-    namespace: DNSSubdomainName = DNSSubdomainName("default")
-    containers: List[ContainerConfiguration]
-    strategy: OptimizationStrategy = OptimizationStrategy.DEFAULT
-    replicas: Replicas
-
-
-CanaryOptimization.update_forward_refs()
-
-
 class FailureMode(str, enum.Enum):
     """
     The FailureMode enumeration defines how to handle a failed adjustment of a Kubernetes resource.
@@ -2318,29 +2304,54 @@ class FailureMode(str, enum.Enum):
         return list(map(lambda mode: mode.value, cls.__members__.values()))
 
 
-class KubernetesConfiguration(BaseConfiguration):
+class BaseKubernetesConfiguration(BaseConfiguration):
+    """
+    BaseKubernetesConfiguration provides a set of configuration primitives to optimizable Kubernetes resources.
+
+    Child classes of `BaseKubernetesConfiguration` such as the `DeploymentConfiguration` can benefit from
+    the cascading configuration behavior implemented on the `KubernetesConfiguration` class.
+
+    Common settings will be cascaded from the containing class for attributes if they have not been explicitly set
+    and are equal to the default value. Settings that are mandatory in the superclass (such as timeout and namespace)
+    but are available for override should be declared as optional on `BaseKubernetesConfiguration` and overridden and
+    declared as mandatory in `BaseKubernetesConfiguration`'.
+    """
+
     kubeconfig: Optional[FilePath] = Field(
         description="Path to the kubeconfig file. If `None`, use the default from the environment.",
     )
     context: Optional[str] = Field(
         description="Name of the kubeconfig context to use."
     )
-    namespace: str = Field(
-        "default",
+    namespace: Optional[DNSSubdomainName] = Field(
         description="Kubernetes namespace where the target deployments are running.",
     )
-    settlement: Duration = Field(
-        0,
+    settlement: Optional[Duration] = Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable."
     )
     on_failure: FailureMode = Field(
         FailureMode.ROLLBACK,
         description=f"How to handle a failed adjustment. Options are: {join_to_series(list(FailureMode.__members__.values()))}"
     )
-    timeout: Duration = Field(
-        "5m",
+    timeout: Optional[Duration] = Field(        
         description="Time interval to wait before considering Kubernetes operations to have failed."
-    )    
+    )
+
+
+class DeploymentConfiguration(BaseKubernetesConfiguration):
+    """
+    The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
+    """
+    name: DNSSubdomainName
+    containers: List[ContainerConfiguration]
+    strategy: OptimizationStrategy = OptimizationStrategy.DEFAULT
+    replicas: Replicas
+
+
+class KubernetesConfiguration(BaseKubernetesConfiguration):
+    namespace: DNSSubdomainName = DNSSubdomainName("default")
+    timeout: Duration = "5m" # TODO: TypeError: __new__() takes from 1 to 2 positional arguments but 4 were given
+  
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",
     )
@@ -2377,7 +2388,38 @@ class KubernetesConfiguration(BaseConfiguration):
             **kwargs
         )
     
-    # TODO: Add a validator that will set the default for deployments if not defined
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.cascade_common_settings()
+        
+    def cascade_common_settings(self, *, overwrite: bool = False) -> None:
+        """
+        Apply common settings to child models that inherit from BaseKubernetesConfiguration.
+
+        This method provides enables hierarchical overrides of common configuration values
+        based on shared inheritance. Each attribute is introspected and if it inherits from
+        `BaseKubernetesConfiguration`, any common attribute values are copied onto the child
+        model, cascading them downward. Only attributes whose value is equal to the default
+        and have not been explicitly set are updated.
+        """
+        for name, field in self.__fields__.items():
+            if issubclass(field.type_, BaseKubernetesConfiguration):                
+                attribute = getattr(self, name)       
+                for obj in (attribute if isinstance(attribute, Collection) else [attribute]):
+                    for field_name, field in BaseKubernetesConfiguration.__fields__.items():
+                        if field_name in obj.__fields_set__ and not overwrite:
+                            default_logger.trace(f"skipping config cascade for field '{field_name}'")
+                            continue
+
+                        current_value = getattr(obj, field_name)
+                        if overwrite or current_value == field.default:
+                            parent_value = getattr(self, field_name)
+                            setattr(obj, field_name, parent_value)
+                            default_logger.debug(f"cascaded setting '{field_name}' from KubernetesConfiguration to child '{attribute}': value={parent_value}")
+
+                        else:
+                            default_logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
+    
     # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:
         """

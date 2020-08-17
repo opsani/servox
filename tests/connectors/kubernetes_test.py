@@ -272,7 +272,39 @@ class TestCommandConfiguration:
     pass
 
 class TestKubernetesConfiguration:
-    pass
+    @pytest.fixture
+    def funkytown(self, config: KubernetesConfiguration) -> KubernetesConfiguration:
+        return config.copy(update={"namespace": "funkytown"})
+
+    def test_cascading_defaults(self, config: KubernetesConfiguration) -> None:
+        # Verify that by default we get a null namespace
+        assert DeploymentConfiguration.__fields__["namespace"].default is None
+        assert DeploymentConfiguration(name="testing", containers=[], replicas=Replicas(min=0, max=1)).namespace is None
+
+        # Verify that we inherit when nested
+        assert config.namespace == "default"        
+        assert config.deployments[0].namespace == "default"
+    
+    def test_explicit_cascade(self, config: KubernetesConfiguration) -> None:
+        model = config.copy(update={"namespace": "funkytown"})
+        assert model.namespace == "funkytown"
+        assert model.deployments[0].namespace == "default"
+
+        model.cascade_common_settings(overwrite=True)
+        assert model.namespace == "funkytown"
+        assert model.deployments[0].namespace == "funkytown"
+    
+    def test_respects_explicit_override(self, config: KubernetesConfiguration) -> None:
+        # set the property explictly to value equal to default, then trigger
+        model = config.copy(update={"namespace": "funkytown"})
+        model.deployments[0].namespace = "default"
+        assert model.namespace == "funkytown"
+        assert model.deployments[0].namespace == "default"
+
+        model.cascade_common_settings()
+        assert model.namespace == "funkytown"
+        assert model.deployments[0].namespace == "default"
+
 
 class TestKubernetesConnector:
     pass
