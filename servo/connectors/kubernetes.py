@@ -2167,8 +2167,6 @@ class KubernetesOptimizations(BaseModel):
         
         # Adjust settings on the local data model
         for adjustment in adjustments:
-            debug("looking up", adjustment.component_name)
-            debug(self.optimizations)
             if adjustable := self.find_optimization(adjustment.component_name):
                 self.logger.info(f"adjusting {adjustment.component_name}: {adjustment}")
                 adjustable.adjust(adjustment)
