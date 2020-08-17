@@ -2436,9 +2436,9 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         else:
             raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
 
-
 KubernetesOptimizations.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
+CanaryOptimization.update_forward_refs()
 
 class KubernetesChecks(BaseChecks):
     config: KubernetesConfiguration
