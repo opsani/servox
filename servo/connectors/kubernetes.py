@@ -2018,6 +2018,29 @@ class CanaryOptimization(BaseOptimization):
             )
         ]
     
+    async def rollback(self, error: Optional[Exception] = None) -> None:
+        """
+        Not supported. Raises a TypeError when called.
+
+        Rollbacks are not supported by the canary optimization strategy
+        because they are dependent on Kubernetes Deployments.
+        """
+        raise TypeError(
+            (
+                "rollback is not supported under the canary optimization strategy because rollbacks are applied to "
+                "Kubernetes Deployment objects and canary optimization is performed against a standalone Pod."
+            )
+        )
+    
+    async def destroy(self, error: Optional[Exception] = None) -> None:
+        self.logger.info(f'destroying canary Pod "{self.name}"')
+        await self.canary_pod.delete()
+        
+        self.logger.debug(f'awaiting deletion of canary Pod "{self.name}"')
+        await self.canary_pod.wait_until_deleted()
+
+        self.logger.info(f'destroyed canary Pod "{self.name}"')
+    
     async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
         if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
             if mode == FailureMode.ROLLBACK:
