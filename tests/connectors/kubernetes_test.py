@@ -362,6 +362,12 @@ class TestContainer:
 
         container.set_resource_requirements(name, value, requirements, **kwargs)
         assert container.resources.to_dict() == resources_dict
+    
+    def test_set_resource_requirements_handles_null_requirements_dict(self, container):
+        container.resources = client.V1ResourceRequirements()
+
+        container.set_resource_requirements("cpu", "1000m")
+        assert container.resources.to_dict() == {'limits': {'cpu': '1000m'}, 'requests': {'cpu': '1000m'}}
 
 class TestReplicas:
     @pytest.fixture

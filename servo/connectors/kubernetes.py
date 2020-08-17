@@ -782,7 +782,6 @@ class Container:
         value: Union[str, Sequence[str]], 
         requirements: ResourceRequirements = ResourceRequirements.compute, 
         *,
-        default: Optional[str] = None,
         clear_others: bool = False
     ) -> None:
         """
@@ -791,15 +790,15 @@ class Container:
         Args:
             name: The resource to set requirements for (e.g. "cpu" or "memory").
             value: The string value or tuple of string values to assign to the resources. Values are 
-                assigned in declaration order of members of the `ResourceRequirements` enumeration.
-            default: The default value to assign for resource requirements not explicitly defined
-                by the value argument. Defaults to `None`.
+                assigned in declaration order of members of the `ResourceRequirements` enumeration. If a
+                single value is provided, it is assigned to all requirements.
             clear_others: When True, any requirements not specified in the input arguments are cleared.
         """
 
         values = (
             [value] if isinstance(value, str) else list(value)
         )
+        default = values[0]
         for requirement in list(ResourceRequirements):
             # skip named combinations of flags
             if requirement.flags:
@@ -808,7 +807,12 @@ class Container:
             if not hasattr(self.resources, requirement.resources_key):
                 raise ValueError(f"unknown resource requirement '{requirement}'")            
                 
-            req_dict: Dict[str, str] = getattr(self.resources, requirement.resources_key)
+            req_dict: Optional[Dict[str, Union[str, None]]] = getattr(self.resources, requirement.resources_key)
+            if req_dict is None:
+                # we are establishing the first requirements for this resource, hydrate the model
+                req_dict = {}
+                setattr(self.resources, requirement.resources_key, req_dict)
+
             if requirement & requirements:
                 req_value = (
                     values.pop(0) if len(values) else default
