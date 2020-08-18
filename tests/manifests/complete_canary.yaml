@@ -28,7 +28,7 @@ data:
               step: 0.125
               
     prometheus:
-      base_url: http://prometheus.opsani-monitoring.svc:9090
+      base_url: http://prometheus.default.svc:9090
       metrics:
         # NOTE: Include `OR on() vector(0)` to ensure that zero values are produced instead of null to avoid upstream exceptions when reporting to oco when data isn't found
         - name: main_instance_count
