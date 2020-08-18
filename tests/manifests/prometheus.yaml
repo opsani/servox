@@ -1,41 +1,41 @@
-# ---
-# apiVersion: rbac.authorization.k8s.io/v1
-# kind: ClusterRoleBinding
-# metadata:
-#   name: prometheus
-# roleRef:
-#   apiGroup: rbac.authorization.k8s.io
-#   kind: ClusterRole
-#   name: prometheus
-# subjects:
-# - kind: ServiceAccount
-#   name: prometheus-k8s
-
-# ---
-# apiVersion: rbac.authorization.k8s.io/v1
-# kind: ClusterRole
-# metadata:
-#   name: prometheus
-# rules:
-# - apiGroups: [""]
-#   resources:
-#   - nodes
-#   - nodes/proxy
-#   - services
-#   - endpoints
-#   - pods
-#   verbs: ["get", "list", "watch"]
-# - apiGroups: [""]
-#   resources:
-#   - configmaps
-#   verbs: ["get"]
-# - nonResourceURLs: ["/metrics"]
-#   verbs: ["get"]
-# ---
-# apiVersion: v1
-# kind: ServiceAccount
-# metadata:
-#   name: prometheus-k8s
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus-k8s
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs: ["get"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-k8s
 ---
 apiVersion: v1
 data:
@@ -189,15 +189,15 @@ spec:
         app: prometheus
         component: core
     spec:
-      # serviceAccountName: prometheus-k8s
+      serviceAccountName: prometheus-k8s
       containers:
       - name: prometheus
         image: prom/prometheus:v1.7.0
+        # image: quay.io/prometheus/prometheus:v2.20.1
         args:
           - '-storage.local.retention=12h'
           - '-storage.local.memory-chunks=500000'
           - '-config.file=/etc/prometheus/prometheus.yaml'
-          - '-alertmanager.url=http://alertmanager:9093/'
         ports:
         - name: webui
           containerPort: 9090
@@ -220,22 +220,22 @@ spec:
       - name: rules-volume
         configMap:
           name: prometheus-rules
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: prometheus
-#   labels:
-#     app: prometheus
-#     component: core
-#   annotations:
-#     prometheus.io/scrape: 'true'
-# spec:
-#   type: NodePort
-#   ports:
-#     - port: 9090
-#       protocol: TCP
-#       name: webui
-#   selector:
-#     app: prometheus
-#     component: core
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+    component: core
+  annotations:
+    prometheus.io/scrape: 'true'
+spec:
+  type: NodePort
+  ports:
+    - port: 9090
+      protocol: TCP
+      name: webui
+  selector:
+    app: prometheus
+    component: core
