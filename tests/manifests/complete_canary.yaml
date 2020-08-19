@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: opsani-servo-config
+  name: servo-config
 data:
   servo.yaml: |
     kubernetes:
@@ -28,71 +28,59 @@ data:
               step: 0.125
               
     prometheus:
-      base_url: http://prometheus.default.svc:9090
+      base_url: http://localhost:9090
       metrics:
         # NOTE: Include `OR on() vector(0)` to ensure that zero values are produced instead of null to avoid upstream exceptions when reporting to oco when data isn't found
         - name: main_instance_count
           query: sum(envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role!="tuning"}) OR on() vector(0)
           unit: count
-          # period: 60
         - name: tuning_instance_count
           query: envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role="tuning"} OR on() vector(0)
           unit: count
-          # period: 60
 
         - name: pod_request_rate
           query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         - name: total_request_rate
           query: sum(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
           unit: rps
-          # period: 60
         - name: main_request_rate
           query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role!="tuning"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         - name: tuning_request_rate
           query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role="tuning"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
 
         - name: main_success_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         - name: tuning_success_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         
         - name: main_error_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         - name: tuning_error_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
           unit: rps
-          # period: 60
         
         - name: main_p90_latency
           #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m]))) OR on() vector(0)
           query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m])) OR on() vector(0)
           unit: ms
-          # period: 60
         - name: tuning_p90_latency
           #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m]))) OR on() vector(0)
           query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m])) OR on() vector(0)
           unit: ms
-          # period: 60
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: opsani-servo
+  name: servo
   labels:
-    comp: opsani-servo
     app: servo
+    component: core
 spec:
   replicas: 1
   revisionHistoryLimit: 2
@@ -100,26 +88,15 @@ spec:
     type: Recreate  
   selector:
     matchLabels:
-      comp: opsani-servo
+      app: servo
   template:
     metadata:
+      name: servo
       labels:
-        comp: opsani-servo
+        app: servo
+        component: core
     spec:
-      serviceAccountName: opsani-servo
-      volumes:
-      - name: token
-        secret:
-          secretName: opsani-servo-token
-          items:
-          - key: token
-            path: opsani.token
-      - name: config
-        configMap:
-          name: opsani-servo-config
-          items:
-          - key: servo.yaml
-            path: servo.yaml
+      serviceAccountName: servo      
       containers:
       - name: main
         image: opsani/servox:webhooks-and-canaries
@@ -138,11 +115,11 @@ spec:
               fieldRef:
                 fieldPath: metadata.namespace
         volumeMounts:
-        - name: token
+        - name: servo-token-volume
           mountPath: /servo/opsani.token
           subPath: opsani.token
           readOnly: true
-        - name: config
+        - name: servo-config-volume
           mountPath: /servo/servo.yaml
           subPath: servo.yaml
           readOnly: true
@@ -150,12 +127,49 @@ spec:
           limits:
             cpu: 250m
             memory: 512Mi
+      - name: prometheus
+        image: quay.io/prometheus/prometheus:v2.20.1
+        args:
+          - '--storage.tsdb.retention.time=12h'
+          - '--config.file=/etc/prometheus/prometheus.yaml'
+        ports:
+        - name: webui
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 500m
+            memory: 500M
+          limits:
+            cpu: 500m
+            memory: 1G
+        volumeMounts:
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus
+      volumes:
+      - name: servo-token-volume
+        secret:
+          secretName: servo-token
+          items:
+          - key: token
+            path: opsani.token
+      - name: servo-config-volume
+        configMap:
+          name: servo-config
+          items:
+          - key: servo.yaml
+            path: servo.yaml
+      - name: prometheus-config-volume
+        configMap:
+          name: prometheus-config
 ---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: opsani-servo-token
+  name: servo-token
   namespace: default
+  labels:
+    app: servo
+    component: core
 type: Opaque
 data:
   token: MDU4MDA2YWFiODFmMWE0ZmM2OTI5ZjY4MjhlMjA5ZDUwNTU4Yjk2ZTc4MWRhZTY3MTc3OGM5Cg==
@@ -164,23 +178,20 @@ data:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: opsani-servo
+  name: servo
+  labels:
+    app: servo
 
 ---
+# Cluster Role for the servo itself
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: opsani-servo
+  name: servo
+  labels:
+    app: servo
+    component: core
 rules:
-  # - apiGroups: [ apps, extensions ]
-  #   resources: [ deployments ]
-  #   verbs: [ get, list, watch, create, update, patch, delete ]
-  # - apiGroups: [ '' ]
-  #   resources: [ pods ]
-  #   verbs: [ get, list , watch, create, update, patch, delete ]
-  # - apiGroups: [ apps ]
-  #   resources: [ replicasets ]
-  #   verbs: [ get, list ]
 - apiGroups: ["apps","extensions"]
   resources: ["deployments","replicasets","PodDisruptionBudget"]
   verbs: ["get", "list", "watch", "update", "patch"]
@@ -189,14 +200,186 @@ rules:
   verbs: ["create", "delete", "get", "list", "watch" ]
 
 ---
+# Cluster Role for the Prometheus sidecar
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRole
 metadata:
-  name: opsani-servo
+  name: prometheus
+  labels:
+    app: servo
+    component: prometheus
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs: ["get"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+
+---
+# Bind the Servo Cluster Role to the servo Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: servo
+  labels:
+    app: servo
+    component: core
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: servo  
 subjects:
 - kind: ServiceAccount
-  name: opsani-servo
+  name: servo
+  namespace: default
+
+---
+# Bind the Prometheus Cluster Role to the servo Service Account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app: servo
+    component: prometheus
 roleRef:
-  kind: Role
-  name: opsani-servo
   apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: servo
+  namespace: default
+
+---
+### Begin Prometheus Configuration Manifests
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    app: servo
+    component: prometheus
+data:
+  prometheus.yaml: |
+    global:
+      scrape_interval: 5s
+      scrape_timeout: 5s
+      evaluation_interval: 5s
+    rule_files:
+      - "/etc/prometheus-rules/*.rules"
+    scrape_configs:
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics.kube-system.svc.cluster.local:8080']
+
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L79
+      - job_name: 'kubernetes-endpoints'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (https?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)(?::\d+);(\d+)
+            replacement: $1:$2
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L119
+      - job_name: 'kubernetes-services'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
+            action: keep
+            regex: true
+          - source_labels: [__address__]
+            target_label: __param_target
+          - target_label: __address__
+            replacement: blackbox
+          - source_labels: [__param_target]
+            target_label: instance
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L156
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: (.+):(?:\d+);(\d+)
+            replacement: ${1}:${2}
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: 9\d{3}
+
+      - job_name: 'kubernetes-envoy'
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)(?::\d+);(\d+)
+            replacement: $1:$2
+---
