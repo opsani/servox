@@ -223,7 +223,6 @@ class Resource(Setting):
         validate_assignment = True
 
 
-
 @runtime_checkable
 class KubernetesObj(Protocol):
     """
@@ -1987,7 +1986,14 @@ class CanaryOptimization(BaseOptimization):
         )
 
     def to_components(self) -> List[Component]:
-        # Return the target and the canary
+        """
+        Return a Component representation of the canary and its reference target.
+
+        Note that all settings on the target are implicitly pinned because only the canary
+        is to be modified during optimization.
+        """
+        
+        # implicitly pin the target settings before we return them
         cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("cpu", first=True):
             cpu.value = value
@@ -1996,12 +2002,8 @@ class CanaryOptimization(BaseOptimization):
         if value := self.target_container.get_resource_requirements("memory", first=True):
             memory.value = value
 
-        replicas = Replicas(            
-            min=0,
-            max=1,
-            value=1,
-            pinned=True,
-        )
+        replicas = self.target_container_config.replicas.copy(update={ "pinned": True })
+        replicas.value = self.target_deployment.replicas
         
         return [
             Component(
@@ -2410,7 +2412,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                         if field_name in BaseConfiguration.__fields__:
                             # don't cascade from the base class
                             continue
-                        
+
                         if field_name in obj.__fields_set__ and not overwrite:
                             default_logger.trace(f"skipping config cascade for unset field '{field_name}'")
                             continue
