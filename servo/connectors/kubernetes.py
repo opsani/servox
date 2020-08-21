@@ -410,7 +410,7 @@ class KubernetesModel(abc.ABC):
         """Refresh the local state (``obj``) of the underlying Kubernetes resource."""
 
     @abc.abstractmethod
-    def is_ready(self) -> bool:
+    async def is_ready(self) -> bool:
         """Check if the resource is in the ready state.
 
         It is up to the wrapper subclass to define what "ready" means for
@@ -941,10 +941,12 @@ class Pod(KubernetesModel):
         Returns:
             True if in the ready state; False otherwise.
         """
+        self.logger.debug("refreshing pod status to check is_ready")
         await self.refresh()
 
         # if there is no status, the pod is definitely not ready
         status = self.obj.status
+        self.logger.debug(f"current pod status is {status}")
         if status is None:
             return False
 
@@ -952,6 +954,7 @@ class Pod(KubernetesModel):
         # the 'failed' or 'success' state will no longer be running,
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
+        self.logger.debug(f"current pod phase is {status}")
         if phase.lower() != 'running':
             return False
 
@@ -962,6 +965,7 @@ class Pod(KubernetesModel):
         # rdy_conditions = [] if not pod.status.conditions else [con for con in pod.status.conditions if con.type in ['Ready', 'ContainersReady']]
         # pod_ready = len(rdy_conditions) > 1 and all([con.status == 'True' for con in rdy_conditions])
         # return conts_ready and pod_ready
+        self.logger.debug(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
             # we only care about the condition type 'ready'
             if cond.type.lower() != 'ready':
@@ -971,6 +975,7 @@ class Pod(KubernetesModel):
             return cond.status.lower() == 'true'
 
         # Catchall
+        self.logger.debug(f"unable to find ready=true, continuing to wait...")
         return False
 
     async def get_status(self) -> client.V1PodStatus:
@@ -2418,6 +2423,8 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         `BaseKubernetesConfiguration`, any common attribute values are copied onto the child
         model, cascading them downward. Only attributes whose value is equal to the default
         and have not been explicitly set are updated.
+
+        # FIXME: Cascaded settings should only be optional if they can be optional at the top level. Right now we are implying that namespace can be None as well.
         """
         for name, field in self.__fields__.items():
             if issubclass(field.type_, BaseKubernetesConfiguration):                
