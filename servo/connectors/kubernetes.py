@@ -1971,12 +1971,6 @@ class CanaryOptimization(BaseOptimization):
              raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{name}'")
 
     async def apply(self) -> None:
-        # FIXME: This is not going to fly for long...
-        # pod_obj.spec.containers = [container.obj]
-        # debug("BEFORE: ", pod_obj.spec.containers[0].resources, container.resources)
-        # pod_obj.spec.containers[0].resources = container.resources
-        # debug("AFTER: ", pod_obj.spec.containers[0].resources)
-
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.obj.spec.resources = self.canary_container.resources
         dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
@@ -2085,6 +2079,10 @@ class CanaryOptimization(BaseOptimization):
                 self.destroy(),
                 timeout=self.timeout.total_seconds()
             )
+
+            # create a new canary against baseline
+            self.logger.info("creating new canary against baseline following failed adjust")
+            self.canary = await self.target_deployment.ensure_canary_pod()
             return True
 
         else:
