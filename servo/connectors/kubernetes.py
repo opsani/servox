@@ -853,6 +853,7 @@ class Pod(KubernetesModel):
     }
 
     @classmethod
+    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def read(cls, name: str, namespace: str) -> "Pod":
         """Read the Pod from the cluster under the given namespace.
 
@@ -863,7 +864,10 @@ class Pod(KubernetesModel):
         default_logger.info(f'reading pod "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
-            obj = await api_client.read_namespaced_pod_status(name, namespace)
+            obj = await asyncio.wait_for(
+                api_client.read_namespaced_pod_status(name, namespace),
+                5.0
+            )
             default_logger.trace("pod: ", obj)
             return Pod(obj)
 
