@@ -7,7 +7,7 @@ data:
   servo.yaml: |
     kubernetes:
       namespace: default
-      settlement: 5m
+      settlement: 1m
       deployments:
         - name: web
           strategy: canary
