@@ -52,7 +52,7 @@ data:
           unit: rps
 
         - name: main_success_rate
-          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class="2"}[3m])) OR on() vector(0)
           unit: rps
         - name: tuning_success_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
