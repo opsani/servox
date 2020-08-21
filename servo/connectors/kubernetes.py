@@ -1951,7 +1951,8 @@ class CanaryOptimization(BaseOptimization):
             self.canary_container.set_resource_requirements(name, value, requirements, clear_others=True)
         
         elif name == "replicas":
-            default_logger.warning(f'ignoring attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
+            if int(value) != 1:
+                default_logger.warning(f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
 
         else:
              raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{name}'")
