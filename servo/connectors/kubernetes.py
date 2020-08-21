@@ -2002,7 +2002,7 @@ class CanaryOptimization(BaseOptimization):
         if value := self.target_container.get_resource_requirements("memory", first=True):
             memory.value = value
 
-        replicas = self.target_container_config.replicas.copy(update={ "pinned": True })
+        replicas = self.target_deployment_config.replicas.copy(update={ "pinned": True })
         replicas.value = self.target_deployment.replicas
         
         return [
