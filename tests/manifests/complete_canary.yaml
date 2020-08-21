@@ -38,8 +38,8 @@ data:
           query: envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role="tuning"} OR on() vector(0)
           unit: count
 
-        - name: main_pod_request_rate
-          query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m]) OR on() vector(0)
+        - name: main_pod_avg_request_rate
+          query: avg(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
           unit: rps
         - name: total_request_rate
           query: sum(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
@@ -59,7 +59,7 @@ data:
           unit: rps
         
         - name: main_error_rate
-          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m])) OR on() vector(0)
           unit: rps
         - name: tuning_error_rate
           query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
