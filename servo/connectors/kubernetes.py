@@ -949,12 +949,12 @@ class Pod(KubernetesModel):
         Returns:
             True if in the ready state; False otherwise.
         """
-        self.logger.debug("refreshing pod status to check is_ready")
+        self.logger.trace("refreshing pod status to check is_ready")
         await self.refresh()
 
         # if there is no status, the pod is definitely not ready
         status = self.obj.status
-        self.logger.debug(f"current pod status is {status}")
+        self.logger.trace(f"current pod status is {status}")
         if status is None:
             return False
 
@@ -962,18 +962,11 @@ class Pod(KubernetesModel):
         # the 'failed' or 'success' state will no longer be running,
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
-        self.logger.debug(f"current pod phase is {status}")
+        self.logger.trace(f"current pod phase is {status}")
         if phase.lower() != 'running':
             return False
 
-        # TODO: Check for Ready and ContainersReady (Check if below logic matches)
-        # 'Returns bool indicating pod readiness'
-        # cont_stats = pod.status.container_statuses
-        # conts_ready = cont_stats and len(cont_stats) >= len(pod.spec.containers) and all([cs.ready for cs in pod.status.container_statuses])
-        # rdy_conditions = [] if not pod.status.conditions else [con for con in pod.status.conditions if con.type in ['Ready', 'ContainersReady']]
-        # pod_ready = len(rdy_conditions) > 1 and all([con.status == 'True' for con in rdy_conditions])
-        # return conts_ready and pod_ready
-        self.logger.debug(f"checking status conditions {status.conditions}")
+        self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
             # we only care about the condition type 'ready'
             if cond.type.lower() != 'ready':
@@ -983,7 +976,7 @@ class Pod(KubernetesModel):
             return cond.status.lower() == 'true'
 
         # Catchall
-        self.logger.debug(f"unable to find ready=true, continuing to wait...")
+        self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
     async def get_status(self) -> client.V1PodStatus:
