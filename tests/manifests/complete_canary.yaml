@@ -22,7 +22,7 @@ data:
               max: 2.0
               step: 0.125
             memory:
-              min: 125 MiB
+              min: 128 MiB
               max: 3 GiB
               step: 0.125
               
