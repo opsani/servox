@@ -144,12 +144,13 @@ class PrometheusConnector(BaseConnector):
 
         sleep_duration = Duration(control.warmup + control.duration)
         self.logger.info(
-            f"Sleeping for {sleep_duration} to allow metrics collection ({control.warmup} warmup + {control.duration} duration)"
+            f"Waiting {sleep_duration} during metrics collection ({control.warmup} warmup + {control.duration} duration)..."
         )
 
         progress = DurationProgress(sleep_duration)
-        notifier = lambda p: self.logger.info(p.annotate(f"sleeping for {sleep_duration} to allow metrics collection", False), progress=p.progress)
+        notifier = lambda p: self.logger.info(p.annotate(f"waiting {sleep_duration} during metrics collection...", False), progress=p.progress)
         await progress.watch(notifier)
+        self.logger.info(f"Done waiting {settlement} for metrics collection, resuming optimization.")
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
