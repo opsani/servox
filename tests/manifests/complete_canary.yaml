@@ -28,6 +28,7 @@ data:
               step: 0.125
               
     prometheus:
+      # NOTE: In a sidecar configuration, Prometheus is colocated with the servo in the Pod
       base_url: http://localhost:9090
       metrics:
         # NOTE: Include `OR on() vector(0)` to ensure that zero values are produced instead of null to avoid upstream exceptions when reporting to oco when data isn't found
@@ -137,8 +138,8 @@ spec:
           containerPort: 9090
         resources:
           requests:
-            cpu: 500m
-            memory: 500M
+            cpu: 100m
+            memory: 128M
           limits:
             cpu: 500m
             memory: 1G
