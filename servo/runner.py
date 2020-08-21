@@ -115,7 +115,7 @@ class Runner(api.Mixin):
 
     async def exec_command(self):
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
-        self.logger.debug(f"What's Next? => {cmd_response.command}")
+        self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(pformat(cmd_response))
 
         try:
