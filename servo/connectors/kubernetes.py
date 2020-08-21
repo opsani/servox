@@ -9,6 +9,7 @@ import itertools
 import os
 import traceback
 import sys
+import backoff
 
 from pydantic.main import Extra
 
@@ -927,12 +928,15 @@ class Pod(KubernetesModel):
                 body=options,
             )
 
+    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Pod resource."""
-        async with self.api_client() as api_client:
-            self.obj = await api_client.read_namespaced_pod_status(
+        async with self.api_client() as api_client:            
+            self.obj = await asyncio.wait_for(
+                api_client.read_namespaced_pod_status(
                 name=self.name,
-                namespace=self.namespace,
+                namespace=self.namespace
+                ), 5.0
             )
 
     async def is_ready(self) -> bool:
