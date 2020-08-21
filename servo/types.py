@@ -325,11 +325,6 @@ class Component(BaseModel):
     name: str
     settings: List[Setting]
 
-    # TODO: These probably move to DeploymentComponent inside KubernetesConnector
-    env: Optional[Dict[str, str]]
-    command: Optional[dict] # TODO: This needs to be modeled but not sure what attributes
-    canary: bool = False
-
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)
 
