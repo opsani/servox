@@ -2532,9 +2532,9 @@ class KubernetesConnector(BaseConnector):
         # TODO: Move this into event declaration??
         settlement = self.config.settlement
         if settlement:
-            self.logger.info(f"Settlement duration of {settlement} requested, sleeping...")            
+            self.logger.info(f"Settlement duration of {settlement} requested, waiting for pods to settle...")
             progress = DurationProgress(settlement)
-            progress_logger = lambda p: self.logger.info(p.annotate("allowing application to settle", False), progress=p.progress)
+            progress_logger = lambda p: self.logger.info(p.annotate("waiting for pods to settle...", False), progress=p.progress)
             await progress.watch(progress_logger)
             self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
 
