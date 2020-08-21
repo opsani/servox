@@ -184,7 +184,7 @@ class Runner(api.Mixin):
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
-        self.logger.info("Broadcasting startup event...")
+        self.logger.info("Dispatching startup event...")
         await self.servo.startup()
 
         self.logger.info("Saying HELLO.", end=" ")
@@ -204,9 +204,7 @@ class Runner(api.Mixin):
             reason = signal.name if signal else 'shutdown'
             await self._post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception:
-            self.logger.exception(
-                f"Exception occurred during GOODBYE request",
-            backtrace=True, diagnose=True)
+            self.logger.exception(f"Exception occurred during GOODBYE request")
         
         self.logger.info("Dispatching shutdown event...")
         await self.servo.shutdown()
@@ -224,16 +222,25 @@ class Runner(api.Mixin):
         
         loop.stop()
     
-    def handle_exception(self, loop, context):
+    def handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        self.logger.error(f"asyncio exception handler triggered with context: {context}")
+
         # context["message"] will always be there; but context["exception"] may not
-        msg = context.get("exception", context["message"])
-        self.logger.opt(exception=msg).exception(f"Caught exception: {msg}")
-        if not loop.is_closed():
-            self.logger.info("Shutting down...")
+        exception = context.get("exception")
+        if exception:
+            # FIXME: it is not necessary to re-raise this to get the right logging it is logging None atm
             try:
-                asyncio.create_task(self.shutdown(loop))
-            except RuntimeError as e:
-                self.logger.error(f"failed trying to schedule shutdown: {e}")
+                raise exception
+            except:
+                self.logger.exception(f"exception details: {exception}")
+
+        self.logger.critical("Shutting down due to unhandled exception in asyncio task...")
+
+        # try to shutdown cleanly
+        try:
+            asyncio.create_task(self.shutdown(loop))
+        except Exception as exception:
+            self.logger.exception(f"caught exception trying to schedule shutdown: {exception}")
 
     def run(self) -> None:
         self.display_banner()
