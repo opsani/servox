@@ -1996,6 +1996,7 @@ class CanaryOptimization(BaseOptimization):
             min=0,
             max=1,
             value=1,
+            pinned=True,
         )
 
     def to_components(self) -> List[Component]:
