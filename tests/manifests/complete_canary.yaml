@@ -19,7 +19,7 @@ data:
           - name: main
             cpu:
               min: 125m
-              max: 3.0
+              max: 2.0
               step: 0.125
             memory:
               min: 125 MiB
