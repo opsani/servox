@@ -1903,15 +1903,26 @@ class CanaryOptimization(BaseOptimization):
     target_container: Container
     target_container_config: ContainerConfiguration
 
+    # Canary Pod may not exist yet
     canary_pod: Pod
     canary_container: Container
+    # canary_pod: Optional[Pod]
+    # canary_container: Optional[Container]
 
     @classmethod
     async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'CanaryOptimization':
-        deployment = await Deployment.read(config.name, config.namespace)
+        deployment = await Deployment.read(config.name, config.namespace.name)
 
-        # Create the canary Pod
         canary_pod = await deployment.ensure_canary_pod()
+        # Retrieve existing canary (if any)
+        # TODO: Eliminate the implicit canary behavior, we don't want to create canary as a side-effect
+        # try:
+        #     canary_pod = await deployment.get_canary_pod()
+        #     default_logger.info(f"Found existing canary Pod '{canary_pod.name}' in namespace '{config.namespace.name}'")
+        # except client.exceptions.ApiException as e:
+        #     canary_pod = None
+        #     if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
+        #         raise
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
@@ -1928,6 +1939,8 @@ class CanaryOptimization(BaseOptimization):
                 canary_container=canary_container,
                 **kwargs
             )
+        
+        raise AssertionError("deployment configuration must have one or more containers")
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         name = adjustment.setting_name
