@@ -2405,17 +2405,21 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         for name, field in self.__fields__.items():
             if issubclass(field.type_, BaseKubernetesConfiguration):                
                 attribute = getattr(self, name)       
-                for obj in (attribute if isinstance(attribute, Collection) else [attribute]):
+                for obj in (attribute if isinstance(attribute, Collection) else [attribute]):                    
                     for field_name, field in BaseKubernetesConfiguration.__fields__.items():
+                        if field_name in BaseConfiguration.__fields__:
+                            # don't cascade from the base class
+                            continue
+                        
                         if field_name in obj.__fields_set__ and not overwrite:
-                            default_logger.trace(f"skipping config cascade for field '{field_name}'")
+                            default_logger.trace(f"skipping config cascade for unset field '{field_name}'")
                             continue
 
                         current_value = getattr(obj, field_name)
                         if overwrite or current_value == field.default:
                             parent_value = getattr(self, field_name)
                             setattr(obj, field_name, parent_value)
-                            default_logger.debug(f"cascaded setting '{field_name}' from KubernetesConfiguration to child '{attribute}': value={parent_value}")
+                            default_logger.trace(f"cascaded setting '{field_name}' from KubernetesConfiguration to child '{attribute}': value={parent_value}")
 
                         else:
                             default_logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
