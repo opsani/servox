@@ -382,4 +382,3 @@ data:
             target_label: __address__
             regex: (.+)(?::\d+);(\d+)
             replacement: $1:$2
----
