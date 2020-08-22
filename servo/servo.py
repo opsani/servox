@@ -7,11 +7,12 @@ from enum import Enum
 from typing import Dict, Iterable, List, Optional, Type, Union, Sequence
 
 import httpx
-from pydantic import Extra, Field, validator
+from pydantic import AnyHttpUrl, Extra, Field, validator
 
 import servo
 from servo import api, connector
 from servo.connector import (
+    AbstractBaseConfiguration,
     BaseConfiguration,
     BaseConnector,
     License,
@@ -21,7 +22,7 @@ from servo.connector import (
     _validate_class
 )
 from servo.events import Preposition, event, on_event
-from servo.types import Adjustment, Check, Component, Control, Description, Measurement, Metric
+from servo.types import Adjustment, Check, Component, Control, Description, Duration, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -138,7 +139,7 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
             if (
                 name not in kwargs
                 and inspect.isclass(field.type_)
-                and issubclass(field.type_, BaseConfiguration)
+                and issubclass(field.type_, AbstractBaseConfiguration)
             ):
                 kwargs[name] = field.type_.generate()
         return cls(**kwargs)

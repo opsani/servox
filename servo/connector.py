@@ -27,7 +27,7 @@ from pydantic import (
 
 
 from servo import api, events, logging, repeating
-from servo.configuration import BaseConfiguration, Optimizer
+from servo.configuration import AbstractBaseConfiguration, BaseConfiguration, Optimizer
 from servo.events import EventHandler, EventResult
 from servo.types import *
 from servo.utilities import (

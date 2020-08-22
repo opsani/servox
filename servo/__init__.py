@@ -30,10 +30,11 @@ from .events import (
     after_event,
     event_handler,
 )
-from .connector import (
-    Optimizer,
+from .connector import (    
+    AbstractBaseConfiguration,
     BaseConfiguration,
     BaseConnector,
+    Optimizer,
     metadata,
 )
 

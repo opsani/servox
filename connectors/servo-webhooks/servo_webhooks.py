@@ -70,13 +70,13 @@ class Webhook(servo.BaseConfiguration):
     # Map strings from config into EventContext objects
     _validate_events = validator("events", pre=True, allow_reuse=True)(validate_event_contexts)
 
-class WebhooksConfiguration(servo.BaseConfiguration):
-    webhooks: List[Webhook] = []
+class WebhooksConfiguration(servo.AbstractBaseConfiguration):
+    __root__: List[Webhook] = []
 
     @classmethod
-    def generate(cls, **kwargs) -> "Configuration":
+    def generate(cls, **kwargs) -> "WebhooksConfiguration":
         return cls(
-            [
+            __root__=[
                 Webhook(
                     name="My Webhook",
                     description="Listens for after:measure events and sends an email",
@@ -85,13 +85,15 @@ class WebhooksConfiguration(servo.BaseConfiguration):
                     secret="s3cr3t!"
                 )
             ],
-            description="Add webhooks for the events you want to listen to.",
             **kwargs,
         )
-
-    # Allow the webhooks to be root configuration
-    def __init__(self, webhooks: List[Webhook], *args, **kwargs) -> None:
-        super().__init__(webhooks=webhooks, *args, **kwargs)
+    
+    @property
+    def webhooks(self) -> List[Webhook]:
+        """
+        Convenience method for retrieving the root type as a list of webhooks.
+        """
+        return self.__root__
 
 
 class Result(BaseModel):

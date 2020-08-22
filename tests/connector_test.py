@@ -152,9 +152,9 @@ class TestBaseConfiguration:
     def test_configuring_with_environment_variables(self) -> None:
         assert BaseConfiguration.__fields__["description"].field_info.extra[
             "env_names"
-        ] == {"DESCRIPTION"}
-        with environment_overrides({"DESCRIPTION": "this description"}):
-            assert os.environ["DESCRIPTION"] == "this description"
+        ] == {"BASE_DESCRIPTION"}
+        with environment_overrides({"BASE_DESCRIPTION": "this description"}):
+            assert os.environ["BASE_DESCRIPTION"] == "this description"
             s = BaseConfiguration()
             assert s.description == "this description"
 
@@ -654,7 +654,7 @@ def test_vegeta_cli_help(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
 
 def test_env_variable_prefixing() -> None:
     schema_title_and_description_envs = [
-        ["Connector Configuration Schema", "DESCRIPTION",],
+        ["Base Connector Configuration Schema", "BASE_DESCRIPTION",],
         ["Vegeta Connector Configuration Schema", "VEGETA_DESCRIPTION",],
         ["Abstract Servo Configuration Schema", "SERVO_DESCRIPTION",],
     ]

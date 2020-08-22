@@ -84,42 +84,41 @@ class Optimizer(BaseSettings):
         }
 
 
-DEFAULT_TITLE = "Connector Configuration Schema"
+DEFAULT_TITLE = "Base Connector Configuration Schema"
 DEFAULT_JSON_ENCODERS = {
     # Serialize Duration as Golang duration strings (treated as a timedelta otherwise)
     Duration: lambda d: f"{d}"
 }
 
 
-class BaseConfiguration(BaseSettings):
+class AbstractBaseConfiguration(BaseSettings):
     """
-    BaseConfiguration is the base configuration class for Opsani Servo Connectors.
+    AbstractBaseConfiguration is the root of the servo configuration class hierarchy.
+    It does not define any concrete configuration model fields but provides a number
+    of shared behaviors common and functionality common across all servo connectors.
 
-    BaseConfiguration instances are typically paired 1:1 with a Connector class
-    that inherits from `servo.connector.Connector` and provides the business logic
-    of the connector. Configuration classes are connector specific and designed
-    to be initialized from commandline arguments, environment variables, and defaults.
-    Connectors are initialized with a valid settings instance capable of providing necessary
-    configuration for the connector to function.
-    """
-
-    description: Optional[str] = Field(
-        None, description="An optional annotation describing the configuration."
-    )
-    """An optional textual description of the configuration stanza useful for differentiating
-    between configurations within assemblies.
+    Typically connector configuration classes will inherit from the concrete subclass
+    `BaseConfiguration` rather than `AbstractBaseConfiguration`. Direct subclasses of 
+    `AbstractBaseConfiguration` are utilized when you wish to make use of Pydantic's
+    Custom Root Type support (see https://pydantic-docs.helpmanual.io/usage/models/#custom-root-types).
+    Custom Roots require that no other model fields are declared on the model when the
+    `__root__` field is defined. Custom roots effectively inline the target attribute
+    from the model, unwrapping a layer of object containment from the config file and
+    JSON Schema perspective. This is especially useful when the connector models a 
+    collection of independent elements such as webhooks or notifications.
     """
 
     @classmethod
     def parse_file(
         cls, file: Path, *, key: Optional[str] = None
-    ) -> "BaseConfiguration":
+    ) -> "AbstractBaseConfiguration":
         """
         Parse a YAML configuration file and return a configuration object with the contents.
 
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
+        debug(config)
         if key:
             try:
                 config = config[key]
@@ -128,7 +127,7 @@ class BaseConfiguration(BaseSettings):
         return cls.parse_obj(config)
 
     @classmethod
-    def generate(cls, **kwargs) -> "BaseConfiguration":
+    def generate(cls, **kwargs) -> "AbstractBaseConfiguration":
         """
         Return a set of default settings for a new configuration.
 
@@ -204,6 +203,26 @@ class BaseConfiguration(BaseSettings):
         extra = Extra.forbid
         title = DEFAULT_TITLE
         json_encoders = DEFAULT_JSON_ENCODERS
+
+
+class BaseConfiguration(AbstractBaseConfiguration):
+    """
+    BaseConfiguration is the base configuration class for Opsani Servo Connectors.
+
+    BaseConfiguration subclasses are typically paired 1:1 with a Connector class
+    that inherits from `servo.connector.Connector` and implements the business logic
+    of the connector. Configuration classes are connector specific and designed
+    to be initialized from commandline arguments, environment variables, and defaults.
+    Connectors are initialized with a valid settings instance capable of providing necessary
+    configuration for the connector to function.
+    """
+
+    description: Optional[str] = Field(
+        None, description="An optional annotation describing the configuration."
+    )
+    """An optional textual description of the configuration stanza useful for differentiating
+    between configurations within assemblies.
+    """
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
