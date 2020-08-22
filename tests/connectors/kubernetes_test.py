@@ -506,7 +506,7 @@ class TestMemory:
             }
         }
     
-    def test_validates_value_in_range(self, cpu) -> None:
+    def test_validates_value_in_range(self, memory) -> None:
         ...
 
 @pytest.mark.integration

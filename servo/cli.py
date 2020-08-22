@@ -387,7 +387,7 @@ class CLI(typer.Typer):
             "schema",
             "generate",
             "validate",
-            "version",
+            "version"
         }:
             try:
                 CLI.assemble_from_context(ctx)
@@ -396,7 +396,7 @@ class CLI(typer.Typer):
                 raise typer.Exit(2)
 
     @staticmethod
-    def assemble_from_context(ctx: Context):
+    def assemble_from_context(ctx: Context):        
         if ctx.config_file is None:
             raise typer.BadParameter("Config file must be specified")
         
@@ -1514,7 +1514,7 @@ class ServoCLI(CLI):
                 else:
                     # If there are no aliases just assign input values
                     config.connectors = connectors
-
+            
             config_yaml = config.yaml(
                 by_alias=True, exclude_unset=exclude_unset, exclude=exclude
             )
