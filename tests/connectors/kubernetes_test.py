@@ -418,12 +418,12 @@ class TestReplicas:
         } == replicas.dict()
     
     def test_to_opsani_dict(self, replicas) -> None:
-        replicas.value = "3"
-        assert cpu.opsani_dict() == {
-            'cpu': {
+        replicas.value = 3
+        assert replicas.opsani_dict() == {
+            'replicas': {
                 'max': 4.0, 
-                'min': 0.1, 
-                'step': 0.125, 
+                'min': 1.0, 
+                'step': 1, 
                 'value': 3.0,
                 'type': SettingType.RANGE,
                 'pinned': False
@@ -444,7 +444,7 @@ class TestCPU:
             'step': 125,
             'value': None,
             'pinned': False,
-            'requirements': ResourceRequirements.both,
+            'requirements': ResourceRequirements.compute,
         } == cpu.dict()
     
     def test_to_opsani_dict(self, cpu) -> None:
@@ -477,7 +477,7 @@ class TestMemory:
             'step': 268435456,
             'value': None,
             'pinned': False,
-            'requirements': ResourceRequirements.both,
+            'requirements': ResourceRequirements.compute,
         } == memory.dict()
     
     def test_to_opsani_dict(self, memory) -> None:
@@ -517,10 +517,6 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("co-http-deployment.cpu").value == 1.0
         assert description.get_setting("co-http-deployment.memory").value == "3G"
         assert description.get_setting("co-http-deployment.replicas").value == 1
-
-async def test_measure(config):
-    connector = KubernetesConnector(config=config)
-    description = await connector.measure()
 
 from servo.api import descriptor_to_adjustments
 async def test_adjust(config, adjustment):    
@@ -608,38 +604,7 @@ async def test_apply_restart_strategy():
 # then watching as all the replicas are updated until the counts match
 # If we never see a progressing condition, then whatever we did
 # did not affect the deployment
-# Handle: CreateContainerError
-
-def test_proposed_config(canary_config) -> None:    
-    dep = DeploymentComponent(
-        name="co-http",
-        container="main",
-        namespace="web-apps",
-        cpu=CPU(
-            min="100m",
-            max="800m",
-            step="125m",
-            value="300m",
-        ),
-        memory=Memory(
-            min="0.1 Gi",
-            max="0.8 Gi",
-            step="125 Mi",
-            value="500 Mi",
-        ),
-        replicas=Replicas(
-            min=1,
-            max=2,
-            step=1,
-            value=1,
-        ),
-        settings=[
-        ]
-    )
-    dep_json = dep.json(by_alias=True, exclude_defaults=False, exclude_unset=False, exclude_none=False)
-    debug(dep_json)
-    dep_yaml = yaml.dump(json.loads(dep_json))
-    debug(dep_yaml)
+# Handle: CreateContainerError 
     
 ## 
 # Canary Tests
