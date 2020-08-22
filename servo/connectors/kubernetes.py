@@ -152,7 +152,9 @@ async def wait_for_condition(
 
         # check if the condition is met and break out if it is
         try:
+            default_logger.debug(f"checking condition {condition}")
             if await condition.check():
+                default_logger.debug(f"condition passed: {condition}")
                 break
         except client.exceptions.ApiException as e:
             default_logger.warning(f'encountered API exception while waiting: {e}')
@@ -161,6 +163,7 @@ async def wait_for_condition(
 
         # if the condition is not met, sleep for the interval
         # to re-check later
+        default_logger.debug(f"sleeping for {interval}")
         await asyncio.sleep(interval)
 
     end = time.time()
