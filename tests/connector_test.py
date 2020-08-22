@@ -1,11 +1,15 @@
 import asyncio
+from inspect import Signature, iscoroutinefunction
 import json
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Coroutine
 
 import pytest
+import respx
 import yaml
+from freezegun import freeze_time
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
@@ -13,21 +17,18 @@ from servo import Duration
 from servo.cli import ServoCLI
 from servo.connector import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     License,
     Maturity,
     Optimizer,
     Version,
     _connector_subclasses,
-    EventContext
 )
 from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import Preposition, _events, event
-from servo.logging import ProgressHandler
+from servo.events import EventContext, Preposition, _events, create_event, event
+from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
-
-pytestmark = pytest.mark.asyncio
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -97,13 +98,13 @@ class TestMaturity:
 
 class TestConnector:
     def test_subclass_registration(self) -> None:
-        class RegisterMe(Connector):
+        class RegisterMe(BaseConnector):
             pass
 
         assert RegisterMe in _connector_subclasses
 
     def test_default_name(self) -> None:
-        class TestConnector(Connector):
+        class TestConnector(BaseConnector):
             pass
 
         assert TestConnector.name == "Test"
@@ -111,13 +112,13 @@ class TestConnector:
         assert TestConnector.__default_name__ == "test"
 
     def test_default_version(self) -> None:
-        class TestConnector(Connector):
+        class TestConnector(BaseConnector):
             pass
 
         assert TestConnector.version == "0.0.0"
 
     def test_default_name(self) -> None:
-        class FancyConnector(Connector):
+        class FancyConnector(BaseConnector):
             pass
 
         c = FancyConnector(config=BaseConfiguration())
@@ -144,16 +145,16 @@ class TestBaseConfiguration:
             "env_names": {"SOME_DURATION",},
             "type": "string",
             "format": "duration",
-            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+            "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }
 
     def test_configuring_with_environment_variables(self) -> None:
         assert BaseConfiguration.__fields__["description"].field_info.extra[
             "env_names"
-        ] == {"DESCRIPTION"}
-        with environment_overrides({"DESCRIPTION": "this description"}):
-            assert os.environ["DESCRIPTION"] == "this description"
+        ] == {"BASE_DESCRIPTION"}
+        with environment_overrides({"BASE_DESCRIPTION": "this description"}):
+            assert os.environ["BASE_DESCRIPTION"] == "this description"
             s = BaseConfiguration()
             assert s.description == "this description"
 
@@ -537,7 +538,7 @@ def test_init_vegeta_connector_no_settings() -> None:
 
 
 def test_init_connector_no_version_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -551,7 +552,7 @@ def test_init_connector_no_version_raises() -> None:
 
 
 def test_init_connector_invalid_version_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -565,7 +566,7 @@ def test_init_connector_invalid_version_raises() -> None:
 
 
 def test_init_connector_parses_version_string() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     FakeConnector.version = "0.5.0"
@@ -578,7 +579,7 @@ def test_init_connector_parses_version_string() -> None:
 
 
 def test_init_connector_no_name_raises() -> None:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         pass
 
     with pytest.raises(ValidationError) as e:
@@ -653,7 +654,7 @@ def test_vegeta_cli_help(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
 
 def test_env_variable_prefixing() -> None:
     schema_title_and_description_envs = [
-        ["Connector Configuration Schema", "DESCRIPTION",],
+        ["Base Connector Configuration Schema", "BASE_DESCRIPTION",],
         ["Vegeta Connector Configuration Schema", "VEGETA_DESCRIPTION",],
         ["Abstract Servo Configuration Schema", "SERVO_DESCRIPTION",],
     ]
@@ -707,7 +708,7 @@ def test_vegeta_cli_schema_json(
                 "env_names": ["VEGETA_DURATION",],
                 "type": "string",
                 "format": "duration",
-                "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
                 "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
             },
             "format": {"$ref": "#/definitions/TargetFormat",},
@@ -797,7 +798,7 @@ def test_vegeta_cli_schema_json(
                 "env_names": ["VEGETA_REPORTING_INTERVAL",],
                 "type": "string",
                 "format": "duration",
-                "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+                "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
                 "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
             },
         },
@@ -844,7 +845,6 @@ def test_vegeta_cli_check(
     optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "check vegeta")
-    debug(result.stderr)
     assert result.exit_code == 0
 
 
@@ -857,7 +857,6 @@ def test_vegeta_cli_measure(
     optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "measure vegeta")
-    debug(result.stderr)
     assert result.exit_code == 0
 
 
@@ -1223,15 +1222,15 @@ def test_vegeta_cli_version_short(servo_cli: ServoCLI, cli_runner: CliRunner) ->
 def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
     pass
 
-
+from contextlib import asynccontextmanager
 class TestConnectorEvents:
-    class FakeConnector(Connector):
+    class FakeConnector(BaseConnector):
         @event(handler=True)
-        def example_event(self) -> None:
+        async def example_event(self) -> int:
             return 12345
         
         @event(handler=True)
-        def get_event_context(self) -> EventContext:
+        async def get_event_context(self) -> Optional[EventContext]:
             return self.current_event
 
         class Config:
@@ -1239,8 +1238,61 @@ class TestConnectorEvents:
 
     class AnotherFakeConnector(FakeConnector):
         @event(handler=True)
-        def another_example_event(self) -> str:
+        async def another_example_event(self) -> str:
             return "example_event"
+        
+        @event()
+        async def wrapped_event(self) -> int:
+            self._enter()
+            yield
+            self._exit()
+        
+        @on_event("wrapped_event")
+        async def async_wrapped_event(self) -> int:
+            return 13
+        
+        def _enter(self) -> None:
+            pass
+        
+        def _exit(self) -> None:
+            pass
+
+    def test_assert_on_non_async_event(self):
+        with pytest.raises(ValueError) as e:
+            class NonAsyncEvent(TestConnectorEvents.FakeConnector):
+                @event()
+                def invalid_event(self):
+                    pass
+        assert e
+        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+
+    async def test_register_non_generator_method(self):
+        with pytest.raises(ValueError) as e:
+            class NonGeneratorEvent(TestConnectorEvents.FakeConnector):
+                @event()
+                async def invalid_event(self):
+                    print("We don't yield and are not a stub")
+        assert e
+        assert str(e.value).startswith("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")
+
+    def test_create_event_non_async_method(self):
+        def foo():
+            pass
+        with pytest.raises(ValueError) as e:
+            create_event("foo", foo)
+        assert e
+        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+
+    async def test_on_handler_context_manager(self, mocker):
+        event = _events["wrapped_event"]
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.AnotherFakeConnector(config=config)
+        _enter = mocker.spy(connector, "_enter")
+        _exit = mocker.spy(connector, "_exit")
+        results = await connector.run_event_handlers(event, Preposition.ON)
+        assert results[0].value == 13
+        _enter.assert_called_once()
+        _exit.assert_called_once()
 
     def test_event_registration(self) -> None:
         assert _events is not None
@@ -1284,31 +1336,34 @@ class TestConnectorEvents:
         result = results[0]
         assert result.event.name == "get_event_context"
         assert result.connector == connector
-        assert result.value 
+        assert result.value
         assert result.value.event == event
+        assert result.value.preposition is not None
         assert result.value.preposition == Preposition.ON
         assert result.value.created_at.replace(microsecond=0) == result.value.created_at.replace(microsecond=0)
 
     async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
-        result = await connector.run_event_handlers("unknown_event", Preposition.ON)
-        assert result is None
+        with pytest.raises(ValueError) as e:
+            await connector.run_event_handlers("unknown_event", Preposition.ON)
+        assert e
+        assert str(e.value) == "event must be an Event object, got str"
 
-    def test_event_dispatch_standalone(self) -> None:
+    async def test_event_dispatch_standalone(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["example_event"]
 
         # Dispatch back to self
-        results = connector.dispatch_event(event)
+        results = await connector.dispatch_event(event)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
 
-    async def test_event_dispatch_standalone(self) -> None:
+    async def test_event_dispatch_to_peer(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         fake_connector = TestConnectorEvents.AnotherFakeConnector(
@@ -1331,16 +1386,65 @@ class TestConnectorEvents:
         assert context != "before:example_event"
         assert context != "after:example_event"
 
+@respx.mock
 async def test_logging() -> None:
+    request = respx.post("https://api.opsani.com/accounts/example.com/applications/my-app/servo", content={"status": "ok"})
     connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    handler = ProgressHandler(connector)
-    print(handler)
-    connector.logger.add(handler)
-    connector.logger.info("First", progress=0)
+    handler = ProgressHandler(connector.report_progress, lambda m: print(m))
+    connector.logger.add(handler.sink)
+    args = dict(operation="ADJUST", started_at=datetime.now())
+    connector.logger.info("First", progress=0, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Second", progress=25.0)
+    connector.logger.info("Second", progress=25.0, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Third", progress=50)
+    connector.logger.info("Third", progress=50, **args)
     await asyncio.sleep(0.00001)
-    connector.logger.info("Fourth", progress=100.0)
+    connector.logger.info("Fourth", progress=100.0, **args)
+    await asyncio.sleep(0.00001)
 
+    await connector.logger.complete()
+    await asyncio.gather(*handler.tasks)
+    reset_to_defaults()
+    assert request.called
+    assert request.stats.call_count == 3
+    request.stats.call_args.args[0].read()
+    last_progress_report = json.loads(request.stats.call_args.args[0].content)
+    assert last_progress_report["param"]["progress"] == 100.0
+
+def test_report_progress_numeric() -> None:
+    pass
+
+def test_report_progress_duration() -> None:
+    pass
+
+# TODO: int progress, float progress
+# TODO: int time_remaining, float time_remaining, duration
+# TODO: paramtrize all of these, mock the response
+# TODO: float of < 1, float of < 100
+# TODO: no time remaining given
+
+async def test_stream_subprocess_output():
+    output = []
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    status_code = await connector.stream_subprocess_output("cd ~/ && echo test", stdout_callback=lambda m: output.append(m))
+    assert status_code == 0
+    assert output == ["test"]
+
+async def test_run_subprocess():
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    status_code, stdout, stderr = await connector.run_subprocess("cd ~/ && echo test")
+    assert status_code == 0
+    assert stdout == ["test"]
+    assert stderr == []
+
+async def test_run_subprocess_timeout():
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    with pytest.raises(asyncio.TimeoutError) as e:
+        await connector.stream_subprocess_output("sleep 60.0", timeout=0.0001)
+    assert e
+
+async def test_run_subprocess_timeout():
+    output = []
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    await connector.stream_subprocess_output("echo 'test'", stdout_callback=lambda m: output.append(m), timeout=10.0)
+    assert output == ['test']

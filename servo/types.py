@@ -1,12 +1,13 @@
 from __future__ import annotations
+import asyncio
 
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
-from pydantic import BaseModel, validator, datetime_parse
+from pydantic import BaseModel, Extra, validator, datetime_parse
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
@@ -91,6 +92,10 @@ class Duration(timedelta):
         return timedelta.__new__(
             cls, seconds=seconds, microseconds=microseconds, **kwargs
         )
+    
+    def __init__(self, duration: Union[str, timedelta, Numeric] = 0, **kwargs) -> None:
+        # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
+        ...
 
     @classmethod
     def __get_validators__(cls):
@@ -101,7 +106,7 @@ class Duration(timedelta):
         field_schema.update(
             type="string",
             format="duration",
-            pattern="([\d\.]+h)?([\d\.]+m)?([\d\.]+s)?([\d\.]+ms)?([\d\.]+us)?([\d\.]+ns)?",
+            pattern="([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             examples=["300ms", "5m", "2h45m", "72h3m0.5s"],
         )
 
@@ -116,7 +121,7 @@ class Duration(timedelta):
         return cls(microseconds=microseconds)
 
     def __str__(self):
-        return timedelta_to_duration_str(self)
+        return timedelta_to_duration_str(self, extended=True)
 
     def __repr__(self):
         return f"Duration('{self}' {super().__str__()})"
@@ -133,6 +138,9 @@ class Duration(timedelta):
 
 
 class DurationProgress(BaseModel):
+    """
+    DurationProgress objects track progress across a fixed time duration.
+    """
     duration: Duration
     started_at: Optional[datetime]
 
@@ -140,29 +148,88 @@ class DurationProgress(BaseModel):
         super().__init__(duration=duration, **kwargs)
 
     def start(self) -> None:
-        assert not self.is_started()
+        """
+        Start progress tracking.
+
+        The current time when `start` is called is used as the starting point to track progress.
+
+        Raises:
+            AssertionError: Raised if the object has already been started.
+        """
+        assert not self.started
         self.started_at = datetime.now()
 
-    def is_started(self) -> bool:
+    @property
+    def started(self) -> bool:
+        """
+        Return a boolean value that indicates if progress tracking has started.
+        """
         return self.started_at is not None
 
-    def is_completed(self) -> bool:
-        return self.progress() >= 100
+    @property
+    def finished(self) -> bool:
+        """
+        Return a boolean value that indicates if the duration has elapsed and progress is 100%.
+        """
+        return self.progress >= 100
+    
+    async def watch(
+        self, 
+        notify: Callable[['DurationProgress'], Union[None, Awaitable[None]]],
+        every: Duration = Duration("5s"), 
+        ) -> None:
+        """
+        Asynchronously watch progress tracking and invoke a callback to periodically report on progress.
+
+        Args:
+            notify: An (optionally asynchronous) callable object to periodically invoke for progress reporting.
+            every: The Duration to periodically invoke the notify callback to report progress.
+        """
+        async def async_notifier() -> None:
+            if asyncio.iscoroutinefunction(notify):
+                await notify(self)
+            else:
+                notify(self)
+
+        if not self.started:
+            self.start()
+
+        while True:
+            if self.finished:
+                break
+            await asyncio.sleep(every.total_seconds())
+            await async_notifier()
 
     @property
     def progress(self) -> float:
-        return min(100.0, 100.0 * (self.elapsed / self.duration))
+        """Completion progress percentage as a floating point value from 0.0 to 100.0"""
+        return min(100.0, 100.0 * (self.elapsed / self.duration)) if self.started else 0.0
 
     @property
     def elapsed(self) -> Duration:
-        return Duration(datetime.now() - self.started_at)
+        """Total time elapsed since progress tracking was started as a Duration value."""
+        return Duration(datetime.now() - self.started_at) if self.started else Duration(0)
 
-    def annotate(self, str_to_annotate: str) -> str:
-        return f"{self.progress:.2f}% complete, {self.elapsed} elapsed - {str_to_annotate}"
+    def annotate(self, str_to_annotate: str, prefix=True) -> str:
+        """
+        Annotate an input string with details about progress status.
+
+        Args:
+            str_to_annotate: The string to annotate with progress status.
+        
+        Returns:
+            A new string annotated with progress status info.
+        """
+        status = f"{self.progress:.2f}% complete, {self.elapsed} elapsed"
+        if prefix:
+            return f"{status} - {str_to_annotate}"
+        else:
+            return f"{str_to_annotate} ({status})"
 
 
 class Unit(str, Enum):
     BYTES = "bytes"
+    COUNT = "count" # TODO: Maybe this is "int" or something?
     REQUESTS_PER_MINUTE = "rpm"
     REQUESTS_PER_SECOND = "rps"
     PERCENTAGE = "%"
@@ -196,7 +263,7 @@ class TimeSeries(BaseModel):
     values: List[Tuple[datetime, Numeric]]
     annotation: Optional[str]
     id: Optional[str] # TODO: source, id, context
-    metadata: Optional[Dict[str, str]]
+    metadata: Optional[Dict[str, Any]]
 
     def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)
@@ -208,6 +275,17 @@ class SettingType(str, Enum):
     RANGE = "range"
     ENUM = "enum"
 
+@runtime_checkable
+class HumanReadable(Protocol):
+    """
+    HumanReadable is a protocol that declares the `human_readable` method for objects
+    that can be represented as a human readable string for user output.
+    """
+    def human_readable(**kwargs) -> str:
+        """
+        Return a human readable representation of the object.
+        """
+        ...
 
 class Setting(BaseModel):
     name: str
@@ -216,12 +294,31 @@ class Setting(BaseModel):
     max: Numeric
     step: Numeric
     value: Optional[Union[Numeric, str]]
+    pinned: bool = False
 
     def __str__(self):
         if self.type == SettingType.RANGE:
             return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
 
         return f"{self.name} ({self.type})"
+    
+    @property
+    def human_readable_value(self, **kwargs) -> str:
+        """
+        Return a human readable representation of the value for use in output.
+
+        The default implementation calls the `human_readable` method on the value
+        property if one exists, else coerces the value into a string. Subclasses
+        can provide arbitrary implementations to directly control the representation.
+        """
+        if isinstance(self.value, HumanReadable):
+            return cast(HumanReadable, self.value).human_readable(**kwargs)
+        return str(self.value)
+    
+    def opsani_dict(self) -> dict:
+        return {
+            self.name: self.dict(include={"type", "min", "max", "step", "pinned", "value"})
+        }
 
 
 class Component(BaseModel):
@@ -231,20 +328,21 @@ class Component(BaseModel):
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)
 
+    def get_setting(self, name: str) -> Optional[Setting]:
+        return next(filter(lambda m: m.name == name, self.settings), None)
+
     def opsani_dict(self) -> dict:
         settings_dict = {"settings": {}}
         for setting in self.settings:
-            settings_dict["settings"][setting.name] = setting.dict(
-                exclude={"name"}, exclude_unset=True
-            )
+            settings_dict["settings"].update(setting.opsani_dict())
         return {self.name: settings_dict}
 
 
 class Control(BaseModel):
     duration: Optional[Duration]
-    past: Duration = None
-    warmup: Duration = None
-    delay: Duration = None
+    past: Duration = cast(Duration, None)
+    warmup: Duration = cast(Duration, None)
+    delay: Duration = cast(Duration, None)
     load: Optional[dict]
 
     @validator('past', 'warmup', 'delay', always=True, pre=True)
@@ -253,11 +351,34 @@ class Control(BaseModel):
         if value:
             return value
         return Duration(0)
+    
+    class Config:
+        extra = Extra.allow
 
 
 class Description(BaseModel):
     components: List[Component] = []
     metrics: List[Metric] = []
+
+    def get_component(self, name: str) -> Optional[Component]:
+        return next(filter(lambda m: m.name == name, self.components), None)
+    
+    def get_setting(self, name: str) -> Optional[Setting]:
+        """
+        Gets a settings from a fully qualified name (`component_name.setting_name`).
+
+        Raises:
+            ValueError: Raised if the name is not fully qualified.
+        """
+        if not "." in name:
+            raise ValueError("name must include component name and setting name")
+        component_name, setting_name = name.split(".", 1)
+        if component := self.get_component(component_name):
+            return component.get_setting(setting_name)
+        return None
+
+    def get_metric(self, name: str) -> Optional[Metric]:
+        return next(filter(lambda m: m.name == name, self.metrics), None)
 
     def opsani_dict(self) -> dict:
         dict = {"application": {"components": {}}, "measurement": {"metrics": {}}}
@@ -296,6 +417,7 @@ class Measurement(BaseModel):
 class Check(BaseModel):
     name: str
     description: Optional[str]
+    required: bool = True
     success: bool
     comment: Optional[str]
     created_at: datetime = None
@@ -304,6 +426,22 @@ class Check(BaseModel):
     @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
+
+
+class Adjustment(BaseModel):
+    component_name: str
+    setting_name: str
+    value: Union[str, Numeric]
+
+    @property
+    def selector(self) -> str:
+        """
+        Returns a fully qualified string identifier for accessing the referenced resource.
+        """
+        return f"{self.component_name}.{self.setting_name}"
+    
+    def __str__(self) -> str:
+        return f"{self.component_name}.{self.setting_name}={self.value}"
 
 
 # Common output formats

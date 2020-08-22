@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import json
 import os
@@ -11,7 +12,7 @@ from pydantic import Extra, ValidationError
 
 from servo import __version__, connector
 from servo.connector import (
-    Connector,
+    BaseConnector,
     Optimizer,
 )
 from servo.connectors.vegeta import VegetaConnector
@@ -38,11 +39,11 @@ def test_version():
     assert __version__
 
 
-class FirstTestServoConnector(Connector):
+class FirstTestServoConnector(BaseConnector):
     started_up: bool = False
 
     @event(handler=True)
-    def this_is_an_event(self) -> str:
+    async def this_is_an_event(self) -> str:
         return "this is the result"
 
     @after_event(Events.ADJUST)
@@ -78,13 +79,13 @@ class FirstTestServoConnector(Connector):
         extra = Extra.allow
 
 
-class SecondTestServoConnector(Connector):
+class SecondTestServoConnector(BaseConnector):
     @on_event()
     def this_is_an_event(self) -> str:
         return "this is a different result"
 
     @event(handler=True)
-    def another_event(self) -> None:
+    async def another_event(self) -> None:
         pass
 
 
@@ -169,6 +170,24 @@ async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert len(results) == 1
     assert results[0].value == "this is a different result"
     assert results[0].connector == second_connector
+
+
+def test_get_event_handlers_all(servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    event_handlers = connector.get_event_handlers("promote")
+    assert len(event_handlers) == 3
+    assert list(map(lambda h: f"{h.preposition}:{h.event}", event_handlers)) == ['before:promote', 'on:promote', 'after:promote']
+
+from servo.events import event_handler, get_event
+
+async def test_add_event_handler_programmatically(mocker, servo: servo) -> None:
+    async def fn(self, results: List[EventResult]) -> None:
+        print("Test!")
+    event = get_event("measure")
+    event_handler = FirstTestServoConnector.add_event_handler(event, Preposition.AFTER, fn)
+    spy = mocker.spy(event_handler, "handler")
+    await servo.dispatch_event("measure")
+    spy.assert_called_once()
 
 
 async def test_before_event(mocker, servo: servo) -> None:
@@ -302,8 +321,7 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) 
 
 async def test_startup_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
-    servo.startup()
-    await asyncio.sleep(0.1)
+    await servo.startup()
     assert connector.started_up == True
 
 
@@ -311,8 +329,7 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
-    servo.shutdown()
-    await asyncio.sleep(0.1)
+    await servo.shutdown()
     on_spy.assert_called()
 
 
@@ -325,9 +342,11 @@ async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None
 ##
 # Test event handlers
 
+async def test_event():
+    ...
 
 def test_creating_event_programmatically(random_string: str) -> None:
-    signature = Signature.from_callable(test_shutdown_event)
+    signature = Signature.from_callable(test_event)
     create_event(random_string, signature)
     event = _events[random_string]
     assert event.name == random_string
@@ -335,10 +354,10 @@ def test_creating_event_programmatically(random_string: str) -> None:
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
-    create_event(random_string, test_shutdown_event)
+    create_event(random_string, test_event)
     event = _events[random_string]
     assert event.name == random_string
-    assert event.signature == Signature.from_callable(test_shutdown_event)
+    assert event.signature == Signature.from_callable(test_event)
 
 
 def test_redeclaring_an_existing_event_fails() -> None:
@@ -358,13 +377,13 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 
         class InvalidConnector:
             @on_event("adjust")
-            def invalid_adjust(self) -> None:
+            def invalid_adjust(self) -> dict:
                 pass
 
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected <class 'dict'>, but found None"
+        == "Invalid return type annotation for 'adjust' event handler: expected None, but found dict"
     )
 
 
@@ -378,7 +397,7 @@ def test_registering_event_handler_fails_with_no_self() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid signature for 'adjust' event handler: () -> None, \"self\" must be the first argument"
+        == "Invalid signature for 'adjust' event handler: () -> 'None', \"self\" must be the first argument"
     )
 
 
@@ -387,7 +406,7 @@ def test_event_decorator_disallows_var_positional_args() -> None:
 
         class InvalidConnector:
             @event("failio")
-            def invalid_event(self, *args) -> None:
+            async def invalid_event(self, *args) -> None:
                 pass
 
     assert error
@@ -401,13 +420,13 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     with pytest.raises(TypeError) as error:
 
         @on_event("adjust")
-        def invalid_adjust(self) -> dict:
+        def invalid_adjust(self) -> None:
             pass
 
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'data': expected signature: (self, data: dict) -> dict"
+        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'None'"
     )
 
 
@@ -421,7 +440,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: List[str] = None, control: servo.types.Control = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> servo.types.Measurement"
+        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'Measurement'"
     )
 
 
@@ -689,7 +708,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -806,7 +828,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -853,7 +878,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -970,7 +998,10 @@ class TestAssembly:
                             ],
                             'type': 'string',
                             'format': 'duration',
-                            'pattern': '([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'pattern': (
+                                '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)'
+                                '?([\\d\\.]+us)?([\\d\\.]+ns)?'
+                            ),
                             'examples': [
                                 '300ms',
                                 '5m',
@@ -1099,10 +1130,10 @@ class TestServoSettings:
         assert s.connectors is None
 
     def test_connectors_allows_set_of_classes(self):
-        class FooConnector(Connector):
+        class FooConnector(BaseConnector):
             pass
 
-        class BarConnector(Connector):
+        class BarConnector(BaseConnector):
             pass
 
         s = BaseServoConfiguration(connectors={FooConnector, BarConnector},)

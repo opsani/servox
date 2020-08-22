@@ -7,11 +7,10 @@
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
 from dotenv import find_dotenv, load_dotenv
-from loguru import logger
 
 from servo.cli import ServoCLI
 from servo.connector import ConnectorLoader
-
+from servo.logging import logger
 
 def run_cli():
     load_dotenv(find_dotenv(usecwd=True))
@@ -21,7 +20,7 @@ def run_cli():
     try:
         for connector in ConnectorLoader().load():
             logger.debug(f"Loaded {connector.__qualname__}")
-    except Exception as error:
+    except Exception:
         logger.exception("failed loading connectors via discovery", backtrace=True, diagnose=True)
 
     cli = ServoCLI()

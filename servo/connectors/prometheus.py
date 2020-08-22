@@ -1,16 +1,16 @@
+from __future__ import annotations
 import asyncio
 from functools import reduce
-import time
-from datetime import datetime
-from typing import List, Literal, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import List
 
 import httpx
 import httpcore._exceptions
-from pydantic import BaseModel, AnyHttpUrl, root_validator, validator
+from pydantic import BaseModel, AnyHttpUrl, validator
 
 from servo import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     Control,
     Check,
     Description,
@@ -22,8 +22,8 @@ from servo import (
     Unit,
     metadata,
     on_event,
-    DataPoint,
     TimeSeries,
+    DurationProgress,
 )
 from servo.utilities import join_to_series
 
@@ -101,12 +101,12 @@ class PrometheusRequest(BaseModel):
     license=License.APACHE2,
     maturity=Maturity.EXPERIMENTAL,
 )
-class PrometheusConnector(Connector):
+class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
     def check(self) -> List[Check]:
-        start, end = datetime.now() - datetime.timedelta(minutes=10), datetime.now()
+        start, end = datetime.now() - timedelta(minutes=10), datetime.now()
         checks = []
         for metric in self.config.metrics:
             self._query_prom(metric, start, end)
@@ -139,18 +139,21 @@ class PrometheusConnector(Connector):
         measuring_names = list(map(lambda m: m.name, metrics__))
         self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {join_to_series(measuring_names)}")
 
-        # TODO: The warmup becomes before_event() for measure
-        # TODO: Before filters need to get the same input as the main action
         start = datetime.now() + control.warmup
         end = start + control.duration
 
-        sleep_duration = Duration(control.warmup + control.duration + control.delay)
-        self.logger.debug(
-            f"Sleeping for {sleep_duration} ({control.warmup} warmup + {control.duration} duration)"
+        sleep_duration = Duration(control.warmup + control.duration)
+        self.logger.info(
+            f"Waiting {sleep_duration} during metrics collection ({control.warmup} warmup + {control.duration} duration)..."
         )
-        await asyncio.sleep(sleep_duration.total_seconds())
+
+        progress = DurationProgress(sleep_duration)
+        notifier = lambda p: self.logger.info(p.annotate(f"waiting {sleep_duration} during metrics collection...", False), progress=p.progress)
+        await progress.watch(notifier)
+        self.logger.info(f"Done waiting {sleep_duration} for metrics collection, resuming optimization.")
 
         # Capture the measurements
+        self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))
         )
@@ -163,17 +166,17 @@ class PrometheusConnector(Connector):
     ) -> List[TimeSeries]:
         prometheus_request = PrometheusRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
         
-        self.logger.info(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
+        self.logger.trace(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
         async with self.api_client() as client:
             try:
                 response = await client.get(prometheus_request.url)
                 response.raise_for_status()
-            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                 self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
                 return []
 
         data = response.json()
-        self.logger.debug(f"Got response data: {data}")
+        self.logger.trace(f"Got response data for metric {metric}: {data}")
 
         if "status" not in data or data["status"] != "success":
             return []

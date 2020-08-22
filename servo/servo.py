@@ -1,36 +1,28 @@
+from __future__ import annotations
 import abc
-import contextlib
+import asyncio
 import inspect
-import json
-import os
-import re
 from contextvars import ContextVar
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union, Sequence
+from typing import Dict, Iterable, List, Optional, Type, Union, Sequence
 
 import httpx
-import yaml
-from pydantic import BaseModel, Extra, Field, create_model, validator
-from pydantic.json import pydantic_encoder
-from pydantic.schema import schema as pydantic_schema
+from pydantic import AnyHttpUrl, Extra, Field, validator
 
 import servo
 from servo import api, connector
 from servo.connector import (
+    AbstractBaseConfiguration,
     BaseConfiguration,
-    Connector,
-    ConnectorLoader,
+    BaseConnector,
     License,
     Maturity,
-    Optimizer,
     _connector_subclasses,
     _connector_class_from_string,
     _validate_class
 )
 from servo.events import Preposition, event, on_event
-from servo.types import Check, Control, Description, Measurement, Metric
-from servo.utilities import join_to_series
+from servo.types import Adjustment, Check, Component, Control, Description, Duration, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -66,44 +58,46 @@ class _EventDefinitions:
 
     # Lifecycle events
     @event(Events.STARTUP)
-    def startup(self) -> None:
-        pass
+    async def startup(self) -> None:
+        ...
 
     @event(Events.SHUTDOWN)
-    def shutdown(self) -> None:
-        pass
+    async def shutdown(self) -> None:
+        ...
 
     # Informational events
     @event(Events.METRICS)
-    def metrics(self) -> List[Metric]:
-        pass
+    async def metrics(self) -> List[Metric]:
+        ...
 
     @event(Events.COMPONENTS)
-    def components(self) -> Description:
-        pass
+    async def components(self) -> List[Component]:
+        ...
 
     # Operational events
     @event(Events.MEASURE)
-    def measure(
+    async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-        pass
+        if control.delay:
+            await asyncio.sleep(control.delay.total_seconds())
+        yield
 
     @event(Events.CHECK)
-    def check(self) -> List[Check]:
-        pass
+    async def check(self) -> List[Check]:
+        ...
 
     @event(Events.DESCRIBE)
-    def describe(self) -> Description:
-        pass
+    async def describe(self) -> Description:
+        ...
 
     @event(Events.ADJUST)
-    def adjust(self, data: dict) -> dict:
-        pass
+    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
+        ...
 
     @event(Events.PROMOTE)
-    def promote(self) -> None:
-        pass
+    async def promote(self) -> None:
+        ...
 
 
 class BaseServoConfiguration(BaseConfiguration, abc.ABC):
@@ -145,7 +139,7 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
             if (
                 name not in kwargs
                 and inspect.isclass(field.type_)
-                and issubclass(field.type_, BaseConfiguration)
+                and issubclass(field.type_, AbstractBaseConfiguration)
             ):
                 kwargs[name] = field.type_.generate()
         return cls(**kwargs)
@@ -192,7 +186,7 @@ _servo_context_var = ContextVar('servo.servo', default=None)
     license=License.APACHE2,
     version=servo.__version__,
 )
-class Servo(Connector):
+class Servo(BaseConnector):
     """
     A connector that interacts with the Opsani API to perform optimization.
 
@@ -215,7 +209,7 @@ class Servo(Connector):
     connector.
     """
 
-    connectors: List[Connector]
+    connectors: List[BaseConnector]
     """
     The active connectors in the servo.
     """
@@ -229,25 +223,25 @@ class Servo(Connector):
         """
         return _servo_context_var.get()
 
-    def __init__(self, *args, connectors: List[Connector], **kwargs) -> None:
+    def __init__(self, *args, connectors: List[BaseConnector], **kwargs) -> None:
         super().__init__(*args, connectors=[], **kwargs)
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)  
 
-    def startup(self):
+    async def startup(self):
         """
         Notifies all connectors that the servo is starting up.
         """
-        return self.broadcast_event(Events.STARTUP, prepositions=Preposition.ON)
+        await self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON)
 
-    def shutdown(self):
+    async def shutdown(self):
         """
         Notifies all connectors that the servo is shutting down.
         """
-        return self.broadcast_event(Events.SHUTDOWN, prepositions=Preposition.ON)
+        await self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON)
 
-    def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[Connector, List[Connector]]]:
+    def get_connector(self, name: Union[str, Sequence[str]]) -> Optional[Union[BaseConnector, List[BaseConnector]]]:
         """
         Returns one or more connectors by name.
 
@@ -291,7 +285,7 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
         if _connector_class_from_string(connectors) is None:
             raise ValueError(f"Invalid connectors value: {connectors}")
         return connectors
-    elif isinstance(connectors, type) and issubclass(connectors, Connector):
+    elif isinstance(connectors, type) and issubclass(connectors, BaseConnector):
         return connectors.__name__
     elif isinstance(connectors, (list, tuple, set)):
         connectors_list: List[str] = []
@@ -321,7 +315,7 @@ def _reserved_keys() -> List[str]:
     return reserved_keys
 
 
-def _default_routes() -> Dict[str, Type[Connector]]:
+def _default_routes() -> Dict[str, Type[BaseConnector]]:
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:
@@ -329,7 +323,7 @@ def _default_routes() -> Dict[str, Type[Connector]]:
     return routes
 
 
-def _routes_for_connectors_descriptor(connectors) -> Dict[str, Connector]:
+def _routes_for_connectors_descriptor(connectors) -> Dict[str, BaseConnector]:
     if connectors is None:
         # None indicates that all available connectors should be activated
         return None
@@ -369,7 +363,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, Connector]:
 
             # Validate the name
             try:
-                Connector.validate_name(name)
+                BaseConnector.validate_name(name)
             except AssertionError as e:
                 raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
 

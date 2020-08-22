@@ -3,7 +3,7 @@ import pytest
 from pydantic import Extra, ValidationError
 from servo.connector import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     License,
     Maturity,
     Optimizer,
@@ -15,7 +15,7 @@ from servo.repeating import Mixin, repeating
 
 pytestmark = pytest.mark.asyncio
 
-class RepeatingConnector(Connector):
+class RepeatingConnector(BaseConnector):
     def run_me(self) -> None:
         pass
 

@@ -1,8 +1,7 @@
-import os
+from __future__ import annotations
 import asyncio
 import json
 import re
-import time
 from datetime import datetime, timedelta
 from enum import Enum
 from io import StringIO
@@ -17,7 +16,7 @@ from servo import (
     HTTP_METHODS,
     BaseConfiguration,
     Check,
-    Connector,
+    BaseConnector,
     Control,
     Description,
     Duration,
@@ -32,7 +31,8 @@ from servo import (
     cli,
     metadata,
     on_event,
-    values_for_keys
+    values_for_keys,
+    value_for_key_path,
 )
 
 ###
@@ -111,17 +111,6 @@ class VegetaReport(BaseModel):
         return 100 - (
             success_rate * 100
         )  # Fraction of success inverted into % of error
-
-    # TODO: Generalize object for key path
-    def get(self, key: str) -> Any:
-        if hasattr(self, key):
-            return getattr(self, key)
-        elif "." in key:
-            parent_key, child_key = key.split(".", 2)
-            child = self.get(parent_key).dict(by_alias=True)
-            return child[child_key]
-        else:
-            raise ValueError(f"unknown key '{key}'")
 
 
 class VegetaConfiguration(BaseConfiguration):
@@ -304,7 +293,7 @@ class VegetaConfiguration(BaseConfiguration):
     license=License.APACHE2,
     maturity=Maturity.STABLE,
 )
-class VegetaConnector(Connector):
+class VegetaConnector(BaseConnector):
     config: VegetaConfiguration
     vegeta_reports: List[VegetaReport] = []
     warmup_until: Optional[datetime] = None
@@ -347,7 +336,7 @@ class VegetaConnector(Connector):
             success = (vegeta_report.error_rate < 5.0)
             checks.append(Check(
                 name="Error rate < 5.0%",
-                success=False,
+                success=success,
                 comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
             ))
 
@@ -357,13 +346,6 @@ class VegetaConnector(Connector):
     async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
-        # Handle delay (if any)
-        # TODO: Push the delay and warm-up into a reusable before filter
-        # TODO: Use an event to signal the connector when warmup is complete
-        if control.delay:
-            self.logger.info(f"DELAY: sleeping {control.delay} seconds")
-            time.sleep(control.delay)
-
         self.warmup_until = datetime.now() + control.warmup
 
         number_of_urls = (
@@ -373,7 +355,7 @@ class VegetaConnector(Connector):
         self.logger.info(summary)
 
         # Run the load generation
-        exit_code, command = await self._run_vegeta()
+        await self._run_vegeta()
 
         self.logger.info(
             f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports"
@@ -392,54 +374,40 @@ class VegetaConnector(Connector):
 
     async def _run_vegeta(
         self, *, config: Optional[VegetaConfiguration] = None
-    ) -> (int, str):
+    ) -> Tuple[int, str]:
         config = config if config else self.config
         vegeta_cmd = self._build_vegeta_command(config)
-        self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+        ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
+        progress = DurationProgress(config.duration)
+        
+        async def process_stdout(output: str) -> None:
+            json_report = ansi_escape.sub("", output)
+            vegeta_report = VegetaReport(**json.loads(json_report))
 
-        report_proc = await asyncio.create_subprocess_shell(
+            if datetime.now() > self.warmup_until:
+                if not progress.started:
+                    progress.start()
+
+                self.vegeta_reports.append(vegeta_report)
+                summary = self._summarize_report(vegeta_report)
+                self.logger.info(progress.annotate(summary), progress=progress.progress)
+            else:
+                self.logger.debug(
+                    f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
+                )
+        
+        self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+        exit_code = await self.stream_subprocess_output(
             vegeta_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stdout_callback=process_stdout,
+            stderr_callback=lambda m: self.logger.error(f"Vegeta stderr: {m}")
         )
 
-        # track progress against our load test duration
-        progress = DurationProgress(config.duration)
-
-        # loop and poll our process pipe to gather report data
-        # compile a regex to strip the ANSI escape sequences from the report output (clear screen)
-        ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
-        while True:
-            data = await report_proc.stdout.readline()
-            if not data:
-                break
-            else:
-                output = data.decode('ascii').rstrip()
-                if output:
-                    json_report = ansi_escape.sub("", output)
-                    vegeta_report = VegetaReport(**json.loads(json_report))
-
-                    if datetime.now() > self.warmup_until:
-                        if not progress.is_started():
-                            progress.start()
-
-                        self.vegeta_reports.append(vegeta_report)
-                        summary = self._summarize_report(vegeta_report)
-                        self.logger.info(progress.annotate(summary), progress=progress.progress)
-                    else:
-                        self.logger.debug(
-                            f"Vegeta metrics excluded (warmup in effect): {metrics}"
-                        )
-
-        stdout, stderr = await report_proc.communicate()
-        exit_code = report_proc.returncode
-        if exit_code != 0:
-            error = stderr.decode().strip()
-            self.logger.error(
-                f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}: error: {error}"
-            )
-
         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
+        if exit_code != 0:
+            self.logger.error(
+                f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
+            )        
 
         return exit_code, vegeta_cmd
 
@@ -495,12 +463,11 @@ class VegetaConnector(Connector):
         )
         return vegeta_cmd
 
-    # helper:  take the time series metrics gathered during the attack and map them into OCO format
-    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[Metric]]) -> List[TimeSeries]:
+    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[str]]) -> List[TimeSeries]:
         readings = []
 
         for metric in METRICS:
-            if metrics and metric not in metrics:
+            if metrics and metric.name not in metrics:
                 continue
 
             if metric.name in ("throughput", "error_rate",):
@@ -512,7 +479,8 @@ class VegetaConnector(Connector):
 
             values: List[Tuple(datetime, Numeric)] = []
             for report in self.vegeta_reports:
-                values.append((report.end, report.get(key),))
+                value = value_for_key_path(report.dict(by_alias=True), key)
+                values.append((report.end, value,))
 
             readings.append(TimeSeries(metric, values))
 

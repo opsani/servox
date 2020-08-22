@@ -1,16 +1,23 @@
+from __future__ import annotations
 import asyncio
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Flag, auto
 from functools import reduce
-from inspect import Parameter, Signature
-from typing import Any, Callable, Dict, Optional, Type, TypeVar, List, Union
+from inspect import Parameter, Signature, iscoroutinefunction
+import inspect
+from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, Optional, Sequence, Type, TypeVar, List, Union
 from weakref import WeakKeyDictionary
+from loguru import logger
 
 from pydantic import BaseModel, validator
+from pydantic.fields import ModelField
 from pydantic.main import ModelMetaclass
 from servo.utilities import join_to_series
 
+
+_signature_cache: Dict[str, Signature] = {}
 
 class Event(BaseModel):
     """
@@ -18,7 +25,16 @@ class Event(BaseModel):
     processed with before, on, and after handlers.
     """
     name: str
-    signature: Signature
+    on_handler_context_manager: Callable[[None], AsyncContextManager]
+
+    def __init__(self, name: str, signature: Signature, *args, **kwargs):
+        _signature_cache[name] = signature
+        super().__init__(name=name, *args, **kwargs)
+
+    @property
+    def signature(self) -> Signature:
+        # Hide signature from Pydantic
+        return _signature_cache[self.name]
 
     def __hash__(self):
         return hash((self.name, self.signature,))
@@ -32,6 +48,30 @@ class Event(BaseModel):
         elif isinstance(other, Event):
             return self.name == other.name and self.signature == other.signature
         return super().__eq__(other)
+    
+    def dict(
+        self,
+        *,
+        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> 'DictStrAny':
+        if exclude is None:
+            exclude = set()
+        exclude.add("on_handler_context_manager")
+        return super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none
+        )
         
     class Config:
         arbitrary_types_allowed = True
@@ -44,6 +84,22 @@ class Preposition(Flag):
     BEFORE = auto()
     ON = auto()
     AFTER = auto()
+    ALL = BEFORE | ON | AFTER
+
+        
+    @classmethod
+    def from_str(cls, prep: str) -> "Preposition":
+        if not isinstance(prep, str):
+            return prep
+
+        if prep == "before":
+            return Preposition.BEFORE
+        elif prep == "on":
+            return Preposition.ON
+        elif prep == "after":
+            return Preposition.AFTER
+        else:
+            raise ValueError(f"unsupported value for Preposition '{prep}'")
 
     def __str__(self):
         if self == Preposition.BEFORE:
@@ -58,7 +114,34 @@ class EventContext(BaseModel):
     event: Event
     preposition: Preposition
     created_at: datetime = None
-    
+
+    @classmethod # Usable as a validator
+    def from_str(cls, event_str) -> Optional['EventContext']:
+        if event := get_event(event_str, None):
+            return EventContext(
+                preposition=Preposition.ON, 
+                event=event
+            )
+
+        components = event_str.split(":", 1)
+        if len(components) < 2:
+            return None
+        preposition, event_name = components
+        if not (preposition or event_name):
+            return None
+        
+        if preposition not in ("before", "on", "after"):
+            return None
+
+        event = get_event(event_name, None)
+        if not event:
+            return None
+
+        return EventContext(
+            preposition=Preposition.from_str(preposition), 
+            event=event
+        )
+
     
     @validator("created_at", pre=True, always=True)
     @classmethod
@@ -75,15 +158,18 @@ class EventContext(BaseModel):
         return self.preposition == Preposition.AFTER
     
     def __str__(self):
-        return f"{self.preposition}:{self.event.name}"
+        if self.preposition == Preposition.ON:
+            return self.event.name
+        else:
+            return f"{self.preposition}:{self.event.name}"
     
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
-            return other in (self.__str__(), self.event.name)
+            return other in (self.__str__(), f"on:{self.event.name}")
         return super().__eq__(other)
     
     # FIXME: This should be aligned with `servo.api.Command.response_event` somehow
-    def operation(self) -> str:
+    def operation(self) -> Optional[str]:
         event_name = self.event.name.upper()
         if event_name == "DESCRIBE":
             return "DESCRIPTION"
@@ -95,11 +181,33 @@ class EventContext(BaseModel):
             return None
 
 
+def validate_event_contexts(
+    cls, 
+    value: Union[str, EventContext, Sequence[Union[str, EventContext]]],
+    field: ModelField) -> Union[str, List[str]]:
+    """
+    A Pydantic validator function that ensures that the input value or values are
+    valid event context identifiers (e.g. "measure", "before:adjust", etc)
+    """
+    if isinstance(value, str):
+        if not EventContext.from_str(value):
+            raise ValueError(f"Invalid event {value}")
+        return value
+    elif isinstance(value, EventContext):
+        return str(value)
+    elif isinstance(value, List):
+        for e in value:
+            validate_event_contexts(cls, e, field)
+        return value
+    else:    
+        raise ValueError(f"Invalid value for {field.name}")
+
+
 class EventHandler(BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["Connector"]]
+    connector_type: Optional[Type['BaseConnector']] # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -114,7 +222,7 @@ class EventResult(BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "Connector"
+    connector: BaseConnector
     created_at: datetime = None
     value: Any
     
@@ -155,12 +263,51 @@ def get_event(name: str, default=...) -> Optional[Event]:
         return _events.get(name, default)
 
 
-def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
+def create_event(
+    name: str, 
+    signature: Union[Callable[[Any], Awaitable], Signature],
+) -> Event:
     """
     Create an event programmatically from a name and function signature.
     """
     if _events.get(name, None):
         raise ValueError(f"Event '{name}' has already been created")
+
+    def _default_context_manager() -> AsyncContextManager:
+        # Simply yield to the on event handler
+        async def fn(self) -> None:
+            yield
+        
+        return asynccontextmanager(fn)
+    
+    if callable(signature):
+        if inspect.isasyncgenfunction(signature):
+            # We have an async generator function defining setup/teardown activities, wrap into a context manager
+            # This is useful for shared behaviors like startup delays, settlement times, etc.
+            on_handler_context_manager = asynccontextmanager(signature)
+
+        elif not iscoroutinefunction(signature):
+            raise ValueError(f"events must be async: add `async` prefix to your function declaration and await as necessary ({signature})")
+
+        else:
+            # Sanity check callables that don't yield are stubs
+            # We expect the last line to be 'pass' or '...' for stub code
+            try:
+                lines = inspect.getsourcelines(signature)
+                last = lines[0][-1]
+                if not last.strip() in ("pass", "..."):
+                    raise ValueError("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")                
+                
+                # use the default since our input doesn't yield
+                on_handler_context_manager = _default_context_manager()
+
+            except OSError as error:
+                logger.warning(f"unable to inspect event declaration for '{name}': dropping event body and proceeding")
+                on_handler_context_manager = _default_context_manager()
+
+    else:
+        # Signatures are opaque from introspection
+        on_handler_context_manager = _default_context_manager()
 
     signature = (
         signature
@@ -177,7 +324,7 @@ def create_event(name: str, signature: Union[Callable, Signature]) -> Event:
             f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
         )
 
-    event = Event(name=name, signature=signature)
+    event = Event(name=name, signature=signature, on_handler_context_manager=on_handler_context_manager)
     _events[name] = event
     return event
 
@@ -196,7 +343,13 @@ def event(
 
     def decorator(fn: EventCallable) -> EventCallable:
         event_name = name if name else fn.__name__
-        create_event(event_name, fn)
+        if handler:
+            # If the method body is a handler, pass the signature directly into `create_event`
+            # as we are going to pass the method body into `on_event`
+            signature = Signature.from_callable(fn)
+            create_event(event_name, signature)
+        else:
+            create_event(event_name, fn)
 
         if handler:
             decorator = on_event(event_name)
@@ -274,7 +427,6 @@ def event_handler(
         event = _events.get(name, None)
         if event is None:
             raise ValueError(f"Unknown event '{name}'")
-
         if preposition != Preposition.ON:
             name = f"{preposition}:{name}"
         handler_signature = Signature.from_callable(fn)
@@ -386,9 +538,10 @@ def _validate_handler_signature(
 
     # Check return type annotation
     if handler_signature.return_annotation != event_signature.return_annotation:
-        raise TypeError(
-            f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
-        )
+        error_message = f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
+        if isinstance(event_signature.return_annotation, str) and not isinstance(handler_signature.return_annotation, str):
+            error_message += "\nThe type annotations captured from the module defining the event handler are not string encoded. Add `from __future__ import annotations` to the top of the module implementation."
+        raise TypeError(error_message)
 
     # Check for extraneous positional parameters on the handler
     handler_positional_only = list(
@@ -541,7 +694,7 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List["Connector"] = None,
+        __connectors__: List[BaseConnector] = None,
         **kwargs,
     ):
         super().__init__(
@@ -568,7 +721,7 @@ class Mixin:
 
     @classmethod
     def get_event_handlers(
-        cls, event: Union[Event, str], preposition: Preposition = Preposition.ON
+        cls, event: Union[Event, str], preposition: Preposition = Preposition.ALL
     ) -> List[EventHandler]:
         """
         Retrieves the event handlers for the given event and preposition.
@@ -579,13 +732,30 @@ class Mixin:
         return list(
             filter(
                 lambda handler: handler.event == event
-                and handler.preposition == preposition,
+                and handler.preposition & preposition,
                 cls.__event_handlers__,
             )
         )
 
+    @classmethod
+    def add_event_handler(
+        cls, event: Event, preposition: Preposition, callable: EventCallable, **kwargs
+    ) -> EventHandler:
+        """
+        Programmatically creates and adds an event handler to the receiving class.
+
+        This method is functionally equivalent to using the decorators to add
+        event handlers at import time.
+        """
+        # Reuse the existing decorator and as would be done in __init__
+        d_callable = event_handler(event.name, preposition, **kwargs)(callable)
+        handler = d_callable.__event_handler__
+        handler.connector_type = cls
+        cls.__event_handlers__.append(handler)
+        return handler
+
     @property
-    def __connectors__(self) -> List["Connector"]:
+    def __connectors__(self) -> List[BaseConnector]:
         return _connector_event_bus[self]
       
     def broadcast_event(
@@ -593,13 +763,14 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
+        include: Optional[List[BaseConnector]] = None,
+        exclude: Optional[List[BaseConnector]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
+        return_exceptions: bool = False,
         **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
+    ) -> asyncio.Task:
         """
         Broadcast an event asynchronously in a fire and forget manner.
 
@@ -607,7 +778,16 @@ class Mixin:
         or care about the result.
         """
         return asyncio.create_task(
-            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
+            self.dispatch_event(
+                event, 
+                *args, 
+                first=first, 
+                include=include, 
+                exclude=exclude, 
+                prepositions=prepositions, 
+                return_exceptions=return_exceptions,
+                **kwargs
+            )
         )
 
     async def dispatch_event(
@@ -615,13 +795,14 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
+        include: Optional[List[BaseConnector]] = None,
+        exclude: Optional[List[BaseConnector]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
+        return_exceptions: bool = False,
         **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
+    ) -> Union[Optional[EventResult], List[EventResult]]:
         """
         Dispatches an event to active connectors for processing and returns the results.
 
@@ -632,6 +813,7 @@ class Mixin:
         :param first: When True, halt dispatch and return the result from the first connector that responds.
         :param include: A list of specific connectors to dispatch the event to.
         :param exclude: A list of specific connectors to exclude from event dispatch.
+        :param return_exceptions: When True, exceptions returned by on event handlers are returned as results.
         """
         results: List[EventResult] = []
         connectors = include if include is not None else self.__connectors__
@@ -663,7 +845,8 @@ class Mixin:
                         break
             else:
                 group = asyncio.gather(
-                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors))
+                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors)),
+                    return_exceptions=return_exceptions,
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
@@ -681,35 +864,22 @@ class Mixin:
 
         return results
 
-    def dispatch_event_sync(
-        self,
-        event: Union[Event, str],
-        *args,
-        first: bool = False,
-        include: Optional[List["Connector"]] = None,
-        exclude: Optional[List["Connector"]] = None,
-        prepositions: Preposition = (
-            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
-        ),
-        **kwargs,
-    ) -> Union[EventResult, List[EventResult]]:
-        """
-        Wraps an event dispatched from a synchronous caller with `asyncio.run` and returns the results.
-
-        This interface exists primarily for use from the CLI. It cannot be invoked from within the asyncio environment.
-        """
-        return asyncio.run(
-            self.dispatch_event(event, *args, first=first, include=include, exclude=exclude, prepositions=prepositions, **kwargs)
-        )
-
     async def run_event_handlers(
-        self, event: Event, preposition: Preposition, *args, **kwargs
+        self, 
+        event: Event, 
+        preposition: Preposition, 
+        *args, 
+        return_exceptions: bool = False,
+        **kwargs
     ) -> Optional[List[EventResult]]:
         """
-        Run handlers for the given event and preposition and and return the results or None if there are no handlers.
+        Run handlers for the given event and preposition and return the results or None if there are no handlers.
         """
+        if not isinstance(event, Event):
+            raise ValueError(f"event must be an Event object, got {event.__class__.__name__}")
+
         event_handlers = self.get_event_handlers(event, preposition)
-        if len(event_handlers) == 0:
+        if not event_handlers:
             return None
 
         results: List[EventResult] = []
@@ -721,10 +891,12 @@ class Mixin:
                 handler_kwargs = event_handler.kwargs.copy()
                 handler_kwargs.update(kwargs)
                 try:
-                    if asyncio.iscoroutinefunction(event_handler.handler):
-                        value = await event_handler.handler(self, *args, **kwargs)
-                    else:
-                        value = event_handler.handler(self, *args, **kwargs)
+                    async with event.on_handler_context_manager(self):
+                        if asyncio.iscoroutinefunction(event_handler.handler):
+                            value = await event_handler.handler(self, *args, **kwargs)
+                        else:
+                            value = event_handler.handler(self, *args, **kwargs)
+
                 except CancelEventError as error:
                     if preposition != Preposition.BEFORE:
                         raise TypeError(
@@ -740,8 +912,15 @@ class Mixin:
                         value=error,
                     )
                     raise error
+                
                 except EventError as error:
                     value = error
+                
+                except Exception as error:
+                    if return_exceptions:
+                        value = error
+                    else:
+                        raise error
 
                 # TODO: Annotate the responses to verify that they are of the correct types
                 # TODO: Should have warning logs and options/way to retrieve bad results for debugging

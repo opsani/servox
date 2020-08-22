@@ -4,13 +4,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-import backoff
 from devtools import pformat
 import httpx
 from pydantic import BaseModel, Field, parse_obj_as
 
-from servo.configuration import Optimizer
-from servo.types import Control, Description, Duration, Measurement, Numeric
+from servo.types import Adjustment, Control, Duration, Numeric
 
 
 USER_AGENT = "github.com/opsani/servox"
@@ -109,6 +107,14 @@ class Mixin:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
     
+    # TODO: Clean this up...
+    async def report_progress(self, **kwargs):
+        try:
+            request = self.progress_request(**kwargs)
+            return await self._post_event(*request)
+        except Exception as e:
+            debug(e)
+
     def progress_request(self,
         operation: str, 
         progress: Numeric, 
@@ -160,22 +166,24 @@ class Mixin:
 
     
     # NOTE: Opsani API primitive
-    @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
+    # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
     async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
-        self.logger.trace(event_request)
+        self.logger.trace(f"POST event request: {pformat(event_request)}")
         async with self.api_client() as client:
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(
-                    f"HTTP error encountered while posting {event.value} event"
+                response_json = response.json()
+                self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {pformat(response_json)}")
+            except httpx.HTTPError:
+                self.logger.error(
+                    f"HTTP error encountered while posting {event} event"
                 )
                 self.logger.trace(pformat(event_request))
-                raise error
+                raise
 
-        return parse_obj_as(Union[CommandResponse, Status], response.json())
+        return parse_obj_as(Union[CommandResponse, Status], response_json)
     
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
@@ -183,11 +191,23 @@ class Mixin:
             try:
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError as error:
-                self.logger.exception(
+            except httpx.HTTPError:
+                self.logger.error(
                     f"HTTP error encountered while posting {event.value} event"
                 )
                 self.logger.trace(pformat(event_request))
-                raise error
+                raise
 
         return parse_obj_as(Union[CommandResponse, Status], response.json())
+
+def descriptor_to_adjustments(descriptor: dict) -> List[Adjustment]:
+    adjustments = []
+    for component_name, component in descriptor["application"]["components"].items():
+        for setting_name, attrs in component["settings"].items():
+            adjustment = Adjustment(
+                component_name=component_name, 
+                setting_name=setting_name,
+                value=attrs["value"]
+            )
+            adjustments.append(adjustment)
+    return adjustments

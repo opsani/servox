@@ -1,0 +1,82 @@
+---
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: co-http-deployment
+  labels:
+    app: co-http
+
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: co-http
+  template:
+    metadata:
+      labels:
+        app: co-http
+      annotations:
+        prometheus.io/path: /stats/prometheus
+        prometheus.io/port: '9901'
+        prometheus.io/scrape: 'true'
+    spec:
+      containers:
+      - name: co-http
+        image: opsani/co-http:latest
+        imagePullPolicy: IfNotPresent
+        args: [ 'busy=10' ]
+        resources:
+          requests:
+            cpu: 1
+            memory: 3G
+          limits:
+            cpu: 1
+            memory: 3G
+        ports:
+          - containerPort: 8080
+      - name: envoy
+        # image: opsani/envoy-proxy:v4
+        image: blakewatters/envoyproxy:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 125m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        env:
+        - name: SERVICE_PORT
+          value: "8080"
+        - name: LISTEN_PORT
+          value: "80"
+        - name: METRICS_PORT
+          value: "9901"
+        ports:
+          - containerPort: 80
+            name: service       # service listener provided by Envoy proxy
+          - containerPort: 9901
+            name: metrics       # metrics provided by Envoy
+
+---
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: co-http-service
+  labels:
+    app: co-http
+
+spec:
+  type: ClusterIP
+  selector:
+    app: co-http
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 80 # send to envoy proxy; change to 8080 to send to web directly

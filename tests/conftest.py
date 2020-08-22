@@ -3,15 +3,11 @@ import os
 import random
 import string
 from pathlib import Path
+from typing import Optional
 
 import pytest
 import yaml
 from typer.testing import CliRunner
-
-from servo.configuration import Optimizer
-from servo.cli import ServoCLI
-# Force the test connectors to load early
-from tests.test_helpers import StubBaseConfiguration
 
 # Add the devtools debug() function globally in tests
 try:
@@ -22,6 +18,40 @@ except ImportError:
     pass
 else:
     builtins.debug = debug
+
+from servo.configuration import Optimizer
+from servo.cli import ServoCLI
+# Force the test connectors to load early
+from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--integration", action="store_true", default=False, help="run integration tests"
+    )
+    parser.addoption(
+        "--system", action="store_true", default=False, help="run system tests"
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "integration: marks integration tests with outside dependencies")    
+    config.addinivalue_line("markers", "system: marks system tests with end to end dependencies")
+
+
+def pytest_collection_modifyitems(config, items):
+    skip_itegration = pytest.mark.skip(reason="add --integration option to run integration tests")
+    skip_system = pytest.mark.skip(reason="add --system to run system tests")
+    
+    for item in items:
+        # Set asyncio as a default marker across the suite
+        item.add_marker('asyncio')
+
+        # Skip slow/sensitive integration & system tests by default
+        if "integration" in item.keywords and not config.getoption("--integration"):
+            item.add_marker(skip_itegration)
+        if "system" in item.keywords and not config.getoption("--system"):
+            item.add_marker(skip_system)
 
 
 @pytest.fixture()
@@ -84,3 +114,45 @@ def run_in_clean_environment() -> None:
 def random_string() -> str:
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
+
+
+@pytest.fixture
+def kubeconfig() -> str:
+    config_path = Path(__file__).parents[0] / 'kubeconfig'
+    if not config_path.exists():
+        raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
+    return str(config_path)
+
+
+@pytest.fixture()
+async def subprocess() -> SubprocessTestHelper:
+    return SubprocessTestHelper()
+
+
+async def build_docker_image(
+    tag: str = "servox:latest", 
+    *, 
+    preamble: Optional[str] = None, 
+    print_output: bool = True, 
+    **kwargs
+) -> str:
+    root_path = Path(__file__).parents[1]
+    subprocess = SubprocessTestHelper()
+    exit_code, stdout, stderr = await subprocess(
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
+        print_output=print_output,
+        **kwargs,
+    )
+    if exit_code != 0:
+        error = '\n'.join(stderr)
+        raise RuntimeError(f"Docker build failed with exit code {exit_code}: error: {error}")
+    
+    return tag
+
+@pytest.fixture()
+async def servo_image() -> str:
+    return await build_docker_image()
+
+@pytest.fixture()
+async def minikube_servo_image(servo_image: str) -> str:
+    return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")

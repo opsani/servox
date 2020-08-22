@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import os
 import re
@@ -12,7 +13,7 @@ from typer.testing import CliRunner
 
 import servo
 from servo.cli import CLI, Context, ServoCLI
-from servo.connector import BaseConfiguration, Optimizer
+from servo.connector import BaseConfiguration, ConnectorLoader, Optimizer
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 
@@ -31,6 +32,11 @@ def optimizer() -> Optimizer:
 def servo_cli() -> ServoCLI:
     return ServoCLI()
 
+@pytest.fixture(autouse=True)
+def servo_yaml(tmp_path: Path) -> Path:
+    config_path: Path = tmp_path / "servo.yaml"
+    config_path.touch()
+    return config_path
 
 @pytest.fixture()
 def vegeta_config_file(servo_yaml: Path) -> Path:
@@ -105,11 +111,13 @@ def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     assert result.exit_code == 2
     assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
-
+@respx.mock
 def test_check(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
+    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
     result = cli_runner.invoke(servo_cli, "check")
+    assert request.called
     assert result.exit_code == 0
     assert re.search("CONNECTOR\\s+STATUS", result.stdout)
 
@@ -156,11 +164,11 @@ def test_show_events_empty_config_file(
     assert len(result.stdout.split("\n")) == 3
 
 
-def test_show_events_no_config_file(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
+def test_show_events_all(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
-    assert result.exit_code == 0
+    result = cli_runner.invoke(servo_cli, "show events -a", catch_exceptions=False)
+    assert result.exit_code == 0    
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("^check", result.stdout, flags=re.MULTILINE)
     assert re.search("^adjust\\s.+", result.stdout, flags=re.MULTILINE)
@@ -259,7 +267,6 @@ def test_show_events_by_connector(
     assert result.exit_code == 0
     assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
     assert re.search("Servo\\s+check\n", result.stdout)
-    debug(result.stdout)
     assert re.search(
         "Measure\\s+before measure\n\\s+measure\n\\s+after measure",
         result.stdout,
@@ -769,13 +776,14 @@ def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
         servo_cli,
         "init",
         catch_exceptions=False,
-        input="dev.opsani.com/servox\n123456789\nn\n",
+        input="dev.opsani.com/servox\n123456789\nn\ny\n",
     )
+    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     dotenv = Path(".env")
     assert (
         dotenv.read_text()
-        == "OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789\n"
+        == "export OPSANI_OPTIMIZER=dev.opsani.com/servox\nexport OPSANI_TOKEN=123456789\nexport SERVO_LOG_LEVEL=DEBUG\n"
     )
     servo_yaml = Path("servo.yaml")
     assert servo_yaml.read_text() is not None

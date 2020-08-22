@@ -1,18 +1,23 @@
+from __future__ import annotations
+import asyncio
 import abc
 import importlib
 import re
+from pathlib import Path
+from pkg_resources import EntryPoint, iter_entry_points
 from typing import (
     Any,
-    Callable,
     ClassVar,
+    IO,
     Generator,
     Optional,
     Set,
     Type,
+    Tuple,
     get_type_hints,
 )
 
-from pkg_resources import EntryPoint, iter_entry_points
+import loguru
 from pydantic import (
     BaseModel,
     HttpUrl,
@@ -22,27 +27,23 @@ from pydantic import (
 
 
 from servo import api, events, logging, repeating
-from servo.configuration import BaseConfiguration, Optimizer
-from servo.events import (
-    CancelEventError,
-    Event,
-    EventCallable,
-    EventContext,
-    EventError,
-    EventHandler,
-    EventResult,
-    Preposition,
-    get_event,
-)
+from servo.configuration import AbstractBaseConfiguration, BaseConfiguration, Optimizer
+from servo.events import EventHandler, EventResult
 from servo.types import *
-from servo.utilities import join_to_series
+from servo.utilities import (
+    OutputStreamCallback,
+    SubprocessResult,
+    Timeout,
+    run_subprocess_shell, 
+    stream_subprocess_shell
+)
 
 
-_connector_subclasses: Set[Type["Connector"]] = set()
+_connector_subclasses: Set[Type["BaseConnector"]] = set()
 
 
 # NOTE: Initialize mixins first to control initialization graph
-class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseModel, abc.ABC, metaclass=events.Metaclass):
+class BaseConnector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseModel, abc.ABC, metaclass=events.Metaclass):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
@@ -108,6 +109,12 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
         assert isinstance(
             cls.version, Version
         ), "version is not a semantic versioning descriptor"
+        
+        if not cls.__default_name__:
+            if name := _name_for_connector_class(cls):
+                cls.__default_name__ = name
+            else:
+                raise ValueError(f"A default connector name could not be constructed for class '{cls}'")
         return v
 
     @validator("name")
@@ -130,11 +137,11 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
         config_cls = hints["config"]
         return config_cls
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls: Type['BaseConnector'], **kwargs):
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
-
+        
         cls.name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
@@ -155,28 +162,141 @@ class Connector(api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseMod
 
     def __hash__(self):
         return hash((self.name, id(self),))
+    
+    ##
+    # Subprocess utilities
+
+    async def run_subprocess(
+        self,
+        cmd: str,
+        *,
+        env: Optional[Dict[str, str]] = None,
+        timeout: Timeout = None,
+        logger: Optional[loguru.Logger] = ...,
+        stdin: Union[int, IO[Any], None] = None,
+        **kwargs
+    ) -> SubprocessResult:
+        """
+        Run a shell command in a subprocess asynchronously and return the results.
+
+        This method is a convenience wrapper for lower-level functionality implemented in the
+        `servo.utilities.subprocess` module. Additional arguments are available for input via
+        `kwargs` that have been omitted for brevity to optimize the public API for common cases.
+
+        :param cmd: The command to run.
+        :param env: An optional dictionary of environment variables to apply to the subprocess.
+        :param timeout: An optional timeout in seconds for how long to read the streams before giving up.
+        :param logger: The logger to log messages about the subprocess execution against. Defaults to `self.logger`. `None` disables logging output.
+        :param stdin: A file descriptor, IO stream, or None value to use as the standard input of the subprocess. Default is `None`.
+
+        :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
+        :return: A named tuple value of the exit status and two string lists of standard output and standard error.
+        """
+        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
+        try:
+            start = time.time()
+            if logger_:
+                timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
+                logger_.info(f"Running subprocess command `{cmd}`{timeout_note}")
+            result = await run_subprocess_shell(
+                cmd,           
+                env=env,
+                timeout=timeout,
+                stdin=stdin,
+                **kwargs
+            )
+            end = time.time()
+            duration = Duration(end - start)
+            if logger_:
+                logger_.info(f"Subprocess finished with return code {result.return_code} in {duration} (`{cmd}`)")
+            return result
+        except asyncio.TimeoutError as error:
+            if logger_:
+                logger_.warning(f"timeout expired waiting for subprocess to complete: {error}")
+            raise error
+
+    async def stream_subprocess_output(
+        self,
+        cmd: str,
+        *,
+        stdout_callback: Optional[OutputStreamCallback] = None,
+        stderr_callback: Optional[OutputStreamCallback] = None,
+        env: Optional[Dict[str, str]] = None,
+        timeout: Timeout = None,        
+        stdin: Union[int, IO[Any], None] = None,
+        logger: Optional[loguru.Logger] = ...,
+        **kwargs
+    ) -> int:
+        """
+        Run a shell command in a subprocess asynchronously and stream its output.
+
+        This method is a convenience wrapper for lower-level functionality implemented in the
+        `servo.utilities.subprocess` module. Additional arguments are available for input via
+        `kwargs` that have been omitted for brevity to optimize the public API for common cases.
+
+        :param cmd: The command to run.
+        :param stdout_callback: An optional callable invoked with each line read from stdout. Must accept a single string positional argument and returns nothing.
+        :param stderr_callback: An optional callable invoked with each line read from stderr. Must accept a single string positional argument and returns nothing.
+        :param env: An optional dictionary of environment variables to apply to the subprocess.
+        :param timeout: An optional timeout in seconds for how long to read the streams before giving up.
+        :param logger: The logger to log messages about the subprocess execution against. Defaults to `self.logger`. `None` disables logging output.
+        :param stdin: A file descriptor, IO stream, or None value to use as the standard input of the subprocess. Default is `None`.
+
+        :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
+        :return: The exit status of the subprocess.
+        """
+        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
+        try:
+            start = time.time()
+            if logger_:
+                timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
+                logger_.info(f"Running subprocess command `{cmd}`{timeout_note}")
+            result = await stream_subprocess_shell(
+                cmd,
+                stdout_callback=stdout_callback,
+                stderr_callback=stderr_callback,                
+                env=env,
+                timeout=timeout,
+                stdin=stdin,
+                **kwargs
+            )
+            end = time.time()
+            duration = Duration(end - start)
+            if logger_:
+                logger_.info(f"Subprocess finished with return code {result} in {duration} (`{cmd}`)")
+            return result
+        except asyncio.TimeoutError as error:
+            if logger_:
+                logger_.warning(f"timeout expired waiting for subprocess to complete: {error}")
+            raise error
 
 
-EventResult.update_forward_refs(Connector=Connector)
-EventHandler.update_forward_refs(Connector=Connector)
+EventResult.update_forward_refs(BaseConnector=BaseConnector)
+EventHandler.update_forward_refs(BaseConnector=BaseConnector)
 
 
 def metadata(
-    name: Optional[str] = None,
+    name: Optional[Union[str, Tuple[str, str]]] = None,
     description: Optional[str] = None,
-    version: Optional[Version] = None,
-    homepage: Optional[HttpUrl] = None,
-    license: Optional[License] = None,
-    maturity: Optional[Maturity] = None,
+    version: Optional[Union[str, Version]] = None,
+    *,
+    homepage: Optional[Union[str, HttpUrl]] = None,
+    license: Optional[Union[str, License]] = None,
+    maturity: Optional[Union[str, Maturity]] = None,
 ):
     """Decorate a Connector class with metadata"""
 
     def decorator(cls):
-        if not issubclass(cls, Connector):
+        if not issubclass(cls, BaseConnector):
             raise TypeError("Metadata can only be attached to Connector subclasses")
 
         if name:
-            cls.name = name
+            if isinstance(name, tuple):
+                if len(name) != 2:
+                    raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
+                cls.name, cls.__default_name__ = name                
+            else:
+                cls.name = name
         if description:
             cls.description = description
         if version:
@@ -186,9 +306,9 @@ def metadata(
         if homepage:
             cls.homepage = homepage
         if license:
-            cls.license = license
+            cls.license = license if isinstance(license, License) else License.from_str(license)
         if maturity:
-            cls.maturity = maturity
+            cls.maturity = maturity if isinstance(maturity, Maturity) else Maturity.from_str(maturity)
         return cls
 
     return decorator
@@ -196,12 +316,18 @@ def metadata(
 ##
 # Utility functions
 
-def _name_for_connector_class(cls: Type[Connector]) -> str:
-    name = re.sub(r"Connector$", "", cls.__name__)
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
+    for name in (cls.name, cls.__name__):
+        if not name:
+            continue
+        name = re.sub(r"Connector$", "", name)
+        name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        if name != "":
+            return name
+    return None
 
 
-def _connector_class_from_string(connector: str) -> Optional[Type[Connector]]:
+def _connector_class_from_string(connector: str) -> Optional[Type[BaseConnector]]:
     if not isinstance(connector, str):
         return None
 
@@ -241,7 +367,7 @@ def _validate_class(connector: type) -> bool:
     if connector is None or not isinstance(connector, type):
         return False
 
-    if not issubclass(connector, Connector):
+    if not issubclass(connector, BaseConnector):
         raise TypeError(f"{connector.__name__} is not a Connector subclass")
 
     return True

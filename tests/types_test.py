@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from pydantic import create_model
 
-from servo.types import Duration
+from servo.types import Adjustment, Component, Duration
 
 
 class TestDuration:
@@ -48,6 +48,12 @@ class TestDuration:
     def test_str(self) -> None:
         duration = Duration("5h37m15s")
         assert duration.__str__() == "5h37m15s"
+    
+    def test_parse_extended(self) -> None:
+        duration = Duration("2y4mm3d8h24m")
+        assert duration.__str__() == "2y4mm3d8h24m"
+        assert duration.total_seconds() == 73729440.0
+        assert Duration(73729440.0).__str__() == "2y4mm3d8h24m"
 
     def test_pydantic_schema(self) -> None:
         model = create_model("duration_model", duration=(Duration, ...))
@@ -56,6 +62,13 @@ class TestDuration:
             "title": "Duration",
             "type": "string",
             "format": "duration",
-            "pattern": "([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
+            "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
             "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
         }
+
+def test_adjustment_str() -> None:
+    adjustment = Adjustment(component_name="web", setting_name="cpu", value=1.25)
+    assert adjustment.__str__() == "web.cpu=1.25"
+    assert str(adjustment) == "web.cpu=1.25"
+    assert f"adjustment=({adjustment})" == "adjustment=(web.cpu=1.25)"
+    assert f"[adjustments=({', '.join(list(map(str, [adjustment])))})]" == "[adjustments=(web.cpu=1.25)]"

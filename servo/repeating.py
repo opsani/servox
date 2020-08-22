@@ -1,11 +1,11 @@
 import asyncio
 from typing import Union, Callable, Optional, List, Dict
-from servo.types import Duration, NoneCallable
+from servo.types import Duration, NoneCallable, Numeric
 from servo.utilities import values_for_keys
 from datetime import timedelta
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
-Every = Union[int, str, Duration]
+Every = Union[Numeric, str, Duration]
 
 _repeating_tasks_registry = WeakKeyDictionary()
 
@@ -22,7 +22,7 @@ class Mixin:
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        repeating_tasks: Dict[str, asyncio.Task] = WeakValueDictionary()
+        repeating_tasks: WeakValueDictionary[str, asyncio.Task] = WeakValueDictionary()
         _repeating_tasks_registry[self] = repeating_tasks
 
         # Start tasks for any methods decorated via `repeating`
@@ -70,7 +70,7 @@ class Mixin:
         return None
 
     @property
-    def repeating_tasks(self) -> List[asyncio.Task]:
+    def repeating_tasks(self) -> Dict[str, asyncio.Task]:
         tasks = _repeating_tasks_registry.get(self, None)
         if tasks is None:
             tasks = {}

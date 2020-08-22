@@ -1,41 +1,29 @@
-import abc
-import importlib
 import json
 import os
 import re
 from contextvars import ContextVar
-from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Type, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
-import httpx
 import yaml
-from pydantic import BaseModel, Extra, Field, create_model, validator
+from pydantic import BaseModel, create_model
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
 
-import servo
-from servo import connector
 from servo.connector import (
     BaseConfiguration,
-    Connector,
+    BaseConnector,
     ConnectorLoader,
-    License,
-    Maturity,
     Optimizer,
-    _connector_class_from_string,
     _connector_subclasses,
 )
 from servo.servo import (
     Servo,
     BaseServoConfiguration, 
     _default_routes, 
-    _normalize_connectors,
     _routes_for_connectors_descriptor,
     _servo_context_var
 )
-from servo.events import Preposition, event, on_event
-from servo.types import Check, Control, Description, Measurement, Metric
 from servo.utilities import join_to_series
 
 
@@ -89,34 +77,29 @@ class Assembly(BaseModel):
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> ("Assembly", Servo, Type[BaseServoConfiguration]):
+    ) -> Tuple["Assembly", Servo, Type[BaseServoConfiguration]]:
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
-
+        
         _discover_connectors()
-        ServoConfiguration, routes = _create_config_model(
-            config_file=config_file, env=env
-        )
 
         # Build our Servo configuration from the config file + environment
-        if config_file.exists():
-            config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-            if not (config is None or isinstance(config, dict)):
-                raise ValueError(
-                    f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
-                )
-            config = {} if config is None else config
-            servo_config = ServoConfiguration.parse_obj(config)
-        else:
-            # If we do not have a config file, build a minimal configuration
-            # NOTE: This configuration is likely incomplete/invalid due to required
-            # settings on the connectors not being fully configured
-            args = kwargs.copy()
-            for name, connector_type in routes.items():
-                args[name] = connector_type.config_model().construct()
-            servo_config = ServoConfiguration.construct(**args)
+        if not config_file.exists():
+            raise FileNotFoundError(f"config file '{config_file}' does not exist")
+
+        ServoConfiguration, routes = _create_config_model(
+            config_file=config_file, env=env
+        )        
+
+        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
+        if not (config is None or isinstance(config, dict)):
+            raise ValueError(
+                f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
+            )
+        config = {} if config is None else config
+        servo_config = ServoConfiguration.parse_obj(config)
 
         # Initialize all active connectors
-        connectors: List[Connector] = []
+        connectors: List[BaseConnector] = []
         for name, connector_type in routes.items():
             connector_config = getattr(servo_config, name)
             if connector_config:
@@ -160,12 +143,12 @@ class Assembly(BaseModel):
     # Utility functions
 
     @classmethod
-    def all_connector_types(cls) -> Set[Type[Connector]]:
+    def all_connector_types(cls) -> Set[Type[BaseConnector]]:
         """Return a set of all connector types in the assembly excluding the Servo"""
         return _connector_subclasses.copy()
 
     @property
-    def connectors(self) -> List[Connector]:
+    def connectors(self) -> List[BaseConnector]:
         """
         Returns a list of all active connectors in the assembly including the Servo.
         """
@@ -191,7 +174,7 @@ def _module_path(cls: Type) -> str:
         return cls.__name__
 
 
-def _discover_connectors() -> Set[Type[Connector]]:
+def _discover_connectors() -> Set[Type[BaseConnector]]:
     """
     Discover available connectors that are registered via setuptools entry points.
 
@@ -205,11 +188,11 @@ def _discover_connectors() -> Set[Type[Connector]]:
 
 
 def _create_config_model_from_routes(
-    routes=Dict[str, Type[Connector]], *, require_fields: bool = True,
+    routes=Dict[str, Type[BaseConnector]], *, require_fields: bool = True,
 ) -> Type[BaseServoConfiguration]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
-        Type[Connector], str
+        Type[BaseConnector], str
     ] = {}  # use dict for uniquing and ordering
     setting_fields: Dict[str, Tuple[Type[BaseConfiguration], Any]] = {}
     default_value = (
@@ -243,9 +226,9 @@ def _create_config_model_from_routes(
 def _create_config_model(
     *,
     config_file: Path,
-    routes: Dict[str, Type[Connector]] = None,
+    routes: Dict[str, Type[BaseConnector]] = None,
     env: Optional[Dict[str, str]] = os.environ,
-) -> (Type[BaseServoConfiguration], Dict[str, Type[Connector]]):
+) -> (Type[BaseServoConfiguration], Dict[str, Type[BaseConnector]]):
     # map of config key in YAML to settings class for target connector
     if routes is None:
         routes = _default_routes()
@@ -274,13 +257,13 @@ def _normalize_name(name: str) -> str:
 
 
 class SettingModelCacheEntry:
-    connector_type: Type[Connector]
+    connector_type: Type[BaseConnector]
     connector_name: str
     config_model: Type[BaseConfiguration]
 
     def __init__(
         self,
-        connector_type: Type[Connector],
+        connector_type: Type[BaseConnector],
         connector_name: str,
         config_model: Type[BaseConfiguration],
     ) -> None:
@@ -296,7 +279,7 @@ __config_models_cache__: List[SettingModelCacheEntry] = []
 
 
 def _derive_config_model_for_route(
-    name: str, model: Type[Connector]
+    name: str, model: Type[BaseConnector]
 ) -> Type[BaseConfiguration]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic

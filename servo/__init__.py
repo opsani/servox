@@ -30,14 +30,15 @@ from .events import (
     after_event,
     event_handler,
 )
-from .connector import (
-    Optimizer,
+from .connector import (    
+    AbstractBaseConfiguration,
     BaseConfiguration,
-    Connector,
+    BaseConnector,
+    Optimizer,
     metadata,
 )
 
-# Pull the errors, types & utilities up to the top level
+from .checks import *
 from .errors import *
 from .types import *
 from .utilities import *
