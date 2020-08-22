@@ -52,7 +52,7 @@ class Webhook(servo.BaseConfiguration):
     description: Optional[str] = Field(
         description="Optional free-form text describing the context or purpose of the webhook.",
     )
-    events: List[EventContext] = Field(
+    events: List[str] = Field(
         description="A list of events that the webhook is listening for.",
     )
     url: AnyHttpUrl = Field(
@@ -124,7 +124,10 @@ class WebhooksConnector(servo.BaseConnector):
     
     def _register_event_handlers(self) -> None:
         for webhook in self.config.webhooks:
-            for event in webhook.events:
+            for event_name in webhook.events:
+                event = EventContext.from_str(event_name)
+                if not event:
+                    raise ValueError(f"invalid webhook event '{event_name}'")
                 if event.preposition == Preposition.BEFORE:
                     self._add_before_event_webhook_handler(webhook, event)
                 elif event.preposition == Preposition.AFTER:

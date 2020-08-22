@@ -48,6 +48,30 @@ class Event(BaseModel):
         elif isinstance(other, Event):
             return self.name == other.name and self.signature == other.signature
         return super().__eq__(other)
+    
+    def dict(
+        self,
+        *,
+        include: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        exclude: Union['AbstractSetIntStr', 'MappingIntStrAny'] = None,
+        by_alias: bool = False,
+        skip_defaults: bool = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+    ) -> 'DictStrAny':
+        if exclude is None:
+            exclude = set()
+        exclude.add("on_handler_context_manager")
+        return super().dict(
+            include=include,
+            exclude=exclude,
+            by_alias=by_alias,
+            skip_defaults=skip_defaults,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none
+        )
         
     class Config:
         arbitrary_types_allowed = True
@@ -117,6 +141,7 @@ class EventContext(BaseModel):
             preposition=Preposition.from_str(preposition), 
             event=event
         )
+
     
     @validator("created_at", pre=True, always=True)
     @classmethod
@@ -159,22 +184,23 @@ class EventContext(BaseModel):
 def validate_event_contexts(
     cls, 
     value: Union[str, EventContext, Sequence[Union[str, EventContext]]],
-    field: ModelField) -> List[EventContext]:
+    field: ModelField) -> Union[str, List[str]]:
     """
-    A Pydantic validator function that validates and returns a list of EventContext
-    objects from a singular or sequence of objects that identify valid event contexts.
+    A Pydantic validator function that ensures that the input value or values are
+    valid event context identifiers (e.g. "measure", "before:adjust", etc)
     """
     if isinstance(value, str):
-        if event_context := EventContext.from_str(value):
-            return [event_context]
-        raise ValueError(f"Invalid value for {field.name}")
+        if not EventContext.from_str(value):
+            raise ValueError(f"Invalid event {value}")
+        return value
     elif isinstance(value, EventContext):
-        return [value]
-    elif isinstance(value, Sequence):
-        events = []
+        return str(value)
+    elif isinstance(value, List):
         for e in value:
-            events.extend(validate_event_contexts(cls, e, field))
-    return events
+            validate_event_contexts(cls, e, field)
+        return value
+    else:    
+        raise ValueError(f"Invalid value for {field.name}")
 
 
 class EventHandler(BaseModel):
