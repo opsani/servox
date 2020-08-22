@@ -118,7 +118,6 @@ class AbstractBaseConfiguration(BaseSettings):
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
         config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
-        debug(config)
         if key:
             try:
                 config = config[key]

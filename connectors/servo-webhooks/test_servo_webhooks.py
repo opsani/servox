@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import hmac
 import hashlib
@@ -5,14 +6,14 @@ from typing import List
 
 import pytest
 import servo
-from servo import BaseConfiguration, Metric, Unit, on_event
+from servo import BaseConfiguration, BaseConnector, Metric, Unit, on_event
 from servo.events import EventContext
 from servo_webhooks import CLI, WebhooksConfiguration, WebhooksConnector, Webhook, __version__
 import respx
 
 pytestmark = pytest.mark.asyncio
 
-class WebhookEventConnector(servo.Connector):
+class WebhookEventConnector(BaseConnector):
     @on_event()
     def metrics(self) -> List[Metric]:
         return [

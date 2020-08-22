@@ -9,8 +9,11 @@ import yaml
 
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client.api_client import ApiClient
+import pydantic
 
+from servo.api import descriptor_to_adjustments
 from servo.connectors.kubernetes import Container, CPU, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName
+from servo.connectors.kubernetes import KubernetesChecks, Millicore
 from servo.types import Adjustment, Component, Setting, SettingType
 from pydantic import BaseModel
 from typing import Type
@@ -518,41 +521,51 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("co-http-deployment.memory").value == "3G"
         assert description.get_setting("co-http-deployment.replicas").value == 1
 
-from servo.api import descriptor_to_adjustments
-async def test_adjust(config, adjustment):    
-    connector = KubernetesConnector(config=config)
 
-    description = await connector.adjust(descriptor_to_adjustments(adjustment))
-    debug(description)
+    async def test_adjust(self, config, adjustment):    
+        connector = KubernetesConnector(config=config)
 
-async def test_adjust_memory_on_deployment(web_config, adjustment):    
-    connector = KubernetesConnector(config=web_config)
+        description = await connector.adjust(descriptor_to_adjustments(adjustment))
+        debug(description)
 
-    adjustment = Adjustment(
-        component_name="web/main",
-        setting_name="memory",
-        value="700Mi",
-    )
-    description = await connector.adjust([adjustment])
-    debug(description)
+    async def test_adjust_memory_on_deployment(self, web_config, adjustment):    
+        connector = KubernetesConnector(config=web_config)
 
-    # Get deployment and check the pods
-    # deployment = await Deployment.read("web", "default")
-    # debug(deployment)
-    # debug(deployment.obj.spec.template.spec.containers)
+        adjustment = Adjustment(
+            component_name="web/main",
+            setting_name="memory",
+            value="700Mi",
+        )
+        description = await connector.adjust([adjustment])
+        debug(description)
+
+        # Get deployment and check the pods
+        # deployment = await Deployment.read("web", "default")
+        # debug(deployment)
+        # debug(deployment.obj.spec.template.spec.containers)
+    
+    async def test_read_pod(self, config, adjustment):
+        connector = KubernetesConnector(config=config)
+        await config.load_kubeconfig()
+        # dep = await Deployment.read("opsani-servo", "default")
+        # debug(dep)
+        pod = await Pod.read("web-canary", "default")
+        debug(pod)
+        # description = await connector.adjust(descriptor_to_adjustments(adjustment))
+        # debug(description)
+    
+    ## 
+    # Canary Tests
+    async def test_create_canary(self, canary_config, adjustment):
+        await canary_config.load_kubeconfig()
+        connector = KubernetesConnector(config=canary_config)
+        dep = await Deployment.read("web", "default")
+        debug(dep)
+        # description = await connector.startup()
+        # debug(description)
 
 def test_config():
     debug(KubernetesConfiguration.generate())
-
-async def test_read_pod(config, adjustment):
-    connector = KubernetesConnector(config=config)
-    await config.load_kubeconfig()
-    # dep = await Deployment.read("opsani-servo", "default")
-    # debug(dep)
-    pod = await Pod.read("web-canary", "default")
-    debug(pod)
-    # description = await connector.adjust(descriptor_to_adjustments(adjustment))
-    # debug(description)
 
 async def test_apply_no_changes():
     # resource_version stays the same and early exits
@@ -605,24 +618,9 @@ async def test_apply_restart_strategy():
 # If we never see a progressing condition, then whatever we did
 # did not affect the deployment
 # Handle: CreateContainerError 
-    
-## 
-# Canary Tests
-async def test_create_canary(canary_config, adjustment):
-    await canary_config.load_kubeconfig()
-    connector = KubernetesConnector(config=canary_config)
-    dep = await Deployment.read("web", "default")
-    debug(dep)
-    # description = await connector.startup()
-    # debug(description)
-
-from servo.connectors.kubernetes import KubernetesChecks
 
 async def test_checks(config: KubernetesConfiguration):
     await KubernetesChecks.run(config)
-
-from servo.connectors.kubernetes import Millicore
-import pydantic
 
 def test_millicpu():
     class Model(pydantic.BaseModel):
