@@ -1281,11 +1281,11 @@ class Deployment(KubernetesModel):
         """
         return list(map(lambda c: Container(c, None), self.obj.spec.template.spec.containers))
 
-    def get_container(self, name: str) -> Container:
+    def find_container(self, name: str) -> Optional[Container]:
         """
         Return the container with the given name.
         """
-        return next(filter(lambda c: c.name == name, self.containers))
+        return next(filter(lambda c: c.name == name, self.containers), None)
 
     @property
     def replicas(self) -> int:
@@ -1682,7 +1682,7 @@ class DeploymentOptimization(BaseOptimization):
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            container = deployment.get_container(container_config.name)
+            container = deployment.find_container(container_config.name)
             return cls(
                 name=f"{deployment.name}/{container.name}",
                 deployment_config=config,
@@ -1935,7 +1935,7 @@ class CanaryOptimization(BaseOptimization):
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            target_container = deployment.get_container(container_config.name)
+            target_container = deployment.find_container(container_config.name)
             canary_container = canary_pod.get_container(container_config.name)
 
             return cls(
