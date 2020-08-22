@@ -97,10 +97,11 @@ class ProgressHandler:
             else:
                 return await self._report_error("declining request to report progress for record without a started_at parameter or inferrable value from event context", record)
 
+        connector_name = connector.name if hasattr(connector, "name") else connector
         return await self._report_progress(
             operation=operation,
             progress=progress,
-            connector=connector.name,
+            connector=connector_name,
             event_context=event_context,
             started_at=started_at,
             message=message
