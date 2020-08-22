@@ -321,8 +321,7 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) 
 
 async def test_startup_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
-    servo.startup()
-    await asyncio.sleep(0.1)
+    await servo.startup()
     assert connector.started_up == True
 
 
@@ -330,8 +329,7 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
     on_spy = mocker.spy(on_handler, "handler")
-    servo.shutdown()
-    await asyncio.sleep(0.1)
+    await servo.shutdown()
     on_spy.assert_called()
 
 
@@ -379,13 +377,13 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 
         class InvalidConnector:
             @on_event("adjust")
-            def invalid_adjust(self) -> None:
+            def invalid_adjust(self) -> dict:
                 pass
 
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected dict, but found None"
+        == "Invalid return type annotation for 'adjust' event handler: expected None, but found dict"
     )
 
 
@@ -422,13 +420,13 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     with pytest.raises(TypeError) as error:
 
         @on_event("adjust")
-        def invalid_adjust(self) -> dict:
+        def invalid_adjust(self) -> None:
             pass
 
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'data': expected signature: (self, data: 'dict') -> 'dict'"
+        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'None'"
     )
 
 
