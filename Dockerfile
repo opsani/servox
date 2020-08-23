@@ -44,7 +44,6 @@ WORKDIR /servo
 # cache friendly files are in the stage when Poetry executes.
 COPY poetry.lock pyproject.toml ./
 COPY servo/entry_points.py servo/entry_points.py
-COPY connectors ./connectors/
 
 RUN pip install poetry==1.0.* \
   && poetry install \
