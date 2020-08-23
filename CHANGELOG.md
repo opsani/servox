@@ -15,7 +15,12 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.5.1] - 2020-08-23
+
+### Removed
+- Migrated servo-webhooks into a standalone project (see https://github.com/opsani/servo-webhooks)
+
+## [0.5.0] - 2020-08-22
 
 ### Added
 - The capabilities of the logging module have been significantly enhanced with supporting for
@@ -27,10 +32,12 @@ default name for connectors of the decorated type, overriding the name inference
 - Progress can be automatically reported to the Opsani API by annotating log messages with a "progress" key.
 - Introduced general utilities for executing subprocesses including streaming output, timeouts, etc.
 - Added integration testing infrastructure for testing the servo in Docker, Minikube, and EKS.
+- Integrated complete implementation of Kubernetes connector on top of kubernetes_asyncio.
 
 ### Changed
 - Enable parsing of extended Golang duration strings in `Duration` (days, weeks, months, years).
 - The base connector class has been renamed from `Connector` to `BaseConnector` to align with other inheritance patterns in the library.
+- Redesigned the Kuberenetes configuration to adopt familiar naming conventions and structure from Kubernetes.
 
 ## [0.4.2] - 2020-07-24
 
