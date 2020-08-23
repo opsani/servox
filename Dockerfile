@@ -52,6 +52,10 @@ RUN pip install poetry==1.0.* \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
 
+# Add common connectors distributed as standalone libraries
+RUN poetry add servo-webhooks
+
+# Copy the servo sources
 COPY . ./
 
 # Allow literal or volume mounted tokens
