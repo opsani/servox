@@ -36,7 +36,6 @@ version = "0.13.0"
 reference = "9aefec8dd301bf8c4a4e03a22fb4ec64c2b479cf"
 type = "git"
 url = "https://github.com/Martiusweb/asynctest.git"
-
 [[package]]
 category = "dev"
 description = "Atomic file writes."
@@ -648,24 +647,6 @@ version = "2.10.2"
 
 [[package]]
 category = "main"
-description = ""
-develop = true
-name = "servo-webhooks"
-optional = false
-python-versions = "^3.8"
-version = "0.1.0"
-
-[package.dependencies]
-httpx = "^0.13.3"
-servox = "^0.5.0"
-
-[package.source]
-reference = ""
-type = "directory"
-url = "connectors/servo-webhooks"
-
-[[package]]
-category = "main"
 description = "Python 2 and 3 compatibility utilities"
 name = "six"
 optional = false
@@ -773,7 +754,7 @@ idna = ">=2.0"
 multidict = ">=4.0"
 
 [metadata]
-content-hash = "61c63a129551e5090b0d315ca0e591d13a85a9a85f3686a43fcb855f070f98a2"
+content-hash = "5bca495112c13069f35c6927bbc07a3abd8cce2ba56fe857fd78de29b227286d"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1100,7 +1081,6 @@ semver = [
     {file = "semver-2.10.2-py2.py3-none-any.whl", hash = "sha256:21e80ca738975ed513cba859db0a0d2faca2380aef1962f48272ebf9a8a44bd4"},
     {file = "semver-2.10.2.tar.gz", hash = "sha256:c0a4a9d1e45557297a722ee9bac3de2ec2ea79016b6ffcaca609b0bc62cf4276"},
 ]
-servo-webhooks = []
 six = [
     {file = "six-1.15.0-py2.py3-none-any.whl", hash = "sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced"},
     {file = "six-1.15.0.tar.gz", hash = "sha256:30639c035cdb23534cd4aa2dd52c3bf48f06e5f4a941509c8bafd8ce11080259"},
