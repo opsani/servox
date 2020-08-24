@@ -67,7 +67,7 @@ spec:
             path: servo.yaml
       containers:
       - name: main
-        image: opsani/servox:webhooks-and-canaries
+        image: opsani/servox:latest
         imagePullPolicy: Always
         # TODO: Enables checks as pre-run for container
         # command:
