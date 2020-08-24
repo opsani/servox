@@ -654,7 +654,7 @@ class ServoCLI(CLI):
                     token = typer.prompt("API token?", default=context.token)
                     token != context.token or typer.echo()
                     dotenv_file.write_text(
-                        f"export OPSANI_OPTIMIZER={optimizer}\nexport OPSANI_TOKEN={token}\nexport SERVO_LOG_LEVEL=DEBUG\n"
+                        f"OPSANI_OPTIMIZER={optimizer}\nOPSANI_TOKEN={token}\nSERVO_LOG_LEVEL=DEBUG\n"
                     )
                     typer.echo(".env file initialized")
 
@@ -936,10 +936,20 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def run(
             context: Context,
+            check: bool = typer.Option(
+                False, "--check", "-c", help="Verify all checks pass before running"
+            )
         ) -> None:
             """
             Run the servo
             """
+            if check:
+                typer_click_object = typer.main.get_group(self)
+                context.invoke(
+                    typer_click_object.commands["check"], 
+                    exit_on_success=False
+                )
+
             if context.assembly:
                 Runner(context.assembly).run()
             else:
@@ -968,11 +978,18 @@ class ServoCLI(CLI):
             quiet: bool = typer.Option(
                 False, "--quiet", "-q", help="Do not echo generated output to stdout",
             ),
+            exit_on_success: bool = typer.Option(
+                True, hidden=True
+            )
         ) -> None:
             """
             Check that the servo is ready to run
             """
             # TODO: Requires a config file
+
+            # FIXME: temporary workaround until I can unwind Context overload
+            if isinstance(context, click.core.Context):
+                context = context.parent
 
             # Validate that explicit args support check events
             if connectors:
@@ -1011,7 +1028,11 @@ class ServoCLI(CLI):
             # Output table and exit
             if not quiet:
                 typer.echo(tabulate(table, headers, tablefmt="plain"))
-                
+
+            # Return instead of exiting if we are being invoked
+            if ready and not exit_on_success:
+                return
+
             exit_code = 0 if ready else 1
             raise typer.Exit(exit_code)
 
