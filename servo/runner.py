@@ -172,9 +172,10 @@ class Runner(api.Mixin):
 
         except Exception as error:            
             self.logger.exception(f"{cmd_response.command} command failed: {error}")
-            param = dict(status="failed", message=str(error))
-            await self.shutdown(asyncio.get_event_loop())
-            await self._post_event(cmd_response.command.response_event, param)
+            # TODO: we need to track connectivity state instead of trying to blindly send
+            # param = dict(status="failed", message=str(error))
+            # await self._post_event(cmd_response.command.response_event, param)
+            raise
 
     async def main(self) -> None:
         # Setup logging
@@ -191,16 +192,14 @@ class Runner(api.Mixin):
         await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
 
         while True:
-            try:
-                await self.exec_command()
-            except Exception:
-                self.logger.exception("Exception encountered while executing command")
+            await self.exec_command()
     
     async def shutdown(self, loop, signal=None):
         if signal:
             self.logger.info(f"Received exit signal {signal.name}...")
 
         try:
+            # TODO: Track connection state. Can't report GOODBYE if HELLO never succeeded
             reason = signal.name if signal else 'shutdown'
             await self._post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception:
@@ -234,13 +233,8 @@ class Runner(api.Mixin):
             except:
                 self.logger.exception(f"exception details: {exception}")
 
-        self.logger.critical("Shutting down due to unhandled exception in asyncio task...")
-
-        # try to shutdown cleanly
-        try:
-            asyncio.create_task(self.shutdown(loop))
-        except Exception as exception:
-            self.logger.exception(f"caught exception trying to schedule shutdown: {exception}")
+        self.logger.critical("Shutting down due to unhandled exception in asyncio event loop...")
+        asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
         self.display_banner()
