@@ -783,7 +783,7 @@ def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
     dotenv = Path(".env")
     assert (
         dotenv.read_text()
-        == "export OPSANI_OPTIMIZER=dev.opsani.com/servox\nexport OPSANI_TOKEN=123456789\nexport SERVO_LOG_LEVEL=DEBUG\n"
+        == "OPSANI_OPTIMIZER=dev.opsani.com/servox\nOPSANI_TOKEN=123456789\nSERVO_LOG_LEVEL=DEBUG\n"
     )
     servo_yaml = Path("servo.yaml")
     assert servo_yaml.read_text() is not None
