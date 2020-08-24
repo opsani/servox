@@ -105,17 +105,24 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    def check(self) -> List[Check]:
+    async def check(self) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()
         checks = []
         for metric in self.config.metrics:
-            self._query_prom(metric, start, end)
-            checks.append(
-                Check(
-                    name=f'Run query: {metric.query}',
-                    success=True,
+            try:
+                result = await self._query_prom(metric, start, end)
+
+            except Exception as error:
+                result = error
+                self.logger.exception(f"failed querying Prometheus")
+
+            finally:
+                checks.append(
+                    Check(
+                        name=f'Run query: {metric.query}',
+                        success=isinstance(result, Exception),
+                    )
                 )
-            )
 
         return checks
 
