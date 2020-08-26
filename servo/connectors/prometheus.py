@@ -106,25 +106,18 @@ class PrometheusConnector(BaseConnector):
 
     @on_event()
     async def check(self) -> List[Check]:
-        start, end = datetime.now() - timedelta(minutes=10), datetime.now()
         checks = []
+        start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
+        async def check_query(metric: PrometheusMetric) -> str:
+            result = await self._query_prom(metric, start, end)
+            return f"returned {len(result)} TimeSeries readings"
+
         for metric in self.config.metrics:
-            try:
-                result = await self._query_prom(metric, start, end)
-                message = f"returned {len(result)} TimeSeries readings"
-
-            except Exception as error:
-                result = error
-                message = repr(error)
-
-            finally:
-                checks.append(
-                    Check(
-                        name=f"Run query '{metric.query}'",
-                        success=not isinstance(result, Exception),
-                        message=message
-                    )
+            checks.append(
+                await Check.run(f"Run query '{metric.query}'",
+                    handler=check_query, args=[metric]
                 )
+            )
 
         return checks
 

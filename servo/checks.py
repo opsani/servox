@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from hashlib import blake2b
 from inspect import Signature, isclass
-from typing import Callable, Generator, List, Optional, Pattern, Sequence, Set, TypeVar, Tuple, Union, get_origin, get_args
+from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Sequence, Set, TypeVar, Tuple, Union, get_origin, get_args
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
@@ -17,12 +17,13 @@ from loguru import logger as default_logger
 __all__ = [
     "BaseChecks",
     "Check",
-    "CheckHandlerResult"
+    "CheckHandlerResult",
+    "check"
 ]
 
 
 CheckHandlerResult = Union[bool, str, Tuple[bool, str], None]
-CheckHandler = TypeVar("CheckHandler", bound=Callable[..., CheckHandlerResult])
+CheckHandler = TypeVar("CheckHandler", Callable[..., CheckHandlerResult], Callable[..., Awaitable[CheckHandlerResult]])
 CHECK_HANDLER_SIGNATURE = Signature(return_annotation=CheckHandlerResult)
 
 Tag = constr(strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$")
@@ -117,27 +118,40 @@ class Check(BaseModel):
     """
 
     @classmethod
-    def run(cls, name: str, *, handler: CheckHandler, description: Optional[str] = None) -> 'Check':
+    async def run(cls, 
+        name: str, 
+        *, 
+        handler: CheckHandler, 
+        description: Optional[str] = None,
+        args: List[Any] = [],
+        kwargs: Dict[Any, Any] = {}
+    ) -> 'Check':
         """Runs a check handler and returns a Check object reporting the outcome.
 
         This method is useful for quickly implementing checks in connectors that
         do not have enough checkable conditions to warrant implementing a `Checks`
         subclass.
 
+        The handler can be synchronous or asynchronous. An arbitrary number of positional 
+        and keyword arguments are supported. The values for the argument must be provided 
+        via the `args` and `kwargs` parameters. The handler must return a `bool`, `str`, 
+        `Tuple[bool, str]`, or `None` value. Boolean values indicate success or failure 
+        and string values are assigned to the `message` attribute of the Check object 
+        returned. Exceptions are rescued, mark the check as a failure, and assigned to 
+        the `exception` attribute.
+
         Args:
             name: A name for the check being run.
-            handler: The callable to run to perform the check. Must accept no arguments
-                and return a `bool`, `str`, `Tuple[bool, str]`, or `None`. Boolean values
-                indicate success or failure and string values are assigned to the `message`
-                attribute of the Check object returned. Exceptions are rescued, mark the check
-                as a failure, and assigned to the `exception` attribute.
+            handler: The callable to run to perform the check.
+            args: A list of positional arguments to pass to the handler.
+            kwargs: A dictionary of keyword arguments to pass to the handler.
             description: An optional detailed description about the check being run.
 
         Returns:
             A check object reporting the outcome of running the handler.
         """
         check = Check(name=name, description=description)
-        run_check_handler(check, handler)
+        await run_check_handler(check, handler, *args, **kwargs)
         return check
 
     @property
@@ -165,40 +179,7 @@ class Check(BaseModel):
         }
 
 
-def run_check_handler(check: Check, handler: CheckHandler, *args):
-    """Runs a check handler and records the result into a Check object.
-
-    Args:
-        check: The check to record execution results.
-        handler: A callable handler to perform the check.
-
-    Raises:
-        ValueError: Raised if an invalid value is returned by the handler.
-    """
-    check.run_at = datetime.now()
-    try:
-        result = handler(*args)
-        check.success = True
-        
-        if isinstance(result, str):
-            check.message = result
-        elif isinstance(result, bool):
-            check.success = result
-        elif isinstance(result, tuple):
-            check.success, check.message = result
-        elif result is None:
-            pass
-        else:
-            raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
-
-    except Exception as e:
-        check.success = False
-        check.exception = e
-        check.message = f"caught exception: {repr(e)}"
-
-    check.runtime = Duration(datetime.now() - check.run_at)
-
-CheckRunner = TypeVar("CheckRunner", bound=Callable[..., Check])
+CheckRunner = TypeVar("CheckRunner", Callable[..., Check], Coroutine[None, None, Check])
 
 def check(
     name: str, 
@@ -240,7 +221,7 @@ def check(
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
     def decorator(fn: CheckHandler) -> CheckRunner:
-        validate_check_handler(fn)
+        _validate_check_handler(fn)
         __check__ = Check(
             name=name, 
             description=description, 
@@ -249,12 +230,20 @@ def check(
             tags=tags,
         )
 
-        # note: use a default value for self to wrap funcs & methods
-        def run_check(self: Optional[Any] = None) -> Check:
-            check = __check__.copy()
-            args = [self] if self else []
-            run_check_handler(check, fn, *args)
-            return check
+        if asyncio.iscoroutinefunction(fn):
+            # note: use a default value for self to wrap funcs & methods
+            async def run_check(self: Optional[Any] = None) -> Check:
+                check = __check__.copy()
+                args = [self] if self else []
+                await run_check_handler(check, fn, *args)
+                return check
+        else:
+            # note: use a default value for self to wrap funcs & methods
+            def run_check(self: Optional[Any] = None) -> Check:
+                check = __check__.copy()
+                args = [self] if self else []
+                run_check_handler_sync(check, fn, *args)
+                return check
 
         run_check.__check__ = __check__
         return run_check
@@ -477,7 +466,7 @@ class BaseChecks(BaseModel):
         extra = Extra.allow
 
 
-def validate_check_handler(fn: CheckHandler) -> None:
+def _validate_check_handler(fn: CheckHandler) -> None:
     """
     Validates that a function or method is usable as a check handler.
 
@@ -516,3 +505,67 @@ def validate_check_handler(fn: CheckHandler) -> None:
         cls = signature.return_annotation if isclass(signature.return_annotation) else signature.return_annotation.__class__
         if not cls in acceptable_types:
             raise error
+
+
+async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
+    """Runs a check handler and records the result into a Check object.
+
+    Args:
+        check: The check to record execution results.
+        handler: A callable handler to perform the check.
+        args: A list of positional arguments to pass to the handler.
+        kwargs: A dictionary of keyword arguments to pass to the handler.
+
+    Raises:
+        ValueError: Raised if an invalid value is returned by the handler.
+    """
+    try:
+        check.run_at = datetime.now()
+        if asyncio.iscoroutinefunction(handler):
+            result = await handler(*args, **kwargs)
+        else:
+            result = handler(*args, **kwargs)
+        _set_check_result(check, result)
+    except Exception as error:
+        _set_check_result(check, error)
+    finally:
+        check.runtime = Duration(datetime.now() - check.run_at)
+
+def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
+    """Runs a check handler and records the result into a Check object.
+
+    Args:
+        check: The check to record execution results.
+        handler: A callable handler to perform the check.
+        args: A list of positional arguments to pass to the handler.
+        kwargs: A dictionary of keyword arguments to pass to the handler.
+
+    Raises:
+        ValueError: Raised if an invalid value is returned by the handler.
+    """
+    try:
+        check.run_at = datetime.now()
+        _set_check_result(check, handler(*args, **kwargs))
+    except Exception as error:
+        _set_check_result(check, error)
+    finally:
+        check.runtime = Duration(datetime.now() - check.run_at)
+
+def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, str], Exception]) -> None:
+    """Sets the result of a check handler run on a check instance."""
+    check.success = True
+        
+    if isinstance(result, str):
+        check.message = result
+    elif isinstance(result, bool):
+        check.success = result
+    elif isinstance(result, tuple):
+        check.success, check.message = result
+    elif result is None:
+        pass
+    elif isinstance(result, Exception):
+        check.success = False
+        check.exception = result
+        check.message = f"caught exception: {repr(result)}"
+    else:
+        raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")

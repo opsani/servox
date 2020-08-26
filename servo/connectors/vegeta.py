@@ -1,12 +1,11 @@
 from __future__ import annotations
-import asyncio
 import json
 import re
 from datetime import datetime, timedelta
 from enum import Enum
 from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import jsonschema
 from devtools import pformat
@@ -16,6 +15,7 @@ from servo import (
     HTTP_METHODS,
     BaseConfiguration,
     Check,
+    BaseChecks,
     BaseConnector,
     Control,
     Description,
@@ -28,6 +28,7 @@ from servo import (
     Numeric,
     TimeSeries,
     Unit,
+    check,
     cli,
     metadata,
     on_event,
@@ -199,6 +200,8 @@ class VegetaConfiguration(BaseConfiguration):
             value_stream = StringIO(value)
         elif field.name == "targets":
             value_stream = open(value)
+        else:
+            raise ValueError(f"unknown field '{field.name}'")
 
         if format == TargetFormat.http:
             # Scan through the targets and run basic heuristics
@@ -285,6 +288,27 @@ class VegetaConfiguration(BaseConfiguration):
             {TargetFormat: lambda t: t.value()}
         )
 
+VegetaRunner = Callable[[VegetaConfiguration], Awaitable[Tuple[int, List[VegetaReport]]]]
+
+class VegetaChecks(BaseChecks):
+    config: VegetaConfiguration
+    runner: VegetaRunner
+    reports: Optional[List[VegetaReport]] = None
+
+    @check("Vegeta execution")
+    async def check_execution(self) -> Tuple[bool, str]:
+        exit_code, reports = await self.runner(config=self.config)
+        self.reports = reports
+        return (exit_code == 0, f"Vegeta exit code: {exit_code}")
+    
+    @check("Report aggregation", required=True)
+    def check_report_aggregation(self) -> Tuple[bool, str]:
+        return (len(self.reports) > 0, f"Collected {len(self.reports)} reports")
+    
+    @check("Error rate < 5.0%")
+    def check_error_rates(self) -> Tuple[bool, str]:
+        vegeta_report = self.reports[-1]
+        return (vegeta_report.error_rate < 5.0, f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%")
 
 @metadata(
     description="Vegeta load testing connector",
@@ -294,8 +318,7 @@ class VegetaConfiguration(BaseConfiguration):
     maturity=Maturity.STABLE,
 )
 class VegetaConnector(BaseConnector):
-    config: VegetaConfiguration
-    vegeta_reports: List[VegetaReport] = []
+    config: VegetaConfiguration    
     warmup_until: Optional[datetime] = None
 
     @on_event()
@@ -317,30 +340,8 @@ class VegetaConnector(BaseConnector):
         check_config.duration = "5s"
         check_config.reporting_interval = "1s"
 
-        checks = []
-        exit_code, vegeta_cmd = await self._run_vegeta(config=check_config)
-        checks.append(Check(
-            name="Vegeta execution",
-            success=(exit_code == 0),
-            message=f"Vegeta exit code: {exit_code}",
-        ))
-
-        # Look at the error rate
-        checks.append(Check(
-            name="Report aggregation",
-            success=(len(self.vegeta_reports) > 0),
-            message=f"Collected {len(self.vegeta_reports)} reports",
-        ))
-        if self.vegeta_reports:
-            vegeta_report = self.vegeta_reports[-1]
-            success = (vegeta_report.error_rate < 5.0)
-            checks.append(Check(
-                name="Error rate < 5.0%",
-                success=success,
-                message=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
-            ))
-
-        return checks
+        checks = VegetaChecks(config=check_config, runner=self._run_vegeta)
+        return await checks.run()
 
     @on_event()
     async def measure(
@@ -355,14 +356,14 @@ class VegetaConnector(BaseConnector):
         self.logger.info(summary)
 
         # Run the load generation
-        await self._run_vegeta()
+        _, vegeta_reports = await self._run_vegeta()
 
         self.logger.info(
-            f"Producing time series readings from {len(self.vegeta_reports)} Vegeta reports"
+            f"Producing time series readings from {len(vegeta_reports)} Vegeta reports"
         )
         readings = (
-            self._time_series_readings_from_vegeta_reports(metrics)
-            if self.vegeta_reports
+            _time_series_readings_from_vegeta_reports(metrics, vegeta_reports)
+            if vegeta_reports
             else []
         )
         measurement = Measurement(
@@ -374,9 +375,10 @@ class VegetaConnector(BaseConnector):
 
     async def _run_vegeta(
         self, *, config: Optional[VegetaConfiguration] = None
-    ) -> Tuple[int, str]:
+    ) -> Tuple[int, List[VegetaReport]]:
+        vegeta_reports: List[VegetaReport] = []
         config = config if config else self.config
-        vegeta_cmd = self._build_vegeta_command(config)
+        vegeta_cmd = _build_vegeta_command(config)
         ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
         progress = DurationProgress(config.duration)
         
@@ -388,8 +390,8 @@ class VegetaConnector(BaseConnector):
                 if not progress.started:
                     progress.start()
 
-                self.vegeta_reports.append(vegeta_report)
-                summary = self._summarize_report(vegeta_report)
+                vegeta_reports.append(vegeta_report)
+                summary = _summarize_report(vegeta_report, config)
                 self.logger.info(progress.annotate(summary), progress=progress.progress)
             else:
                 self.logger.debug(
@@ -409,100 +411,102 @@ class VegetaConnector(BaseConnector):
                 f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
             )        
 
-        return exit_code, vegeta_cmd
+        return exit_code, vegeta_reports
 
-    def _build_vegeta_command(self, config: VegetaConfiguration) -> str:
-        vegeta_attack_args = list(
-            map(
-                str,
-                [
-                    "vegeta",
-                    "attack",
-                    "-rate",
-                    config.rate,
-                    "-duration",
-                    config.duration,
-                    "-targets",
-                    config.targets if config.targets else "stdin",
-                    "-format",
-                    config.format,
-                    "-connections",
-                    config.connections,
-                    "-workers",
-                    config.workers,
-                    "-max-workers",
-                    config.max_workers,
-                    "-http2",
-                    config.http2,
-                    "-keepalive",
-                    config.keepalive,
-                    "-insecure",
-                    config.insecure,
-                    "-max-body",
-                    config.max_body,
-                ],
-            )
+
+def _build_vegeta_command(config: VegetaConfiguration) -> str:
+    vegeta_attack_args = list(
+        map(
+            str,
+            [
+                "vegeta",
+                "attack",
+                "-rate",
+                config.rate,
+                "-duration",
+                config.duration,
+                "-targets",
+                config.targets if config.targets else "stdin",
+                "-format",
+                config.format,
+                "-connections",
+                config.connections,
+                "-workers",
+                config.workers,
+                "-max-workers",
+                config.max_workers,
+                "-http2",
+                config.http2,
+                "-keepalive",
+                config.keepalive,
+                "-insecure",
+                config.insecure,
+                "-max-body",
+                config.max_body,
+            ],
         )
+    )
 
-        vegeta_report_args = [
-            "vegeta",
-            "report",
-            "-type",
-            "json",
-            "-every",
-            str(config.reporting_interval),
-        ]
+    vegeta_report_args = [
+        "vegeta",
+        "report",
+        "-type",
+        "json",
+        "-every",
+        str(config.reporting_interval),
+    ]
 
-        echo_args = ["echo", f"{config.target}"]
-        echo_cmd = f'echo "{config.target}" | ' if config.target else ""
-        vegeta_cmd = (
-            echo_cmd
-            + " ".join(vegeta_attack_args)
-            + " | "
-            + " ".join(vegeta_report_args)
-        )
-        return vegeta_cmd
+    echo_cmd = f'echo "{config.target}" | ' if config.target else ""
+    vegeta_cmd = (
+        echo_cmd
+        + " ".join(vegeta_attack_args)
+        + " | "
+        + " ".join(vegeta_report_args)
+    )
+    return vegeta_cmd
 
-    def _time_series_readings_from_vegeta_reports(self, metrics: Optional[List[str]]) -> List[TimeSeries]:
-        readings = []
+def _time_series_readings_from_vegeta_reports(
+    metrics: Optional[List[str]],
+    vegeta_reports: List[VegetaReport]
+) -> List[TimeSeries]:
+    readings = []
 
-        for metric in METRICS:
-            if metrics and metric.name not in metrics:
-                continue
+    for metric in METRICS:
+        if metrics and metric.name not in metrics:
+            continue
 
-            if metric.name in ("throughput", "error_rate",):
-                key = metric.name
-            elif metric.name.startswith("latency_"):
-                key = "latencies" + "." + metric.name.replace("latency_", "")
-            else:
-                raise NameError(f'Unexpected metric name "{metric.name}"')
+        if metric.name in ("throughput", "error_rate",):
+            key = metric.name
+        elif metric.name.startswith("latency_"):
+            key = "latencies" + "." + metric.name.replace("latency_", "")
+        else:
+            raise NameError(f'Unexpected metric name "{metric.name}"')
 
-            values: List[Tuple(datetime, Numeric)] = []
-            for report in self.vegeta_reports:
-                value = value_for_key_path(report.dict(by_alias=True), key)
-                values.append((report.end, value,))
+        values: List[Tuple[datetime, Numeric]] = []
+        for report in vegeta_reports:
+            value = value_for_key_path(report.dict(by_alias=True), key)
+            values.append((report.end, value,))
 
-            readings.append(TimeSeries(metric, values))
+        readings.append(TimeSeries(metric, values))
 
-        return readings
+    return readings
 
-    def _summarize_report(self, report: VegetaReport) -> str:
-        def format_metric(value: Numeric, unit: Unit) -> str:
-            return f"{value:.2f}{unit.value}"
+def _summarize_report(report: VegetaReport, config: VegetaConfiguration) -> str:
+    def format_metric(value: Numeric, unit: Unit) -> str:
+        return f"{value:.2f}{unit.value}"
 
-        throughput = format_metric(report.throughput, Unit.REQUESTS_PER_MINUTE)
-        error_rate = format_metric(report.error_rate, Unit.PERCENTAGE)
-        latency_50th = format_metric(report.latencies.p50, Unit.MILLISECONDS)
-        latency_90th = format_metric(report.latencies.p90, Unit.MILLISECONDS)
-        latency_95th = format_metric(report.latencies.p95, Unit.MILLISECONDS)
-        latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
-        return f'Vegeta attacking "{self.config.target}" @ {self.config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
+    throughput = format_metric(report.throughput, Unit.REQUESTS_PER_MINUTE)
+    error_rate = format_metric(report.error_rate, Unit.PERCENTAGE)
+    latency_50th = format_metric(report.latencies.p50, Unit.MILLISECONDS)
+    latency_90th = format_metric(report.latencies.p90, Unit.MILLISECONDS)
+    latency_95th = format_metric(report.latencies.p95, Unit.MILLISECONDS)
+    latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
+    return f'Vegeta attacking "{config.target}" @ {config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
 
-
-def _number_of_lines_in_file(filename: str):
+def _number_of_lines_in_file(filename: Path):
     count = 0
     with open(filename, "r") as f:
-        for line in f:
+        for _ in f:
             count += 1
     return count
 
