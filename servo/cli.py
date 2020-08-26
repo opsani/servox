@@ -72,6 +72,7 @@ class LogLevel(str, Enum):
     ERROR = "ERROR"
     CRITICAL = "CRITICAL"
 
+# FIXME: Eliminate the mixin and put our context object onto the Click.obj instance
 class Context(typer.Context):
     """
     Context models state required by different CLI invocations.
@@ -1004,25 +1005,30 @@ class ServoCLI(CLI):
             table = []
             ready = True
             if verbose:
-                headers = ["CONNECTOR", "CHECK", "STATUS", "COMMENT"]                    
+                headers = ["CONNECTOR", "CHECK", "STATUS", "MESSAGE"]                    
                 for result in results:
-                    checks: List[Check] = result.value                
+                    checks: List[Check] = result.value
                     names, statuses, comments = [], [], []
                     for check in checks:
                         names.append(check.name)                
                         statuses.append("√ PASSED" if check.success else "X FAILED")
-                        comments.append(check.comment)
-                        ready = ready and check.success
+                        comments.append(check.message or "-")
+                        ready &= check.success
                     row = [result.connector.name, "\n".join(names), "\n".join(statuses), "\n".join(comments)]
                     table.append(row)
             else:                    
-                headers = ["CONNECTOR", "STATUS"]
+                headers = ["CONNECTOR", "STATUS", "ERRORS"]
                 for result in results:
                     checks: List[Check] = result.value
-                    success = reduce(lambda success, c: success and c.success, checks, True)
-                    ready = ready and success
+                    success = True
+                    errors = []
+                    for check in checks:
+                        success &= check.success
+                        check.success or errors.append(f"{check.name}: {check.message or '-'}")
+                    ready &= success
                     status = "√ PASSED" if success else "X FAILED"
-                    row = [result.connector.name, status]
+                    message = reduce(lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n", errors, "")
+                    row = [result.connector.name, status, message]
                     table.append(row)
                 
             # Output table and exit

@@ -36,6 +36,7 @@ version = "0.13.0"
 reference = "9aefec8dd301bf8c4a4e03a22fb4ec64c2b479cf"
 type = "git"
 url = "https://github.com/Martiusweb/asynctest.git"
+
 [[package]]
 category = "dev"
 description = "Atomic file writes."
@@ -527,6 +528,18 @@ testing = ["fields", "hunter", "process-tests (2.0.2)", "six", "pytest-xdist", "
 
 [[package]]
 category = "dev"
+description = "Wrap tests with fixtures in freeze_time"
+name = "pytest-freezegun"
+optional = false
+python-versions = "*"
+version = "0.4.2"
+
+[package.dependencies]
+freezegun = ">0.3"
+pytest = ">=3.0.0"
+
+[[package]]
+category = "dev"
 description = "Thin-wrapper around the mock package for easier use with pytest"
 name = "pytest-mock"
 optional = false
@@ -754,7 +767,7 @@ idna = ">=2.0"
 multidict = ">=4.0"
 
 [metadata]
-content-hash = "5bca495112c13069f35c6927bbc07a3abd8cce2ba56fe857fd78de29b227286d"
+content-hash = "253b923591681116041a5972a02b954ef23bf10327b51ae3d6289228a70d4ae5"
 python-versions = "^3.8"
 
 [metadata.files]
@@ -1030,6 +1043,10 @@ pytest-asyncio = [
 pytest-cov = [
     {file = "pytest-cov-2.10.1.tar.gz", hash = "sha256:47bd0ce14056fdd79f93e1713f88fad7bdcc583dcd7783da86ef2f085a0bb88e"},
     {file = "pytest_cov-2.10.1-py2.py3-none-any.whl", hash = "sha256:45ec2d5182f89a81fc3eb29e3d1ed3113b9e9a873bcddb2a71faaab066110191"},
+]
+pytest-freezegun = [
+    {file = "pytest-freezegun-0.4.2.zip", hash = "sha256:19c82d5633751bf3ec92caa481fb5cffaac1787bd485f0df6436fd6242176949"},
+    {file = "pytest_freezegun-0.4.2-py2.py3-none-any.whl", hash = "sha256:5318a6bfb8ba4b709c8471c94d0033113877b3ee02da5bfcd917c1889cde99a7"},
 ]
 pytest-mock = [
     {file = "pytest-mock-3.3.0.tar.gz", hash = "sha256:1d146a6e798b9e6322825e207b4e0544635e679b69253e6e01a221f45945d2f6"},

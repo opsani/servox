@@ -322,14 +322,14 @@ class VegetaConnector(BaseConnector):
         checks.append(Check(
             name="Vegeta execution",
             success=(exit_code == 0),
-            comment=f"Vegeta exit code: {exit_code}",
+            message=f"Vegeta exit code: {exit_code}",
         ))
 
         # Look at the error rate
         checks.append(Check(
             name="Report aggregation",
             success=(len(self.vegeta_reports) > 0),
-            comment=f"Collected {len(self.vegeta_reports)} reports",
+            message=f"Collected {len(self.vegeta_reports)} reports",
         ))
         if self.vegeta_reports:
             vegeta_report = self.vegeta_reports[-1]
@@ -337,7 +337,7 @@ class VegetaConnector(BaseConnector):
             checks.append(Check(
                 name="Error rate < 5.0%",
                 success=success,
-                comment=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
+                message=f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
             ))
 
         return checks

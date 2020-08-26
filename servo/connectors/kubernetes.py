@@ -2478,10 +2478,10 @@ class KubernetesChecks(BaseChecks):
             await KubernetesOptimizations.create(self.config)
         except Exception as e:
             return Check(
-                name="Connect to Kubernetes", success=False, comment=str(e)
+                name="Connect to Kubernetes", success=False, message=str(e)
             )
 
-        return Check(name="Connect to Kubernetes", success=True, comment="")
+        return Check(name="Connect to Kubernetes", success=True, message="")
     
     # TODO: Verify the connectivity & permissions
     # TODO: Check the Deployments exist

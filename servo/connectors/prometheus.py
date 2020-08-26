@@ -111,16 +111,18 @@ class PrometheusConnector(BaseConnector):
         for metric in self.config.metrics:
             try:
                 result = await self._query_prom(metric, start, end)
+                message = f"returned {len(result)} TimeSeries readings"
 
             except Exception as error:
                 result = error
-                self.logger.exception(f"failed querying Prometheus")
+                message = repr(error)
 
             finally:
                 checks.append(
                     Check(
-                        name=f'Run query: {metric.query}',
-                        success=isinstance(result, Exception),
+                        name=f"Run query '{metric.query}'",
+                        success=not isinstance(result, Exception),
+                        message=message
                     )
                 )
 
@@ -179,8 +181,8 @@ class PrometheusConnector(BaseConnector):
                 response = await client.get(prometheus_request.url)
                 response.raise_for_status()
             except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
-                self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
-                return []
+                self.logger.trace(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
+                raise
 
         data = response.json()
         self.logger.trace(f"Got response data for metric {metric}: {data}")

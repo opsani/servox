@@ -21,8 +21,9 @@ from servo.connector import (
     _connector_class_from_string,
     _validate_class
 )
+from servo.checks import Check
 from servo.events import Preposition, event, on_event
-from servo.types import Adjustment, Check, Component, Control, Description, Duration, Measurement, Metric
+from servo.types import Adjustment, Component, Control, Description, Duration, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -274,7 +275,7 @@ class Servo(BaseConnector):
             return [Check(
                 name="Opsani API connectivity",
                 success=success,
-                comment=f"Response status code: {response.status_code}",
+                message=f"Response status code: {response.status_code}",
             )]
 
 
