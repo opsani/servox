@@ -973,6 +973,15 @@ class ServoCLI(CLI):
                 help="Connectors to check",
                 callback=self.connectors_instance_callback,
             ),
+            name: Optional[List[str]] = typer.Option(
+                False, "--name", "-n", help="Filter by name"
+            ),
+            id: Optional[List[str]] = typer.Option(
+                False, "--id", "-i", help="Filter by ID"
+            ),
+            tag: Optional[List[str]] = typer.Option(
+                False, "--tag", "-t", help="Filter by tag"
+            ),            
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose output"
             ),
@@ -998,23 +1007,26 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
+            filters = dict(filter(lambda i: len(i[1]), dict(name=name, id=id, tags=tag).items()))
             results: List[EventResult] = sync(context.servo.dispatch_event(
-                Events.CHECK, include=connectors
+                Events.CHECK, include=connectors, **filters
             ))
 
             table = []
             ready = True
             if verbose:
-                headers = ["CONNECTOR", "CHECK", "STATUS", "MESSAGE"]                    
+                headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]                    
                 for result in results:
                     checks: List[Check] = result.value
-                    names, statuses, comments = [], [], []
+                    names, ids, tags, statuses, comments = [], [], [], [], []
                     for check in checks:
-                        names.append(check.name)                
+                        names.append(check.name)
+                        ids.append(check.id)
+                        tags.append(", ".join(check.tags) if check.tags else "-")
                         statuses.append("√ PASSED" if check.success else "X FAILED")
                         comments.append(check.message or "-")
                         ready &= check.success
-                    row = [result.connector.name, "\n".join(names), "\n".join(statuses), "\n".join(comments)]
+                    row = [result.connector.name, "\n".join(names), "\n".join(ids), "\n".join(tags), "\n".join(statuses), "\n".join(comments)]
                     table.append(row)
             else:                    
                 headers = ["CONNECTOR", "STATUS", "ERRORS"]

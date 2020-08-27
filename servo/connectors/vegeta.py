@@ -295,13 +295,13 @@ class VegetaChecks(BaseChecks):
     runner: VegetaRunner
     reports: Optional[List[VegetaReport]] = None
 
-    @check("Vegeta execution")
+    @check("Vegeta execution", required=True)
     async def check_execution(self) -> Tuple[bool, str]:
         exit_code, reports = await self.runner(config=self.config)
         self.reports = reports
         return (exit_code == 0, f"Vegeta exit code: {exit_code}")
     
-    @check("Report aggregation", required=True)
+    @check("Report aggregation")
     def check_report_aggregation(self) -> Tuple[bool, str]:
         return (len(self.reports) > 0, f"Collected {len(self.reports)} reports")
     
@@ -333,7 +333,7 @@ class VegetaConnector(BaseConnector):
         return METRICS
 
     @on_event()
-    async def check(self) -> List[Check]:
+    async def check(self, **kwargs) -> List[Check]:
         # Take the current config and run a 5 second check against it
         self.warmup_until = datetime.now()
         check_config = self.config.copy()
@@ -341,7 +341,7 @@ class VegetaConnector(BaseConnector):
         check_config.reporting_interval = "1s"
 
         checks = VegetaChecks(config=check_config, runner=self._run_vegeta)
-        return await checks.run()
+        return await checks.run(**kwargs)
 
     @on_event()
     async def measure(
