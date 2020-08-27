@@ -495,18 +495,18 @@ class TestVegetaConnector:
     @pytest.fixture(autouse=True)
     def mock_run_vegeta(self, mocker) -> None:
         mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(1, "vegeta attack")
+            VegetaConnector, "_run_vegeta", return_value=(1, [])
         )
 
     async def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
         mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack")
+            VegetaConnector, "_run_vegeta", return_value=(0, [])
         )
         await vegeta_connector.check()
 
     def test_vegeta_metrics(self, vegeta_connector: VegetaConnector, mocker) -> None:
         mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(0, "vegeta attack")
+            VegetaConnector, "_run_vegeta", return_value=(0, [])
         )
         vegeta_connector.metrics()
 

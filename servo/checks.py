@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from hashlib import blake2b
 from inspect import Signature, isclass
-from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Sequence, Set, TypeVar, Tuple, Union, get_origin, get_args
+from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
@@ -246,7 +246,7 @@ def check(
                 return check
 
         run_check.__check__ = __check__
-        return run_check
+        return cast(CheckRunner, run_check)
 
     return decorator
 
@@ -350,8 +350,8 @@ class BaseChecks(BaseModel):
         """
 
         class Filter(BaseModel):
-            name: Union[None, str, Sequence[str], Pattern[str]] = None,
-            id: Union[None, str, Sequence[str], Pattern[str]] = None,
+            name: Union[None, str, Sequence[str], Pattern[str]] = None
+            id: Union[None, str, Sequence[str], Pattern[str]] = None
             tags: Optional[Set[str]] = None
 
             @property
@@ -412,8 +412,9 @@ class BaseChecks(BaseModel):
             class Config:
                 arbitrary_types_allowed = True
         
-        checks = []
+        # identify methods that match the filter
         filter = Filter(name=name, id=id, tags=tags)
+        filtered_methods  = []
         for method_name, method in self.check_methods():
             if filter.any:
                 spec = getattr(method, '__check__', None)
@@ -423,6 +424,20 @@ class BaseChecks(BaseModel):
                 
                 if not filter.matches(spec):
                     continue
+            
+            filtered_methods.append(method)
+        
+        # iterate a second time to run filtered and required checks
+        checks = []
+        for method_name, method in self.check_methods():
+            if method in filtered_methods:
+                filtered_methods.remove(method)            
+            else:
+                spec = getattr(method, '__check__', None)
+                if spec:
+                    # once all filtered methods are removed, only run non-decorated
+                    if not spec.required or not filtered_methods:
+                        continue
 
             check = (
                 await method() if asyncio.iscoroutinefunction(method)
@@ -431,13 +446,17 @@ class BaseChecks(BaseModel):
             if not isinstance(check, Check):
                 raise TypeError(f"check methods must return `Check` objects: `{method_name}` returned `{check.__class__.__name__}`")
             
-            checks.append(check)
+            checks.append(check)            
 
-            # halt if a required check has failed
-            if check.failed and check.required:
+            # halt if a required check has failed (unless running all)
+            if check.failed and check.required and not all:
                 break
         
         return checks
+    
+    @property
+    def logger(self) -> 'loguru.Logger':
+        return self.__dict__["logger"]
     
     def check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
         """

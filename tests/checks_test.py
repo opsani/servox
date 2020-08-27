@@ -132,11 +132,13 @@ class NamedChecks(BaseChecks):
     def check_connectivity(self) -> CheckHandlerResult:
         return True
 
-    def check_permissions(self) -> Check:
-        return Check(name="Verify permissions", success=False)
+    @check("Verify permissions")
+    def check_permissions(self) -> None:
+        ...
 
-    def check_resources(self) -> Check:
-        return Check(name="Ensure adequate resources", success=True)
+    @check("Ensure adequate resources")
+    def check_resources(self) -> None:
+        ...
 
 @pytest.mark.parametrize(
     "return_value, success, message",
@@ -165,14 +167,14 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
         (123, ValueError, (
             "caught exception: ValueError('check method returned unexpected value of type \"int\"')"
         )),
-        # ((False, 187), ValueError, (
-        #     "caught exception: ValidationError(model='Check', errors=[{'loc': ('message',), 'msg': 'str type expected'"
-        #     ", 'type': 'type_error.str'}])"
-        # )),
-        # ((666, "fail"), ValueError, (
-        #     "caught exception: ValidationError(model='Check', errors=[{'loc': ('success',), 'msg': 'value could not be"
-        #     " parsed to a boolean', 'type': 'type_error.bool'}])"
-        # )),
+        ((False, 187), ValueError, (
+            "caught exception: ValidationError(model='Check', errors=[{'loc': ('message',), 'msg': 'str type expected'"
+            ", 'type': 'type_error.str'}])"
+        )),
+        ((666, "fail"), ValueError, (
+            "caught exception: ValidationError(model='Check', errors=[{'loc': ('success',), 'msg': 'value could not be"
+            " parsed to a boolean', 'type': 'type_error.bool'}])"
+        )),
     ]
 )
 def test_invalid_check_decorator_return_values(return_value, exception_type, message) -> None:
@@ -288,7 +290,6 @@ async def test_decorate_async() -> None:
     assert check.run_at == datetime(2020, 8, 25, 0, 0, 15)
     assert check.runtime == "15s"
 
-
 async def test_run_check_by_name() -> None:
     nc = NamedChecks(BaseConfiguration())
     checks = await nc.run(name="Check connectivity")
@@ -370,3 +371,108 @@ async def test_filtering(name, id, tags, expected_ids) -> None:
     ids = list(map(lambda c: c.id, checks))
     assert len(ids) == len(expected_ids)
     assert ids == expected_ids
+
+class RequirementChecks(BaseChecks):
+    @check("required-1", required=True)
+    def check_one(self) -> None:
+        ...
+    
+    @check("not-required-1")
+    def check_two(self) -> None:
+        ...
+    
+    @check("not-required-2")
+    def check_three(self) -> None:
+        raise RuntimeError("fail check")
+    
+    @check("required-2", required=True)
+    def check_four(self) -> None:
+        raise RuntimeError("fail check")
+    
+    @check("required-3", required=True)
+    def check_five(self) -> None:
+        ...
+    
+    @check("not-required-3")
+    def check_six(self) -> None:
+        ...
+
+@pytest.mark.parametrize(
+    "name, all, expected_results",
+    [
+        # no filter, halt at not-required-2
+        (None, False, {
+            'required-1': True,
+            'not-required-1': True,
+            'not-required-2': False,
+            'required-2': False,
+        }),
+        # no filter, continue to end
+        (None, True, {
+            'required-1': True,
+            'not-required-1': True,
+            'not-required-2': False,
+            'required-2': False,
+            'required-3': True,
+            'not-required-3': True,
+        }),
+        # run not-required-1, trigger 1 requirement, no failures
+        ("not-required-1", False, {'not-required-1': True, 'required-1': True}),
+        # run not-required-2, trigger 1 requirement, fail
+        ("not-required-2", True, {'not-required-2': False, 'required-1': True}),
+        # run required-3, trigger 2 requirements, halt at required-2
+        ("not-required-3", False, {'required-1': True, 'required-2': False}),
+        # run all required-3, trigger 2 requirements, required-2 fails
+        ("not-required-3", True, {
+            'required-1': True,
+            'required-2': False,
+            'required-3': True,
+            'not-required-3': True,
+        }),
+        # run not-required-1 and not-required-3
+        (("not-required-1", "not-required-3"), False, {
+            'required-1': True,
+            'not-required-1': True,
+            'required-2': False,
+        }),
+        (("not-required-1", "not-required-3"), True, {
+            'required-1': True,
+            'not-required-1': True,
+            'required-2': False,
+            'required-3': True,
+            'not-required-3': True,
+        }),
+    ]
+)
+async def test_running_requirements(name, all, expected_results) -> None:
+    checks = await RequirementChecks.check(BaseConfiguration(), name=name, all=all)
+    actual_results = dict(map(lambda c: (c.name, c.success), checks))
+    assert actual_results == expected_results
+
+class MixedChecks(BaseChecks):
+    @check("one")
+    def check_one(self) -> None:
+        ...
+    
+    def check_two(self) -> Check:
+        return Check(name="two", success=True)
+    
+    @check("three")
+    def check_three(self) -> None:
+        ...
+    
+    def check_four(self) -> Check:
+        return Check(name="four", success=True)
+
+@pytest.mark.parametrize(
+    "name, expected_results",
+    [
+        ("one", ["one", "two", "four"]),
+        ("three", ["two", "three", "four"]),
+        ("unknown", ["two", "four"]),
+    ]
+)
+async def test_mixed_checks(name, expected_results) -> None:
+    checks = await MixedChecks.check(BaseConfiguration(), name=name)
+    actual_results = list(map(lambda c: c.name, checks))
+    assert actual_results == expected_results
