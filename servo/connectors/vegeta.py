@@ -503,7 +503,7 @@ def _summarize_report(report: VegetaReport, config: VegetaConfiguration) -> str:
     latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
     return f'Vegeta attacking "{config.target}" @ {config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
 
-def _number_of_lines_in_file(filename: Path):
+def _number_of_lines_in_file(filename: Path) -> int:
     count = 0
     with open(filename, "r") as f:
         for _ in f:

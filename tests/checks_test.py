@@ -476,3 +476,13 @@ async def test_mixed_checks(name, expected_results) -> None:
     checks = await MixedChecks.check(BaseConfiguration(), name=name)
     actual_results = list(map(lambda c: c.name, checks))
     assert actual_results == expected_results
+
+from servo.checks import create_checks_from_iterable
+async def test_generate_checks() -> None:
+    handler = lambda c: f"so_check_it_{c}"
+    items = ["one", "two", "three"]
+    ItemChecks = create_checks_from_iterable(handler, items)
+    checker = ItemChecks(BaseConfiguration())
+    results = await checker.run()
+    assert len(results) == 3
+

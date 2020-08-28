@@ -1,6 +1,7 @@
 from __future__ import annotations
 import abc
 import asyncio
+import importlib
 import inspect
 from contextvars import ContextVar
 from enum import Enum
@@ -17,9 +18,7 @@ from servo.connector import (
     BaseConnector,
     License,
     Maturity,
-    _connector_subclasses,
-    _connector_class_from_string,
-    _validate_class
+    _connector_subclasses
 )
 from servo.checks import Check
 from servo.events import Preposition, event, on_event

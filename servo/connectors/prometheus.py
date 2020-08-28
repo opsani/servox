@@ -25,6 +25,7 @@ from servo import (
     TimeSeries,
     DurationProgress,
 )
+from servo.checks import create_checks_from_iterable
 from servo.utilities import join_to_series
 
 
@@ -35,6 +36,12 @@ API_PATH = "/api/v1"
 class PrometheusMetric(Metric):
     query: str
     step: Duration = "1m"
+
+    def __check__(self) -> Check:
+        return Check(
+            name=f"Check {self.name}",
+            description=f"Run Prometheus query \"{self.query}\""
+        )
 
 
 class PrometheusConfiguration(BaseConfiguration):
@@ -93,7 +100,6 @@ class PrometheusRequest(BaseModel):
             f"&step={self.metric.step}"
         )
 
-
 @metadata(
     description="Prometheus Connector for Opsani",
     version="1.5.0",
@@ -105,21 +111,15 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self) -> List[Check]:
-        checks = []
+    async def check(self, **kwargs) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
         async def check_query(metric: PrometheusMetric) -> str:
             result = await self._query_prom(metric, start, end)
             return f"returned {len(result)} TimeSeries readings"
 
-        for metric in self.config.metrics:
-            checks.append(
-                await Check.run(f"Run query '{metric.query}'",
-                    handler=check_query, args=[metric]
-                )
-            )
-
-        return checks
+        # wrap all queries into checks and verify that they work
+        PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
+        return await PrometheusChecks.check(self.config, **kwargs)
 
     @on_event()
     def describe(self) -> Description:

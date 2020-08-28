@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from hashlib import blake2b
 from inspect import Signature, isclass
-from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin
+from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Protocol, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
@@ -588,3 +588,66 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.message = f"caught exception: {repr(result)}"
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
+
+@runtime_checkable
+class Checkable(Protocol):
+    """Returns a Check representation...
+
+    Args:
+        Protocol ([type]): [description]
+    """
+    def __check__() -> Check:
+        ...
+    
+
+def create_checks_from_iterable(handler, iterable) -> BaseChecks:
+    """Returns a class wrapping each item in an iterable collection into check instance methods. 
+
+    Building a checks subclass implementation with this function is semantically equivalent to 
+    iterating across every method on a target class and synthesizing pass/fail unit tests from
+    available metadata.
+
+    Some connector types such as metrics system integrations wind up exposing collections
+    of homogenously typed settings within their configuration. The canonical example is a
+    collection of queries against Prometheus. Each query really should be validated for 
+    correctness early and often, but this can become challenging to manage, audit, and enforce
+    as the collection grows and entropy increases. Key challenges include non-obvious 
+    evolution within the collection and developer fatigue from boilerplate code maintenance.
+    This function provides a remedy for these issues by wrapping these sorts of collections into
+    fully featured classes that are integrated into the servo checks system.
+
+    Args:
+        handler: A callable for performing a check given a single element input.
+        iterable: An iterable collection of checkable items to be wrapped into check methods.
+
+    Returns:
+        A new subclass of `BaseChecks` with instance method check implememntatiomns for each
+        item in the `iterable` argument collection.
+    """
+
+    # TODO: Need a way to generate a better class name
+    cls = type("_IterableChecks", (BaseChecks,), {})
+
+    def create_fn(name, item):
+        async def fn(self) -> Check:
+            check = fn.__check__.copy()
+            await run_check_handler(check, handler, item)
+            return check
+
+        return fn
+
+    for item in iterable:
+        if isinstance(item, Checkable):
+            check = item.__check__().copy()
+            fn = create_fn(check.name, item)
+            fn.__check__ = check
+        else:
+            name = item.name if hasattr(item, 'name') else str(item)
+            check = Check(name=f"Check {name}")
+            fn = create_fn(name, item)            
+            fn.__check__ = check
+        
+        method_name = f"check_{check.id}"
+        setattr(cls, method_name, fn)
+    
+    return cls
