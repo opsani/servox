@@ -485,4 +485,6 @@ async def test_generate_checks() -> None:
     checker = ItemChecks(BaseConfiguration())
     results = await checker.run()
     assert len(results) == 3
+    messages = list(map(lambda c: c.message, results))
+    assert messages == ["so_check_it_one", "so_check_it_two", "so_check_it_three"]
 

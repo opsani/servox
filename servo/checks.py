@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from hashlib import blake2b
 from inspect import Signature, isclass
-from typing import Awaitable, Callable, Coroutine, Dict, Generator, List, Optional, Pattern, Protocol, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
+from typing import Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
@@ -199,7 +199,7 @@ def check(
 
     The decorator requires a `name` parameter to identify the check as well as an optional
     informative `description`, an `id` for succintly referencing the check, and a `required`
-    boolean value that determines if a failure with halt execution of subsequent checks.
+    boolean value that determines if a failure will halt execution of subsequent checks.
     The body of the decorated function is used to perform the business logic of running
     the check. The decorator wraps the original function body into a handler that runs the
     check and marshalls the value returned or exception caught into a `Check` representation.
@@ -591,21 +591,18 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
 
 @runtime_checkable
 class Checkable(Protocol):
-    """Returns a Check representation...
-
-    Args:
-        Protocol ([type]): [description]
+    """Returns a Check representation of the object.
     """
     def __check__() -> Check:
         ...
     
 
-def create_checks_from_iterable(handler, iterable) -> BaseChecks:
+def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable) -> BaseChecks:
     """Returns a class wrapping each item in an iterable collection into check instance methods. 
 
     Building a checks subclass implementation with this function is semantically equivalent to 
-    iterating across every method on a target class and synthesizing pass/fail unit tests from
-    available metadata.
+    iterating through every item in the collection, defining a new `check_` prefixed method,
+    and passing the item and the handler to the `run_check_handler` function.
 
     Some connector types such as metrics system integrations wind up exposing collections
     of homogenously typed settings within their configuration. The canonical example is a
@@ -624,8 +621,6 @@ def create_checks_from_iterable(handler, iterable) -> BaseChecks:
         A new subclass of `BaseChecks` with instance method check implememntatiomns for each
         item in the `iterable` argument collection.
     """
-
-    # TODO: Need a way to generate a better class name
     cls = type("_IterableChecks", (BaseChecks,), {})
 
     def create_fn(name, item):
