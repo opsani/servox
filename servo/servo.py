@@ -266,7 +266,7 @@ class Servo(BaseConnector):
     # Event handlers
 
     @on_event()
-    async def check(self, filter_: Optional[Filter]) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         async with self.api_client() as client:
             event_request = api.Request(event=api.Event.HELLO)
             response = await client.post("servo", data=event_request.json())
