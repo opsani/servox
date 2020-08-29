@@ -113,7 +113,10 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
+    async def check(self, 
+        filter_: Optional[Filter] = None, 
+        halt_on: HaltOnFailed = HaltOnFailed.requirement
+    ) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
         async def check_query(metric: PrometheusMetric) -> str:
             result = await self._query_prom(metric, start, end)

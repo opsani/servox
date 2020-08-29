@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -8,7 +9,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import reduce
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Iterable, List, Optional, Set, Type, Tuple, Union
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Pattern, Set, Type, Tuple, Union
 
 import bullet
 import click
@@ -40,7 +41,7 @@ from servo.servo import (
     Servo,
     _connector_class_from_string
 )
-from servo.checks import Filter, HaltOnFailed
+from servo.checks import Check, Filter, HaltOnFailed
 from servo.runner import Runner
 from servo.types import *
 from servo.utilities import PreservedScalarString, commandify
@@ -999,8 +1000,6 @@ class ServoCLI(CLI):
             """
             Check that the servo is ready to run
             """
-            # TODO: Requires a config file
-
             # FIXME: temporary workaround until I can unwind Context overload
             if isinstance(context, click.core.Context):
                 context = context.parent
@@ -1010,8 +1009,32 @@ class ServoCLI(CLI):
                 validate_connectors_respond_to_event(connectors, Events.CHECK)
             else:
                 connectors = context.assembly.connectors
+            
+            def parse_re(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
+                if value and len(value) == 1:
+                    val = value[0]
+                    if val[:1] == '/' and val[-1] == '/':
+                        return re.compile(val[1:-1])
+                
+                return value
+            
+            def parse_csv(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
+                if value and len(value) == 1:
+                    val = value[0]
+                    if "," in val:
+                        return list(map(lambda v: v.strip(), val.split(",")))
+                
+                return value
+            
+            def parse_id(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
+                v = parse_re(value)
+                if not isinstance(v, Pattern):
+                    return parse_csv(v)
+                
+                return v
 
-            constraints = dict(filter(lambda i: len(i[1]), dict(name=name, id=id, tags=tag).items()))
+            args = dict(name=parse_re(name), id=parse_id(id), tags=tag)
+            constraints = dict(filter(lambda i: bool(i[1]), args.items()))
             filter_ = Filter(**constraints)
             results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.CHECK, filter_, include=connectors, halt_on=halt_on
@@ -1031,12 +1054,19 @@ class ServoCLI(CLI):
                         statuses.append("√ PASSED" if check.success else "X FAILED")
                         comments.append(check.message or "-")
                         ready &= check.success
+                    
+                    if not names:
+                        continue
+
                     row = [result.connector.name, "\n".join(names), "\n".join(ids), "\n".join(tags), "\n".join(statuses), "\n".join(comments)]
                     table.append(row)
             else:                    
                 headers = ["CONNECTOR", "STATUS", "ERRORS"]
                 for result in results:
                     checks: List[Check] = result.value
+                    if not checks:
+                        continue
+                    
                     success = True
                     errors = []
                     for check in checks:
