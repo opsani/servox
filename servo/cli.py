@@ -40,7 +40,7 @@ from servo.servo import (
     Servo,
     _connector_class_from_string
 )
-from servo.checks import Filter
+from servo.checks import Filter, HaltOnFailed
 from servo.runner import Runner
 from servo.types import *
 from servo.utilities import PreservedScalarString, commandify
@@ -982,7 +982,10 @@ class ServoCLI(CLI):
             ),
             tag: Optional[List[str]] = typer.Option(
                 False, "--tag", "-t", help="Filter by tag"
-            ),            
+            ),
+            halt_on: HaltOnFailed = typer.Option(
+                HaltOnFailed.requirement, "--halt-on-failed", "-h", help="Halt running checks on a failure condition",
+            ),
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose output"
             ),
@@ -1011,7 +1014,7 @@ class ServoCLI(CLI):
             constraints = dict(filter(lambda i: len(i[1]), dict(name=name, id=id, tags=tag).items()))
             filter_ = Filter(**constraints)
             results: List[EventResult] = sync(context.servo.dispatch_event(
-                Events.CHECK, filter_, include=connectors, 
+                Events.CHECK, filter_, include=connectors, halt_on=halt_on
             ))
 
             table = []

@@ -34,6 +34,7 @@ from servo import (
     Duration,
     DurationProgress,
     Filter,
+    HaltOnFailed,
     License,
     Maturity,
     Setting,
@@ -2551,8 +2552,8 @@ class KubernetesConnector(BaseConnector):
             self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
 
     @on_event()
-    async def check(self, filter_: Optional[Filter]) -> List[Check]:
-        return await KubernetesChecks.run(self.config, filter_)
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
+        return await KubernetesChecks.run(self.config, filter_, halt_on=halt_on)
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:

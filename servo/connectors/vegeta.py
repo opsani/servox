@@ -22,6 +22,7 @@ from servo import (
     Duration,
     DurationProgress,
     Filter,
+    HaltOnFailed,
     License,
     Maturity,
     Measurement,
@@ -334,7 +335,7 @@ class VegetaConnector(BaseConnector):
         return METRICS
 
     @on_event()
-    async def check(self, filter_: Optional[Filter] = None) -> List[Check]:
+    async def check(self, filter_: Optional[Filter] = None, halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         # Take the current config and run a 5 second check against it
         self.warmup_until = datetime.now()
         check_config = self.config.copy()
@@ -342,7 +343,7 @@ class VegetaConnector(BaseConnector):
         check_config.reporting_interval = "1s"
 
         checks = VegetaChecks(config=check_config, runner=self._run_vegeta)
-        return await checks.run_(filter_)
+        return await checks.run_(filter_, halt_on=halt_on)
 
     @on_event()
     async def measure(

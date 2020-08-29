@@ -1,4 +1,5 @@
 import asyncio
+import enum
 
 from datetime import datetime
 from hashlib import blake2b
@@ -19,6 +20,7 @@ __all__ = [
     "Check",
     "CheckHandlerResult",
     "Filter",
+    "HaltOnFailed",
     "check"
 ]
 
@@ -359,6 +361,23 @@ class Filter(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+class HaltOnFailed(str, enum.Enum):
+    """HaltOnFailed is an enumeration that describes how to handle check failures.
+    """
+
+    requirement = "requirement"
+    """Halt running when a required check has failed.
+    """
+
+    check = "check"
+    """Halt running when any check has failed.
+    """
+
+    never = "never"
+    """Never halt running regardless of check failures.
+    """
+
+
 class BaseChecks(BaseModel):
     """
     Base class for collections of Check objects.
@@ -399,7 +418,7 @@ class BaseChecks(BaseModel):
         filter_: Optional[Filter] = None,
         *, 
         logger: 'loguru.Logger' = default_logger,        
-        all: bool = False
+        halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
         """
         Runs checks and returns a list of Check objects reflecting the results.
@@ -411,24 +430,24 @@ class BaseChecks(BaseModel):
             config: The connector configuration to initialize the checks instance with.
             filter_: An optional filter to limit the set of checks that are run.
             logger: The logger to write messages to.            
-            all: When True, continue running checks even if a required check has failed.
+            halt_on: The type of check failure that should halt the run.
         
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
         """
-        return await cls(config, logger=logger).run_(filter_=filter_, all=all)
+        return await cls(config, logger=logger).run_(filter_=filter_, halt_on=halt_on)
 
     async def run_(self,         
         filter_: Optional[Filter] = None,
         *, 
-        all: bool = False
+        halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
         """
         Runs checks and returns the results.
 
         Args:
             logger: An optional filter to limit the set of checks that are run.
-            all: When True, continue running checks even if a required check has failed.
+            halt_on: The type of check failure that should halt the run.
         
         Returns:
             A list of checks that were run.
@@ -470,9 +489,11 @@ class BaseChecks(BaseModel):
             
             checks.append(check)            
 
-            # halt if a required check has failed (unless running all)
-            if check.failed and check.required and not all:
-                break
+            # halt the run if necessary
+            if check.failed:
+                if (halt_on == HaltOnFailed.check 
+                or (halt_on == HaltOnFailed.requirement and check.required)):
+                    break
         
         return checks
     

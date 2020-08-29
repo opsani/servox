@@ -16,6 +16,7 @@ from servo import (
     Description,
     Duration,
     Filter,
+    HaltOnFailed,
     License,
     Maturity,
     Measurement,
@@ -112,7 +113,7 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self, filter_: Optional[Filter]) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
         async def check_query(metric: PrometheusMetric) -> str:
             result = await self._query_prom(metric, start, end)
@@ -120,7 +121,7 @@ class PrometheusConnector(BaseConnector):
 
         # wrap all queries into checks and verify that they work
         PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
-        return await PrometheusChecks.run(self.config, filter_)
+        return await PrometheusChecks.run(self.config, filter_, halt_on=halt_on)
 
     @on_event()
     def describe(self) -> Description:

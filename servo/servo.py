@@ -20,7 +20,7 @@ from servo.connector import (
     Maturity,
     _connector_subclasses
 )
-from servo.checks import Check, Filter
+from servo.checks import Check, Filter, HaltOnFailed
 from servo.events import Preposition, event, on_event
 from servo.types import Adjustment, Component, Control, Description, Duration, Measurement, Metric
 
@@ -84,7 +84,7 @@ class _EventDefinitions:
         yield
 
     @event(Events.CHECK)
-    async def check(self, filter_: Optional[Filter]) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         ...
 
     @event(Events.DESCRIBE)

@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import Check, BaseChecks, Filter, check
+from servo.checks import Check, BaseChecks, Filter, HaltOnFailed, check
 from servo.configuration import BaseConfiguration
 from servo.checks import check as check_decorator, CheckHandlerResult
 from servo.utilities.inspect import get_instance_methods
@@ -398,17 +398,17 @@ class RequirementChecks(BaseChecks):
         ...
 
 @pytest.mark.parametrize(
-    "name, all, expected_results",
+    "name, halt_on, expected_results",
     [
         # no filter, halt at not-required-2
-        (None, False, {
+        (None, HaltOnFailed.requirement, {
             'required-1': True,
             'not-required-1': True,
             'not-required-2': False,
             'required-2': False,
         }),
         # no filter, continue to end
-        (None, True, {
+        (None, HaltOnFailed.never, {
             'required-1': True,
             'not-required-1': True,
             'not-required-2': False,
@@ -417,25 +417,25 @@ class RequirementChecks(BaseChecks):
             'not-required-3': True,
         }),
         # run not-required-1, trigger 1 requirement, no failures
-        ("not-required-1", False, {'not-required-1': True, 'required-1': True}),
+        ("not-required-1", HaltOnFailed.requirement, {'not-required-1': True, 'required-1': True}),
         # run not-required-2, trigger 1 requirement, fail
-        ("not-required-2", True, {'not-required-2': False, 'required-1': True}),
+        ("not-required-2", HaltOnFailed.never, {'not-required-2': False, 'required-1': True}),
         # run required-3, trigger 2 requirements, halt at required-2
-        ("not-required-3", False, {'required-1': True, 'required-2': False}),
+        ("not-required-3", HaltOnFailed.requirement, {'required-1': True, 'required-2': False}),
         # run all required-3, trigger 2 requirements, required-2 fails
-        ("not-required-3", True, {
+        ("not-required-3", HaltOnFailed.never, {
             'required-1': True,
             'required-2': False,
             'required-3': True,
             'not-required-3': True,
         }),
         # run not-required-1 and not-required-3
-        (("not-required-1", "not-required-3"), False, {
+        (("not-required-1", "not-required-3"), HaltOnFailed.requirement, {
             'required-1': True,
             'not-required-1': True,
             'required-2': False,
         }),
-        (("not-required-1", "not-required-3"), True, {
+        (("not-required-1", "not-required-3"), HaltOnFailed.never, {
             'required-1': True,
             'not-required-1': True,
             'required-2': False,
@@ -444,8 +444,8 @@ class RequirementChecks(BaseChecks):
         }),
     ]
 )
-async def test_running_requirements(name, all, expected_results) -> None:
-    checks = await RequirementChecks.run(BaseConfiguration(), Filter(name=name), all=all)
+async def test_running_requirements(name, halt_on, expected_results) -> None:
+    checks = await RequirementChecks.run(BaseConfiguration(), Filter(name=name), halt_on=halt_on)
     actual_results = dict(map(lambda c: (c.name, c.success), checks))
     assert actual_results == expected_results
 
