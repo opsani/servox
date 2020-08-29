@@ -620,7 +620,7 @@ async def test_apply_restart_strategy():
 # Handle: CreateContainerError 
 
 async def test_checks(config: KubernetesConfiguration):
-    await KubernetesChecks.check(config)
+    await KubernetesChecks.run(config)
 
 def test_millicpu():
     class Model(pydantic.BaseModel):

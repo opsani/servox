@@ -18,6 +18,7 @@ __all__ = [
     "BaseChecks",
     "Check",
     "CheckHandlerResult",
+    "Filter",
     "check"
 ]
 
@@ -179,6 +180,17 @@ class Check(BaseModel):
         }
 
 
+@runtime_checkable
+class Checkable(Protocol):
+    """Checkable objects can be represented as a Check.
+    """
+
+    def __check__() -> Check:
+        """Returns a Check representation of the object.
+        """
+        ...
+
+
 CheckRunner = TypeVar("CheckRunner", Callable[..., Check], Coroutine[None, None, Check])
 
 def check(
@@ -255,6 +267,98 @@ CHECK_SIGNATURE = Signature(return_annotation=Check)
 CHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Check')
 
 
+class Filter(BaseModel):
+    """Filter objects are used to select a subset of available checks for execution.
+    
+    Specific checks can be targetted for execution using the metadata attributes of `name`,
+    `id`, and `tags`. Metadata filters are evaluated using AND semantics. Names and ids
+    are matched case-sensitively. Tags are always lowercase. Names and ids can be targetted 
+    using regular expression patterns.
+    """
+
+    name: Union[None, str, Sequence[str], Pattern[str]] = None
+    """A name, sequence of names, or regex pattern for selecting checks by name.
+    """
+
+    id: Union[None, str, Sequence[str], Pattern[str]] = None
+    """A name, sequence of names, or regex pattern for selecting checks by name.
+    """
+
+    tags: Optional[Set[str]] = None
+    """A set of tags for selecting checks to be run. Checks matching any tag in the set
+    are selected.
+    """
+
+    @property
+    def any(self) -> bool:
+        """Returns true if any constraints are in effect.
+        """
+        return not self.empty
+    
+    @property
+    def empty(self) -> bool:
+        """Return true if no constraints are in effect.
+        """
+        return bool(
+            self.name is None 
+            and self.id is None 
+            and self.tags is None
+        )
+    
+    def matches(self, check: Check) -> bool:
+        """Matches a check against the filter.
+
+        Args:
+            check: The check to match against the filter.
+
+        Returns:
+            bool: True if the check meets the name, id, and tags constraints.
+        """
+        if self.empty:
+            return True
+
+        return (                    
+            self._matches_name(check)
+            and self._matches_id(check)
+            and self._matches_tags(check)
+        )
+
+    def _matches_name(self, check: Check) -> bool:
+        return self._matches_str_attr(self.name, check.name)
+    
+    def _matches_id(self, check: Check) -> bool:
+        return self._matches_str_attr(self.id, check.id)
+    
+    def _matches_tags(self, check: Check) -> bool:
+        if self.tags is None:
+            return True
+        
+        # exclude untagged checks if filtering by tag
+        if check.tags is None:
+            return False
+        
+        # look for an intersection in our sets
+        return bool(self.tags.intersection(check.tags))
+    
+    def _matches_str_attr(
+        self, 
+        attr: Union[None, str, Sequence[str], Pattern[str]],
+        value: str
+    ) -> bool:
+        if attr is None:
+            return True
+        elif isinstance(attr, str):
+            return value == attr
+        elif isinstance(attr, Sequence):
+            return value in attr
+        elif isinstance(attr, Pattern):
+            return bool(attr.search(value))
+        else:
+            raise ValueError(f"unexpected value of type \"{attr.__class__.__name__}\": {attr}")
+
+    class Config:
+        arbitrary_types_allowed = True
+
 class BaseChecks(BaseModel):
     """
     Base class for collections of Check objects.
@@ -290,13 +394,11 @@ class BaseChecks(BaseModel):
     """
 
     @classmethod
-    async def check(cls, 
+    async def run(cls, 
         config: BaseConfiguration, 
+        filter_: Optional[Filter] = None,
         *, 
-        logger: 'loguru.Logger' = default_logger,
-        name: Union[None, str, Sequence[str], Pattern[str]] = None,
-        id: Union[None, str, Sequence[str], Pattern[str]] = None,
-        tags: Optional[Set[str]] = None,
+        logger: 'loguru.Logger' = default_logger,        
         all: bool = False
     ) -> List[Check]:
         """
@@ -305,124 +407,44 @@ class BaseChecks(BaseModel):
         Checks are implemented as instance methods prefixed with `check_` that return a `Check`
         object. Please refer to the `BaseChecks` class documentation for details.
 
-        Keyword arguments are used to filter the set of checks to be run. See the documentation
-        on the `run` instance method for details on filtering.
-
         Args:
             config: The connector configuration to initialize the checks instance with.
-            logger: 
-            name: A name, sequence of names, or regex pattern for selecting checks by name.
-            id:  A name, sequence of names, or regex pattern for selecting checks by name.
-            tags: A set of tags for selecting checks to be run. Checks matching any tag in the set
-                are selected.
+            filter_: An optional filter to limit the set of checks that are run.
+            logger: The logger to write messages to.            
             all: When True, continue running checks even if a required check has failed.
         
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
         """
-        return await cls(config, logger=logger).run(name=name, id=id, tags=tags, all=all)
+        return await cls(config, logger=logger).run_(filter_=filter_, all=all)
 
-    async def run(self, 
+    async def run_(self,         
+        filter_: Optional[Filter] = None,
         *, 
-        name: Union[None, str, Sequence[str], Pattern[str]] = None,
-        id: Union[None, str, Sequence[str], Pattern[str]] = None,
-        tags: Optional[Set[str]] = None,
         all: bool = False
     ) -> List[Check]:
         """
         Runs checks and returns the results.
 
-        Specific checks can be targetted for execution using the metadata attributes of `name`,
-        `id`, and `tags`. Metadata filters are evaluated using AND semantics. Names and ids
-        are matched case-sensitively. Tags are always lowercase. Names and ids can be targetted 
-        using regular expression patterns. Checks are evaluated and returned in method definition
-        order.
-
         Args:
-            name: A name, sequence of names, or regex pattern for selecting checks by name.
-            id:  A name, sequence of names, or regex pattern for selecting checks by name.
-            tags: A set of tags for selecting checks to be run. Checks matching any tag in the set
-                are selected.
+            logger: An optional filter to limit the set of checks that are run.
             all: When True, continue running checks even if a required check has failed.
         
         Returns:
             A list of checks that were run.
         """
-
-        class Filter(BaseModel):
-            name: Union[None, str, Sequence[str], Pattern[str]] = None
-            id: Union[None, str, Sequence[str], Pattern[str]] = None
-            tags: Optional[Set[str]] = None
-
-            @property
-            def any(self) -> bool:
-                return not self.empty
-            
-            @property
-            def empty(self) -> bool:
-                return bool(
-                    self.name is None 
-                    and self.id is None 
-                    and self.tags is None
-                )
-            
-            def matches(self, check: Check) -> bool:
-                if self.empty:
-                    return True
-
-                return (                    
-                    self._matches_name(check)
-                    and self._matches_id(check)
-                    and self._matches_tags(check)
-                )
-
-            def _matches_name(self, check: Check) -> bool:
-                return self._matches_str_attr(self.name, check.name)
-            
-            def _matches_id(self, check: Check) -> bool:
-                return self._matches_str_attr(self.id, check.id)
-            
-            def _matches_tags(self, check: Check) -> bool:
-                if self.tags is None:
-                    return True
-                
-                # exclude untagged checks if filtering by tag
-                if check.tags is None:
-                    return False
-                
-                # look for an intersection in our sets
-                return bool(self.tags.intersection(check.tags))
-            
-            def _matches_str_attr(
-                self, 
-                attr: Union[None, str, Sequence[str], Pattern[str]],
-                value: str
-            ) -> bool:
-                if attr is None:
-                    return True
-                elif isinstance(attr, str):
-                    return value == attr
-                elif isinstance(attr, Sequence):
-                    return value in attr
-                elif isinstance(attr, Pattern):
-                    return bool(attr.search(value))
-                else:
-                    raise ValueError(f"unexpected value of type \"{attr.__class__.__name__}\": {attr}")
-        
-            class Config:
-                arbitrary_types_allowed = True
         
         # identify methods that match the filter
-        filter = Filter(name=name, id=id, tags=tags)
         filtered_methods  = []
         for method_name, method in self.check_methods():
-            if filter.any:
-                spec = getattr(method, '__check__', None)
-                if not spec:
+            if filter_ and filter_.any:
+                if isinstance(method, Checkable):
+                    spec = method.__check__
+                else:
                     self.logger.warning(f"filtering requested but encountered non-filterable check method \"{method_name}\"")
                     continue
                 
-                if not filter.matches(spec):
+                if not filter_.matches(spec):
                     continue
             
             filtered_methods.append(method)
@@ -588,13 +610,6 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.message = f"caught exception: {repr(result)}"
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
-
-@runtime_checkable
-class Checkable(Protocol):
-    """Returns a Check representation of the object.
-    """
-    def __check__() -> Check:
-        ...
     
 
 def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable) -> BaseChecks:

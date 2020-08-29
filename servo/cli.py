@@ -31,15 +31,16 @@ from servo.assembly import (
 )
 from servo.connector import (
     BaseConnector, 
-    Optimizer,
-    _connector_class_from_string
+    Optimizer
 )
 from servo.events import EventHandler, EventResult, Preposition
 from servo.logging import logger, set_level as set_log_level
 from servo.servo import (
     Events,
     Servo,
+    _connector_class_from_string
 )
+from servo.checks import Filter
 from servo.runner import Runner
 from servo.types import *
 from servo.utilities import PreservedScalarString, commandify
@@ -1007,9 +1008,10 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            filters = dict(filter(lambda i: len(i[1]), dict(name=name, id=id, tags=tag).items()))
+            constraints = dict(filter(lambda i: len(i[1]), dict(name=name, id=id, tags=tag).items()))
+            filter_ = Filter(**constraints)
             results: List[EventResult] = sync(context.servo.dispatch_event(
-                Events.CHECK, include=connectors, **filters
+                Events.CHECK, filter_, include=connectors, 
             ))
 
             table = []

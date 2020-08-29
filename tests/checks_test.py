@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import Check, BaseChecks, check
+from servo.checks import Check, BaseChecks, Filter, check
 from servo.configuration import BaseConfiguration
 from servo.checks import check as check_decorator, CheckHandlerResult
 from servo.utilities.inspect import get_instance_methods
@@ -51,7 +51,7 @@ async def test_raises_on_invalid_method_name() -> None:
         
     with pytest.raises(ValueError) as e:
         config = BaseConfiguration()
-        await MeasureChecks.check(config)
+        await MeasureChecks.run(config)
     
     assert e
     assert str(e.value) == "method names of Checks subtypes must start with \"_\" or \"check_\""
@@ -62,7 +62,7 @@ async def test_allows_underscored_method_names() -> None:
             return Check(name="Test", success=True)
     
     config = BaseConfiguration()
-    assert await MeasureChecks.check(config)
+    assert await MeasureChecks.run(config)
 
 async def test_raises_on_invalid_signature() -> None:
     class MeasureChecks(BaseChecks):
@@ -71,7 +71,7 @@ async def test_raises_on_invalid_signature() -> None:
     
     with pytest.raises(TypeError) as e:
         config = BaseConfiguration()
-        await MeasureChecks.check(config)
+        await MeasureChecks.run(config)
 
     assert e
     assert str(e.value) == 'invalid signature for method "check_invalid": expected <Signature () -> servo.checks.Check>, but found <Signature () -> int>'
@@ -82,7 +82,7 @@ async def test_valid_checks() -> None:
             return Check(name="Test", success=True)
     
     config = BaseConfiguration()
-    checks = await MeasureChecks.check(config)
+    checks = await MeasureChecks.run(config)
     assert checks == [Check(name='Test', success=True, created_at=datetime(2020, 8, 24, 0, 0))]
 
 async def test_run_as_instance() -> None:
@@ -92,7 +92,7 @@ async def test_run_as_instance() -> None:
     
     config = BaseConfiguration()
     checker = MeasureChecks(config)
-    checks = await checker.run()
+    checks = await checker.run_()
     assert checks == [Check(name='Test', success=True, created_at=datetime(2020, 8, 24, 0, 0))]
 
 async def test_check_ordering() -> None:
@@ -107,7 +107,7 @@ async def test_check_ordering() -> None:
             return Check(name="3", success=True)
     
     config = BaseConfiguration()
-    checks = await MeasureChecks.check(config)
+    checks = await MeasureChecks.run(config)
     values = list(map(lambda c: (c.name, c.success), checks))
     assert values == [("1", True), ("2", False), ("3", True)]
 
@@ -123,7 +123,7 @@ async def test_check_aborts_on_failed_requirement() -> None:
             return Check(name="3", success=True)
     
     config = BaseConfiguration()
-    checks = await MeasureChecks.check(config)
+    checks = await MeasureChecks.run(config)
     values = list(map(lambda c: (c.name, c.success), checks))
     assert values == [("1", True), ("2", False)]
 
@@ -292,7 +292,7 @@ async def test_decorate_async() -> None:
 
 async def test_run_check_by_name() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run(name="Check connectivity")
+    checks = await nc.run_(Filter(name="Check connectivity"))
     check = checks[0]
     assert check
     assert check.name == "Check connectivity"
@@ -308,7 +308,7 @@ def test_decorator_sets_id_to_method_name() -> None:
 
 async def test_run_check_by_id() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run(id="check_connectivity")
+    checks = await nc.run_(Filter(id="check_connectivity"))
     assert len(checks) == 1
     check = checks[0]
     assert check
@@ -367,7 +367,7 @@ class FilterableChecks(BaseChecks):
     ]
 )
 async def test_filtering(name, id, tags, expected_ids) -> None:
-    checks = await FilterableChecks.check(BaseConfiguration(), name=name, id=id, tags=tags)    
+    checks = await FilterableChecks.run(BaseConfiguration(), Filter(name=name, id=id, tags=tags))
     ids = list(map(lambda c: c.id, checks))
     assert len(ids) == len(expected_ids)
     assert ids == expected_ids
@@ -445,7 +445,7 @@ class RequirementChecks(BaseChecks):
     ]
 )
 async def test_running_requirements(name, all, expected_results) -> None:
-    checks = await RequirementChecks.check(BaseConfiguration(), name=name, all=all)
+    checks = await RequirementChecks.run(BaseConfiguration(), Filter(name=name), all=all)
     actual_results = dict(map(lambda c: (c.name, c.success), checks))
     assert actual_results == expected_results
 
@@ -473,7 +473,7 @@ class MixedChecks(BaseChecks):
     ]
 )
 async def test_mixed_checks(name, expected_results) -> None:
-    checks = await MixedChecks.check(BaseConfiguration(), name=name)
+    checks = await MixedChecks.run(BaseConfiguration(), Filter(name=name))
     actual_results = list(map(lambda c: c.name, checks))
     assert actual_results == expected_results
 
@@ -483,7 +483,7 @@ async def test_generate_checks() -> None:
     items = ["one", "two", "three"]
     ItemChecks = create_checks_from_iterable(handler, items)
     checker = ItemChecks(BaseConfiguration())
-    results = await checker.run()
+    results = await checker.run_()
     assert len(results) == 3
     messages = list(map(lambda c: c.message, results))
     assert messages == ["so_check_it_one", "so_check_it_two", "so_check_it_three"]

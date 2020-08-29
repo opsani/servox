@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 from functools import reduce
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 import httpx
 import httpcore._exceptions
@@ -15,6 +15,7 @@ from servo import (
     Check,
     Description,
     Duration,
+    Filter,
     License,
     Maturity,
     Measurement,
@@ -111,7 +112,7 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self, **kwargs) -> List[Check]:
+    async def check(self, filter_: Optional[Filter]) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
         async def check_query(metric: PrometheusMetric) -> str:
             result = await self._query_prom(metric, start, end)
@@ -119,7 +120,7 @@ class PrometheusConnector(BaseConnector):
 
         # wrap all queries into checks and verify that they work
         PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
-        return await PrometheusChecks.check(self.config, **kwargs)
+        return await PrometheusChecks.run(self.config, filter_)
 
     @on_event()
     def describe(self) -> Description:
