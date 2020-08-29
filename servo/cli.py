@@ -1033,7 +1033,7 @@ class ServoCLI(CLI):
                 
                 return v
 
-            args = dict(name=parse_re(name), id=parse_id(id), tags=tag)
+            args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
             constraints = dict(filter(lambda i: bool(i[1]), args.items()))
             filter_ = Filter(**constraints)
             results: List[EventResult] = sync(context.servo.dispatch_event(
@@ -1066,7 +1066,7 @@ class ServoCLI(CLI):
                     checks: List[Check] = result.value
                     if not checks:
                         continue
-                    
+
                     success = True
                     errors = []
                     for check in checks:
