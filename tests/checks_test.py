@@ -3,12 +3,11 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import Check, BaseChecks, Filter, HaltOnFailed, check
+from servo.checks import BaseChecks, Check, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable
 from servo.configuration import BaseConfiguration
-from servo.checks import check as check_decorator, CheckHandlerResult
+# from servo.checks import check as CheckHandlerResult, create_checks_from_iterable
 from servo.utilities.inspect import get_instance_methods
 from typing import List, Tuple, Union, Optional
-
 
 pytestmark = pytest.mark.freeze_time('2020-08-24')
 
@@ -54,7 +53,7 @@ async def test_raises_on_invalid_method_name() -> None:
         await MeasureChecks.run(config)
     
     assert e
-    assert str(e.value) == "method names of Checks subtypes must start with \"_\" or \"check_\""
+    assert str(e.value) == "invalid method name \"invalid_check\": method names of Checks subtypes must start with \"_\" or \"check_\""
 
 async def test_allows_underscored_method_names() -> None:
     class MeasureChecks(BaseChecks):
@@ -62,7 +61,8 @@ async def test_allows_underscored_method_names() -> None:
             return Check(name="Test", success=True)
     
     config = BaseConfiguration()
-    assert await MeasureChecks.run(config)
+    results = await MeasureChecks.run(config)
+    assert results is not None
 
 async def test_raises_on_invalid_signature() -> None:
     class MeasureChecks(BaseChecks):
@@ -128,7 +128,7 @@ async def test_check_aborts_on_failed_requirement() -> None:
     assert values == [("1", True), ("2", False)]
 
 class NamedChecks(BaseChecks):
-    @check_decorator("Check connectivity")
+    @check("Check connectivity")
     def check_connectivity(self) -> CheckHandlerResult:
         return True
 
@@ -150,16 +150,16 @@ class NamedChecks(BaseChecks):
     ]
 )
 def test_valid_check_decorator_return_values(return_value, success, message) -> None:    
-    @check_decorator("Test decorator")
+    @check("Test decorator")
     def check_test() -> CheckHandlerResult:
         return return_value
     
-    check = check_test()
-    assert check
-    assert isinstance(check, Check)
-    assert check.success == success
-    assert check.message == message
-    assert check.exception is None
+    check_ = check_test()
+    assert check_
+    assert isinstance(check_, Check)
+    assert check_.success == success
+    assert check_.message == message
+    assert check_.exception is None
 
 @pytest.mark.parametrize(
     "return_value, exception_type, message",
@@ -178,17 +178,17 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
     ]
 )
 def test_invalid_check_decorator_return_values(return_value, exception_type, message) -> None:
-    @check_decorator("Test decorator")
+    @check("Test decorator")
     def check_test() -> CheckHandlerResult:
         return return_value
     
-    check = check_test()
-    assert check
-    assert isinstance(check, Check)
-    assert check.success == False    
-    assert check.message == message
-    assert check.exception is not None
-    assert isinstance(check.exception, exception_type)
+    check_ = check_test()
+    assert check_
+    assert isinstance(check_, Check)
+    assert check_.success == False    
+    assert check_.message == message
+    assert check_.exception is not None
+    assert isinstance(check_.exception, exception_type)
 
 class ValidHandlerSignatures:
     def check_none(self) -> None:
@@ -221,7 +221,7 @@ class ValidHandlerSignatures:
     ids=get_instance_methods(ValidHandlerSignatures()).keys()
 )
 def test_valid_signatures(method) -> None:
-    check_decorator(method.__name__)(method)
+    check(method.__name__)(method)
 
 class InvalidHandlerSignatures:
     def check_int(self) -> int:
@@ -248,7 +248,7 @@ class InvalidHandlerSignatures:
 )
 def test_invalid_signatures(method) -> None:
     with pytest.raises(TypeError) as e:
-        check_decorator(method.__name__)(method)
+        check(method.__name__)(method)
 
     sig = Signature.from_callable(method)
     message = f'invalid check handler "{method.__name__}": incompatible return type annotation in signature {repr(sig)}, expected to match <Signature () -> Union[bool, str, Tuple[bool, str], NoneType]>'
@@ -256,7 +256,7 @@ def test_invalid_signatures(method) -> None:
 
 def test_decorating_invalid_signatures() -> None:
     with pytest.raises(TypeError) as e:
-        @check_decorator("Test decorator")
+        @check("Test decorator")
         def check_test() -> int:
             ...
     
@@ -268,27 +268,27 @@ def test_decorating_invalid_signatures() -> None:
 
 @pytest.mark.freeze_time('2020-08-25', auto_tick_seconds=15)
 async def test_check_timer() -> None:
-    @check_decorator("Check timer")
+    @check("Check timer")
     def check_test() -> None:
         ...
     
-    check = check_test()
-    assert check
-    assert isinstance(check, Check)
-    assert check.run_at == datetime(2020, 8, 25, 0, 0, 15)
-    assert check.runtime == "15s"
+    check_ = check_test()
+    assert check_
+    assert isinstance(check_, Check)
+    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
+    assert check_.runtime == "15s"
 
 @pytest.mark.freeze_time('2020-08-25', auto_tick_seconds=15)
 async def test_decorate_async() -> None:
-    @check_decorator("Check async")
+    @check("Check async")
     async def check_test() -> None:
         ...
     
-    check = await check_test()
-    assert check
-    assert isinstance(check, Check)
-    assert check.run_at == datetime(2020, 8, 25, 0, 0, 15)
-    assert check.runtime == "15s"
+    check_ = await check_test()
+    assert check_
+    assert isinstance(check_, Check)
+    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
+    assert check_.runtime == "15s"
 
 async def test_run_check_by_name() -> None:
     nc = NamedChecks(BaseConfiguration())
@@ -477,7 +477,6 @@ async def test_mixed_checks(name, expected_results) -> None:
     actual_results = list(map(lambda c: c.name, checks))
     assert actual_results == expected_results
 
-from servo.checks import create_checks_from_iterable
 async def test_generate_checks() -> None:
     handler = lambda c: f"so_check_it_{c}"
     items = ["one", "two", "three"]
@@ -488,3 +487,20 @@ async def test_generate_checks() -> None:
     messages = list(map(lambda c: c.message, results))
     assert messages == ["so_check_it_one", "so_check_it_two", "so_check_it_three"]
 
+async def test_add_checks_to_existing_class() -> None:
+    handler = lambda c: f"so_check_it_{c}"
+    items = ["five", "six", "seven"]
+    ExtendedChecks = create_checks_from_iterable(handler, items, base_class=MixedChecks)
+    checker = ExtendedChecks(BaseConfiguration())
+    results = await checker.run_()
+    assert len(results) == 7
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [ 'one', 'check_one', None, ],
+        [ 'two', '0b1c4a4d', None, ],
+        [ 'three', 'check_three', None, ],
+        [ 'four', '31d68b28', None, ],
+        [ 'Check five', 'b3f49d29', 'so_check_it_five', ],
+        [ 'Check six', 'bdc0e261', 'so_check_it_six', ],
+        [ 'Check seven', 'b991c85a', 'so_check_it_seven', ],
+    ]
