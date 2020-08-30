@@ -1,28 +1,23 @@
 from __future__ import annotations
-import abc
 import asyncio
-import importlib
-import inspect
 from contextvars import ContextVar
 from enum import Enum
-from typing import Dict, Iterable, List, Optional, Type, Union, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Protocol, Type, Union, Sequence
 
 import httpx
-from pydantic import Extra, Field, validator
 
 import servo
 from servo import api, connector
 from servo.connector import (
-    AbstractBaseConfiguration,
-    BaseConfiguration,
     BaseConnector,
     License,
     Maturity,
-    _connector_subclasses
 )
 from servo.checks import Check, Filter, HaltOnFailed
+from servo.configuration import BaseAssemblyConfiguration
 from servo.events import Preposition, event, on_event
 from servo.types import Adjustment, Component, Control, Description, Duration, Measurement, Metric
+from servo.utilities.pydantic import extra
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -49,7 +44,7 @@ class Events(str, Enum):
     PROMOTE = "promote"
 
 
-class _EventDefinitions:
+class _EventDefinitions(Protocol):
     """
     Defines the default events. This class is declarative and is never directly referenced.
 
@@ -100,82 +95,6 @@ class _EventDefinitions:
         ...
 
 
-class BaseServoConfiguration(BaseConfiguration, abc.ABC):
-    """
-    Abstract base class for Servo settings
-
-    Note that the concrete BaseServoConfiguration class is built dynamically at runtime
-    based on the avilable connectors and configuration in effect.
-
-    See `Assembly` for details on how the concrete model is built.
-    """
-
-    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(
-        None,
-        description=(
-            "An optional, explicit configuration of the active connectors.\n"
-            "\nConfigurable as either an array of connector identifiers (names or class) or\n"
-            "a dictionary where the keys specify the key path to the connectors configuration\n"
-            "and the values identify the connector (by name or class name)."
-        ),
-        examples=[
-            ["kubernetes", "prometheus"],
-            {"staging_prom": "prometheus", "gateway_prom": "prometheus"},
-        ],
-    )
-    """
-    An optional list of connector keys or a dict mapping of connector 
-    key-paths to connector class names
-    """
-
-    @classmethod
-    def generate(
-        cls: Type["BaseServoConfiguration"], **kwargs
-    ) -> "BaseServoConfiguration":
-        """
-        Generate configuration for the servo settings
-        """
-        for name, field in cls.__fields__.items():
-            if (
-                name not in kwargs
-                and inspect.isclass(field.type_)
-                and issubclass(field.type_, AbstractBaseConfiguration)
-            ):
-                kwargs[name] = field.type_.generate()
-        return cls(**kwargs)
-
-    @validator("connectors", pre=True)
-    @classmethod
-    def validate_connectors(
-        cls, connectors
-    ) -> Optional[Union[Dict[str, str], List[str]]]:
-        if isinstance(connectors, str):
-            # NOTE: Special case. When we are invoked with a string it is typically an env var
-            try:
-                decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
-            except ValueError as e:
-                raise ValueError(f'error parsing JSON for "{connectors}"') from e
-
-            # Prevent infinite recursion
-            if isinstance(decoded_value, str):
-                raise ValueError(
-                    f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
-                )
-
-            connectors = decoded_value
-        
-        connectors = _normalize_connectors(connectors)
-        # NOTE: Will raise if descriptor is invalid, failing validation
-        _routes_for_connectors_descriptor(connectors)
-        
-        return connectors
-
-    class Config:
-        extra = Extra.forbid
-        title = "Abstract Servo Configuration Schema"
-        env_prefix = "SERVO_"
-
-
 _servo_context_var = ContextVar('servo.servo', default=None)
 
 
@@ -201,17 +120,17 @@ class Servo(BaseConnector):
     and are instead built through the `Assembly.assemble` method.
     """
 
-    config: BaseServoConfiguration
-    """Configuration for the Servo.
+    config: BaseAssemblyConfiguration
+    """Configuration of the Servo assembly.
 
-    Note that the Servo configuration is built dynamically at Servo assembly time.
-    The concrete type is built in `Assembly.assemble()` and adds a field for each active 
+    Note that the configuration is built dynamically at Servo assembly time.
+    The concrete type is created in `Assembly.assemble()` and adds a field for each active 
     connector.
     """
 
     connectors: List[BaseConnector]
     """
-    The active connectors in the servo.
+    The active connectors in the Servo.
     """
 
     @staticmethod
@@ -227,7 +146,25 @@ class Servo(BaseConnector):
         super().__init__(*args, connectors=[], **kwargs)
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
-        self.connectors.extend(connectors)  
+        self.connectors.extend(connectors)
+        
+        # associate our config with our children
+        self._set_association("servo_config", self.config.servo)
+        for connector in connectors:
+            connector._set_association("servo_config", self.config.servo)
+
+            with extra(connector):
+                connector.api_client_options = self.api_client_options
+
+    @property
+    def api_client_options(self) -> Dict[str, Any]:
+        options = super().api_client_options
+        if self.config.servo:
+            options["proxies"] = self.config.servo.proxies
+            options["timeout"] = self.config.servo.timeouts
+            options["verify"] = self.config.servo.ssl_verify
+        
+        return options
 
     async def startup(self):
         """
@@ -276,164 +213,3 @@ class Servo(BaseConnector):
                 success=success,
                 message=f"Response status code: {response.status_code}",
             )]
-
-
-def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
-    if connectors is None:
-        return connectors
-    elif isinstance(connectors, str):
-        if _connector_class_from_string(connectors) is None:
-            raise ValueError(f"Invalid connectors value: {connectors}")
-        return connectors
-    elif isinstance(connectors, type) and issubclass(connectors, BaseConnector):
-        return connectors.__name__
-    elif isinstance(connectors, (list, tuple, set)):
-        connectors_list: List[str] = []
-        for connector in connectors:
-            connectors_list.append(_normalize_connectors(connector))
-        return connectors_list
-    elif isinstance(connectors, dict):
-        normalized_dict: Dict[str, str] = {}
-        for key, value in connectors.items():
-            if not isinstance(key, str):
-                raise ValueError(
-                    f"Connector descriptor keys must be strings (invalid value '{key}'"
-                )
-            normalized_dict[key] = _normalize_connectors(value)
-
-        return normalized_dict
-    else:
-        raise ValueError(f"Invalid connectors value: {connectors}")
-
-
-RESERVED_KEYS = ["connectors", "control", "measure", "adjust", "optimization"]
-
-
-def _reserved_keys() -> List[str]:
-    reserved_keys = list(_default_routes().keys())
-    reserved_keys.extend(RESERVED_KEYS)
-    return reserved_keys
-
-
-def _default_routes() -> Dict[str, Type[BaseConnector]]:
-    routes = {}
-    for connector in _connector_subclasses:
-        if connector is not Servo:
-            routes[connector.__default_name__] = connector
-    return routes
-
-
-def _routes_for_connectors_descriptor(connectors) -> Dict[str, BaseConnector]:
-    if connectors is None:
-        # None indicates that all available connectors should be activated
-        return None
-
-    elif isinstance(connectors, str):
-        # NOTE: Special case. When we are invoked with a string it is typically an env var
-        try:
-            decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
-        except ValueError as e:
-            raise ValueError(f'error parsing JSON for "{connectors}"') from e
-
-        # Prevent infinite recursion
-        if isinstance(decoded_value, str):
-            raise ValueError(
-                f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
-            )
-
-        return _routes_for_connectors_descriptor(decoded_value)
-
-    elif isinstance(connectors, (list, tuple, set)):
-        connector_routes: Dict[str, str] = {}
-        for connector in connectors:
-            if _validate_class(connector):
-                connector_routes[connector.__default_name__] = connector
-            elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.__default_name__] = connector_class
-            else:
-                raise ValueError(f"Missing validation for value {connector}")
-
-        return connector_routes
-
-    elif isinstance(connectors, dict):
-        connector_routes = {}
-        for name, value in connectors.items():
-            if not isinstance(name, str):
-                raise TypeError(f'Connector names must be strings: "{key}"')
-
-            # Validate the name
-            try:
-                BaseConnector.validate_name(name)
-            except AssertionError as e:
-                raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
-
-            # Resolve the connector class
-            if isinstance(value, type):
-                connector_class = value
-            elif isinstance(value, str):
-                connector_class = _connector_class_from_string(value)
-
-            # Check for key reservations
-            if name in _reserved_keys():
-                if c := _default_routes().get(name, None):
-                    if connector_class != c:
-                        raise ValueError(
-                            f'Name "{name}" is reserved by `{c.__name__}`'
-                        )
-                else:
-                    raise ValueError(f'Name "{name}" is reserved')
-
-            connector_routes[name] = connector_class
-
-        return connector_routes
-
-    else:
-        raise ValueError(
-            f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
-        )
-
-
-def _connector_class_from_string(connector: str) -> Optional[Type[BaseConnector]]:
-    if not isinstance(connector, str):
-        return None
-
-    # Check for an existing class in the namespace
-    # FIXME: This symbol lookup doesn't seem solid
-    connector_class = globals().get(connector, None)
-    try:
-        connector_class = (
-            eval(connector) if connector_class is None else connector_class
-        )
-    except Exception:
-        pass
-    
-    if _validate_class(connector_class):
-        return connector_class
-
-    # Check if the string is an identifier for a connector
-    for connector_class in _connector_subclasses:
-        if connector == connector_class.__default_name__ or connector in [
-            connector_class.__name__,
-            connector_class.__qualname__,
-        ]:
-            return connector_class
-
-    # Try to load it as a module path
-    if "." in connector:
-        module_path, class_name = connector.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        if hasattr(module, class_name):
-            connector_class = getattr(module, class_name)
-            if _validate_class(connector_class):
-                return connector_class
-
-    return None
-
-def _validate_class(connector: type) -> bool:
-    if connector is None or not isinstance(connector, type):
-        return False
-
-    if not issubclass(connector, BaseConnector):
-        raise TypeError(f"{connector.__name__} is not a Connector subclass")
-
-    return True

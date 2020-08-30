@@ -7,8 +7,6 @@ import copy
 import enum
 import itertools
 import os
-import traceback
-import sys
 import backoff
 
 from pydantic.main import Extra
@@ -39,6 +37,7 @@ from servo import (
     Maturity,
     Setting,
     SettingType,
+    check,
     connector,
     join_to_series,
     on_event,
@@ -426,7 +425,6 @@ class KubernetesModel(abc.ABC):
             True if in the ready state; False otherwise.
         """
     
-    # TODO: Add Duration support
     async def wait_until_ready(
             self,
             timeout: int = None,
@@ -463,7 +461,6 @@ class KubernetesModel(abc.ABC):
             fail_on_api_error=fail_on_api_error,
         )
     
-    # TODO: Add Duration support
     async def wait_until_deleted(self, timeout: int = None, interval: Union[int, float] = 1) -> None:
         """Wait until the resource is deleted from the cluster.
 
@@ -899,7 +896,7 @@ class Pod(KubernetesModel):
     
     async def patch(self) -> None:
         """
-        TODO: Add docs....
+        Patches a Pod, applying spec changes to the cluster.
         """
         self.logger.info(f'patching pod "{self.name}"')
         self.logger.trace(f'pod: {self.obj}')
@@ -1014,7 +1011,6 @@ class Pod(KubernetesModel):
 
         return self.containers
 
-    # TODO: Rename `find_container` ??
     def get_container(self, name: str) -> Union[Container, None]:
         """Get a container in the Pod by name.
 
@@ -1266,15 +1262,6 @@ class Deployment(KubernetesModel):
             return False
 
         return total == ready
-    
-    # TODO: Determine if we want this...
-    def is_complete(self, target_generation: int) -> bool:
-        # Kubernetes marks a Deployment as complete when it has the following characteristics:
-
-        # All of the replicas associated with the Deployment have been updated to the latest version you've specified, meaning any updates you've requested have been completed.
-        # All of the replicas associated with the Deployment are available.
-        # No old replicas for the Deployment are running.
-        ...
 
     @property
     def containers(self) -> List[Container]:
@@ -1685,8 +1672,13 @@ class DeploymentOptimization(BaseOptimization):
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
             container = deployment.find_container(container_config.name)
+            if not container:
+                names = join_to_series(list(map(lambda c: c.name, deployment.containers)))
+                raise ValueError(f"no container named \"{container_config.name}\" exists in the Pod (found {names})")
+
+            name = f"{deployment.name}/{container.name}" if container else deployment.name
             return cls(
-                name=f"{deployment.name}/{container.name}",
+                name=name,
                 deployment_config=config,
                 deployment=deployment,
                 container_config=container_config,
@@ -2376,7 +2368,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
-    timeout: Duration = "5m" # TODO: TypeError: __new__() takes from 1 to 2 positional arguments but 4 were given
+    timeout: Duration = "5m"
   
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",
@@ -2451,7 +2443,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
                         else:
                             default_logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
-    
+
     # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:
         """
@@ -2475,29 +2467,51 @@ CanaryOptimization.update_forward_refs()
 class KubernetesChecks(BaseChecks):
     config: KubernetesConfiguration
 
+    @check("Connectivity to Kubernetes", required=True)
     async def check_connectivity(self) -> Check:
-        try:
-            await KubernetesOptimizations.create(self.config)
-        except Exception as e:
-            return Check(
-                name="Connect to Kubernetes", success=False, message=str(e)
-            )
-
-        return Check(name="Connect to Kubernetes", success=True, message="")
+        await KubernetesOptimizations.create(self.config)
     
-    # TODO: Verify the connectivity & permissions
-    # TODO: Check the Deployments exist
-    # TODO: Check that the Deployment is available
+    @check("Required permissions")
+    async def check_permissions(self) -> None:
+        ...
+    
+    @check("Deployments are readable")
+    async def check_deployment_exists(self) -> None:
+        for dep in self.config.deployments:
+            await Deployment.read(dep.name, self.config.namespace)
+    
+    @check("All containers have resource requirements")
+    async def check_resource_requirements(self) -> str:
+        messages = []
+        for dep in self.config.deployments:
+            deployment = await Deployment.read(dep.name, self.config.namespace)
+            for container in deployment.containers:
+                assert container.resources
+                assert container.resources.requests
+                assert container.resources.requests["cpu"]
+                assert container.resources.requests["memory"]
+                assert container.resources.limits
+                assert container.resources.limits["cpu"]
+                assert container.resources.limits["memory"]
+                messages.append(f"{deployment.name}/{container.name}={container.resources}")
+        
+        message = ", ".join(messages)
+        return f"Container resources: {message}"
+    
+    @check("Deployments are ready")
+    async def check_deployment_is_ready(self) -> str:
+        ready = []
+        for dep in self.config.deployments:
+            deployment = await Deployment.read(dep.name, self.config.namespace)
+            if deployment.is_ready:
+                ready.append(deployment.name)
+            else:
+                raise RuntimeError(f"Deployment \"{deployment.name}\" is not ready")
+        
+        names = ", ".join(ready)
+        return f"Deployments ready: {names}"
+
     # TODO: What other unhealthy conditions?
-
-    # def check_access(self) -> Check:
-    #     ...
-    
-    # def check_deployment_exists(self) -> Check:
-    #     ...
-    
-    # def check_deployment_is_available(self) -> Check:
-    #     ...
 
 
 @connector.metadata(
@@ -2528,17 +2542,6 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
-        # TODO: Handle this adjust_on stuff (Do we even need this???)
-        # adjust_on = desc.get("adjust_on", False)
-
-        # if adjust_on:
-        #     try:
-        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
-        #     except:
-        #         should_adjust = False
-        #     if not should_adjust:
-        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
-
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 

@@ -3,7 +3,7 @@ import os
 import random
 import string
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 import pytest
 import yaml
@@ -12,16 +12,14 @@ from typer.testing import CliRunner
 # Add the devtools debug() function globally in tests
 try:
     import builtins
-
     from devtools import debug
+
+    builtins.debug = debug
 except ImportError:
     pass
-else:
-    builtins.debug = debug
 
 from servo.configuration import Optimizer
 from servo.cli import ServoCLI
-# Force the test connectors to load early
 from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 
 
@@ -65,7 +63,7 @@ def servo_cli() -> ServoCLI:
 
 
 @pytest.fixture()
-def optimizer_env() -> None:
+def optimizer_env() -> Iterator[None]:
     os.environ.update(
         {"OPSANI_OPTIMIZER": "dev.opsani.com/servox", "OPSANI_TOKEN": "123456789"}
     )

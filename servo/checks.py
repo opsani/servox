@@ -1,10 +1,11 @@
 import asyncio
 import enum
+import functools
 
 from datetime import datetime
 from hashlib import blake2b
 from inspect import Signature, isclass
-from typing import Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
+from typing import Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, Type, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
@@ -245,21 +246,21 @@ def check(
         )
 
         if asyncio.iscoroutinefunction(fn):
-            # note: use a default value for self to wrap funcs & methods
-            async def run_check(self: Optional[Any] = None) -> Check:
+            @functools.wraps(fn)
+            async def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
-                args = [self] if self else []
-                await run_check_handler(check, fn, *args)
+                await run_check_handler(check, fn, *args, **kwargs)
                 return check
         else:
-            # note: use a default value for self to wrap funcs & methods
-            def run_check(self: Optional[Any] = None) -> Check:
+            @functools.wraps(fn)
+            def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
-                args = [self] if self else []
-                run_check_handler_sync(check, fn, *args)
+                run_check_handler_sync(check, fn, *args, **kwargs)
                 return check
 
+        # update the wrapped return signature conform with protocol
         run_check.__check__ = __check__
+        run_check.__annotations__['return'] = Check
         return cast(CheckRunner, run_check)
 
     return decorator
@@ -479,7 +480,7 @@ class BaseChecks(BaseModel):
                     # once all filtered methods are removed, only run non-decorated
                     if not spec.required or not filtered_methods:
                         continue
-
+            
             check = (
                 await method() if asyncio.iscoroutinefunction(method)
                 else method()
@@ -509,9 +510,12 @@ class BaseChecks(BaseModel):
         Check method names are prefixed with "check_", accept no parameters, and return a
         `Check` object reporting the outcome of the check operation.
         """
-        for name, method in get_instance_methods(self).items():
+        for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
+            if name.startswith("_") or name in ("run_", "check_methods"):
+                continue
+            
             if not name.startswith(("_", "check_")):
-                raise ValueError(f'method names of Checks subtypes must start with "_" or "check_"')
+                raise ValueError(f'invalid method name "{name}": method names of Checks subtypes must start with "_" or "check_"')
             
             sig = Signature.from_callable(method)
             if sig not in (CHECK_SIGNATURE, CHECK_SIGNATURE_ANNOTATED):
@@ -629,11 +633,12 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.success = False
         check.exception = result
         check.message = f"caught exception: {repr(result)}"
+        default_logger.exception("error", exception=result)
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
     
 
-def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable) -> BaseChecks:
+def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable, *, base_class: Type[BaseChecks] = BaseChecks) -> BaseChecks:
     """Returns a class wrapping each item in an iterable collection into check instance methods. 
 
     Building a checks subclass implementation with this function is semantically equivalent to 
@@ -652,12 +657,14 @@ def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable) -> Ba
     Args:
         handler: A callable for performing a check given a single element input.
         iterable: An iterable collection of checkable items to be wrapped into check methods.
+        base_class: The base class for the new checks subclass. Enables mixed mode checks where
+            some are written by hand and others a are generated.
 
     Returns:
         A new subclass of `BaseChecks` with instance method check implememntatiomns for each
         item in the `iterable` argument collection.
     """
-    cls = type("_IterableChecks", (BaseChecks,), {})
+    cls = type("_IterableChecks", (base_class,), {})
 
     def create_fn(name, item):
         async def fn(self) -> Check:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import signal
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
@@ -13,8 +14,8 @@ from pydantic import BaseModel, Field, parse_obj_as
 
 from servo import api
 from servo.api import descriptor_to_adjustments
-from servo.assembly import Assembly, BaseServoConfiguration
-from servo.configuration import Optimizer
+from servo.assembly import Assembly
+from servo.configuration import BaseAssemblyConfiguration, Optimizer, ServoConfiguration
 from servo.errors import ConnectorError
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
@@ -22,11 +23,51 @@ from servo.types import Adjustment, Control, Duration, Description, Measurement
 from servo.utilities import commandify, value_for_key_path
 
 
+DEFAULT_CONTEXT = "__default__"
+
+
+class BackoffConfig:
+    """BackoffConfig provides callables for runtime configuration of backoff decorators.
+
+    This implementation relies upon the framework managed context variables to determine
+    which servo is running and retrieve the configuration.
+    """
+
+    @staticmethod
+    def max_time(context: str = DEFAULT_CONTEXT) -> Optional[int]:
+        if servo_config := Servo.current().config.servo:
+            if backoff_config := servo_config.backoff.get(context, None):
+                if max_time := backoff_config.max_time:
+                    return max_time.total_seconds()
+        
+        # fallback to default
+        if max_time := BackoffConfig.max_time():
+            return max_time
+        
+        raise AssertionError("max_time default should never be None")
+
+    
+    @staticmethod
+    def max_tries(context: str = DEFAULT_CONTEXT) -> Optional[int]:
+        if servo_config := Servo.current().config.servo:
+            if backoff_config := servo_config.backoff.get(context, None):
+                return backoff_config.max_tries
+        
+        # fallback to default
+        return BackoffConfig.max_tries()
+
+
 class Runner(api.Mixin):
     assembly: Assembly
+    connected: bool = False
 
     def __init__(self, assembly: Assembly) -> None:
         self.assembly = assembly
+
+        # initialize default servo options if not configured
+        if self.config.servo is None:
+            self.config.servo = ServoConfiguration()
+
         super().__init__()
 
     @property
@@ -38,7 +79,7 @@ class Runner(api.Mixin):
         return self.assembly.servo
 
     @property
-    def config(self) -> BaseServoConfiguration:
+    def config(self) -> BaseAssemblyConfiguration:
         return self.servo.config
 
     @property
@@ -113,6 +154,8 @@ class Runner(api.Mixin):
         await self.servo.dispatch_event(Events.ADJUST, adjustments)
         self.logger.info(f"Adjustment completed {summary}")
 
+    # backoff and retry for an hour on transient request failures
+    @backoff.on_exception(backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time)
     async def exec_command(self):
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
         self.logger.info(f"What's Next? => {cmd_response.command}")
@@ -173,10 +216,11 @@ class Runner(api.Mixin):
         except Exception as error:            
             self.logger.exception(f"{cmd_response.command} command failed: {error}")
             # TODO: we need to track connectivity state instead of trying to blindly send
-            # param = dict(status="failed", message=str(error))
-            # await self._post_event(cmd_response.command.response_event, param)
+            if self.connected:
+                param = dict(status="failed", message=str(error))
+                await self._post_event(cmd_response.command.response_event, param)
             raise
-
+        
     async def main(self) -> None:
         # Setup logging
         self.progress_handler = ProgressHandler(self.servo.report_progress, self.logger.warning)
@@ -185,11 +229,31 @@ class Runner(api.Mixin):
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
         )
-        self.logger.info("Dispatching startup event...")
-        await self.servo.startup()
 
-        self.logger.info("Saying HELLO.", end=" ")
-        await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
+        async def giveup(details) -> None:
+            loop = asyncio.get_event_loop()
+            self.logger.critical("retries exhausted, giving up")
+            asyncio.create_task(self.shutdown(loop))
+
+        try:
+            @backoff.on_exception(
+                backoff.expo, 
+                httpx.HTTPError, 
+                max_time=lambda: BackoffConfig.max_time("connect"),
+                on_giveup=giveup
+            )
+            async def connect() -> None:                
+                self.logger.info("Saying HELLO.", end=" ")
+                await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
+                self.connected = True
+
+            self.logger.info("Dispatching startup event...")
+            await self.servo.startup()
+
+            self.logger.info("Connecting to Opsani optimizer API...")
+            await connect()
+        except:
+            pass
 
         while True:
             await self.exec_command()
@@ -199,9 +263,9 @@ class Runner(api.Mixin):
             self.logger.info(f"Received exit signal {signal.name}...")
 
         try:
-            # TODO: Track connection state. Can't report GOODBYE if HELLO never succeeded
-            reason = signal.name if signal else 'shutdown'
-            await self._post_event(api.Event.GOODBYE, dict(reason=reason))
+            if self.connected:
+                reason = signal.name if signal else 'shutdown'
+                await self._post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception:
             self.logger.exception(f"Exception occurred during GOODBYE request")
         
@@ -253,4 +317,6 @@ class Runner(api.Mixin):
             loop.create_task(self.main())
             loop.run_forever()
         finally:
-            loop.close()            
+            loop.close()
+
+    

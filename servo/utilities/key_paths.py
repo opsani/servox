@@ -30,5 +30,4 @@ def value_for_key_path(obj: object, key_path: str, default: Any = DEFAULT_SENTIN
         if default is not DEFAULT_SENTINEL:
             return default
         else:
-            debug(default)
             raise ValueError(f"unknown key-path '{key_path}'")

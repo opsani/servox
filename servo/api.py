@@ -1,5 +1,3 @@
-import abc
-import time
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
@@ -9,7 +7,6 @@ import httpx
 from pydantic import BaseModel, Field, parse_obj_as
 
 from servo.types import Adjustment, Control, Duration, Numeric
-
 
 USER_AGENT = "github.com/opsani/servox"
 
@@ -88,24 +85,29 @@ class StatusMessage(BaseModel):
 class Mixin:
     @property
     def api_headers(self) -> Dict[str, str]:
+        if not self.optimizer:
+            raise RuntimeError(f"cannot construct API headers: optimizer is not configured")
         return {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-
-    def api_client(self) -> httpx.AsyncClient:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""
-        headers = {
-            "Authorization": f"Bearer {self.optimizer.token}",
-            "User-Agent": USER_AGENT,
-            "Content-Type": "application/json",
-        }
-        return httpx.AsyncClient(base_url=self.optimizer.api_url, headers=self.api_headers)
     
-    def api_client_sync(self) -> httpx.Client:
+    @property
+    def api_client_options(self) -> Dict[str, Any]:
+        return dict(base_url=self.optimizer.api_url, headers=self.api_headers)
+    
+    def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
-        return httpx.Client(base_url=self.optimizer.api_url, headers=self.api_headers)
+        if not self.optimizer:
+            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
+        return httpx.AsyncClient(**{ **self.api_client_options, **kwargs })
+    
+    def api_client_sync(self, **kwargs) -> httpx.Client:
+        """Yields an httpx.Client instance configured to talk to Opsani API"""
+        if not self.optimizer:
+            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
+        return httpx.Client(**{ **self.api_client_options, **kwargs })
     
     # TODO: Clean this up...
     async def report_progress(self, **kwargs):
