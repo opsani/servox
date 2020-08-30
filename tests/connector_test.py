@@ -15,8 +15,8 @@ from typer.testing import CliRunner
 
 from servo import Duration
 from servo.cli import ServoCLI
+from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
 from servo.connector import (
-    BaseConfiguration,
     BaseConnector,
     License,
     Maturity,
@@ -24,7 +24,6 @@ from servo.connector import (
     Version,
     _connector_subclasses,
 )
-from servo.assembly import BaseServoConfiguration
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import EventContext, Preposition, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
@@ -661,7 +660,7 @@ def test_env_variable_prefixing() -> None:
     schemas = [
         BaseConfiguration.schema(),
         VegetaConfiguration.schema(),
-        BaseServoConfiguration.schema(),
+        BaseAssemblyConfiguration.schema(),
     ]
     # NOTE: popping the env_names without copying is a mistake you will only make once
     values = list(
@@ -974,7 +973,6 @@ def test_vegeta_cli_generate_with_defaults(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        "description": None,
         "vegeta": {
             "connections": 10000,
             "description": "Update the rate, duration, and target/targets to match your load profile",
@@ -988,7 +986,6 @@ def test_vegeta_cli_generate_with_defaults(
             "rate": "50/1s",
             "reporting_interval": "15s",
             "target": "GET https://example.com/",
-            "targets": None,
             "workers": 10,
         },
     }

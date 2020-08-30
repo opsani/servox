@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import signal
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
@@ -13,8 +14,8 @@ from pydantic import BaseModel, Field, parse_obj_as
 
 from servo import api
 from servo.api import descriptor_to_adjustments
-from servo.assembly import Assembly, BaseServoConfiguration
-from servo.configuration import Optimizer
+from servo.assembly import Assembly
+from servo.configuration import BaseAssemblyConfiguration, Optimizer
 from servo.errors import ConnectorError
 from servo.logging import ProgressHandler
 from servo.servo import Events, Servo
@@ -38,7 +39,7 @@ class Runner(api.Mixin):
         return self.assembly.servo
 
     @property
-    def config(self) -> BaseServoConfiguration:
+    def config(self) -> BaseAssemblyConfiguration:
         return self.servo.config
 
     @property

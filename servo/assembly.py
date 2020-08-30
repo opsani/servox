@@ -10,18 +10,20 @@ from pydantic import BaseModel, create_model
 from pydantic.json import pydantic_encoder
 from pydantic.schema import schema as pydantic_schema
 
-from servo.connector import (
+from servo.configuration import (
+    BaseAssemblyConfiguration,
     BaseConfiguration,
+)
+from servo.connector import (
     BaseConnector,
     ConnectorLoader,
     Optimizer,
     _connector_subclasses,
+    _default_routes,
+    _routes_for_connectors_descriptor
 )
 from servo.servo import (
     Servo,
-    BaseServoConfiguration, 
-    _default_routes, 
-    _routes_for_connectors_descriptor,
     _servo_context_var
 )
 from servo.utilities import join_to_series
@@ -42,7 +44,7 @@ class Assembly(BaseModel):
     in the config file.
 
     The Assembly class is responsible for handling the connector
-    loading and creating a concrete BaseServoConfiguration model that supports
+    loading and creating a concrete BaseAssemblyConfiguration model that supports
     the connectors available and activated in the assembly. An assembly
     is the combination of configuration and associated code artifacts
     in an executable environment (e.g. a Docker image or a Python virtualenv
@@ -57,7 +59,7 @@ class Assembly(BaseModel):
     optimizer: Optimizer
 
     ## Assembled settings & Servo
-    config_model: Type[BaseServoConfiguration]
+    config_model: Type[BaseAssemblyConfiguration]
     servo: Servo
 
     @staticmethod
@@ -77,7 +79,7 @@ class Assembly(BaseModel):
         optimizer: Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> Tuple["Assembly", Servo, Type[BaseServoConfiguration]]:
+    ) -> Tuple["Assembly", Servo, Type[BaseAssemblyConfiguration]]:
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
         
         _discover_connectors()
@@ -189,7 +191,7 @@ def _discover_connectors() -> Set[Type[BaseConnector]]:
 
 def _create_config_model_from_routes(
     routes=Dict[str, Type[BaseConnector]], *, require_fields: bool = True,
-) -> Type[BaseServoConfiguration]:
+) -> Type[BaseAssemblyConfiguration]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
         Type[BaseConnector], str
@@ -211,7 +213,7 @@ def _create_config_model_from_routes(
 
     # Create our model
     servo_config_model = create_model(
-        "ServoConfiguration", __base__=BaseServoConfiguration, **setting_fields,
+        "ServoConfiguration", __base__=BaseAssemblyConfiguration, **setting_fields,
     )
 
     connectors_series = join_to_series(list(connector_versions.values()))
@@ -228,7 +230,7 @@ def _create_config_model(
     config_file: Path,
     routes: Dict[str, Type[BaseConnector]] = None,
     env: Optional[Dict[str, str]] = os.environ,
-) -> (Type[BaseServoConfiguration], Dict[str, Type[BaseConnector]]):
+) -> (Type[BaseAssemblyConfiguration], Dict[str, Type[BaseConnector]]):
     # map of config key in YAML to settings class for target connector
     if routes is None:
         routes = _default_routes()

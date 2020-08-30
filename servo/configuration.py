@@ -1,8 +1,10 @@
+import abc
+import inspect
 import re
 import json
 import yaml
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Type, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Type, Union
 from pydantic import (
     BaseSettings,
     Extra,
@@ -10,8 +12,8 @@ from pydantic import (
     HttpUrl,
     constr,
 )
+from pydantic import AnyHttpUrl, BaseModel, Extra, Field, FilePath, validator, constr
 from servo.types import Duration
-
 
 class Optimizer(BaseSettings):
     """
@@ -231,3 +233,195 @@ env_names = BaseConfiguration.__fields__["description"].field_info.extra.get(
 BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
+
+
+class BackoffSettings(BaseConfiguration):
+    """
+    BackoffSettings objects model configuration of backoff and retry policies.
+
+    See https://github.com/litl/backoff
+    """
+
+    max_time: Optional[Duration]
+    """
+    The maximum amount of time to retry before giving up.
+    """
+
+    max_tries: Optional[int]
+    """
+    The maximum number of retry attempts to make before giving up.
+    """
+
+
+class Timeouts(BaseConfiguration):
+    """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+
+    See https://www.python-httpx.org/advanced/#timeout-configuration
+    """
+
+    connect: Optional[Duration]
+    """Specifies the maximum amount of time to wait until a connection to the requested host is established. If HTTPX is unable 
+    to connect within this time frame, a ConnectTimeout exception is raised.
+    """
+
+    read: Optional[Duration]
+    """Specifies the maximum duration to wait for a chunk of data to be received (for example, a chunk of the response body). 
+    If HTTPX is unable to receive data within this time frame, a ReadTimeout exception is raised.
+    """
+
+    write: Optional[Duration]
+    """Specifies the maximum duration to wait for a chunk of data to be sent (for example, a chunk of the request body). 
+    If HTTPX is unable to send data within this time frame, a WriteTimeout exception is raised.
+    """
+
+    pool: Optional[Duration]
+    """Specifies the maximum duration to wait for acquiring a connection from the connection pool. If HTTPX is unable to 
+    acquire a connection within this time frame, a PoolTimeout exception is raised. A related configuration here is the maximum 
+    number of allowable connections in the connection pool, which is configured by the pool_limits.
+    """
+
+    def __init__(self, timeout: Optional[Union[str, int, float, Duration]] = None, **kwargs) -> None:
+        for attr in ("connect", "read", "write", "pool"):
+            if not attr in kwargs:
+                kwargs[attr] = timeout
+        super().__init__(**kwargs)
+
+
+ProxyKey = constr(regex=r'^(https?|all)://')
+
+
+class ServoConfiguration(BaseConfiguration):
+    """ServoConfiguration models configuration for the Servo connector and establishes default
+    settings for shared services such as networking and logging.
+    """
+
+    backoff: Dict[str, BackoffSettings] = { "connect": { "max_time": "1h" } }
+    """A mapping of named operations to settings for the backoff library, which provides backoff
+    and retry capabilities to the servo.
+
+    See https://github.com/litl/backoff
+    """
+
+    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[AnyHttpUrl]]]
+    """Proxy configuration for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+
+    See https://www.python-httpx.org/advanced/#http-proxying
+    """
+
+    timeouts: Optional[Timeouts]
+    """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+    """
+
+    ssl_verify: Union[None, bool, FilePath]
+    """SSL verification settings for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+
+    Used to provide a certificate bundle for interacting with HTTPS web services with certificates that
+    do not verify with the standard bundle (self-signed, private PKI, etc).
+
+    Setting a value of `False` disables SSL verification and is strongly discouraged due to the significant
+    security implications.
+
+    See https://www.python-httpx.org/advanced/#ssl-certificates
+    """
+
+    @validator("timeouts", pre=True)
+    def parse_timeouts(cls, v):
+        if isinstance(v, (str, int, float)):
+            return Timeouts(v)
+        return v
+    
+    @classmethod
+    def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
+        return None
+
+
+class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
+    """
+    Abstract base class for Servo assembly settings.
+
+    Note that the concrete BaseAssemblyConfiguration class is built dynamically at runtime
+    based on the avilable connectors and configuration in effect.
+
+    See `Assembly` for details on how the concrete model is built.
+    """
+
+    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(
+        None,
+        description=(
+            "An optional, explicit configuration of the active connectors.\n"
+            "\nConfigurable as either an array of connector identifiers (names or class) or\n"
+            "a dictionary where the keys specify the key path to the connectors configuration\n"
+            "and the values identify the connector (by name or class name)."
+        ),
+        examples=[
+            ["kubernetes", "prometheus"],
+            {"staging_prom": "prometheus", "gateway_prom": "prometheus"},
+        ],
+    )
+    """
+    An optional list of connector names or a mapping of connector names to connector class names
+    """
+
+    servo: Optional[ServoConfiguration] = Field(
+        None,
+        description="Configuration of the Servo connector"
+    )
+    """Configuration of the Servo itself.
+
+    Servo settings are applied as defaults for other connectors whenever possible.
+    """
+
+    @classmethod
+    def generate(
+        cls: Type["BaseAssemblyConfiguration"], **kwargs
+    ) -> Optional["BaseAssemblyConfiguration"]:
+        """
+        Generates configuration for the servo assembly.
+        """
+        for name, field in cls.__fields__.items():
+            if (
+                name not in kwargs
+                and inspect.isclass(field.type_)
+                and issubclass(field.type_, AbstractBaseConfiguration)
+            ):
+                if config := field.type_.generate():
+                    kwargs[name] = config
+        return cls(**kwargs)
+
+    @validator("connectors", pre=True)
+    @classmethod
+    def validate_connectors(
+        cls, connectors
+    ) -> Optional[Union[Dict[str, str], List[str]]]:
+        if isinstance(connectors, str):
+            # NOTE: Special case. When we are invoked with a string it is typically an env var
+            try:
+                decoded_value = BaseAssemblyConfiguration.__config__.json_loads(connectors)  # type: ignore
+            except ValueError as e:
+                raise ValueError(f'error parsing JSON for "{connectors}"') from e
+
+            # Prevent infinite recursion
+            if isinstance(decoded_value, str):
+                raise ValueError(
+                    f'JSON string values for `connectors` cannot parse into strings: "{connectors}"'
+                )
+
+            connectors = decoded_value
+        
+        # import late until dependencies are untangled
+        from servo.connector import _normalize_connectors, _routes_for_connectors_descriptor
+
+        connectors = _normalize_connectors(connectors)
+        # NOTE: Will raise if descriptor is invalid, failing validation
+        _routes_for_connectors_descriptor(connectors)
+        
+        return connectors
+
+    class Config:
+        extra = Extra.forbid
+        title = "Abstract Servo Configuration Schema"
+        env_prefix = "SERVO_"

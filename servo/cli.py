@@ -32,14 +32,14 @@ from servo.assembly import (
 )
 from servo.connector import (
     BaseConnector, 
-    Optimizer
+    Optimizer,
+    _connector_class_from_string
 )
 from servo.events import EventHandler, EventResult, Preposition
 from servo.logging import logger, set_level as set_log_level
 from servo.servo import (
     Events,
     Servo,
-    _connector_class_from_string
 )
 from servo.checks import Check, Filter, HaltOnFailed
 from servo.runner import Runner
@@ -1559,7 +1559,7 @@ class ServoCLI(CLI):
         ) -> None:
             """Generate a configuration"""
             exclude_unset = not defaults
-            exclude = {"connectors"} if standalone else {}
+            exclude = {"connectors", "servo"} if standalone else {}
 
             routes = (
                 self.connector_routes_callback(context=context, value=connectors)
@@ -1590,7 +1590,7 @@ class ServoCLI(CLI):
                     config.connectors = connectors
             
             config_yaml = config.yaml(
-                by_alias=True, exclude_unset=exclude_unset, exclude=exclude
+                by_alias=True, exclude_unset=exclude_unset, exclude=exclude, exclude_none=True
             )
             if file.exists() and force == False:
                 delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
