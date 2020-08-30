@@ -24,6 +24,16 @@ checks and provide a better operational experience for running and debugging che
 ### Added
 - `servo run --check` will run all configured checks before starting the servo runloop.
 - `servo check` now supports filtering by name, id, and tags. Failure mode handling is configurable via `--halt-on-failed=[requirement,check,never]`
+- `servo run` now applies exponential backoff and retry to recover from transient HTTP errors.
+- Introduce associations mixin for managing off-model support objects that don't make sense to model as attributes.
+- `ServoConfiguration` class for applying settings to the servo itself.
+- HTTP proxy support (configured on `ServoConfiguration`).
+- Timeout configuration (configured on `ServoConfiguration`).
+- Support for configuring backoff and retry behaviors (configured on `ServoConfiguration`).
+
+### Fixed
+- Attempting to connect to an invalid or unavailable optimizer backend now triggers exponential backoff and retry rather than crashing.
+- Encountering an unexpected event error from the optimizer now aborts the operation in progress and resets rather than waiting for the operation to complete.
 
 ## [0.5.1] - 2020-08-23
 

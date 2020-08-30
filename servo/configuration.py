@@ -296,7 +296,10 @@ class ServoConfiguration(BaseConfiguration):
     settings for shared services such as networking and logging.
     """
 
-    backoff: Dict[str, BackoffSettings] = { "connect": { "max_time": "1h" } }
+    backoff: Dict[str, BackoffSettings] = Field({ 
+        "__default__": { "max_time": "10m", "max_tries": None },
+        "connect": { "max_time": "1h", "max_tries": None },
+    })
     """A mapping of named operations to settings for the backoff library, which provides backoff
     and retry capabilities to the servo.
 
@@ -337,6 +340,9 @@ class ServoConfiguration(BaseConfiguration):
     @classmethod
     def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
         return None
+    
+    class Config:
+        validate_assignment = True
 
 
 class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):

@@ -840,8 +840,13 @@ class TestAssembly:
                     'backoff': {
                         'title': 'Backoff',
                         'default': {
+                            '__default__': {
+                                'max_time': '10m',
+                                'max_tries': None,
+                            },
                             'connect': {
                                 'max_time': '1h',
+                                'max_tries': None,
                             },
                         },
                         'env_names': [
@@ -1620,3 +1625,12 @@ async def test_httpx_client_config() -> None:
             assert client.proxies["all"]
             assert client.transport._ssl_context.verify_mode == ssl.CERT_NONE
             assert client.transport._ssl_context.check_hostname == False
+
+
+def test_backoff_defaults() -> None:
+    config = ServoConfiguration()
+    assert config.backoff
+    assert config.backoff["__default__"]
+    assert config.backoff["__default__"].max_time is not None
+    assert config.backoff["__default__"].max_time == Duration("10m")
+    assert config.backoff["__default__"].max_tries is None

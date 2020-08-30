@@ -1590,7 +1590,7 @@ class ServoCLI(CLI):
                     config.connectors = connectors
             
             config_yaml = config.yaml(
-                by_alias=True, exclude_unset=exclude_unset, exclude=exclude, exclude_none=True
+                by_alias=True, exclude_unset=exclude_unset, exclude_defaults=exclude_unset, exclude=exclude, exclude_none=True
             )
             if file.exists() and force == False:
                 delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")

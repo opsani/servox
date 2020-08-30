@@ -13,6 +13,7 @@ from pydantic.schema import schema as pydantic_schema
 from servo.configuration import (
     BaseAssemblyConfiguration,
     BaseConfiguration,
+    ServoConfiguration
 )
 from servo.connector import (
     BaseConnector,
@@ -88,7 +89,7 @@ class Assembly(BaseModel):
         if not config_file.exists():
             raise FileNotFoundError(f"config file '{config_file}' does not exist")
 
-        ServoConfiguration, routes = _create_config_model(
+        AssemblyConfiguration, routes = _create_config_model(
             config_file=config_file, env=env
         )        
 
@@ -98,12 +99,12 @@ class Assembly(BaseModel):
                 f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
             )
         config = {} if config is None else config
-        servo_config = ServoConfiguration.parse_obj(config)
+        assembly_config = AssemblyConfiguration.parse_obj(config)
 
         # Initialize all active connectors
         connectors: List[BaseConnector] = []
         for name, connector_type in routes.items():
-            connector_config = getattr(servo_config, name)
+            connector_config = getattr(assembly_config, name)
             if connector_config:
                 # NOTE: If the command is routed but doesn't define a settings class this will raise
                 connector = connector_type(
@@ -116,7 +117,7 @@ class Assembly(BaseModel):
 
         # Build the servo object
         servo = Servo(
-            config=servo_config,
+            config=assembly_config,
             connectors=connectors.copy(), # Avoid self-referential reference to servo
             optimizer=optimizer,
             __connectors__=connectors,
@@ -125,7 +126,7 @@ class Assembly(BaseModel):
         assembly = Assembly(
             config_file=config_file,
             optimizer=optimizer,
-            config_model=ServoConfiguration,
+            config_model=AssemblyConfiguration,
             servo=servo,
         )
 
@@ -133,7 +134,7 @@ class Assembly(BaseModel):
         _assembly_context_var.set(assembly)
         _servo_context_var.set(servo)
 
-        return assembly, servo, ServoConfiguration
+        return assembly, servo, AssemblyConfiguration
 
     def __init__(self, *args, servo: Servo, **kwargs):
         super().__init__(*args, servo=servo, **kwargs)
