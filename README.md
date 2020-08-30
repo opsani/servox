@@ -139,6 +139,7 @@ are simple string values that have connector defined semantics and can optionall
 events of `DESCRIBE`, `MEASURE`, `ADJUST`, and `PROMOTE` which correspond to declaring the metrics & components that the connector is interested in,
 taking measurements and returning normalized scalar or time series data points, making changes to the application under optimization, or promoting
 an optimized configuration to the broader system.
+* **Checks** - Checks provide a mechanism for verifying the correctness and health of connector configuration and opeations. They are designed to support a high throughput integration and debugging experience by providing feedback loop driven workflow. Checks are implemented on top of the events subsystem and provide a rich interface via the `servo check` CLI command. The design of the checks subsystem is covered in depth [in the docs](docs/checks.md).
 * **Assembly** - The Servo Assembly models the runtime environment of the servo outside of a particular configuration. The assembly is the parent
 of the servo and is responsible for "assembling" it by instantiating connectors as configured by the operator. Connectors can be used multiple times
 (e.g. you may want to connect to multiple discrete Prometheus services) or may not be used at all (e.g. you have a New Relic connector in the 
@@ -214,7 +215,7 @@ results returned by active connectors via the on event handlers.
 
 #### Creating a new Event
 
-Events can be created either programmatically via the `Connector.create_event()` class methd or
+Events can be created either programmatically via the `Connector.create_event()` class method or
 declaratively via the `event()` decorator:
 
 ```python
@@ -289,8 +290,8 @@ Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid h
 
 ### Connector Discovery
 
-Connectors are set up to be auto-discovered using setuptools entry point available from the Python standard library. When a new connector
-is installed into the assembly, it will be automatically discovered and available for interaction.
+Connectors are set up to be auto-discovered using the setuptools entry point functionality available from the Python standard library. When a new connector
+is installed into the assembly, it will be automatically discovered and become available for interaction.
 
 The specific of how this mechanism works is discussed in detail on the [Python Packaging Guide](https://packaging.python.org/guides/creating-and-discovering-plugins/).
 
