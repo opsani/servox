@@ -630,6 +630,7 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.success = False
         check.exception = result
         check.message = f"caught exception: {repr(result)}"
+        default_logger.exception("error", exception=result)
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
     
