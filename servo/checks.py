@@ -1,5 +1,6 @@
 import asyncio
 import enum
+import functools
 
 from datetime import datetime
 from hashlib import blake2b
@@ -245,21 +246,21 @@ def check(
         )
 
         if asyncio.iscoroutinefunction(fn):
-            # note: use a default value for self to wrap funcs & methods
-            async def run_check(self: Optional[Any] = None) -> Check:
+            @functools.wraps(fn)
+            async def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
-                args = [self] if self else []
-                await run_check_handler(check, fn, *args)
+                await run_check_handler(check, fn, *args, **kwargs)
                 return check
         else:
-            # note: use a default value for self to wrap funcs & methods
-            def run_check(self: Optional[Any] = None) -> Check:
+            @functools.wraps(fn)
+            def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
-                args = [self] if self else []
-                run_check_handler_sync(check, fn, *args)
+                run_check_handler_sync(check, fn, *args, **kwargs)
                 return check
 
+        # update the wrapped return signature conform with protocol
         run_check.__check__ = __check__
+        run_check.__annotations__['return'] = Check
         return cast(CheckRunner, run_check)
 
     return decorator
