@@ -1,13 +1,14 @@
 from __future__ import annotations
 import abc
 import asyncio
+import importlib
 import inspect
 from contextvars import ContextVar
 from enum import Enum
 from typing import Dict, Iterable, List, Optional, Type, Union, Sequence
 
 import httpx
-from pydantic import AnyHttpUrl, Extra, Field, validator
+from pydantic import Extra, Field, validator
 
 import servo
 from servo import api, connector
@@ -17,12 +18,11 @@ from servo.connector import (
     BaseConnector,
     License,
     Maturity,
-    _connector_subclasses,
-    _connector_class_from_string,
-    _validate_class
+    _connector_subclasses
 )
+from servo.checks import Check, Filter, HaltOnFailed
 from servo.events import Preposition, event, on_event
-from servo.types import Adjustment, Check, Component, Control, Description, Duration, Measurement, Metric
+from servo.types import Adjustment, Component, Control, Description, Duration, Measurement, Metric
 
 
 _servo_context_var = ContextVar("servo.Servo.current", default=None)
@@ -84,7 +84,7 @@ class _EventDefinitions:
         yield
 
     @event(Events.CHECK)
-    async def check(self) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         ...
 
     @event(Events.DESCRIBE)
@@ -266,7 +266,7 @@ class Servo(BaseConnector):
     # Event handlers
 
     @on_event()
-    async def check(self) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
         async with self.api_client() as client:
             event_request = api.Request(event=api.Event.HELLO)
             response = await client.post("servo", data=event_request.json())
@@ -274,7 +274,7 @@ class Servo(BaseConnector):
             return [Check(
                 name="Opsani API connectivity",
                 success=success,
-                comment=f"Response status code: {response.status_code}",
+                message=f"Response status code: {response.status_code}",
             )]
 
 
@@ -391,3 +391,49 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, BaseConnector]:
         raise ValueError(
             f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
         )
+
+
+def _connector_class_from_string(connector: str) -> Optional[Type[BaseConnector]]:
+    if not isinstance(connector, str):
+        return None
+
+    # Check for an existing class in the namespace
+    # FIXME: This symbol lookup doesn't seem solid
+    connector_class = globals().get(connector, None)
+    try:
+        connector_class = (
+            eval(connector) if connector_class is None else connector_class
+        )
+    except Exception:
+        pass
+    
+    if _validate_class(connector_class):
+        return connector_class
+
+    # Check if the string is an identifier for a connector
+    for connector_class in _connector_subclasses:
+        if connector == connector_class.__default_name__ or connector in [
+            connector_class.__name__,
+            connector_class.__qualname__,
+        ]:
+            return connector_class
+
+    # Try to load it as a module path
+    if "." in connector:
+        module_path, class_name = connector.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        if hasattr(module, class_name):
+            connector_class = getattr(module, class_name)
+            if _validate_class(connector_class):
+                return connector_class
+
+    return None
+
+def _validate_class(connector: type) -> bool:
+    if connector is None or not isinstance(connector, type):
+        return False
+
+    if not issubclass(connector, BaseConnector):
+        raise TypeError(f"{connector.__name__} is not a Connector subclass")
+
+    return True

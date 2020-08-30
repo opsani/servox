@@ -15,6 +15,16 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Enhanced
+- The checks subsystem has been rearchitected to streamline the development of
+checks and provide a better operational experience for running and debugging checks.
+
+### Added
+- `servo run --check` will run all configured checks before starting the servo runloop.
+- `servo check` now supports filtering by name, id, and tags. Failure mode handling is configurable via `--halt-on-failed=[requirement,check,never]`
+
 ## [0.5.1] - 2020-08-23
 
 ### Removed

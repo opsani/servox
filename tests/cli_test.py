@@ -129,7 +129,7 @@ def test_check_verbose(
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
     assert result.exit_code == 0    
-    assert re.search("CONNECTOR\\s+CHECK\\s+STATUS\\s+COMMENT", result.stdout)
+    assert re.search("CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout)
 
 
 def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:

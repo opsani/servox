@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 from functools import reduce
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 import httpx
 import httpcore._exceptions
@@ -15,6 +15,8 @@ from servo import (
     Check,
     Description,
     Duration,
+    Filter,
+    HaltOnFailed,
     License,
     Maturity,
     Measurement,
@@ -25,6 +27,7 @@ from servo import (
     TimeSeries,
     DurationProgress,
 )
+from servo.checks import create_checks_from_iterable
 from servo.utilities import join_to_series
 
 
@@ -35,6 +38,12 @@ API_PATH = "/api/v1"
 class PrometheusMetric(Metric):
     query: str
     step: Duration = "1m"
+
+    def __check__(self) -> Check:
+        return Check(
+            name=f"Check {self.name}",
+            description=f"Run Prometheus query \"{self.query}\""
+        )
 
 
 class PrometheusConfiguration(BaseConfiguration):
@@ -93,7 +102,6 @@ class PrometheusRequest(BaseModel):
             f"&step={self.metric.step}"
         )
 
-
 @metadata(
     description="Prometheus Connector for Opsani",
     version="1.5.0",
@@ -105,26 +113,18 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self) -> List[Check]:
-        start, end = datetime.now() - timedelta(minutes=10), datetime.now()
-        checks = []
-        for metric in self.config.metrics:
-            try:
-                result = await self._query_prom(metric, start, end)
+    async def check(self, 
+        filter_: Optional[Filter] = None, 
+        halt_on: HaltOnFailed = HaltOnFailed.requirement
+    ) -> List[Check]:
+        start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
+        async def check_query(metric: PrometheusMetric) -> str:
+            result = await self._query_prom(metric, start, end)
+            return f"returned {len(result)} TimeSeries readings"
 
-            except Exception as error:
-                result = error
-                self.logger.exception(f"failed querying Prometheus")
-
-            finally:
-                checks.append(
-                    Check(
-                        name=f'Run query: {metric.query}',
-                        success=isinstance(result, Exception),
-                    )
-                )
-
-        return checks
+        # wrap all queries into checks and verify that they work
+        PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
+        return await PrometheusChecks.run(self.config, filter_, halt_on=halt_on)
 
     @on_event()
     def describe(self) -> Description:
@@ -179,8 +179,8 @@ class PrometheusConnector(BaseConnector):
                 response = await client.get(prometheus_request.url)
                 response.raise_for_status()
             except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
-                self.logger.exception(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
-                return []
+                self.logger.trace(f"HTTP error encountered during GET {prometheus_request.url}: {error}")
+                raise
 
         data = response.json()
         self.logger.trace(f"Got response data for metric {metric}: {data}")

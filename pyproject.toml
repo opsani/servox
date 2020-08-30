@@ -37,6 +37,7 @@ freezegun = "^0.3.15"
 asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.11.2"
 kubetest = "^0.8.1"
+pytest-freezegun = "^0.4.2"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"

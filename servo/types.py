@@ -414,20 +414,6 @@ class Measurement(BaseModel):
         return dict(metrics=readings, annotations=self.annotations)
 
 
-class Check(BaseModel):
-    name: str
-    description: Optional[str]
-    required: bool = True
-    success: bool
-    comment: Optional[str]
-    created_at: datetime = None
-
-    @validator("created_at", pre=True, always=True)
-    @classmethod
-    def set_created_at_now(cls, v):
-        return v or datetime.now()
-
-
 class Adjustment(BaseModel):
     component_name: str
     setting_name: str
