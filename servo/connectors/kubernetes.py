@@ -425,7 +425,6 @@ class KubernetesModel(abc.ABC):
             True if in the ready state; False otherwise.
         """
     
-    # TODO: Add Duration support
     async def wait_until_ready(
             self,
             timeout: int = None,
@@ -462,7 +461,6 @@ class KubernetesModel(abc.ABC):
             fail_on_api_error=fail_on_api_error,
         )
     
-    # TODO: Add Duration support
     async def wait_until_deleted(self, timeout: int = None, interval: Union[int, float] = 1) -> None:
         """Wait until the resource is deleted from the cluster.
 
@@ -898,7 +896,7 @@ class Pod(KubernetesModel):
     
     async def patch(self) -> None:
         """
-        TODO: Add docs....
+        Patches a Pod, applying spec changes to the cluster.
         """
         self.logger.info(f'patching pod "{self.name}"')
         self.logger.trace(f'pod: {self.obj}')
@@ -1013,7 +1011,6 @@ class Pod(KubernetesModel):
 
         return self.containers
 
-    # TODO: Rename `find_container` ??
     def get_container(self, name: str) -> Union[Container, None]:
         """Get a container in the Pod by name.
 
@@ -1265,15 +1262,6 @@ class Deployment(KubernetesModel):
             return False
 
         return total == ready
-    
-    # TODO: Determine if we want this...
-    def is_complete(self, target_generation: int) -> bool:
-        # Kubernetes marks a Deployment as complete when it has the following characteristics:
-
-        # All of the replicas associated with the Deployment have been updated to the latest version you've specified, meaning any updates you've requested have been completed.
-        # All of the replicas associated with the Deployment are available.
-        # No old replicas for the Deployment are running.
-        ...
 
     @property
     def containers(self) -> List[Container]:
@@ -2380,7 +2368,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
-    timeout: Duration = "5m" # TODO: TypeError: __new__() takes from 1 to 2 positional arguments but 4 were given
+    timeout: Duration = "5m"
   
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",
@@ -2554,17 +2542,6 @@ class KubernetesConnector(BaseConnector):
 
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
-        # TODO: Handle this adjust_on stuff (Do we even need this???)
-        # adjust_on = desc.get("adjust_on", False)
-
-        # if adjust_on:
-        #     try:
-        #         should_adjust = eval(adjust_on, {"__builtins__": None}, {"data": data})
-        #     except:
-        #         should_adjust = False
-        #     if not should_adjust:
-        #         return {"status": "ok", "reason": "Skipped due to 'adjust_on' condition"}
-
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
