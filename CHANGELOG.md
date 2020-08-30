@@ -15,7 +15,7 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.6.0] "woke up like this" - 2020-08-30
 
 ### Enhanced
 - The checks subsystem has been rearchitected to streamline the development of
@@ -30,6 +30,7 @@ checks and provide a better operational experience for running and debugging che
 - HTTP proxy support (configured on `ServoConfiguration`).
 - Timeout configuration (configured on `ServoConfiguration`).
 - Support for configuring backoff and retry behaviors (configured on `ServoConfiguration`).
+- Baseline set of checks on the Kubernetes Connector.
 
 ### Fixed
 - Attempting to connect to an invalid or unavailable optimizer backend now triggers exponential backoff and retry rather than crashing.
