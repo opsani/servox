@@ -517,9 +517,9 @@ class TestKubernetesConnectorIntegration:
     async def test_describe(self, config):
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("co-http-deployment.cpu").value == 1.0
-        assert description.get_setting("co-http-deployment.memory").value == "3G"
-        assert description.get_setting("co-http-deployment.replicas").value == 1
+        assert description.get_setting("fiber-http-deployment.cpu").value == 1.0
+        assert description.get_setting("fiber-http-deployment.memory").value == "3G"
+        assert description.get_setting("fiber-http-deployment.replicas").value == 1
 
 
     async def test_adjust(self, config, adjustment):    
@@ -601,7 +601,7 @@ async def test_apply_restart_strategy():
     # .spec.strategy specifies the strategy used to replace old Pods by new ones. .spec.strategy.type can be "Recreate" or "RollingUpdate". "RollingUpdate" is the default value.
     # Recreate Deployment
     ...
-# TODO: Put a co-http deployment live. Create a config and describe it.
+# TODO: Put a fiber-http deployment live. Create a config and describe it.
 # TODO: Test talking to multiple namespaces. Test kubeconfig file
 # Test describe an empty config.
 # Version ID checks
@@ -678,14 +678,14 @@ def config() -> KubernetesConfiguration:
         namespace="default",
         deployments=[
             DeploymentConfiguration(
-                name="co-http-deployment",
+                name="fiber-http-deployment",
                 replicas=Replicas(
                     min=1,
                     max=2,
                 ),
                 containers=[
                     ContainerConfiguration(
-                        name="opsani/co-http:latest",
+                        name="opsani/fiber-http:latest",
                         cpu=CPU(
                             min="100m",
                             max="800m",
@@ -707,7 +707,7 @@ def adjustment() -> dict:
     return {
         'application': {
             'components': {
-                'co-http-deployment': {
+                'fiber-http-deployment': {
                     'settings': {
                         'cpu': {
                             'value': 1.80, #0.725,
@@ -730,7 +730,7 @@ def adjustment() -> dict:
     # data:  (dict) len=2
     # adjustments: [
     #     Component(
-    #         name='co-http-deployment',
+    #         name='fiber-http-deployment',
     #         settings=[
     #             Setting(
     #                 name='cpu',

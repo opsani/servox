@@ -2388,7 +2388,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                     ),
                     containers=[
                         ContainerConfiguration(
-                            name="opsani/co-http:latest",
+                            name="opsani/fiber-http:latest",
                             cpu=CPU(
                                 min="250m",
                                 max="4000m",

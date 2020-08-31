@@ -9,14 +9,14 @@ data:
       namespace: default
       settlement: 2s        
       deployments:
-      - name: co-http-deployment
+      - name: fiber-http-deployment
         strategy: canary
         replicas:
           min: 1
           max: 2
           step: 1
         containers:
-        - name: co-http
+        - name: fiber-http
           cpu:
             min: 100m
             max: 0.8
@@ -29,7 +29,7 @@ data:
       description: Update the rate, duration, and target/targets to match your load profile
       duration: 35s
       rate: 50/1s
-      target: GET http://co-http-service.default.svc.cluster.local/
+      target: GET http://fiber-http-service.default.svc.cluster.local/
       reporting_interval: 2s
 ---
 apiVersion: apps/v1
@@ -69,10 +69,6 @@ spec:
       - name: main
         image: opsani/servox:latest
         imagePullPolicy: Always
-        # TODO: Enables checks as pre-run for container
-        # command:
-        #   - servo
-        #   - check
         env:
         - name: OPSANI_OPTIMIZER
           value: dev.opsani.com/blake-ignite

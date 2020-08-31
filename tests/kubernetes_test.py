@@ -35,25 +35,25 @@ def test_nginx(kube):
 
 
 @pytest.mark.applymanifests('manifests', files=[
-    'co-http.yaml'
+    'fiber-http.yaml'
 ])
 def test_co_http_and_envoy(kube):
     kube.wait_for_registered(timeout=60)
 
     deployments = kube.get_deployments()
-    web_deploy = deployments.get('co-http-deployment')
+    web_deploy = deployments.get('fiber-http-deployment')
     assert web_deploy is not None
 
     pods = web_deploy.get_pods()
-    assert len(pods) == 1, 'co-http should deploy with one replica'
+    assert len(pods) == 1, 'fiber-http should deploy with one replica'
 
     pod = pods[0]
     pod.wait_until_ready(timeout=30)
 
     # Check containers
     containers = pod.get_containers()
-    assert len(containers) == 2, "should have co-http and an envoy sidecar"
-    assert containers[0].obj.name == "co-http"
+    assert len(containers) == 2, "should have fiber-http and an envoy sidecar"
+    assert containers[0].obj.name == "fiber-http"
     assert containers[1].obj.name == "envoy"
 
     # Check services
@@ -121,11 +121,11 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
 
 def test_deploy_servo_cohttp_vegeta_measure() -> None:
     pass
-    # Make servo load test co-http, report the outcome in JSON
+    # Make servo load test fiber-http, report the outcome in JSON
 
 def test_deploy_servo_cohttp_vegeta_adjust() -> None:
     pass
-    # Make servo adjust co-http memory, report in JSON
+    # Make servo adjust fiber-http memory, report in JSON
 
 # TODO: Tests to write...
 # 1. Servo creates canary on start
