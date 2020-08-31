@@ -37,7 +37,7 @@ def test_nginx(kube):
 @pytest.mark.applymanifests('manifests', files=[
     'fiber-http.yaml'
 ])
-def test_co_http_and_envoy(kube):
+def test_fiber_http_and_envoy(kube):
     kube.wait_for_registered(timeout=60)
 
     deployments = kube.get_deployments()
@@ -58,7 +58,7 @@ def test_co_http_and_envoy(kube):
 
     # Check services
     response = pod.http_proxy_get('/')
-    assert "busy for " in response.data
+    assert "move along, nothing to see here" in response.data
 
     # TODO: Ugly hack to control port number
     pod.name = pod.name + ":9901"

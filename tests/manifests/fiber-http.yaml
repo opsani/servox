@@ -38,7 +38,7 @@ spec:
           - containerPort: 8080
       - name: envoy
         image: opsani/envoy-proxy:v1.14-latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         resources:
           requests:
             cpu: 125m
