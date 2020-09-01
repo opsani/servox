@@ -1352,7 +1352,9 @@ class Deployment(KubernetesModel):
         self.logger.trace(f"building new canary")
         pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
         pod_obj.metadata.name = canary_pod_name
+        if pod_obj.metadata.annotations is None: pod_obj.metadata.annotations = {}
         pod_obj.metadata.annotations['opsani.com/opsani_tuning_for'] = self.name
+        if pod_obj.metadata.labels is None: pod_obj.metadata.labels = {}
         pod_obj.metadata.labels['opsani_role'] = 'tuning'
 
         canary_pod = Pod(obj=pod_obj)
@@ -2539,7 +2541,6 @@ class KubernetesConnector(BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
         
-
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
         state = await KubernetesOptimizations.create(self.config)
