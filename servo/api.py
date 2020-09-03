@@ -106,7 +106,7 @@ class Mixin:
     def api_client_sync(self, **kwargs) -> httpx.Client:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         if not self.optimizer:
-            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
+            raise RuntimeError(f"cannot construct API client: optimizer is not configured")        
         return httpx.Client(**{ **self.api_client_options, **kwargs })
     
     # TODO: Clean this up...

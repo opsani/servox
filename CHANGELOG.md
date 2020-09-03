@@ -15,6 +15,19 @@ This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2020-09-03
+
+### Enhanced
+- Logging when connecting via a proxy.
+
+### Fixed
+- Handled null annotations and labels when cloning a Deployment in order to create a Pod.
+- Servo runner now honors proxy settings (previously only honored within connectors).
+- `servo check servo` now works as expected (previously not handled as a connector name).
+
+### Changed
+- Updated to httpx v0.14.3.
+
 ## [0.6.0] "woke up like this" - 2020-08-30
 
 ### Enhanced

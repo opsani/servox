@@ -9,6 +9,7 @@ from typing import List
 
 import pytest
 import yaml
+import httpx
 from pydantic import Extra, ValidationError
 
 from servo import __version__, connector
@@ -1634,3 +1635,34 @@ def test_backoff_defaults() -> None:
     assert config.backoff["__default__"].max_time is not None
     assert config.backoff["__default__"].max_time == Duration("10m")
     assert config.backoff["__default__"].max_tries is None
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("proxies"),
+    [
+        "http://localhost:1234", 
+        {"all://": "http://localhost:1234"},
+        {"https://": "http://localhost:1234"},
+        {"https://api.opsani.com": "http://localhost:1234"},
+        {"https://*.opsani.com": "http://localhost:1234"},
+    ]
+)
+async def test_proxy_utilization(proxies) -> None:
+    # test raw httpx
+    async with httpx.AsyncClient(base_url="https://api.opsani.com/1234", proxies=proxies) as c:
+        with pytest.raises(httpx.NetworkError) as e:
+            await c.get("/test")
+        assert e
+        assert "Connect call failed ('127.0.0.1', 1234)" in str(e.value)
+
+    # test servo machinery
+    config = ServoConfiguration(
+        proxies=proxies
+    )
+    optimizer = Optimizer("test.com/foo", token="12345")
+    servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    async with servo.api_client() as client:
+        with pytest.raises(httpx.NetworkError) as e:
+            await client.get("/test")
+        assert e
+        assert "Connect call failed ('127.0.0.1', 1234)" in str(e.value)

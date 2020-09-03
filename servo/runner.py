@@ -86,6 +86,12 @@ class Runner(api.Mixin):
     def logger(self) -> loguru.Logger:
         return self.servo.logger
     
+    @property
+    def api_client_options(self) -> Dict[str, Any]:
+        # FIXME: Support for proxies. This is messy. Needs to be cleaned up.
+        # We have unnatural layering because proxies is on config but api is standalone.
+        return self.servo.api_client_options
+    
     def display_banner(self) -> None:
         banner = (
             "   _____                      _  __\n"
@@ -117,6 +123,9 @@ class Runner(api.Mixin):
         if self.optimizer.base_url != "https://api.opsani.com/":
             base_url = typer.style(f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED)
             typer.secho(f"base url: {base_url}")
+        if self.config.servo.proxies:
+            proxies = typer.style(f"{pformat(self.config.servo.proxies)}", bold=True, fg=typer.colors.CYAN)
+            typer.secho(f"proxies: {proxies}")
         typer.secho()
 
     async def describe(self) -> Description:
@@ -250,7 +259,7 @@ class Runner(api.Mixin):
             self.logger.info("Dispatching startup event...")
             await self.servo.startup()
 
-            self.logger.info("Connecting to Opsani optimizer API...")
+            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
         except:
             pass
