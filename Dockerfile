@@ -1,4 +1,5 @@
-FROM python:3.8
+FROM peterevans/vegeta AS vegeta
+FROM python:3.8-slim
 
 ARG SERVO_ENV=development
 
@@ -13,27 +14,15 @@ ENV SERVO_ENV=${SERVO_ENV} \
     PIP_DEFAULT_TIMEOUT=100 \
     # Poetry
     POETRY_VIRTUALENVS_CREATE=false \
-    POETRY_CACHE_DIR='/var/cache/pypoetry' \
-    # Vegeta
-    VEGETA_VERSION=12.8.3
+    POETRY_CACHE_DIR='/var/cache/pypoetry'
 
-# Install kubectl
 RUN apt-get update \
-  && apt-get install -y apt-utils apt-transport-https gnupg2 \
-  && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - \
-  && echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | tee -a /etc/apt/sources.list.d/kubernetes.list \
-  && apt-get update \
-  && apt-get install -y kubectl
-
-# Install AWS IAM Authenticator
-RUN curl -o /usr/local/bin/aws-iam-authenticator https://amazon-eks.s3.us-west-2.amazonaws.com/1.17.7/2020-07-08/bin/linux/amd64/aws-iam-authenticator \
-  && chmod +x /usr/local/bin/aws-iam-authenticator
+  && apt-get install -y --no-install-recommends git \
+  && apt-get purge -y --auto-remove \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install Vegeta
-RUN wget -q "https://github.com/tsenart/vegeta/releases/download/v$VEGETA_VERSION/vegeta-$VEGETA_VERSION-linux-amd64.tar.gz" -O /tmp/vegeta.tar.gz \
- && cd bin \
- && tar xzf /tmp/vegeta.tar.gz \
- && rm /tmp/vegeta.tar.gz
+COPY --from=vegeta /bin/vegeta /bin/vegeta
 
 # Build Servo
 WORKDIR /servo
