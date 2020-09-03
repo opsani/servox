@@ -449,7 +449,7 @@ class CLI(typer.Typer):
         if value:
             if isinstance(value, str):
                 # Lookup by name
-                for connector in context.servo.connectors:
+                for connector in context.assembly.connectors:
                     if connector.name == value:
                         return connector
                 raise typer.BadParameter(f"no connector found named '{value}'")
@@ -457,7 +457,7 @@ class CLI(typer.Typer):
                 connectors: List[BaseConnector] = []
                 for key in value:
                     size = len(connectors)
-                    for connector in context.servo.connectors:
+                    for connector in context.assembly.connectors:
                         if connector.name == key:
                             connectors.append(connector)
                             break
