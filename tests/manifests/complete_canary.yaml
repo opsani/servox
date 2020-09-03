@@ -99,11 +99,11 @@ spec:
       serviceAccountName: servo      
       containers:
       - name: main
-        image: opsani/servox:webhooks-and-canaries
+        image: opsani/servox:latest
         imagePullPolicy: Always
         env:
         - name: OPSANI_OPTIMIZER
-          value: dev.opsani.com/blake.watters-k8s-live
+          value: dev.opsani.com/blake-test-blank
         - name: SERVO_LOG_LEVEL
           value: DEBUG        
         - name: POD_NAME
@@ -172,7 +172,7 @@ metadata:
     component: core
 type: Opaque
 data:
-  token: MDU4MDA2YWFiODFmMWE0ZmM2OTI5ZjY4MjhlMjA5ZDUwNTU4Yjk2ZTc4MWRhZTY3MTc3OGM5Cg==
+  token: ZjRmYmMxNmI1ZWYzYjg3N2FhNDUyMmIyMzc1MDAyZDM3MTlhNGY4NDc1Zjc1MjBkZWZiYjIxCg==
 
 ---
 apiVersion: v1

@@ -1610,7 +1610,9 @@ async def test_httpx_client_config() -> None:
     config = ServoConfiguration(
         proxies="http://localhost:1234",
         ssl_verify=False
-    )    
+    )
+    
+    from httpx._utils import URLPattern
 
     optimizer = Optimizer("test.com/foo", token="12345")
     connector = MeasureConnector(config=BaseConfiguration(), optimizer=optimizer)
@@ -1618,14 +1620,10 @@ async def test_httpx_client_config() -> None:
 
     for c in [servo, connector]:
         async with c.api_client() as client:
-            assert client.proxies["all"]
-            assert client.transport._ssl_context.verify_mode == ssl.CERT_NONE
-            assert client.transport._ssl_context.check_hostname == False
-        
-        with c.api_client_sync() as client:
-            assert client.proxies["all"]
-            assert client.transport._ssl_context.verify_mode == ssl.CERT_NONE
-            assert client.transport._ssl_context.check_hostname == False
+            for k, v in client._proxies.items():
+                assert k == URLPattern("all://")
+            assert client._transport._ssl_context.verify_mode == ssl.CERT_NONE
+            assert client._transport._ssl_context.check_hostname == False
 
 
 def test_backoff_defaults() -> None:
