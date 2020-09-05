@@ -1411,7 +1411,7 @@ class Deployment(KubernetesModel):
 
 class Millicore(int):
     """
-    The Millicore class represents one one-hundreth of a vCPU or hyperthread in Kubernetes.
+    The Millicore class represents one one-thousandth of a vCPU or hyperthread in Kubernetes.
     """
     @classmethod
     def __get_validators__(cls) -> 'CallableGenerator':
