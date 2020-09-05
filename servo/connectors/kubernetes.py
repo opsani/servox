@@ -174,9 +174,9 @@ async def wait_for_condition(
 class ResourceRequirements(enum.Flag):
     """
     The ResourceRequirement enumeration determines how optimization values are submitted to the
-    Kubernetes scheduler to allocate core compute resources. Requests establish the lower bounds 
+    Kubernetes scheduler to allocate core compute resources. Requests establish the lower bounds
     of the CPU and memory necessary for an application to execute while Limits define the upper
-    bounds for resources that can be consumed by a given Pod. The Opsani engine can determine 
+    bounds for resources that can be consumed by a given Pod. The Opsani engine can determine
     optimal values for these settings by identifying performant, low cost configurations that meet
     target SLOs and/or maximizing performance while identifying the point of diminishing returns
     on further resourcing.
@@ -191,12 +191,12 @@ class ResourceRequirements(enum.Flag):
         Return a boolean value that indicates if the requirements are an individual flag value.
 
         The implementation relies on the Python `enum.Flag` modeling of individual members of
-        the flag enumeration as values that are powers of two (1, 2, 4, 8, …), while combinations 
+        the flag enumeration as values that are powers of two (1, 2, 4, 8, …), while combinations
         of flags are not.
         """
         value = self.value
         return bool((value & (value - 1) == 0) and value != 0)
-    
+
     @property
     def flags(self) -> bool:
         """
@@ -204,7 +204,7 @@ class ResourceRequirements(enum.Flag):
         """
         return self.flag is False
 
-    @property    
+    @property
     def resources_key(self) -> str:
         """
         Return a string value for accessing resource requirements within a Kubernetes Container representation.
@@ -238,7 +238,7 @@ class KubernetesObj(Protocol):
     @property
     def api_version(self) -> str:
         ...
-    
+
     @property
     def kind(self) -> str:
         ...
@@ -250,7 +250,7 @@ class KubernetesObj(Protocol):
 
 class KubernetesModel(abc.ABC):
     """
-    KubernetesModel is an abstract base class for Servo connector 
+    KubernetesModel is an abstract base class for Servo connector
     models that wrap Kubernetes API objects.
 
     This base class provides common functionality and common object
@@ -287,7 +287,7 @@ class KubernetesModel(abc.ABC):
     def __init__(self, obj, logger: loguru.Logger = default_logger, **kwargs) -> None:
         self.obj = obj
         self._logger = logger
-    
+
     def __str__(self) -> str:
         return str(self.obj)
 
@@ -323,7 +323,7 @@ class KubernetesModel(abc.ABC):
     def namespace(self) -> str:
         """The namespace of the Kubernetes object (``obj.metadata.namespace``)."""
         return cast(str, self.obj.metadata.namespace)
-    
+
     @namespace.setter
     def namespace(self, namespace: str):
         """Set the namespace of the Kubernetes object (``obj.metadata.namespace``)."""
@@ -353,7 +353,7 @@ class KubernetesModel(abc.ABC):
         # If we did find it, initialize that client version.
         async with ApiClient() as api:
             yield c(api)
-    
+
     @classmethod
     @asynccontextmanager
     async def preferred_client(cls) -> Generator[Any]:
@@ -370,7 +370,7 @@ class KubernetesModel(abc.ABC):
             )
         async with ApiClient() as api:
             yield c(api)
-    
+
     @abc.abstractclassmethod
     async def read(cls, name: str, namespace: str) -> "KubernetesModel":
         """Read the underlying Kubernetes resource from the cluster and
@@ -380,7 +380,7 @@ class KubernetesModel(abc.ABC):
             name: The name of the resource to read.
             namespace: The namespace to read the resource from.
         """
-    
+
     @abc.abstractmethod
     async def create(self, namespace: str = None) -> None:
         """Create the underlying Kubernetes resource in the cluster
@@ -392,7 +392,7 @@ class KubernetesModel(abc.ABC):
                 namespace member, which is set when the object is created
                 via the kubetest client.
         """
-    
+
     @abc.abstractmethod
     async def patch(self) -> None:
         """Partially update the underlying Kubernetes resource in the cluster.
@@ -424,7 +424,7 @@ class KubernetesModel(abc.ABC):
         Returns:
             True if in the ready state; False otherwise.
         """
-    
+
     async def wait_until_ready(
             self,
             timeout: int = None,
@@ -460,7 +460,7 @@ class KubernetesModel(abc.ABC):
             interval=interval,
             fail_on_api_error=fail_on_api_error,
         )
-    
+
     async def wait_until_deleted(self, timeout: int = None, interval: Union[int, float] = 1) -> None:
         """Wait until the resource is deleted from the cluster.
 
@@ -537,7 +537,7 @@ class Namespace(KubernetesModel):
                 name=name
             )
         ))
-    
+
     @classmethod
     async def read(cls, name: str) -> "Namespace":
         """Read a Namespace from the Kubernetes API.
@@ -571,7 +571,7 @@ class Namespace(KubernetesModel):
             self.obj = await api_client.create_namespace(
                 body=self.obj,
             )
-    
+
     async def patch(self) -> None:
         """
         TODO: Add docs....
@@ -653,7 +653,7 @@ class Container:
     @property
     def name(self) -> str:
         return self.obj.name
-    
+
     @property
     def image(self) -> str:
         """
@@ -682,7 +682,7 @@ class Container:
         raise RuntimeError(
             f'Unable to determine container status for {container_name}'
         )
-    
+
     @property
     def resources(self) -> client.V1ResourceRequirements:
         """
@@ -704,11 +704,11 @@ class Container:
         self.obj.resources = resources
 
     def get_resource_requirements(
-        self, 
-        name: str, 
-        requirements: ResourceRequirements = ResourceRequirements.compute, 
+        self,
+        name: str,
+        requirements: ResourceRequirements = ResourceRequirements.compute,
         *,
-        first: bool = False, 
+        first: bool = False,
         reverse: bool = False,
         default: Optional[str] = None
     ) -> Union[str, Tuple[str], None]:
@@ -717,25 +717,25 @@ class Container:
 
         This method retrieves one or more resource requirement values with a non-exceptional,
         cascading fallback behavior. It is useful for retrieving available requirements from a
-        resource that you do not know the configuration of. Requirements are read and returned in        
-        declaration order in the `ResourceRequirements` enumeration. Values can be retrieved as a 
-        tuple collection or a single value can be returned by setting the `first` argument to `True`. 
-        Values are evaluated in `ResourceRequirements` declaration order and the first requirement 
-        that contains a string value is returned. Evaluation order can be reversed via the 
+        resource that you do not know the configuration of. Requirements are read and returned in
+        declaration order in the `ResourceRequirements` enumeration. Values can be retrieved as a
+        tuple collection or a single value can be returned by setting the `first` argument to `True`.
+        Values are evaluated in `ResourceRequirements` declaration order and the first requirement
+        that contains a string value is returned. Evaluation order can be reversed via the
         `reverse=True` argument. This is useful is you want to retrieve the limit if one exists or
         else fallback to the request value.
 
         Args:
             name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
             requirements: A `ResourceRequirements` flag enumeration specifying the requirements to retrieve.
-                Multiple values can be retrieved by using a bitwise or (`|`) operator. Defaults to 
+                Multiple values can be retrieved by using a bitwise or (`|`) operator. Defaults to
                 `ResourceRequirements.compute` which is equal to `ResourceRequirements.request | ResourceRequirements.limit`.
             first: When True, a single value is returned for the first requirement to return a value.
             reverse: When True, the `ResourceRequirements` enumeration evaluated in reverse order.
             default: A default value to return when a resource requirement could not be found.
-        
+
         Returns:
-            A tuple of resource requirement strings or `None` values in input order or a singular, optional string 
+            A tuple of resource requirement strings or `None` values in input order or a singular, optional string
             value when `first` is True.
         """
         values: List[Union[str, None]] = []
@@ -753,7 +753,7 @@ class Container:
             if requirements & member:
                 if not hasattr(self.resources, member.resources_key):
                     raise ValueError(f"unknown resource requirement '{member}'")
-                
+
                 requirement_dict: Dict[str, str] = getattr(self.resources, member.resources_key)
                 if requirement_dict and name in requirement_dict:
                     value = requirement_dict[name]
@@ -763,7 +763,7 @@ class Container:
                         return value
                     else:
                         values.append(value)
-                
+
                 else:
                     default_logger.warning(f"requirement '{member}' is not set for resource '{name}'")
                     values.append(default)
@@ -775,14 +775,14 @@ class Container:
                 return default
             else:
                 default_logger.debug(f"no resource requirements found. returning default values: {values}")
-        
+
         return tuple(values)
-    
+
     def set_resource_requirements(
-        self, 
-        name: str, 
-        value: Union[str, Sequence[str]], 
-        requirements: ResourceRequirements = ResourceRequirements.compute, 
+        self,
+        name: str,
+        value: Union[str, Sequence[str]],
+        requirements: ResourceRequirements = ResourceRequirements.compute,
         *,
         clear_others: bool = False
     ) -> None:
@@ -791,7 +791,7 @@ class Container:
 
         Args:
             name: The resource to set requirements for (e.g. "cpu" or "memory").
-            value: The string value or tuple of string values to assign to the resources. Values are 
+            value: The string value or tuple of string values to assign to the resources. Values are
                 assigned in declaration order of members of the `ResourceRequirements` enumeration. If a
                 single value is provided, it is assigned to all requirements.
             clear_others: When True, any requirements not specified in the input arguments are cleared.
@@ -807,8 +807,8 @@ class Container:
                 continue
 
             if not hasattr(self.resources, requirement.resources_key):
-                raise ValueError(f"unknown resource requirement '{requirement}'")            
-                
+                raise ValueError(f"unknown resource requirement '{requirement}'")
+
             req_dict: Optional[Dict[str, Union[str, None]]] = getattr(self.resources, requirement.resources_key)
             if req_dict is None:
                 # we are establishing the first requirements for this resource, hydrate the model
@@ -826,7 +826,7 @@ class Container:
                     default_logger.debug(f"clearing resource requirement: '{requirement}'")
                     req_dict.pop(name, None)
 
-        
+
     def __str__(self) -> str:
         return str(self.obj)
 
@@ -893,7 +893,7 @@ class Pod(KubernetesModel):
             namespace=namespace,
             body=self.obj,
         )
-    
+
     async def patch(self) -> None:
         """
         Patches a Pod, applying spec changes to the cluster.
@@ -937,7 +937,7 @@ class Pod(KubernetesModel):
     @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Pod resource."""
-        async with self.api_client() as api_client:            
+        async with self.api_client() as api_client:
             self.obj = await asyncio.wait_for(
                 api_client.read_namespaced_pod_status(
                 name=self.name,
@@ -992,7 +992,7 @@ class Pod(KubernetesModel):
 
         # return the status of the pod
         return cast(client.V1PodStatus, self.obj.status)
-    
+
     @property
     def containers(self) -> List[Container]:
         """
@@ -1021,7 +1021,7 @@ class Pod(KubernetesModel):
             Container: The Pod's Container with the matching name. If
             no container with the given name is found, ``None`` is returned.
         """
-        return next(filter(lambda c: c.name == name, self.containers))
+        return next(filter(lambda c: c.name == name, self.containers), None)
 
     async def get_restart_count(self) -> int:
         """Get the total number of Container restarts for the Pod.
@@ -1038,7 +1038,7 @@ class Pod(KubernetesModel):
             total += container_status.restart_count
 
         return total
-    
+
     async def containers_started(self) -> bool:
         """Check if the Pod's Containers have all started.
 
@@ -1063,7 +1063,7 @@ class Pod(KubernetesModel):
                 break
 
         return containers_started
-    
+
     def uid(self) -> str:
         """
         Gets the UID for the Pod.
@@ -1114,7 +1114,7 @@ class Deployment(KubernetesModel):
                 namespace=namespace,
                 body=self.obj,
             )
-    
+
     @classmethod
     async def read(cls, name: str, namespace: str) -> "Deployment":
         """Read a Deployment by name under the given namespace.
@@ -1123,11 +1123,11 @@ class Deployment(KubernetesModel):
             name: The name of the Deployment to read.
             namespace: The namespace to read the Deployment from.
         """
-        
+
         async with cls.preferred_client() as api_client:
             obj = await api_client.read_namespaced_deployment(name, namespace)
             return Deployment(obj)
-    
+
     async def patch(self) -> None:
         """Update the changed attributes of the Deployment.
         """
@@ -1172,7 +1172,7 @@ class Deployment(KubernetesModel):
                 name=self.name,
                 namespace=self.namespace,
             )
-    
+
     async def rollback(self) -> None:
         """Roll back an unstable Deployment revision to a previous version."""
         async with ApiClient() as api:
@@ -1182,7 +1182,7 @@ class Deployment(KubernetesModel):
                 namespace=self.namespace,
                 body=self.obj,
             )
-    
+
     async def get_status(self) -> client.V1DeploymentStatus:
         """Get the status of the Deployment.
 
@@ -1203,7 +1203,7 @@ class Deployment(KubernetesModel):
             A list of pods that belong to the deployment.
         """
         self.logger.info(f'getting pods for deployment "{self.name}"')
-        
+
         async with Pod.preferred_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
             pod_list: client.V1PodList = await api_client.list_namespaced_pod(
@@ -1213,7 +1213,7 @@ class Deployment(KubernetesModel):
 
         pods = [Pod(p) for p in pod_list.items]
         return pods
-    
+
     @property
     def status(self) -> client.V1DeploymentStatus:
         """Return the status of the Deployment.
@@ -1229,7 +1229,7 @@ class Deployment(KubernetesModel):
         Returns the resource version of the Deployment.
         """
         return self.obj.metadata.resource_version
-    
+
     @property
     def observed_generation(self) -> str:
         """
@@ -1238,7 +1238,7 @@ class Deployment(KubernetesModel):
         The generation is observed by the deployment controller.
         """
         return self.obj.status.observed_generation
-    
+
     async def is_ready(self) -> bool:
         """Check if the Deployment is in the ready state.
 
@@ -1282,21 +1282,21 @@ class Deployment(KubernetesModel):
         Return the number of desired pods.
         """
         return self.obj.spec.replicas
-    
+
     @replicas.setter
     def replicas(self, replicas: int) -> None:
         """
         Set the number of desired pods.
         """
         self.obj.spec.replicas = replicas
-    
+
     @property
     def label_selector(self) -> str:
         """
         Return a string for matching the Deployment in Kubernetes API calls.
         """
         return selector_string(self.obj.spec.selector.match_labels)
-    
+
     ##
     # Canary support
 
@@ -1312,9 +1312,9 @@ class Deployment(KubernetesModel):
         Retrieve the canary Pod for this Deployment (if any).
 
         Will raise a Kubernetes API exception if not found.
-        """        
+        """
         return await Pod.read(self.canary_pod_name, self.namespace)
-    
+
 
     async def delete_canary_pod(self, *, raise_if_not_found: bool = True, timeout: Numeric = 600) -> Optional[Pod]:
         """
@@ -1330,7 +1330,7 @@ class Deployment(KubernetesModel):
         except client.exceptions.ApiException as e:
             if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
                 raise
-        
+
         return None
 
 
@@ -1339,15 +1339,19 @@ class Deployment(KubernetesModel):
         Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
 
         TODO: docs...
-        """        
+        """
         canary_pod_name = self.canary_pod_name
         namespace = self.namespace
         self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'")
-        
+
+        # TODO: Set the strategy to Recreate so we can rollout faster?
+    #     strategy:
+    # type: Recreate
+
         # Delete any pre-existing canary debris
         self.logger.trace("deleting pre-existing canary pod (if any)")
         await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
-        
+
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new canary")
         pod_obj = client.V1Pod(metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec)
@@ -1362,7 +1366,7 @@ class Deployment(KubernetesModel):
         self.logger.trace(f"initialized new canary: {canary_pod}")
 
         # TODO: Attach envoy proxy
-        
+
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get('POD_NAME')
         SERVO_POD_NAMESPACE = os.environ.get('POD_NAMESPACE')
@@ -1387,7 +1391,7 @@ class Deployment(KubernetesModel):
                     kind='Deployment',
                     name=servo_dep.metadata.name,
                     uid=servo_dep.metadata.uid
-                ) 
+                )
             ]
 
         # Create the Pod and wait for it to get ready
@@ -1412,7 +1416,7 @@ class Millicore(int):
     @classmethod
     def __get_validators__(cls) -> 'CallableGenerator':
         yield cls.parse
-    
+
     @classmethod
     def parse(cls, v: StrIntFloat) -> 'Millicore':
         """
@@ -1433,13 +1437,13 @@ class Millicore(int):
             return cls(int(v * 1000))
         else:
             raise ValueError("could not parse millicore value")
-            
+
     def __str__(self) -> str:
         return f'{int(self)}m'
-    
+
     def __float__(self) -> float:
         return self / 1000.0
-    
+
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
             return str(self) == other
@@ -1466,7 +1470,7 @@ class CPU(Resource):
 
     def opsani_dict(self) -> dict:
         o_dict = super().opsani_dict()
-        
+
         # normalize values into floats (see Millicore __float__)
         for field in ("min", "max", "step", "value"):
             value = getattr(self, field)
@@ -1482,7 +1486,7 @@ class ShortByteSize(ByteSize):
     """Kubernetes omits the 'B' suffix for some reason"""
     @classmethod
     def validate(cls, v: StrIntFloat) -> 'ShortByteSize':
-        if isinstance(v, str):            
+        if isinstance(v, str):
             try:
                 return super().validate(v)
             except:
@@ -1566,14 +1570,14 @@ class BaseOptimization(abc.ABC, BaseModel):
         Adjust a setting on the underlying Deployment/Pod or Container.
         """
         ...
-    
+
     @abstractmethod
     async def apply(self) -> None:
         """
         Apply the adjusted settings to the Kubernetes cluster.
         """
         ...
-    
+
     async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
@@ -1596,12 +1600,12 @@ class BaseOptimization(abc.ABC, BaseModel):
         """
         if mode == FailureMode.CRASH:
             raise RuntimeError("an unrecoverable failure occurred while interacting with Kubernetes")
-        
+
         elif mode == FailureMode.IGNORE:
             self.logger.warning(f"ignoring runtime error and continuing: {error}")
             self.logger.opt(exception=error).exception("ignoring Kubernetes error")
             return True
-        
+
         elif mode == FailureMode.ROLLBACK:
             await self.rollback(error)
             return True
@@ -1612,7 +1616,7 @@ class BaseOptimization(abc.ABC, BaseModel):
 
         else:
             raise NotImplementedError(f"missing error handler for failure mode '{mode}'")
-    
+
     @abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
         """
@@ -1623,7 +1627,7 @@ class BaseOptimization(abc.ABC, BaseModel):
             error: An optional exception that contextualizes the cause of the rollback.
         """
         ...
-    
+
     @abstractmethod
     async def destroy(self, error: Optional[Exception] = None) -> None:
         """
@@ -1642,13 +1646,13 @@ class BaseOptimization(abc.ABC, BaseModel):
         Components are the canonical representation of optimizations in the Opsani API.
         """
         ...
-    
+
     @property
     def logger(self) -> loguru.Logger:
         return default_logger
 
     def __hash__(self):
-        return hash((self.name, id(self),))    
+        return hash((self.name, id(self),))
 
     class Config:
         arbitrary_types_allowed = True
@@ -1696,7 +1700,7 @@ class DeploymentOptimization(BaseOptimization):
         cpu = self.container_config.cpu.copy()
         cpu.value = self.container.get_resource_requirements("cpu", first=True)
         return cpu
-    
+
     @property
     def memory(self) -> Memory:
         """
@@ -1714,7 +1718,7 @@ class DeploymentOptimization(BaseOptimization):
         replicas = self.deployment_config.replicas.copy()
         replicas.value = self.deployment.replicas
         return replicas
-    
+
     async def rollback(self, error: Optional[Exception] = None) -> None:
         """
         Initiates an asynchronous rollback to a previous version of the Deployment.
@@ -1729,7 +1733,7 @@ class DeploymentOptimization(BaseOptimization):
             ),
             timeout=self.timeout.total_seconds()
         )
-    
+
     async def destroy(self, error: Optional[Exception] = None) -> None:
         """
         Initiates the asynchronous deletion of the Deployment under optimization.
@@ -1773,7 +1777,7 @@ class DeploymentOptimization(BaseOptimization):
 
         elif adjustment.setting_name == "replicas":
             self.deployment.replicas = int(value)
-            
+
         else:
             raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{adjustment.setting_name}'")
 
@@ -1784,11 +1788,11 @@ class DeploymentOptimization(BaseOptimization):
         Kubernetes deployments orchestrate a number of underlying resources. Awaiting the
         outcome of a deployment change requires observation of the `resource_version` which
         indicates if a given patch actually changed the resource, the `observed_generation`
-        which is a value managed by the deployments controller and indicates the effective 
+        which is a value managed by the deployments controller and indicates the effective
         version of the deployment exclusive of insignificant changes that do not affect runtime
         (such as label updates), and the `conditions` of the deployment status which reflect
-        state at a particular point in time. How these elements change during a rollout is 
-        dependent on the deployment strategy in effect and its requirementss (max unavailable, 
+        state at a particular point in time. How these elements change during a rollout is
+        dependent on the deployment strategy in effect and its requirementss (max unavailable,
         surge, etc).
 
         The logic implemented by this method is as follows:
@@ -1799,7 +1803,7 @@ class DeploymentOptimization(BaseOptimization):
             - Observe events streamed via the watch.
             - Look for the Deployment to report a Status Condition of `"Progressing"`.
             - Wait for the `observed_generation` to increment indicating that the Deployment is applying our changes.
-            - Track the value of the `available_replicas`, `ready_replicas`, `unavailable_replicas`, 
+            - Track the value of the `available_replicas`, `ready_replicas`, `unavailable_replicas`,
                 and `updated_replicas` attributes of the Deployment Status until `available_replicas`,
                 `ready_replicas`, and `updated_replicas` are all equal to the value of the `replicas` attribute of
                 the Deployment and `unavailable_replicas` is `None`. Return success.
@@ -1814,7 +1818,7 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        
+
         # Resource version lets us track any change. Observed generation only increments
         # when the deployment controller sees a significant change that requires rollout
         resource_version = self.deployment.resource_version
@@ -1828,7 +1832,7 @@ class DeploymentOptimization(BaseOptimization):
         if self.deployment.resource_version == resource_version:
             self.logger.info(f"adjustments applied to Deployment '{self.deployment.name}' made no changes, continuing")
             return
-                
+
         # Create a Kubernetes watch against the deployment under optimization to track changes
         self.logger.info(f"Using label_selector={self.deployment.label_selector}, resource_version={resource_version}")
         async with client.ApiClient() as api:
@@ -1843,12 +1847,12 @@ class DeploymentOptimization(BaseOptimization):
                     # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
                     event_type, deployment = event['type'], event['object']
                     status: client.V1DeploymentStatus = deployment.status
-                    
+
                     self.logger.debug(f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}")
 
                     if event_type == 'ERROR':
                         stream.stop()
-                        raise RuntimeError(str(deployment))                    
+                        raise RuntimeError(str(deployment))
 
                     # Check that the conditions aren't reporting a failure
                     self._check_conditions(status.conditions)
@@ -1857,26 +1861,26 @@ class DeploymentOptimization(BaseOptimization):
                     if status.observed_generation == observed_generation:
                         self.logger.debug("observed generation has not changed, continuing watch")
                         continue
-                    
+
                     # Check the replica counts. Once available, updated, and ready match
                     # our expected count and the unavailable count is zero we are rolled out
                     if status.unavailable_replicas:
                         self.logger.debug("found unavailable replicas, continuing watch", status.unavailable_replicas)
                         continue
-                    
+
                     replica_counts = [status.replicas, status.available_replicas, status.ready_replicas, status.updated_replicas]
                     if replica_counts.count(desired_replicas) == len(replica_counts):
                         # We are done: all the counts match. Stop the watch and return
                         self.logger.info("adjustment applied successfully", status)
                         stream.stop()
                         return
-    
+
     def _check_conditions(self, conditions: List[client.V1DeploymentCondition]):
         for condition in conditions:
-            if condition.type == "Available":                            
+            if condition.type == "Available":
                 if condition.status == "True":
                     # If we hit on this and have not raised yet we are good to go
-                    break                        
+                    break
                 elif condition.status in ("False", "Unknown"):
                     # Condition has not yet been met, log status and continue monitoring
                     self.logger.debug(f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}")
@@ -1903,7 +1907,7 @@ class CanaryOptimization(BaseOptimization):
     """
     """
     target_deployment: Deployment
-    target_deployment_config: DeploymentConfiguration    
+    target_deployment_config: DeploymentConfiguration
 
     target_container: Container
     target_container_config: ContainerConfiguration
@@ -1944,7 +1948,7 @@ class CanaryOptimization(BaseOptimization):
                 canary_container=canary_container,
                 **kwargs
             )
-        
+
         raise AssertionError("deployment configuration must have one or more containers")
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
@@ -1954,7 +1958,7 @@ class CanaryOptimization(BaseOptimization):
         if name in ("cpu", "memory"):
             requirements = getattr(self.target_container_config, name).requirements
             self.canary_container.set_resource_requirements(name, value, requirements, clear_others=True)
-        
+
         elif name == "replicas":
             if int(value) != 1:
                 default_logger.warning(f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
@@ -1977,7 +1981,7 @@ class CanaryOptimization(BaseOptimization):
         cpu = self.target_container_config.cpu.copy()
         cpu.value = self.canary_container.get_resource_requirements("cpu", first=True)
         return cpu
-    
+
     @property
     def memory(self) -> Memory:
         """
@@ -1992,7 +1996,7 @@ class CanaryOptimization(BaseOptimization):
         """
         Return the current Replicas setting for the optimization.
         """
-        return Replicas(            
+        return Replicas(
             min=0,
             max=1,
             value=1,
@@ -2006,7 +2010,7 @@ class CanaryOptimization(BaseOptimization):
         Note that all settings on the target are implicitly pinned because only the canary
         is to be modified during optimization.
         """
-        
+
         # implicitly pin the target settings before we return them
         cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("cpu", first=True):
@@ -2018,7 +2022,7 @@ class CanaryOptimization(BaseOptimization):
 
         replicas = self.target_deployment_config.replicas.copy(update={ "pinned": True })
         replicas.value = self.target_deployment.replicas
-        
+
         return [
             Component(
                 name=f"{self.target_deployment.name}/{self.target_container.name}",
@@ -2037,7 +2041,7 @@ class CanaryOptimization(BaseOptimization):
                 ]
             )
         ]
-    
+
     async def rollback(self, error: Optional[Exception] = None) -> None:
         """
         Not supported. Raises a TypeError when called.
@@ -2051,22 +2055,22 @@ class CanaryOptimization(BaseOptimization):
                 "Kubernetes Deployment objects and canary optimization is performed against a standalone Pod."
             )
         )
-    
+
     async def destroy(self, error: Optional[Exception] = None) -> None:
         self.logger.info(f'destroying canary Pod "{self.name}"')
         await self.canary_pod.delete()
-        
+
         self.logger.debug(f'awaiting deletion of canary Pod "{self.name}"')
         await self.canary_pod.wait_until_deleted()
 
         self.logger.info(f'destroyed canary Pod "{self.name}"')
-    
+
     async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
         if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
             if mode == FailureMode.ROLLBACK:
                 self.logger.warning(f"cannot rollback a canary Pod: falling back to destroy: {error}")
                 self.logger.opt(exception=error).exception("")
-            
+
             await asyncio.wait_for(
                 self.destroy(),
                 timeout=self.timeout.total_seconds()
@@ -2079,7 +2083,7 @@ class CanaryOptimization(BaseOptimization):
 
         else:
             return await super().handle_error(error, mode)
-    
+
     class Config:
         arbitrary_types_allowed = True
         extra = Extra.allow
@@ -2128,7 +2132,7 @@ class KubernetesOptimizations(BaseModel):
             runtime_ids[optimization.name] = [pod.uid for pod in pods]
             pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
             images[container.name] = container.image
-        
+
         # Compute checksums for change detection
         spec_id = get_hash([pod_tmpl_specs[k] for k in sorted(pod_tmpl_specs.keys())])
         runtime_id = get_hash(runtime_ids)
@@ -2142,7 +2146,7 @@ class KubernetesOptimizations(BaseModel):
             runtime_id=runtime_id,
             version_id=version_id,
         )
-    
+
     def to_components(self) -> List[Component]:
         """
         Return a list of Component objects modeling the state of local optimization activities.
@@ -2152,7 +2156,7 @@ class KubernetesOptimizations(BaseModel):
         """
         components = list(map(lambda opt: opt.to_components(), self.optimizations))
         return list(itertools.chain(*components))
-    
+
     def to_description(self) -> Description:
         """
         Return a representation of the current state as a Description object.
@@ -2162,11 +2166,11 @@ class KubernetesOptimizations(BaseModel):
 
         Returns:
             A Description of the current state.
-        """                        
+        """
         return Description(
             components=self.to_components()
         )
-    
+
     def find_optimization(self, name: str) -> Optional[BaseOptimization]:
         """
         Find and return an optimization by name.
@@ -2181,20 +2185,20 @@ class KubernetesOptimizations(BaseModel):
         if not adjustments:
             self.logger.debug("early exiting from adjust: no adjustments")
             return
-        
+
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
         self.logger.info(f"Applying {len(adjustments)} Kubernetes adjustments: {summary}")
-        
+
         # Adjust settings on the local data model
         for adjustment in adjustments:
             if adjustable := self.find_optimization(adjustment.component_name):
                 self.logger.info(f"adjusting {adjustment.component_name}: {adjustment}")
                 adjustable.adjust(adjustment)
-                
+
             else:
                 self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
-        
-        
+
+
         # Apply the changes to Kubernetes and wait for the results
         timeout = self.config.timeout
         if self.optimizations:
@@ -2225,7 +2229,7 @@ class KubernetesOptimizations(BaseModel):
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
-    
+
     @property
     def logger(self) -> loguru.Logger:
         return default_logger
@@ -2267,7 +2271,7 @@ ContainerTagName = constr(strip_whitespace=True, min_length=1, max_length=128, r
 ContainerTagName models the name of a container referenced in a Kubernetes manifest.
 
 Valid container tags must:
-    * be valid ASCII and may contain lowercase and uppercase letters, digits, underscores, periods and dashes. 
+    * be valid ASCII and may contain lowercase and uppercase letters, digits, underscores, periods and dashes.
     * not start with a period or a dash
     * may contain a maximum of 128 characters
 """
@@ -2353,7 +2357,7 @@ class BaseKubernetesConfiguration(BaseConfiguration):
         FailureMode.ROLLBACK,
         description=f"How to handle a failed adjustment. Options are: {join_to_series(list(FailureMode.__members__.values()))}"
     )
-    timeout: Optional[Duration] = Field(        
+    timeout: Optional[Duration] = Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
     )
 
@@ -2371,7 +2375,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
     timeout: Duration = "5m"
-  
+
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",
     )
@@ -2407,11 +2411,11 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             ],
             **kwargs
         )
-    
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.cascade_common_settings()
-        
+
     def cascade_common_settings(self, *, overwrite: bool = False) -> None:
         """
         Apply common settings to child models that inherit from BaseKubernetesConfiguration.
@@ -2425,9 +2429,9 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         # FIXME: Cascaded settings should only be optional if they can be optional at the top level. Right now we are implying that namespace can be None as well.
         """
         for name, field in self.__fields__.items():
-            if issubclass(field.type_, BaseKubernetesConfiguration):                
-                attribute = getattr(self, name)       
-                for obj in (attribute if isinstance(attribute, Collection) else [attribute]):                    
+            if issubclass(field.type_, BaseKubernetesConfiguration):
+                attribute = getattr(self, name)
+                for obj in (attribute if isinstance(attribute, Collection) else [attribute]):
                     for field_name, field in BaseKubernetesConfiguration.__fields__.items():
                         if field_name in BaseConfiguration.__fields__:
                             # don't cascade from the base class
@@ -2472,16 +2476,16 @@ class KubernetesChecks(BaseChecks):
     @check("Connectivity to Kubernetes", required=True)
     async def check_connectivity(self) -> Check:
         await KubernetesOptimizations.create(self.config)
-    
+
     @check("Required permissions")
     async def check_permissions(self) -> None:
         ...
-    
+
     @check("Deployments are readable")
     async def check_deployment_exists(self) -> None:
         for dep in self.config.deployments:
             await Deployment.read(dep.name, self.config.namespace)
-    
+
     @check("All containers have resource requirements")
     async def check_resource_requirements(self) -> str:
         messages = []
@@ -2496,10 +2500,10 @@ class KubernetesChecks(BaseChecks):
                 assert container.resources.limits["cpu"]
                 assert container.resources.limits["memory"]
                 messages.append(f"{deployment.name}/{container.name}={container.resources}")
-        
+
         message = ", ".join(messages)
         return f"Container resources: {message}"
-    
+
     @check("Deployments are ready")
     async def check_deployment_is_ready(self) -> str:
         ready = []
@@ -2509,7 +2513,7 @@ class KubernetesChecks(BaseChecks):
                 ready.append(deployment.name)
             else:
                 raise RuntimeError(f"Deployment \"{deployment.name}\" is not ready")
-        
+
         names = ", ".join(ready)
         return f"Deployments ready: {names}"
 
@@ -2532,7 +2536,7 @@ class KubernetesConnector(BaseConnector):
         await self.config.load_kubeconfig()
 
     @on_event()
-    async def describe(self) -> Description:        
+    async def describe(self) -> Description:
         state = await KubernetesOptimizations.create(self.config)
         return state.to_description()
 
@@ -2540,7 +2544,7 @@ class KubernetesConnector(BaseConnector):
     async def components(self) -> List[Component]:
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
-        
+
     @on_event()
     async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
         state = await KubernetesOptimizations.create(self.config)
