@@ -66,7 +66,7 @@ class Duration(timedelta):
     """
     Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
 
-    Duration objects can be initialized with a duration string, a numeric seconds value, 
+    Duration objects can be initialized with a duration string, a numeric seconds value,
     a timedelta object, and with the time component keywoards of timedelta.
 
     Refer to `servo.utilities.duration_str` for details about duration strings.
@@ -92,7 +92,7 @@ class Duration(timedelta):
         return timedelta.__new__(
             cls, seconds=seconds, microseconds=microseconds, **kwargs
         )
-    
+
     def __init__(self, duration: Union[str, timedelta, Numeric] = 0, **kwargs) -> None:
         # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
         ...
@@ -172,11 +172,11 @@ class DurationProgress(BaseModel):
         Return a boolean value that indicates if the duration has elapsed and progress is 100%.
         """
         return self.progress >= 100
-    
+
     async def watch(
-        self, 
+        self,
         notify: Callable[['DurationProgress'], Union[None, Awaitable[None]]],
-        every: Duration = Duration("5s"), 
+        every: Duration = Duration("5s"),
         ) -> None:
         """
         Asynchronously watch progress tracking and invoke a callback to periodically report on progress.
@@ -216,7 +216,7 @@ class DurationProgress(BaseModel):
 
         Args:
             str_to_annotate: The string to annotate with progress status.
-        
+
         Returns:
             A new string annotated with progress status info.
         """
@@ -242,7 +242,7 @@ class Metric(BaseModel):
 
     def __init__(self, name: str, unit: Unit, **kwargs) -> None:
         super().__init__(name=name, unit=unit, **kwargs)
-    
+
     def __hash__(self):
         return hash((self.name, self.unit,))
 
@@ -253,7 +253,7 @@ class DataPoint(BaseModel):
 
     def __init__(self, metric: Metric, value: Numeric, **kwargs) -> None:
         super().__init__(metric=metric, value=value, **kwargs)
-    
+
     def __str__(self) -> str:
         return f"{self.value:.2f}{self.unit.value}"
 
@@ -301,7 +301,7 @@ class Setting(BaseModel):
             return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
 
         return f"{self.name} ({self.type})"
-    
+
     @property
     def human_readable_value(self, **kwargs) -> str:
         """
@@ -314,7 +314,7 @@ class Setting(BaseModel):
         if isinstance(self.value, HumanReadable):
             return cast(HumanReadable, self.value).human_readable(**kwargs)
         return str(self.value)
-    
+
     def opsani_dict(self) -> dict:
         return {
             self.name: self.dict(include={"type", "min", "max", "step", "pinned", "value"})
@@ -345,13 +345,13 @@ class Control(BaseModel):
     delay: Duration = cast(Duration, None)
     load: Optional[dict]
 
-    @validator('past', 'warmup', 'delay', always=True, pre=True)
+    @validator('duration', 'past', 'warmup', 'delay', always=True, pre=True)
     @classmethod
     def validate_durations(cls, value) -> Duration:
         if value:
             return value
         return Duration(0)
-    
+
     class Config:
         extra = Extra.allow
 
@@ -362,7 +362,7 @@ class Description(BaseModel):
 
     def get_component(self, name: str) -> Optional[Component]:
         return next(filter(lambda m: m.name == name, self.components), None)
-    
+
     def get_setting(self, name: str) -> Optional[Setting]:
         """
         Gets a settings from a fully qualified name (`component_name.setting_name`).
@@ -425,7 +425,7 @@ class Adjustment(BaseModel):
         Returns a fully qualified string identifier for accessing the referenced resource.
         """
         return f"{self.component_name}.{self.setting_name}"
-    
+
     def __str__(self) -> str:
         return f"{self.component_name}.{self.setting_name}={self.value}"
 
