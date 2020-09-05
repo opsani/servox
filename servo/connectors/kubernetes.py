@@ -1921,6 +1921,8 @@ class CanaryOptimization(BaseOptimization):
     @classmethod
     async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'CanaryOptimization':
         deployment = await Deployment.read(config.name, cast(str, config.namespace))
+        if not deployment:
+            raise ValueError(f"cannot create canary: target deployment \"{config.name}\" does not exist in namespace \"{config.namespace}\"")
 
         canary_pod = await deployment.ensure_canary_pod()
         # Retrieve existing canary (if any)
