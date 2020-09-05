@@ -19,9 +19,9 @@ spec:
       labels:
         app: fiber-http
       annotations:
-        prometheus.io/path: /stats/prometheus
-        prometheus.io/port: "9901"
-        prometheus.io/scrape: "true"
+        prometheus.opsani.com/path: /stats/prometheus
+        prometheus.opsani.com/port: "9901"
+        prometheus.opsani.com/scrape: "true"
     spec:
       containers:
       - name: fiber-http
