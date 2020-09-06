@@ -20,10 +20,10 @@ from servo.connector import (
 )
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (
-    CancelEventError, 
-    EventError, 
-    EventResult, 
-    Preposition, 
+    CancelEventError,
+    EventError,
+    EventResult,
+    Preposition,
     _events,
     after_event,
     before_event,
@@ -430,7 +430,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'None'"
+        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=Duration('0' 0:00:00), past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'None'"
     )
 
 
@@ -444,7 +444,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=None, past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'Measurement'"
+        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=Duration('0' 0:00:00), past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'Measurement'"
     )
 
 
@@ -1480,10 +1480,10 @@ def test_backoff_settings() -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (None, None), 
-        (60, 60), 
+        (None, None),
+        (60, 60),
         (5.0, 5.0),
-        ("30s", 30), 
+        ("30s", 30),
         (Duration("3h4m"), Duration("3h4m"))
     ]
 )
@@ -1494,7 +1494,7 @@ def test_valid_timeouts_input(attr, value, expected) -> None:
 
 @pytest.mark.parametrize("attr", ["connect", "read", "write", "pool"])
 @pytest.mark.parametrize(
-    "value", 
+    "value",
     [
         [], "not valid", {}
     ]
@@ -1506,10 +1506,10 @@ def test_invalid_timeouts_input(attr, value) -> None:
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (None, None), 
-        (60, 60), 
+        (None, None),
+        (60, 60),
         (5.0, 5.0),
-        ("30s", 30), 
+        ("30s", 30),
     ]
 )
 def test_timeouts_parsing(value, expected) -> None:
@@ -1525,9 +1525,9 @@ def test_timeouts_parsing(value, expected) -> None:
         )
 
 @pytest.mark.parametrize(
-    "proxies", 
+    "proxies",
     [
-        None, 
+        None,
         {
             "http://": "http://localhost:8030",
             "https://": "http://localhost:8031",
@@ -1581,7 +1581,7 @@ def test_valid_proxies(proxies) -> None:
     ServoConfiguration(proxies=proxies)
 
 @pytest.mark.parametrize(
-    "proxies", 
+    "proxies",
     [
         0.5, "not valid", 1234
     ]
@@ -1611,7 +1611,7 @@ async def test_httpx_client_config() -> None:
         proxies="http://localhost:1234",
         ssl_verify=False
     )
-    
+
     from httpx._utils import URLPattern
 
     optimizer = Optimizer("test.com/foo", token="12345")
@@ -1638,7 +1638,7 @@ def test_backoff_defaults() -> None:
 @pytest.mark.parametrize(
     ("proxies"),
     [
-        "http://localhost:1234", 
+        "http://localhost:1234",
         {"all://": "http://localhost:1234"},
         {"https://": "http://localhost:1234"},
         {"https://api.opsani.com": "http://localhost:1234"},
