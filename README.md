@@ -288,6 +288,39 @@ The servo handles configuration of deeply nested attributes by building the envi
 For convenience, the `servo` CLI utility automatically supports `.env` files for loading configuration and is already in the `.gitignore`.
 Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid having to deal with the options to configure the optimizer. The `servo init` command will help set this up interactively.
 
+### Logging
+
+The servo base library provides logging services for all connectors and core 
+components. By default, the `servo` CLI utility runs at the `INFO` log level
+which is designed to provide balanced output that informs you of what is 
+happening operationally without becoming overwhelming and pedantic. During
+development, debugging, or troubleshooting it may become desirable to run at
+an elevated log level. The log level can be set via a commandline option on
+the `servo` utility or via the `SERVO_LOG_LEVEL` environment variable:
+
+```console
+  -l, --log-level [TRACE|DEBUG|INFO|SUCCESS|WARNING|ERROR|CRITICAL]
+                                  Set the log level  [env var:
+                                  SERVO_LOG_LEVEL; default: INFO]
+```
+
+By default, log messages are written to `stderr` and a file sink at the `logs/`
+subdirectory relative to the servo root. Backtraces are preformatted and as much
+context as possible is provided when an exception is logged.
+
+The `servo.logging` module exposes some interesting functionality for operators
+and developers alike. Logging is aware of the eventing subsystem and will 
+automatically attribute log messages to the currently executing connector and
+event context. Long running operations can be automatically reported to the
+Opsani API by including a `progress` key with a numeric percentage value ranging
+from 0.0 to 100.0. There are several function decorators available that can 
+provide automatic logging output for entry and exit, execution timing, etc.
+
+Dependent libraries such as `backoff` have been configured to emit their logs
+into the servo logging module. Every component that has logging support is 
+intercepted and handled by the logging subsystem and conforms to the log levels
+outlined above.
+
 ### Connector Discovery
 
 Connectors are set up to be auto-discovered using the setuptools entry point functionality available from the Python standard library. When a new connector
