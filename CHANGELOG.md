@@ -9,11 +9,17 @@ by linking with the metrics system (e.g. Prometheus, Thanos, DataDog, etc) and t
 orchestration system (e.g. Kubernetes, CloudFormation, etc) in order to apply changes
 and evaluate their impact on cost and performance.
 
-Servo is distributed under the terms of the Apache 2.0 license. 
+Servo is distributed under the terms of the Apache 2.0 license.
 
 This changelog catalogs all notable changes made to the project. The format
-is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are 
+is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Unreleased
+
+### Added
+- `servo run --check` can now be controlled via the `SERVO_RUN_CHECK`
+environment variable.
 
 ## [0.6.2] - 2020-09-03
 
@@ -161,7 +167,7 @@ Initial public release.
 
 There is quite a bit of functionality available. Please consult the README.md at the
 root of the repository for details. The major limitations at the moment are around porting
-of connectors to the new architecture. At the moment a connectfor for the Vegeta load 
+of connectors to the new architecture. At the moment a connectfor for the Vegeta load
 generator and Kubernetes resource management are bundled in the distribution. The connector
 catalog will expand rapidly but porting does involve some effort in order to leverage the
 full value of the new system.

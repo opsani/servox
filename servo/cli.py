@@ -31,7 +31,7 @@ from servo.assembly import (
     _default_routes,
 )
 from servo.connector import (
-    BaseConnector, 
+    BaseConnector,
     Optimizer,
     _connector_class_from_string
 )
@@ -375,7 +375,7 @@ class CLI(typer.Typer):
             envvar="SERVO_LOG_LEVEL",
             show_envvar=True,
             help="Set the log level",
-        )        
+        )
     ):
         ctx.config_file = config_file
         ctx.optimizer = optimizer
@@ -399,16 +399,16 @@ class CLI(typer.Typer):
                 raise typer.Exit(2)
 
     @staticmethod
-    def assemble_from_context(ctx: Context):        
+    def assemble_from_context(ctx: Context):
         if ctx.config_file is None:
             raise typer.BadParameter("Config file must be specified")
-        
+
         if not ctx.config_file.exists():
             raise typer.BadParameter(f"Config file '{ctx.config_file}' does not exist")
 
         if ctx.optimizer is None:
             raise typer.BadParameter("An optimizer must be specified")
-        
+
         # Resolve token
         if ctx.token is None and ctx.token_file is None:
             raise typer.BadParameter(
@@ -466,7 +466,7 @@ class CLI(typer.Typer):
                 return connectors
         else:
             return None
-    
+
     @staticmethod
     def connectors_type_callback(
         context: typer.Context, value: Optional[Union[str, List[str]]]
@@ -523,7 +523,7 @@ class CLI(typer.Typer):
                 raise typer.BadParameter(f"no connector found for identifier '{identifier}'")
 
         return routes
-    
+
     @staticmethod
     def duration_callback(
         context: typer.Context, value: Optional[str]
@@ -535,7 +535,7 @@ class CLI(typer.Typer):
         """
         if not value:
             return None
-        
+
         try:
             return Duration(value)
         except ValueError as e:
@@ -922,7 +922,7 @@ class ServoCLI(CLI):
                 c_list = connectors_by_type.get(c_type, [])
                 c_list.append(c)
                 connectors_by_type[c_type] = c_list
-            
+
             for connector_type in connectors_by_type.keys():
                 if all:
                     names = [connector_type.__default_name__]
@@ -940,7 +940,8 @@ class ServoCLI(CLI):
         def run(
             context: Context,
             check: bool = typer.Option(
-                False, "--check", "-c", help="Verify all checks pass before running"
+                False, "--check", "-c", help="Verify all checks pass before running",
+                envvar="SERVO_RUN_CHECK"
             )
         ) -> None:
             """
@@ -949,7 +950,7 @@ class ServoCLI(CLI):
             if check:
                 typer_click_object = typer.main.get_group(self)
                 context.invoke(
-                    typer_click_object.commands["check"], 
+                    typer_click_object.commands["check"],
                     exit_on_success=False
                 )
 
@@ -1009,28 +1010,28 @@ class ServoCLI(CLI):
                 validate_connectors_respond_to_event(connectors, Events.CHECK)
             else:
                 connectors = context.assembly.connectors
-            
+
             def parse_re(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
                 if value and len(value) == 1:
                     val = value[0]
                     if val[:1] == '/' and val[-1] == '/':
                         return re.compile(val[1:-1])
-                
+
                 return value
-            
+
             def parse_csv(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
                 if value and len(value) == 1:
                     val = value[0]
                     if "," in val:
                         return list(map(lambda v: v.strip(), val.split(",")))
-                
+
                 return value
-            
+
             def parse_id(value: Optional[List[str]]) -> Union[None, List[str], Pattern[str]]:
                 v = parse_re(value)
                 if not isinstance(v, Pattern):
                     return parse_csv(v)
-                
+
                 return v
 
             args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
@@ -1043,7 +1044,7 @@ class ServoCLI(CLI):
             table = []
             ready = True
             if verbose:
-                headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]                    
+                headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
                 for result in results:
                     checks: List[Check] = result.value
                     names, ids, tags, statuses, comments = [], [], [], [], []
@@ -1054,13 +1055,13 @@ class ServoCLI(CLI):
                         statuses.append("√ PASSED" if check.success else "X FAILED")
                         comments.append(check.message or "-")
                         ready &= check.success
-                    
+
                     if not names:
                         continue
 
                     row = [result.connector.name, "\n".join(names), "\n".join(ids), "\n".join(tags), "\n".join(statuses), "\n".join(comments)]
                     table.append(row)
-            else:                    
+            else:
                 headers = ["CONNECTOR", "STATUS", "ERRORS"]
                 for result in results:
                     checks: List[Check] = result.value
@@ -1077,7 +1078,7 @@ class ServoCLI(CLI):
                     message = reduce(lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n", errors, "")
                     row = [result.connector.name, status, message]
                     table.append(row)
-                
+
             # Output table and exit
             if not quiet:
                 typer.echo(tabulate(table, headers, tablefmt="plain"))
@@ -1199,10 +1200,10 @@ class ServoCLI(CLI):
         ) -> None:
             """
             Capture measurements for one or more metrics
-            """            
+            """
             if not connectors:
                 connectors = list(filter(lambda c: c.responds_to_event(Events.MEASURE), context.assembly.connectors))
-            
+
             # TODO: Test combination of metrics + connector options
             if metrics:
                 # Filter target connectors by metrics
@@ -1214,14 +1215,14 @@ class ServoCLI(CLI):
                     metric_names: Set[str] = set(map(lambda m: m.name, result_metrics))
                     if not metric_names | set(metrics):
                         connectors.remove(result.connector)
-            
+
             # Capture the measurements
             results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.MEASURE, metrics=metrics, control=Control(duration=duration), include=connectors
             ))
 
             # FIXME: The data that is crossing connector boundaries needs to be validated
-            aggregated_by_metric: Dict[Metric, Dict[str, Dict[BaseConnector, List[Tuple[Numeric, Reading]]]]] = {}                       
+            aggregated_by_metric: Dict[Metric, Dict[str, Dict[BaseConnector, List[Tuple[Numeric, Reading]]]]] = {}
             metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
             headers = ["METRIC", "UNIT", "READINGS"]
             table = []
@@ -1231,7 +1232,7 @@ class ServoCLI(CLI):
                     continue
                 for reading in measurement.readings: # List[TimeSeries]
                     metric = reading.metric
-                    
+
                     metric_to_timestamp = aggregated_by_metric.get(metric, {})
                     for value_tuple in reading.values: # List[Tuple[datetime, Numeric]]
                         time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
@@ -1242,8 +1243,8 @@ class ServoCLI(CLI):
                         metric_to_timestamp[time_key] = timestamp_to_connector
 
                     aggregated_by_metric[metric] = metric_to_timestamp
-            
-            # Print the table            
+
+            # Print the table
             def attribute_connector(connector, reading) -> str:
                 return f"[{connector.name}{reading.id or ''}]" if len(connectors) > 1 else ""
 
@@ -1261,7 +1262,7 @@ class ServoCLI(CLI):
                 row = [
                     metric.name,
                     metric.unit,
-                    "\n".join(readings_column),                            
+                    "\n".join(readings_column),
                 ]
                 table.append(row)
             typer.echo(tabulate(table, headers, tablefmt="plain"))
@@ -1283,13 +1284,13 @@ class ServoCLI(CLI):
                 component_name, setting_descriptor = descriptor.split(".", 1)
                 setting_name, value = setting_descriptor.split("=", 1)
                 adjustment = Adjustment(
-                    component_name=component_name, 
+                    component_name=component_name,
                     setting_name=setting_name,
                     value=value
                 )
                 adjustments.append(adjustment)
 
-            
+
             results: List[EventResult] = sync(context.servo.dispatch_event(
                 Events.ADJUST, adjustments
             ))
@@ -1298,12 +1299,12 @@ class ServoCLI(CLI):
 
                 if isinstance(outcome, Exception):
                     message = str(outcome.get("message", "undefined"))
-                    raise ConnectorError(                        
+                    raise ConnectorError(
                         f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
                     )
                 else:
                     self.logger.info(f"{result.connector.name} - Adjustment completed")
-                    
+
 
         @self.command(section=section, hidden=True)
         def promote() -> None:
@@ -1361,7 +1362,7 @@ class ServoCLI(CLI):
                                 "type": connector.full_name,
                                 "description": connector.description,
                                 "version": str(connector.version),
-                                "url": str(connector.homepage),                                
+                                "url": str(connector.homepage),
                             }
                         )
                     connectors_json_str = json.dumps(connectors, indent=None)
@@ -1588,7 +1589,7 @@ class ServoCLI(CLI):
                 else:
                     # If there are no aliases just assign input values
                     config.connectors = connectors
-            
+
             config_yaml = config.yaml(
                 by_alias=True, exclude_unset=exclude_unset, exclude_defaults=exclude_unset, exclude=exclude, exclude_none=True
             )
@@ -1669,7 +1670,7 @@ class ServoCLI(CLI):
                     raise typer.BadParameter(f"no connector found for key '{identifier}'")
             else:
                 connector_class = Servo
-            
+
             if short:
                 if format == VersionOutputFormat.text:
                     typer.echo(f"{connector_class.full_name} v{connector_class.version}")
@@ -1723,6 +1724,6 @@ def sync(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
         Any: The Future's result.
 
     Raises:
-        Exception: 
+        Exception:
     """
     return asyncio.get_event_loop().run_until_complete(future)
