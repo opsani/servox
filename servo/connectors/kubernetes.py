@@ -2871,6 +2871,16 @@ class KubernetesConnector(BaseConnector):
         # add the sidecar to the Deployment
         dep.obj.spec.template.spec.containers.append(container)
 
+        # add annotations so the servo will scrape the metrics
+        if dep.obj.spec.template.metadata.annotations is None:
+            dep.obj.spec.template.metadata.annotations = {}
+
+        dep.obj.spec.template.metadata.annotations.update({
+            "prometheus.opsani.com/path": "/stats/prometheus",
+            "prometheus.opsani.com/port": "9901",
+            "prometheus.opsani.com/scrape": "true"
+        })
+
         # patch the deployment
         await dep.patch()
 
