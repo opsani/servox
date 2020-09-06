@@ -21,6 +21,9 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 - `servo run --check` can now be controlled via the `SERVO_RUN_CHECK`
 environment variable.
 
+### Fixed
+- Handle measure command responses that include metric units (`oco-e` compatibility).
+
 ## [0.6.2] - 2020-09-03
 
 ### Changed
