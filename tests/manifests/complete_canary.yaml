@@ -25,53 +25,50 @@ data:
               min: 128 MiB
               max: 3 GiB
               step: 0.125
-              
+
     prometheus:
       # NOTE: In a sidecar configuration, Prometheus is colocated with the servo in the Pod
       base_url: http://localhost:9090
       metrics:
-        # NOTE: Include `OR on() vector(0)` to ensure that zero values are produced instead of null to avoid upstream exceptions when reporting to oco when data isn't found
         - name: main_instance_count
-          query: sum(envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role!="tuning"}) OR on() vector(0)
+          query: sum(envoy_cluster_membership_healthy{opsani_role!="tuning"})
           unit: count
         - name: tuning_instance_count
-          query: envoy_cluster_membership_healthy{app="web", kubernetes_namespace="default",opsani_role="tuning"} OR on() vector(0)
+          query: envoy_cluster_membership_healthy{opsani_role="tuning"}
           unit: count
 
         - name: main_pod_avg_request_rate
-          query: avg(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
+          query: avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))
           unit: rps
         - name: total_request_rate
-          query: sum(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default"}[3m])) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_total[3m]))
           unit: rps
         - name: main_request_rate
-          query: sum(rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role!="tuning"}[3m])) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))
           unit: rps
         - name: tuning_request_rate
-          query: rate(envoy_cluster_upstream_rq_total{app="web", kubernetes_namespace="default",opsani_role="tuning"}[3m]) OR on() vector(0)
+          query: rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m])
           unit: rps
 
         - name: main_success_rate
-          query: sum(rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class="2"}[3m])) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[3m]))
           unit: rps
         - name: tuning_success_rate
-          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class="2"}[3m]) OR on() vector(0)
+          query: rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])
           unit: rps
-        
+
         - name: main_error_rate
-          query: sum(rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m])) OR on() vector(0)
+          query: sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))
           unit: rps
         - name: tuning_error_rate
-          query: rate(envoy_cluster_upstream_rq_xx{app="web", kubernetes_namespace="default", opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m]) OR on() vector(0)
+          query: rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])
           unit: rps
-        
+
         - name: main_p90_latency
-          #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m]))) OR on() vector(0)
-          query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role!="tuning"}[3m])) OR on() vector(0)
+          query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))
           unit: ms
         - name: tuning_p90_latency
-          #query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m]))) OR on() vector(0)
-          query: histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{app="web", kubernetes_namespace="default", opsani_role="tuning"}[3m])) OR on() vector(0)
+          query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))
           unit: ms
 ---
 apiVersion: apps/v1
@@ -85,7 +82,7 @@ spec:
   replicas: 1
   revisionHistoryLimit: 2
   strategy:
-    type: Recreate  
+    type: Recreate
   selector:
     matchLabels:
       app: servo
@@ -96,7 +93,7 @@ spec:
         app: servo
         component: core
     spec:
-      serviceAccountName: servo      
+      serviceAccountName: servo
       containers:
       - name: main
         image: opsani/servox:latest
@@ -105,7 +102,7 @@ spec:
         - name: OPSANI_OPTIMIZER
           value: dev.opsani.com/blake-test-blank
         - name: SERVO_LOG_LEVEL
-          value: DEBUG        
+          value: DEBUG
         - name: POD_NAME
           valueFrom:
               fieldRef:
@@ -193,7 +190,7 @@ metadata:
     component: core
 rules:
 - apiGroups: ["apps","extensions"]
-  resources: ["deployments","replicasets","PodDisruptionBudget"]
+  resources: ["deployments","replicasets"]
   verbs: ["get", "list", "watch", "update", "patch"]
 - apiGroups: [""]
   resources: ["pods", "pods/logs", "pods/status", "namespaces"]
@@ -236,7 +233,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: servo  
+  name: servo
 subjects:
 - kind: ServiceAccount
   name: servo
@@ -272,113 +269,50 @@ metadata:
     component: prometheus
 data:
   prometheus.yaml: |
+    # Opsani Servo Prometheus Sidecar v0.6.2
+    # This configuration allows the Opsani Servo to discover and scrape Pods that
+    # have been injected with an Envoy proxy sidecar container that emits the metrics
+    # necessary for optimization. Scraping by the Prometheus sidecar is enabled by
+    # adding the following annotations to the Pod spec of the Deployment under
+    # optimization:
+    #
+    # annotations:
+    #   prometheus.opsani.com/path: /stats/prometheus # Default Envoy metrics path
+    #   prometheus.opsani.com/port: "9901" # Default Envoy metrics port
+    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
+    #
+    # Path and port collisions with the optimization target can be resolved be changing
+    # the relevant annotation.
+
+    # Scrape the targets every 5 seconds.
+    # Since we are only looking at specifically annotated Envoy sidecar containers
+    # with a known metrics surface area and retain the values for <= 24 hours, we
+    # can scrape aggressively. The higher scrape resolution is helpful for testing
+    # and running checks that verify configuration health.
     global:
       scrape_interval: 5s
       scrape_timeout: 5s
       evaluation_interval: 5s
-    rule_files:
-      - "/etc/prometheus-rules/*.rules"
+
+    # Scrape the Envoy sidecar metrics based on matching annotations (see above)
     scrape_configs:
-      - job_name: 'kube-state-metrics'
-        static_configs:
-          - targets: ['kube-state-metrics.kube-system.svc.cluster.local:8080']
+    - job_name: 'opsani-envoy-sidecars'
+      kubernetes_sd_configs:
+        - role: pod
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
-      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L79
-      - job_name: 'kubernetes-endpoints'
-        kubernetes_sd_configs:
-          - role: endpoints
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-            action: keep
-            regex: true
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
-            action: replace
-            target_label: __scheme__
-            regex: (https?)
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
-            action: replace
-            target_label: __metrics_path__
-            regex: (.+)
-          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
-            action: replace
-            target_label: __address__
-            regex: (.+)(?::\d+);(\d+)
-            replacement: $1:$2
-          - action: labelmap
-            regex: __meta_kubernetes_service_label_(.+)
-          - source_labels: [__meta_kubernetes_namespace]
-            action: replace
-            target_label: kubernetes_namespace
-          - source_labels: [__meta_kubernetes_service_name]
-            action: replace
-            target_label: kubernetes_name
-
-      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L119
-      - job_name: 'kubernetes-services'
-        metrics_path: /probe
-        params:
-          module: [http_2xx]
-        kubernetes_sd_configs:
-          - role: service
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
-            action: keep
-            regex: true
-          - source_labels: [__address__]
-            target_label: __param_target
-          - target_label: __address__
-            replacement: blackbox
-          - source_labels: [__param_target]
-            target_label: instance
-          - action: labelmap
-            regex: __meta_kubernetes_service_label_(.+)
-          - source_labels: [__meta_kubernetes_namespace]
-            target_label: kubernetes_namespace
-          - source_labels: [__meta_kubernetes_service_name]
-            target_label: kubernetes_name
-
-      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L156
-      - job_name: 'kubernetes-pods'
-        kubernetes_sd_configs:
-          - role: pod
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-            action: keep
-            regex: true
-          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
-            action: replace
-            target_label: __metrics_path__
-            regex: (.+)
-          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-            action: replace
-            regex: (.+):(?:\d+);(\d+)
-            replacement: ${1}:${2}
-            target_label: __address__
-          - action: labelmap
-            regex: __meta_kubernetes_pod_label_(.+)
-          - source_labels: [__meta_kubernetes_namespace]
-            action: replace
-            target_label: kubernetes_namespace
-          - source_labels: [__meta_kubernetes_pod_name]
-            action: replace
-            target_label: kubernetes_pod_name
-          - source_labels: [__meta_kubernetes_pod_container_port_number]
-            action: keep
-            regex: 9\d{3}
-
-      - job_name: 'kubernetes-envoy'
-        kubernetes_sd_configs:
-          - role: service
-        relabel_configs:
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-            action: keep
-            regex: true
-          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
-            action: replace
-            target_label: __metrics_path__
-            regex: (.+)
-          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
-            action: replace
-            target_label: __address__
-            regex: (.+)(?::\d+);(\d+)
-            replacement: $1:$2
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_opsani_com_port]
+          action: replace
+          target_label: __address__
+          regex: (.+)(?::\d+);(\d+)
+          replacement: $1:$2
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
