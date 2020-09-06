@@ -1,0 +1,137 @@
+# Project information
+site_name: Opsani ServoX
+site_url: https://opsani.github.io/servox/
+site_author: Blake Watters
+site_description: >-
+  Optimize your cloud native application.
+# Repository
+repo_name: opsani/servox
+repo_url: https://github.com/opsani/servox
+edit_uri: ""
+
+# Copyright
+copyright: Copyright &copy; 2018 - 2020 Opsani
+
+# Plugins
+plugins:
+  - search
+  # - mkdocstrings
+    # default_handler: python
+    # handlers:
+    #   python:
+    #     rendering:
+    #       show_source: false
+
+# Customization
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/opsani
+    - icon: fontawesome/brands/docker
+      link: https://hub.docker.com/r/opsani/servox/
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/opsani
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/in/opsani/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: indigo
+    accent: blue
+  font:
+    text: Montserrat
+    code: Source Code Pro
+  favicon: images/cropped-Opsaniv2.1_icon-192x192.png
+  icon:
+    # logo: octicons/code-16
+    logo: fontawesome/solid/terminal
+  
+  language: en
+  # features:
+  #   - tabs
+
+# Extensions
+markdown_extensions:
+  - codehilite
+  - mkautodoc
+  - markdown.extensions.admonition
+  - markdown.extensions.attr_list
+  - markdown.extensions.def_list
+  - markdown.extensions.footnotes
+  - markdown.extensions.meta
+  - markdown.extensions.toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:materialx.emoji.twemoji
+      emoji_generator: !!python/name:materialx.emoji.to_svg
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: squidfunk
+      repo: mkdocs-material
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Navigation
+nav:
+  - Home: index.md
+  - Getting started:
+    - Overview: overview.md
+    - Supported environments: environments.md
+    - Installation: installation.md    
+  - Running optimization:
+    - Optimization lifecycle: operations/lifecycle.md
+    - Saturation vs canary mode: operations/modes.md
+    - Configuring your app: operations/configuration.md
+    - Running preflight checks: operations/checks.md
+    - Deploying the servo: operations/deployment.md
+    - Optimizing for cost: operations/cost_optimization.md
+    - Optimizing for performance: operations/performance_optimization.md
+    - Optimizing with synthetic load: operations/loadgen.md
+    - How load balancers affect optimization: operations/load_balancers.md
+    - Continuous optimization: operations/continuous_optimization.md
+    - Troubleshooting: operations/troubleshooting.md
+    - Getting help: operations/support.md
+  - Developing connectors:
+    - Architecture overview: development/architecture.md
+    - Understanding connectors: development/connectors.md
+    - Managing configuration: development/configuration.md
+    - Working with events: development/events.md
+    - Leveraging preflight checks: development/checks.md
+    - Building assemblies: development/assemblies.md
+    - Extending the CLI: development/cli.md
+  - Changelog:
+    - Release notes: changelog.md
+    - Upgrading: upgrading.md
+    - Deprecations: deprecations.md
+    - License: license.md
+
+# Google Analytics
+google_analytics:
+  - !!python/object/apply:os.getenv ["GOOGLE_ANALYTICS_KEY"]
+  - auto
+
+extra_css:
+  - css/custom.css
