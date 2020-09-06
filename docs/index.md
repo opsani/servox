@@ -26,8 +26,3 @@ services it is not necessary to consume the development focused content.
         index.md  # The documentation homepage.
         ...       # Other markdown pages, images and other files.
 
-# API documentation
-
-::: servo.servo.Servo
-    :docstring:
-    :members:
