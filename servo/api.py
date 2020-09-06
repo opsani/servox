@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from devtools import pformat
 import httpx
-from pydantic import BaseModel, Field, parse_obj_as
+from pydantic import BaseModel, Field, parse_obj_as, validator
 
 from servo.types import Adjustment, Control, Duration, Numeric
 
@@ -64,6 +64,13 @@ class MeasureParams(BaseModel):
     metrics: List[str]
     control: Control
 
+    @validator('metrics', always=True, pre=True)
+    @classmethod
+    def coerce_metrics(cls, value) -> List[str]:
+        if isinstance(value, dict):
+            return list(value.keys())
+        
+        return value
 
 class CommandResponse(BaseModel):
     command: Command = Field(alias="cmd",)
