@@ -15,7 +15,7 @@ copyright: Copyright &copy; 2018 - 2020 Opsani
 # Plugins
 plugins:
   - search
-  # - mkdocstrings
+  - mkdocstrings
     # default_handler: python
     # handlers:
     #   python:
@@ -54,8 +54,7 @@ theme:
 
 # Extensions
 markdown_extensions:
-  - codehilite
-  - mkautodoc
+  # - mkautodoc
   - markdown.extensions.admonition
   - markdown.extensions.attr_list
   - markdown.extensions.def_list
@@ -73,7 +72,8 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:materialx.emoji.twemoji
       emoji_generator: !!python/name:materialx.emoji.to_svg
-  - pymdownx.highlight
+  - pymdownx.highlight:
+      use_pygments: true
   - pymdownx.inlinehilite
   - pymdownx.keys
   - pymdownx.magiclink:
@@ -122,6 +122,13 @@ nav:
     - Leveraging preflight checks: development/checks.md
     - Building assemblies: development/assemblies.md
     - Extending the CLI: development/cli.md
+  - API Reference: #mkapi/api/servo
+    - Core: api/core.md
+    - KubernetesConnector: api/kubernetes_connector.md
+    - PrometheusConnector: api/prometheus_connector.md
+    - VegetaConnector: api/vegeta_connector.md
+    - CLI: api/cli.md
+    - Utilities: api/utilities.md
   - Changelog:
     - Release notes: changelog.md
     - Upgrading: upgrading.md
