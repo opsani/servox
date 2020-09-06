@@ -1158,13 +1158,6 @@ class ServoCLI(CLI):
 
             return metrics
 
-        @self.command(section=section, hidden=True)
-        def baseline() -> None:
-            """
-            Adjust settings to baseline configuration
-            """
-            _not_yet_implemented()
-
         @self.command(section=section)
         def measure(
             context: Context,
@@ -1305,13 +1298,36 @@ class ServoCLI(CLI):
                 else:
                     self.logger.info(f"{result.connector.name} - Adjustment completed")
 
+        @self.command(section=section)
+        def inject_sidecar(
+            context: Context,
+            target: str = typer.Argument(
+                ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
+            ),
+            service: Optional[str] = typer.Option(
+                None, "--service", "-s", help="Service to target"
+            ),
+            port: Optional[int] = typer.Option(
+                None, "--port", "-p", help="Port to target"
+            )
+        ) -> None:
+            """
+            Inject an Envoy sidecar to capture metrics
+            """
+            if not target.startswith(("deploy/", "deployment/", "pod/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
 
-        @self.command(section=section, hidden=True)
-        def promote() -> None:
-            """
-            Promote optimized settings to the cluster
-            """
-            _not_yet_implemented()
+            if not service or port:
+                raise typer.MissingParameter("service or port must be given")
+
+            if target.startswith("deploy"):
+                connector = context.servo.get_connector("kubernetes")
+                sync(connector.inject_sidecar(deployment=target, service=service, port=port))
+
+            elif target.startswith("pod"):
+                raise typer.BadParameter("Pod sidecar injection is not yet implemented")
+            else:
+                raise typer.BadParameter(f"unexpected sidecar target: {target}")
 
     def add_config_commands(self, section=Section.CONFIG) -> None:
         class ConfigOutputFormat(AbstractOutputFormat):
