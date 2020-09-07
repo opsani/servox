@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable
+from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable, multicheck
 from servo.configuration import BaseConfiguration
 from servo.utilities.inspect import get_instance_methods
 from typing import Iterable, List, Tuple, Union, Optional
@@ -504,7 +504,6 @@ async def test_add_checks_to_existing_class() -> None:
         [ 'Check seven', 'b991c85a', 'so_check_it_seven', ],
     ]
 
-from servo.checks import multicheck
 
 class MultiChecks(BaseChecks):
     @multicheck("Check number {}")
@@ -514,16 +513,12 @@ class MultiChecks(BaseChecks):
 
         return ["one", "two", "three"], handler
     
-    # @multicheck("Asynchronously check number {}")
-    # async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
-    #     def handler(value: str) -> str:
-    #         return f"Number {value} was checked"
+    @multicheck("Asynchronously check number {}")
+    async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
+        async def handler(value: str) -> str:
+            return f"Number {value} was checked"
 
-    #     return ["one", "two", "three"], handler
-
-
-    # TODO: add tags, description, etc.
-    # TODO: test with value that can't expand to a Python identifier
+        return ["four", "five", "six"], handler
     
 async def test_multichecks() -> None:
     checker = MultiChecks(BaseConfiguration())
@@ -545,8 +540,23 @@ async def test_multichecks() -> None:
             'b495fc6b',
             'Number three was checked',
         ],
+        [
+            'Asynchronously check number four',
+            '2773da1a',
+            'Number four was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'f9df3756',
+            'Number five was checked',
+        ],
+        [
+            'Asynchronously check number six',
+            'a72e0913',
+            'Number six was checked',
+        ]
     ]
-
+5
 async def test_multichecks_async() -> None:
     checker = MultiChecks(BaseConfiguration())
     results = await checker.run_()
@@ -567,6 +577,21 @@ async def test_multichecks_async() -> None:
             'b495fc6b',
             'Number three was checked',
         ],
+        [
+            'Asynchronously check number four',
+            '2773da1a',
+            'Number four was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'f9df3756',
+            'Number five was checked',
+        ],
+        [
+            'Asynchronously check number six',
+            'a72e0913',
+            'Number six was checked',
+        ]
     ]
 
 def test_multicheck_invalid_args() -> None:
