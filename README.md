@@ -296,12 +296,17 @@ which is designed to provide balanced output that informs you of what is
 happening operationally without becoming overwhelming and pedantic. During
 development, debugging, or troubleshooting it may become desirable to run at
 an elevated log level. The log level can be set via a commandline option on
-the `servo` utility or via the `SERVO_LOG_LEVEL` environment variable:
+the `servo` utility or via the `SERVO_LOG_LEVEL` environment variable. The
+servo will emit ANSI colored output to `stderr` when the terminal is a TTY.
+Coloring can be suppressed via the `--no-color` commandline option or with
+the `SERVO_NO_COLOR` or `NO_COLOR` environment variables.
 
 ```console
   -l, --log-level [TRACE|DEBUG|INFO|SUCCESS|WARNING|ERROR|CRITICAL]
                                   Set the log level  [env var:
                                   SERVO_LOG_LEVEL; default: INFO]
+  --no-color                      Disable colored output  [env var:
+                                  SERVO_NO_COLOR, NO_COLOR]
 ```
 
 By default, log messages are written to `stderr` and a file sink at the `logs/`

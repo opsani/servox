@@ -2473,6 +2473,9 @@ DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 
 class KubernetesChecks(BaseChecks):
+    """Checks for ensuring that the Kubernetes connector is ready to run.
+    """
+    
     config: KubernetesConfiguration
 
     @check("Connectivity to Kubernetes", required=True)

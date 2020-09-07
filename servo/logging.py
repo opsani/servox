@@ -155,41 +155,41 @@ DEFAULT_FORMAT = (
 )
 
 
-def _format(record: dict) -> str:
-    """
-    Formats a log message with contextual information from the servo assembly.
-    """
-    extra = record["extra"]
+class Formatter:
+    def __call__(self, record: dict) -> str:
+        """
+        Formats a log message with contextual information from the servo assembly.
+        """
+        extra = record["extra"]
 
-    # Add optional traceback
-    if extra.get("with_traceback", False):
-        extra["traceback"] = "\n" + "".join(traceback.format_stack())
-    else:
-        extra["traceback"] = ""
-
-    # Respect an explicit component 
-    if not "component" in record["extra"]:        
-        if connector := extra.get("connector", None):
-            component = connector.name
+        # Add optional traceback
+        if extra.get("with_traceback", False):
+            extra["traceback"] = "\n" + "".join(traceback.format_stack())
         else:
-            component = "servo"
-        
-        # Append event context if available
-        if event_context := _event_context_var.get():
-            component += f"[{event_context}]"
-        
-        extra["component"] = component
+            extra["traceback"] = ""
 
-    return DEFAULT_FORMAT + "\n{exception}"
+        # Respect an explicit component 
+        if not "component" in record["extra"]:        
+            if connector := extra.get("connector", None):
+                component = connector.name
+            else:
+                component = "servo"
+            
+            # Append event context if available
+            if event_context := _event_context_var.get():
+                component += f"[{event_context}]"
+            
+            extra["component"] = component
+
+        return DEFAULT_FORMAT + "\n{exception}"
 
 
 DEFAULT_FILTER = Filter("INFO")
-DEFAULT_FORMATTER = _format
+DEFAULT_FORMATTER = Formatter()
 
 
 DEFAULT_STDERR_HANDLER = {
     "sink": sys.stderr,
-    "colorize": True,
     "filter": DEFAULT_FILTER,
     "level": 0,
     "format": DEFAULT_FORMATTER,
@@ -218,20 +218,32 @@ DEFAULT_HANDLERS = [
     DEFAULT_FILE_HANDLER,
 ]
 
+
 def set_level(level: str) -> None:
     """
     Sets the logging threshold to the given level for all log handlers.
     """
     DEFAULT_FILTER.level = level
 
+def set_colors(colors: bool) -> None:
+    """Sets whether ANSI colored output will be emitted to the logs.
+
+    Args:
+        colors (bool): Whether or not to color log output.
+    """
+    DEFAULT_STDERR_HANDLER["colorize"] = colors
+    loguru.logger.remove()
+    loguru.logger.configure(handlers=DEFAULT_HANDLERS)
+
 def reset_to_defaults() -> loguru.Logger:
     """
     Resets the logging subsystem to the default configuration and returns the logger instance.
     """
-    logger = loguru.logger
-    logger.remove()
-    logger.configure(handlers=DEFAULT_HANDLERS)
     DEFAULT_FILTER.level = "INFO"
+    DEFAULT_STDERR_HANDLER["colorize"] = None
+
+    loguru.logger.remove()
+    loguru.logger.configure(handlers=DEFAULT_HANDLERS)    
 
     # Intercept messages from backoff library
     logging.getLogger('backoff').addHandler(InterceptHandler())

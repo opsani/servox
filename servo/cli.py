@@ -36,7 +36,7 @@ from servo.connector import (
     _connector_class_from_string
 )
 from servo.events import EventHandler, EventResult, Preposition
-from servo.logging import logger, set_level as set_log_level
+import servo.logging
 from servo.servo import (
     Events,
     Servo,
@@ -375,6 +375,12 @@ class CLI(typer.Typer):
             envvar="SERVO_LOG_LEVEL",
             show_envvar=True,
             help="Set the log level",
+        ),
+        no_color: Optional[bool] = typer.Option(
+            None,
+            "--no-color",
+            envvar=["SERVO_NO_COLOR", "NO_COLOR"],
+            help="Disable colored output"
         )
     ):
         ctx.config_file = config_file
@@ -382,7 +388,8 @@ class CLI(typer.Typer):
         ctx.token = token
         ctx.token_file = token_file
         ctx.base_url = base_url
-        set_log_level(log_level)
+        servo.logging.set_level(log_level)
+        servo.logging.set_colors(not no_color)
 
         # TODO: This should be pluggable
         if ctx.invoked_subcommand not in {

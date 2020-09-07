@@ -20,6 +20,12 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 ### Added
 - `servo run --check` can now be controlled via the `SERVO_RUN_CHECK`
 environment variable.
+- The `servo.logging` module now provides the `set_colors` function for programmatically enabling or disabling coloring.
+- The CLI accepts a `—no-colors` argument that will explicitly disable coloring.
+- The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to disable coloring.
+
+### Changed
+- Log coloring is now conditionally enabled via TTY auto-detection.
 
 ### Fixed
 - Handle measure command responses that include metric units (`oco-e` compatibility).
