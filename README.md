@@ -967,6 +967,28 @@ A context dictionary is provided to the template that includes references to all
 Kubernetes resources that have been loaded at render time. The `namespace` and
 `objs` are likely to be the most interesting.
 
+## Documentation
+
+ServoX is documented with a combination of code local docstrings and task
+oriented docs covering servo operations, development, and general info about 
+optimization.
+
+Composed docs are built using [mkdocs](https://www.mkdocs.org/) with the most 
+excellent [material theme](https://squidfunk.github.io/mkdocs-material/) and API documentation is parsed from the docstrings using [pydoc-markdown](https://github.com/NiklasRosenstein/pydoc-markdown). The [`docs`](docs/) subdirectory
+contains Markdown documents that are assembled to build the docs site.
+
+You can launch a local copy of the documentation site via:
+
+```console
+mkdocs serve
+```
+
+API documentation can built into the `docs/api` directory by running:
+
+```console
+pydoc-markdown --build --render-toc --site-dir api
+````
+
 ## License
 
 ServoX is distributed under the terms of the Apache 2.0 Open Source license.
