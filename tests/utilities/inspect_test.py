@@ -1,5 +1,6 @@
 import pytest
 import inspect
+import types
 from functools import reduce
 from servo.utilities.inspect import get_instance_methods, get_methods, get_defining_class
 
@@ -44,4 +45,13 @@ def test_get_instance_methods_invalid_parent() -> None:
 def test_get_instance_methods_returns_bound_methods_if_possible() -> None:
     methods = get_instance_methods(ThreeClass(), stop_at_parent=OneClass)
     assert list(methods.keys()) == ['one', 'two', 'three', 'four', 'five', 'six']
+    assert reduce(lambda bound, m: bound & inspect.ismethod(m), methods.values(), True)
+
+def test_get_instance_methods_returns_finds_dynamic_instance_methods() -> None:
+    def seven() -> None:
+        ...
+    instance = ThreeClass()
+    instance.seven = types.MethodType(seven, instance)
+    methods = get_instance_methods(instance, stop_at_parent=OneClass)
+    assert list(methods.keys()) == ['one', 'two', 'three', 'four', 'five', 'six', 'seven']
     assert reduce(lambda bound, m: bound & inspect.ismethod(m), methods.values(), True)
