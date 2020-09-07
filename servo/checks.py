@@ -1,6 +1,7 @@
 import asyncio
 import enum
 import functools
+import types
 
 from datetime import datetime
 from hashlib import blake2b
@@ -537,6 +538,16 @@ class BaseChecks(BaseModel):
     
     def __init__(self, config: BaseConfiguration, *, logger: 'loguru.Logger' = default_logger, **kwargs) -> None:
         super().__init__(config=config, logger=logger, **kwargs)
+        self._expand_multichecks()
+    
+    def _expand_multichecks(self) -> None:
+        # Iterate our multimethods and define them
+        for method_name, method in get_instance_methods(self).items():
+            if hasattr(method, "__multicheck__"):
+                checks_fns = method()
+                for check_method_name, fn in checks_fns.items():
+                    method = types.MethodType(fn, self)
+                    setattr(self, check_method_name, method)
     
     class Config:
         arbitrary_types_allowed = True
@@ -700,3 +711,88 @@ def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable, *, ba
         setattr(cls, method_name, fn)
     
     return cls
+
+
+MultiCheckHandler = TypeVar("MultiCheckHandler", Callable[..., CheckHandlerResult], Callable[..., Awaitable[CheckHandlerResult]])
+MultiCheckRunner = TypeVar("MultiCheckRunner", Callable[..., List[Check]], Coroutine[None, None, Check])
+
+def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
+    sig = Signature.from_callable(fn)
+    if len(sig.parameters) > 0:
+        for param in sig.parameters.values():
+            if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
+                continue
+
+            raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": unexpected parameter \"{param.name}\" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}")
+
+    origin = get_origin(sig.return_annotation)
+    args = get_args(sig.return_annotation)
+    if origin is tuple:
+        if args == (Iterable, CheckHandler):
+            return
+    
+    raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}")
+
+def multicheck(
+    base_name: str,
+    *, 
+    description: Optional[str] = None,
+    required: bool = False,
+    tags: Optional[List[str]] = None
+) -> Callable[[MultiCheckHandler], MultiCheckRunner]:
+    """Expands a method into a series of checks from a returned iterable and check handler.
+
+    This method provides an alternative to `create_checks_from_iterable` that is usable in cases
+    where it is desirable to implement a `BaseChecks` subclass to hand-roll specific checks but
+    there are also iterable values that can be checked by a common handler.
+
+    The decorator works by dynamically creating check instance methods when a `BaseChecks` subclass
+    is initialized.
+
+    The decorator requires a `base_name` parameter to identify the checks as well as an optional
+    informative `description`, a `required` boolean value that determines if a failure will halt 
+    execution of subsequent checks. The `base_name` is interpolated into an item specific name
+    by formatting the `base_name` with an item from the iterable collection.
+    
+    The decorated function must return an iterable collection of objects to be checked and a
+    handler function for checking each value.
+    
+    Args:
+        base_name: Human readable base name of the check. Expanded with each iterable.
+        description: Optional additional details about the checks.
+        required: When True, failure of the checks will halt execution of subsequent checks.
+        tags: An optional list of tags for filtering checks. Tags may contain only lowercase
+            alphanumeric characters, hyphens '-', and periods '.'.
+    
+    Returns:
+        A decorator function for transforming a method into a series of check instance methods.
+    
+    Raises:
+        TypeError: Raised if the signature of the decorated function is incompatible.
+    """
+    def decorator(fn_: MultiCheckHandler) -> MultiCheckRunner:
+        _validate_multicheck_handler(fn_)
+        @functools.wraps(fn_)
+        def create_checks(*args, **kwargs):            
+            def create_fn(name, item):
+                async def _fn(self) -> Check:
+                    check = Check(name=name, description=description, required=required, tags=tags)
+                    await run_check_handler(check, handler, item)
+                    return check
+                
+                return _fn
+            
+            checks_fns = {}
+            iterable, handler = fn_(*args, **kwargs)
+            for item in iterable:
+                check_name = base_name.format(item)
+                fn = create_fn(check_name, item)
+                fn_name = f"{fn_.__name__}_{item}"
+                checks_fns[fn_name] = fn
+
+            return checks_fns
+
+        create_checks.__multicheck__ = True
+        return create_checks
+    
+    return decorator
