@@ -258,7 +258,7 @@ def check(
                 run_check_handler_sync(check, fn, *args, **kwargs)
                 return check
 
-        # update the wrapped return signature conform with protocol
+        # update the wrapped return signature to conform with the protocol
         run_check.__check__ = __check__
         run_check.__annotations__['return'] = Check
         return cast(CheckRunner, run_check)
@@ -268,6 +268,9 @@ def check(
 
 CHECK_SIGNATURE = Signature(return_annotation=Check)
 CHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Check')
+
+MULTICHECK_SIGNATURE = Signature(return_annotation=Tuple[Iterable, CheckHandler])
+MULTICHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Tuple[Iterable, CheckHandler]')
 
 
 class Filter(BaseModel):
@@ -518,6 +521,14 @@ class BaseChecks(BaseModel):
                 raise ValueError(f'invalid method name "{name}": method names of Checks subtypes must start with "_" or "check_"')
             
             sig = Signature.from_callable(method)
+
+            # skip multicheck source methods as they are atomized into instance methods
+            if hasattr(method, "__multicheck__"):
+                if sig in (MULTICHECK_SIGNATURE, MULTICHECK_SIGNATURE_ANNOTATED):
+                    continue
+                else:
+                    raise TypeError(f'invalid signature for method "{name}": expected {repr(MULTICHECK_SIGNATURE)}, but found {repr(sig)}')
+                        
             if sig not in (CHECK_SIGNATURE, CHECK_SIGNATURE_ANNOTATED):
                 raise TypeError(f'invalid signature for method "{name}": expected {repr(CHECK_SIGNATURE)}, but found {repr(sig)}')
             

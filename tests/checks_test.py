@@ -3,11 +3,10 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable
+from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable
 from servo.configuration import BaseConfiguration
-# from servo.checks import check as CheckHandlerResult, create_checks_from_iterable
 from servo.utilities.inspect import get_instance_methods
-from typing import List, Tuple, Union, Optional
+from typing import Iterable, List, Tuple, Union, Optional
 
 pytestmark = pytest.mark.freeze_time('2020-08-24')
 
@@ -504,3 +503,153 @@ async def test_add_checks_to_existing_class() -> None:
         [ 'Check six', 'bdc0e261', 'so_check_it_six', ],
         [ 'Check seven', 'b991c85a', 'so_check_it_seven', ],
     ]
+
+import functools
+from typing import Awaitable, Callable, Coroutine, TypeVar, get_origin, get_args
+from servo.checks import run_check_handler, MULTICHECK_SIGNATURE, MULTICHECK_SIGNATURE_ANNOTATED
+MultiCheckHandler = TypeVar("MultiCheckHandler", Callable[..., CheckHandlerResult], Callable[..., Awaitable[CheckHandlerResult]])
+MultiCheckRunner = TypeVar("MultiCheckRunner", Callable[..., List[Check]], Coroutine[None, None, Check])
+
+def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
+    sig = Signature.from_callable(fn)
+    if len(sig.parameters) > 0:
+        for param in sig.parameters.values():
+            if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
+                continue
+
+            raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": unexpected parameter \"{param.name}\" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}")
+
+    origin = get_origin(sig.return_annotation)
+    args = get_args(sig.return_annotation)
+    if origin is tuple:
+        if args == (Iterable, CheckHandler):
+            return
+    
+    return TypeError(f"invalid multicheck handler \"{fn.__name__}\": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}")
+
+def multicheck(
+    base_name: str,
+    *, 
+    description: Optional[str] = None,
+    required: bool = False,
+    tags: Optional[List[str]] = None
+) -> Callable[[MultiCheckHandler], MultiCheckRunner]:
+    """
+    """
+    # TODO: Generate a method name using the ID
+    def decorator(fn_: MultiCheckHandler) -> MultiCheckRunner:
+        _validate_multicheck_handler(fn_)
+        @functools.wraps(fn_)
+        def create_checks(*args, **kwargs):            
+            def create_fn(name, item):
+                async def _fn(self) -> Check:
+                    check = Check(name=name, description=description, required=required, tags=tags)
+                    await run_check_handler(check, handler, item)
+                    return check
+                
+                return _fn
+            
+            checks_fns = {}
+            iterable, handler = fn_(*args, **kwargs)
+            debug(iterable, handler)
+            for item in iterable:
+                # TODO: format the ID
+                check_name = base_name.format(item)
+                debug("define check for ", item, check_name)
+                fn = create_fn(check_name, item)
+                fn_name = f"{fn_.__name__}_{item}"#f"check_{item}"
+                checks_fns[fn_name] = fn
+
+            return checks_fns
+
+        create_checks.__multicheck__ = True
+        return create_checks
+    
+    return decorator
+
+import loguru
+from loguru import logger as default_logger
+import types
+
+class MultiChecks(BaseChecks):
+
+    def __init__(self, config: BaseConfiguration, *, logger: 'loguru.Logger' = default_logger, **kwargs) -> None:
+        super().__init__(config=config, logger=logger, **kwargs)
+        self._expand_multichecks()
+
+    def _expand_multichecks(self) -> None:
+        # Iterate our multimethods and define them
+        for method_name, method in get_instance_methods(self).items():
+            if hasattr(method, "__multicheck__"):
+                checks_fns = method()
+                debug("Add methods: ", checks_fns)
+                for check_method_name, fn in checks_fns.items():
+                    method = types.MethodType(fn, self)
+                    # debug(method)
+                    debug(f"creating method {check_method_name}")
+                    setattr(self, check_method_name, method)
+
+    @multicheck("Check number {}")
+    def check_numbers(self) -> Tuple[Iterable, CheckHandler]:
+        def handler(value: str) -> str:
+            return f"Number {value} was checked"
+
+        return ["one", "two", "three"], handler
+    
+    # @multicheck("Asynchronously check number {}")
+    # async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
+    #     def handler(value: str) -> str:
+    #         return f"Number {value} was checked"
+
+    #     return ["one", "two", "three"], handler
+
+
+    # TODO: add tags, description, etc.
+    # TODO: test with value that can't expand to a Python identifier
+    
+async def test_multichecks() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_()
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'ded3c8bf',
+            'Number one was checked',
+        ],
+        [
+            'Check number two',
+            '67317614',
+            'Number two was checked',
+        ],
+        [
+            'Check number three',
+            'b495fc6b',
+            'Number three was checked',
+        ],
+    ]
+
+async def test_multichecks_async() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_()
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'ded3c8bf',
+            'Number one was checked',
+        ],
+        [
+            'Check number two',
+            '67317614',
+            'Number two was checked',
+        ],
+        [
+            'Check number three',
+            'b495fc6b',
+            'Number three was checked',
+        ],
+    ]
+
+# TODO: test wrong params and return type for multicheck
+# TODO: test unusable identifier
