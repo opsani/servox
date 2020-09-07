@@ -40,7 +40,7 @@ kubetest = "^0.8.1"
 pytest-freezegun = "^0.4.2"
 mkdocs-material = "^5.5.12"
 mkdocs = "^1.1.2"
-mkautodoc = "^0.1.0"
+pydoc-markdown = "^3.5.0"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
