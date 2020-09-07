@@ -15,12 +15,6 @@ copyright: Copyright &copy; 2018 - 2020 Opsani
 # Plugins
 plugins:
   - search
-  - mkdocstrings
-    # default_handler: python
-    # handlers:
-    #   python:
-    #     rendering:
-    #       show_source: false
 
 # Customization
 extra:
@@ -54,7 +48,7 @@ theme:
 
 # Extensions
 markdown_extensions:
-  # - mkautodoc
+  - mkautodoc
   - markdown.extensions.admonition
   - markdown.extensions.attr_list
   - markdown.extensions.def_list
