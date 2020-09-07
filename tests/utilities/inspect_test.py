@@ -55,3 +55,12 @@ def test_get_instance_methods_returns_finds_dynamic_instance_methods() -> None:
     methods = get_instance_methods(instance, stop_at_parent=OneClass)
     assert list(methods.keys()) == ['one', 'two', 'three', 'four', 'five', 'six', 'seven']
     assert reduce(lambda bound, m: bound & inspect.ismethod(m), methods.values(), True)
+
+def test_get_instance_methods_returns_ignores_attributes() -> None:
+    class FourClass(ThreeClass):
+        ignore_me: str = "ignore_me"
+
+    instance = FourClass()
+    methods = get_instance_methods(instance, stop_at_parent=OneClass)
+    assert list(methods.keys()) == ['one', 'two', 'three', 'four', 'five', 'six']
+    assert reduce(lambda bound, m: bound & inspect.ismethod(m), methods.values(), True)

@@ -20,10 +20,12 @@ from loguru import logger as default_logger
 __all__ = [
     "BaseChecks",
     "Check",
+    "CheckHandler",
     "CheckHandlerResult",
     "Filter",
     "HaltOnFailed",
-    "check"
+    "check",
+    "multicheck"
 ]
 
 
@@ -600,6 +602,12 @@ def _validate_check_handler(fn: CheckHandler) -> None:
 async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
 
+    The first item in args (if any) is given to the `format` builtin as an argument named "item" 
+    in order to support building dynamic, context specific values that are assigned as attributes of 
+    the Check instance given during exection. More concretely, this means that running a check handler 
+    with a non-empty arguments list will let you use provide format string input values of the form
+    "Check that {item.name} work as expected (v{item.version}, release date: {item.released_At})".
+
     Args:
         check: The check to record execution results.
         handler: A callable handler to perform the check.
@@ -610,6 +618,9 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
         ValueError: Raised if an invalid value is returned by the handler.
     """
     try:
+        if len(args):
+            check.name = check.name.format(item=args[0])
+            
         check.run_at = datetime.now()
         if asyncio.iscoroutinefunction(handler):
             result = await handler(*args, **kwargs)
@@ -619,7 +630,8 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
     except Exception as error:
         _set_check_result(check, error)
     finally:
-        check.runtime = Duration(datetime.now() - check.run_at)
+        if check.run_at:
+            check.runtime = Duration(datetime.now() - check.run_at)
 
 def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
@@ -727,13 +739,14 @@ def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
 
             raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": unexpected parameter \"{param.name}\" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}")
 
+    if sig.return_annotation == 'Tuple[Iterable, CheckHandler]':
+        # fast return if the type annotation is already a string (depends on `from __future__ import annotations`)
+        return
+
     origin = get_origin(sig.return_annotation)
     args = get_args(sig.return_annotation)
-    if origin is tuple:
-        if args == (Iterable, CheckHandler):
-            return
-    
-    raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}")
+    if origin is not tuple or (args != (Iterable, CheckHandler)):
+        raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}")
 
 def multicheck(
     base_name: str,
@@ -754,7 +767,9 @@ def multicheck(
     The decorator requires a `base_name` parameter to identify the checks as well as an optional
     informative `description`, a `required` boolean value that determines if a failure will halt 
     execution of subsequent checks. The `base_name` is interpolated into an item specific name
-    by formatting the `base_name` with an item from the iterable collection.
+    by formatting the `base_name` with an item from the iterable collection. The item is passed
+    to format as the `item` key, enabling the use of property access and subscripting within the
+    format string.
     
     The decorated function must return an iterable collection of objects to be checked and a
     handler function for checking each value.
@@ -790,7 +805,7 @@ def multicheck(
             else:
                 iterable, handler = fn_(*args, **kwargs)
             for item in iterable:
-                check_name = base_name.format(item)
+                check_name = base_name.format(item=item)
                 fn = create_fn(check_name, item)
                 fn_name = f"{fn_.__name__}_{item}"
                 checks_fns[fn_name] = fn

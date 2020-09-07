@@ -506,14 +506,14 @@ async def test_add_checks_to_existing_class() -> None:
 
 
 class MultiChecks(BaseChecks):
-    @multicheck("Check number {}")
+    @multicheck("Check number {item}")
     def check_numbers(self) -> Tuple[Iterable, CheckHandler]:
         def handler(value: str) -> str:
             return f"Number {value} was checked"
 
         return ["one", "two", "three"], handler
     
-    @multicheck("Asynchronously check number {}")
+    @multicheck("Asynchronously check number {item}")
     async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
         async def handler(value: str) -> str:
             return f"Number {value} was checked"
@@ -608,12 +608,13 @@ def test_multicheck_invalid_return_type() -> None:
         class BadArgs(BaseChecks):
             @multicheck("Check something")
             def check_invalid(self) -> int:
-                ...
+                123
+
     assert e is not None
     assert str(e.value) == "invalid multicheck handler \"check_invalid\": incompatible return type annotation in signature <Signature (self) -> int>, expected to match <Signature () -> Tuple[Iterable, ~CheckHandler]>"
 
 class InvalidMultichecks(BaseChecks):
-    @multicheck("Check number {}")
+    @multicheck("Check number {item}")
     def check_invalid_identifiers(self) -> Tuple[Iterable, CheckHandler]:
         def handler(value: str) -> str:
             return f"Identifier {value} was checked"
