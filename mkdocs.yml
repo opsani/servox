@@ -48,7 +48,6 @@ theme:
 
 # Extensions
 markdown_extensions:
-  - mkautodoc
   - markdown.extensions.admonition
   - markdown.extensions.attr_list
   - markdown.extensions.def_list

@@ -443,6 +443,28 @@ Pre-built images are built using BuildKit and can be used as the basis for very 
 Tests are implemented using [Pytest](https://docs.pytest.org/en/stable/) and live in the `tests` subdirectory. Tests can be executed directly via the `pyenv` CLI
 interface (e.g. `pytest tests`) or via the developer module of the CLI via `servo dev test`.
 
+## Documentation
+
+ServoX is documented with a combination of code local docstrings and task
+oriented docs covering servo operations, development, and general info about 
+optimization.
+
+Composed docs are built using [mkdocs](https://www.mkdocs.org/) with the most 
+excellent [material theme](https://squidfunk.github.io/mkdocs-material/) and API documentation is parsed from the docstrings using [pydoc-markdown](https://github.com/NiklasRosenstein/pydoc-markdown). The [`docs`](docs/) subdirectory
+contains Markdown documents that are assembled to build the docs site.
+
+You can launch a local copy of the documentation site via:
+
+```console
+mkdocs serve
+```
+
+API documentation can built into the `docs/api` directory by running:
+
+```console
+pydoc-markdown --build --render-toc --site-dir api
+````
+
 ## License
 
 ServoX is distributed under the terms of the Apache 2.0 Open Source license.
