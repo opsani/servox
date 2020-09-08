@@ -520,7 +520,7 @@ class BaseChecks(BaseModel):
         `Check` object reporting the outcome of the check operation.
         """
         for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
-            if name.startswith("_") or name in ("run_", "check_methods"):
+            if name.startswith("_") or name in ("run_", "check_methods") or method.__self__ != self:
                 continue
             
             if not name.startswith(("_", "check_")):
@@ -602,7 +602,7 @@ def _validate_check_handler(fn: CheckHandler) -> None:
 async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
 
-    The first item in args (if any) is given to the `format` builtin as an argument named "item" 
+    The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item" 
     in order to support building dynamic, context specific values that are assigned as attributes of 
     the Check instance given during exection. More concretely, this means that running a check handler 
     with a non-empty arguments list will let you use provide format string input values of the form
@@ -619,7 +619,7 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
     """
     try:
         if len(args):
-            check.name = check.name.format(item=args[0])
+            check.name = check.name.format(item=args[0], self=args[0])
             
         check.run_at = datetime.now()
         if asyncio.iscoroutinefunction(handler):

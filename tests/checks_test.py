@@ -6,7 +6,7 @@ from servo.configuration import BaseConfiguration
 from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable, multicheck
 from servo.configuration import BaseConfiguration
 from servo.utilities.inspect import get_instance_methods
-from typing import Iterable, List, Tuple, Union, Optional
+from typing import Callable, Iterable, List, Tuple, Union, Optional
 
 pytestmark = pytest.mark.freeze_time('2020-08-24')
 
@@ -637,3 +637,14 @@ async def test_invalid_multichecks() -> None:
             'Identifier ••••• was checked',
         ],
     ]
+
+async def test_handles_method_attrs() -> None:
+    class Other:
+        def test(self):
+            ...
+    
+    class MethodAttrsCheck(BaseChecks):
+        other: Callable[..., None]
+    
+    checker = MethodAttrsCheck(BaseConfiguration(), other=Other().test)
+    results = await checker.run_()
