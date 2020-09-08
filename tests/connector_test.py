@@ -71,6 +71,17 @@ class TestOptimizer:
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("base_url",)
         assert e.value.errors()[0]["msg"] == "invalid or missing URL scheme"
+    
+    @pytest.mark.parametrize(
+        "url, expected_api_url",
+        [
+            (None, "https://api.opsani.com/accounts/example.com/applications/my-app/"),
+            ("http://localhost:1234", "http://localhost:1234"),
+        ]
+    )
+    def test_api_url(self, url, expected_api_url) -> None:
+        optimizer = Optimizer(id="example.com/my-app", token="123456", url=url)
+        assert optimizer.api_url == expected_api_url
 
 
 class TestLicense:

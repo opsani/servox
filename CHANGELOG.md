@@ -23,6 +23,7 @@ environment variable.
 - The `servo.logging` module now provides the `set_colors` function for programmatically enabling or disabling coloring.
 - The CLI accepts a `—no-colors` argument that will explicitly disable coloring.
 - The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to disable coloring.
+- The API URL can be now be overridden via the hidden `--url` CLI option or the `OPSANI_URL` environment variable.
 
 ### Changed
 - Log coloring is now conditionally enabled via TTY auto-detection.

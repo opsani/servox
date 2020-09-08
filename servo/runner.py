@@ -236,7 +236,7 @@ class Runner(api.Mixin):
         self.logger.add(self.progress_handler.sink, catch=True)
 
         self.logger.info(
-            f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.base_url}]"
+            f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
 
         async def giveup(details) -> None:
