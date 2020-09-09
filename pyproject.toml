@@ -33,7 +33,7 @@ pytest = "^6.0.1"
 pytest-asyncio = "^0.14.0"
 pytest-cov = "^2.10.0"
 pytest-mock = "^3.3.1"
-freezegun = "^0.3.15"
+freezegun = "^1.0.0"
 asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.12.1"
 kubetest = "^0.8.1"
