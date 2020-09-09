@@ -22,14 +22,35 @@ versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.
 environment variable.
 - The `servo.logging` module now provides the `set_colors` function for programmatically enabling or disabling coloring.
 - The CLI accepts a `—no-colors` argument that will explicitly disable coloring.
-- The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to disable coloring.
+- The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to
+  disable coloring.
 - The API URL can be now be overridden via the hidden `--url` CLI option or the `OPSANI_URL` environment variable.
+- Introduce the `multicheck` decorator for use in checks implementations. A 
+  multicheck is method that returns an iterable collection of checkable objects
+  and a `CheckHandler` callable that can evaluate each item. Each item in the 
+  iterable collection is wrapped into an individual check and run independently.
+  This provides a simple mechanism for checking configurations that have a mix
+  of settings that need to be handled specifically and homogenous collections
+  that can be handled iteratively. The generated checks are filterable and fully
+  integrated with the CLI.
+- Checks and multichecks now support templated string inputs. The `self` and
+  `item` arguments are made available as format variables, enabling the names
+  and descriptions given to the decorators to produce dynamic, contextual values
+  from the configuration. This enhances the readability and diagnostic context
+  of the checks output.
+- The Prometheus connector now exposes a rich set of checks.
+- The Prometheus connector now accepts an optional list of targets that are
+  expected to be scraped.
 
 ### Changed
 - Log coloring is now conditionally enabled via TTY auto-detection.
 
 ### Fixed
-- Handle measure command responses that include metric units (`oco-e` compatibility).
+- Handle measure command responses that include metric units (`oco-e`
+  compatibility).
+- Prometheus can now connect to localhost URLs.
+- The `get_instance_methods` utility function now returns instance methods that
+  are bound to a specific object instance
 
 ## [0.6.2] - 2020-09-03
 

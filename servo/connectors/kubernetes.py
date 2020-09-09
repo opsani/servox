@@ -26,6 +26,7 @@ from servo import (
     BaseConfiguration,
     BaseConnector,
     Check,
+    CheckHandler,
     Component,
     Control,
     Description,
@@ -40,6 +41,7 @@ from servo import (
     check,
     connector,
     join_to_series,
+    multicheck,
     on_event,
     get_hash
 )
@@ -48,7 +50,7 @@ from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from kubernetes_asyncio.client.api_client import ApiClient
 import loguru
 from loguru import logger
-from typing import ClassVar, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
+from typing import ClassVar, Iterable, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
 
 
@@ -2475,27 +2477,26 @@ CanaryOptimization.update_forward_refs()
 class KubernetesChecks(BaseChecks):
     """Checks for ensuring that the Kubernetes connector is ready to run.
     """
-    
+
     config: KubernetesConfiguration
 
     @check("Connectivity to Kubernetes", required=True)
-    async def check_connectivity(self) -> Check:
+    async def check_connectivity(self) -> None:
+        # TODO: Just read the namespace or connect to API server
         await KubernetesOptimizations.create(self.config)
+    
+    @check("Namespace \"{self.config.namespace}\" is readable")
+    async def check_namespace_is_readable(self) -> None:
+        await Namespace.read(self.config.namespace)
 
     @check("Required permissions")
     async def check_permissions(self) -> None:
         ...
 
-    @check("Deployments are readable")
-    async def check_deployment_exists(self) -> None:
-        for dep in self.config.deployments:
-            await Deployment.read(dep.name, self.config.namespace)
-
-    @check("All containers have resource requirements")
-    async def check_resource_requirements(self) -> str:
-        messages = []
-        for dep in self.config.deployments:
-            deployment = await Deployment.read(dep.name, self.config.namespace)
+    @multicheck("Containers in the \"{item.name}\" Deployment have resource requirements")
+    async def check_resource_requirements(self) -> Tuple[Iterable, CheckHandler]:
+        async def check_dep_resource_requirements(dep_config: DeploymentConfiguration) -> str:
+            deployment = await Deployment.read(dep_config.name, dep_config.namespace)
             for container in deployment.containers:
                 assert container.resources
                 assert container.resources.requests
@@ -2504,25 +2505,21 @@ class KubernetesChecks(BaseChecks):
                 assert container.resources.limits
                 assert container.resources.limits["cpu"]
                 assert container.resources.limits["memory"]
-                messages.append(f"{deployment.name}/{container.name}={container.resources}")
+        
+        return self.config.deployments, check_dep_resource_requirements
 
-        message = ", ".join(messages)
-        return f"Container resources: {message}"
-
-    @check("Deployments are ready")
-    async def check_deployment_is_ready(self) -> str:
-        ready = []
-        for dep in self.config.deployments:
-            deployment = await Deployment.read(dep.name, self.config.namespace)
-            if deployment.is_ready:
-                ready.append(deployment.name)
-            else:
+    @multicheck("Deployment \"{item.name}\" is ready")
+    async def check_deployments_are_ready(self) -> Tuple[Iterable, CheckHandler]:
+        async def check_deployment(dep_config: DeploymentConfiguration) -> None:
+            deployment = await Deployment.read(dep_config.name, dep_config.namespace)
+            if not deployment.is_ready:
                 raise RuntimeError(f"Deployment \"{deployment.name}\" is not ready")
-
-        names = ", ".join(ready)
-        return f"Deployments ready: {names}"
+        
+        return self.config.deployments, check_deployment
 
     # TODO: What other unhealthy conditions?
+    # Kubernetes version
+    # 
 
 
 @connector.metadata(

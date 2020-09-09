@@ -136,3 +136,10 @@ def test_deploy_servo_cohttp_vegeta_adjust() -> None:
 # k8s sizing tool
 
 # Integration test k8s describe, adjust
+
+
+def test_generate_outputs_human_readable_config() -> None:
+    ...
+
+def test_supports_nil_container_name() -> None:
+    ...

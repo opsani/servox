@@ -28,6 +28,12 @@ def get_instance_methods(obj, *, stop_at_parent: Optional[Type[Any]] = None) -> 
     methods = ChainMap()
     stopped = False
 
+    # search for instance specific methods before traversing the class hierarchy
+    if not inspect.isclass(obj):
+        methods.maps.append(
+            dict(filter(lambda item: inspect.ismethod(item[1]), obj.__dict__.items()))
+        )
+
     for c in inspect.getmro(cls):
         methods.maps.append(
             dict(filter(lambda item: inspect.isfunction(item[1]), c.__dict__.items()))

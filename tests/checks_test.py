@@ -3,11 +3,10 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable
+from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable, multicheck
 from servo.configuration import BaseConfiguration
-# from servo.checks import check as CheckHandlerResult, create_checks_from_iterable
 from servo.utilities.inspect import get_instance_methods
-from typing import List, Tuple, Union, Optional
+from typing import Callable, Iterable, List, Tuple, Union, Optional
 
 pytestmark = pytest.mark.freeze_time('2020-08-24')
 
@@ -504,3 +503,148 @@ async def test_add_checks_to_existing_class() -> None:
         [ 'Check six', 'bdc0e261', 'so_check_it_six', ],
         [ 'Check seven', 'b991c85a', 'so_check_it_seven', ],
     ]
+
+
+class MultiChecks(BaseChecks):
+    @multicheck("Check number {item}")
+    def check_numbers(self) -> Tuple[Iterable, CheckHandler]:
+        def handler(value: str) -> str:
+            return f"Number {value} was checked"
+
+        return ["one", "two", "three"], handler
+    
+    @multicheck("Asynchronously check number {item}")
+    async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
+        async def handler(value: str) -> str:
+            return f"Number {value} was checked"
+
+        return ["four", "five", "six"], handler
+    
+async def test_multichecks() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_()
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'ded3c8bf',
+            'Number one was checked',
+        ],
+        [
+            'Check number two',
+            '67317614',
+            'Number two was checked',
+        ],
+        [
+            'Check number three',
+            'b495fc6b',
+            'Number three was checked',
+        ],
+        [
+            'Asynchronously check number four',
+            '2773da1a',
+            'Number four was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'f9df3756',
+            'Number five was checked',
+        ],
+        [
+            'Asynchronously check number six',
+            'a72e0913',
+            'Number six was checked',
+        ]
+    ]
+5
+async def test_multichecks_async() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_()
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'ded3c8bf',
+            'Number one was checked',
+        ],
+        [
+            'Check number two',
+            '67317614',
+            'Number two was checked',
+        ],
+        [
+            'Check number three',
+            'b495fc6b',
+            'Number three was checked',
+        ],
+        [
+            'Asynchronously check number four',
+            '2773da1a',
+            'Number four was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'f9df3756',
+            'Number five was checked',
+        ],
+        [
+            'Asynchronously check number six',
+            'a72e0913',
+            'Number six was checked',
+        ]
+    ]
+
+def test_multicheck_invalid_args() -> None:
+    with pytest.raises(TypeError) as e:
+        class BadArgs(BaseChecks):
+            @multicheck("Check something")
+            def check_invalid(self, foo: int) -> int:
+                ...
+    assert e is not None
+    assert str(e.value) == "invalid multicheck handler \"check_invalid\": unexpected parameter \"foo\" in signature <Signature (self, foo: int) -> int>, expected <Signature () -> Tuple[Iterable, ~CheckHandler]>"
+
+def test_multicheck_invalid_return_type() -> None:
+    with pytest.raises(TypeError) as e:
+        class BadArgs(BaseChecks):
+            @multicheck("Check something")
+            def check_invalid(self) -> int:
+                123
+
+    assert e is not None
+    assert str(e.value) == "invalid multicheck handler \"check_invalid\": incompatible return type annotation in signature <Signature (self) -> int>, expected to match <Signature () -> Tuple[Iterable, ~CheckHandler]>"
+
+class InvalidMultichecks(BaseChecks):
+    @multicheck("Check number {item}")
+    def check_invalid_identifiers(self) -> Tuple[Iterable, CheckHandler]:
+        def handler(value: str) -> str:
+            return f"Identifier {value} was checked"
+
+        return ["NOT A VALID IDENTIFIER", "•••••"], handler
+
+async def test_invalid_multichecks() -> None:
+    checker = InvalidMultichecks(BaseConfiguration())
+    results = await checker.run_()
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number NOT A VALID IDENTIFIER',
+            '98238cdc',
+            'Identifier NOT A VALID IDENTIFIER was checked',
+        ],
+        [
+            'Check number •••••',
+            '144838d5',
+            'Identifier ••••• was checked',
+        ],
+    ]
+
+async def test_handles_method_attrs() -> None:
+    class Other:
+        def test(self):
+            ...
+    
+    class MethodAttrsCheck(BaseChecks):
+        other: Callable[..., None]
+    
+    checker = MethodAttrsCheck(BaseConfiguration(), other=Other().test)
+    results = await checker.run_()

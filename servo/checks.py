@@ -1,6 +1,7 @@
 import asyncio
 import enum
 import functools
+import types
 
 from datetime import datetime
 from hashlib import blake2b
@@ -19,10 +20,12 @@ from loguru import logger as default_logger
 __all__ = [
     "BaseChecks",
     "Check",
+    "CheckHandler",
     "CheckHandlerResult",
     "Filter",
     "HaltOnFailed",
-    "check"
+    "check",
+    "multicheck"
 ]
 
 
@@ -258,7 +261,7 @@ def check(
                 run_check_handler_sync(check, fn, *args, **kwargs)
                 return check
 
-        # update the wrapped return signature conform with protocol
+        # update the wrapped return signature to conform with the protocol
         run_check.__check__ = __check__
         run_check.__annotations__['return'] = Check
         return cast(CheckRunner, run_check)
@@ -268,6 +271,9 @@ def check(
 
 CHECK_SIGNATURE = Signature(return_annotation=Check)
 CHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Check')
+
+MULTICHECK_SIGNATURE = Signature(return_annotation=Tuple[Iterable, CheckHandler])
+MULTICHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Tuple[Iterable, CheckHandler]')
 
 
 class Filter(BaseModel):
@@ -419,7 +425,8 @@ class BaseChecks(BaseModel):
         filter_: Optional[Filter] = None,
         *, 
         logger: 'loguru.Logger' = default_logger,        
-        halt_on: HaltOnFailed = HaltOnFailed.requirement
+        halt_on: HaltOnFailed = HaltOnFailed.requirement,
+        **kwargs
     ) -> List[Check]:
         """
         Runs checks and returns a list of Check objects reflecting the results.
@@ -432,6 +439,7 @@ class BaseChecks(BaseModel):
             filter_: An optional filter to limit the set of checks that are run.
             logger: The logger to write messages to.            
             halt_on: The type of check failure that should halt the run.
+            kwargs: Additional arguments to initialize the checks instance with.
         
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
@@ -453,6 +461,9 @@ class BaseChecks(BaseModel):
         Returns:
             A list of checks that were run.
         """
+
+        # expand any multicheck methods into instance methods
+        await self._expand_multichecks()
         
         # identify methods that match the filter
         filtered_methods  = []
@@ -511,13 +522,21 @@ class BaseChecks(BaseModel):
         `Check` object reporting the outcome of the check operation.
         """
         for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
-            if name.startswith("_") or name in ("run_", "check_methods"):
+            if name.startswith("_") or name in ("run_", "check_methods") or method.__self__ != self:
                 continue
             
             if not name.startswith(("_", "check_")):
                 raise ValueError(f'invalid method name "{name}": method names of Checks subtypes must start with "_" or "check_"')
             
             sig = Signature.from_callable(method)
+
+            # skip multicheck source methods as they are atomized into instance methods
+            if hasattr(method, "__multicheck__"):
+                if sig in (MULTICHECK_SIGNATURE, MULTICHECK_SIGNATURE_ANNOTATED):
+                    continue
+                else:
+                    raise TypeError(f'invalid signature for method "{name}": expected {repr(MULTICHECK_SIGNATURE)}, but found {repr(sig)}')
+                        
             if sig not in (CHECK_SIGNATURE, CHECK_SIGNATURE_ANNOTATED):
                 raise TypeError(f'invalid signature for method "{name}": expected {repr(CHECK_SIGNATURE)}, but found {repr(sig)}')
             
@@ -526,6 +545,19 @@ class BaseChecks(BaseModel):
     
     def __init__(self, config: BaseConfiguration, *, logger: 'loguru.Logger' = default_logger, **kwargs) -> None:
         super().__init__(config=config, logger=logger, **kwargs)
+    
+    async def _expand_multichecks(self) -> List[types.MethodType]:
+        # search for any instance methods decorated by multicheck and expand them
+        checks = []
+        for method_name, method in get_instance_methods(self).items():
+            if hasattr(method, "__multicheck__"):
+                checks_fns = await method()
+                for check_method_name, fn in checks_fns.items():
+                    method = types.MethodType(fn, self)
+                    setattr(self, check_method_name, method)
+                    checks.append(method)
+        
+        return checks
     
     class Config:
         arbitrary_types_allowed = True
@@ -576,6 +608,12 @@ def _validate_check_handler(fn: CheckHandler) -> None:
 async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
 
+    The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item" 
+    in order to support building dynamic, context specific values that are assigned as attributes of 
+    the Check instance given during exection. More concretely, this means that running a check handler 
+    with a non-empty arguments list will let you use provide format string input values of the form
+    "Check that {item.name} work as expected (v{item.version}, release date: {item.released_At})".
+
     Args:
         check: The check to record execution results.
         handler: A callable handler to perform the check.
@@ -586,6 +624,9 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
         ValueError: Raised if an invalid value is returned by the handler.
     """
     try:
+        if len(args):
+            check.name = check.name.format(item=args[0], self=args[0])
+            
         check.run_at = datetime.now()
         if asyncio.iscoroutinefunction(handler):
             result = await handler(*args, **kwargs)
@@ -595,7 +636,8 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
     except Exception as error:
         _set_check_result(check, error)
     finally:
-        check.runtime = Duration(datetime.now() - check.run_at)
+        if check.run_at:
+            check.runtime = Duration(datetime.now() - check.run_at)
 
 def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
@@ -633,7 +675,6 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.success = False
         check.exception = result
         check.message = f"caught exception: {repr(result)}"
-        default_logger.exception("error", exception=result)
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
     
@@ -689,3 +730,94 @@ def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable, *, ba
         setattr(cls, method_name, fn)
     
     return cls
+
+
+MultiCheckHandler = Callable[..., Tuple[Iterable, CheckHandler]]
+MultiCheckExpander = Callable[..., Awaitable[Tuple[Iterable, CheckHandler]]]
+
+def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
+    sig = Signature.from_callable(fn)
+    if len(sig.parameters) > 0:
+        for param in sig.parameters.values():
+            if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
+                continue
+
+            raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": unexpected parameter \"{param.name}\" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}")
+
+    if sig.return_annotation == 'Tuple[Iterable, CheckHandler]':
+        # fast return if the type annotation is already a string (depends on `from __future__ import annotations`)
+        return
+
+    origin = get_origin(sig.return_annotation)
+    args = get_args(sig.return_annotation)
+    if origin is not tuple or (args != (Iterable, CheckHandler)):
+        raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}")
+
+def multicheck(
+    base_name: str,
+    *, 
+    description: Optional[str] = None,
+    required: bool = False,
+    tags: Optional[List[str]] = None
+) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
+    """Expands a method into a series of checks from a returned iterable and check handler.
+
+    This method provides an alternative to `create_checks_from_iterable` that is usable in cases
+    where it is desirable to implement a `BaseChecks` subclass to hand-roll specific checks but
+    there are also iterable values that can be checked by a common handler.
+
+    The decorator works by dynamically creating check instance methods when a `BaseChecks` subclass
+    is initialized.
+
+    The decorator requires a `base_name` parameter to identify the checks as well as an optional
+    informative `description`, a `required` boolean value that determines if a failure will halt 
+    execution of subsequent checks. The `base_name` is interpolated into an item specific name
+    by formatting the `base_name` with an item from the iterable collection. The item is passed
+    to format as the `item` key, enabling the use of property access and subscripting within the
+    format string.
+    
+    The decorated function must return an iterable collection of objects to be checked and a
+    handler function for checking each value.
+    
+    Args:
+        base_name: Human readable base name of the check. Expanded with each iterable.
+        description: Optional additional details about the checks.
+        required: When True, failure of the checks will halt execution of subsequent checks.
+        tags: An optional list of tags for filtering checks. Tags may contain only lowercase
+            alphanumeric characters, hyphens '-', and periods '.'.
+    
+    Returns:
+        A decorator function for transforming a method into a series of check instance methods.
+    
+    Raises:
+        TypeError: Raised if the signature of the decorated function is incompatible.
+    """
+    def decorator(fn_: MultiCheckHandler) -> MultiCheckExpander:
+        _validate_multicheck_handler(fn_)
+        @functools.wraps(fn_)
+        async def create_checks(*args, **kwargs) -> Tuple[Iterable, CheckHandler]:
+            def create_fn(name, item):
+                async def _fn(self) -> Check:
+                    check = Check(name=name, description=description, required=required, tags=tags)
+                    await run_check_handler(check, handler, item)
+                    return check
+                
+                return _fn
+            
+            checks_fns = {}
+            if asyncio.iscoroutinefunction(fn_):
+                iterable, handler = await fn_(*args, **kwargs)    
+            else:
+                iterable, handler = fn_(*args, **kwargs)
+            for item in iterable:
+                check_name = base_name.format(item=item)
+                fn = create_fn(check_name, item)
+                fn_name = f"{fn_.__name__}_{item}"
+                checks_fns[fn_name] = fn
+
+            return checks_fns
+
+        create_checks.__multicheck__ = True
+        return create_checks
+    
+    return decorator
