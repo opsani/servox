@@ -457,6 +457,17 @@ email to coordinate efforts.
 It is expected that most Open Source contributions will come in the form of new connectors. Should you wish to develop
 a connector, reach out to us at Opsani as we have connector developer guides that are in pre-release while ServoX matures.
 
+### Connecting to Development APIs
+
+By default, the servo will connect to the primary Opsani API hosted on 
+https://api.opsani.com. This behavior can be overridden via CLI options and
+environment variables:
+
+| Option | Environment Variable | Description | Example |
+|--------|----------------------|-------------|---------|
+| `--base-url` | `OPSANI_BASE_URL` | Sets an alternate base URL. The path is computed using the optimizer. Useful for staging deployments and integration tests. | `servo --base-url https://staging-api.opsani.com:3456 run` |
+| `--url` | `OPSANI_URL` | Sets an explicit URL target. When given, the base URL is ignored and paths are not computed. Useful in unit tests and workstation development with a partial server stack. | `servo --url http://localhost:1234  run` |
+
 ### Docker & Compose
 
 `Dockerfile` and `docker-compose.yaml` configurations are available in the repository and have been designed to support both

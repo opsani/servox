@@ -24,6 +24,7 @@ environment variable.
 - The CLI accepts a `—no-colors` argument that will explicitly disable coloring.
 - The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to
   disable coloring.
+- The API URL can be now be overridden via the hidden `--url` CLI option or the `OPSANI_URL` environment variable.
 - Introduce the `multicheck` decorator for use in checks implementations. A 
   multicheck is method that returns an iterable collection of checkable objects
   and a `CheckHandler` callable that can evaluate each item. Each item in the 

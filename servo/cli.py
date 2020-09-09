@@ -89,6 +89,7 @@ class Context(typer.Context):
     token: Optional[str] = None
     token_file: Optional[Path] = None
     base_url: Optional[str] = None
+    url: Optional[str] = None
 
     # Assembled servo
     assembly: Optional[Assembly] = None
@@ -113,6 +114,7 @@ class Context(typer.Context):
             "token",
             "token_file",
             "base_url",
+            "url"
         }
 
     def __init__(
@@ -128,6 +130,7 @@ class Context(typer.Context):
         token: Optional[str] = None,
         token_file: Optional[Path] = None,
         base_url: Optional[str] = None,
+        url: Optional[str] = None,
         **kwargs,
     ):
         self.config_file = config_file
@@ -354,6 +357,13 @@ class CLI(typer.Typer):
             metavar="URL",
             help="Base URL for connecting to Opsani API",
         ),
+        url: str = typer.Option(
+            None,
+            hidden=True,
+            envvar="OPSANI_URL",
+            metavar="URL",
+            help="Complete URL to reach the Opsani API, overriding the URL computed from the base URL"
+        ),
         config_file: Path = typer.Option(
             "servo.yaml",
             "--config-file",
@@ -388,6 +398,7 @@ class CLI(typer.Typer):
         ctx.token = token
         ctx.token_file = token_file
         ctx.base_url = base_url
+        ctx.url = url
         servo.logging.set_level(log_level)
         servo.logging.set_colors(not no_color)
 
@@ -431,7 +442,7 @@ class CLI(typer.Typer):
         if len(ctx.token) == 0 or ctx.token.isspace():
             raise typer.BadParameter("token cannot be blank")
 
-        optimizer = Optimizer(ctx.optimizer, token=ctx.token, base_url=ctx.base_url)
+        optimizer = Optimizer(ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url)
 
         # Assemble the Servo
         try:

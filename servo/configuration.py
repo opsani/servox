@@ -43,10 +43,15 @@ class Optimizer(BaseSettings):
     An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
     """
 
-    base_url: HttpUrl = "https://api.opsani.com/"
+    base_url: AnyHttpUrl = "https://api.opsani.com/"
     """
-    The base URL for accessing the Opsani API. This optiion is typically only useful for Opsani developers or in the context
+    The base URL for accessing the Opsani API. This option is typically only useful to Opsani developers or in the context
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
+    """
+
+    url: Optional[AnyHttpUrl]
+    """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development 
+    and automated testing to bind the servo to a fixed URL.
     """
 
     def __init__(self, id: str = None, **kwargs):
@@ -73,7 +78,7 @@ class Optimizer(BaseSettings):
         Returns a complete URL for interacting with the optimizer API.
         """
         return (
-            f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+            self.url or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
         )
 
     class Config:
