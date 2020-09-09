@@ -1048,6 +1048,8 @@ class ServoCLI(CLI):
                 Events.CHECK, filter_, include=connectors, halt_on=halt_on
             ))
 
+            import textwrap
+
             table = []
             ready = True
             if verbose:
@@ -1060,7 +1062,7 @@ class ServoCLI(CLI):
                         ids.append(check.id)
                         tags.append(", ".join(check.tags) if check.tags else "-")
                         statuses.append("√ PASSED" if check.success else "X FAILED")
-                        comments.append(check.message or "-")
+                        comments.append(textwrap.shorten(check.message or "-", 70))
                         ready &= check.success
 
                     if not names:
@@ -1079,7 +1081,7 @@ class ServoCLI(CLI):
                     errors = []
                     for check in checks:
                         success &= check.success
-                        check.success or errors.append(f"{check.name}: {check.message or '-'}")
+                        check.success or errors.append(f"{check.name}: {textwrap.wrap(check.message or '-')}")
                     ready &= success
                     status = "√ PASSED" if success else "X FAILED"
                     message = reduce(lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n", errors, "")

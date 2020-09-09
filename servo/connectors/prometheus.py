@@ -197,27 +197,6 @@ determine if it is ready for use in an optimization run.
 
         return f"found {target_count} targets"
     
-    # @multicheck("Target \"\" is healthy")
-    # async def check_targets_health(self) -> Tuple[Iterable, CheckHandler]:
-    #     async def check_target(target: Dict[str, Any]) -> str:
-    #         ...
-        
-        # TODO: Load all the targets and then yield them
-
-
-
-
-            # return f"returned {len(result)} results"
-            # debug(response.json())
-
-        # TODO: Check for 
-        # targets: opsani-envoy-sidecars
-        # status: success
-        # "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
-        # "lastScrapeDuration": 0.050688943,
-        # "health": "up"
-        return ""
-    
 @metadata(
     description="Prometheus Connector for Opsani",
     version="1.5.0",

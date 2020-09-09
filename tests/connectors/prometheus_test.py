@@ -1,5 +1,6 @@
 import pytest
 import respx
+import httpx
 import re
 from datetime import timedelta
 
@@ -120,13 +121,14 @@ class TestPrometheusConfiguration:
             'description: Update the base_url and metrics to match your Prometheus configuration\n'
             'metrics:\n'
             '- name: throughput\n'
-            '  query: rate(http_requests_total[1s])[3m]\n'
+            '  query: rate(http_requests_total[5m])\n'
             '  step: 1m\n'
             '  unit: rps\n'
             '- name: error_rate\n'
-            '  query: rate(errors)\n'
+            '  query: rate(errors[5m])\n'
             '  step: 1m\n'
             "  unit: '%'\n"
+            'targets: null\n'
         )
 
 
@@ -152,11 +154,6 @@ class TestPrometheusRequest:
         assert request.url == "http://localhost:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
 
 
-# TODO: Add support for before and after filters that enable warmup and settlement
-# TODO: Reporting interval...
-# def run_servo
-#     - Microenvironment that spins up a loop, handles signals and cancellation
-
 class TestPrometheusConnector:
     def test_describe(self):
         pass
@@ -171,15 +168,76 @@ class TestPrometheusConnector:
         pass
 
 
-@pytest.mark.integration
-class TestPrometheusIntegration:
-    async def test_check_targets(self) -> None:
-        config = PrometheusConfiguration.generate(base_url="http://localhost:9090")
-        optimizer = servo.Optimizer("test.com/foo", token="12345")
-        debug(config, optimizer)
-        connector = PrometheusConnector(config=config, optimizer=optimizer)
-        checks = await connector.check()
-        debug(checks)
+# @pytest.mark.integration
+# class TestPrometheusIntegration:
+#     async def test_check_targets(self) -> None:
+#         config = PrometheusConfiguration.generate(base_url="http://localhost:9090")
+#         optimizer = servo.Optimizer("test.com/foo", token="12345")
+#         debug(config, optimizer)
+#         connector = PrometheusConnector(config=config, optimizer=optimizer)
+#         checks = await connector.check()
+#         debug(checks)
+
+# @pytest.fixture
+def envoy_sidecars() -> dict:
+    return {
+        'status': 'success',
+        'data': {
+            'activeTargets': [
+                {
+                    'discoveredLabels': {
+                        '__address__': '192.168.95.123:9901',
+                        '__meta_kubernetes_namespace': 'default',
+                        '__meta_kubernetes_pod_annotation_kubectl_kubernetes_io_restartedAt': '2020-08-31T04:10:38-07:00',
+                        '__meta_kubernetes_pod_annotation_kubernetes_io_psp': 'eks.privileged',
+                        '__meta_kubernetes_pod_annotation_prometheus_opsani_com_path': '/stats/prometheus',
+                        '__meta_kubernetes_pod_annotation_prometheus_opsani_com_port': '9901',
+                        '__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape': 'true',
+                        '__meta_kubernetes_pod_annotationpresent_kubectl_kubernetes_io_restartedAt': 'true',
+                        '__meta_kubernetes_pod_annotationpresent_kubernetes_io_psp': 'true',
+                        '__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_path': 'true',
+                        '__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_port': 'true',
+                        '__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_scrape': 'true',
+                        '__meta_kubernetes_pod_container_init': 'false',
+                        '__meta_kubernetes_pod_container_name': 'envoy',
+                        '__meta_kubernetes_pod_container_port_name': 'metrics',
+                        '__meta_kubernetes_pod_container_port_number': '9901',
+                        '__meta_kubernetes_pod_container_port_protocol': 'TCP',
+                        '__meta_kubernetes_pod_controller_kind': 'ReplicaSet',
+                        '__meta_kubernetes_pod_controller_name': 'web-6f756468f6',
+                        '__meta_kubernetes_pod_host_ip': '192.168.92.91',
+                        '__meta_kubernetes_pod_ip': '192.168.95.123',
+                        '__meta_kubernetes_pod_label_app': 'web',
+                        '__meta_kubernetes_pod_label_pod_template_hash': '6f756468f6',
+                        '__meta_kubernetes_pod_labelpresent_app': 'true',
+                        '__meta_kubernetes_pod_labelpresent_pod_template_hash': 'true',
+                        '__meta_kubernetes_pod_name': 'web-6f756468f6-w96f2',
+                        '__meta_kubernetes_pod_node_name': 'ip-192-168-92-91.us-east-2.compute.internal',
+                        '__meta_kubernetes_pod_phase': 'Running',
+                        '__meta_kubernetes_pod_ready': 'true',
+                        '__meta_kubernetes_pod_uid': 'c80a750c-773b-4c27-abe0-45d53a782781',
+                        '__metrics_path__': '/metrics',
+                        '__scheme__': 'http',
+                        'job': 'opsani-envoy-sidecars',
+                    },
+                    'labels': {
+                        'app': 'web',
+                        'instance': '192.168.95.123:9901',
+                        'job': 'opsani-envoy-sidecars',
+                        'pod_template_hash': '6f756468f6',
+                    },
+                    'scrapePool': 'opsani-envoy-sidecars',
+                    'scrapeUrl': 'http://192.168.95.123:9901/stats/prometheus',
+                    'globalUrl': 'http://192.168.95.123:9901/stats/prometheus',
+                    'lastError': '',
+                    'lastScrape': '2020-09-09T10:04:02.662498189Z',
+                    'lastScrapeDuration': 0.013974479,
+                    'health': 'up',
+                }
+            ]
+        }
+    }
+
 
 
 class TestPrometheusChecks:
@@ -200,8 +258,10 @@ class TestPrometheusChecks:
     def mocked_api(self, go_memstats_gc_sys_bytes):
         with respx.mock(base_url="http://localhost:9090", assert_all_called=False) as respx_mock:
             respx_mock.get("/api/v1/targets", alias="targets", content=[])
-            respx_mock.get("/api/v1/query_range", alias="query_range", content={ "status": "success", "data": { "result": [] }})
-            respx_mock.get("/api/v1/query_range", alias="go_memstats_gc_sys_bytes", content=go_memstats_gc_sys_bytes)
+
+            # re.compile(r"/api/v1/query_range/\w+")
+            respx_mock.get(re.compile(r"/api/v1/query_range.+"), alias="query", content=go_memstats_gc_sys_bytes)
+            # respx_mock.get("/api/v1/query_range", alias="query", content=go_memstats_gc_sys_bytes)
             yield respx_mock
     
     @pytest.fixture
@@ -217,22 +277,51 @@ class TestPrometheusChecks:
         assert check.name == 'Connect to "http://localhost:9090"'
         assert check.id == 'check_base_url'
         assert check.required
+        assert check.success
         assert check.message is None
+    
+    async def test_check_base_url_failing(self, checks) -> None:
+        with respx.mock(base_url="http://localhost:9090") as respx_mock:
+            request = respx_mock.get("/api/v1/targets", status_code=503)
+            check = await checks.check_base_url()        
+            assert request.called
+            assert check
+            assert check.name == 'Connect to "http://localhost:9090"'
+            assert check.id == 'check_base_url'
+            assert check.required
+            assert not check.success
+            assert check.message is not None
+            assert isinstance(check.exception, httpx.HTTPStatusError)
         
     @respx.mock
     async def test_check_queries(self, mocked_api, checks) -> None:
-        ...
+        request = mocked_api["query"]
+        multichecks = await checks._expand_multichecks()
+        check = await multichecks[0]()
+        assert request.called
+        assert check
+        assert check.name == 'Run query "throughput"'
+        assert check.id == '009f1d6e'
+        assert not check.required
+        assert check.success
+        assert check.message == "returned 2 results"
     
+    @pytest.mark.parametrize(
+        "targets, success, message", 
+        [
+            ({ 'status': 'success', "data": {"activeTargets": [] } }, False, "caught exception: AssertionError()"),
+            (envoy_sidecars(), True, "found 1 targets")
+        ]
+    )
     @respx.mock
-    async def test_check_targets(self) -> str:
-        ...
-    
-# import re
-# import httpx
-# @respx.mock(base_url="https://foo.bar")
-# async def test_something(*, respx_mock):
-#     async with httpx.AsyncClient(base_url="https://foo.bar") as client:
-#         request = respx_mock.get("/baz/", content="Baz")
-#         response = await client.get("/baz/")
-#         assert response.text == "Baz"
-    
+    async def test_check_targets(self, checks, targets, success, message) -> str:
+        with respx.mock(base_url="http://localhost:9090") as respx_mock:
+            request = respx_mock.get("/api/v1/targets", content=targets)
+            check = await checks.check_targets()        
+            assert request.called
+            assert check
+            assert check.name == 'Active targets'
+            assert check.id == 'check_targets'
+            assert not check.required
+            assert check.success == success
+            assert check.message == message
