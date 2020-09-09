@@ -425,7 +425,8 @@ class BaseChecks(BaseModel):
         filter_: Optional[Filter] = None,
         *, 
         logger: 'loguru.Logger' = default_logger,        
-        halt_on: HaltOnFailed = HaltOnFailed.requirement
+        halt_on: HaltOnFailed = HaltOnFailed.requirement,
+        **kwargs
     ) -> List[Check]:
         """
         Runs checks and returns a list of Check objects reflecting the results.
@@ -438,6 +439,7 @@ class BaseChecks(BaseModel):
             filter_: An optional filter to limit the set of checks that are run.
             logger: The logger to write messages to.            
             halt_on: The type of check failure that should halt the run.
+            kwargs: Additional arguments to initialize the checks instance with.
         
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.

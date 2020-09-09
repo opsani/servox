@@ -2485,7 +2485,7 @@ class KubernetesChecks(BaseChecks):
         # TODO: Just read the namespace or connect to API server
         await KubernetesOptimizations.create(self.config)
     
-    @check("Namespace \"{config.namespace}\" is readable")
+    @check("Namespace \"{self.config.namespace}\" is readable")
     async def check_namespace_is_readable(self) -> None:
         await Namespace.read(self.config.namespace)
 

@@ -1,8 +1,13 @@
+import pytest
+import respx
+import re
 from datetime import timedelta
 
 from pydantic import ValidationError, AnyHttpUrl
 
+import servo
 from servo.connectors.prometheus import (
+    PrometheusChecks,
     PrometheusConfiguration, 
     PrometheusConnector, 
     PrometheusMetric, 
@@ -159,34 +164,75 @@ class TestPrometheusConnector:
     def test_measure(self):
         pass
 
-    def test_check_fails_with_invalid_query(self):
-        pass
-        # mock
-
-    def test_check_fails_if_unreachable(self):
-        pass
-    # mock
-
-    def test_check_fails_with_invalid_query(self):
-        pass
-        # mockss
-
-
-class TestPrometheusCLI:
-    # TODO: I can make these a helper that intercepts the event dispatch
     def test_metrics(self):
-        pass
-
-    def test_measure(self):
         pass
 
     def test_check(self):
         pass
 
 
-# TODO: Annotate with pydantic and run prometheus locally for smoke tests
+@pytest.mark.integration
 class TestPrometheusIntegration:
-    pass
+    async def test_check_targets(self) -> None:
+        config = PrometheusConfiguration.generate(base_url="http://localhost:9090")
+        optimizer = servo.Optimizer("test.com/foo", token="12345")
+        debug(config, optimizer)
+        connector = PrometheusConnector(config=config, optimizer=optimizer)
+        checks = await connector.check()
+        debug(checks)
 
-# Marshall against this fixture
-# Got response data: {'status': 'success', 'data': {'resultType': 'matrix', 'result': [{'metric': {'__name__': 'go_memstats_gc_sys_bytes', 'instance': 'localhost:9090', 'job': 'prometheus'}, 'values': [[1595142421.024, '3594504'], [1595142481.024, '3594504']]}]}}
+
+class TestPrometheusChecks:
+    @pytest.fixture
+    def metric(self) -> PrometheusMetric:
+        return PrometheusMetric(
+            name="test",
+            unit=Unit.REQUESTS_PER_MINUTE,
+            query="throughput",
+            step="45m",
+        )
+    
+    @pytest.fixture
+    def go_memstats_gc_sys_bytes(self) -> dict:
+        return {'status': 'success', 'data': {'resultType': 'matrix', 'result': [{'metric': {'__name__': 'go_memstats_gc_sys_bytes', 'instance': 'localhost:9090', 'job': 'prometheus'}, 'values': [[1595142421.024, '3594504'], [1595142481.024, '3594504']]}]}}
+
+    @pytest.fixture
+    def mocked_api(self, go_memstats_gc_sys_bytes):
+        with respx.mock(base_url="http://localhost:9090", assert_all_called=False) as respx_mock:
+            respx_mock.get("/api/v1/targets", alias="targets", content=[])
+            respx_mock.get("/api/v1/query_range", alias="query_range", content={ "status": "success", "data": { "result": [] }})
+            respx_mock.get("/api/v1/query_range", alias="go_memstats_gc_sys_bytes", content=go_memstats_gc_sys_bytes)
+            yield respx_mock
+    
+    @pytest.fixture
+    def checks(self, metric) -> PrometheusChecks:
+        config = PrometheusConfiguration(base_url="http://localhost:9090", metrics=[metric])
+        return PrometheusChecks(config=config)
+
+    async def test_check_base_url(self, mocked_api, checks) -> None:        
+        request = mocked_api["targets"]
+        check = await checks.check_base_url()        
+        assert request.called
+        assert check
+        assert check.name == 'Connect to "http://localhost:9090"'
+        assert check.id == 'check_base_url'
+        assert check.required
+        assert check.message is None
+        
+    @respx.mock
+    async def test_check_queries(self, mocked_api, checks) -> None:
+        ...
+    
+    @respx.mock
+    async def test_check_targets(self) -> str:
+        ...
+    
+# import re
+# import httpx
+# @respx.mock(base_url="https://foo.bar")
+# async def test_something(*, respx_mock):
+#     async with httpx.AsyncClient(base_url="https://foo.bar") as client:
+#         request = respx_mock.get("/baz/", content="Baz")
+#         response = await client.get("/baz/")
+#         assert response.text == "Baz"
+    
