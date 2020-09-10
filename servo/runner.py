@@ -170,65 +170,56 @@ class Runner(api.Mixin):
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(pformat(cmd_response))
 
-        try:
-            if cmd_response.command == api.Command.DESCRIBE:
-                description = await self.describe()
-                self.logger.info(
-                    f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
-                )
-                self.logger.trace(pformat(description))
-                param = dict(descriptor=description.opsani_dict(), status="ok")
-                await self._post_event(api.Event.DESCRIPTION, param)
+        if cmd_response.command == api.Command.DESCRIBE:
+            description = await self.describe()
+            self.logger.info(
+                f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
+            )
+            self.logger.trace(pformat(description))
+            param = dict(descriptor=description.opsani_dict(), status="ok")
+            await self._post_event(api.Event.DESCRIPTION, param)
 
-            elif cmd_response.command == api.Command.MEASURE:
-                measurement = await self.measure(cmd_response.param)
-                self.logger.info(
-                    f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
-                )
-                self.logger.trace(pformat(measurement))
-                param = measurement.opsani_dict()
-                await self._post_event(api.Event.MEASUREMENT, param)
+        elif cmd_response.command == api.Command.MEASURE:
+            measurement = await self.measure(cmd_response.param)
+            self.logger.info(
+                f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
+            )
+            self.logger.trace(pformat(measurement))
+            param = measurement.opsani_dict()
+            await self._post_event(api.Event.MEASUREMENT, param)
 
-            elif cmd_response.command == api.Command.ADJUST:
-                adjustments = descriptor_to_adjustments(cmd_response.param["state"])
-                control = Control(**cmd_response.param.get("control", {}))
-                await self.adjust(adjustments, control)
+        elif cmd_response.command == api.Command.ADJUST:
+            adjustments = descriptor_to_adjustments(cmd_response.param["state"])
+            control = Control(**cmd_response.param.get("control", {}))
+            await self.adjust(adjustments, control)
 
-                # TODO: Model a response class ("Adjusted"?) -- map errors to the response
-                # If no errors, report state matching the request
-                reply = { "status": "ok", "state": cmd_response.param["state"] }
+            # TODO: Model a response class ("Adjusted"?) -- map errors to the response
+            # If no errors, report state matching the request
+            reply = { "status": "ok", "state": cmd_response.param["state"] }
 
-                components_dict = cmd_response.param["state"]["application"]["components"]
-                components_count = len(components_dict)
-                settings_count = sum(
-                    len(components_dict[component]["settings"])
-                    for component in components_dict
-                )
-                self.logger.info(
-                    f"Adjusted: {components_count} components, {settings_count} settings"
-                )
+            components_dict = cmd_response.param["state"]["application"]["components"]
+            components_count = len(components_dict)
+            settings_count = sum(
+                len(components_dict[component]["settings"])
+                for component in components_dict
+            )
+            self.logger.info(
+                f"Adjusted: {components_count} components, {settings_count} settings"
+            )
 
-                await self._post_event(api.Event.ADJUSTMENT, reply)
+            await self._post_event(api.Event.ADJUSTMENT, reply)
 
-            elif cmd_response.command == api.Command.SLEEP:
-                    # TODO: Model this
-                    duration = Duration(cmd_response.param.get("duration", 120))
-                    status = value_for_key_path(cmd_response.param, "data.status", None)
-                    reason = value_for_key_path(cmd_response.param, "data.reason", "unknown reason")
-                    msg = f"{status}: {reason}" if status else f"{reason}"
-                    self.logger.info(f"Sleeping for {duration} ({msg}).")
-                    await asyncio.sleep(duration.total_seconds())
+        elif cmd_response.command == api.Command.SLEEP:
+                # TODO: Model this
+                duration = Duration(cmd_response.param.get("duration", 120))
+                status = value_for_key_path(cmd_response.param, "data.status", None)
+                reason = value_for_key_path(cmd_response.param, "data.reason", "unknown reason")
+                msg = f"{status}: {reason}" if status else f"{reason}"
+                self.logger.info(f"Sleeping for {duration} ({msg}).")
+                await asyncio.sleep(duration.total_seconds())
 
-            else:
-                raise ValueError(f"Unknown command '{cmd_response.command.value}'")
-
-        except Exception as error:            
-            self.logger.exception(f"{cmd_response.command} command failed: {error}")
-            # TODO: we need to track connectivity state instead of trying to blindly send
-            if self.connected:
-                param = dict(status="failed", message=str(error))
-                await self._post_event(cmd_response.command.response_event, param)
-            raise
+        else:
+            raise ValueError(f"Unknown command '{cmd_response.command.value}'")
         
     async def main(self) -> None:
         # Setup logging
