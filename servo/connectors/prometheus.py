@@ -190,7 +190,6 @@ determine if it is ready for use in an optimization run.
             response.raise_for_status()
             result = response.json()
         
-        debug(result)
         target_count = len(result["data"]["activeTargets"])
         assert target_count > 0
 
