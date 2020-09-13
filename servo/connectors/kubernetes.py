@@ -16,7 +16,6 @@ from servo.types import Numeric
 import time
 from pathlib import Path
 from typing import Callable, Collection, List, Optional, Dict, Any, Sequence, Tuple
-from kubetest.objects import namespace
 
 from pydantic import BaseModel, ByteSize, Field, FilePath
 
@@ -33,21 +32,25 @@ from servo import (
     Duration,
     DurationProgress,
     Filter,
-    HaltOnFailed,
     License,
     Maturity,
     Setting,
     SettingType,
+    Severity,
     check,
     connector,
     join_to_series,
+    logger,
     multicheck,
     on_event,
-    get_hash
+    get_hash,
+    require,
+    warn
 )
 from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watch
 from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from kubernetes_asyncio.client.api_client import ApiClient
+
 import servo.logging
 from servo.logging import logger
 from typing import ClassVar, Iterable, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
@@ -2317,7 +2320,7 @@ class FailureMode(str, enum.Enum):
 
 class BaseKubernetesConfiguration(BaseConfiguration):
     """
-    BaseKubernetesConfiguration provides a set of configuration primitives to optimizable Kubernetes resources.
+    BaseKubernetesConfiguration provides a set of configuration primitives for optimizable Kubernetes resources.
 
     Child classes of `BaseKubernetesConfiguration` such as the `DeploymentConfiguration` can benefit from
     the cascading configuration behavior implemented on the `KubernetesConfiguration` class.
@@ -2437,7 +2440,6 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                         else:
                             self.logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
 
-    # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:
         """
         Asynchronously load the Kubernetes configuration
@@ -2463,11 +2465,16 @@ class KubernetesChecks(BaseChecks):
 
     config: KubernetesConfiguration
 
-    @check("Connectivity to Kubernetes", required=True)
+    @require("Connectivity to Kubernetes")
     async def check_connectivity(self) -> None:
         # TODO: Just read the namespace or connect to API server
         await KubernetesOptimizations.create(self.config)
-    
+
+    @warn("Kubernetes version")
+    async def check_version(self) -> None:
+        # TODO: Get the version, check against supported
+        ...
+
     @check("Namespace \"{self.config.namespace}\" is readable")
     async def check_namespace_is_readable(self) -> None:
         await Namespace.read(self.config.namespace)
@@ -2488,7 +2495,7 @@ class KubernetesChecks(BaseChecks):
                 assert container.resources.limits
                 assert container.resources.limits["cpu"]
                 assert container.resources.limits["memory"]
-        
+
         return self.config.deployments, check_dep_resource_requirements
 
     @multicheck("Deployment \"{item.name}\" is ready")
@@ -2497,13 +2504,8 @@ class KubernetesChecks(BaseChecks):
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
             if not deployment.is_ready:
                 raise RuntimeError(f"Deployment \"{deployment.name}\" is not ready")
-        
+
         return self.config.deployments, check_deployment
-
-    # TODO: What other unhealthy conditions?
-    # Kubernetes version
-    # 
-
 
 @connector.metadata(
     description="Kubernetes adjust connector",
@@ -2535,7 +2537,6 @@ class KubernetesConnector(BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
-        # TODO: Move this into event declaration??
         settlement = self.config.settlement
         if settlement:
             self.logger.info(f"Settlement duration of {settlement} requested, waiting for pods to settle...")
@@ -2545,7 +2546,7 @@ class KubernetesConnector(BaseConnector):
             self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
 
     @on_event()
-    async def check(self, filter_: Optional[Filter], halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
         return await KubernetesChecks.run(self.config, filter_, halt_on=halt_on)
 
 
@@ -2586,82 +2587,3 @@ def selector_kwargs(
         kwargs['label_selector'] = selector_string(labels)
 
     return kwargs
-
-
-def __todo_encoders():
-    # TODO: This is broken atm. Bake ENV support into core
-    # TODO: This has dynamic keys to kill off.
-    env = component.env
-    if env:
-        for en, ev in env.items():
-            assert isinstance(
-                ev, dict
-            ), 'Setting "{}" in section "env" of a config file is not a dictionary.'
-            if "encoder" in ev:
-                for name, setting in describe_encoder(
-                    cont_env_dict.get(en),
-                    ev["encoder"],
-                    exception_context="an environment variable {}" "".format(en),
-                ):
-                    settings[name] = setting
-            if issetting(ev):
-                defval = ev.pop("default", None)
-                val = cont_env_dict.get(en, defval)
-                val = (
-                    float(val)
-                    if israngesetting(ev) and isinstance(val, (int, str))
-                    else val
-                )
-                assert val is not None, (
-                    'Environment variable "{}" does not have a current value defined and '
-                    "neither it has a default value specified in a config file. "
-                    "Please, set current value for this variable or adjust the "
-                    "configuration file to include its default value."
-                    "".format(en)
-                )
-                val = {**ev, "value": val}
-                settings[en] = val
-
-            # TODO: Must be added to model...
-            # command = comp.get("command")
-            # if command:
-            #     if command.get("encoder"):
-            #         for name, setting in describe_encoder(
-            #             cont.get("command", []),
-            #             command["encoder"],
-            #             exception_context="a command section",
-            #         ):
-            #             settings[name] = setting
-            #         # Remove section "command" from final descriptor
-            #     del comp["command"]
-
-
-             # TODO: Port this
-            # command = component.command
-            # if command:
-            #     if command.get("encoder"):
-            #         cont_patch["command"], encoded_settings = encode_encoder(
-            #             settings, command["encoder"], expected_type=list
-            #         )
-
-            #         # Prevent encoded settings from further processing
-            #         for setting in encoded_settings:
-            #             del settings[setting]
-
-            # env = component.env
-            # if env:
-            #     for en, ev in env.items():
-            #         if ev.get("encoder"):
-            #             val, encoded_settings = encode_encoder(
-            #                 settings, ev["encoder"], expected_type=str
-            #             )
-            #             patch_env = cont_patch.setdefault("env", [])
-            #             patch_env.append({"name": en, "value": val})
-
-            #             # Prevent encoded settings from further processing
-            #             for setting in encoded_settings:
-            #                 del settings[setting]
-            #         elif issetting(ev):
-            #             patch_env = cont_patch.setdefault("env", [])
-            #             patch_env.append({"name": en, "value": str(settings[en]["value"])})
-            #             del settings[en]

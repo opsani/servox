@@ -945,7 +945,10 @@ class TestAssembly:
                     },
                     'duration': {
                         'title': 'Duration',
-                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'description': (
+                            'Specifies the amount of time to issue requests to the targets. This value can be overridd'
+                            'en by the server.'
+                        ),
                         'env_names': [
                             'SERVO_OTHER_DURATION',
                         ],
@@ -1115,7 +1118,10 @@ class TestAssembly:
                     },
                     'duration': {
                         'title': 'Duration',
-                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'description': (
+                            'Specifies the amount of time to issue requests to the targets. This value can be overridd'
+                            'en by the server.'
+                        ),
                         'env_names': [
                             'SERVO_VEGETA_DURATION',
                         ],

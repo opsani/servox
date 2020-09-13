@@ -40,7 +40,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
-    
+
     ##
     # Connector metadata
 
@@ -102,7 +102,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         assert isinstance(
             cls.version, Version
         ), "version is not a semantic versioning descriptor"
-        
+
         if not cls.__default_name__:
             if name := _name_for_connector_class(cls):
                 cls.__default_name__ = name
@@ -121,8 +121,8 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     @classmethod
     def config_model(cls) -> Type["BaseConfiguration"]:
         """
-        Return the configuration model backing the connector. 
-        
+        Return the configuration model backing the connector.
+
         The model is determined by the type hint of the `configuration` attribute
         nearest in definition to the target class in the inheritance hierarchy.
         """
@@ -134,7 +134,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
-        
+
         cls.name = cls.__name__.replace("Connector", "")
         cls.full_name = cls.__name__.replace("Connector", " Connector")
         cls.version = Version.parse("0.0.0")
@@ -151,15 +151,15 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         )
         super().__init__(
             *args, name=name, **kwargs,
-        )        
+        )
 
     def __hash__(self):
         return hash((self.name, id(self),))
-    
+
     @property
     def api_client_options(self) -> Dict[str, Any]:
         return self.__dict__.get("api_client_options", super().api_client_options)
-    
+
     @property
     def logger(self) -> loguru.Logger:
         """Returns a contextualized logger"""
@@ -191,7 +191,7 @@ def metadata(
             if isinstance(name, tuple):
                 if len(name) != 2:
                     raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
-                cls.name, cls.__default_name__ = name                
+                cls.name, cls.__default_name__ = name
             else:
                 cls.name = name
         if description:
@@ -354,7 +354,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector
         )
     except Exception:
         pass
-    
+
     if _validate_class(connector_class):
         return connector_class
 

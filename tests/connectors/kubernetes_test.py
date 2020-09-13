@@ -41,11 +41,11 @@ class TestDNSSubdomainName:
                 'limit_value': 1,
             },
         } in e.value.errors()
-    
+
     def test_handles_uppercase_chars(self, model) -> None:
         valid_name = "ABCD"
         assert model(name=valid_name)
-    
+
     def test_cannot_be_longer_than_253_chars(self, model) -> None:
         valid_name = "a" * 253
         invalid_name = valid_name + "b"
@@ -63,7 +63,7 @@ class TestDNSSubdomainName:
             },
         } in e.value.errors()
 
-    
+
     def test_can_only_contain_alphanumerics_hyphens_and_dots(self, model) -> None:
         valid_name = "abcd1234.-sss"
         invalid_name = "abcd1234.-sss_$%!"
@@ -71,7 +71,7 @@ class TestDNSSubdomainName:
         assert model(name=valid_name)
         with pytest.raises(ValidationError) as e:
             model(name=invalid_name)
-        assert e        
+        assert e
         assert {
             'loc': ('name',),
             'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
@@ -80,7 +80,7 @@ class TestDNSSubdomainName:
                 'pattern': DNSSubdomainName.regex.pattern,
             },
         } in e.value.errors()
-    
+
     def test_must_start_with_alphanumeric_character(self, model) -> None:
         valid_name = "abcd"
         invalid_name = "-abcd"
@@ -97,7 +97,7 @@ class TestDNSSubdomainName:
                 'pattern': DNSSubdomainName.regex.pattern,
             },
         } in e.value.errors()
-    
+
     def test_must_end_with_alphanumeric_character(self, model) -> None:
         valid_name = "abcd"
         invalid_name = "abcd-"
@@ -139,11 +139,11 @@ class TestDNSLabelName:
                 'limit_value': 1,
             },
         } in e.value.errors()
-    
+
     def test_handles_uppercase_chars(self, model) -> None:
         valid_name = "ABCD"
         assert model(name=valid_name)
-    
+
     def test_cannot_be_longer_than_63_chars(self, model) -> None:
         valid_name = "a" * 63
         invalid_name = valid_name + "b"
@@ -161,7 +161,7 @@ class TestDNSLabelName:
             },
         } in e.value.errors()
 
-    
+
     def test_can_only_contain_alphanumerics_and_hyphens(self, model) -> None:
         valid_name = "abcd1234-sss"
         invalid_name = "abcd1234.-sss_$%!"
@@ -169,7 +169,7 @@ class TestDNSLabelName:
         assert model(name=valid_name)
         with pytest.raises(ValidationError) as e:
             model(name=invalid_name)
-        assert e        
+        assert e
         assert {
             'loc': ('name',),
             'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
@@ -178,7 +178,7 @@ class TestDNSLabelName:
                 'pattern': DNSLabelName.regex.pattern,
             },
         } in e.value.errors()
-    
+
     def test_must_start_with_alphanumeric_character(self, model) -> None:
         valid_name = "abcd"
         invalid_name = "-abcd"
@@ -195,7 +195,7 @@ class TestDNSLabelName:
                 'pattern': DNSLabelName.regex.pattern,
             },
         } in e.value.errors()
-    
+
     def test_must_end_with_alphanumeric_character(self, model) -> None:
         valid_name = "abcd"
         invalid_name = "abcd-"
@@ -236,7 +236,7 @@ class TestContainerTagName:
                 'limit_value': 128,
             },
         } in e.value.errors()
-    
+
     @pytest.mark.parametrize(
         "tag_name,valid",
         [
@@ -285,9 +285,9 @@ class TestKubernetesConfiguration:
         assert DeploymentConfiguration(name="testing", containers=[], replicas=Replicas(min=0, max=1)).namespace is None
 
         # Verify that we inherit when nested
-        assert config.namespace == "default"        
+        assert config.namespace == "default"
         assert config.deployments[0].namespace == "default"
-    
+
     def test_explicit_cascade(self, config: KubernetesConfiguration) -> None:
         model = config.copy(update={"namespace": "funkytown"})
         assert model.namespace == "funkytown"
@@ -296,7 +296,7 @@ class TestKubernetesConfiguration:
         model.cascade_common_settings(overwrite=True)
         assert model.namespace == "funkytown"
         assert model.deployments[0].namespace == "funkytown"
-    
+
     def test_respects_explicit_override(self, config: KubernetesConfiguration) -> None:
         # set the property explictly to value equal to default, then trigger
         model = config.copy(update={"namespace": "funkytown"})
@@ -334,7 +334,7 @@ class TestResourceRequirements:
         assert requirement.flag is val
         assert requirement.flags is not val
 
-    
+
 class TestContainer:
     @pytest.fixture
     def container(self, mocker) -> Container:
@@ -367,7 +367,7 @@ class TestContainer:
         resources.requests = { "cpu": "100m", "memory": "3G" }
         resources.limits = { "cpu": "15000m" }
         container.resources = resources
-        
+
         # Support testing default arguments
         if requirements == ...:
             requirements = container.get_resource_requirements.__defaults__[0]
@@ -375,7 +375,7 @@ class TestContainer:
             kwargs = container.get_resource_requirements.__kwdefaults__
 
         assert container.get_resource_requirements(name, requirements, **kwargs) == value
-    
+
     @pytest.mark.parametrize(
         "name, value, requirements, kwargs, resources_dict",
         [
@@ -397,7 +397,7 @@ class TestContainer:
 
         container.set_resource_requirements(name, value, requirements, **kwargs)
         assert container.resources.to_dict() == resources_dict
-    
+
     def test_set_resource_requirements_handles_null_requirements_dict(self, container):
         container.resources = client.V1ResourceRequirements()
 
@@ -419,14 +419,14 @@ class TestReplicas:
             'value': None,
             'pinned': False,
         } == replicas.dict()
-    
+
     def test_to_opsani_dict(self, replicas) -> None:
         replicas.value = 3
         assert replicas.opsani_dict() == {
             'replicas': {
-                'max': 4.0, 
-                'min': 1.0, 
-                'step': 1, 
+                'max': 4.0,
+                'min': 1.0,
+                'step': 1,
                 'value': 3.0,
                 'type': SettingType.RANGE,
                 'pinned': False
@@ -438,7 +438,7 @@ class TestCPU:
     def cpu(self) -> CPU:
         return CPU(min="100m", max=4, step="125m")
 
-    def test_parsing(self, cpu) -> None:        
+    def test_parsing(self, cpu) -> None:
         assert {
             'name': 'cpu',
             'type': SettingType.RANGE,
@@ -449,20 +449,20 @@ class TestCPU:
             'pinned': False,
             'requirements': ResourceRequirements.compute,
         } == cpu.dict()
-    
+
     def test_to_opsani_dict(self, cpu) -> None:
         cpu.value = "3"
         assert cpu.opsani_dict() == {
             'cpu': {
-                'max': 4.0, 
-                'min': 0.1, 
-                'step': 0.125, 
+                'max': 4.0,
+                'min': 0.1,
+                'step': 0.125,
                 'value': 3.0,
                 'type': SettingType.RANGE,
                 'pinned': False
             }
         }
-    
+
     def test_validates_value_in_range(self, cpu) -> None:
         ...
 
@@ -482,33 +482,33 @@ class TestMemory:
             'pinned': False,
             'requirements': ResourceRequirements.compute,
         } == memory.dict()
-    
+
     def test_to_opsani_dict(self, memory) -> None:
         memory.value = "3.0 GiB"
         assert memory.opsani_dict() == {
             'memory': {
-                'max': 4.0, 
-                'min': 0.125, 
-                'step': 0.25, 
+                'max': 4.0,
+                'min': 0.125,
+                'step': 0.25,
                 'value': 3.0,
                 'type': SettingType.RANGE,
                 'pinned': False
             }
         }
-    
+
     def test_handling_float_input(self) -> None:
         memory = Memory(min=0.5, max=4.0, step=0.125, value="3.0 GiB")
         assert memory.opsani_dict() == {
             'memory': {
-                'max': 4.0, 
-                'min': 0.5, 
-                'step': 0.125, 
+                'max': 4.0,
+                'min': 0.5,
+                'step': 0.125,
                 'value': 3.0,
                 'type': SettingType.RANGE,
                 'pinned': False
             }
         }
-    
+
     def test_validates_value_in_range(self, memory) -> None:
         ...
 
@@ -522,13 +522,13 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("fiber-http-deployment.replicas").value == 1
 
 
-    async def test_adjust(self, config, adjustment):    
+    async def test_adjust(self, config, adjustment):
         connector = KubernetesConnector(config=config)
 
         description = await connector.adjust(descriptor_to_adjustments(adjustment))
         debug(description)
 
-    async def test_adjust_memory_on_deployment(self, web_config, adjustment):    
+    async def test_adjust_memory_on_deployment(self, web_config, adjustment):
         connector = KubernetesConnector(config=web_config)
 
         adjustment = Adjustment(
@@ -543,7 +543,7 @@ class TestKubernetesConnectorIntegration:
         # deployment = await Deployment.read("web", "default")
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
-    
+
     async def test_read_pod(self, config, adjustment):
         connector = KubernetesConnector(config=config)
         await config.load_kubeconfig()
@@ -553,8 +553,8 @@ class TestKubernetesConnectorIntegration:
         debug(pod)
         # description = await connector.adjust(descriptor_to_adjustments(adjustment))
         # debug(description)
-    
-    ## 
+
+    ##
     # Canary Tests
     async def test_create_canary(self, canary_config, adjustment):
         await canary_config.load_kubeconfig()
@@ -563,9 +563,6 @@ class TestKubernetesConnectorIntegration:
         debug(dep)
         # description = await connector.startup()
         # debug(description)
-
-def test_config():
-    debug(KubernetesConfiguration.generate())
 
 async def test_apply_no_changes():
     # resource_version stays the same and early exits
@@ -609,7 +606,7 @@ async def test_apply_restart_strategy():
 # Add watch, test create, read, delete, patch
 # TODO: settlement time, recovery behavior (rollback, delete), "adjust_on"?, restart detection
 # TODO: wait/watch tests with conditionals...
-# TODO: Test cases will be: change memory, change cpu, change replica count. 
+# TODO: Test cases will be: change memory, change cpu, change replica count.
 # Test setting limit and request independently
 # Detect scheduling error
 
@@ -617,7 +614,7 @@ async def test_apply_restart_strategy():
 # then watching as all the replicas are updated until the counts match
 # If we never see a progressing condition, then whatever we did
 # did not affect the deployment
-# Handle: CreateContainerError 
+# Handle: CreateContainerError
 
 async def test_checks(config: KubernetesConfiguration):
     await KubernetesChecks.run(config)

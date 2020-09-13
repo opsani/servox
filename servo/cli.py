@@ -16,6 +16,7 @@ import click
 import timeago
 import typer
 import yaml
+import textwrap
 
 from devtools import pformat
 from pydantic import ValidationError
@@ -24,6 +25,7 @@ from pygments.formatters import TerminalFormatter
 from tabulate import tabulate
 from typer.models import CommandFunctionType, Default, DefaultPlaceholder
 
+import servo
 from servo.assembly import (
     Assembly,
     _create_config_model,
@@ -36,12 +38,12 @@ from servo.connector import (
     _connector_class_from_string
 )
 from servo.events import EventHandler, EventResult, Preposition
-import servo.logging
+from servo.logging import logger
 from servo.servo import (
     Events,
     Servo,
 )
-from servo.checks import Check, Filter, HaltOnFailed
+from servo.checks import Check, Filter, Severity
 from servo.runner import Runner
 from servo.types import *
 from servo.utilities import PreservedScalarString, commandify
@@ -238,7 +240,7 @@ class OrderedGroup(Group):
         return self.commands
 
 
-class CLI(typer.Typer):
+class CLI(typer.Typer, servo.logging.Mixin):
     section: Section = Section.COMMANDS
 
     def __init__(
@@ -261,10 +263,6 @@ class CLI(typer.Typer):
         super().__init__(
             *args, name=name, help=help, cls=command_type, callback=callback, **kwargs
         )
-
-    @property
-    def logger(self) -> 'Logger':
-        return logger
 
     def command(
         self,
@@ -643,6 +641,10 @@ class ServoCLI(CLI):
         self.add_connector_commands()
         self.add_other_commands()
 
+    @property
+    def logger(self) -> "loguru.Logger":
+        return servo.logger
+
     def add_assembly_commands(self) -> None:
         # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
         # TODO: Options for Docker Compose and Kubernetes?
@@ -1003,14 +1005,20 @@ class ServoCLI(CLI):
             tag: Optional[List[str]] = typer.Option(
                 False, "--tag", "-t", help="Filter by tag"
             ),
-            halt_on: HaltOnFailed = typer.Option(
-                HaltOnFailed.requirement, "--halt-on-failed", "-h", help="Halt running checks on a failure condition",
+            halt_on: Optional[Severity] = typer.Option(
+                Severity.critical, "--halt-on", "-h", help="Halt running on failure severity",
             ),
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose output"
             ),
             quiet: bool = typer.Option(
                 False, "--quiet", "-q", help="Do not echo generated output to stdout",
+            ),
+            wait: Optional[str] = typer.Option(
+                None, "--wait", "-w", help="Wait for checks to pass", metavar="[DURATION]"
+            ),
+            delay: Optional[str] = typer.Option(
+                None, "--delay", "-d", help="Delay duration. Requires --wait", metavar="[DURATION]"
             ),
             exit_on_success: bool = typer.Option(
                 True, hidden=True
@@ -1052,56 +1060,76 @@ class ServoCLI(CLI):
 
                 return v
 
-            args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
-            constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-            filter_ = Filter(**constraints)
-            results: List[EventResult] = sync(context.servo.dispatch_event(
-                Events.CHECK, filter_, include=connectors, halt_on=halt_on
-            ))
+            progress = DurationProgress(Duration(wait or 0))
+            progress.start()
+            while True:
+                args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
+                constraints = dict(filter(lambda i: bool(i[1]), args.items()))
+                filter_ = Filter(**constraints)
+                results: List[EventResult] = sync(context.servo.dispatch_event(
+                    Events.CHECK, filter_, include=connectors, halt_on=halt_on
+                ))
 
-            import textwrap
+                def check_status_to_str(check: Check) -> str:
+                    if check.success:
+                        return "√ PASSED"
+                    else:
+                        if check.warning:
+                            return "! WARNING"
+                        else:
+                            return "X FAILED"
 
-            table = []
-            ready = True
-            if verbose:
-                headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
-                for result in results:
-                    checks: List[Check] = result.value
-                    names, ids, tags, statuses, comments = [], [], [], [], []
-                    for check in checks:
-                        names.append(check.name)
-                        ids.append(check.id)
-                        tags.append(", ".join(check.tags) if check.tags else "-")
-                        statuses.append("√ PASSED" if check.success else "X FAILED")
-                        comments.append(textwrap.shorten(check.message or "-", 70))
-                        ready &= check.success
+                table = []
+                ready = True
+                if verbose:
+                    headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
+                    for result in results:
+                        checks: List[Check] = result.value
+                        names, ids, tags, statuses, comments = [], [], [], [], []
+                        for check in checks:
+                            names.append(check.name)
+                            ids.append(check.id)
+                            tags.append(", ".join(check.tags) if check.tags else "-")
+                            statuses.append(check_status_to_str(check))
+                            comments.append(textwrap.shorten(check.message or "-", 70))
+                            ready &= check.success
 
-                    if not names:
-                        continue
+                        if not names:
+                            continue
 
-                    row = [result.connector.name, "\n".join(names), "\n".join(ids), "\n".join(tags), "\n".join(statuses), "\n".join(comments)]
-                    table.append(row)
-            else:
-                headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                for result in results:
-                    checks: List[Check] = result.value
-                    if not checks:
-                        continue
+                        row = [result.connector.name, "\n".join(names), "\n".join(ids), "\n".join(tags), "\n".join(statuses), "\n".join(comments)]
+                        table.append(row)
+                else:
+                    headers = ["CONNECTOR", "STATUS", "ERRORS"]
+                    for result in results:
+                        checks: List[Check] = result.value
+                        if not checks:
+                            continue
 
-                    success = True
-                    errors = []
-                    for check in checks:
-                        success &= check.success
-                        check.success or errors.append(f"{check.name}: {textwrap.wrap(check.message or '-')}")
-                    ready &= success
-                    status = "√ PASSED" if success else "X FAILED"
-                    message = reduce(lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n", errors, "")
-                    row = [result.connector.name, status, message]
-                    table.append(row)
+                        success = True
+                        errors = []
+                        for check in checks:
+                            success &= check.passed
+                            check.success or errors.append(f"{check.name}: {textwrap.wrap(check.message or '-')}")
+                        ready &= success
+                        status = "√ PASSED" if success else "X FAILED"
+                        message = reduce(lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n", errors, "")
+                        row = [result.connector.name, status, message]
+                        table.append(row)
 
-            # Output table and exit
-            if not quiet:
-                typer.echo(tabulate(table, headers, tablefmt="plain"))
+                # Output table
+                if not quiet:
+                    typer.echo(tabulate(table, headers, tablefmt="plain"))
+
+                if ready:
+                    break
+                elif progress.finished:
+                    self.logger.error(f"timed out waiting for checks to pass {progress.duration}")
+                    break
+
+                if delay is not None:
+                    self.logger.info(f"waiting for {delay} before rerunning failing checks")
+                    time.sleep(Duration(delay).total_seconds())
 
             # Return instead of exiting if we are being invoked
             if ready and not exit_on_success:

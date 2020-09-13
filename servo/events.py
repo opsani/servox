@@ -20,7 +20,7 @@ _signature_cache: Dict[str, Signature] = {}
 
 class Event(BaseModel):
     """
-    The Event class defines a named event that can be dispatched and 
+    The Event class defines a named event that can be dispatched and
     processed with before, on, and after handlers.
     """
     name: str
@@ -40,14 +40,14 @@ class Event(BaseModel):
 
     def __str__(self):
         return self.name
-    
+
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
             return self.__str__() == other
         elif isinstance(other, Event):
             return self.name == other.name and self.signature == other.signature
         return super().__eq__(other)
-    
+
     def dict(
         self,
         *,
@@ -71,7 +71,7 @@ class Event(BaseModel):
             exclude_defaults=exclude_defaults,
             exclude_none=exclude_none
         )
-        
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -85,7 +85,7 @@ class Preposition(Flag):
     AFTER = auto()
     ALL = BEFORE | ON | AFTER
 
-        
+
     @classmethod
     def from_str(cls, prep: str) -> "Preposition":
         if not isinstance(prep, str):
@@ -118,7 +118,7 @@ class EventContext(BaseModel):
     def from_str(cls, event_str) -> Optional['EventContext']:
         if event := get_event(event_str, None):
             return EventContext(
-                preposition=Preposition.ON, 
+                preposition=Preposition.ON,
                 event=event
             )
 
@@ -128,7 +128,7 @@ class EventContext(BaseModel):
         preposition, event_name = components
         if not (preposition or event_name):
             return None
-        
+
         if preposition not in ("before", "on", "after"):
             return None
 
@@ -137,36 +137,36 @@ class EventContext(BaseModel):
             return None
 
         return EventContext(
-            preposition=Preposition.from_str(preposition), 
+            preposition=Preposition.from_str(preposition),
             event=event
         )
 
-    
+
     @validator("created_at", pre=True, always=True)
     @classmethod
     def set_created_at_now(cls, v):
         return v or datetime.now()
-    
+
     def is_before(self) -> bool:
         return self.preposition == Preposition.BEFORE
 
     def is_on(self) -> bool:
         return self.preposition == Preposition.ON
-    
+
     def is_after(self) -> bool:
         return self.preposition == Preposition.AFTER
-    
+
     def __str__(self):
         if self.preposition == Preposition.ON:
             return self.event.name
         else:
             return f"{self.preposition}:{self.event.name}"
-    
+
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
             return other in (self.__str__(), f"on:{self.event.name}")
         return super().__eq__(other)
-    
+
     # FIXME: This should be aligned with `servo.api.Command.response_event` somehow
     def operation(self) -> Optional[str]:
         event_name = self.event.name.upper()
@@ -181,7 +181,7 @@ class EventContext(BaseModel):
 
 
 def validate_event_contexts(
-    cls, 
+    cls,
     value: Union[str, EventContext, Sequence[Union[str, EventContext]]],
     field: ModelField) -> Union[str, List[str]]:
     """
@@ -198,7 +198,7 @@ def validate_event_contexts(
         for e in value:
             validate_event_contexts(cls, e, field)
         return value
-    else:    
+    else:
         raise ValueError(f"Invalid value for {field.name}")
 
 
@@ -224,7 +224,7 @@ class EventResult(BaseModel):
     connector: BaseConnector
     created_at: datetime = None
     value: Any
-    
+
     @validator("created_at", pre=True, always=True)
     @classmethod
     def set_created_at_now(cls, v):
@@ -263,7 +263,7 @@ def get_event(name: str, default=...) -> Optional[Event]:
 
 
 def create_event(
-    name: str, 
+    name: str,
     signature: Union[Callable[[Any], Awaitable], Signature],
 ) -> Event:
     """
@@ -276,9 +276,9 @@ def create_event(
         # Simply yield to the on event handler
         async def fn(self) -> None:
             yield
-        
+
         return asynccontextmanager(fn)
-    
+
     if callable(signature):
         if inspect.isasyncgenfunction(signature):
             # We have an async generator function defining setup/teardown activities, wrap into a context manager
@@ -295,8 +295,8 @@ def create_event(
                 lines = inspect.getsourcelines(signature)
                 last = lines[0][-1]
                 if not last.strip() in ("pass", "..."):
-                    raise ValueError("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")                
-                
+                    raise ValueError("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")
+
                 # use the default since our input doesn't yield
                 on_handler_context_manager = _default_context_manager()
 
@@ -367,7 +367,7 @@ def before_event(
     Registers the decorated function as an event handler to run before the specified event.
 
     Before event handlers require no arguments positional or keyword arguments and return `None`. Any arguments
-    provided via the `kwargs` parameter are passed through at invocation time. Before event handlers 
+    provided via the `kwargs` parameter are passed through at invocation time. Before event handlers
     can cancel event propagation by raising `CancelEventError`. Canceled events are reported to the
     event originator by attaching the `CancelEventError` instance to the `EventResult`.
 
@@ -475,8 +475,8 @@ def _validate_handler_signature(
     """
     Validates that the given handler signature is compatible with the event signature. Validation
     checks the parameter and return value types using annotations. The intent is to immediately
-    expose errors in event handlers rather than encountering them at runtime (which may take 
-    an arbitrary amount of time to trigger a given event). Raises a TypeError when an incompatibility 
+    expose errors in event handlers rather than encountering them at runtime (which may take
+    an arbitrary amount of time to trigger a given event). Raises a TypeError when an incompatibility
     is encountered.
 
     :param handler_signature: The event handler signature to validate.
@@ -537,6 +537,7 @@ def _validate_handler_signature(
         )
 
     # Check return type annotation
+    # TODO: Handle various import formats on return annotation
     if handler_signature.return_annotation != event_signature.return_annotation:
         error_message = f"Invalid return type annotation for '{handler_name}' event handler: expected {event_signature.return_annotation}, but found {handler_signature.return_annotation}"
         if isinstance(event_signature.return_annotation, str) and not isinstance(handler_signature.return_annotation, str):
@@ -757,7 +758,7 @@ class Mixin:
     @property
     def __connectors__(self) -> List[BaseConnector]:
         return _connector_event_bus[self]
-      
+
     def broadcast_event(
         self,
         event: Union[Event, str],
@@ -779,12 +780,12 @@ class Mixin:
         """
         return asyncio.create_task(
             self.dispatch_event(
-                event, 
-                *args, 
-                first=first, 
-                include=include, 
-                exclude=exclude, 
-                prepositions=prepositions, 
+                event,
+                *args,
+                first=first,
+                include=include,
+                exclude=exclude,
+                prepositions=prepositions,
                 return_exceptions=return_exceptions,
                 **kwargs
             )
@@ -807,7 +808,7 @@ class Mixin:
         Dispatches an event to active connectors for processing and returns the results.
 
         Eventing can be used to notify other connectors of activities and state changes
-        driven by one connector or to facilitate loosely coupled cross-connector RPC 
+        driven by one connector or to facilitate loosely coupled cross-connector RPC
         communication.
 
         :param first: When True, halt dispatch and return the result from the first connector that responds.
@@ -865,10 +866,10 @@ class Mixin:
         return results
 
     async def run_event_handlers(
-        self, 
-        event: Event, 
-        preposition: Preposition, 
-        *args, 
+        self,
+        event: Event,
+        preposition: Preposition,
+        *args,
         return_exceptions: bool = False,
         **kwargs
     ) -> Optional[List[EventResult]]:
@@ -902,7 +903,7 @@ class Mixin:
                         raise TypeError(
                             f"Cannot cancel an event from an {preposition} handler"
                         ) from error
-                    
+
                     # Annotate the exception and reraise to halt execution
                     error.result = EventResult(
                         connector=self,
@@ -912,10 +913,10 @@ class Mixin:
                         value=error,
                     )
                     raise error
-                
+
                 except EventError as error:
                     value = error
-                
+
                 except Exception as error:
                     if return_exceptions:
                         value = error
@@ -937,7 +938,7 @@ class Mixin:
             _event_context_var.reset(prev_event_token)
 
         return results
-    
+
     @property
     def current_event(self) -> Optional[EventContext]:
         """

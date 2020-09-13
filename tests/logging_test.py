@@ -11,16 +11,16 @@ from freezegun import freeze_time
 from servo import BaseConfiguration
 from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.logging import (
-    DEFAULT_FORMAT, 
+    DEFAULT_FORMAT,
     DEFAULT_FORMATTER,
-    DEFAULT_FILTER, 
-    Filter, 
-    Mixin, 
-    ProgressHandler, 
+    Mixin,
+    DEFAULT_FILTER,
+    Filter,
+    ProgressHandler,
     log_execution,
     log_execution_time,
-    logger, 
-    reset_to_defaults, 
+    logger,
+    reset_to_defaults,
     set_level
 )
 from tests.test_helpers import MeasureConnector
@@ -51,7 +51,7 @@ class TestFilter:
         messages = []
         def raw_messages() -> List[str]:
             return list(map(lambda m: m.record["message"], messages))
-        
+
         logger.remove(None)
         logger.add(lambda m: messages.append(m), filter=DEFAULT_FILTER, level=0)
 
@@ -62,7 +62,7 @@ class TestFilter:
         assert raw_messages() == ["Another"]
         logger.info("Info")
         assert raw_messages() == ["Another"]
-        
+
         set_level("INFO")
         logger.info("Info")
         assert raw_messages() == ["Another", "Info"]
@@ -91,14 +91,14 @@ class TestFormatting:
     def test_explicit_component(self, messages):
         logger.info("Test", component="something_cool")
         message = messages[0]
-        assert message.record["message"] == "Test"        
+        assert message.record["message"] == "Test"
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "something_cool - Test"
 
     def test_connector_name_included(self, messages):
         logger.info("Test", connector=self)
         message = messages[0]
-        assert message.record["message"] == "Test"        
+        assert message.record["message"] == "Test"
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "TestFormatting - Test"
 
@@ -108,16 +108,16 @@ class TestFormatting:
         assert message.record["message"] == "Test"
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "servo - Test"
-    
-    def test_event_context_included(self, messages):        
+
+    def test_event_context_included(self, messages):
         _event_context_var.set(EventContext.from_str("before:adjust"))
         logger.info("Test", connector=self)
         message = messages[0]
         assert message.record["message"] == "Test"
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "TestFormatting[before:adjust] - Test"
-    
-    def test_connector_context_car(self, messages):
+
+    def test_connector_context_var(self, messages):
         _connector_context_var.set(self)
         _event_context_var.set(EventContext.from_str("before:adjust"))
         logger.info("Test")
@@ -125,7 +125,7 @@ class TestFormatting:
         assert message.record["message"] == "Test"
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "TestFormatting[before:adjust] - Test"
-    
+
     def test_traceback(self, messages) -> None:
         logger.info("Test", with_traceback=True)
         message = messages[0]
@@ -134,27 +134,11 @@ class TestFormatting:
         message_with_traceback = message.split("\n")
         assert len(message_with_traceback) > 5 # arbitrary check of depth
 
-class TestLoggingMixin(Mixin):
-    @property
-    def name(self) -> str:
-        return "TestLoggingMixin"
-    
-    def test_logger(self) -> None:
-        messages = []
-        logger = self.logger
-        logger.add(lambda m: messages.append(m), level=0)
-        logger.info("Testing")
-        record = messages[0].record
-        assert record["message"] == "Testing"
-        assert record["module"] == "logging_test"
-        assert record["name"] == "tests.logging_test"
-        assert record["level"].name == "INFO"
-
 class TestProgressHandler:
     @pytest.fixture()
     def progress_reporter(self, mocker):
         return asynctest.Mock(name="progress reporter")
-    
+
     @pytest.fixture()
     def error_reporter(self, mocker):
         return asynctest.Mock(name="error reporter")
@@ -162,7 +146,7 @@ class TestProgressHandler:
     @pytest.fixture()
     def handler(self, progress_reporter, error_reporter) -> ProgressHandler:
         return ProgressHandler(progress_reporter, error_reporter)
-    
+
     @pytest.fixture()
     def logger(self, handler: ProgressHandler) -> loguru.Logger:
         logger = loguru.logger.bind(connector="progress")
@@ -174,25 +158,25 @@ class TestProgressHandler:
         await logger.complete()
         progress_reporter.assert_not_called()
         error_reporter.assert_not_called()
-    
+
     async def test_error_no_connector(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector=None)
         await logger.complete()
         progress_reporter.assert_not_called()
         assert "declining request to report progress for record without a connector attribute"  in error_reporter.call_args.args[0]
-    
+
     async def test_error_no_operation(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo")
         await logger.complete()
         progress_reporter.assert_not_called()
         assert "declining request to report progress for record without an operation parameter or inferrable value from event context" in error_reporter.call_args.args[0]
-    
+
     async def test_error_no_started_at(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo", operation="hacking")
         await logger.complete()
         progress_reporter.assert_not_called()
         assert "declining request to report progress for record without a started_at parameter or inferrable value from event context" in error_reporter.call_args.args[0]
-    
+
     async def test_success(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo", operation="hacking", started_at=datetime.now())
         await logger.complete()
@@ -212,7 +196,7 @@ def test_log_execution() -> None:
     @log_execution
     def log_me():
         pass
-    
+
     messages = []
     logger.add(lambda m: messages.append(m), level=0)
     log_me()
@@ -224,7 +208,7 @@ def test_log_execution_time() -> None:
     @log_execution_time(level="INFO")
     def log_me():
         pass
-    
+
     messages = []
     logger.add(lambda m: messages.append(m), level=0)
     log_me()
@@ -236,7 +220,7 @@ def test_log_execution_time_no_args() -> None:
     @log_execution_time
     def log_me():
         pass
-    
+
     messages = []
     logger.add(lambda m: messages.append(m), level=0)
     log_me()
