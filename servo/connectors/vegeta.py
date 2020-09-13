@@ -125,7 +125,7 @@ class VegetaConfiguration(BaseConfiguration):
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
     )
     duration: Duration = Field(
-        description="Specifies the amount of time to issue requests to the targets.",
+        description="Specifies the amount of time to issue requests to the targets. This value can be overridden by the server.",
     )
     format: TargetFormat = Field(
         TargetFormat.http,
