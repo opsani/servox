@@ -47,9 +47,9 @@ class Maturity(Enum):
 
     EXPERIMENTAL = "Experimental"
     """Experimental components are in an early state of development or are
-otherwise not fully supported by the developers. 
+otherwise not fully supported by the developers.
 
-    APIs should be considered as potentially volatile and documentation, testing, 
+    APIs should be considered as potentially volatile and documentation, testing,
     and deployment concerns may not yet be fully addressed.
     """
 
@@ -57,12 +57,12 @@ otherwise not fully supported by the developers.
     """Stable components can be considered production ready and released under
 Semantic Versioning expectations.
 
-    APIs should be considered stable and the component is fully supported by 
+    APIs should be considered stable and the component is fully supported by
     the developers and recommended for use in a production environment.
     """
 
     ROBUST = "Robust"
-    """Robust components are fully mature, stable, well documented, and battle 
+    """Robust components are fully mature, stable, well documented, and battle
     tested in a variety of production environments.
     """
 
@@ -166,7 +166,7 @@ class DurationProgress(BaseModel):
     """
     DurationProgress objects track progress across a fixed time duration.
     """
-    
+
     duration: Duration
     """The duration of the operation for which progress is being tracked.
     """
@@ -247,7 +247,7 @@ class DurationProgress(BaseModel):
 
     def annotate(self, str_to_annotate: str, prefix=True) -> str:
         """
-        Returns a string annotated with details about progress status.
+        Annotates and returns a string with details about progress status.
 
         Args:
             str_to_annotate: The string to annotate with progress status.
@@ -278,11 +278,11 @@ optimizable metrics.
     REQUESTS_PER_MINUTE = "rpm"
     """Application throughput in terms of requests processed per minute.
     """
-    
+
     REQUESTS_PER_SECOND = "rps"
     """Application throughput in terms of requests processed per second.
     """
-    
+
     PERCENTAGE = "%"
     """A ratio of one value as compared to another (e.g., errors as compared to
 total requests processed).
@@ -328,7 +328,7 @@ class DataPoint(BaseModel):
     Returns:
         A new DataPoint object modeling a scalar value reading of a Metric.
     """
-    
+
     metric: Metric
     """The metric being measured.
     """
@@ -361,7 +361,7 @@ over a period of time.
     """An optional advisory annotation providing supplemental context
 information about the time series.
     """
-    
+
     id: Optional[str]
     """An optional identifier contextualizing the source of the time series
 among a set of peers.
@@ -726,9 +726,9 @@ semantics.
             # NOTE: past is an alias for delay in the API
             if 'delay' in values:
                 assert values['past'] == values['delay'], "past and delay attributes must be equal"
-            
+
             values['delay'] = values.pop('past')
-        
+
         return values
 
     @validator('duration', 'warmup', 'delay', always=True, pre=True)
@@ -810,8 +810,8 @@ a set of readings for the metrics that were measured.
     readings: Readings = []
     """A list of readings taken of target metrics during the measurement
 operation.
-    
-    Readings can either be `DataPoint` objects modeling scalar values or 
+
+    Readings can either be `DataPoint` objects modeling scalar values or
     `TimeSeries` objects modeling a sequence of values captured over time.
     """
     annotations: Dict[str, str] = {}
@@ -825,9 +825,9 @@ operation.
                     assert isinstance(obj, reading_type), f"all readings must be of the same type: expected \"{reading_type.__name__}\" but found \"{obj.__class__.__name__}\""
                 else:
                     reading_type = obj.__class__
-        
+
         return value
-    
+
     @validator('readings', always=True, pre=True)
     def validate_time_series_dimensionality(cls, value) -> Readings:
         if value:
@@ -835,12 +835,11 @@ operation.
             for obj in value:
                 if isinstance(obj, TimeSeries):
                     actual_count = len(obj.values)
-                    if expected_count: 
-                        if actual_count != expected_count:
-                            logger.warning(f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\"")
+                    if expected_count and actual_count != expected_count:
+                        logger.warning(f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\"")
                     else:
                         expected_count = actual_count
-        
+
         return value
 
     def __opsani_repr__(self) -> dict:

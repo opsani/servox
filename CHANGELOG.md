@@ -49,6 +49,25 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
 
+## Unreleased
+
+### Added
+- Critical checks can be declared via the `require` decorator.
+- Added the `warn` decorator for creating checks that emit warnings rather than failing.
+- The Kubernetes connector configuration now supports a checkable `sidecars` setting.
+- Kubernetes version is now checked.
+- Creation of a Kubernetes canary tuning Pod is now checked.
+- The Prometheus connector configuration now supports threshold values for checking that the metrics
+are reporting usable values.
+
+### Changed
+- Checks now have a severity described by the `servo.checks.Severity` enumeration, replacing required.
+- Required check nomenclature has been replaced with the `critical` severity level to clarify
+expectations and eliminate ambiguity in check behavior.
+
+### Removed
+- The `required` attribute from the `servo.checks` module in favor of `severity`.
+
 ## [0.7.0] "nice for what?" - 2020-09-09
 
 ### Added
@@ -59,9 +78,9 @@ environment variable.
 - The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to
   disable coloring.
 - The API URL can be now be overridden via the hidden `--url` CLI option or the `OPSANI_URL` environment variable.
-- Introduce the `multicheck` decorator for use in checks implementations. A 
+- Introduce the `multicheck` decorator for use in checks implementations. A
   multicheck is method that returns an iterable collection of checkable objects
-  and a `CheckHandler` callable that can evaluate each item. Each item in the 
+  and a `CheckHandler` callable that can evaluate each item. Each item in the
   iterable collection is wrapped into an individual check and run independently.
   This provides a simple mechanism for checking configurations that have a mix
   of settings that need to be handled specifically and homogenous collections

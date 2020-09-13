@@ -17,6 +17,7 @@ from servo.assembly import Assembly
 from servo.configuration import BaseAssemblyConfiguration, Optimizer, ServoConfiguration
 from servo.errors import ConnectorError
 from servo.events import EventResult
+from servo.logging import ProgressHandler, logger
 from servo.servo import Events, Servo
 from servo.types import Adjustment, Control, Duration, Description, Measurement
 from servo.utilities import commandify, value_for_key_path
@@ -38,20 +39,20 @@ class BackoffConfig:
             if backoff_config := servo_config.backoff.get(context, None):
                 if max_time := backoff_config.max_time:
                     return max_time.total_seconds()
-        
+
         # fallback to default
         if max_time := BackoffConfig.max_time():
             return max_time
-        
+
         raise AssertionError("max_time default should never be None")
 
-    
+
     @staticmethod
     def max_tries(context: str = DEFAULT_CONTEXT) -> Optional[int]:
         if servo_config := Servo.current().config.servo:
             if backoff_config := servo_config.backoff.get(context, None):
                 return backoff_config.max_tries
-        
+
         # fallback to default
         return BackoffConfig.max_tries()
 
@@ -72,7 +73,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
     @property
     def optimizer(self) -> Optimizer:
         return self.servo.optimizer
-    
+
     @property
     def servo(self) -> Servo:
         return self.assembly.servo
@@ -80,13 +81,13 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
     @property
     def config(self) -> BaseAssemblyConfiguration:
         return self.servo.config
-    
+
     @property
     def api_client_options(self) -> Dict[str, Any]:
         # FIXME: Support for proxies. This is messy. Needs to be cleaned up.
         # We have unnatural layering because proxies is on config but api is standalone.
         return self.servo.api_client_options
-    
+
     def display_banner(self) -> None:
         banner = (
             "   _____                      _  __\n"
@@ -96,24 +97,25 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             "/____/\___/_/    |___/\____/_/|_|"
         )
         typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
-                
+
         types = Assembly.all_connector_types()
         types.remove(Servo)
-        
+
         names = []
         for c in types:
             name = typer.style(commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False)
             version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
             names.append(f"{name}-{version}")
+
         version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
         codename = typer.style(servo.__codename__, fg=typer.colors.MAGENTA, bold=False)
-        initialized = typer.style("initialized", fg=typer.colors.BRIGHT_GREEN, bold=True)        
-        
+        initialized = typer.style("initialized", fg=typer.colors.BRIGHT_GREEN, bold=True)
+
         typer.secho(f"{version} \"{codename}\" {initialized}")
         typer.secho()
         typer.secho(f"connectors:  {', '.join(sorted(names))}")
         typer.secho(f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}")
-        id = typer.style(self.optimizer.id, bold=True, fg=typer.colors.WHITE)        
+        id = typer.style(self.optimizer.id, bold=True, fg=typer.colors.WHITE)
         typer.secho(f"optimizer:   {id}")
         if self.optimizer.base_url != "https://api.opsani.com/":
             base_url = typer.style(f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED)
@@ -124,7 +126,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         typer.secho()
 
     async def describe(self) -> Description:
-        self.logger.info("Describing...")
+        logger.info("Describing...")
 
         aggregate_description = Description.construct()
         results: List[EventResult] = await self.servo.dispatch_event(Events.DESCRIBE)
@@ -136,8 +138,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         return aggregate_description
 
     async def measure(self, param: api.MeasureParams) -> Measurement:
-        self.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
-        self.logger.trace(pformat(param))
+        logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
+        logger.trace(pformat(param))
 
         aggregate_measurement = Measurement.construct()
         results: List[EventResult] = await self.servo.dispatch_event(
@@ -152,34 +154,34 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     async def adjust(self, adjustments: List[Adjustment], control: Control) -> None:
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
-        self.logger.info(f"Adjusting... {summary}")
-        self.logger.trace(pformat(adjustments))
-        
+        logger.info(f"Adjusting... {summary}")
+        logger.trace(pformat(adjustments))
+
         await self.servo.dispatch_event(Events.ADJUST, adjustments)
-        self.logger.info(f"Adjustment completed {summary}")
+        logger.info(f"Adjustment completed {summary}")
 
     # backoff and retry for an hour on transient request failures
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time)
     async def exec_command(self):
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
-        self.logger.info(f"What's Next? => {cmd_response.command}")
-        self.logger.trace(pformat(cmd_response))
+        logger.info(f"What's Next? => {cmd_response.command}")
+        logger.trace(pformat(cmd_response))
 
         if cmd_response.command == api.Command.DESCRIBE:
             description = await self.describe()
-            self.logger.info(
+            logger.info(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
-            self.logger.trace(pformat(description))
+            logger.trace(pformat(description))
             param = dict(descriptor=description.__opsani_repr__(), status="ok")
             await self._post_event(api.Event.DESCRIPTION, param)
 
         elif cmd_response.command == api.Command.MEASURE:
             measurement = await self.measure(cmd_response.param)
-            self.logger.info(
+            logger.info(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
-            self.logger.trace(pformat(measurement))
+            logger.trace(pformat(measurement))
             param = measurement.__opsani_repr__()
             await self._post_event(api.Event.MEASUREMENT, param)
 
@@ -198,7 +200,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 len(components_dict[component]["settings"])
                 for component in components_dict
             )
-            self.logger.info(
+            logger.info(
                 f"Adjusted: {components_count} components, {settings_count} settings"
             )
 
@@ -210,78 +212,78 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 status = value_for_key_path(cmd_response.param, "data.status", None)
                 reason = value_for_key_path(cmd_response.param, "data.reason", "unknown reason")
                 msg = f"{status}: {reason}" if status else f"{reason}"
-                self.logger.info(f"Sleeping for {duration} ({msg}).")
+                logger.info(f"Sleeping for {duration} ({msg}).")
                 await asyncio.sleep(duration.total_seconds())
 
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
-        
+
     async def main(self) -> None:
         # Setup logging
         self.progress_handler = servo.logging.ProgressHandler(self.servo.report_progress, self.logger.warning)
         self.logger.add(self.progress_handler.sink, catch=True)
 
-        self.logger.info(
+        logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
 
         async def giveup(details) -> None:
             loop = asyncio.get_event_loop()
-            self.logger.critical("retries exhausted, giving up")
+            logger.critical("retries exhausted, giving up")
             asyncio.create_task(self.shutdown(loop))
 
         try:
             @backoff.on_exception(
-                backoff.expo, 
-                httpx.HTTPError, 
+                backoff.expo,
+                httpx.HTTPError,
                 max_time=lambda: BackoffConfig.max_time("connect"),
                 on_giveup=giveup
             )
-            async def connect() -> None:                
-                self.logger.info("Saying HELLO.", end=" ")
+            async def connect() -> None:
+                logger.info("Saying HELLO.", end=" ")
                 await self._post_event(api.Event.HELLO, dict(agent=api.USER_AGENT))
                 self.connected = True
 
-            self.logger.info("Dispatching startup event...")
+            logger.info("Dispatching startup event...")
             await self.servo.startup()
 
-            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
+            logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
         except:
             pass
 
         while True:
             await self.exec_command()
-    
+
     async def shutdown(self, loop, signal=None):
         if signal:
-            self.logger.info(f"Received exit signal {signal.name}...")
+            logger.info(f"Received exit signal {signal.name}...")
 
         try:
             if self.connected:
                 reason = signal.name if signal else 'shutdown'
                 await self._post_event(api.Event.GOODBYE, dict(reason=reason))
         except Exception:
-            self.logger.exception(f"Exception occurred during GOODBYE request")
-        
-        self.logger.info("Dispatching shutdown event...")
+            logger.exception(f"Exception occurred during GOODBYE request")
+
+        logger.info("Dispatching shutdown event...")
         await self.servo.shutdown()
-        
+
         tasks = [t for t in asyncio.all_tasks() if t is not
                 asyncio.current_task()]
 
         [task.cancel() for task in tasks]
 
-        self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+        logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
-        
-        self.logger.info("Servo shutdown complete.")
-        await self.logger.complete()
-        
+
+        logger.info("Servo shutdown complete.")
+        await logger.complete()
+
         loop.stop()
-    
+
     def handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
-        self.logger.error(f"asyncio exception handler triggered with context: {context}")
+        logger.error(f"asyncio exception handler triggered with context: {context}")
 
         # context["message"] will always be there; but context["exception"] may not
         exception = context.get("exception")
@@ -290,9 +292,9 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             try:
                 raise exception
             except:
-                self.logger.exception(f"exception details: {exception}")
+                logger.exception(f"exception details: {exception}")
 
-        self.logger.critical("Shutting down due to unhandled exception in asyncio event loop...")
+        logger.critical("Shutting down due to unhandled exception in asyncio event loop...")
         asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
@@ -300,12 +302,12 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         # Setup async event loop
         loop = asyncio.get_event_loop()
-        
+
         signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
         for s in signals:
             loop.add_signal_handler(
                 s, lambda s=s: asyncio.create_task(self.shutdown(loop, signal=s)))
-        
+
         loop.set_exception_handler(self.handle_exception)
 
         try:
@@ -314,4 +316,3 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         finally:
             loop.close()
 
-    

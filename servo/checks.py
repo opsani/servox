@@ -14,16 +14,17 @@ import servo.logging
 from servo.types import Any, Duration
 from servo.utilities.inspect import get_instance_methods
 
-
 __all__ = [
     "BaseChecks",
     "Check",
     "CheckHandler",
     "CheckHandlerResult",
     "Filter",
-    "HaltOnFailed",
+    "Severity",
     "check",
-    "multicheck"
+    "multicheck",
+    "require",
+    "warn"
 ]
 
 
@@ -33,6 +34,38 @@ CHECK_HANDLER_SIGNATURE = Signature(return_annotation=CheckHandlerResult)
 
 Tag = constr(strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$")
 
+class Severity(str, enum.Enum):
+    """Severity is an enumeration the describes the severity and handling of a
+    check upon failure."""
+
+    warning = "warning"
+    """At warning severity, check failure is advisory and do not indicate an
+inability to operate. By default, warnings will not halt execution and emit
+actionable messages about potential problems.
+    """
+
+    error = "error"
+    """At error severity, check failures are atomic and have no bearing on the
+outcome of other checks. By default, errors are non-blocking and other available
+checks will be executed.
+    """
+
+    critical = "critical"
+    """At critical severity, check failures block the execution of dependent
+    checks until the required condition is met.
+
+    Critical failures halt the execution of a sequence of checks that are part
+    of a `Checks` object. For example, given a connector that connects to a
+    remote service such as a metrics provider, you may wish to check that each
+    metrics query is well formed and returns results. In order for any of the
+    query checks to succeed, the servo must be able to connect to the service.
+    During failure modes such as network partitions, service outage, or simple
+    configuration errors this can result in an arbitrary number of failing
+    checks with an identical root cause that make it harder to identify the
+    issue. Required checks allow you to declare these sorts of pre-conditions
+    and the servo will test them before running any dependent checks, ensuring
+    that you get a single failure that identifies the root cause.
+    """
 
 class Check(BaseModel, servo.logging.Mixin):
     """
@@ -59,38 +92,21 @@ class Check(BaseModel, servo.logging.Mixin):
     """An optional detailed description about the condition being checked.
     """
 
-    required: bool = False
-    """
-    Indicates if the check is a pre-condition for subsequent checks.
-
-    Required state is used to halt the execution of a sequence of checks
-    that are part of a `Checks` object. For example, given a connector
-    that connects to a remote service such as a metrics provider, you
-    may wish to check that each metrics query is well formed and returns
-    results. In order for any of the query checks to succeed, the servo
-    must be able to connect to the service. During failure modes such as
-    network partitions, service outage, or simple configuration errors
-    this can result in an arbitrary number of failing checks with an 
-    identical root cause that make it harder to identify the issue.
-    Required checks allow you to declare these sorts of pre-conditions
-    and the servo will test them before running any dependent checks,
-    ensuring that you get a single failure that identifies the root cause.
-
-    For checks that do not belong to a `Checks` object, required is
-    purely advisory metadata and is ignored by the servo.
+    severity: Severity = Severity.error
+    """The relative importance of the check determining failure handling.
     """
 
     tags: Optional[Set[Tag]]
     """
     An optional set of tags for filtering checks.
 
-    Tags are strings between 1 and 32 characters in length and may contain 
+    Tags are strings between 1 and 32 characters in length and may contain
     only lowercase alphanumeric characters, hyphens '-', and periods '.'.
     """
 
     success: Optional[bool]
     """
-    Indicates if the condition being checked was met or not. 
+    Indicates if the condition being checked was met or not.
     """
 
     message: Optional[StrictStr]
@@ -106,10 +122,10 @@ class Check(BaseModel, servo.logging.Mixin):
     An optional exception encountered while running the check.
 
     When checks encounter an exception condition, it is recommended to
-    store the exception so that diagnostic metadata such as the stack trace 
+    store the exception so that diagnostic metadata such as the stack trace
     can be presented to the user.
     """
-    
+
     created_at: datetime = None
     """When the check was created (set automatically).
     """
@@ -123,10 +139,10 @@ class Check(BaseModel, servo.logging.Mixin):
     """
 
     @classmethod
-    async def run(cls, 
-        name: str, 
-        *, 
-        handler: CheckHandler, 
+    async def run(cls,
+        name: str,
+        *,
+        handler: CheckHandler,
         description: Optional[str] = None,
         args: List[Any] = [],
         kwargs: Dict[Any, Any] = {}
@@ -137,12 +153,12 @@ class Check(BaseModel, servo.logging.Mixin):
         do not have enough checkable conditions to warrant implementing a `Checks`
         subclass.
 
-        The handler can be synchronous or asynchronous. An arbitrary number of positional 
-        and keyword arguments are supported. The values for the argument must be provided 
-        via the `args` and `kwargs` parameters. The handler must return a `bool`, `str`, 
-        `Tuple[bool, str]`, or `None` value. Boolean values indicate success or failure 
-        and string values are assigned to the `message` attribute of the Check object 
-        returned. Exceptions are rescued, mark the check as a failure, and assigned to 
+        The handler can be synchronous or asynchronous. An arbitrary number of positional
+        and keyword arguments are supported. The values for the argument must be provided
+        via the `args` and `kwargs` parameters. The handler must return a `bool`, `str`,
+        `Tuple[bool, str]`, or `None` value. Boolean values indicate success or failure
+        and string values are assigned to the `message` attribute of the Check object
+        returned. Exceptions are rescued, mark the check as a failure, and assigned to
         the `exception` attribute.
 
         Args:
@@ -160,22 +176,43 @@ class Check(BaseModel, servo.logging.Mixin):
         return check
 
     @property
+    def passed(self) -> bool:
+        """
+        Indicates if the check is passing due to evaluating positively or being a warning.
+        """
+        return self.success or self.warning
+
+    @property
     def failed(self) -> bool:
         """
-        Indicates if the check was unsuccessful.
+        Indicates if the check is failing.
         """
-        return not self.success
+        return not self.success and not self.warning
+
+    @property
+    def critical(self) -> bool:
+        """
+        Indicates if the check is of critical severity.
+        """
+        return self.severity == Severity.critical
+
+    @property
+    def warning(self) -> bool:
+        """
+        Indicates if the check is of warning severity.
+        """
+        return self.severity == Severity.warning
 
     @validator("created_at", pre=True, always=True)
     @classmethod
     def _set_created_at_now(cls, v):
         return v or datetime.now()
-    
+
     @validator("id", pre=True, always=True)
     @classmethod
-    def _generated_id(cls, v,  values):        
+    def _generated_id(cls, v,  values):
         return v or blake2b(values["name"].encode('utf-8'), digest_size=4).hexdigest()
-    
+
     class Config:
         validate_assignment = True
         arbitrary_types_allowed = True
@@ -198,24 +235,24 @@ class Checkable(Protocol):
 CheckRunner = TypeVar("CheckRunner", Callable[..., Check], Coroutine[None, None, Check])
 
 def check(
-    name: str, 
-    *, 
+    name: str,
+    *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    required: bool = False,
+    severity: Severity = Severity.error,
     tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
     """
     Transforms a function or method into a check.
-    
+
     Checks are used to test the availability, readiness, and health of resources and
     services that used during optimization. The `Check` class models the status of a
     check that has been run. The `check` function is a decorator that transforms a
-    function or method that returns a `bool`, `str`, `Tuple[bool, str]`, or `None` 
+    function or method that returns a `bool`, `str`, `Tuple[bool, str]`, or `None`
     into a check function or method.
 
     The decorator requires a `name` parameter to identify the check as well as an optional
-    informative `description`, an `id` for succintly referencing the check, and a `required`
-    boolean value that determines if a failure will halt execution of subsequent checks.
+    informative `description`, an `id` for succintly referencing the check, and a `severity`
+    value that determines how failure is reported and affects depdendent checks.
     The body of the decorated function is used to perform the business logic of running
     the check. The decorator wraps the original function body into a handler that runs the
     check and marshalls the value returned or exception caught into a `Check` representation.
@@ -226,23 +263,23 @@ def check(
         name: Human readable name of the check.
         description: Optional additional details about the check.
         id: A short identifier for referencing the check (e.g. from the CLI interface).
-        required: When True, failure of the check will halt execution of subsequent checks.
+        severity: The severity level of failure.
         tags: An optional list of tags for filtering checks. Tags may contain only lowercase
             alphanumeric characters, hyphens '-', and periods '.'.
-    
+
     Returns:
         A decorator function for transforming a function into a check.
-    
+
     Raises:
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
     def decorator(fn: CheckHandler) -> CheckRunner:
         _validate_check_handler(fn)
         __check__ = Check(
-            name=name, 
-            description=description, 
+            name=name,
+            description=description,
             id=(id or fn.__name__),
-            required=required,
+            severity=severity,
             tags=tags,
         )
 
@@ -266,6 +303,33 @@ def check(
 
     return decorator
 
+def require(
+    name: str,
+    *,
+    description: Optional[str] = None,
+    id: Optional[str] = None,
+    tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
+    """Transforms a function or method into a critical check.
+
+    The require decorator is syntactic sugar for the `check` decorator to declare
+    a check as being of the `Severity.critical` severity. Refer to the check documentation
+    for detailed information.
+    """
+    return check(name, description=description, id=id, tags=tags, severity=Severity.critical)
+
+def warn(
+    name: str,
+    *,
+    description: Optional[str] = None,
+    id: Optional[str] = None,
+    tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
+    """Transforms a function or method into a warning check.
+
+    The warn decorator is syntactic sugar for the `check` decorator to declare
+    a check as being of the `Severity.warning` severity. Refer to the check documentation
+    for detailed information.
+    """
+    return check(name, description=description, id=id, tags=tags, severity=Severity.warning)
 
 CHECK_SIGNATURE = Signature(return_annotation=Check)
 CHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Check')
@@ -276,10 +340,10 @@ MULTICHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Tuple[Iterable, Ch
 
 class Filter(BaseModel):
     """Filter objects are used to select a subset of available checks for execution.
-    
+
     Specific checks can be targetted for execution using the metadata attributes of `name`,
     `id`, and `tags`. Metadata filters are evaluated using AND semantics. Names and ids
-    are matched case-sensitively. Tags are always lowercase. Names and ids can be targetted 
+    are matched case-sensitively. Tags are always lowercase. Names and ids can be targetted
     using regular expression patterns.
     """
 
@@ -301,17 +365,17 @@ class Filter(BaseModel):
         """Returns true if any constraints are in effect.
         """
         return not self.empty
-    
+
     @property
     def empty(self) -> bool:
         """Return true if no constraints are in effect.
         """
         return bool(
-            self.name is None 
-            and self.id is None 
+            self.name is None
+            and self.id is None
             and self.tags is None
         )
-    
+
     def matches(self, check: Check) -> bool:
         """Matches a check against the filter.
 
@@ -324,7 +388,7 @@ class Filter(BaseModel):
         if self.empty:
             return True
 
-        return (                    
+        return (
             self._matches_name(check)
             and self._matches_id(check)
             and self._matches_tags(check)
@@ -332,23 +396,23 @@ class Filter(BaseModel):
 
     def _matches_name(self, check: Check) -> bool:
         return self._matches_str_attr(self.name, check.name)
-    
+
     def _matches_id(self, check: Check) -> bool:
         return self._matches_str_attr(self.id, check.id)
-    
+
     def _matches_tags(self, check: Check) -> bool:
         if self.tags is None:
             return True
-        
+
         # exclude untagged checks if filtering by tag
         if check.tags is None:
             return False
-        
+
         # look for an intersection in our sets
         return bool(self.tags.intersection(check.tags))
-    
+
     def _matches_str_attr(
-        self, 
+        self,
         attr: Union[None, str, Sequence[str], Pattern[str]],
         value: str
     ) -> bool:
@@ -366,22 +430,6 @@ class Filter(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-class HaltOnFailed(str, enum.Enum):
-    """HaltOnFailed is an enumeration that describes how to handle check failures.
-    """
-
-    requirement = "requirement"
-    """Halt running when a required check has failed.
-    """
-
-    check = "check"
-    """Halt running when any check has failed.
-    """
-
-    never = "never"
-    """Never halt running regardless of check failures.
-    """
-
 
 class BaseChecks(BaseModel, servo.logging.Mixin):
     """
@@ -391,9 +439,9 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
     for a connector. A check is an atomic verification that a particular aspect
     of a configuration is functional and ready for deployment. Connectors can
     have an arbitrary number of prerequisites and options that need to be
-    checked within the runtime environment. The BaseChecks class provides a simple 
+    checked within the runtime environment. The BaseChecks class provides a simple
     inheritance based interface for implementing an arbitrary number of checks.
-    
+
     Checks are implemented through standard instance methods that are prefixed
     with `check_`, accept no arguments, and return an instance of `Check`. The method
     body tests a single aspect of the configuration (rescuing exceptions as necessary)
@@ -404,25 +452,24 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
     declared as coroutines via the `async def` syntax are run asynchronously.
 
     By default, check execution is halted upon encountering a failure. This behavior
-    allows the developer to assume that the runtime environment described by preceding
+    allows the user to assume that the runtime environment described by preceding
     checks has been established and implement a narrowly scoped check. Halting execution
-    can be overridden via the boolean `all` argument to the `run` class method entry point 
-    or by setting the `required` attribute of the returned `Check` instance to `False`.
+    can be overridden via the `halt_on` argument.
 
     Args:
         config: The configuration object for the connector being checked.
     """
-    
+
     config: BaseConfiguration
     """The configuration object for the connector being checked.
     """
 
     @classmethod
-    async def run(cls, 
-        config: BaseConfiguration, 
+    async def run(cls,
+        config: BaseConfiguration,
         filter_: Optional[Filter] = None,
         *,
-        halt_on: HaltOnFailed = HaltOnFailed.requirement,
+        halt_on: Optional[Severity] = Severity.critical,
         **kwargs
     ) -> List[Check]:
         """
@@ -434,32 +481,33 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
         Args:
             config: The connector configuration to initialize the checks instance with.
             filter_: An optional filter to limit the set of checks that are run.
-            halt_on: The type of check failure that should halt the run.
+            halt_on: The severity of check failure that should halt the run.
             kwargs: Additional arguments to initialize the checks instance with.
-        
+
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
         """
         return await cls(config).run_(filter_=filter_, halt_on=halt_on)
 
-    async def run_(self,         
+    async def run_(self,
         filter_: Optional[Filter] = None,
-        *, 
-        halt_on: HaltOnFailed = HaltOnFailed.requirement
+        *,
+        halt_on: Optional[Severity] = Severity.critical
     ) -> List[Check]:
         """
         Runs checks and returns the results.
 
         Args:
-            halt_on: The type of check failure that should halt the run.
-        
+            filter_: An optional filter to limit the set of checks that are run.
+            halt_on: The severity of check failure that should halt the run.
+
         Returns:
             A list of checks that were run.
         """
 
         # expand any multicheck methods into instance methods
         await self._expand_multichecks()
-        
+
         # identify methods that match the filter
         filtered_methods  = []
         for method_name, method in self.check_methods():
@@ -469,44 +517,45 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
                 else:
                     self.logger.warning(f"filtering requested but encountered non-filterable check method \"{method_name}\"")
                     continue
-                
+
                 if not filter_.matches(spec):
                     continue
-            
+
             filtered_methods.append(method)
-        
+
         # iterate a second time to run filtered and required checks
         checks = []
         for method_name, method in self.check_methods():
             if method in filtered_methods:
-                filtered_methods.remove(method)            
+                filtered_methods.remove(method)
             else:
                 spec = getattr(method, '__check__', None)
                 if spec:
                     # once all filtered methods are removed, only run non-decorated
-                    if not spec.required or not filtered_methods:
+                    if not spec.critical or not filtered_methods:
                         continue
-            
+
             check = (
                 await method() if asyncio.iscoroutinefunction(method)
                 else method()
             )
             if not isinstance(check, Check):
                 raise TypeError(f"check methods must return `Check` objects: `{method_name}` returned `{check.__class__.__name__}`")
-            
-            checks.append(check)            
+
+            checks.append(check)
 
             # halt the run if necessary
-            if check.failed:
-                if (halt_on == HaltOnFailed.check 
-                or (halt_on == HaltOnFailed.requirement and check.required)):
+            if check.failed and halt_on:
+                if (halt_on == Severity.warning
+                or (halt_on == Severity.error and not check.warning)
+                or (halt_on == Severity.critical and check.critical)):
                     break
-        
+
         return checks
-    
+
     def check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
         """
-        Enumerates all check methods and yields the check method names and callable instances 
+        Enumerates all check methods and yields the check method names and callable instances
         in method definition order.
 
         Check method names are prefixed with "check_", accept no parameters, and return a
@@ -515,10 +564,10 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
         for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
             if name.startswith("_") or name in ("run_", "check_methods") or method.__self__ != self:
                 continue
-            
+
             if not name.startswith(("_", "check_")):
                 raise ValueError(f'invalid method name "{name}": method names of Checks subtypes must start with "_" or "check_"')
-            
+
             sig = Signature.from_callable(method)
 
             # skip multicheck source methods as they are atomized into instance methods
@@ -527,16 +576,15 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
                     continue
                 else:
                     raise TypeError(f'invalid signature for method "{name}": expected {repr(MULTICHECK_SIGNATURE)}, but found {repr(sig)}')
-                        
+
             if sig not in (CHECK_SIGNATURE, CHECK_SIGNATURE_ANNOTATED):
-                raise TypeError(f'invalid signature for method "{name}": expected {repr(CHECK_SIGNATURE)}, but found {repr(sig)}')
-            
+                raise TypeError(f'invalid signature for method "{name}" (did you forget to decorate with @check?): expected {repr(CHECK_SIGNATURE)}, but found {repr(sig)}')
+
             yield (name, method)
 
-    
     def __init__(self, config: BaseConfiguration, *args, **kwargs) -> None:
         super().__init__(config=config, *args, **kwargs)
-    
+
     async def _expand_multichecks(self) -> List[types.MethodType]:
         # search for any instance methods decorated by multicheck and expand them
         checks = []
@@ -547,9 +595,9 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
                     method = types.MethodType(fn, self)
                     setattr(self, check_method_name, method)
                     checks.append(method)
-        
+
         return checks
-    
+
     class Config:
         arbitrary_types_allowed = True
         extra = Extra.allow
@@ -559,12 +607,12 @@ def _validate_check_handler(fn: CheckHandler) -> None:
     """
     Validates that a function or method is usable as a check handler.
 
-    Check handlers accept no arguments and return a `bool`, `str`, 
+    Check handlers accept no arguments and return a `bool`, `str`,
     `Tuple[bool, str]`, or `None`.
 
     Args:
         fn: The check handler to be validated.
-    
+
     Raises:
         TypeError: Raised if the handler function is invalid.
     """
@@ -599,9 +647,9 @@ def _validate_check_handler(fn: CheckHandler) -> None:
 async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
 
-    The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item" 
-    in order to support building dynamic, context specific values that are assigned as attributes of 
-    the Check instance given during exection. More concretely, this means that running a check handler 
+    The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item"
+    in order to support building dynamic, context specific values that are assigned as attributes of
+    the Check instance given during exection. More concretely, this means that running a check handler
     with a non-empty arguments list will let you use provide format string input values of the form
     "Check that {item.name} work as expected (v{item.version}, release date: {item.released_At})".
 
@@ -617,7 +665,7 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
     try:
         if len(args):
             check.name = check.name.format(item=args[0], self=args[0])
-            
+
         check.run_at = datetime.now()
         if asyncio.iscoroutinefunction(handler):
             result = await handler(*args, **kwargs)
@@ -653,7 +701,7 @@ def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs)
 def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, str], Exception]) -> None:
     """Sets the result of a check handler run on a check instance."""
     check.success = True
-        
+
     if isinstance(result, str):
         check.message = result
     elif isinstance(result, bool):
@@ -668,20 +716,20 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
         check.message = f"caught exception: {repr(result)}"
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
-    
+
 
 def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable, *, base_class: Type[BaseChecks] = BaseChecks) -> BaseChecks:
-    """Returns a class wrapping each item in an iterable collection into check instance methods. 
+    """Returns a class wrapping each item in an iterable collection into check instance methods.
 
-    Building a checks subclass implementation with this function is semantically equivalent to 
+    Building a checks subclass implementation with this function is semantically equivalent to
     iterating through every item in the collection, defining a new `check_` prefixed method,
     and passing the item and the handler to the `run_check_handler` function.
 
     Some connector types such as metrics system integrations wind up exposing collections
     of homogenously typed settings within their configuration. The canonical example is a
-    collection of queries against Prometheus. Each query really should be validated for 
+    collection of queries against Prometheus. Each query really should be validated for
     correctness early and often, but this can become challenging to manage, audit, and enforce
-    as the collection grows and entropy increases. Key challenges include non-obvious 
+    as the collection grows and entropy increases. Key challenges include non-obvious
     evolution within the collection and developer fatigue from boilerplate code maintenance.
     This function provides a remedy for these issues by wrapping these sorts of collections into
     fully featured classes that are integrated into the servo checks system.
@@ -714,12 +762,12 @@ def create_checks_from_iterable(handler: CheckHandler, iterable: Iterable, *, ba
         else:
             name = item.name if hasattr(item, 'name') else str(item)
             check = Check(name=f"Check {name}")
-            fn = create_fn(name, item)            
+            fn = create_fn(name, item)
             fn.__check__ = check
-        
+
         method_name = f"check_{check.id}"
         setattr(cls, method_name, fn)
-    
+
     return cls
 
 
@@ -746,40 +794,43 @@ def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
 
 def multicheck(
     base_name: str,
-    *, 
+    *,
     description: Optional[str] = None,
-    required: bool = False,
+    severity: Severity = Severity.error,
     tags: Optional[List[str]] = None
 ) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
-    """Expands a method into a series of checks from a returned iterable and check handler.
+    """Expands a method into a series of checks from a returned iterable and
+    check handler.
 
-    This method provides an alternative to `create_checks_from_iterable` that is usable in cases
-    where it is desirable to implement a `BaseChecks` subclass to hand-roll specific checks but
-    there are also iterable values that can be checked by a common handler.
+    This method provides an alternative to `create_checks_from_iterable` that is
+    usable in cases where it is desirable to implement a `BaseChecks` subclass
+    to hand-roll specific checks but there are also iterable values that can be
+    checked by a common handler.
 
-    The decorator works by dynamically creating check instance methods when a `BaseChecks` subclass
-    is initialized.
+    The decorator works by dynamically creating check instance methods when a
+    `BaseChecks` subclass is initialized.
 
-    The decorator requires a `base_name` parameter to identify the checks as well as an optional
-    informative `description`, a `required` boolean value that determines if a failure will halt 
-    execution of subsequent checks. The `base_name` is interpolated into an item specific name
-    by formatting the `base_name` with an item from the iterable collection. The item is passed
-    to format as the `item` key, enabling the use of property access and subscripting within the
-    format string.
-    
-    The decorated function must return an iterable collection of objects to be checked and a
-    handler function for checking each value.
-    
+    The decorator requires a `base_name` parameter to identify the checks as
+    well as an optional informative `description`, a `severity` value that
+    determines how a failure is handled. The `base_name` is interpolated into an
+    item specific name by formatting the `base_name` with an item from the
+    iterable collection. The item is passed to format as the `item` key,
+    enabling the use of property access and subscripting within the format
+    string.
+
+    The decorated function must return an iterable collection of objects to be
+    checked and a handler function for checking each value.
+
     Args:
         base_name: Human readable base name of the check. Expanded with each iterable.
         description: Optional additional details about the checks.
-        required: When True, failure of the checks will halt execution of subsequent checks.
+        severity: The severity level of failure.
         tags: An optional list of tags for filtering checks. Tags may contain only lowercase
             alphanumeric characters, hyphens '-', and periods '.'.
-    
+
     Returns:
         A decorator function for transforming a method into a series of check instance methods.
-    
+
     Raises:
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
@@ -789,15 +840,15 @@ def multicheck(
         async def create_checks(*args, **kwargs) -> Tuple[Iterable, CheckHandler]:
             def create_fn(name, item):
                 async def _fn(self) -> Check:
-                    check = Check(name=name, description=description, required=required, tags=tags)
+                    check = Check(name=name, description=description, severity=severity, tags=tags)
                     await run_check_handler(check, handler, item)
                     return check
-                
+
                 return _fn
-            
+
             checks_fns = {}
             if asyncio.iscoroutinefunction(fn_):
-                iterable, handler = await fn_(*args, **kwargs)    
+                iterable, handler = await fn_(*args, **kwargs)
             else:
                 iterable, handler = fn_(*args, **kwargs)
             for item in iterable:
@@ -810,5 +861,5 @@ def multicheck(
 
         create_checks.__multicheck__ = True
         return create_checks
-    
+
     return decorator

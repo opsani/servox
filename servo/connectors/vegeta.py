@@ -22,12 +22,12 @@ from servo import (
     Duration,
     DurationProgress,
     Filter,
-    HaltOnFailed,
     License,
     Maturity,
     Measurement,
     Metric,
     Numeric,
+    Severity,
     TimeSeries,
     Unit,
     check,
@@ -35,6 +35,7 @@ from servo import (
     logger,
     metadata,
     on_event,
+    require,
     stream_subprocess_shell,
     values_for_keys,
     value_for_key_path,
@@ -294,16 +295,16 @@ class VegetaChecks(BaseChecks):
     config: VegetaConfiguration
     reports: Optional[List[VegetaReport]] = None
 
-    @check("Vegeta execution", required=True)
+    @require("Vegeta execution")
     async def check_execution(self) -> Tuple[bool, str]:
         exit_code, reports = await _run_vegeta(config=self.config)
         self.reports = reports
         return (exit_code == 0, f"Vegeta exit code: {exit_code}")
-    
+
     @check("Report aggregation")
     def check_report_aggregation(self) -> Tuple[bool, str]:
         return (len(self.reports) > 0, f"Collected {len(self.reports)} reports")
-    
+
     @check("Error rate < 5.0%")
     def check_error_rates(self) -> Tuple[bool, str]:
         vegeta_report = self.reports[-1]
@@ -317,12 +318,12 @@ class VegetaChecks(BaseChecks):
     maturity=Maturity.STABLE,
 )
 class VegetaConnector(BaseConnector):
-    config: VegetaConfiguration    
+    config: VegetaConfiguration
 
     @on_event()
     def describe(self) -> Description:
         """
-        Describe the metrics and components exported by the connector.
+        Describes the metrics and components exported by the connector.
         """
         return Description(metrics=METRICS, components=[])
 
@@ -331,13 +332,13 @@ class VegetaConnector(BaseConnector):
         return METRICS
 
     @on_event()
-    async def check(self, filter_: Optional[Filter] = None, halt_on: HaltOnFailed = HaltOnFailed.requirement) -> List[Check]:
+    async def check(self, filter_: Optional[Filter] = None, halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+        # Take the current config and run a 5 second check against it
         check_config = self.config.copy()
         check_config.duration = "5s"
         check_config.reporting_interval = "1s"
 
-        checks = VegetaChecks(config=check_config)
-        return await checks.run_(filter_, halt_on=halt_on)
+        return await VegetaChecks.run(check_config, filter_, halt_on=halt_on)
 
     @on_event()
     async def measure(
@@ -377,7 +378,7 @@ async def _run_vegeta(
     vegeta_cmd = _build_vegeta_command(config)
     ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
     progress = DurationProgress(config.duration)
-    
+
     async def process_stdout(output: str) -> None:
         json_report = ansi_escape.sub("", output)
         vegeta_report = VegetaReport(**json.loads(json_report))
@@ -393,7 +394,7 @@ async def _run_vegeta(
             logger.debug(
                 f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
             )
-    
+
     logger.debug(f"Vegeta started: `{vegeta_cmd}`")
     exit_code = await stream_subprocess_shell(
         vegeta_cmd,
@@ -405,7 +406,48 @@ async def _run_vegeta(
     if exit_code != 0:
         logger.error(
             f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
-        )        
+        )
+
+    return exit_code, vegeta_reports
+# =======
+#     async def _run_vegeta(
+#         self, *, config: Optional[VegetaConfiguration] = None
+#     ) -> Tuple[int, List[VegetaReport]]:
+#         vegeta_reports: List[VegetaReport] = []
+#         config = config if config else self.config
+#         vegeta_cmd = _build_vegeta_command(config)
+#         ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
+#         progress = DurationProgress(config.duration)
+
+#         async def process_stdout(output: str) -> None:
+#             json_report = ansi_escape.sub("", output)
+#             vegeta_report = VegetaReport(**json.loads(json_report))
+
+#             if datetime.now() > self.warmup_until:
+#                 if not progress.started:
+#                     progress.start()
+
+#                 vegeta_reports.append(vegeta_report)
+#                 summary = _summarize_report(vegeta_report, config)
+#                 self.logger.info(progress.annotate(summary), progress=progress.progress)
+#             else:
+#                 self.logger.debug(
+#                     f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
+#                 )
+
+#         self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+#         exit_code = await self.stream_subprocess_output(
+#             vegeta_cmd,
+#             stdout_callback=process_stdout,
+#             stderr_callback=lambda m: self.logger.error(f"Vegeta stderr: {m}")
+#         )
+
+#         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
+#         if exit_code != 0:
+#             self.logger.error(
+#                 f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
+#             )
+# >>>>>>> c62b39a... Revise checks architecture to support warnings and severity levels
 
     return exit_code, vegeta_reports
 

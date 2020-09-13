@@ -25,7 +25,7 @@ from servo.connector import (
     _connector_subclasses,
 )
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import EventContext, Preposition, _events, create_event, event
+from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
 
@@ -71,7 +71,7 @@ class TestOptimizer:
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("base_url",)
         assert e.value.errors()[0]["msg"] == "invalid or missing URL scheme"
-    
+
     @pytest.mark.parametrize(
         "url, expected_api_url",
         [
@@ -713,7 +713,7 @@ def test_vegeta_cli_schema_json(
             },
             "duration": {
                 "title": "Duration",
-                "description": "Specifies the amount of time to issue requests to the targets.",
+                "description": "Specifies the amount of time to issue requests to the targets. This value can be overridden by the server.",
                 "env_names": ["VEGETA_DURATION",],
                 "type": "string",
                 "format": "duration",
@@ -1235,7 +1235,7 @@ class TestConnectorEvents:
         @event(handler=True)
         async def example_event(self) -> int:
             return 12345
-        
+
         @event(handler=True)
         async def get_event_context(self) -> Optional[EventContext]:
             return self.current_event
@@ -1247,20 +1247,20 @@ class TestConnectorEvents:
         @event(handler=True)
         async def another_example_event(self) -> str:
             return "example_event"
-        
+
         @event()
         async def wrapped_event(self) -> int:
             self._enter()
             yield
             self._exit()
-        
+
         @on_event("wrapped_event")
         async def async_wrapped_event(self) -> int:
             return 13
-        
+
         def _enter(self) -> None:
             pass
-        
+
         def _exit(self) -> None:
             pass
 
@@ -1333,7 +1333,7 @@ class TestConnectorEvents:
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
-    
+
     async def test_event_context_var(self) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
@@ -1383,7 +1383,7 @@ class TestConnectorEvents:
         assert result.event.name == "example_event"
         assert result.connector == connector
         assert result.value == 12345
-    
+
     def test_event_context_str_comparison(self) -> None:
         assert _events is not None
         event = _events["example_event"]
@@ -1397,6 +1397,7 @@ class TestConnectorEvents:
 async def test_logging() -> None:
     request = respx.post("https://api.opsani.com/accounts/example.com/applications/my-app/servo", content={"status": "ok"})
     connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    _connector_context_var.set(connector)
     handler = ProgressHandler(connector.report_progress, lambda m: print(m))
     connector.logger.add(handler.sink)
     args = dict(operation="ADJUST", started_at=datetime.now())
