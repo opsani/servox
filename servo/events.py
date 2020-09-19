@@ -9,7 +9,6 @@ from inspect import Parameter, Signature, iscoroutinefunction
 import inspect
 from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, Optional, Sequence, Type, TypeVar, List, Union
 from weakref import WeakKeyDictionary
-from loguru import logger
 
 from pydantic import BaseModel, validator
 from pydantic.fields import ModelField
@@ -302,6 +301,7 @@ def create_event(
                 on_handler_context_manager = _default_context_manager()
 
             except OSError as error:
+                from servo.logging import logger
                 logger.warning(f"unable to inspect event declaration for '{name}': dropping event body and proceeding")
                 on_handler_context_manager = _default_context_manager()
 

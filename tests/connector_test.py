@@ -1456,3 +1456,12 @@ async def test_run_subprocess_timeout():
     connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
     await connector.stream_subprocess_output("echo 'test'", stdout_callback=lambda m: output.append(m), timeout=10.0)
     assert output == ['test']
+    
+def test_logger_binds_connector_name() -> None:
+    messages = []
+    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    logger = connector.logger
+    logger.add(lambda m: messages.append(m), level=0)
+    logger.info("Testing")
+    record = messages[0].record
+    assert record["extra"]["connector"].name == "measure"

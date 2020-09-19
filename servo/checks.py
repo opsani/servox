@@ -10,11 +10,9 @@ from typing import Awaitable, Callable, Coroutine, Dict, Iterable, Generator, Li
 
 from pydantic import BaseModel, Extra, StrictStr, validator, constr
 from servo.configuration import BaseConfiguration
+import servo.logging
 from servo.types import Any, Duration
 from servo.utilities.inspect import get_instance_methods
-
-import loguru
-from loguru import logger as default_logger
 
 
 __all__ = [
@@ -36,7 +34,7 @@ CHECK_HANDLER_SIGNATURE = Signature(return_annotation=CheckHandlerResult)
 Tag = constr(strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$")
 
 
-class Check(BaseModel):
+class Check(BaseModel, servo.logging.Mixin):
     """
     Check objects represent the status of required runtime conditions.
 
@@ -385,7 +383,7 @@ class HaltOnFailed(str, enum.Enum):
     """
 
 
-class BaseChecks(BaseModel):
+class BaseChecks(BaseModel, servo.logging.Mixin):
     """
     Base class for collections of Check objects.
 
@@ -423,8 +421,7 @@ class BaseChecks(BaseModel):
     async def run(cls, 
         config: BaseConfiguration, 
         filter_: Optional[Filter] = None,
-        *, 
-        logger: 'loguru.Logger' = default_logger,        
+        *,
         halt_on: HaltOnFailed = HaltOnFailed.requirement,
         **kwargs
     ) -> List[Check]:
@@ -437,14 +434,13 @@ class BaseChecks(BaseModel):
         Args:
             config: The connector configuration to initialize the checks instance with.
             filter_: An optional filter to limit the set of checks that are run.
-            logger: The logger to write messages to.            
             halt_on: The type of check failure that should halt the run.
             kwargs: Additional arguments to initialize the checks instance with.
         
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
         """
-        return await cls(config, logger=logger).run_(filter_=filter_, halt_on=halt_on)
+        return await cls(config).run_(filter_=filter_, halt_on=halt_on)
 
     async def run_(self,         
         filter_: Optional[Filter] = None,
@@ -455,7 +451,6 @@ class BaseChecks(BaseModel):
         Runs checks and returns the results.
 
         Args:
-            logger: An optional filter to limit the set of checks that are run.
             halt_on: The type of check failure that should halt the run.
         
         Returns:
@@ -509,10 +504,6 @@ class BaseChecks(BaseModel):
         
         return checks
     
-    @property
-    def logger(self) -> 'loguru.Logger':
-        return self.__dict__["logger"]
-    
     def check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
         """
         Enumerates all check methods and yields the check method names and callable instances 
@@ -543,8 +534,8 @@ class BaseChecks(BaseModel):
             yield (name, method)
 
     
-    def __init__(self, config: BaseConfiguration, *, logger: 'loguru.Logger' = default_logger, **kwargs) -> None:
-        super().__init__(config=config, logger=logger, **kwargs)
+    def __init__(self, config: BaseConfiguration, *args, **kwargs) -> None:
+        super().__init__(config=config, *args, **kwargs)
     
     async def _expand_multichecks(self) -> List[types.MethodType]:
         # search for any instance methods decorated by multicheck and expand them

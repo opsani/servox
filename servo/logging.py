@@ -1,3 +1,9 @@
+"""The `servo.logging` module provides standard logging capabilities to the
+servo package and its dependencies.
+
+Logging is implemented on top of the
+[loguru](https://loguru.readthedocs.io/en/stable/) library.
+"""
 from __future__ import annotations
 import asyncio
 import functools
@@ -5,14 +11,12 @@ import logging
 import sys
 import time
 import traceback
-from datetime import datetime
 from pathlib import Path
 from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
 from weakref import WeakSet
 
 import loguru
-from loguru import logger
-from servo.events import EventContext, _event_context_var
+from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.types import Duration
 
 __all__ = (
@@ -27,12 +31,18 @@ __all__ = (
     "set_level"
 )
 
+# Alias the loguru default logger
+logger = loguru.logger
 
 class Mixin:
+    """The `servo.logging.Mixin` class is a convenience class for adding
+    logging capabilities to arbitrary classes through multiple inheritance.
+    """
     @property
     def logger(self) -> loguru.Logger:
-        """Returns a contextualized logger"""
-        return loguru.logger.bind(connector=self)
+        """Returns the servo package logger"""
+        global logger
+        return logger
 
 
 class Filter:
@@ -55,7 +65,7 @@ class ProgressHandler:
     automatically picked up by the handler and reported back to the API via a callback.
 
     NOTE: We call the logger re-entrantly for misconfigured progress logging attempts. The
-        `progress` should must be excluded on logger calls to avoid recursion.
+        `progress` must be excluded on logger calls to avoid recursion.
     """
     def __init__(self, 
         progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]], 
@@ -80,7 +90,8 @@ class ProgressHandler:
         if not progress:
             return
 
-        connector = extra.get("connector", None)
+        # Favor explicit connector in extra (see Mixin) else use the context var
+        connector = extra.get("connector", _connector_context_var.get())
         if not connector:
             return await self._report_error("declining request to report progress for record without a connector attribute", record)
 
@@ -170,7 +181,8 @@ class Formatter:
 
         # Respect an explicit component 
         if not "component" in record["extra"]:        
-            if connector := extra.get("connector", None):
+            # Favor explicit connector from the extra dict or use the context var
+            if connector := extra.get("connector", _connector_context_var.get()):
                 component = connector.name
             else:
                 component = "servo"
@@ -252,7 +264,7 @@ def reset_to_defaults() -> loguru.Logger:
 
 def friendly_decorator(f):
     """
-    A "decorator decorator" that wraps a decorator function such that it can be invoked
+    Returns a "decorator decorator" that wraps a decorator function such that it can be invoked
     with or without parentheses such as:
    
         @decorator(with, arguments, and=kwargs)

@@ -14,6 +14,7 @@ from pydantic import (
 )
 from pydantic import AnyHttpUrl, BaseModel, Extra, Field, FilePath, validator, constr
 from servo.types import Duration
+import servo.logging
 
 class Optimizer(BaseSettings):
     """
@@ -98,7 +99,7 @@ DEFAULT_JSON_ENCODERS = {
 }
 
 
-class AbstractBaseConfiguration(BaseSettings):
+class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
     """
     AbstractBaseConfiguration is the root of the servo configuration class hierarchy.
     It does not define any concrete configuration model fields but provides a number

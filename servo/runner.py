@@ -1,23 +1,22 @@
 from __future__ import annotations
 import asyncio
 import signal
-import logging
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
 import httpx
 import typer
-import loguru
 
 from devtools import pformat
 from pydantic import BaseModel, Field, parse_obj_as
 
+import servo
 from servo import api
 from servo.api import descriptor_to_adjustments
 from servo.assembly import Assembly
 from servo.configuration import BaseAssemblyConfiguration, Optimizer, ServoConfiguration
 from servo.errors import ConnectorError
-from servo.logging import ProgressHandler
+from servo.events import EventResult
 from servo.servo import Events, Servo
 from servo.types import Adjustment, Control, Duration, Description, Measurement
 from servo.utilities import commandify, value_for_key_path
@@ -57,7 +56,7 @@ class BackoffConfig:
         return BackoffConfig.max_tries()
 
 
-class Runner(api.Mixin):
+class Runner(servo.logging.Mixin, servo.api.Mixin):
     assembly: Assembly
     connected: bool = False
 
@@ -81,10 +80,6 @@ class Runner(api.Mixin):
     @property
     def config(self) -> BaseAssemblyConfiguration:
         return self.servo.config
-
-    @property
-    def logger(self) -> loguru.Logger:
-        return self.servo.logger
     
     @property
     def api_client_options(self) -> Dict[str, Any]:
@@ -223,7 +218,7 @@ class Runner(api.Mixin):
         
     async def main(self) -> None:
         # Setup logging
-        self.progress_handler = ProgressHandler(self.servo.report_progress, self.logger.warning)
+        self.progress_handler = servo.logging.ProgressHandler(self.servo.report_progress, self.logger.warning)
         self.logger.add(self.progress_handler.sink, catch=True)
 
         self.logger.info(

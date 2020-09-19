@@ -48,17 +48,13 @@ from servo import (
 from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watch
 from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from kubernetes_asyncio.client.api_client import ApiClient
-import loguru
-from loguru import logger
+import servo.logging
+from servo.logging import logger
 from typing import ClassVar, Iterable, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
 from contextlib import asynccontextmanager
 
 
-# Create a top-level logger for classes that aren't yet passing the connector logger instance around
-default_logger = logger.bind(component="kubernetes")
-
-
-class Condition:
+class Condition(servo.logging.Mixin):
     """A Condition is a convenience wrapper around a function and its arguments
     which allows the function to be called at a later time.
 
@@ -137,7 +133,7 @@ async def wait_for_condition(
     Raises:
         TimeoutError: The specified timeout was exceeded.
     """
-    default_logger.info(f'waiting for condition: {condition}')
+    logger.info(f'waiting for condition: {condition}')
 
     # define the maximum time to wait. once this is met, we should
     # stop waiting.
@@ -155,22 +151,22 @@ async def wait_for_condition(
 
         # check if the condition is met and break out if it is
         try:
-            default_logger.debug(f"checking condition {condition}")
+            logger.debug(f"checking condition {condition}")
             if await condition.check():
-                default_logger.debug(f"condition passed: {condition}")
+                logger.debug(f"condition passed: {condition}")
                 break
         except client.exceptions.ApiException as e:
-            default_logger.warning(f'encountered API exception while waiting: {e}')
+            logger.warning(f'encountered API exception while waiting: {e}')
             if fail_on_api_error:
                 raise
 
         # if the condition is not met, sleep for the interval
         # to re-check later
-        default_logger.debug(f"sleeping for {interval}")
+        logger.debug(f"sleeping for {interval}")
         await asyncio.sleep(interval)
 
     end = time.time()
-    default_logger.info(f'wait completed (total={Duration(end-start)}) {condition}')
+    logger.info(f'wait completed (total={Duration(end-start)}) {condition}')
 
 
 class ResourceRequirements(enum.Flag):
@@ -250,7 +246,7 @@ class KubernetesObj(Protocol):
         ...
 
 
-class KubernetesModel(abc.ABC):
+class KubernetesModel(abc.ABC, servo.logging.Mixin):
     """
     KubernetesModel is an abstract base class for Servo connector
     models that wrap Kubernetes API objects.
@@ -286,7 +282,7 @@ class KubernetesModel(abc.ABC):
     is not specified for the resource.
     '''
 
-    def __init__(self, obj, logger: loguru.Logger = default_logger, **kwargs) -> None:
+    def __init__(self, obj, **kwargs) -> None:
         self.obj = obj
         self._logger = logger
 
@@ -300,11 +296,6 @@ class KubernetesModel(abc.ABC):
     def obj_type(cls) -> Type:
         """The type of the underlying Kubernetes API object."""
         return get_type_hints(cls)["obj"]
-
-    @property
-    def logger(self) -> loguru.Logger:
-        """A logger instance for outputting operational messages."""
-        return self._logger
 
     @property
     def api_version(self) -> str:
@@ -629,7 +620,7 @@ class Namespace(KubernetesModel):
 
 _DEFAULT_SENTINEL = object()
 
-class Container:
+class Container(servo.logging.Mixin):
     """Kubetest wrapper around a Kubernetes `Container`_ API Object.
 
     The actual ``kubernetes.client.V1Container`` instance that this
@@ -767,16 +758,16 @@ class Container:
                         values.append(value)
 
                 else:
-                    default_logger.warning(f"requirement '{member}' is not set for resource '{name}'")
+                    logger.warning(f"requirement '{member}' is not set for resource '{name}'")
                     values.append(default)
 
         if not found_requirements:
             if first:
                 # code path only accessible on nothing found due to early exit
-                default_logger.debug(f"no resource requirements found. returning default value: {default}")
+                logger.debug(f"no resource requirements found. returning default value: {default}")
                 return default
             else:
-                default_logger.debug(f"no resource requirements found. returning default values: {values}")
+                logger.debug(f"no resource requirements found. returning default values: {values}")
 
         return tuple(values)
 
@@ -825,7 +816,7 @@ class Container:
 
             else:
                 if clear_others:
-                    default_logger.debug(f"clearing resource requirement: '{requirement}'")
+                    self.logger.debug(f"clearing resource requirement: '{requirement}'")
                     req_dict.pop(name, None)
 
 
@@ -865,14 +856,14 @@ class Pod(KubernetesModel):
             name: The name of the Pod to read.
             namespace: The namespace to read the Pod from.
         """
-        default_logger.info(f'reading pod "{name}" in namespace "{namespace}"')
+        logger.info(f'reading pod "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
             obj = await asyncio.wait_for(
                 api_client.read_namespaced_pod_status(name, namespace),
                 5.0
             )
-            default_logger.trace("pod: ", obj)
+            logger.trace("pod: ", obj)
             return Pod(obj)
 
     async def create(self, namespace: str = None) -> None:
@@ -1649,10 +1640,6 @@ class BaseOptimization(abc.ABC, BaseModel):
         """
         ...
 
-    @property
-    def logger(self) -> loguru.Logger:
-        return default_logger
-
     def __hash__(self):
         return hash((self.name, id(self),))
 
@@ -1931,7 +1918,7 @@ class CanaryOptimization(BaseOptimization):
         # TODO: Eliminate the implicit canary behavior, we don't want to create canary as a side-effect
         # try:
         #     canary_pod = await deployment.get_canary_pod()
-        #     default_logger.info(f"Found existing canary Pod '{canary_pod.name}' in namespace '{config.namespace.name}'")
+        #     logger.info(f"Found existing canary Pod '{canary_pod.name}' in namespace '{config.namespace.name}'")
         # except client.exceptions.ApiException as e:
         #     canary_pod = None
         #     if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
@@ -1965,7 +1952,7 @@ class CanaryOptimization(BaseOptimization):
 
         elif name == "replicas":
             if int(value) != 1:
-                default_logger.warning(f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
+                logger.warning(f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"')
 
         else:
              raise RuntimeError(f"failed adjustment of unsupported Kubernetes setting '{name}'")
@@ -2093,7 +2080,7 @@ class CanaryOptimization(BaseOptimization):
         extra = Extra.allow
 
 
-class KubernetesOptimizations(BaseModel):
+class KubernetesOptimizations(BaseModel, servo.logging.Mixin):
     """
     Models the state of resources under optimization in a Kubernetes cluster.
     """
@@ -2233,10 +2220,6 @@ class KubernetesOptimizations(BaseModel):
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
-
-    @property
-    def logger(self) -> loguru.Logger:
-        return default_logger
 
     class Config:
         arbitrary_types_allowed = True
@@ -2442,17 +2425,17 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                             continue
 
                         if field_name in obj.__fields_set__ and not overwrite:
-                            default_logger.trace(f"skipping config cascade for unset field '{field_name}'")
+                            self.logger.trace(f"skipping config cascade for unset field '{field_name}'")
                             continue
 
                         current_value = getattr(obj, field_name)
                         if overwrite or current_value == field.default:
                             parent_value = getattr(self, field_name)
                             setattr(obj, field_name, parent_value)
-                            default_logger.trace(f"cascaded setting '{field_name}' from KubernetesConfiguration to child '{attribute}': value={parent_value}")
+                            self.logger.trace(f"cascaded setting '{field_name}' from KubernetesConfiguration to child '{attribute}': value={parent_value}")
 
                         else:
-                            default_logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
+                            self.logger.trace(f"declining to cascade value to field '{field_name}': the default value is set and overwrite is false")
 
     # TODO: This might not be the right home for this method...
     async def load_kubeconfig(self) -> None:

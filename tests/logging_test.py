@@ -8,9 +8,8 @@ import loguru
 import respx
 
 from freezegun import freeze_time
-from loguru import logger
 from servo import BaseConfiguration
-from servo.events import EventContext, _event_context_var
+from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.logging import (
     DEFAULT_FORMAT, 
     DEFAULT_FORMATTER,
@@ -28,6 +27,7 @@ from tests.test_helpers import MeasureConnector
 
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:
+    _connector_context_var.set(None)
     _event_context_var.set(None)
     # Remove all handlers during logging tests
     logger.remove(None)
@@ -117,6 +117,15 @@ class TestFormatting:
         attributed_message = message.rsplit(" | ", 1)[1].strip()
         assert attributed_message == "TestFormatting[before:adjust] - Test"
     
+    def test_connector_context_car(self, messages):
+        _connector_context_var.set(self)
+        _event_context_var.set(EventContext.from_str("before:adjust"))
+        logger.info("Test")
+        message = messages[0]
+        assert message.record["message"] == "Test"
+        attributed_message = message.rsplit(" | ", 1)[1].strip()
+        assert attributed_message == "TestFormatting[before:adjust] - Test"
+    
     def test_traceback(self, messages) -> None:
         logger.info("Test", with_traceback=True)
         message = messages[0]
@@ -130,13 +139,16 @@ class TestLoggingMixin(Mixin):
     def name(self) -> str:
         return "TestLoggingMixin"
     
-    def test_logger_binds_connector_name(self) -> None:
+    def test_logger(self) -> None:
         messages = []
         logger = self.logger
         logger.add(lambda m: messages.append(m), level=0)
         logger.info("Testing")
         record = messages[0].record
-        assert record["extra"]["connector"].name == "TestLoggingMixin"
+        assert record["message"] == "Testing"
+        assert record["module"] == "logging_test"
+        assert record["name"] == "tests.logging_test"
+        assert record["level"].name == "INFO"
 
 class TestProgressHandler:
     @pytest.fixture()

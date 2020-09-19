@@ -167,6 +167,14 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     def api_client_options(self) -> Dict[str, Any]:
         return self.__dict__.get("api_client_options", super().api_client_options)
     
+    @property
+    def logger(self) -> loguru.Logger:
+        """Returns a contextualized logger"""
+        # NOTE: We support the explicit connector ref and the context var so
+        # that logging is attributable outside of an event whenever possible
+        # return loguru.logger.bind(connector=self)
+        return super().logger.bind(connector=self)
+
     ##
     # Subprocess utilities
 

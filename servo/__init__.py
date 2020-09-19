@@ -9,6 +9,7 @@ for pkg in {"servo", "servox"}:
 
 import servo.assembly
 import servo.connector
+import servo.connectors
 import servo.errors
 import servo.events
 import servo.types

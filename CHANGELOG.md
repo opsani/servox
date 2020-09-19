@@ -13,7 +13,17 @@ Servo is distributed under the terms of the Apache 2.0 license.
 
 This changelog catalogs all notable changes made to the project. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
-versioned in accordance with [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+versioned in accordance with [Semantic
+Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Unreleased
+
+### Changed
+- The `servo.logging` module has been generalized for use outside of the
+  `servo.connectors.Connector` inheritance hierarchy.
+- The active connector is now managed via a `ContextVar` just as the active
+  event is. This enables logging to correctly be attributed to the active
+  connector without having to pass a specific logger object around everywhere.
 
 ## [0.7.0] "nice for what?" - 2020-09-09
 
