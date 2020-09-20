@@ -430,7 +430,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=Duration('0' 0:00:00), past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'None'"
+        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None, userdata=None)) -> 'None'"
     )
 
 
@@ -444,7 +444,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=Duration('0' 0:00:00), past=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None)) -> 'Measurement'"
+        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'Control' = Control(duration=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None, userdata=None)) -> 'Measurement'"
     )
 
 

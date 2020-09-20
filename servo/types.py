@@ -1,3 +1,6 @@
+"""The `servo.types` module defines the essential data types shared by all
+consumers of the servo package.
+"""
 from __future__ import annotations
 import asyncio
 
@@ -7,14 +10,15 @@ from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
-from pydantic import BaseModel, Extra, validator, datetime_parse
+from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
 
 
 class License(Enum):
-    """Defined licenses"""
+    """The License enumeration defines a set of licenses that describe the
+    terms under which software components are released for use."""
 
     MIT = "MIT"
     APACHE2 = "Apache 2.0"
@@ -35,11 +39,29 @@ class License(Enum):
 
 
 class Maturity(Enum):
-    """Connector maturity level"""
+    """The Maturity enumeration defines a set of tiers that describe how mature
+    and stable a software component is considered by its developers."""
 
     EXPERIMENTAL = "Experimental"
+    """Experimental components are in an early state of development or are
+otherwise not fully supported by the developers. 
+
+    APIs should be considered as potentially volatile and documentation, testing, 
+    and deployment concerns may not yet be fully addressed.
+    """
+
     STABLE = "Stable"
+    """Stable components can be considered production ready and released under
+Semantic Versioning expectations.
+
+    APIs should be considered stable and the component is fully supported by 
+    the developers and recommended for use in a production environment.
+    """
+
     ROBUST = "Robust"
+    """Robust components are fully mature, stable, well documented, and battle 
+    tested in a variety of production environments.
+    """
 
     @classmethod
     def from_str(cls, identifier: str) -> "Maturity":
@@ -67,7 +89,7 @@ class Duration(timedelta):
     Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
 
     Duration objects can be initialized with a duration string, a numeric seconds value,
-    a timedelta object, and with the time component keywoards of timedelta.
+    a timedelta object, and with the time component keywords of timedelta.
 
     Refer to `servo.utilities.duration_str` for details about duration strings.
     """
@@ -141,8 +163,14 @@ class DurationProgress(BaseModel):
     """
     DurationProgress objects track progress across a fixed time duration.
     """
+    
     duration: Duration
+    """The duration of the operation for which progress is being tracked.
+    """
+
     started_at: Optional[datetime]
+    """The time that progress tracking was started.
+    """
 
     def __init__(self, duration: "Duration", **kwargs) -> None:
         super().__init__(duration=duration, **kwargs)
@@ -232,17 +260,53 @@ class DurationProgress(BaseModel):
 
 
 class Unit(str, Enum):
+    """The Unit enumeration defines a standard set of units of measure for
+optimizable metrics.
+    """
+
     BYTES = "bytes"
-    COUNT = "count" # TODO: Maybe this is "int" or something?
+    """Digital data size in bytes.
+    """
+
+    COUNT = "count"
+    """An unsigned integer count of the number of times something has happened.
+    """
+
     REQUESTS_PER_MINUTE = "rpm"
+    """Application throughput in terms of requests processed per minute.
+    """
+    
     REQUESTS_PER_SECOND = "rps"
+    """Application throughput in terms of requests processed per second.
+    """
+    
     PERCENTAGE = "%"
+    """A ratio of one value as compared to another (e.g., errors as compared to
+total requests processed).
+    """
+
     MILLISECONDS = "ms"
+    """A time value at millisecond resolution."""
 
 
 class Metric(BaseModel):
+    """Metric objects model optimizable value types in a specific Unit of measure.
+
+    Args:
+        name: The name of the metric.
+        unit: The unit that the metric is measured in (e.g., requests per second).
+
+    Returns:
+        A new Metric object.
+    """
+
     name: str
+    """The name of the metric.
+    """
+
     unit: Unit
+    """The unit that the metric is measured in (e.g., requests per second).
+    """
 
     def __init__(self, name: str, unit: Unit, **kwargs) -> None:
         super().__init__(name=name, unit=unit, **kwargs)
@@ -252,8 +316,23 @@ class Metric(BaseModel):
 
 
 class DataPoint(BaseModel):
+    """DataPoint objects model a scalar value reading of a Metric.
+
+    Args:
+        metric: The metric being measured.
+        value: The value that was read for the metric.
+
+    Returns:
+        A new DataPoint object modeling a scalar value reading of a Metric.
+    """
+    
     metric: Metric
+    """The metric being measured.
+    """
+
     value: Numeric
+    """The value that was read for the metric.
+    """
 
     def __init__(self, metric: Metric, value: Numeric, **kwargs) -> None:
         super().__init__(metric=metric, value=value, **kwargs)
@@ -263,11 +342,34 @@ class DataPoint(BaseModel):
 
 
 class TimeSeries(BaseModel):
+    """TimeSeries objects represent a sequence of readings taken for a Metric
+over a period of time.
+    """
+
     metric: Metric
+    """The metric being measured.
+    """
+
     values: List[Tuple[datetime, Numeric]]
+    """The values read for the metric at specific moments in time.
+    """
+
     annotation: Optional[str]
-    id: Optional[str] # TODO: source, id, context
+    """An optional advisory annotation providing supplemental context
+information about the time series.
+    """
+    
+    id: Optional[str]
+    """An optional identifier contextualizing the source of the time series
+among a set of peers.
+    """
+
     metadata: Optional[Dict[str, Any]]
+    """An optional collection of arbitrary key-value metadata that provides
+context about the time series (e.g., the total run time of the operation, the
+server from which the readings were taken, version info about the upstream
+metrics provider, etc.).
+    """
 
     def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)
@@ -276,8 +378,20 @@ Reading = Union[DataPoint, TimeSeries]
 Readings = List[Reading]
 
 class SettingType(str, Enum):
+    """The SettingType enumeration defines type of adjustable settings supported
+by the servo.
+    """
+
     RANGE = "range"
+    """Range settings describe an inclusive span of numeric values that can be
+applied to a setting.
+    """
+
     ENUM = "enum"
+    """Enum settings describe a fixed set of values that can be applied to a
+setting. Enum settings are not necessarily numeric and cover use-cases such as
+instance types where the applicable values are part of a fixed taxonomy.
+    """
 
 @runtime_checkable
 class HumanReadable(Protocol):
@@ -292,6 +406,7 @@ class HumanReadable(Protocol):
         ...
 
 class Setting(BaseModel):
+    # ...
     name: str
     type: SettingType
     min: Numeric
@@ -326,13 +441,32 @@ class Setting(BaseModel):
 
 
 class Component(BaseModel):
+    """Component objects describe optimizable applications or services that
+expose adjustable settings.
+    """
+
     name: str
+    """The unique name of the component.
+    """
+
     settings: List[Setting]
+    """The list of adjustable settings that are available for optimizing the
+component.
+    """
 
     def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
         super().__init__(name=name, settings=settings, **kwargs)
 
     def get_setting(self, name: str) -> Optional[Setting]:
+        """Returns a setting by name or None if it could not be found.
+
+        Args:
+            name: The name of the setting to retrieve.
+
+        Returns:
+            The setting within the component with the given name or None if such
+            a setting could not be found.
+        """
         return next(filter(lambda m: m.name == name, self.settings), None)
 
     def opsani_dict(self) -> dict:
@@ -343,33 +477,86 @@ class Component(BaseModel):
 
 
 class Control(BaseModel):
-    duration: Optional[Duration]
-    past: Duration = cast(Duration, None)
-    warmup: Duration = cast(Duration, None)
-    delay: Duration = cast(Duration, None)
-    load: Optional[dict]
+    """Control objects model parameters returned by the optimizer that govern
+aspects of the operation to be performed.
+    """
 
-    @validator('duration', 'past', 'warmup', 'delay', always=True, pre=True)
+    duration: Duration = cast(Duration, 0)
+    """How long the operation should execute.
+    """
+
+    warmup: Duration = cast(Duration, 0)
+    """How long to wait before starting the operation in order to allow the
+application to reach a steady state (e.g., filling read through caches, loading
+class files into memory, just-in-time compilation being appliied to critical
+code paths, etc.).
+    """
+
+    delay: Duration = cast(Duration, 0)
+    """How long to wait beyond the duration in order to ensure that the metrics
+for the target interval have been aggregated and are available for reading.
+    """
+
+    load: Optional[Dict[str, Any]] = None
+    """An optional dictionary describing the parameters of the desired load
+profile.
+    """
+
+    userdata: Optional[Dict[str, Any]] = None
+    """An optional dictionary of supplemental metadata with no platform defined
+semantics.
+    """
+
+    @root_validator(pre=True)
+    def validate_past_and_delay(cls, values):
+        if 'past' in values:
+            # NOTE: past is an alias for delay in the API
+            if 'delay' in values:
+                assert values['past'] == values['delay'], "past and delay attributes must be equal"
+            
+            values['delay'] = values.pop('past')
+        
+        return values
+
+    @validator('duration', 'warmup', 'delay', always=True, pre=True)
     @classmethod
     def validate_durations(cls, value) -> Duration:
-        if value:
-            return value
-        return Duration(0)
-
-    class Config:
-        extra = Extra.allow
+        return value or Duration(0)
 
 
 class Description(BaseModel):
+    """Description objects model the essential elements of a servo
+configuration that the optimizer must be aware of in order to process
+measurements and prescribe adjustments.
+    """
+
     components: List[Component] = []
+    """The set of adjustable components and settings that are available for
+optimization.
+    """
+
     metrics: List[Metric] = []
+    """The set of measurable metrics that are available for optimization.
+    """
 
     def get_component(self, name: str) -> Optional[Component]:
+        """Returns the component with the given name or `None` if the component
+could not be found.
+
+        Args:
+            name: The name of the component to retrieve.
+
+        Returns:
+            The component with the given name or None if it could not be found.
+        """
         return next(filter(lambda m: m.name == name, self.components), None)
 
     def get_setting(self, name: str) -> Optional[Setting]:
         """
-        Gets a settings from a fully qualified name (`component_name.setting_name`).
+        Returns a setting from a fully qualified name of the form `component_name.setting_name`.
+
+        Returns:
+            The setting with the given name or None if it could not be found.
 
         Raises:
             ValueError: Raised if the name is not fully qualified.
@@ -382,6 +569,15 @@ class Description(BaseModel):
         return None
 
     def get_metric(self, name: str) -> Optional[Metric]:
+        """Returns the metric with the given name or `None` if the metric
+could not be found.
+
+        Args:
+            name: The name of the metric to retrieve.
+
+        Returns:
+            The metric with the given name or None if it could not be found.
+        """
         return next(filter(lambda m: m.name == name, self.metrics), None)
 
     def opsani_dict(self) -> dict:
@@ -394,8 +590,44 @@ class Description(BaseModel):
 
 
 class Measurement(BaseModel):
+    """Measurement objects model the outcome of a measure operation and contain
+a set of readings for the metrics that were measured.
+    """
+
     readings: Readings = []
+    """A list of readings taken of target metrics during the measurement
+operation.
+    
+    Readings can either be `DataPoint` objects modeling scalar values or 
+    `TimeSeries` objects modeling a sequence of values captured over time.
+    """
     annotations: Dict[str, str] = {}
+
+    @validator('readings', always=True, pre=True)
+    def validate_readings_type(cls, value) -> Readings:
+        if value:
+            reading_type = None
+            for obj in value:
+                if reading_type:
+                    assert isinstance(obj, reading_type), f"all readings must be of the same type: expected \"{reading_type.__name__}\" but found \"{obj.__class__.__name__}\""
+                else:
+                    reading_type = obj.__class__
+        
+        return value
+    
+    @validator('readings', always=True, pre=True)
+    def validate_time_series_dimensionality(cls, value) -> Readings:
+        if value:
+            expected_count = None
+            for obj in value:
+                if isinstance(obj, TimeSeries):
+                    actual_count = len(obj.values)
+                    if expected_count:                        
+                        assert actual_count == expected_count, f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\""
+                    else:
+                        expected_count = actual_count
+        
+        return value
 
     def opsani_dict(self) -> dict:
         readings = {}
@@ -419,14 +651,25 @@ class Measurement(BaseModel):
 
 
 class Adjustment(BaseModel):
+    """Adjustment objects model an instruction from the optimizer to apply a
+specific change to a setting of a component.
+    """
+
     component_name: str
+    """The name of the component to be adjusted.
+    """
+
     setting_name: str
+    """The name of the setting to be adjusted.
+    """
+
     value: Union[str, Numeric]
+    """The value to be applied to the setting being adjusted.
+    """
 
     @property
     def selector(self) -> str:
-        """
-        Returns a fully qualified string identifier for accessing the referenced resource.
+        """Returns a fully qualified string identifier for accessing the referenced resource.
         """
         return f"{self.component_name}.{self.setting_name}"
 
