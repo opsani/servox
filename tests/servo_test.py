@@ -12,7 +12,7 @@ import yaml
 import httpx
 from pydantic import Extra, ValidationError
 
-from servo import __version__, connector
+from servo import __version__, __codename__, connector
 from servo.configuration import BaseConfiguration
 from servo.connector import (
     BaseConnector,
@@ -1664,3 +1664,6 @@ async def test_proxy_utilization(proxies) -> None:
             await client.get("/test")
         assert e
         assert "Connect call failed ('127.0.0.1', 1234)" in str(e.value)
+
+def test_codename() -> None:
+    assert __codename__
