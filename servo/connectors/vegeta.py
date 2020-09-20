@@ -431,7 +431,7 @@ def _build_vegeta_command(config: VegetaConfiguration) -> str:
                 "-workers",
                 config.workers,
                 "-max-workers",
-                config.max_workers,
+                config.max_workers or 18446744073709551615,
                 "-http2",
                 config.http2,
                 "-keepalive",
