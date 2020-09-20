@@ -146,8 +146,8 @@ class VegetaConfiguration(BaseConfiguration):
         10,
         description="Specifies the initial number of workers used in the attack. The workers will automatically increase to achieve the target request rate, up to max-workers.",
     )
-    max_workers: int = Field(
-        18446744073709551615,
+    max_workers: Optional[int] = Field(
+        None,
         description="The maximum number of workers used to sustain the attack. This can be used to control the concurrency of the attack to simulate a target number of clients.",
     )
     max_body: int = Field(

@@ -21,6 +21,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `servo.__codename__` constant now contains the release codename.
 - Extensive docstring comments for all members of the `servo.types` module.
+- Integrated orjson to gain control over JSON/YAML serialization for classes that
+  inherit from built-in types (e.g., str, int, float).
 
 ### Removed
 - Subprocess methods have been removed from `servo.connector.Connector` in
@@ -32,9 +34,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The active connector is now managed via a `ContextVar` just as the active
   event is. This enables logging to correctly be attributed to the active
   connector without having to pass a specific logger object around everywhere.
+- JSON and YAML serializations now favor human readable representations by
+  default whenever possible.
 
 ### Fixed
 - Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
+- Model objects that inherit from builtin classes can now be serialized
+- Kubernetes configuration values now serialize to human readable values instead
+  of numerics.
 
 ## Unreleased
 

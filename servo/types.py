@@ -9,12 +9,63 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
+import orjson
 import semver
-from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator
+import pydantic
+from pydantic import Extra, validator, datetime_parse, root_validator
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
 
+
+def _orjson_dumps(v, *, default, indent: Optional[int] = None, sort_keys: bool = False) -> str:
+    """Serializes an input object into JSON via the `orjson` library.
+
+    Returns:
+        A JSON string representation of the input object.
+
+    Raises:
+        TypeError: Raised if the input object could not be serialized to a JSON representation.
+    """
+    option = orjson.OPT_PASSTHROUGH_SUBCLASS
+    if indent and indent == 2:
+        option |= orjson.OPT_INDENT_2
+    if sort_keys:
+        option |= orjson.OPT_SORT_KEYS
+
+    def default_handler(obj) -> Any:
+        try:
+            if isinstance(obj, HumanReadable):
+                return obj.human_readable()
+
+            return default(obj)
+        except TypeError as err:
+            return orjson.dumps(obj).decode()
+
+    try:
+        return orjson.dumps(v, default=default_handler, option=option).decode()
+    except TypeError as err:
+        raise err
+
+DEFAULT_JSON_ENCODERS = {}
+
+class BaseModelConfig:
+    """The `BaseModelConfig` class provides a common set of Pydantic model
+    configuration shared across the library.
+    """
+    json_encoders = DEFAULT_JSON_ENCODERS
+    json_loads = orjson.loads
+    json_dumps = _orjson_dumps
+    use_enum_values = True
+    validate_assignment = True
+
+class BaseModel(pydantic.BaseModel):
+    """The `BaseModel` class is the base class implementation of Pydantic model
+    types utilized throughout the library.
+    """
+
+    class Config(BaseModelConfig):
+        ...
 
 class License(Enum):
     """The License enumeration defines a set of licenses that describe the
@@ -27,7 +78,7 @@ class License(Enum):
     @classmethod
     def from_str(cls, identifier: str) -> "License":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `License` for the given string identifier (e.g., "MIT").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -66,7 +117,7 @@ Semantic Versioning expectations.
     @classmethod
     def from_str(cls, identifier: str) -> "Maturity":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `Maturity` object for the given string identifier (e.g., "Stable").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -157,6 +208,9 @@ class Duration(timedelta):
             return self.total_seconds() == other
 
         return False
+
+    def human_readable(self) -> str:
+        return str(self)
 
 
 class DurationProgress(BaseModel):
@@ -405,15 +459,48 @@ class HumanReadable(Protocol):
         """
         ...
 
+
 class Setting(BaseModel):
-    # ...
+    """Setting objects represent adjustable parameters that have a meaningful
+    impact on application performance and are tuned by the optimizer.
+    """
+
     name: str
+    """A component scoped unique name of the setting.
+    """
+
     type: SettingType
+    """The type of setting, which defines the semantics of how adjustable values
+    are computed by the optimizer."""
+
     min: Numeric
+    """The lower bound of acceptable values for a range setting.
+    """
+
     max: Numeric
+    """The upper bound of acceptable values for a range setting.
+    """
+
     step: Numeric
+    """The delta between values that the optimizer will apply to the setting.
+    """
+
     value: Optional[Union[Numeric, str]]
+    """The current value of the setting, if any.
+
+    Connectors are responsible for hydrating the value of their settings as appropriate
+    for their use-case. A value of None does not imply any particular state or failure
+    mode and the value may be stale and should not be considered authoritative. Directly
+    interact with connectors via events to introspect current state before driving logic
+    off of setting values.
+    """
+
     pinned: bool = False
+    """When True, the value of the setting will not be changed by the optimizer.
+
+    Canary optimization strategies will implicitly pin settings and settings can be pinned
+    via configuration on the optimizer side.
+    """
 
     def __str__(self):
         if self.type == SettingType.RANGE:
@@ -424,7 +511,7 @@ class Setting(BaseModel):
     @property
     def human_readable_value(self, **kwargs) -> str:
         """
-        Return a human readable representation of the value for use in output.
+        Returns a human readable representation of the value for use in output.
 
         The default implementation calls the `human_readable` method on the value
         property if one exists, else coerces the value into a string. Subclasses

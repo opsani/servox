@@ -12,11 +12,12 @@ import backoff
 from pydantic.main import Extra
 
 from pydantic.types import StrictInt, constr
-from servo.types import Numeric
+from servo.types import BaseModelConfig, HumanReadable, Numeric
 import time
 from pathlib import Path
 from typing import Callable, Collection, List, Optional, Dict, Any, Sequence, Tuple
 
+import pydantic
 from pydantic import BaseModel, ByteSize, Field, FilePath
 
 from servo import (
@@ -201,7 +202,7 @@ class ResourceRequirements(enum.Flag):
     @property
     def flags(self) -> bool:
         """
-        Return a boolean value that indicates if the requirements are a compoud set of flag values.
+        Return a boolean value that indicates if the requirements are a compound set of flag values.
         """
         return self.flag is False
 
@@ -217,6 +218,14 @@ class ResourceRequirements(enum.Flag):
         else:
             raise NotImplementedError(f"missing key implementation for resource requirement \"{self}\"")
 
+    def human_readable(self) -> str:
+        flags_set = []
+        for flag in ResourceRequirements:
+            if self.value & flag.value:
+                flags_set.append(flag.name)
+
+        return ", ".join(flags_set) if flags_set else "-"
+
 
 class Resource(Setting):
     """
@@ -224,9 +233,6 @@ class Resource(Setting):
     to request and limit configuration.
     """
     requirements: ResourceRequirements = ResourceRequirements.compute
-
-    class Config:
-        validate_assignment = True
 
 
 @runtime_checkable
@@ -326,7 +332,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         self.obj.metadata.namespace = namespace
 
     @asynccontextmanager
-    async def api_client(self) -> Generator[Any]:
+    async def api_client(self) -> Generator[Any, None, None]:
         """The API client for the Kubernetes object. This is determined
         by the ``apiVersion`` of the object configuration.
 
@@ -352,7 +358,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     @classmethod
     @asynccontextmanager
-    async def preferred_client(cls) -> Generator[Any]:
+    async def preferred_client(cls) -> Generator[Any, None, None]:
         """The preferred API client type for the Kubernetes object. This is defined in the
         ``api_clients`` class member dict for each object.
 
@@ -1404,17 +1410,17 @@ class Deployment(KubernetesModel):
 
         return canary_pod
 
-
 class Millicore(int):
     """
     The Millicore class represents one one-thousandth of a vCPU or hyperthread in Kubernetes.
     """
+
     @classmethod
     def __get_validators__(cls) -> 'CallableGenerator':
         yield cls.parse
 
     @classmethod
-    def parse(cls, v: StrIntFloat) -> 'Millicore':
+    def parse(cls, v: 'StrIntFloat') -> 'Millicore':
         """
         Parse an input value into Millicore units.
 
@@ -1450,16 +1456,15 @@ class Millicore(int):
     def human_readable(self) -> str:
         return str(self)
 
-
 class CPU(Resource):
     """
     The CPU class models a Kubernetes CPU resource in Millicore units.
     """
+    name = "cpu"
     value: Optional[Millicore]
     min: Millicore
     max: Millicore
     step: Millicore
-    name = "cpu"
     type = SettingType.RANGE
 
     # TODO: Don't allow value outside of range
@@ -1481,7 +1486,7 @@ GiB = 1024 * 1024 * 1024
 class ShortByteSize(ByteSize):
     """Kubernetes omits the 'B' suffix for some reason"""
     @classmethod
-    def validate(cls, v: StrIntFloat) -> 'ShortByteSize':
+    def validate(cls, v: 'StrIntFloat') -> 'ShortByteSize':
         if isinstance(v, str):
             try:
                 return super().validate(v)
@@ -1497,11 +1502,11 @@ class Memory(Resource):
     """
     The Memory class models a Kubernetes Memory resource.
     """
+    name = "memory"
     value: Optional[ShortByteSize]
     min: ShortByteSize
     max: ShortByteSize
     step: ShortByteSize
-    name = "memory"
     type = SettingType.RANGE
 
     def opsani_dict(self) -> dict:
@@ -1548,14 +1553,8 @@ class BaseOptimization(abc.ABC, BaseModel):
     name: str
     timeout: Duration
 
-    # Resources
-    # cpu: CPU
-    # memory: Memory
-    # replicas: Replicas
-    # TODO: add env and command
-
     @abstractclassmethod
-    async def create(cls, config: DeploymentConfiguration, *args, **kwargs) -> BaseOptimization:
+    async def create(cls, config: 'BaseKubernetesConfiguration', *args, **kwargs) -> 'BaseOptimization':
         """
         """
         ...
@@ -1574,7 +1573,7 @@ class BaseOptimization(abc.ABC, BaseModel):
         """
         ...
 
-    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
+    async def handle_error(self, error: Exception, mode: 'FailureMode') -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
 
@@ -1655,13 +1654,13 @@ class DeploymentOptimization(BaseOptimization):
     The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
     Deployment and its associated containers.
     """
-    deployment_config: DeploymentConfiguration
+    deployment_config: 'DeploymentConfiguration'
     deployment: Deployment
-    container_config: ContainerConfiguration
+    container_config: 'ContainerConfiguration'
     container: Container
 
     @classmethod
-    async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'DeploymentOptimization':
+    async def create(cls, config: 'DeploymentConfiguration', **kwargs) -> 'DeploymentOptimization':
         deployment = await Deployment.read(config.name, config.namespace)
 
         replicas = config.replicas.copy()
@@ -1899,10 +1898,10 @@ class CanaryOptimization(BaseOptimization):
     """
     """
     target_deployment: Deployment
-    target_deployment_config: DeploymentConfiguration
+    target_deployment_config: 'DeploymentConfiguration'
 
     target_container: Container
-    target_container_config: ContainerConfiguration
+    target_container_config: 'ContainerConfiguration'
 
     # Canary Pod may not exist yet
     canary_pod: Pod
@@ -1911,7 +1910,7 @@ class CanaryOptimization(BaseOptimization):
     # canary_container: Optional[Container]
 
     @classmethod
-    async def create(cls, config: DeploymentConfiguration, **kwargs) -> 'CanaryOptimization':
+    async def create(cls, config: 'DeploymentConfiguration', **kwargs) -> 'CanaryOptimization':
         deployment = await Deployment.read(config.name, cast(str, config.namespace))
         if not deployment:
             raise ValueError(f"cannot create canary: target deployment \"{config.name}\" does not exist in namespace \"{config.namespace}\"")
@@ -2059,7 +2058,7 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.info(f'destroyed canary Pod "{self.name}"')
 
-    async def handle_error(self, error: Exception, mode: FailureMode) -> bool:
+    async def handle_error(self, error: Exception, mode: 'FailureMode') -> bool:
         if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
             if mode == FailureMode.ROLLBACK:
                 self.logger.warning(f"cannot rollback a canary Pod: falling back to destroy: {error}")
@@ -2087,7 +2086,7 @@ class KubernetesOptimizations(BaseModel, servo.logging.Mixin):
     """
     Models the state of resources under optimization in a Kubernetes cluster.
     """
-    config: KubernetesConfiguration
+    config: 'KubernetesConfiguration'
     namespace: Namespace
     optimizations: List[BaseOptimization]
     runtime_id: str
@@ -2095,7 +2094,7 @@ class KubernetesOptimizations(BaseModel, servo.logging.Mixin):
     version_id: str
 
     @classmethod
-    async def create(cls, config: KubernetesConfiguration) -> 'KubernetesOptimizations':
+    async def create(cls, config: 'KubernetesConfiguration') -> 'KubernetesOptimizations':
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
@@ -2286,6 +2285,7 @@ class ContainerConfiguration(BaseConfiguration):
     env: Optional[List[str]] # TODO: create model...
 
 
+
 class OptimizationStrategy(str, enum.Enum):
     """
     OptimizationStrategy is an enumeration of the possible ways to perform optimization on a Kubernetes Deployment.
@@ -2316,7 +2316,6 @@ class FailureMode(str, enum.Enum):
         Return a list of strings that identifies all failure mode configuration options.
         """
         return list(map(lambda mode: mode.value, cls.__members__.values()))
-
 
 class BaseKubernetesConfiguration(BaseConfiguration):
     """
