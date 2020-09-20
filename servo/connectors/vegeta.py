@@ -409,47 +409,6 @@ async def _run_vegeta(
         )
 
     return exit_code, vegeta_reports
-# =======
-#     async def _run_vegeta(
-#         self, *, config: Optional[VegetaConfiguration] = None
-#     ) -> Tuple[int, List[VegetaReport]]:
-#         vegeta_reports: List[VegetaReport] = []
-#         config = config if config else self.config
-#         vegeta_cmd = _build_vegeta_command(config)
-#         ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
-#         progress = DurationProgress(config.duration)
-
-#         async def process_stdout(output: str) -> None:
-#             json_report = ansi_escape.sub("", output)
-#             vegeta_report = VegetaReport(**json.loads(json_report))
-
-#             if datetime.now() > self.warmup_until:
-#                 if not progress.started:
-#                     progress.start()
-
-#                 vegeta_reports.append(vegeta_report)
-#                 summary = _summarize_report(vegeta_report, config)
-#                 self.logger.info(progress.annotate(summary), progress=progress.progress)
-#             else:
-#                 self.logger.debug(
-#                     f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
-#                 )
-
-#         self.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
-#         exit_code = await self.stream_subprocess_output(
-#             vegeta_cmd,
-#             stdout_callback=process_stdout,
-#             stderr_callback=lambda m: self.logger.error(f"Vegeta stderr: {m}")
-#         )
-
-#         self.logger.debug(f"Vegeta exited with exit code: {exit_code}")
-#         if exit_code != 0:
-#             self.logger.error(
-#                 f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
-#             )
-# >>>>>>> c62b39a... Revise checks architecture to support warnings and severity levels
-
-    return exit_code, vegeta_reports
 
 
 def _build_vegeta_command(config: VegetaConfiguration) -> str:
