@@ -29,14 +29,7 @@ from servo import api, events, logging, repeating
 from servo.configuration import AbstractBaseConfiguration, BaseConfiguration, Optimizer
 from servo.events import EventHandler, EventResult
 from servo.types import *
-from servo.utilities import (
-    OutputStreamCallback,
-    SubprocessResult,
-    Timeout,
-    run_subprocess_shell, 
-    stream_subprocess_shell,
-    associations
-)
+from servo.utilities import associations
 
 
 _connector_subclasses: Set[Type["BaseConnector"]] = set()
@@ -172,115 +165,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         """Returns a contextualized logger"""
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
-        # return loguru.logger.bind(connector=self)
         return super().logger.bind(connector=self)
-
-    ##
-    # Subprocess utilities
-
-    async def run_subprocess(
-        self,
-        cmd: str,
-        *,
-        env: Optional[Dict[str, str]] = None,
-        timeout: Timeout = None,
-        logger: Optional[loguru.Logger] = ...,
-        stdin: Union[int, IO[Any], None] = None,
-        **kwargs
-    ) -> SubprocessResult:
-        """
-        Run a shell command in a subprocess asynchronously and return the results.
-
-        This method is a convenience wrapper for lower-level functionality implemented in the
-        `servo.utilities.subprocess` module. Additional arguments are available for input via
-        `kwargs` that have been omitted for brevity to optimize the public API for common cases.
-
-        :param cmd: The command to run.
-        :param env: An optional dictionary of environment variables to apply to the subprocess.
-        :param timeout: An optional timeout in seconds for how long to read the streams before giving up.
-        :param logger: The logger to log messages about the subprocess execution against. Defaults to `self.logger`. `None` disables logging output.
-        :param stdin: A file descriptor, IO stream, or None value to use as the standard input of the subprocess. Default is `None`.
-
-        :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
-        :return: A named tuple value of the exit status and two string lists of standard output and standard error.
-        """
-        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
-        try:
-            start = time.time()
-            if logger_:
-                timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
-                logger_.info(f"Running subprocess command `{cmd}`{timeout_note}")
-            result = await run_subprocess_shell(
-                cmd,           
-                env=env,
-                timeout=timeout,
-                stdin=stdin,
-                **kwargs
-            )
-            end = time.time()
-            duration = Duration(end - start)
-            if logger_:
-                logger_.info(f"Subprocess finished with return code {result.return_code} in {duration} (`{cmd}`)")
-            return result
-        except asyncio.TimeoutError as error:
-            if logger_:
-                logger_.warning(f"timeout expired waiting for subprocess to complete: {error}")
-            raise error
-
-    async def stream_subprocess_output(
-        self,
-        cmd: str,
-        *,
-        stdout_callback: Optional[OutputStreamCallback] = None,
-        stderr_callback: Optional[OutputStreamCallback] = None,
-        env: Optional[Dict[str, str]] = None,
-        timeout: Timeout = None,        
-        stdin: Union[int, IO[Any], None] = None,
-        logger: Optional[loguru.Logger] = ...,
-        **kwargs
-    ) -> int:
-        """
-        Run a shell command in a subprocess asynchronously and stream its output.
-
-        This method is a convenience wrapper for lower-level functionality implemented in the
-        `servo.utilities.subprocess` module. Additional arguments are available for input via
-        `kwargs` that have been omitted for brevity to optimize the public API for common cases.
-
-        :param cmd: The command to run.
-        :param stdout_callback: An optional callable invoked with each line read from stdout. Must accept a single string positional argument and returns nothing.
-        :param stderr_callback: An optional callable invoked with each line read from stderr. Must accept a single string positional argument and returns nothing.
-        :param env: An optional dictionary of environment variables to apply to the subprocess.
-        :param timeout: An optional timeout in seconds for how long to read the streams before giving up.
-        :param logger: The logger to log messages about the subprocess execution against. Defaults to `self.logger`. `None` disables logging output.
-        :param stdin: A file descriptor, IO stream, or None value to use as the standard input of the subprocess. Default is `None`.
-
-        :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
-        :return: The exit status of the subprocess.
-        """
-        logger_: Optional[loguru.Logger] = self.logger if logger == ... else logger
-        try:
-            start = time.time()
-            if logger_:
-                timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
-                logger_.info(f"Running subprocess command `{cmd}`{timeout_note}")
-            result = await stream_subprocess_shell(
-                cmd,
-                stdout_callback=stdout_callback,
-                stderr_callback=stderr_callback,                
-                env=env,
-                timeout=timeout,
-                stdin=stdin,
-                **kwargs
-            )
-            end = time.time()
-            duration = Duration(end - start)
-            if logger_:
-                logger_.info(f"Subprocess finished with return code {result} in {duration} (`{cmd}`)")
-            return result
-        except asyncio.TimeoutError as error:
-            if logger_:
-                logger_.warning(f"timeout expired waiting for subprocess to complete: {error}")
-            raise error
 
 
 EventResult.update_forward_refs(BaseConnector=BaseConnector)

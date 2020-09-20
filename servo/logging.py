@@ -23,7 +23,6 @@ __all__ = (
     "Mixin",
     "Filter",
     "ProgressHandler",
-    "Logger",
     "logger",
     "log_execution",
     "log_execution_time",

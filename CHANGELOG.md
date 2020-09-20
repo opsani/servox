@@ -20,9 +20,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - `servo.__codename__` constant now contains the release codename.
+- Extensive docstring comments for all members of the `servo.types` module.
 
-### Fixed
-- Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
+### Removed
+- Subprocess methods have been removed from `servo.connector.Connector` in
+  favor of directly importing the subprocess module from the utilities module.
 
 ### Changed
 - The `servo.logging` module has been generalized for use outside of the
@@ -30,6 +32,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The active connector is now managed via a `ContextVar` just as the active
   event is. This enables logging to correctly be attributed to the active
   connector without having to pass a specific logger object around everywhere.
+
+### Fixed
+- Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
 
 ## [0.7.0] "nice for what?" - 2020-09-09
 

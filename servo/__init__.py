@@ -43,5 +43,6 @@ from .connector import (
 
 from .checks import *
 from .errors import *
+from .logging import *
 from .types import *
 from .utilities import *

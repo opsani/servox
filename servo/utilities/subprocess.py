@@ -1,9 +1,15 @@
+"""The `servo.utilities.subprocess` module provides support for asynchronous
+execution of subprocesses with support for timeouts, streaming output, error
+management, and logging.
+"""
 import asyncio
+import time
 
 from asyncio.streams import StreamReader
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, IO, List, NamedTuple, Optional, TypeVar, Union, cast
+from loguru import logger
 
 __all__ = (
     "OutputStreamCallback",
@@ -227,7 +233,7 @@ async def stream_subprocess_shell(
 
     :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
     :return: The exit status of the subprocess.
-    """
+    """                    
     process = await asyncio.create_subprocess_shell(
         cmd,
         cwd=cwd,
@@ -237,13 +243,25 @@ async def stream_subprocess_shell(
         stderr=stderr,
         limit=limit,
         **kwargs,
-    )
-    return await stream_subprocess_output(
-        process,
-        timeout=timeout,
-        stdout_callback=stdout_callback,
-        stderr_callback=stderr_callback,
-    )
+    )    
+    from servo.types import Duration
+    try:
+        start = time.time()
+        timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
+        logger.info(f"Running subprocess command `{cmd}`{timeout_note}")
+        result = await stream_subprocess_output(
+            process,
+            timeout=timeout,
+            stdout_callback=stdout_callback,
+            stderr_callback=stderr_callback,
+        )
+        end = time.time()
+        duration = Duration(end - start)
+        logger.info(f"Subprocess finished with return code {result} in {duration} (`{cmd}`)")
+        return result
+    except asyncio.TimeoutError as error:
+        logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
+        raise error
     
 
 async def stream_subprocess_output(

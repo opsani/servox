@@ -493,7 +493,6 @@ class TestVegetaConfiguration:
         )
 
 
-# TODO: All of these tests need to be expanded
 class TestVegetaConnector:
     @pytest.fixture
     def vegeta_connector(self) -> VegetaConnector:
@@ -504,19 +503,19 @@ class TestVegetaConnector:
 
     @pytest.fixture(autouse=True)
     def mock_run_vegeta(self, mocker) -> None:
-        mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(1, [])
+        mocker.patch(
+            "servo.connectors.vegeta._run_vegeta", return_value=(1, [])
         )
 
     async def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
-        mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(0, [])
+        mocker.patch(
+            "servo.connectors.vegeta._run_vegeta", return_value=(0, [])
         )
         await vegeta_connector.check()
 
     def test_vegeta_metrics(self, vegeta_connector: VegetaConnector, mocker) -> None:
-        mocker.patch.object(
-            VegetaConnector, "_run_vegeta", return_value=(0, [])
+        mocker.patch(
+            "servo.connectors.vegeta._run_vegeta", return_value=(0, [])
         )
         vegeta_connector.metrics()
 
@@ -1430,32 +1429,6 @@ def test_report_progress_duration() -> None:
 # TODO: paramtrize all of these, mock the response
 # TODO: float of < 1, float of < 100
 # TODO: no time remaining given
-
-async def test_stream_subprocess_output():
-    output = []
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    status_code = await connector.stream_subprocess_output("cd ~/ && echo test", stdout_callback=lambda m: output.append(m))
-    assert status_code == 0
-    assert output == ["test"]
-
-async def test_run_subprocess():
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    status_code, stdout, stderr = await connector.run_subprocess("cd ~/ && echo test")
-    assert status_code == 0
-    assert stdout == ["test"]
-    assert stderr == []
-
-async def test_run_subprocess_timeout():
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    with pytest.raises(asyncio.TimeoutError) as e:
-        await connector.stream_subprocess_output("sleep 60.0", timeout=0.0001)
-    assert e
-
-async def test_run_subprocess_timeout():
-    output = []
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
-    await connector.stream_subprocess_output("echo 'test'", stdout_callback=lambda m: output.append(m), timeout=10.0)
-    assert output == ['test']
     
 def test_logger_binds_connector_name() -> None:
     messages = []
