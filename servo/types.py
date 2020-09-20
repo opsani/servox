@@ -149,7 +149,7 @@ class DurationProgress(BaseModel):
 
     def start(self) -> None:
         """
-        Start progress tracking.
+        Starts progress tracking.
 
         The current time when `start` is called is used as the starting point to track progress.
 
@@ -162,14 +162,14 @@ class DurationProgress(BaseModel):
     @property
     def started(self) -> bool:
         """
-        Return a boolean value that indicates if progress tracking has started.
+        Returns a boolean value that indicates if progress tracking has started.
         """
         return self.started_at is not None
 
     @property
     def finished(self) -> bool:
         """
-        Return a boolean value that indicates if the duration has elapsed and progress is 100%.
+        Returns a boolean value that indicates if the duration has elapsed and progress is 100%.
         """
         return self.progress >= 100
 
@@ -179,7 +179,7 @@ class DurationProgress(BaseModel):
         every: Duration = Duration("5s"),
         ) -> None:
         """
-        Asynchronously watch progress tracking and invoke a callback to periodically report on progress.
+        Asynchronously watches progress tracking and invoke a callback to periodically report on progress.
 
         Args:
             notify: An (optionally asynchronous) callable object to periodically invoke for progress reporting.
@@ -202,17 +202,21 @@ class DurationProgress(BaseModel):
 
     @property
     def progress(self) -> float:
-        """Completion progress percentage as a floating point value from 0.0 to 100.0"""
-        return min(100.0, 100.0 * (self.elapsed / self.duration)) if self.started else 0.0
+        """Returns completion progress percentage as a floating point value from 0.0 to
+        100.0"""
+        if self.started:
+            return min(100.0, 100.0 * (self.elapsed / self.duration)) if self.duration else 100.0
+        else:
+            return 0.0
 
     @property
     def elapsed(self) -> Duration:
-        """Total time elapsed since progress tracking was started as a Duration value."""
+        """Returns the total time elapsed since progress tracking was started as a Duration value."""
         return Duration(datetime.now() - self.started_at) if self.started else Duration(0)
 
     def annotate(self, str_to_annotate: str, prefix=True) -> str:
         """
-        Annotate an input string with details about progress status.
+        Returns a string annotated with details about progress status.
 
         Args:
             str_to_annotate: The string to annotate with progress status.

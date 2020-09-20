@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from pydantic import create_model
 
-from servo.types import Adjustment, Component, Duration
+from servo.types import Adjustment, Component, Duration, DurationProgress
 
 
 class TestDuration:
@@ -125,3 +125,11 @@ def test_parse_measure_command_response_including_units() -> None:
     assert isinstance(obj, CommandResponse)
     assert isinstance(obj.param, MeasureParams)
     assert obj.param.metrics == ['throughput', 'error_rate', 'latency_total', 'latency_mean', 'latency_50th', 'latency_90th', 'latency_95th', 'latency_99th', 'latency_max', 'latency_min']
+
+class TestDurationProgress:
+    def test_handling_zero_duration(self) -> None:
+        progress = DurationProgress(0)
+        assert not progress.finished
+        progress.start()
+        assert progress.finished
+

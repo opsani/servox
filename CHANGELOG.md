@@ -18,6 +18,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Fixed
+- Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
+
 ### Changed
 - The `servo.logging` module has been generalized for use outside of the
   `servo.connectors.Connector` inheritance hierarchy.
