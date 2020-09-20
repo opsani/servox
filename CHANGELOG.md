@@ -25,6 +25,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   rather than automatically deriving names from Deployment/Container.
 - Kubernetes Optimization Strategy classes can now accept options from the
   config file (currently supports `alias` for canaries).
+- Integrated orjson to gain control over JSON/YAML serialization for classes that
+  inherit from built-in types (e.g., str, int, float).
 
 ### Removed
 - Subprocess methods have been removed from `servo.connector.Connector` in
@@ -44,10 +46,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     optimizer settings
   - Validate numerous behaviors (range inclusion, enum inclusion, type
     agreement, etc)
-
+- JSON and YAML serializations now favor human readable representations by
+  default whenever possible.
 
 ### Fixed
 - Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
+- Model objects that inherit from builtin classes can now be serialized
+- Kubernetes configuration values now serialize to human readable values instead
+  of numerics.
 
 ## Unreleased
 

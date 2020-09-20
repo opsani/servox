@@ -1,20 +1,15 @@
-import asyncio
-
-from pkg_resources import Requirement
-from kubetest.objects import namespace
 from pydantic.error_wrappers import ValidationError
 import pytest
-import json
-import yaml
 
-from kubernetes_asyncio import client, config
-from kubernetes_asyncio.client.api_client import ApiClient
+from kubernetes_asyncio import client
 import pydantic
 
 from servo.api import descriptor_to_adjustments
 from servo.connectors.kubernetes import CanaryOptimization, Container, CPU, CanaryOptimizationStrategyConfiguration, DefaultOptimizationStrategyConfiguration, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName, OptimizationStrategy
 from servo.connectors.kubernetes import KubernetesChecks, Millicore
-from servo.types import Adjustment, Component, Setting
+
+from servo.types import Adjustment, Component, Setting, HumanReadable
+from tests.test_helpers import *
 from pydantic import BaseModel
 from typing import Type
 
@@ -308,6 +303,57 @@ class TestKubernetesConfiguration:
         assert model.namespace == "funkytown"
         assert model.deployments[0].namespace == "default"
 
+    @pytest.mark.parametrize(
+        "yaml_path, expected_value",
+        [
+            # CPU in millicores
+            ("deployments[0].containers[0].cpu.min", "250m"),
+            ("deployments[0].containers[0].cpu.max", "4000m"),
+            ("deployments[0].containers[0].cpu.step", "125m"),
+
+            # Memory
+            ("deployments[0].containers[0].memory.min", "256.0MiB"),
+            ("deployments[0].containers[0].memory.max", "4.0GiB"),
+            ("deployments[0].containers[0].memory.step", "128.0MiB"),
+        ]
+    )
+    def test_generate_emits_human_readable_values(self, yaml_path, expected_value) -> None:
+        # import yamlpath
+        config = KubernetesConfiguration.generate()
+
+        # assert yaml_key_path(config.yaml(), key_path) == expected_value
+
+        import sys
+
+        from ruamel.yaml import YAML
+        from ruamel.yaml.parser import ParserError
+
+        import yamlpath.patches
+        from yamlpath.func import get_yaml_data, get_yaml_editor
+        from yamlpath.wrappers import ConsolePrinter
+        from yamlpath import Processor
+        from yamlpath import YAMLPath
+        from yamlpath.exceptions import YAMLPathException
+
+        # Process command-line arguments and initialize the output writer
+        # args = processcli()
+        # log = ConsolePrinter(args)
+
+        # Prep the YAML parser and round-trip editor (tweak to your needs)
+        yaml = get_yaml_editor()
+
+        # At this point, you'd load or parse your YAML file, stream, or string.  When
+        # loading from file, I typically follow this pattern:
+        # yaml_data = get_yaml_data(yaml, logger, config.yaml())
+        yaml_data = yaml.load(config.yaml())
+        assert yaml_data
+
+        processor = Processor(logger, yaml_data)
+        path = YAMLPath(yaml_path)
+        matches = list(processor.get_nodes(path))
+        assert len(matches) == 1, "expected only a single matching node"
+        assert matches[0].node == expected_value
+
 
 class TestKubernetesConnector:
     pass
@@ -600,6 +646,14 @@ class TestCPU:
         assert cpu.max == 4000
         assert cpu.step == 125
 
+    def test_resources_encode_to_json_human_readable(self, cpu) -> None:
+        serialization = json.loads(cpu.json())
+        assert serialization['min'] == "100m"
+        assert serialization['max'] == "4000m"
+        assert serialization['step'] == "125m"
+        # TODO: Requirements also needs to serialize
+
+
 class TestMemory:
     @pytest.fixture
     def memory(self) -> Memory:
@@ -648,6 +702,13 @@ class TestMemory:
         assert memory.min == 134217728
         assert memory.max == 4294967296
         assert memory.step == 268435456
+
+    def test_resources_encode_to_json_human_readable(self, memory) -> None:
+        serialization = json.loads(memory.json())
+        assert serialization['min'] == "128.0MiB"
+        assert serialization['max'] == "4.0GiB"
+        assert serialization['step'] == "256.0MiB"
+        # TODO: Requirements also needs to serialize
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:

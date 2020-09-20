@@ -765,7 +765,6 @@ def test_vegeta_cli_schema_json(
                     "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
                     "ency of the attack to simulate a target number of clients."
                 ),
-                "default": 18446744073709551615,
                 "env_names": ["VEGETA_MAX_WORKERS",],
                 "type": "integer",
             },
@@ -992,7 +991,6 @@ def test_vegeta_cli_generate_with_defaults(
             "insecure": False,
             "keepalive": True,
             "max_body": -1,
-            "max_workers": 18446744073709551615,
             "rate": "50/1s",
             "reporting_interval": "15s",
             "target": "GET https://example.com/",
@@ -1179,7 +1177,6 @@ def test_vegeta_cli_validate_invalid_config(
             "insecure: false\n"
             "keepalive: true\n"
             "max_body: -1\n"
-            "max_workers: 18446744073709551615\n"
             #'rate: 50/1s\n'  # Rate is omitted
             "target: GET http://localhost:8080\n"
             "targets: null\n"
@@ -1430,7 +1427,7 @@ def test_report_progress_duration() -> None:
 # TODO: paramtrize all of these, mock the response
 # TODO: float of < 1, float of < 100
 # TODO: no time remaining given
-    
+
 def test_logger_binds_connector_name() -> None:
     messages = []
     connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())

@@ -1020,7 +1020,6 @@ class TestAssembly:
                             'The maximum number of workers used to sustain the attack. This can be used to control the'
                             ' concurrency of the attack to simulate a target number of clients.'
                         ),
-                        'default': 18446744073709551615,
                         'env_names': [
                             'SERVO_OTHER_MAX_WORKERS',
                         ],
@@ -1193,7 +1192,6 @@ class TestAssembly:
                             'The maximum number of workers used to sustain the attack. This can be used to control the'
                             ' concurrency of the attack to simulate a target number of clients.'
                         ),
-                        'default': 18446744073709551615,
                         'env_names': [
                             'SERVO_VEGETA_MAX_WORKERS',
                         ],

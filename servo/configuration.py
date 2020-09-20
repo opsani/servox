@@ -13,8 +13,9 @@ from pydantic import (
     constr,
 )
 from pydantic import AnyHttpUrl, BaseModel, Extra, Field, FilePath, validator, constr
-from servo.types import Duration
+from servo.types import Duration, HumanReadable
 import servo.logging
+from servo.types import HumanReadable, BaseModelConfig
 
 __all__ = [    
     "AbstractBaseConfiguration",
@@ -43,8 +44,8 @@ class Optimizer(BaseSettings):
 
     app_name: constr(regex=r"^[a-z\-\.0-9]{3,64}$")
     """
-    The symbolic name of the application or servoce under optimization in a string of URL-safe characters between 3 and 64
-    characters in length 
+    The symbolic name of the application or service under optimization in a string of URL-safe characters between 3 and 64
+    characters in length.
     """
 
     token: str
@@ -59,7 +60,7 @@ class Optimizer(BaseSettings):
     """
 
     url: Optional[AnyHttpUrl]
-    """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development 
+    """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
     and automated testing to bind the servo to a fixed URL.
     """
 
@@ -74,7 +75,7 @@ class Optimizer(BaseSettings):
     @property
     def id(self) -> str:
         """
-        Returns the primary identifier of the optimizer. 
+        Returns the primary identifier of the optimizer.
 
         A friendly identifier formed by joining the `org_domain` and the `app_name` with a slash character
         of the form `example.com/my-app` or `another.com/app-2`.
@@ -99,12 +100,7 @@ class Optimizer(BaseSettings):
             "base_url": {"env": "OPSANI_BASE_URL",},
         }
 
-
 DEFAULT_TITLE = "Base Connector Configuration Schema"
-DEFAULT_JSON_ENCODERS = {
-    # Serialize Duration as Golang duration strings (treated as a timedelta otherwise)
-    Duration: lambda d: f"{d}"
-}
 
 
 class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
@@ -114,13 +110,13 @@ class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
     of shared behaviors common and functionality common across all servo connectors.
 
     Typically connector configuration classes will inherit from the concrete subclass
-    `BaseConfiguration` rather than `AbstractBaseConfiguration`. Direct subclasses of 
+    `BaseConfiguration` rather than `AbstractBaseConfiguration`. Direct subclasses of
     `AbstractBaseConfiguration` are utilized when you wish to make use of Pydantic's
     Custom Root Type support (see https://pydantic-docs.helpmanual.io/usage/models/#custom-root-types).
     Custom Roots require that no other model fields are declared on the model when the
     `__root__` field is defined. Custom roots effectively inline the target attribute
     from the model, unwrapping a layer of object containment from the config file and
-    JSON Schema perspective. This is especially useful when the connector models a 
+    JSON Schema perspective. This is especially useful when the connector models a
     collection of independent elements such as webhooks or notifications.
     """
 
@@ -206,18 +202,18 @@ class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
         encoders: Dict[Type[Any], Callable[..., Any]] = {}
     ) -> Dict[Type[Any], Callable[..., Any]]:
         """
-        Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes 
-        when `json_encoders` need to be customized. Encoders provided in the encoders argument 
+        Returns a dict mapping servo types to callable JSON encoders for use in Pydantic Config classes
+        when `json_encoders` need to be customized. Encoders provided in the encoders argument
         are merged into the returned dict and take precedence over the defaults.
         """
+        from servo.types import DEFAULT_JSON_ENCODERS
         return {**DEFAULT_JSON_ENCODERS, **encoders}
 
-    class Config:
+    class Config(BaseModelConfig):
         env_file = ".env"
         case_sensitive = True
         extra = Extra.forbid
         title = DEFAULT_TITLE
-        json_encoders = DEFAULT_JSON_ENCODERS
 
 
 class BaseConfiguration(AbstractBaseConfiguration):
@@ -275,23 +271,23 @@ class Timeouts(BaseConfiguration):
     """
 
     connect: Optional[Duration]
-    """Specifies the maximum amount of time to wait until a connection to the requested host is established. If HTTPX is unable 
+    """Specifies the maximum amount of time to wait until a connection to the requested host is established. If HTTPX is unable
     to connect within this time frame, a ConnectTimeout exception is raised.
     """
 
     read: Optional[Duration]
-    """Specifies the maximum duration to wait for a chunk of data to be received (for example, a chunk of the response body). 
+    """Specifies the maximum duration to wait for a chunk of data to be received (for example, a chunk of the response body).
     If HTTPX is unable to receive data within this time frame, a ReadTimeout exception is raised.
     """
 
     write: Optional[Duration]
-    """Specifies the maximum duration to wait for a chunk of data to be sent (for example, a chunk of the request body). 
+    """Specifies the maximum duration to wait for a chunk of data to be sent (for example, a chunk of the request body).
     If HTTPX is unable to send data within this time frame, a WriteTimeout exception is raised.
     """
 
     pool: Optional[Duration]
-    """Specifies the maximum duration to wait for acquiring a connection from the connection pool. If HTTPX is unable to 
-    acquire a connection within this time frame, a PoolTimeout exception is raised. A related configuration here is the maximum 
+    """Specifies the maximum duration to wait for acquiring a connection from the connection pool. If HTTPX is unable to
+    acquire a connection within this time frame, a PoolTimeout exception is raised. A related configuration here is the maximum
     number of allowable connections in the connection pool, which is configured by the pool_limits.
     """
 
@@ -310,7 +306,7 @@ class ServoConfiguration(BaseConfiguration):
     settings for shared services such as networking and logging.
     """
 
-    backoff: Dict[str, BackoffSettings] = Field({ 
+    backoff: Dict[str, BackoffSettings] = Field({
         "__default__": { "max_time": "10m", "max_tries": None },
         "connect": { "max_time": "1h", "max_tries": None },
     })
@@ -350,12 +346,12 @@ class ServoConfiguration(BaseConfiguration):
         if isinstance(v, (str, int, float)):
             return Timeouts(v)
         return v
-    
+
     @classmethod
     def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
         return None
-    
-    class Config:
+
+    class Config(BaseModelConfig):
         validate_assignment = True
 
 
@@ -431,17 +427,17 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
                 )
 
             connectors = decoded_value
-        
+
         # import late until dependencies are untangled
         from servo.connector import _normalize_connectors, _routes_for_connectors_descriptor
 
         connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if descriptor is invalid, failing validation
         _routes_for_connectors_descriptor(connectors)
-        
+
         return connectors
 
-    class Config:
+    class Config(BaseModelConfig):
         extra = Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"

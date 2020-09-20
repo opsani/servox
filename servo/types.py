@@ -10,14 +10,66 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
+import orjson
 import semver
+import pydantic
 from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator, Field, conlist, ValidationError, StrictInt, StrictFloat
 from pydantic.error_wrappers import ErrorWrapper
+
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.logging import logger
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
 
+
+def _orjson_dumps(v, *, default, indent: Optional[int] = None, sort_keys: bool = False) -> str:
+    """Serializes an input object into JSON via the `orjson` library.
+
+    Returns:
+        A JSON string representation of the input object.
+
+    Raises:
+        TypeError: Raised if the input object could not be serialized to a JSON representation.
+    """
+    option = orjson.OPT_PASSTHROUGH_SUBCLASS
+    if indent and indent == 2:
+        option |= orjson.OPT_INDENT_2
+    if sort_keys:
+        option |= orjson.OPT_SORT_KEYS
+
+    def default_handler(obj) -> Any:
+        try:
+            if isinstance(obj, HumanReadable):
+                return obj.human_readable()
+
+            return default(obj)
+        except TypeError as err:
+            return orjson.dumps(obj).decode()
+
+    try:
+        return orjson.dumps(v, default=default_handler, option=option).decode()
+    except TypeError as err:
+        raise err
+
+DEFAULT_JSON_ENCODERS = {}
+
+class BaseModelConfig:
+    """The `BaseModelConfig` class provides a common set of Pydantic model
+    configuration shared across the library.
+    """
+    json_encoders = DEFAULT_JSON_ENCODERS
+    json_loads = orjson.loads
+    json_dumps = _orjson_dumps
+    use_enum_values = True
+    validate_assignment = True
+
+class BaseModel(pydantic.BaseModel):
+    """The `BaseModel` class is the base class implementation of Pydantic model
+    types utilized throughout the library.
+    """
+
+    class Config(BaseModelConfig):
+        ...
 
 class License(Enum):
     """The License enumeration defines a set of licenses that describe the
@@ -30,7 +82,7 @@ class License(Enum):
     @classmethod
     def from_str(cls, identifier: str) -> "License":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `License` for the given string identifier (e.g., "MIT").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -69,7 +121,7 @@ Semantic Versioning expectations.
     @classmethod
     def from_str(cls, identifier: str) -> "Maturity":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `Maturity` object for the given string identifier (e.g., "Stable").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -160,6 +212,9 @@ class Duration(timedelta):
             return self.total_seconds() == other
 
         return False
+
+    def human_readable(self) -> str:
+        return str(self)
 
 
 class DurationProgress(BaseModel):
@@ -432,7 +487,7 @@ class Setting(BaseModel, abc.ABC):
     @property
     def human_readable_value(self, **kwargs) -> str:
         """
-        Return a human readable representation of the value for use in output.
+        Returns a human readable representation of the value for use in output.
 
         The default implementation calls the `human_readable` method on the value
         property if one exists, else coerces the value into a string. Subclasses
