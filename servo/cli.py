@@ -1124,7 +1124,9 @@ class ServoCLI(CLI):
                 if ready:
                     break
                 elif progress.finished:
-                    self.logger.error(f"timed out waiting for checks to pass {progress.duration}")
+                    # Don't log a timeout if we aren't running in wait mode
+                    if progress.duration:
+                        self.logger.error(f"timed out waiting for checks to pass {progress.duration}")
                     break
 
                 if delay is not None:
