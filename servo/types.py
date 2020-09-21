@@ -13,6 +13,7 @@ import semver
 from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
+from servo.logging import logger
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
 
 
@@ -622,8 +623,9 @@ operation.
             for obj in value:
                 if isinstance(obj, TimeSeries):
                     actual_count = len(obj.values)
-                    if expected_count:                        
-                        assert actual_count == expected_count, f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\""
+                    if expected_count: 
+                        if actual_count != expected_count:
+                            logger.warning(f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\"")
                     else:
                         expected_count = actual_count
         

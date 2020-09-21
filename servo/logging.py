@@ -17,7 +17,6 @@ from weakref import WeakSet
 
 import loguru
 from servo.events import EventContext, _connector_context_var, _event_context_var
-from servo.types import Duration
 
 __all__ = (
     "Mixin",
@@ -306,6 +305,8 @@ def log_execution_time(func, *, level="DEBUG"):
     """
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
+        from servo.types import Duration
+
         name = func.__name__
         logger_ = logger.opt(depth=1)
 
