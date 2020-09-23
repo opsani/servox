@@ -1538,7 +1538,7 @@ def _qualify(value, unit):
     return value
 
 
-class BaseOptimization(abc.ABC, BaseModel):
+class BaseOptimization(abc.ABC, BaseModel, servo.logging.Mixin):
     """
     BaseOptimization is the base class for concrete implementations of optimization strategies.
     """
