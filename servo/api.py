@@ -10,6 +10,8 @@ from servo.types import Adjustment, Control, Duration, Numeric
 
 USER_AGENT = "github.com/opsani/servox"
 
+class UnexpectedEventError(RuntimeError):
+    pass
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -51,7 +53,9 @@ class Request(BaseModel):
 class Status(BaseModel):
     status: str
     message: Optional[str]
+    reason: Optional[str]
 
+UNEXPECTED_EVENT = 'unexpected-event'
 
 class SleepResponse(BaseModel):
     pass
@@ -118,7 +122,11 @@ class Mixin:
 
     async def report_progress(self, **kwargs):
         request = self.progress_request(**kwargs)
-        return await self._post_event(*request)
+        status = await self._post_event(*request)
+
+        if status.status == UNEXPECTED_EVENT:
+            # We have lost sync with the backend, raise an exception to halt broken execution
+            raise UnexpectedEventError(status.reason)
 
     def progress_request(self,
         operation: str,
@@ -172,15 +180,18 @@ class Mixin:
 
     # NOTE: Opsani API primitive
     # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
-    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
-        event_request = Request(event=event, param=param)
-        self.logger.trace(f"POST event request: {pformat(event_request)}")
+    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:        
         async with self.api_client() as client:
+            event_request = Request(event=event, param=param)
+            self.logger.trace(f"POST event request: {pformat(event_request)}")
+
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
                 response_json = response.json()
                 self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {pformat(response_json)}")
+
+                return parse_obj_as(Union[CommandResponse, Status], response_json)
             except httpx.HTTPError:
                 self.logger.error(
                     f"HTTP error encountered while posting {event} event"
@@ -188,7 +199,6 @@ class Mixin:
                 self.logger.trace(pformat(event_request))
                 raise
 
-        return parse_obj_as(Union[CommandResponse, Status], response_json)
 
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)

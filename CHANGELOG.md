@@ -25,8 +25,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   rather than automatically deriving names from Deployment/Container.
 - Kubernetes Optimization Strategy classes can now accept options from the
   config file (currently supports `alias` for canaries).
-- Integrated orjson to gain control over JSON/YAML serialization for classes that
-  inherit from built-in types (e.g., str, int, float).
+- Integrated orjson to gain control over JSON/YAML serialization for classes 
+  that inherit from built-in types (e.g., str, int, float).
+- The `ProgressHandler` now handles exceptions and optionally notifies an 
+  external exception handler.
+- Servo will now interrupt operations when it detects losing sync with the 
+  backend by encountering unexpected operation errors.
 
 ### Removed
 - Subprocess methods have been removed from `servo.connector.Connector` in
@@ -57,6 +61,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Kubernetes configuration values now serialize to human readable values instead
   of numerics.
 - Multicheck expanded methods are now filterable and taggable.
+- Progress logging and reporting will no longer trigger unhandled exceptions.
 
 ## Unreleased
 

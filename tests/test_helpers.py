@@ -38,9 +38,26 @@ class MeasureConnector(BaseConnector):
     def after_measure(self, *args, **kwargs) -> None:
         pass
 
+from servo.types import Component, Description, Setting, SettingType
 
 class AdjustConnector(BaseConnector):
     config: StubBaseConfiguration
+
+    @on_event()
+    async def describe(self) -> Description:
+        components = await self.components()
+        return Description(components=components)
+
+    @on_event()
+    async def components(self) -> List[Component]:
+        return [
+            Component(
+                name="main",
+                settings=[
+                    Setting(name="cpu", type=SettingType.RANGE, min=0, max=10, step=1, value=3)
+                ]
+            )
+        ]
 
     @on_event()
     def adjust(self, *args, **kwargs) -> None:

@@ -301,7 +301,7 @@ class TestPrometheusChecks:
         assert request.called
         assert check
         assert check.name == 'Run query "throughput"'
-        assert check.id == '009f1d6e'
+        assert check.id == 'check_queries_item_0'
         assert not check.critical
         assert check.success
         assert check.message == "returned 2 results"
