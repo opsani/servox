@@ -510,7 +510,7 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
         # identify methods that match the filter
         filtered_methods  = []
-        for method_name, method in self.check_methods():
+        for method_name, method in self.check_methods():            
             if filter_ and filter_.any:
                 if isinstance(method, Checkable):
                     spec = method.__check__
@@ -588,8 +588,9 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
     async def _expand_multichecks(self) -> List[types.MethodType]:
         # search for any instance methods decorated by multicheck and expand them
         checks = []
-        for method_name, method in get_instance_methods(self).items():
+        for method_name, method in get_instance_methods(self).items():            
             if hasattr(method, "__multicheck__"):
+                check_template = method.__multicheck__
                 checks_fns = await method()
                 for check_method_name, fn in checks_fns.items():
                     method = types.MethodType(fn, self)
@@ -838,11 +839,11 @@ def multicheck(
         _validate_multicheck_handler(fn_)
         @functools.wraps(fn_)
         async def create_checks(*args, **kwargs) -> Tuple[Iterable, CheckHandler]:
-            def create_fn(name, item):
+            def create_fn(check, item):
                 async def _fn(self) -> Check:
-                    check = Check(name=name, description=description, severity=severity, tags=tags)
-                    await run_check_handler(check, handler, item)
-                    return check
+                    result_check = check.copy()
+                    await run_check_handler(result_check, handler, item)
+                    return result_check
 
                 return _fn
 
@@ -851,10 +852,19 @@ def multicheck(
                 iterable, handler = await fn_(*args, **kwargs)
             else:
                 iterable, handler = fn_(*args, **kwargs)
-            for item in iterable:
-                check_name = base_name.format(item=item)
-                fn = create_fn(check_name, item)
-                fn_name = f"{fn_.__name__}_{item}"
+            
+            for index, item in enumerate(iterable):
+                check_name = base_name.format(item=item)                
+                fn_name = f"{fn_.__name__}_item_{index}"
+                __check__ = Check(
+                    name=check_name,
+                    description=description,
+                    id=fn_name,
+                    severity=severity,
+                    tags=tags,
+                )
+                fn = create_fn(__check__, item)
+                fn.__check__ = __check__
                 checks_fns[fn_name] = fn
 
             return checks_fns

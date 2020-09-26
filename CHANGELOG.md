@@ -36,12 +36,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   connector without having to pass a specific logger object around everywhere.
 - JSON and YAML serializations now favor human readable representations by
   default whenever possible.
+- Multicheck methods now yield more readable IDs based off the parent multicheck
+  method name (e.g., `check_resource_requirements_item_0`). 
 
 ### Fixed
 - Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
 - Model objects that inherit from builtin classes can now be serialized
 - Kubernetes configuration values now serialize to human readable values instead
   of numerics.
+- Multicheck expanded methods are now filterable and taggable.
 
 ## Unreleased
 

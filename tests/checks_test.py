@@ -527,36 +527,53 @@ async def test_multichecks() -> None:
     assert attrs == [
         [
             'Check number one',
-            'ded3c8bf',
+            'check_numbers_item_0',
             'Number one was checked',
         ],
         [
             'Check number two',
-            '67317614',
+            'check_numbers_item_1',
             'Number two was checked',
         ],
         [
             'Check number three',
-            'b495fc6b',
+            'check_numbers_item_2',
             'Number three was checked',
         ],
         [
             'Asynchronously check number four',
-            '2773da1a',
+            'check_numbers_async_item_0',
             'Number four was checked',
         ],
         [
             'Asynchronously check number five',
-            'f9df3756',
+            'check_numbers_async_item_1',
             'Number five was checked',
         ],
         [
             'Asynchronously check number six',
-            'a72e0913',
+            'check_numbers_async_item_2',
             'Number six was checked',
         ]
     ]
-5
+
+async def test_multichecks_filtering() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_(Filter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'check_numbers_item_0',
+            'Number one was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'check_numbers_async_item_1',
+            'Number five was checked',
+        ]
+    ]
+
 async def test_multichecks_async() -> None:
     checker = MultiChecks(BaseConfiguration())
     results = await checker.run_()
@@ -564,32 +581,32 @@ async def test_multichecks_async() -> None:
     assert attrs == [
         [
             'Check number one',
-            'ded3c8bf',
+            'check_numbers_item_0',
             'Number one was checked',
         ],
         [
             'Check number two',
-            '67317614',
+            'check_numbers_item_1',
             'Number two was checked',
         ],
         [
             'Check number three',
-            'b495fc6b',
+            'check_numbers_item_2',
             'Number three was checked',
         ],
         [
             'Asynchronously check number four',
-            '2773da1a',
+            'check_numbers_async_item_0',
             'Number four was checked',
         ],
         [
             'Asynchronously check number five',
-            'f9df3756',
+            'check_numbers_async_item_1',
             'Number five was checked',
         ],
         [
             'Asynchronously check number six',
-            'a72e0913',
+            'check_numbers_async_item_2',
             'Number six was checked',
         ]
     ]
@@ -628,12 +645,12 @@ async def test_invalid_multichecks() -> None:
     assert attrs == [
         [
             'Check number NOT A VALID IDENTIFIER',
-            '98238cdc',
+            'check_invalid_identifiers_item_0',
             'Identifier NOT A VALID IDENTIFIER was checked',
         ],
         [
             'Check number •••••',
-            '144838d5',
+            'check_invalid_identifiers_item_1',
             'Identifier ••••• was checked',
         ],
     ]
