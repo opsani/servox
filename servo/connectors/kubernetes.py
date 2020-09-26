@@ -15,7 +15,7 @@ from pydantic.types import StrictInt, constr
 from servo.types import BaseModelConfig, HumanReadable, Numeric
 import time
 from pathlib import Path
-from typing import Callable, Collection, List, Optional, Dict, Any, Sequence, Tuple
+from typing import Callable, Collection, List, NamedTuple, Optional, Dict, Any, Sequence, Tuple
 
 import pydantic
 from pydantic import BaseModel, ByteSize, Field, FilePath
@@ -2084,8 +2084,6 @@ class KubernetesOptimizations(BaseModel, servo.logging.Mixin):
         """
         Read the state of all components under optimization from the cluster and return an object representation.
         """
-        await config.load_kubeconfig()
-
         namespace = await Namespace.read(config.namespace)
         optimizations: List[BaseOptimization] = []
         images = {}
@@ -2321,6 +2319,29 @@ class FailureMode(str, enum.Enum):
         """
         return list(map(lambda mode: mode.value, cls.__members__.values()))
 
+
+class PermissionSet(BaseModel):
+    """Permissions objects model Kubernetes permissions granted through RBAC.
+    """
+    group: str
+    resources: List[str]
+    verbs: List[str]
+
+
+STANDARD_PERMISSIONS = [
+    PermissionSet(
+        group="apps",
+        resources=[ "deployments", "replicasets" ],
+        verbs=[ "get", "list", "watch", "update", "patch" ]
+    ),
+    PermissionSet(
+        group="",
+        resources=[ "pods", "pods/logs", "pods/status", "namespaces" ],
+        verbs=[ "create", "delete", "get", "list", "watch" ]
+    )
+]
+
+
 class BaseKubernetesConfiguration(BaseConfiguration):
     """
     BaseKubernetesConfiguration provides a set of configuration primitives for optimizable Kubernetes resources.
@@ -2342,6 +2363,10 @@ class BaseKubernetesConfiguration(BaseConfiguration):
     )
     namespace: Optional[DNSSubdomainName] = Field(
         description="Kubernetes namespace where the target deployments are running.",
+    )
+    permissions: List[PermissionSet] = Field(
+        STANDARD_PERMISSIONS,
+        description="Permissions required by the connector to operate in Kubernetes."
     )
     settlement: Optional[Duration] = Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable."
@@ -2466,27 +2491,61 @@ CanaryOptimization.update_forward_refs()
 class KubernetesChecks(BaseChecks):
     """Checks for ensuring that the Kubernetes connector is ready to run.
     """
-
     config: KubernetesConfiguration
 
     @require("Connectivity to Kubernetes")
     async def check_connectivity(self) -> None:
-        # TODO: Just read the namespace or connect to API server
-        await KubernetesOptimizations.create(self.config)
+        async with ApiClient() as api:
+            v1 = client.VersionApi(api)
+            await v1.get_code()            
 
     @warn("Kubernetes version")
     async def check_version(self) -> None:
-        # TODO: Get the version, check against supported
-        ...
+        async with ApiClient() as api:
+            v1 = client.VersionApi(api)
+            version = await v1.get_code()
+            assert int(version.major) >= 1
+            # EKS sets minor to "17+"
+            assert int(int(''.join(c for c in version.minor if c.isdigit()))) >= 16
 
-    @check("Namespace \"{self.config.namespace}\" is readable")
-    async def check_namespace_is_readable(self) -> None:
-        await Namespace.read(self.config.namespace)
-
-    @check("Required permissions")
+    @require("Required permissions")
     async def check_permissions(self) -> None:
-        ...
+        async with ApiClient() as api:
+            v1 = client.AuthorizationV1Api(api)
+            for permission in self.config.permissions:
+                for resource in permission.resources:
+                    for verb in permission.verbs:
+                        attributes = client.models.V1ResourceAttributes(
+                            namespace=self.config.namespace,
+                            group=permission.group, 
+                            resource=resource, 
+                            verb=verb
+                        )
 
+                        # TODO: The below checks an alternative serviceaccount
+                        # user = "system:serviceaccount:default:opsani-servo"
+                        # spec = client.models.V1SubjectAccessReviewSpec(resource_attributes=attributes)
+                        # spec.user = user
+                        # review = client.models.V1SubjectAccessReview(spec=spec)
+                        # access_review = await v1.create_subject_access_review(review)
+
+                        spec = client.models.V1SelfSubjectAccessReviewSpec(resource_attributes=attributes)
+                        review = client.models.V1SelfSubjectAccessReview(spec=spec)
+                        access_review = await v1.create_self_subject_access_review(body=review)
+                        assert access_review.status.allowed, f"Not allowed to \"{verb}\" resource \"{resource}\""
+
+    
+    @require("Namespace \"{self.config.namespace}\" is readable")
+    async def check_namespace(self) -> None:
+        await Namespace.read(self.config.namespace)
+    
+    @multicheck("Deployment \"{item.name}\" is readable")
+    async def check_deployments(self) -> Tuple[Iterable, CheckHandler]:
+        async def check_dep(dep_config: DeploymentConfiguration) -> str:
+            await Deployment.read(dep_config.name, dep_config.namespace)
+
+        return self.config.deployments, check_dep
+    
     @multicheck("Containers in the \"{item.name}\" Deployment have resource requirements")
     async def check_resource_requirements(self) -> Tuple[Iterable, CheckHandler]:
         async def check_dep_resource_requirements(dep_config: DeploymentConfiguration) -> str:
@@ -2550,7 +2609,7 @@ class KubernetesConnector(BaseConnector):
             self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
 
     @on_event()
-    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:        
         return await KubernetesChecks.run(self.config, filter_, halt_on=halt_on)
 
 

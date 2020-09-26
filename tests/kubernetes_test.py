@@ -1,3 +1,6 @@
+import servo
+import servo.connectors.kubernetes as kubernetes_connector
+from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesChecks, KubernetesConnector
 import sys
 
 from pathlib import Path
@@ -119,11 +122,11 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "https://opsani.com/" in "".join(stdout)
 
-def test_deploy_servo_cohttp_vegeta_measure() -> None:
+def test_deploy_servo_fiberhttp_vegeta_measure() -> None:
     pass
     # Make servo load test fiber-http, report the outcome in JSON
 
-def test_deploy_servo_cohttp_vegeta_adjust() -> None:
+def test_deploy_servo_fiberhttp_vegeta_adjust() -> None:
     pass
     # Make servo adjust fiber-http memory, report in JSON
 
@@ -143,3 +146,135 @@ def test_generate_outputs_human_readable_config() -> None:
 
 def test_supports_nil_container_name() -> None:
     ...
+
+
+class TestChecks:
+    @pytest.fixture
+    async def config(self) -> kubernetes_connector.KubernetesConfiguration:
+        config = kubernetes_connector.KubernetesConfiguration(
+            namespace="default",
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            deployments=[
+                kubernetes_connector.DeploymentConfiguration(
+                    name="app",
+                    replicas=kubernetes_connector.Replicas(
+                        min=1,
+                        max=2,
+                    ),
+                    containers=[
+                        kubernetes_connector.ContainerConfiguration(
+                            name="opsani/fiber-http:latest",
+                            cpu=kubernetes_connector.CPU(
+                                min="250m",
+                                max="4000m",
+                                step="125m"
+                            ),
+                            memory=kubernetes_connector.Memory(
+                                min="256 MiB",
+                                max="4.0 GiB",
+                                step="128 MiB"
+                            )
+                        )
+                    ]
+                )
+            ]
+        )
+        return config
+
+    async def test_check_version(self, config) -> None:
+        await config.load_kubeconfig()
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id="check_version"))
+        assert results
+        assert results[-1].success
+
+    async def test_check_connectivity_success(self, config) -> None:
+        await config.load_kubeconfig()
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id="check_connectivity"))
+        assert len(results) == 1
+        assert results[0].success
+    
+    async def test_check_connectivity_bad_hostname(self, config) -> None:
+        # TODO: Generalize this into a helper
+        from kubernetes_asyncio.client import Configuration as KubernetesAsyncioConfiguration
+        await config.load_kubeconfig()
+
+        loaded_config = KubernetesAsyncioConfiguration.get_default_copy()
+        loaded_config.host = "https://localhost:4321"
+        KubernetesAsyncioConfiguration.set_default(loaded_config)
+
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id="check_connectivity"))
+        assert len(results) == 1
+        result = results[0]        
+        assert not result.success
+        assert "Cannot connect to host localhost:4321" in str(result.exception)
+
+    async def test_check_permissions_success(self, config: KubernetesConfiguration) -> None:
+        await config.load_kubeconfig()
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id=["check_permissions"]))
+        assert len(results)
+        result = results[-1]
+        assert result.id == "check_permissions"
+        assert result.success
+    
+    async def test_check_permissions_fails(self, config: KubernetesConfiguration) -> None:
+        ...
+
+    async def test_check_namespace_success(self, config) -> None:
+        await config.load_kubeconfig()
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id=["check_namespace"]))
+        assert len(results)
+        result = results[-1]
+        assert result.id == "check_namespace"
+        assert result.success
+    
+    async def test_check_namespace_doesnt_exist(self, config) -> None:
+        await config.load_kubeconfig()
+        config.namespace = "INVALID"
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id=["check_namespace"]))
+        assert len(results)
+        result = results[-1]
+        assert result.id == "check_namespace"
+        assert not result.success
+        assert result.exception
+        assert "Not Found" in str(result.exception)
+    
+    async def test_check_deployment(self, config) -> None:
+        await config.load_kubeconfig()
+        results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.Filter(id="check_deployments_item_0"))
+        assert results
+        result = results[-1]
+        assert result.id == "check_deployments_item_0"
+        assert result.success
+    
+    async def test_check_deployment_doesnt_exist(self, config: KubernetesConfiguration) -> None:
+        await config.load_kubeconfig()
+        config.deployments[0].name = "INVALID"
+        checks = kubernetes_connector.KubernetesChecks(config)
+        results = await checks.run_(servo.checks.Filter(id=["check_deployments_item_0"]))
+        assert len(results)
+        result = results[-1]
+        assert result.id == "check_deployments_item_0"
+        assert not result.success
+        assert result.exception
+        assert "Not Found" in str(result.exception)
+
+    async def test_check_resource_requirements(self, config) -> None:
+        await config.load_kubeconfig()
+        results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.Filter(id="check_resource_requirements_item_0"))
+        assert results
+        result = results[-1]
+        assert result.id == "check_resource_requirements_item_0"
+        assert result.success
+
+    # TODO: Create deployment without CPU, check it
+
+    async def check_deployments_are_ready(self, config) -> None:
+        ...
+        # TODO: How do I force a deployment to be non-ready?
+    
