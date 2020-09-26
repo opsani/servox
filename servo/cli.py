@@ -450,6 +450,9 @@ class CLI(typer.Typer, servo.logging.Mixin):
         except ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
+        
+        # Dispatch the startup event
+        sync(servo.startup())
 
         # Populate the context for use by other commands
         ctx.assembly = assembly
