@@ -162,7 +162,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     # backoff and retry for an hour on transient request failures
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time)
-    async def exec_command(self):
+    async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
         logger.info(f"What's Next? => {cmd_response.command}")
         logger.trace(pformat(cmd_response))
@@ -174,7 +174,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             )
             logger.trace(pformat(description))
             param = dict(descriptor=description.opsani_dict(), status="ok")
-            await self._post_event(api.Event.DESCRIPTION, param)
+            return await self._post_event(api.Event.DESCRIPTION, param)
 
         elif cmd_response.command == api.Command.MEASURE:
             measurement = await self.measure(cmd_response.param)
@@ -183,7 +183,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             )
             logger.trace(pformat(measurement))
             param = measurement.opsani_dict()
-            await self._post_event(api.Event.MEASUREMENT, param)
+            return await self._post_event(api.Event.MEASUREMENT, param)
 
         elif cmd_response.command == api.Command.ADJUST:
             adjustments = descriptor_to_adjustments(cmd_response.param["state"])
@@ -204,7 +204,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 f"Adjusted: {components_count} components, {settings_count} settings"
             )
 
-            await self._post_event(api.Event.ADJUSTMENT, reply)
+            return await self._post_event(api.Event.ADJUSTMENT, reply)
 
         elif cmd_response.command == api.Command.SLEEP:
                 # TODO: Model this
@@ -215,12 +215,40 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 logger.info(f"Sleeping for {duration} ({msg}).")
                 await asyncio.sleep(duration.total_seconds())
 
+                # Return a status so we have a simple API contract
+                return servo.api.Status(status="slept", message=msg)
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
     async def main(self) -> None:
+        # Kick off the main runloop
+        async def main_loop() -> None:
+            while True:
+                status = await self.exec_command()
+                if status.status == "unexpected-event":
+                    logger.warning(f"server reported unexpected event: {status.reason}")
+
+        async def handle_progress_exception(error: Exception) -> None:
+            print(f"handle exceotuib cakked with {error}")
+            if isinstance(error, servo.api.UnexpectedEventError):
+                logger.error("servo has lost synchronization with the optimizer: restarting operations")
+                
+                # Clear out the logger queue
+                await logger.complete()
+
+                tasks = [t for t in asyncio.all_tasks() if t is not
+                    asyncio.current_task()]
+
+                [task.cancel() for task in tasks]
+
+                logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Restart a fresh main loop
+                asyncio.create_task(main_loop(), name="main loop")
+
         # Setup logging
-        self.progress_handler = servo.logging.ProgressHandler(self.servo.report_progress, self.logger.warning)
+        self.progress_handler = servo.logging.ProgressHandler(self.servo.report_progress, self.logger.warning, handle_progress_exception)
         self.logger.add(self.progress_handler.sink, catch=True)
 
         logger.info(
@@ -252,8 +280,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         except:
             pass
 
-        while True:
-            await self.exec_command()
+        await asyncio.create_task(main_loop(), name="main loop")
 
     async def shutdown(self, loop, signal=None):
         if signal:
@@ -284,15 +311,6 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     def handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         logger.error(f"asyncio exception handler triggered with context: {context}")
-
-        # context["message"] will always be there; but context["exception"] may not
-        exception = context.get("exception")
-        if exception:
-            # FIXME: it is not necessary to re-raise this to get the right logging it is logging None atm
-            try:
-                raise exception
-            except:
-                logger.exception(f"exception details: {exception}")
 
         logger.critical("Shutting down due to unhandled exception in asyncio event loop...")
         asyncio.create_task(self.shutdown(loop))

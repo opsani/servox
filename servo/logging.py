@@ -17,7 +17,6 @@ from weakref import WeakSet
 
 import loguru
 from servo.events import EventContext, _connector_context_var, _event_context_var
-from servo.types import Duration
 
 __all__ = (
     "Mixin",
@@ -52,7 +51,7 @@ class Filter:
     def __init__(self, level = "INFO") -> None:
         self.level = level
 
-    def __call__(self, record) -> bool:
+    def __call__(self, record) -> bool:        
         levelno = logger.level(self.level).no
         return record["level"].no >= levelno
 
@@ -66,18 +65,21 @@ class ProgressHandler:
     NOTE: We call the logger re-entrantly for misconfigured progress logging attempts. The
         `progress` must be excluded on logger calls to avoid recursion.
     """
-    def __init__(self,
-        progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]],
-        error_reporter: Callable[[str], Union[None, Awaitable[None]]],
+    def __init__(self, 
+        progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]], 
+        error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
+        exception_handler: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None
+
     ) -> None:
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
+        self._exception_handler = exception_handler
         self._tasks = WeakSet()
-
+    
     @property
     def tasks(self) -> Set[asyncio.Task]:
         return cast(Set[asyncio.Task], self._tasks.copy())
-
+    
     async def sink(self, message: loguru.Message) -> None:
         """
         An asynchronous loguru sink handling the progress reporting.
@@ -92,7 +94,7 @@ class ProgressHandler:
         # Favor explicit connector in extra (see Mixin) else use the context var
         connector = extra.get("connector", _connector_context_var.get())
         if not connector:
-            return await self._report_error("declining request to report progress for record without a connector attribute or active connector context", record)
+            return await self._report_error("declining request to report progress for record without a connector attribute", record)
 
         event_context: Optional[EventContext] = _event_context_var.get()
         operation = extra.get("operation", None)
@@ -109,7 +111,8 @@ class ProgressHandler:
                 return await self._report_error("declining request to report progress for record without a started_at parameter or inferrable value from event context", record)
 
         connector_name = connector.name if hasattr(connector, "name") else connector
-        return await self._report_progress(
+
+        await self._report_progress(
             operation=operation,
             progress=progress,
             connector=connector_name,
@@ -117,14 +120,29 @@ class ProgressHandler:
             started_at=started_at,
             message=message
         )
-
+    
     async def _report_progress(self, **kwargs) -> None:
         """
         Report progress about a log message that was processed.
         """
+
+        def _handle_task_result(task: asyncio.Task) -> None:
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                pass  # Task cancellation should not be logged as an error.
+            except Exception as error:  # pylint: disable=broad-except
+                if self._exception_handler:
+                    if asyncio.iscoroutinefunction(self._exception_handler):
+                        asyncio.create_task(self._exception_handler(error))
+                    else:
+                        self._exception_handler(error)
+
         if self._progress_reporter:
             if asyncio.iscoroutinefunction(self._progress_reporter):
-                self._tasks.add(asyncio.create_task(self._progress_reporter(**kwargs)))
+                task = asyncio.create_task(self._progress_reporter(**kwargs))
+                task.add_done_callback(_handle_task_result)
+                self._tasks.add(task)
             else:
                 self._progress_reporter(**kwargs)
 
@@ -178,18 +196,18 @@ class Formatter:
         else:
             extra["traceback"] = ""
 
-        # Respect an explicit component
-        if not "component" in record["extra"]:
+        # Respect an explicit component 
+        if not "component" in record["extra"]:        
             # Favor explicit connector from the extra dict or use the context var
             if connector := extra.get("connector", _connector_context_var.get()):
                 component = connector.name
             else:
                 component = "servo"
-
+            
             # Append event context if available
             if event_context := _event_context_var.get():
                 component += f"[{event_context}]"
-
+            
             extra["component"] = component
 
         return DEFAULT_FORMAT + "\n{exception}"
@@ -254,7 +272,7 @@ def reset_to_defaults() -> loguru.Logger:
     DEFAULT_STDERR_HANDLER["colorize"] = None
 
     loguru.logger.remove()
-    loguru.logger.configure(handlers=DEFAULT_HANDLERS)
+    loguru.logger.configure(handlers=DEFAULT_HANDLERS)    
 
     # Intercept messages from backoff library
     logging.getLogger('backoff').addHandler(InterceptHandler())
@@ -265,7 +283,7 @@ def friendly_decorator(f):
     """
     Returns a "decorator decorator" that wraps a decorator function such that it can be invoked
     with or without parentheses such as:
-
+   
         @decorator(with, arguments, and=kwargs)
         or
         @decorator
@@ -306,6 +324,8 @@ def log_execution_time(func, *, level="DEBUG"):
     """
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
+        from servo.types import Duration
+
         name = func.__name__
         logger_ = logger.opt(depth=1)
 

@@ -56,7 +56,6 @@ class BaseModelConfig:
     json_encoders = DEFAULT_JSON_ENCODERS
     json_loads = orjson.loads
     json_dumps = _orjson_dumps
-    use_enum_values = True
     validate_assignment = True
 
 class BaseModel(pydantic.BaseModel):

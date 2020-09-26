@@ -1527,7 +1527,7 @@ class Replicas(Setting):
     value: Optional[StrictInt]
     min: StrictInt
     max: StrictInt
-    step: StrictInt = StrictInt(1)
+    step: StrictInt = 1
     name = "replicas"
     type = SettingType.RANGE
 
@@ -2359,11 +2359,7 @@ class BaseKubernetesConfiguration(BaseConfiguration):
     )
     namespace: Optional[DNSSubdomainName] = Field(
         description="Kubernetes namespace where the target deployments are running.",
-    )
-    permissions: List[PermissionSet] = Field(
-        STANDARD_PERMISSIONS,
-        description="Permissions required by the connector to operate in Kubernetes."
-    )
+    )    
     settlement: Optional[Duration] = Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable."
     )
@@ -2389,6 +2385,10 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
     timeout: Duration = "5m"
+    permissions: List[PermissionSet] = Field(
+        STANDARD_PERMISSIONS,
+        description="Permissions required by the connector to operate in Kubernetes."
+    )
 
     deployments: List[DeploymentConfiguration] = Field(
         description="Deployments to be optimized.",

@@ -894,7 +894,7 @@ class Mixin:
                 try:
                     async with event.on_handler_context_manager(self):
                         if asyncio.iscoroutinefunction(event_handler.handler):
-                            value = await event_handler.handler(self, *args, **kwargs)
+                            value = await asyncio.create_task(event_handler.handler(self, *args, **kwargs), name=f"{preposition}:{event}")
                         else:
                             value = event_handler.handler(self, *args, **kwargs)
 
