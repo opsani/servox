@@ -229,7 +229,6 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                     logger.warning(f"server reported unexpected event: {status.reason}")
 
         async def handle_progress_exception(error: Exception) -> None:
-            print(f"handle exceotuib cakked with {error}")
             if isinstance(error, servo.api.UnexpectedEventError):
                 logger.error("servo has lost synchronization with the optimizer: restarting operations")
                 
