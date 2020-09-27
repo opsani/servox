@@ -87,7 +87,7 @@ class _EventDefinitions(Protocol):
         ...
 
     @event(Events.ADJUST)
-    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
+    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> Description:
         ...
 
     @event(Events.PROMOTE)
