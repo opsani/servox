@@ -13,7 +13,6 @@ import time
 import traceback
 from pathlib import Path
 from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
-from weakref import WeakSet
 
 import loguru
 from servo.events import EventContext, _connector_context_var, _event_context_var
@@ -74,7 +73,7 @@ class ProgressHandler:
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
         self._exception_handler = exception_handler
-        self._tasks = WeakSet()
+        self._tasks = set()
     
     @property
     def tasks(self) -> Set[asyncio.Task]:
@@ -128,6 +127,7 @@ class ProgressHandler:
 
         def _handle_task_result(task: asyncio.Task) -> None:
             try:
+                self._tasks.remove(task)
                 task.result()
             except asyncio.CancelledError:
                 pass  # Task cancellation should not be logged as an error.

@@ -121,20 +121,12 @@ class Mixin:
         return httpx.Client(**{ **self.api_client_options, **kwargs })
 
     async def report_progress(self, **kwargs):
-        try:
-            request = self.progress_request(**kwargs)
-            status = await self._post_event(*request)
+        request = self.progress_request(**kwargs)
+        status = await self._post_event(*request)
 
-            if status.status == UNEXPECTED_EVENT:
-                # We have lost sync with the backend, raise an exception to halt broken execution
-                raise UnexpectedEventError(status.reason)
-        except UnexpectedEventError:
-            raise
-        except Exception as error:
-            print(f"!!! report_progress got exception: {error}")
-            # self.logger.error(f"rescued exception during progress reporting: {error}")
-
-        return None
+        if status.status == UNEXPECTED_EVENT:
+            # We have lost sync with the backend, raise an exception to halt broken execution
+            raise UnexpectedEventError(status.reason)
 
     def progress_request(self,
         operation: str,

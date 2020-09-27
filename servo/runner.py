@@ -221,33 +221,22 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
     async def main(self) -> None:
-        # Kick off the main runloop
+        # Main run loop for processing commands from the optimizer
         async def main_loop() -> None:
             while True:
                 status = await self.exec_command()
-                if status.status == "unexpected-event":
+                if status.status == servo.api.UNEXPECTED_EVENT:
                     logger.warning(f"server reported unexpected event: {status.reason}")
 
-        # async def handle_progress_exception(error: Exception) -> None:
         def handle_progress_exception(error: Exception) -> None:
+            # Restart the main event loop if we get out of sync with the server
             if isinstance(error, servo.api.UnexpectedEventError):
                 logger.error("servo has lost synchronization with the optimizer: restarting operations")
-                
-                # Clear out the logger queue
-                # await logger.complete()
 
                 tasks = [t for t in asyncio.all_tasks() if t is not
                     asyncio.current_task()]
-                debug(tasks)
                 logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
-                
-                # results = await asyncio.gather(*tasks, return_exceptions=True)
-                # debug(results)
-                
-                # await asyncio.sleep(0.25)
-                # Clear out the logger queue
-                # await logger.complete()
 
                 # Restart a fresh main loop
                 asyncio.create_task(main_loop(), name="main loop")
