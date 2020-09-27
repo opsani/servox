@@ -1,15 +1,16 @@
 from __future__ import annotations
-import enum
 import os
+from servo.connectors.prometheus import PrometheusConnector
+from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesConnector
 from servo.events import on_event
-from typing import List, Optional, Tuple
+from typing import Generator, List, Optional, Tuple
 import servo
 from servo import connector, configuration, checks
 from servo.connectors import kubernetes, prometheus
 from servo import Check, Filter, Severity
 
-class Formations(str, enum.Enum):
-    opsani_dev = "opsani_dev"
+# class Formations(str, enum.Enum):
+#     opsani_dev = "opsani_dev"
 
 class DevFormationChecks(checks.BaseChecks):
     @checks.warn("Prometheus sidecar")
@@ -49,9 +50,127 @@ class DevFormationChecks(checks.BaseChecks):
     #     ...
 
 class FormationConfiguration(servo.AbstractBaseConfiguration):
-    __root__: Optional[Formations] = None
+    @classmethod
+    def _generate(cls, **kwargs) -> Generator[Tuple[str, servo.AbstractBaseConfiguration], None, None]:
+        for method in (cls.generate_kubernetes_config, cls.generate_prometheus_config):
+            yield method()
+    
+    @classmethod
+    def generate_kubernetes_config(cls, **kwargs) -> Tuple[str, KubernetesConfiguration]:
+        """Generates a configuration for running an Opsani Dev optimization under Kubernetes.
 
-    # TODO: Add a generate command
+        Returns:
+            A tuple of connector name and a Kubernetes connector configuration object.
+        """
+        return "kubernetes", KubernetesConfiguration(
+            namespace="default",
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            deployments=[
+                kubernetes.DeploymentConfiguration(
+                    name="app",
+                    replicas=kubernetes.Replicas(
+                        min=1,
+                        max=2,
+                    ),
+                    containers=[
+                        kubernetes.ContainerConfiguration(
+                            name="opsani/fiber-http:latest",
+                            cpu=kubernetes.CPU(
+                                min="250m",
+                                max="4000m",
+                                step="125m"
+                            ),
+                            memory=kubernetes.Memory(
+                                min="256 MiB",
+                                max="4.0 GiB",
+                                step="128 MiB"
+                            )
+                        )
+                    ]
+                )
+            ],
+            **kwargs
+        )
+    
+    @classmethod
+    def generate_prometheus_config(cls, **kwargs) -> Tuple[str, KubernetesConfiguration]:
+        """Generates a configuration for running an Opsani Dev optimization that utilizes
+        Prometheus and Envoy sidecars to produce and aggregate the necessary metrics.
+
+        Returns:
+            A tuple of connector name and a Prometheus connector configuration object.
+        """
+        return "prometheus", prometheus.PrometheusConfiguration(
+            description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
+            base_url="http://localhost:9090",            
+            metrics=[
+                prometheus.PrometheusMetric(
+                    "main_instance_count",
+                    servo.types.Unit.COUNT,
+                    query="sum(envoy_cluster_membership_healthy{opsani_role!=\"tuning\"})",
+                ),
+                prometheus.PrometheusMetric(
+                    "tuning_instance_count",
+                    servo.types.Unit.COUNT,
+                    query="envoy_cluster_membership_healthy{opsani_role=\"tuning\"}",
+                ),
+
+                prometheus.PrometheusMetric(
+                    "main_pod_avg_request_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="avg(rate(envoy_cluster_upstream_rq_total{opsani_role!=\"tuning\"}[3m]))",
+                ),
+                prometheus.PrometheusMetric(
+                    "total_request_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="sum(rate(envoy_cluster_upstream_rq_total[3m]))",
+                ),
+                prometheus.PrometheusMetric(
+                    "main_request_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="sum(rate(envoy_cluster_upstream_rq_total{opsani_role!=\"tuning\"}[3m]))",
+                ),
+                prometheus.PrometheusMetric(
+                    "tuning_request_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="rate(envoy_cluster_upstream_rq_total{opsani_role=\"tuning\"}[3m])",
+                ),
+                
+                prometheus.PrometheusMetric(
+                    "main_success_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=\"2\"}[3m]))",
+                ),
+                prometheus.PrometheusMetric(
+                    "tuning_success_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="rate(envoy_cluster_upstream_rq_xx{opsani_role=\"tuning\", envoy_response_code_class=\"2\"}[3m])",
+                ),
+                
+                prometheus.PrometheusMetric(
+                    "main_error_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[3m]))",
+                ),
+                prometheus.PrometheusMetric(
+                    "tuning_error_rate",
+                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    query="rate(envoy_cluster_upstream_rq_xx{opsani_role=\"tuning\", envoy_response_code_class=~\"4|5\"}[3m])",
+                ),
+
+                prometheus.PrometheusMetric(
+                    "main_p90_latency",
+                    servo.types.Unit.MILLISECONDS,
+                    query="avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!=\"tuning\"}[3m])))",
+                ),
+                prometheus.PrometheusMetric(
+                    "tuning_p90_latency",
+                    servo.types.Unit.MILLISECONDS,
+                    query="avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role=\"tuning\"}[3m])))",
+                ),
+            ],
+            **kwargs,
+        )
 
 @connector.metadata(
     description="Run connectors in a specific formation",

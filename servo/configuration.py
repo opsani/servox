@@ -396,8 +396,13 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
                 and inspect.isclass(field.type_)
                 and issubclass(field.type_, AbstractBaseConfiguration)
             ):
-                if config := field.type_.generate():
-                    kwargs[name] = config
+                if inspect.isgeneratorfunction(field.type_.generate):
+                    for name, config in field.type_.generate():
+                        kwargs[name] = config
+                else:    
+                    if config := field.type_.generate():
+                        kwargs[name] = config
+
         return cls(**kwargs)
 
     @validator("connectors", pre=True)
