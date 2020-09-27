@@ -9,7 +9,7 @@ OPSANI_TOKEN_FILE ?= "/dev/null"
 
 .PHONY: build
 build:
-	docker build -t ${IMAGE_NAME} .
+	DOCKER_BUILDKIT=1 docker build -t ${IMAGE_NAME} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
 
 .PHONY: config
 config:
