@@ -228,9 +228,13 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         # Main run loop for processing commands from the optimizer
         async def main_loop() -> None:
             while True:
-                status = await self.exec_command()
-                if status.status == servo.api.UNEXPECTED_EVENT:
-                    logger.warning(f"server reported unexpected event: {status.reason}")
+                try:
+                    status = await self.exec_command()
+                    if status.status == servo.api.UNEXPECTED_EVENT:
+                        logger.warning(f"server reported unexpected event: {status.reason}")
+                except Exception as error:
+                    logger.exception(f"failed with unrecoverable error: {error}")
+                    raise error
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server

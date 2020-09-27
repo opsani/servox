@@ -714,7 +714,7 @@ def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, s
     elif isinstance(result, Exception):
         check.success = False
         check.exception = result
-        check.message = f"caught exception: {str(result)}"
+        check.message = f"caught exception: {str(result) or repr(result)}"
     else:
         raise ValueError(f"check method returned unexpected value of type \"{result.__class__.__name__}\"")
 
