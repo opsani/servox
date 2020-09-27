@@ -36,7 +36,6 @@ version = "0.13.0"
 reference = "9aefec8dd301bf8c4a4e03a22fb4ec64c2b479cf"
 type = "git"
 url = "https://github.com/Martiusweb/asynctest.git"
-
 [[package]]
 category = "dev"
 description = "Atomic file writes."
@@ -156,7 +155,7 @@ description = "Google Authentication Library"
 name = "google-auth"
 optional = false
 python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*"
-version = "1.21.2"
+version = "1.21.3"
 
 [package.dependencies]
 cachetools = ">=2.0.0,<5.0"
@@ -316,14 +315,6 @@ win32-setctime = ">=1.0.0"
 dev = ["codecov (>=2.0.15)", "colorama (>=0.3.4)", "flake8 (>=3.7.7)", "tox (>=3.9.0)", "tox-travis (>=0.12)", "pytest (>=4.6.2)", "pytest-cov (>=2.7.1)", "Sphinx (>=2.2.1)", "sphinx-autobuild (>=0.7.1)", "sphinx-rtd-theme (>=0.4.3)", "black (>=19.10b0)", "isort (>=5.1.1)"]
 
 [[package]]
-category = "dev"
-description = "More routines for operating on iterables, beyond itertools"
-name = "more-itertools"
-optional = false
-python-versions = ">=3.5"
-version = "8.5.0"
-
-[[package]]
 category = "main"
 description = "multidict implementation"
 name = "multidict"
@@ -350,7 +341,7 @@ description = "Fast, correct Python JSON library supporting dataclasses, datetim
 name = "orjson"
 optional = false
 python-versions = ">=3.6"
-version = "3.3.1"
+version = "3.4.0"
 
 [[package]]
 category = "dev"
@@ -456,14 +447,13 @@ description = "pytest: simple powerful testing with Python"
 name = "pytest"
 optional = false
 python-versions = ">=3.5"
-version = "6.0.2"
+version = "6.1.0"
 
 [package.dependencies]
 atomicwrites = ">=1.0"
 attrs = ">=17.4.0"
 colorama = "*"
 iniconfig = "*"
-more-itertools = ">=4.0.0"
 packaging = "*"
 pluggy = ">=0.12,<1.0"
 py = ">=1.8.2"
@@ -777,7 +767,7 @@ description = "Yet another URL library"
 name = "yarl"
 optional = false
 python-versions = ">=3.5"
-version = "1.5.1"
+version = "1.6.0"
 
 [package.dependencies]
 idna = ">=2.0"
@@ -889,8 +879,8 @@ freezegun = [
     {file = "freezegun-1.0.0.tar.gz", hash = "sha256:1cf08e441f913ff5e59b19cc065a8faa9dd1ddc442eaf0375294f344581a0643"},
 ]
 google-auth = [
-    {file = "google-auth-1.21.2.tar.gz", hash = "sha256:7084c50c03f7a8a5696ef4500e65df0c525a0f6909f3c70b9ee65900a230c755"},
-    {file = "google_auth-1.21.2-py2.py3-none-any.whl", hash = "sha256:dcf86c5adc3a8a7659be190b12bb8912ae019cfd9ee2a571ea881e289fafbe39"},
+    {file = "google-auth-1.21.3.tar.gz", hash = "sha256:31941bf019fb242c04d0de32845da10180788bfddb0de87d78c4bdf55555dda1"},
+    {file = "google_auth-1.21.3-py2.py3-none-any.whl", hash = "sha256:873051a6317294b083795cffc467bcd05b6df483ef542bfe0069ddbfbac0a096"},
 ]
 h11 = [
     {file = "h11-0.9.0-py2.py3-none-any.whl", hash = "sha256:4bc6d6a1238b7615b266ada57e0618568066f57dd6fa967d1290ec9309b2f2f1"},
@@ -931,10 +921,6 @@ loguru = [
     {file = "loguru-0.5.3-py3-none-any.whl", hash = "sha256:f8087ac396b5ee5f67c963b495d615ebbceac2796379599820e324419d53667c"},
     {file = "loguru-0.5.3.tar.gz", hash = "sha256:b28e72ac7a98be3d28ad28570299a393dfcd32e5e3f6a353dec94675767b6319"},
 ]
-more-itertools = [
-    {file = "more-itertools-8.5.0.tar.gz", hash = "sha256:6f83822ae94818eae2612063a5101a7311e68ae8002005b5e05f03fd74a86a20"},
-    {file = "more_itertools-8.5.0-py3-none-any.whl", hash = "sha256:9b30f12df9393f0d28af9210ff8efe48d10c94f73e5daf886f10c4b0b0b4f03c"},
-]
 multidict = [
     {file = "multidict-4.7.6-cp35-cp35m-macosx_10_14_x86_64.whl", hash = "sha256:275ca32383bc5d1894b6975bb4ca6a7ff16ab76fa622967625baeebcf8079000"},
     {file = "multidict-4.7.6-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:1ece5a3369835c20ed57adadc663400b5525904e53bae59ec854a5d36b39b21a"},
@@ -959,24 +945,21 @@ oauthlib = [
     {file = "oauthlib-3.1.0.tar.gz", hash = "sha256:bee41cc35fcca6e988463cacc3bcb8a96224f470ca547e697b604cc697b2f889"},
 ]
 orjson = [
-    {file = "orjson-3.3.1-cp36-cp36m-macosx_10_7_x86_64.whl", hash = "sha256:0f33d28083819579976669f54ca79675d8e95fd5d75e7db21b798354ed8dd15b"},
-    {file = "orjson-3.3.1-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:4c290f1c0b6665d60181ee2f0ef631640d04ead2002ca4eadce4991ea5d6a4ed"},
-    {file = "orjson-3.3.1-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:bf542f372162533550e86003d48664ab5fc1b44fb2b88923b9794cc8db6f0cf0"},
-    {file = "orjson-3.3.1-cp36-cp36m-manylinux2014_x86_64.whl", hash = "sha256:28e6116ebd2082357bb9c66a76a3a1dc6aa4de0754801ac10b9903d31b752a1b"},
-    {file = "orjson-3.3.1-cp36-none-win_amd64.whl", hash = "sha256:c4ac5a1d1767733708fd9b45cbbab3f8871af57b54b707a2dc6fddb47e51a81a"},
-    {file = "orjson-3.3.1-cp37-cp37m-macosx_10_7_x86_64.whl", hash = "sha256:0f11fd620b74fbdcf29021b3a9c36fb6e13efcdd63cbacc292d0786b54b4b2e8"},
-    {file = "orjson-3.3.1-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:e455c5b42a023f4777526c623d2e9ae415084de5130f93aefe689ea482de5f67"},
-    {file = "orjson-3.3.1-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:8c90083c67653d88b132820719e604250f26ba04229efe3149bf82ba2a08f8cf"},
-    {file = "orjson-3.3.1-cp37-cp37m-manylinux2014_x86_64.whl", hash = "sha256:bc23eed41167b4454cddd51f72a7ee4163c33565c509bb9469adf56384b1cce2"},
-    {file = "orjson-3.3.1-cp37-none-win_amd64.whl", hash = "sha256:3bff4765281da6fa8ddbbe692e5061f950d11aabdfe64837fb53ead4756e9af6"},
-    {file = "orjson-3.3.1-cp38-cp38-macosx_10_7_x86_64.whl", hash = "sha256:1e19907c1ccf82976c2d111f3914a2c0697720b91908e8ef02405e4dc21c662a"},
-    {file = "orjson-3.3.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:aa8332a3ee0fa03a331bea4f28cdcc4d363b53af2ea41630d7eb580422514a1f"},
-    {file = "orjson-3.3.1-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:4ab9536c3776136303ab9e6432691d970e6aa5d27dbc2b5e0ca0d0db3e12f1c4"},
-    {file = "orjson-3.3.1-cp38-cp38-manylinux2014_x86_64.whl", hash = "sha256:28dc7e1f89440a68c1ccb937f6f0ae40fa3875de84f747262c00bc18aa25c5ec"},
-    {file = "orjson-3.3.1-cp38-none-win_amd64.whl", hash = "sha256:fa4d5d734e76d9f21a94444fbf1de7eea185b355b324d38c8a7456ce63c3bbeb"},
-    {file = "orjson-3.3.1-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:b0533d6719b781db7563c478672d91faeac9ea810f30f16ebb5e917c4451b098"},
-    {file = "orjson-3.3.1-cp39-cp39-manylinux2014_x86_64.whl", hash = "sha256:a7d634eb69083ca5a49baf412625604813f9e3365cb869f445c388d15fe60122"},
-    {file = "orjson-3.3.1.tar.gz", hash = "sha256:149d6a2bc71514826979b9d053f3df0c2397a99e2b87213ba71605a1626d662c"},
+    {file = "orjson-3.4.0-cp36-cp36m-macosx_10_7_x86_64.whl", hash = "sha256:5b7db73d295d75a25c4f3a120e141d182cbcbb240d07c1b006655269bb802508"},
+    {file = "orjson-3.4.0-cp36-cp36m-manylinux2014_aarch64.whl", hash = "sha256:4fc25cd9f81de2b6e55fa7e5563973a1d47c05c86fbaf9124b1b74a08df65929"},
+    {file = "orjson-3.4.0-cp36-cp36m-manylinux2014_x86_64.whl", hash = "sha256:e7c2920f66ee994cef285e93b81bee08935803b4f322bee77d0353a33746f778"},
+    {file = "orjson-3.4.0-cp36-none-win_amd64.whl", hash = "sha256:24dd09562ec383ddd77e9f82b9d604ea3a300643b2fd5beaf9a0b21d77e52be2"},
+    {file = "orjson-3.4.0-cp37-cp37m-macosx_10_7_x86_64.whl", hash = "sha256:86c005a10b626e1be5392a439774cf79f920a6e90f49dcd708aa6adc0c2f3fb3"},
+    {file = "orjson-3.4.0-cp37-cp37m-manylinux2014_aarch64.whl", hash = "sha256:b326c47e19c939ee770c377d72d7595eefc21bf3b08864fcb82f46d433a0069f"},
+    {file = "orjson-3.4.0-cp37-cp37m-manylinux2014_x86_64.whl", hash = "sha256:fd1bf6ab3b12020531a153e77d8468d7febf0efa6e36a64a06e08e5c02d2d707"},
+    {file = "orjson-3.4.0-cp37-none-win_amd64.whl", hash = "sha256:132766446e6ff0ad9d13cd550cfc15d078ca3d2c6d5277517897da91d12e39df"},
+    {file = "orjson-3.4.0-cp38-cp38-macosx_10_7_x86_64.whl", hash = "sha256:48238a0a2696c4f082d5432802064b4a63849cce3fc81ea80d9517f5cfeda138"},
+    {file = "orjson-3.4.0-cp38-cp38-manylinux2014_aarch64.whl", hash = "sha256:ec84a7c0703fab8b4feecac19a5fb92156ae402fc8952a961ecbf1cdac1ef5c0"},
+    {file = "orjson-3.4.0-cp38-cp38-manylinux2014_x86_64.whl", hash = "sha256:5ed087b0de8c8fad29d0b776d5c3287644271159e85efe2fbd745ebc0cb81697"},
+    {file = "orjson-3.4.0-cp38-none-win_amd64.whl", hash = "sha256:af526fa8f4e4ac6ba953bf50bb384928a7d4a2849180c21593cdd3e08060f8ca"},
+    {file = "orjson-3.4.0-cp39-cp39-manylinux2014_aarch64.whl", hash = "sha256:4a757ee2154b09631d272e63bd35c549f876ce5425dd154446dff0e1ef603429"},
+    {file = "orjson-3.4.0-cp39-cp39-manylinux2014_x86_64.whl", hash = "sha256:1e957d1ab0ea3e4a4706cfa8f00a3a672dda7959607c231b6acb0b15ce35d52e"},
+    {file = "orjson-3.4.0.tar.gz", hash = "sha256:2dcfc744cad7dceee7fca55ebdca91cc79e14223acc76423f0f4017e7a2676c9"},
 ]
 packaging = [
     {file = "packaging-20.4-py2.py3-none-any.whl", hash = "sha256:998416ba6962ae7fbd6596850b80e17859a5753ba17c32284f67bfff33784181"},
@@ -1055,8 +1038,8 @@ pyrsistent = [
     {file = "pyrsistent-0.17.3.tar.gz", hash = "sha256:2e636185d9eb976a18a8a8e96efce62f2905fea90041958d8cc2a189756ebf3e"},
 ]
 pytest = [
-    {file = "pytest-6.0.2-py3-none-any.whl", hash = "sha256:0e37f61339c4578776e090c3b8f6b16ce4db333889d65d0efb305243ec544b40"},
-    {file = "pytest-6.0.2.tar.gz", hash = "sha256:c8f57c2a30983f469bf03e68cdfa74dc474ce56b8f280ddcb080dfd91df01043"},
+    {file = "pytest-6.1.0-py3-none-any.whl", hash = "sha256:1cd09785c0a50f9af72220dd12aa78cfa49cbffc356c61eab009ca189e018a33"},
+    {file = "pytest-6.1.0.tar.gz", hash = "sha256:d010e24666435b39a4cf48740b039885642b6c273a3f77be3e7e03554d2806b7"},
 ]
 pytest-asyncio = [
     {file = "pytest-asyncio-0.14.0.tar.gz", hash = "sha256:9882c0c6b24429449f5f969a5158b528f39bde47dc32e85b9f0403965017e700"},
@@ -1187,21 +1170,21 @@ yamlpath = [
     {file = "yamlpath-2.3.7.tar.gz", hash = "sha256:67f2b410d4b4d871c0d7fedd2d516e216372176cf08619c3748810b1e660950d"},
 ]
 yarl = [
-    {file = "yarl-1.5.1-cp35-cp35m-macosx_10_14_x86_64.whl", hash = "sha256:db6db0f45d2c63ddb1a9d18d1b9b22f308e52c83638c26b422d520a815c4b3fb"},
-    {file = "yarl-1.5.1-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:17668ec6722b1b7a3a05cc0167659f6c95b436d25a36c2d52db0eca7d3f72593"},
-    {file = "yarl-1.5.1-cp35-cp35m-win32.whl", hash = "sha256:040b237f58ff7d800e6e0fd89c8439b841f777dd99b4a9cca04d6935564b9409"},
-    {file = "yarl-1.5.1-cp35-cp35m-win_amd64.whl", hash = "sha256:f18d68f2be6bf0e89f1521af2b1bb46e66ab0018faafa81d70f358153170a317"},
-    {file = "yarl-1.5.1-cp36-cp36m-macosx_10_14_x86_64.whl", hash = "sha256:c52ce2883dc193824989a9b97a76ca86ecd1fa7955b14f87bf367a61b6232511"},
-    {file = "yarl-1.5.1-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:ce584af5de8830d8701b8979b18fcf450cef9a382b1a3c8ef189bedc408faf1e"},
-    {file = "yarl-1.5.1-cp36-cp36m-win32.whl", hash = "sha256:df89642981b94e7db5596818499c4b2219028f2a528c9c37cc1de45bf2fd3a3f"},
-    {file = "yarl-1.5.1-cp36-cp36m-win_amd64.whl", hash = "sha256:3a584b28086bc93c888a6c2aa5c92ed1ae20932f078c46509a66dce9ea5533f2"},
-    {file = "yarl-1.5.1-cp37-cp37m-macosx_10_14_x86_64.whl", hash = "sha256:da456eeec17fa8aa4594d9a9f27c0b1060b6a75f2419fe0c00609587b2695f4a"},
-    {file = "yarl-1.5.1-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:bc2f976c0e918659f723401c4f834deb8a8e7798a71be4382e024bcc3f7e23a8"},
-    {file = "yarl-1.5.1-cp37-cp37m-win32.whl", hash = "sha256:4439be27e4eee76c7632c2427ca5e73703151b22cae23e64adb243a9c2f565d8"},
-    {file = "yarl-1.5.1-cp37-cp37m-win_amd64.whl", hash = "sha256:48e918b05850fffb070a496d2b5f97fc31d15d94ca33d3d08a4f86e26d4e7c5d"},
-    {file = "yarl-1.5.1-cp38-cp38-macosx_10_14_x86_64.whl", hash = "sha256:9b930776c0ae0c691776f4d2891ebc5362af86f152dd0da463a6614074cb1b02"},
-    {file = "yarl-1.5.1-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:b3b9ad80f8b68519cc3372a6ca85ae02cc5a8807723ac366b53c0f089db19e4a"},
-    {file = "yarl-1.5.1-cp38-cp38-win32.whl", hash = "sha256:f379b7f83f23fe12823085cd6b906edc49df969eb99757f58ff382349a3303c6"},
-    {file = "yarl-1.5.1-cp38-cp38-win_amd64.whl", hash = "sha256:9102b59e8337f9874638fcfc9ac3734a0cfadb100e47d55c20d0dc6087fb4692"},
-    {file = "yarl-1.5.1.tar.gz", hash = "sha256:c22c75b5f394f3d47105045ea551e08a3e804dc7e01b37800ca35b58f856c3d6"},
+    {file = "yarl-1.6.0-cp35-cp35m-macosx_10_14_x86_64.whl", hash = "sha256:db9eb8307219d7e09b33bcb43287222ef35cbcf1586ba9472b0a4b833666ada1"},
+    {file = "yarl-1.6.0-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:e31fef4e7b68184545c3d68baec7074532e077bd1906b040ecfba659737df188"},
+    {file = "yarl-1.6.0-cp35-cp35m-win32.whl", hash = "sha256:5d84cc36981eb5a8533be79d6c43454c8e6a39ee3118ceaadbd3c029ab2ee580"},
+    {file = "yarl-1.6.0-cp35-cp35m-win_amd64.whl", hash = "sha256:5e447e7f3780f44f890360ea973418025e8c0cdcd7d6a1b221d952600fd945dc"},
+    {file = "yarl-1.6.0-cp36-cp36m-macosx_10_14_x86_64.whl", hash = "sha256:6f6898429ec3c4cfbef12907047136fd7b9e81a6ee9f105b45505e633427330a"},
+    {file = "yarl-1.6.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:d088ea9319e49273f25b1c96a3763bf19a882cff774d1792ae6fba34bd40550a"},
+    {file = "yarl-1.6.0-cp36-cp36m-win32.whl", hash = "sha256:b7c199d2cbaf892ba0f91ed36d12ff41ecd0dde46cbf64ff4bfe997a3ebc925e"},
+    {file = "yarl-1.6.0-cp36-cp36m-win_amd64.whl", hash = "sha256:67c5ea0970da882eaf9efcf65b66792557c526f8e55f752194eff8ec722c75c2"},
+    {file = "yarl-1.6.0-cp37-cp37m-macosx_10_14_x86_64.whl", hash = "sha256:04a54f126a0732af75e5edc9addeaa2113e2ca7c6fce8974a63549a70a25e50e"},
+    {file = "yarl-1.6.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:fcbe419805c9b20db9a51d33b942feddbf6e7fb468cb20686fd7089d4164c12a"},
+    {file = "yarl-1.6.0-cp37-cp37m-win32.whl", hash = "sha256:c604998ab8115db802cc55cb1b91619b2831a6128a62ca7eea577fc8ea4d3131"},
+    {file = "yarl-1.6.0-cp37-cp37m-win_amd64.whl", hash = "sha256:c22607421f49c0cb6ff3ed593a49b6a99c6ffdeaaa6c944cdda83c2393c8864d"},
+    {file = "yarl-1.6.0-cp38-cp38-macosx_10_14_x86_64.whl", hash = "sha256:7ce35944e8e61927a8f4eb78f5bc5d1e6da6d40eadd77e3f79d4e9399e263921"},
+    {file = "yarl-1.6.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:c15d71a640fb1f8e98a1423f9c64d7f1f6a3a168f803042eaf3a5b5022fde0c1"},
+    {file = "yarl-1.6.0-cp38-cp38-win32.whl", hash = "sha256:3cc860d72ed989f3b1f3abbd6ecf38e412de722fb38b8f1b1a086315cf0d69c5"},
+    {file = "yarl-1.6.0-cp38-cp38-win_amd64.whl", hash = "sha256:e32f0fb443afcfe7f01f95172b66f279938fbc6bdaebe294b0ff6747fb6db020"},
+    {file = "yarl-1.6.0.tar.gz", hash = "sha256:61d3ea3c175fe45f1498af868879c6ffeb989d4143ac542163c45538ba5ec21b"},
 ]
