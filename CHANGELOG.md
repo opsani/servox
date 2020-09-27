@@ -52,6 +52,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Progress logging and reporting will no longer trigger unhandled exceptions.
 - Adjust operations now return a state descriptor rather than parroting back    
   the requested state.
+- Kubernetes Connector is now aware of out of band changes such as those made 
+  by Horizontal Pod Autoscalers.
 
 ## Unreleased
 
