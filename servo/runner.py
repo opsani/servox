@@ -152,13 +152,20 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         return aggregate_measurement
 
-    async def adjust(self, adjustments: List[Adjustment], control: Control) -> None:
+    async def adjust(self, adjustments: List[Adjustment], control: Control) -> Description:
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
         logger.info(f"Adjusting... {summary}")
         logger.trace(pformat(adjustments))
+        
+        aggregate_description = Description.construct()
+        results = await self.servo.dispatch_event(Events.ADJUST, adjustments)
+        for result in results:
+            description = result.value
+            aggregate_description.components.extend(description.components)
+            aggregate_description.metrics.extend(description.metrics)
 
-        await self.servo.dispatch_event(Events.ADJUST, adjustments)
         logger.info(f"Adjustment completed {summary}")
+        return aggregate_description
 
     # backoff and retry for an hour on transient request failures
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time)
@@ -188,17 +195,14 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == api.Command.ADJUST:
             adjustments = descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
-            await self.adjust(adjustments, control)
+            description = await self.adjust(adjustments, control)
 
-            # TODO: Model a response class ("Adjusted"?) -- map errors to the response
-            # If no errors, report state matching the request
-            reply = { "status": "ok", "state": cmd_response.param["state"] }
+            reply = { "status": "ok", "state": description.opsani_dict() }
 
-            components_dict = cmd_response.param["state"]["application"]["components"]
-            components_count = len(components_dict)
+            components_count = len(description.components)
             settings_count = sum(
-                len(components_dict[component]["settings"])
-                for component in components_dict
+                len(component.settings)
+                for component in description.components
             )
             logger.info(
                 f"Adjusted: {components_count} components, {settings_count} settings"

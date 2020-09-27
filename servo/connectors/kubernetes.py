@@ -1560,7 +1560,7 @@ class BaseOptimization(abc.ABC, BaseModel, servo.logging.Mixin):
         ...
 
     @abstractmethod
-    async def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+    async def adjust(self, adjustment: Adjustment, control: Control = Control()) -> Description:
         """
         Adjust a setting on the underlying Deployment/Pod or Container.
         """
@@ -2591,7 +2591,7 @@ class KubernetesConnector(BaseConnector):
         return state.to_components()
 
     @on_event()
-    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> None:
+    async def adjust(self, adjustments: List[Adjustment], control: Control = Control()) -> Description:
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
@@ -2602,6 +2602,9 @@ class KubernetesConnector(BaseConnector):
             progress_logger = lambda p: self.logger.info(p.annotate(f"waiting {settlement} for pods to settle...", False), progress=p.progress)
             await progress.watch(progress_logger)
             self.logger.info(f"Settlement duration of {settlement} has elapsed, resuming optimization.")
+        
+        description = state.to_description()
+        return description
 
     @on_event()
     async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:        
