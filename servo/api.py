@@ -196,14 +196,8 @@ class Mixin:
                 self.logger.error(
                     f"HTTP error encountered while posting {event} event"
                 )
-                # self.logger.trace(pformat(event_request))
+                self.logger.trace(pformat(event_request))
                 raise
-            
-            except Exception as error:
-                print(f"Exception raised in _post_event: {error}")
-                raise error
-        
-        print(f"AssertionError in _post_event")
 
 
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
