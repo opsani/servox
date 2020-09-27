@@ -60,7 +60,7 @@ class AdjustConnector(BaseConnector):
         ]
 
     @on_event()
-    def adjust(self, *args, **kwargs) -> None:
+    def adjust(self, *args, **kwargs) -> Description:
         pass
 
 

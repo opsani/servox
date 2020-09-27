@@ -164,15 +164,17 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
     "return_value, exception_type, message",
     [
         (123, ValueError, (
-            "caught exception: ValueError('check method returned unexpected value of type \"int\"')"
+            "caught exception: check method returned unexpected value of type \"int\""
         )),
         ((False, 187), ValueError, (
-            "caught exception: ValidationError(model='Check', errors=[{'loc': ('message',), 'msg': 'str type expected'"
-            ", 'type': 'type_error.str'}])"
+            'caught exception: 1 validation error for Check\n'
+            'message\n'
+            '  str type expected (type=type_error.str)'
         )),
         ((666, "fail"), ValueError, (
-            "caught exception: ValidationError(model='Check', errors=[{'loc': ('success',), 'msg': 'value could not be"
-            " parsed to a boolean', 'type': 'type_error.bool'}])"
+            'caught exception: 1 validation error for Check\n'
+            'success\n'
+            '  value could not be parsed to a boolean (type=type_error.bool)'
         )),
     ]
 )
@@ -684,7 +686,7 @@ async def test_warnings() -> None:
             'warning-1',
             'check_one',
             False,
-            "caught exception: RuntimeError('Failure')",
+            "caught exception: Failure",
         ],
         [
             'warning-2',
