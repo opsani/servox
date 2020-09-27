@@ -1,5 +1,5 @@
 FROM peterevans/vegeta AS vegeta
-FROM python:3.8
+FROM python:3.8-slim
 
 ARG SERVO_ENV=development
 
