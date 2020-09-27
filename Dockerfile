@@ -16,6 +16,11 @@ ENV SERVO_ENV=${SERVO_ENV} \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_CACHE_DIR='/var/cache/pypoetry'
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && apt-get purge -y --auto-remove \
+  && rm -rf /var/lib/apt/lists/*
+
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
 
