@@ -1,5 +1,5 @@
 FROM peterevans/vegeta AS vegeta
-FROM python:3.8-slim
+FROM python:3.8
 
 ARG SERVO_ENV=development
 
@@ -15,11 +15,6 @@ ENV SERVO_ENV=${SERVO_ENV} \
     # Poetry
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_CACHE_DIR='/var/cache/pypoetry'
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends git build-essential libssl-dev libffi-dev python3-dev \
-  && apt-get purge -y --auto-remove \
-  && rm -rf /var/lib/apt/lists/*
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
