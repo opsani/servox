@@ -443,6 +443,13 @@ class TestCanaryOptimization:
         assert optimization.target_name == "main"
         assert optimization.canary_name == "tuning"
 
+def test_compare_strategy() -> None:
+    config = CanaryOptimizationStrategyConfiguration(
+        type=OptimizationStrategy.CANARY, 
+        alias="tuning"
+    )
+    assert config == OptimizationStrategy.CANARY
+    
 class TestResourceRequirements:
     @pytest.mark.parametrize(
         "requirement, val",

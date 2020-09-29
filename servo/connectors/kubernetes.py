@@ -2325,6 +2325,11 @@ class OptimizationStrategy(str, enum.Enum):
 class BaseOptimizationStrategyConfiguration(BaseModel):
     type: OptimizationStrategy = Field(..., const=True)
 
+    def __eq__(self, other) -> bool:
+        if isinstance(other, OptimizationStrategy):
+            return self.type == other
+        return super().__eq__(other)
+
     class Config:
         extra = Extra.forbid
 
