@@ -21,6 +21,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `servo.__codename__` constant now contains the release codename.
 - Extensive docstring comments for all members of the `servo.types` module.
+- Kubernetes Containers can be aliased to set explicit Compomnent names rather
+  rather than automatically deriving names from Deployment/Container.
+- Kubernetes Optimization Strategy classes can now accept options from the
+  config file (currently supports `alias` for canaries).
 
 ### Removed
 - Subprocess methods have been removed from `servo.connector.Connector` in

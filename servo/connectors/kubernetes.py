@@ -9,7 +9,7 @@ import itertools
 import os
 import backoff
 
-from pydantic.main import Extra
+from pydantic import Extra, validator
 
 from pydantic.types import StrictInt, constr
 from servo.types import Numeric
@@ -1959,7 +1959,7 @@ class CanaryOptimization(BaseOptimization):
 
     async def apply(self) -> None:
         dep_copy = copy.copy(self.target_deployment)
-        dep_copy.obj.spec.resources = self.canary_container.resources
+        # dep_copy.obj.spec.resources = self.canary_container.resources
         dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
 
         self.canary = await dep_copy.ensure_canary_pod()
@@ -1993,6 +1993,31 @@ class CanaryOptimization(BaseOptimization):
             value=1,
             pinned=True,
         )
+    
+    @property
+    def target_name(self) -> str:
+        """Returns the name of the target component.
+
+        Component names are generated from the Deployment and Container name
+        unless overriden with an alias.
+        """
+        return (self.target_container_config.alias or 
+            f"{self.target_deployment_config.name}/{self.target_container_config.name}")
+    
+    @property
+    def canary_name(self) -> str:
+        """Returns the name of the canary component.
+
+        Component names are generated from the Deployment and Container name
+        unless overriden with an alias.
+        """
+        if (
+            isinstance(self.target_deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
+            and self.target_deployment_config.strategy.alias
+        ):
+            return self.target_deployment_config.strategy.alias
+        
+        return self.name
 
     def to_components(self) -> List[Component]:
         """
@@ -2003,28 +2028,28 @@ class CanaryOptimization(BaseOptimization):
         """
 
         # implicitly pin the target settings before we return them
-        cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
+        target_cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("cpu", first=True):
-            cpu.value = value
+            target_cpu.value = value
 
-        memory = self.target_container_config.memory.copy(update={ "pinned": True })
+        target_memory = self.target_container_config.memory.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("memory", first=True):
-            memory.value = value
+            target_memory.value = value
 
-        replicas = self.target_deployment_config.replicas.copy(update={ "pinned": True })
-        replicas.value = self.target_deployment.replicas
+        target_replicas = self.target_deployment_config.replicas.copy(update={ "pinned": True })
+        target_replicas.value = self.target_deployment.replicas
 
         return [
             Component(
-                name=f"{self.target_deployment.name}/{self.target_container.name}",
+                name=self.target_name,
                 settings=[
-                    cpu,
-                    memory,
-                    replicas,
+                    target_cpu,
+                    target_memory,
+                    target_replicas,
                 ]
             ),
             Component(
-                name=self.name,
+                name=self.canary_name,
                 settings=[
                     self.cpu,
                     self.memory,
@@ -2277,6 +2302,7 @@ class ContainerConfiguration(BaseConfiguration):
     The ContainerConfiguration class models the configuration of an optimizable container within a Kubernetes Deployment.
     """
     name: ContainerTagName
+    alias: Optional[ContainerTagName]
     command: Optional[str] # TODO: create model...
     cpu: CPU
     memory: Memory
@@ -2296,6 +2322,18 @@ class OptimizationStrategy(str, enum.Enum):
     adjustments to it instead of the Deployment itself.
     """
 
+class BaseOptimizationStrategyConfiguration(BaseModel):
+    type: OptimizationStrategy = Field(..., const=True)
+
+    class Config:
+        extra = Extra.forbid
+
+class DefaultOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
+    type = Field(OptimizationStrategy.DEFAULT, const=True)
+
+class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
+    type = Field(OptimizationStrategy.CANARY, const=True)
+    alias: Optional[ContainerTagName]
 
 class FailureMode(str, enum.Enum):
     """
@@ -2348,14 +2386,15 @@ class BaseKubernetesConfiguration(BaseConfiguration):
         description="Time interval to wait before considering Kubernetes operations to have failed."
     )
 
+StrategyTypes = Union[OptimizationStrategy, DefaultOptimizationStrategyConfiguration, CanaryOptimizationStrategyConfiguration]
 
 class DeploymentConfiguration(BaseKubernetesConfiguration):
     """
     The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
     """
-    name: DNSSubdomainName
+    name: DNSSubdomainName    
     containers: List[ContainerConfiguration]
-    strategy: OptimizationStrategy = OptimizationStrategy.DEFAULT
+    strategy: StrategyTypes = OptimizationStrategy.DEFAULT
     replicas: Replicas
 
 

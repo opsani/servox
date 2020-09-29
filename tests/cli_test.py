@@ -556,8 +556,7 @@ class TestCommands:
     def test_schema_dict(self, servo_cli: Typer, cli_runner: CliRunner) -> None:
         result = cli_runner.invoke(servo_cli, "schema -f dict")
         assert result.exit_code == 0
-        dict = eval(result.stdout)
-        assert dict["title"] == "Servo Configuration Schema"
+        assert "'title': 'Servo Configuration Schema'" in result.stdout
 
     def test_schema_dict_file_output(
         self, servo_cli: Typer, cli_runner: CliRunner, tmp_path: Path
@@ -565,8 +564,8 @@ class TestCommands:
         path = tmp_path / "output.dict"
         result = cli_runner.invoke(servo_cli, f"schema -f dict -o {path}")
         assert result.exit_code == 0
-        dict = eval(path.read_text())
-        assert dict["title"] == "Servo Configuration Schema"
+        content = path.read_text()
+        assert "'title': 'Servo Configuration Schema'" in content
 
     def test_validate(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass

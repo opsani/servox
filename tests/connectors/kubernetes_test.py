@@ -12,7 +12,7 @@ from kubernetes_asyncio.client.api_client import ApiClient
 import pydantic
 
 from servo.api import descriptor_to_adjustments
-from servo.connectors.kubernetes import Container, CPU, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName
+from servo.connectors.kubernetes import CanaryOptimization, Container, CPU, CanaryOptimizationStrategyConfiguration, DefaultOptimizationStrategyConfiguration, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName, OptimizationStrategy
 from servo.connectors.kubernetes import KubernetesChecks, Millicore
 from servo.types import Adjustment, Component, Setting, SettingType
 from pydantic import BaseModel
@@ -316,10 +316,132 @@ class TestContainerConfiguration:
     pass
 
 class TestDeploymentConfiguration:
-    pass
-
     def test_inheritance_of_default_namespace(self) -> None:
         ...
+    
+    def test_strategy_enum(self) -> None:
+        config = DeploymentConfiguration(
+            name="testing", 
+            containers=[], 
+            replicas=Replicas(min=1, max=4),
+            strategy=OptimizationStrategy.DEFAULT
+        )        
+        assert config.yaml(exclude_unset=True) == (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy: default\n'
+        )
+    
+    def test_strategy_object_default(self) -> None:
+        config = DeploymentConfiguration(
+            name="testing", 
+            containers=[], 
+            replicas=Replicas(min=1, max=4),
+            strategy=DefaultOptimizationStrategyConfiguration(type=OptimizationStrategy.DEFAULT)
+        )
+        assert config.yaml(exclude_unset=True) == (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy:\n'
+            '  type: default\n'
+        )
+    
+    def test_strategy_object_canary(self) -> None:
+        config = DeploymentConfiguration(
+            name="testing", 
+            containers=[], 
+            replicas=Replicas(min=1, max=4),
+            strategy=CanaryOptimizationStrategyConfiguration(type=OptimizationStrategy.CANARY, alias="tuning")
+        )
+        assert config.yaml(exclude_unset=True) == (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy:\n'
+            '  alias: tuning\n'
+            '  type: canary\n'
+        )
+    
+    def test_strategy_object_default_parsing(self) -> None:
+        config_yaml = (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy:\n'
+            '  type: default\n'
+        )
+        config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
+        config = DeploymentConfiguration.parse_obj(config_dict)
+        assert isinstance(config.strategy, DefaultOptimizationStrategyConfiguration)
+        assert config.strategy.type == OptimizationStrategy.DEFAULT
+
+    def test_strategy_object_canary_parsing(self) -> None:
+        config_yaml = (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy:\n'
+            '  type: canary\n'
+        )
+        config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
+        config = DeploymentConfiguration.parse_obj(config_dict)
+        assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
+        assert config.strategy.type == OptimizationStrategy.CANARY
+        assert config.strategy.alias is None
+    
+    def test_strategy_object_canary_parsing_with_alias(self) -> None:
+        config_yaml = (
+            'containers: []\n'
+            'name: testing\n'
+            'replicas:\n'
+            '  max: 4\n'
+            '  min: 1\n'
+            'strategy:\n'
+            '  alias: tuning\n'
+            '  type: canary\n'
+        )
+        config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
+        config = DeploymentConfiguration.parse_obj(config_dict)
+        assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
+        assert config.strategy.type == OptimizationStrategy.CANARY
+        assert config.strategy.alias == 'tuning'
+
+class TestCanaryOptimization:
+    def test_to_components_default_name(self, config) -> None:
+        config.deployments[0].strategy = OptimizationStrategy.CANARY
+        optimization = CanaryOptimization.construct(
+            name="fiber-http-deployment/opsani/fiber-http:latest-canary",
+            target_deployment_config=config.deployments[0],
+            target_container_config=config.deployments[0].containers[0]
+        )
+        assert optimization.target_name == "fiber-http-deployment/opsani/fiber-http:latest"
+        assert optimization.canary_name == "fiber-http-deployment/opsani/fiber-http:latest-canary"
+
+    def test_to_components_respects_aliases(self, config) -> None:
+        config.deployments[0].strategy = CanaryOptimizationStrategyConfiguration(
+            type=OptimizationStrategy.CANARY, 
+            alias="tuning"
+        )
+        config.deployments[0].containers[0].alias = "main"
+        optimization = CanaryOptimization.construct(
+            name="fiber-http-deployment/opsani/fiber-http:latest-canary",
+            target_deployment_config=config.deployments[0],
+            target_container_config=config.deployments[0].containers[0]
+        )
+        assert optimization.target_name == "main"
+        assert optimization.canary_name == "tuning"
 
 class TestResourceRequirements:
     @pytest.mark.parametrize(
