@@ -1348,7 +1348,7 @@ class Deployment(KubernetesModel):
 
         # Look for an existing canary
         try:
-            if canary_pod := self.get_canary_pod():
+            if canary_pod := await self.get_canary_pod():
                 self.logger.info(f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'")
                 return canary_pod
         except client.exceptions.ApiException as e:
