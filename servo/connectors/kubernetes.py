@@ -1346,13 +1346,14 @@ class Deployment(KubernetesModel):
         namespace = self.namespace
         self.logger.debug(f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'")
 
-        # TODO: Set the strategy to Recreate so we can rollout faster?
-    #     strategy:
-    # type: Recreate
-
-        # Delete any pre-existing canary debris
-        self.logger.trace("deleting pre-existing canary pod (if any)")
-        await self.delete_canary_pod(raise_if_not_found=False, timeout=timeout)
+        # Look for an existing canary
+        try:
+            if canary_pod := self.get_canary_pod():
+                self.logger.info(f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'")
+                return canary_pod
+        except client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != 'Not Found':
+                raise
 
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new canary")
@@ -1366,8 +1367,6 @@ class Deployment(KubernetesModel):
         canary_pod = Pod(obj=pod_obj)
         canary_pod.namespace = namespace
         self.logger.trace(f"initialized new canary: {canary_pod}")
-
-        # TODO: Attach envoy proxy
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get('POD_NAME')
@@ -1895,7 +1894,9 @@ class DeploymentOptimization(BaseOptimization):
 
 
 class CanaryOptimization(BaseOptimization):
-    """
+    """CanaryOptimization objects manage the optimization of Containers within a Deployment using
+    a canary Pod that is adjusted independently and compared against the performance and cost profile
+    of its siblings.
     """
     target_deployment: Deployment
     target_deployment_config: 'DeploymentConfiguration'
@@ -1903,28 +1904,18 @@ class CanaryOptimization(BaseOptimization):
     target_container: Container
     target_container_config: 'ContainerConfiguration'
 
-    # Canary Pod may not exist yet
+    # Canary will be created if it does not yet exist
     canary_pod: Pod
     canary_container: Container
-    # canary_pod: Optional[Pod]
-    # canary_container: Optional[Container]
 
     @classmethod
     async def create(cls, config: 'DeploymentConfiguration', **kwargs) -> 'CanaryOptimization':
         deployment = await Deployment.read(config.name, cast(str, config.namespace))
         if not deployment:
-            raise ValueError(f"cannot create canary: target deployment \"{config.name}\" does not exist in namespace \"{config.namespace}\"")
+            raise ValueError(f"cannot create CanaryOptimization: target Deployment \"{config.name}\" does not exist in Namespace \"{config.namespace}\"")
 
+        # Ensure that we have a canary Pod
         canary_pod = await deployment.ensure_canary_pod()
-        # Retrieve existing canary (if any)
-        # TODO: Eliminate the implicit canary behavior, we don't want to create canary as a side-effect
-        # try:
-        #     canary_pod = await deployment.get_canary_pod()
-        #     logger.info(f"Found existing canary Pod '{canary_pod.name}' in namespace '{config.namespace.name}'")
-        # except client.exceptions.ApiException as e:
-        #     canary_pod = None
-        #     if e.status != 404 or e.reason != 'Not Found' and raise_if_not_found:
-        #         raise
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
@@ -1961,7 +1952,7 @@ class CanaryOptimization(BaseOptimization):
 
     async def apply(self) -> None:
         dep_copy = copy.copy(self.target_deployment)
-        dep_copy.obj.spec.resources = self.canary_container.resources
+        # dep_copy.obj.spec.resources = self.canary_container.resources
         dep_copy.obj.spec.template.spec.containers[0].resources = self.canary_container.resources
 
         self.canary = await dep_copy.ensure_canary_pod()
@@ -2187,7 +2178,7 @@ class KubernetesOptimizations(BaseModel, servo.logging.Mixin):
                 adjustable.adjust(adjustment)
 
             else:
-                self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
+                self.logger.warning(f'ignoring unrecognized adjustment "{adjustment}"')
 
 
         # Apply the changes to Kubernetes and wait for the results
