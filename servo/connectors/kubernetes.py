@@ -1671,7 +1671,7 @@ class DeploymentOptimization(BaseOptimization):
                 names = join_to_series(list(map(lambda c: c.name, deployment.containers)))
                 raise ValueError(f"no container named \"{container_config.name}\" exists in the Pod (found {names})")
 
-            name = f"{deployment.name}/{container.name}" if container else deployment.name
+            name = container_config.alias or (f"{deployment.name}/{container.name}" if container else deployment.name)
             return cls(
                 name=name,
                 deployment_config=config,
@@ -1929,8 +1929,15 @@ class CanaryOptimization(BaseOptimization):
             target_container = deployment.find_container(container_config.name)
             canary_container = canary_pod.get_container(container_config.name)
 
+            name = (
+                config.strategy.alias if
+                    isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
+                    and config.strategy.alias
+                else f"{deployment.name}/{canary_container.name}-canary"
+            )
+
             return cls(
-                name=f"{deployment.name}/{canary_container.name}-canary",
+                name=name,
                 target_deployment_config=config,
                 target_deployment=deployment,
                 target_container_config=container_config,
@@ -1993,31 +2000,6 @@ class CanaryOptimization(BaseOptimization):
             value=1,
             pinned=True,
         )
-    
-    @property
-    def target_name(self) -> str:
-        """Returns the name of the target component.
-
-        Component names are generated from the Deployment and Container name
-        unless overriden with an alias.
-        """
-        return (self.target_container_config.alias or 
-            f"{self.target_deployment_config.name}/{self.target_container_config.name}")
-    
-    @property
-    def canary_name(self) -> str:
-        """Returns the name of the canary component.
-
-        Component names are generated from the Deployment and Container name
-        unless overriden with an alias.
-        """
-        if (
-            isinstance(self.target_deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
-            and self.target_deployment_config.strategy.alias
-        ):
-            return self.target_deployment_config.strategy.alias
-        
-        return self.name
 
     def to_components(self) -> List[Component]:
         """
@@ -2027,6 +2009,10 @@ class CanaryOptimization(BaseOptimization):
         is to be modified during optimization.
         """
 
+        target_name = (
+            self.target_container_config.alias or 
+            f"{self.target_deployment_config.name}/{self.target_container_config.name}"
+        )
         # implicitly pin the target settings before we return them
         target_cpu = self.target_container_config.cpu.copy(update={ "pinned": True })
         if value := self.target_container.get_resource_requirements("cpu", first=True):
@@ -2041,7 +2027,7 @@ class CanaryOptimization(BaseOptimization):
 
         return [
             Component(
-                name=self.target_name,
+                name=target_name,
                 settings=[
                     target_cpu,
                     target_memory,
@@ -2049,7 +2035,7 @@ class CanaryOptimization(BaseOptimization):
                 ]
             ),
             Component(
-                name=self.canary_name,
+                name=self.name,
                 settings=[
                     self.cpu,
                     self.memory,
