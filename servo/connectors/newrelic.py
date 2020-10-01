@@ -276,9 +276,13 @@ class NewrelicConnector(BaseConnector):
         for i in instance_ids:
             api_path = '/applications/{app_id}/instances/{instance_id}/metrics/data.json'.format(NEWRELIC_APM_APP_ID, i)
             self.logger.trace(f"Querying Newrelic for instance: {i}")
-            async with self.api_client() as client:
+            async with httpx.AsyncClient(
+                base_url=self.config.api_url + api_path, 
+                params=newrelic_request.params,
+                headers={'X-Api-Key': NEWRELIC_APM_API_KEY},
+            ) as client:
                 try:
-                    response = await client.get(self.config.api_url + api_path, params=newrelic_request.params)
+                    response = await client.get()
                     response.raise_for_status()
                 except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                     self.logger.trace(f"HTTP error encountered during GET {newrelic_request.url}: {error}")
