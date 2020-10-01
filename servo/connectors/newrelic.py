@@ -293,12 +293,15 @@ class NewrelicConnector(BaseConnector):
                 raise RuntimeError(f"instance {i} fetch unsuccessful", data)
 
             for fetched_m in data.get('metric_data', {}).get('metrics', []):
-                timeslices = fetched_m.get('timeslices', [])
+                m_readings: Dict[NewrelicMetric, List[Tuple[datetime, Numeric]]] = defaultdict(list)
+                for ts in fetched_m.get('timeslices', []):
+                    for m in f_names_to_ms[fetched_m['name']]:
+                        m_readings[m].append((date_parser.parse(ts['from']), ts['values'][m.values_selector]))
                 for m in f_names_to_ms[fetched_m['name']]:
                     readings.append(
                         TimeSeries(
                             metric=m,
-                            values=[(date_parser.parse(ts['from']), ts['values'][m.values_selector]) for ts in timeslices],
+                            values=m_readings[m],
                             id=i,
                             metadata=dict(instance=i)
                         )
