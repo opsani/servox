@@ -293,7 +293,7 @@ class NewrelicConnector(BaseConnector):
                         TimeSeries(
                             metric=m,
                             values=[(date_parser.parse(ts['from']), ts['values'][m.values_selector]) for ts in timeslices],
-                            id=inst_id,
+                            id=i,
                             metadata=dict(instance=instance)
                         )
                     )
