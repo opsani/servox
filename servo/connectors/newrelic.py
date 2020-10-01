@@ -48,14 +48,14 @@ class NewrelicMetric(Metric):
     """NewrelicMetric objects describe metrics that can be measure from the Newrelic apm api."""    
     
     fetch_name: str
-    """The Fetch containing the data for this Metric
+    """The name of the APM metric containing the values for this Metric
 
     For details, see the [TODO better Newrelic resource](https://docs.newrelic.com/docs/apis/rest-api-v2/application-examples-v2/average-response-time-examples-v2) documentation.
     """
 
     values_selector: str
     """
-    Values selector  of resultant time series # TODO double check
+    Values selector  of resultant time series
     """
 
     def __init__(self, name: str, unit: Unit, fetch_name: str, values_selector: str) -> None:
