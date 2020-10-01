@@ -213,6 +213,37 @@ class NewrelicConnector(BaseConnector):
         return self.config.metrics
 
     @on_event()
+    def instances(self) -> List[str]:
+        async with self.api_client as client:
+            try:
+                response = await client.get('/config')
+                response.raise_for_status()
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
+                self.logger.trace(f"HTTP error encountered during oco config GET {self.optimizer.api_url}/config: {error}")
+                raise
+
+        opsani_config = response.json()
+        canary = opsani_config.get('adjustment', {}).get('control', {}).get('userdata', {}).get('canary')
+        canary_ip = canary.get('ip')
+        canary_ip = re.sub(r"\.", "-", canary_ip)
+        canary_hostname = f"ip-{canary_ip}.ec2.internal"
+
+        async with httpx.AsyncClient(
+            base_url=self.config.api_url + 'applications/{newrelic_app_id}/instances.json'.format(NEWRELIC_APM_APP_ID), 
+            params={'filter[hostname]': canary_hostname},
+            headers={'X-Api-Key': NEWRELIC_APM_API_KEY},
+        ) as client:
+            try:
+                response = await client.get()
+                response.raise_for_status()
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
+                self.logger.trace(f"HTTP error encountered during GET {newrelic_request.url}: {error}")
+                raise
+
+        return [ai['host'] for ai in response.json()['application_instances']] 
+
+
+    @on_event()
     async def measure(
         self, *, metrics: List[str] = None, control: Control = Control()
     ) -> Measurement:
