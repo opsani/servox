@@ -39,6 +39,11 @@ from servo.utilities import join_to_series
 DEFAULT_BASE_URL = 'https://api.newrelic.com'
 API_PATH = "/v2"
 
+# TODO: how are secrets handled?
+NEWRELIC_ACCOUNT_ID = str(open('/run/secrets/optune_newrelic_account_id').read()).strip()
+NEWRELIC_APM_API_KEY = str(open('/run/secrets/optune_newrelic_apm_api_key').read()).strip()
+NEWRELIC_APM_APP_ID = str(open('/run/secrets/optune_newrelic_apm_app_id').read()).strip()
+
 class NewrelicMetric(Metric):
     """NewrelicMetric objects describe metrics that can be measure from the Newrelic apm api."""    
     
@@ -269,11 +274,12 @@ class NewrelicConnector(BaseConnector):
         self.logger.trace(f"Querying Newrelic: {newrelic_request.url}")
         readings = []
         # TODO asyncio gather this instead
-        for i in instance_ids: 
+        for i in instance_ids:
+            api_path = '/applications/{app_id}/instances/{instance_id}/metrics/data.json'.format(NEWRELIC_APM_APP_ID, i)
             self.logger.trace(f"Querying Newrelic for instance: {i}")
             async with self.api_client() as client:
                 try:
-                    response = await client.get(self.config.api_url, params=newrelic_request.params)
+                    response = await client.get(self.config.api_url + api_path, params=newrelic_request.params)
                     response.raise_for_status()
                 except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                     self.logger.trace(f"HTTP error encountered during GET {newrelic_request.url}: {error}")
