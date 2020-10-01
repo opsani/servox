@@ -273,7 +273,7 @@ class NewrelicConnector(BaseConnector):
             self.logger.trace(f"Querying Newrelic for instance: {i}")
             async with self.api_client() as client:
                 try:
-                    response = await client.get(newrelic_request.url)
+                    response = await client.get(self.config.api_url, params=newrelic_request.params)
                     response.raise_for_status()
                 except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                     self.logger.trace(f"HTTP error encountered during GET {newrelic_request.url}: {error}")
