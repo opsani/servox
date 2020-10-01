@@ -288,10 +288,6 @@ class NewrelicConnector(BaseConnector):
             data = response.json()
             self.logger.trace(f"Got response data for instance {i}: {data}")
 
-
-            if "status" not in data or data["status"] != "success":
-                raise RuntimeError(f"instance {i} fetch unsuccessful", data)
-
             for fetched_m in data.get('metric_data', {}).get('metrics', []):
                 m_readings: Dict[NewrelicMetric, List[Tuple[datetime, Numeric]]] = defaultdict(list)
                 for ts in fetched_m.get('timeslices', []):
