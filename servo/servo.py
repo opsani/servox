@@ -35,6 +35,7 @@ class Events(str, Enum):
     # Informational events
     METRICS = "metrics"
     COMPONENTS = "components"
+    INSTANCES = "instances"
 
     # Operational events
     CHECK = "check"
@@ -67,6 +68,10 @@ class _EventDefinitions(Protocol):
 
     @event(Events.COMPONENTS)
     async def components(self) -> List[Component]:
+        ...
+
+    @event(Events.INSTANCES)
+    async def instances(self) -> List[str]:
         ...
 
     # Operational events

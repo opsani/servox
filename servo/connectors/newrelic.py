@@ -268,8 +268,7 @@ class NewrelicConnector(BaseConnector):
         newrelic_request = NewrelicRequest(base_url=self.config.api_url, fetches=fetches, start=start, end=end, step=self.config.step)
 
         self.logger.trace(f"Getting Newrelic instance ids: {newrelic_request.url}")
-        instance_ids = []
-        # TODO
+        instance_ids: List[str] = await self.dispatch_event("instances")
         
         self.logger.trace(f"Querying Newrelic: {newrelic_request.url}")
         readings = []
