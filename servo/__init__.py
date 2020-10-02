@@ -40,6 +40,7 @@ from .connector import (
     metadata,
 )
 
+from .configuration import *
 from .checks import *
 from .errors import *
 from .logging import *
