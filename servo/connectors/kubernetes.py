@@ -1490,7 +1490,6 @@ class Memory(BaseMemory):
     """
     The Memory class models a Kubernetes Memory resource.
     """
-    name = "memory"
     value: Optional[ShortByteSize]
     min: ShortByteSize
     max: ShortByteSize
