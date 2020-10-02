@@ -29,6 +29,7 @@ from servo import (
     CheckHandler,
     Component,
     Control,
+    CPU as BaseCPU,    
     Description,
     Duration,
     DurationProgress,
@@ -36,8 +37,9 @@ from servo import (
     HaltOnFailed,
     License,
     Maturity,
+    Memory as BaseMemory,
+    Replicas,
     Setting,
-    SettingType,
     check,
     connector,
     join_to_series,
@@ -213,17 +215,6 @@ class ResourceRequirements(enum.Flag):
             return "limits"
         else:
             raise NotImplementedError(f"missing key implementation for resource requirement \"{self}\"")
-
-
-class Resource(Setting):
-    """
-    Resource is a class that models Kubernetes specific Setting objects that are subject
-    to request and limit configuration.
-    """
-    requirements: ResourceRequirements = ResourceRequirements.compute
-
-    class Config:
-        validate_assignment = True
 
 
 @runtime_checkable
@@ -1447,22 +1438,18 @@ class Millicore(int):
     def human_readable(self) -> str:
         return str(self)
 
-
-class CPU(Resource):
+class CPU(BaseCPU):
     """
     The CPU class models a Kubernetes CPU resource in Millicore units.
-    """
-    value: Optional[Millicore]
+    """    
     min: Millicore
     max: Millicore
     step: Millicore
-    name = "cpu"
-    type = SettingType.RANGE
+    value: Optional[Millicore]
+    requirements: ResourceRequirements = ResourceRequirements.compute
 
-    # TODO: Don't allow value outside of range
-
-    def opsani_dict(self) -> dict:
-        o_dict = super().opsani_dict()
+    def __opsani_repr__(self) -> dict:
+        o_dict = super().__opsani_repr__()
 
         # normalize values into floats (see Millicore __float__)
         for field in ("min", "max", "step", "value"):
@@ -1489,8 +1476,7 @@ class ShortByteSize(ByteSize):
             v = v * GiB
         return super().validate(v)
 
-
-class Memory(Resource):
+class Memory(BaseMemory):
     """
     The Memory class models a Kubernetes Memory resource.
     """
@@ -1498,33 +1484,16 @@ class Memory(Resource):
     min: ShortByteSize
     max: ShortByteSize
     step: ShortByteSize
-    name = "memory"
-    type = SettingType.RANGE
+    requirements: ResourceRequirements = ResourceRequirements.compute
 
-    def opsani_dict(self) -> dict:
-        o_dict = super().opsani_dict()
+    def __opsani_repr__(self) -> dict:
+        o_dict = super().__opsani_repr__()
 
         # normalize values into floating point Gibibyte units
         for field in ("min", "max", "step", "value"):
             value = getattr(self, field)
-            o_dict["memory"][field] = float(value) / GiB if value is not None else None
+            o_dict["mem"][field] = float(value) / GiB if value is not None else None
         return o_dict
-
-
-class Replicas(Setting):
-    """
-    The Replicas class models a Kubernetes setting that specifies the number of
-    desired Pods running in a Deployment.
-    """
-    value: Optional[StrictInt]
-    min: StrictInt
-    max: StrictInt
-    step: StrictInt = StrictInt(1)
-    name = "replicas"
-    type = SettingType.RANGE
-
-    class Config:
-        validate_assignment = True
 
 
 # TODO: The Adjustment needs to marshal value appropriately on ingress

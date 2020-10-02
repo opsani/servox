@@ -14,7 +14,7 @@ import pydantic
 from servo.api import descriptor_to_adjustments
 from servo.connectors.kubernetes import CanaryOptimization, Container, CPU, CanaryOptimizationStrategyConfiguration, DefaultOptimizationStrategyConfiguration, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName, OptimizationStrategy
 from servo.connectors.kubernetes import KubernetesChecks, Millicore
-from servo.types import Adjustment, Component, Setting, SettingType
+from servo.types import Adjustment, Component, Setting
 from pydantic import BaseModel
 from typing import Type
 
@@ -543,7 +543,7 @@ class TestReplicas:
     def test_parsing(self, replicas) -> None:
         assert {
             'name': 'replicas',
-            'type': SettingType.RANGE,
+            'type': "range",
             'min': 1,
             'max': 4,
             'step': 1,
@@ -551,15 +551,15 @@ class TestReplicas:
             'pinned': False,
         } == replicas.dict()
     
-    def test_to_opsani_dict(self, replicas) -> None:
+    def test_to___opsani_repr__(self, replicas) -> None:
         replicas.value = 3
-        assert replicas.opsani_dict() == {
+        assert replicas.__opsani_repr__() == {
             'replicas': {
                 'max': 4.0, 
                 'min': 1.0, 
                 'step': 1, 
                 'value': 3.0,
-                'type': SettingType.RANGE,
+                'type': "range",
                 'pinned': False
             }
         }
@@ -567,12 +567,12 @@ class TestReplicas:
 class TestCPU:
     @pytest.fixture
     def cpu(self) -> CPU:
-        return CPU(min="100m", max=4, step="125m")
+        return CPU(min="100m", max="4000m", step="125m")
 
     def test_parsing(self, cpu) -> None:        
         assert {
             'name': 'cpu',
-            'type': SettingType.RANGE,
+            'type': "range",
             'min': 100,
             'max': 4000,
             'step': 125,
@@ -581,21 +581,24 @@ class TestCPU:
             'requirements': ResourceRequirements.compute,
         } == cpu.dict()
     
-    def test_to_opsani_dict(self, cpu) -> None:
+    def test_to___opsani_repr__(self, cpu) -> None:
         cpu.value = "3"
-        assert cpu.opsani_dict() == {
+        assert cpu.__opsani_repr__() == {
             'cpu': {
                 'max': 4.0, 
                 'min': 0.1, 
                 'step': 0.125, 
                 'value': 3.0,
-                'type': SettingType.RANGE,
+                'type': "range",
                 'pinned': False
             }
         }
     
-    def test_validates_value_in_range(self, cpu) -> None:
-        ...
+    def test_resolving_equivalent_units(self) -> None:
+        cpu = CPU(min="100m", max=4.0, step=0.125)
+        assert cpu.min == 100
+        assert cpu.max == 4000
+        assert cpu.step == 125
 
 class TestMemory:
     @pytest.fixture
@@ -604,8 +607,8 @@ class TestMemory:
 
     def test_parsing(self, memory) -> None:
         assert {
-            'name': 'memory',
-            'type': SettingType.RANGE,
+            'name': 'mem',
+            'type': "range",
             'min': 134217728,
             'max': 4294967296,
             'step': 268435456,
@@ -614,34 +617,37 @@ class TestMemory:
             'requirements': ResourceRequirements.compute,
         } == memory.dict()
     
-    def test_to_opsani_dict(self, memory) -> None:
+    def test_to___opsani_repr__(self, memory) -> None:
         memory.value = "3.0 GiB"
-        assert memory.opsani_dict() == {
-            'memory': {
+        assert memory.__opsani_repr__() == {
+            'mem': {
                 'max': 4.0, 
                 'min': 0.125, 
                 'step': 0.25, 
                 'value': 3.0,
-                'type': SettingType.RANGE,
+                'type': "range",
                 'pinned': False
             }
         }
     
     def test_handling_float_input(self) -> None:
         memory = Memory(min=0.5, max=4.0, step=0.125, value="3.0 GiB")
-        assert memory.opsani_dict() == {
-            'memory': {
+        assert memory.__opsani_repr__() == {
+            'mem': {
                 'max': 4.0, 
                 'min': 0.5, 
                 'step': 0.125, 
                 'value': 3.0,
-                'type': SettingType.RANGE,
+                'type': "range",
                 'pinned': False
             }
         }
     
-    def test_validates_value_in_range(self, memory) -> None:
-        ...
+    def test_resolving_equivalent_units(self) -> None:
+        memory = Memory(min="128 MiB", max=4.0, step=268435456)
+        assert memory.min == 134217728
+        assert memory.max == 4294967296
+        assert memory.step == 268435456
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:
@@ -843,7 +849,7 @@ def adjustment() -> dict:
                         'cpu': {
                             'value': 1.80, #0.725,
                         },
-                        'memory': {
+                        'mem': {
                             'value': "2.5G", #2.25,
                         },
                         'replicas': {
@@ -865,7 +871,7 @@ def adjustment() -> dict:
     #         settings=[
     #             Setting(
     #                 name='cpu',
-    #                 type=<SettingType.RANGE: 'range'>,
+    #                 type=<"range": 'range'>,
     #                 min=1.0,
     #                 max=4.0,
     #                 step=1.0,
@@ -874,7 +880,7 @@ def adjustment() -> dict:
     #             ),
     #             Setting(
     #                 name='memory',
-    #                 type=<SettingType.RANGE: 'range'>,
+    #                 type=<"range": 'range'>,
     #                 min=1.0,
     #                 max=4.0,
     #                 step=1.0,
@@ -883,7 +889,7 @@ def adjustment() -> dict:
     #             ),
     #             Setting(
     #                 name='replicas',
-    #                 type=<SettingType.RANGE: 'range'>,
+    #                 type=<"range": 'range'>,
     #                 min=1.0,
     #                 max=4.0,
     #                 step=1.0,

@@ -1,5 +1,4 @@
 from __future__ import annotations
-import asyncio
 import abc
 import importlib
 import re
@@ -8,6 +7,7 @@ from typing import (
     Any,
     ClassVar,
     IO,
+    Iterable,
     Generator,
     Optional,
     Set,
@@ -26,7 +26,7 @@ from pydantic import (
 
 
 from servo import api, events, logging, repeating
-from servo.configuration import AbstractBaseConfiguration, BaseConfiguration, Optimizer
+from servo.configuration import BaseConfiguration, Optimizer
 from servo.events import EventHandler, EventResult
 from servo.types import *
 from servo.utilities import associations
@@ -308,7 +308,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
         connector_routes = {}
         for name, value in connectors.items():
             if not isinstance(name, str):
-                raise TypeError(f'Connector names must be strings: "{key}"')
+                raise TypeError(f'Connector names must be strings: "{name}"')
 
             # Validate the name
             try:
@@ -321,6 +321,8 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
                 connector_class = value
             elif isinstance(value, str):
                 connector_class = _connector_class_from_string(value)
+            else:
+                raise ValueError(f'"{value}" is not a string or type')
 
             # Check for key reservations
             if name in _reserved_keys():

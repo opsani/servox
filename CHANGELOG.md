@@ -36,6 +36,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The active connector is now managed via a `ContextVar` just as the active
   event is. This enables logging to correctly be attributed to the active
   connector without having to pass a specific logger object around everywhere.
+- The `servo.types.Setting` class has been significantly overhauled:
+  - Setting is now an abstract base class
+  - RangeSetting models range settings
+  - EnumSetting models enum settings
+  - Introduce CPU, Memory, Replicas, and InstanceType settings for special
+    optimizer settings
+  - Validate numerous behaviors (range inclusion, enum inclusion, type
+    agreement, etc)
+
 
 ### Fixed
 - Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
