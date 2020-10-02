@@ -1922,7 +1922,7 @@ class CanaryOptimization(BaseOptimization):
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
 
-        if name in ("cpu", "memory"):
+        if name in ("cpu", "mem"):
             resource_name = "memory" if name == "mem" else name
             requirements = getattr(self.target_container_config, resource_name).requirements
             self.canary_container.set_resource_requirements(resource_name, value, requirements, clear_others=True)
