@@ -17,7 +17,7 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] "pass the calimari" - Unreleased
+## [0.8.0] "pass the calimari" - 2020-10-02
 
 ### Added
 - `servo.__codename__` constant now contains the release codename.
