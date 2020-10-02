@@ -387,11 +387,11 @@ class DataPoint(BaseModel):
     """The metric being measured.
     """
 
-    value: Numeric
+    value: float
     """The value that was read for the metric.
     """
 
-    def __init__(self, metric: Metric, value: Numeric, **kwargs) -> None:
+    def __init__(self, metric: Metric, value: float, **kwargs) -> None:
         super().__init__(metric=metric, value=value, **kwargs)
 
     def __str__(self) -> str:
@@ -407,7 +407,7 @@ over a period of time.
     """The metric being measured.
     """
 
-    values: List[Tuple[datetime, Numeric]]
+    values: List[Tuple[datetime, float]]
     """The values read for the metric at specific moments in time.
     """
 
@@ -428,7 +428,7 @@ server from which the readings were taken, version info about the upstream
 metrics provider, etc.).
     """
 
-    def __init__(self, metric: Metric, values: List[Tuple[datetime, Numeric]], **kwargs) -> None:
+    def __init__(self, metric: Metric, values: List[Tuple[datetime, float]], **kwargs) -> None:
         super().__init__(metric=metric, values=values, **kwargs)
 
 Reading = Union[DataPoint, TimeSeries]
