@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, HaltOnFailed, check, create_checks_from_iterable, multicheck
+from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, Severity, check, create_checks_from_iterable, require, multicheck, warn
 from servo.configuration import BaseConfiguration
 from servo.utilities.inspect import get_instance_methods
 from typing import Callable, Iterable, List, Tuple, Union, Optional
@@ -19,7 +19,7 @@ def test_serialize_with_exception() -> None:
     exception = RuntimeError("Testing")
     check = Check(name="Test", success=False, exception=exception)
     assert check.json() == (
-        '{"name": "Test", "id": "1bab7e8d", "description": null, "required": false, "tags": null, "success": false, "message": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
+        '{"name": "Test", "id": "1bab7e8d", "description": null, "severity": "error", "tags": null, "success": false, "message": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
     )
 
 async def test_inline_check() -> None:
@@ -46,11 +46,11 @@ async def test_raises_on_invalid_method_name() -> None:
     class MeasureChecks(BaseChecks):
         def invalid_check(self) -> Check:
             return Check(name="Test", success=True)
-        
+
     with pytest.raises(ValueError) as e:
         config = BaseConfiguration()
         await MeasureChecks.run(config)
-    
+
     assert e
     assert str(e.value) == "invalid method name \"invalid_check\": method names of Checks subtypes must start with \"_\" or \"check_\""
 
@@ -58,7 +58,7 @@ async def test_allows_underscored_method_names() -> None:
     class MeasureChecks(BaseChecks):
         def _allowed_helper(self) -> Check:
             return Check(name="Test", success=True)
-    
+
     config = BaseConfiguration()
     results = await MeasureChecks.run(config)
     assert results is not None
@@ -67,19 +67,19 @@ async def test_raises_on_invalid_signature() -> None:
     class MeasureChecks(BaseChecks):
         def check_invalid(self) -> int:
             return 123
-    
+
     with pytest.raises(TypeError) as e:
         config = BaseConfiguration()
         await MeasureChecks.run(config)
 
     assert e
-    assert str(e.value) == 'invalid signature for method "check_invalid": expected <Signature () -> servo.checks.Check>, but found <Signature () -> int>'
+    assert str(e.value) == 'invalid signature for method "check_invalid" (did you forget to decorate with @check?): expected <Signature () -> servo.checks.Check>, but found <Signature () -> int>'
 
 async def test_valid_checks() -> None:
     class MeasureChecks(BaseChecks):
         def check_something(self) -> Check:
             return Check(name="Test", success=True)
-    
+
     config = BaseConfiguration()
     checks = await MeasureChecks.run(config)
     assert checks == [Check(name='Test', success=True, created_at=datetime(2020, 8, 24, 0, 0))]
@@ -88,7 +88,7 @@ async def test_run_as_instance() -> None:
     class MeasureChecks(BaseChecks):
         def check_something(self) -> Check:
             return Check(name="Test", success=True)
-    
+
     config = BaseConfiguration()
     checker = MeasureChecks(config)
     checks = await checker.run_()
@@ -98,13 +98,13 @@ async def test_check_ordering() -> None:
     class MeasureChecks(BaseChecks):
         def check_one(self) -> Check:
             return Check(name="1", success=True)
-        
+
         def check_two(self) -> Check:
             return Check(name="2", success=False)
-        
+
         def check_three(self) -> Check:
             return Check(name="3", success=True)
-    
+
     config = BaseConfiguration()
     checks = await MeasureChecks.run(config)
     values = list(map(lambda c: (c.name, c.success), checks))
@@ -114,13 +114,13 @@ async def test_check_aborts_on_failed_requirement() -> None:
     class MeasureChecks(BaseChecks):
         def check_one(self) -> Check:
             return Check(name="1", success=True)
-        
+
         def check_two(self) -> Check:
-            return Check(name="2", success=False, required=True)
-        
+            return Check(name="2", success=False, severity=Severity.critical)
+
         def check_three(self) -> Check:
             return Check(name="3", success=True)
-    
+
     config = BaseConfiguration()
     checks = await MeasureChecks.run(config)
     values = list(map(lambda c: (c.name, c.success), checks))
@@ -148,11 +148,11 @@ class NamedChecks(BaseChecks):
         (None, True, None),
     ]
 )
-def test_valid_check_decorator_return_values(return_value, success, message) -> None:    
+def test_valid_check_decorator_return_values(return_value, success, message) -> None:
     @check("Test decorator")
     def check_test() -> CheckHandlerResult:
         return return_value
-    
+
     check_ = check_test()
     assert check_
     assert isinstance(check_, Check)
@@ -164,15 +164,17 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
     "return_value, exception_type, message",
     [
         (123, ValueError, (
-            "caught exception: ValueError('check method returned unexpected value of type \"int\"')"
+            "caught exception: check method returned unexpected value of type \"int\""
         )),
         ((False, 187), ValueError, (
-            "caught exception: ValidationError(model='Check', errors=[{'loc': ('message',), 'msg': 'str type expected'"
-            ", 'type': 'type_error.str'}])"
+            'caught exception: 1 validation error for Check\n'
+            'message\n'
+            '  str type expected (type=type_error.str)'
         )),
         ((666, "fail"), ValueError, (
-            "caught exception: ValidationError(model='Check', errors=[{'loc': ('success',), 'msg': 'value could not be"
-            " parsed to a boolean', 'type': 'type_error.bool'}])"
+            'caught exception: 1 validation error for Check\n'
+            'success\n'
+            '  value could not be parsed to a boolean (type=type_error.bool)'
         )),
     ]
 )
@@ -180,11 +182,11 @@ def test_invalid_check_decorator_return_values(return_value, exception_type, mes
     @check("Test decorator")
     def check_test() -> CheckHandlerResult:
         return return_value
-    
+
     check_ = check_test()
     assert check_
     assert isinstance(check_, Check)
-    assert check_.success == False    
+    assert check_.success == False
     assert check_.message == message
     assert check_.exception is not None
     assert isinstance(check_.exception, exception_type)
@@ -192,25 +194,25 @@ def test_invalid_check_decorator_return_values(return_value, exception_type, mes
 class ValidHandlerSignatures:
     def check_none(self) -> None:
         ...
-    
+
     def check_str(self) -> str:
         ...
-    
+
     def check_bool(self) -> bool:
         ...
-    
+
     def check_tuple(self) -> Tuple[bool, str]:
         ...
-    
+
     def check_union(self) -> Union[str, bool]:
         ...
-    
+
     def check_optional(self) -> Optional[str]:
         ...
-    
+
     def check_union_of_tuple(self) -> Union[str, Tuple[bool, str]]:
         ...
-    
+
     def check_optional_tuple(self) -> Optional[Tuple[bool, str]]:
         ...
 
@@ -225,19 +227,19 @@ def test_valid_signatures(method) -> None:
 class InvalidHandlerSignatures:
     def check_int(self) -> int:
         ...
-    
+
     def check_list(self) -> List[Check]:
         ...
-    
+
     def check_invalid_tuple(self) -> Tuple[int, str]:
         ...
-    
+
     def check_invalid_optional(self) -> Optional[float]:
         ...
-    
+
     def check_invalid_union(self) -> Union[bool, str, float]:
         ...
-    
+
     def check_invalid_union_with_tuple(self) -> Union[bool, Tuple[str, float]]:
         ...
 
@@ -258,7 +260,7 @@ def test_decorating_invalid_signatures() -> None:
         @check("Test decorator")
         def check_test() -> int:
             ...
-    
+
     assert e
     assert str(e.value) == (
         'invalid check handler "check_test": incompatible return type annotation in signature <Signature () -> int>, e'
@@ -270,7 +272,7 @@ async def test_check_timer() -> None:
     @check("Check timer")
     def check_test() -> None:
         ...
-    
+
     check_ = check_test()
     assert check_
     assert isinstance(check_, Check)
@@ -282,7 +284,7 @@ async def test_decorate_async() -> None:
     @check("Check async")
     async def check_test() -> None:
         ...
-    
+
     check_ = await check_test()
     assert check_
     assert isinstance(check_, Check)
@@ -318,23 +320,23 @@ class FilterableChecks(BaseChecks):
     @check("name-only")
     def check_one(self) -> None:
         ...
-    
+
     @check("name-and-id", id="explicit-id")
     def check_two(self) -> None:
         ...
-    
+
     @check("name-and-tags", tags=["one", "two"])
     def check_three(self) -> None:
         ...
-    
+
     @check("name-and-identicial-tags", tags=["one", "two"])
     def check_four(self) -> None:
         ...
-    
+
     @check("name-and-exclusive-tags", tags=["three", "four"])
     def check_five(self) -> None:
         ...
-    
+
     @check("name-and-intersecting-tags", tags=["one", "four"])
     def check_six(self) -> None:
         ...
@@ -348,7 +350,7 @@ class FilterableChecks(BaseChecks):
         (("name-only", "name-and-id"), None, None, ["check_one", "explicit-id"]),
         (["name-only", "name-and-id"], None, None, ["check_one", "explicit-id"]),
         (re.compile('.*tags'), None, None, ['check_three', 'check_four', 'check_five', 'check_six']),
-        
+
         # id cases
         (None, 'explicit-id', None, ['explicit-id']),
         (None, ('explicit-id', 'check_three'), None, ['explicit-id', 'check_three']),
@@ -372,26 +374,26 @@ async def test_filtering(name, id, tags, expected_ids) -> None:
     assert ids == expected_ids
 
 class RequirementChecks(BaseChecks):
-    @check("required-1", required=True)
+    @check("required-1", severity=Severity.critical)
     def check_one(self) -> None:
         ...
-    
+
     @check("not-required-1")
     def check_two(self) -> None:
         ...
-    
+
     @check("not-required-2")
     def check_three(self) -> None:
         raise RuntimeError("fail check")
-    
-    @check("required-2", required=True)
+
+    @require("required-2")
     def check_four(self) -> None:
         raise RuntimeError("fail check")
-    
-    @check("required-3", required=True)
+
+    @require("required-3")
     def check_five(self) -> None:
         ...
-    
+
     @check("not-required-3")
     def check_six(self) -> None:
         ...
@@ -400,14 +402,14 @@ class RequirementChecks(BaseChecks):
     "name, halt_on, expected_results",
     [
         # no filter, halt at not-required-2
-        (None, HaltOnFailed.requirement, {
+        (None, Severity.critical, {
             'required-1': True,
             'not-required-1': True,
             'not-required-2': False,
             'required-2': False,
         }),
         # no filter, continue to end
-        (None, HaltOnFailed.never, {
+        (None, None, {
             'required-1': True,
             'not-required-1': True,
             'not-required-2': False,
@@ -416,25 +418,25 @@ class RequirementChecks(BaseChecks):
             'not-required-3': True,
         }),
         # run not-required-1, trigger 1 requirement, no failures
-        ("not-required-1", HaltOnFailed.requirement, {'not-required-1': True, 'required-1': True}),
+        ("not-required-1", Severity.critical, {'not-required-1': True, 'required-1': True}),
         # run not-required-2, trigger 1 requirement, fail
-        ("not-required-2", HaltOnFailed.never, {'not-required-2': False, 'required-1': True}),
+        ("not-required-2", None, {'not-required-2': False, 'required-1': True}),
         # run required-3, trigger 2 requirements, halt at required-2
-        ("not-required-3", HaltOnFailed.requirement, {'required-1': True, 'required-2': False}),
+        ("not-required-3", Severity.critical, {'required-1': True, 'required-2': False}),
         # run all required-3, trigger 2 requirements, required-2 fails
-        ("not-required-3", HaltOnFailed.never, {
+        ("not-required-3", None, {
             'required-1': True,
             'required-2': False,
             'required-3': True,
             'not-required-3': True,
         }),
         # run not-required-1 and not-required-3
-        (("not-required-1", "not-required-3"), HaltOnFailed.requirement, {
+        (("not-required-1", "not-required-3"), Severity.critical, {
             'required-1': True,
             'not-required-1': True,
             'required-2': False,
         }),
-        (("not-required-1", "not-required-3"), HaltOnFailed.never, {
+        (("not-required-1", "not-required-3"), None, {
             'required-1': True,
             'not-required-1': True,
             'required-2': False,
@@ -452,14 +454,14 @@ class MixedChecks(BaseChecks):
     @check("one")
     def check_one(self) -> None:
         ...
-    
+
     def check_two(self) -> Check:
         return Check(name="two", success=True)
-    
+
     @check("three")
     def check_three(self) -> None:
         ...
-    
+
     def check_four(self) -> Check:
         return Check(name="four", success=True)
 
@@ -512,14 +514,14 @@ class MultiChecks(BaseChecks):
             return f"Number {value} was checked"
 
         return ["one", "two", "three"], handler
-    
+
     @multicheck("Asynchronously check number {item}")
     async def check_numbers_async(self) -> Tuple[Iterable, CheckHandler]:
         async def handler(value: str) -> str:
             return f"Number {value} was checked"
 
         return ["four", "five", "six"], handler
-    
+
 async def test_multichecks() -> None:
     checker = MultiChecks(BaseConfiguration())
     results = await checker.run_()
@@ -527,36 +529,53 @@ async def test_multichecks() -> None:
     assert attrs == [
         [
             'Check number one',
-            'ded3c8bf',
+            'check_numbers_item_0',
             'Number one was checked',
         ],
         [
             'Check number two',
-            '67317614',
+            'check_numbers_item_1',
             'Number two was checked',
         ],
         [
             'Check number three',
-            'b495fc6b',
+            'check_numbers_item_2',
             'Number three was checked',
         ],
         [
             'Asynchronously check number four',
-            '2773da1a',
+            'check_numbers_async_item_0',
             'Number four was checked',
         ],
         [
             'Asynchronously check number five',
-            'f9df3756',
+            'check_numbers_async_item_1',
             'Number five was checked',
         ],
         [
             'Asynchronously check number six',
-            'a72e0913',
+            'check_numbers_async_item_2',
             'Number six was checked',
         ]
     ]
-5
+
+async def test_multichecks_filtering() -> None:
+    checker = MultiChecks(BaseConfiguration())
+    results = await checker.run_(Filter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
+    attrs = list(map(lambda c: [c.name, c.id, c.message], results))
+    assert attrs == [
+        [
+            'Check number one',
+            'check_numbers_item_0',
+            'Number one was checked',
+        ],
+        [
+            'Asynchronously check number five',
+            'check_numbers_async_item_1',
+            'Number five was checked',
+        ]
+    ]
+
 async def test_multichecks_async() -> None:
     checker = MultiChecks(BaseConfiguration())
     results = await checker.run_()
@@ -564,32 +583,32 @@ async def test_multichecks_async() -> None:
     assert attrs == [
         [
             'Check number one',
-            'ded3c8bf',
+            'check_numbers_item_0',
             'Number one was checked',
         ],
         [
             'Check number two',
-            '67317614',
+            'check_numbers_item_1',
             'Number two was checked',
         ],
         [
             'Check number three',
-            'b495fc6b',
+            'check_numbers_item_2',
             'Number three was checked',
         ],
         [
             'Asynchronously check number four',
-            '2773da1a',
+            'check_numbers_async_item_0',
             'Number four was checked',
         ],
         [
             'Asynchronously check number five',
-            'f9df3756',
+            'check_numbers_async_item_1',
             'Number five was checked',
         ],
         [
             'Asynchronously check number six',
-            'a72e0913',
+            'check_numbers_async_item_2',
             'Number six was checked',
         ]
     ]
@@ -628,12 +647,12 @@ async def test_invalid_multichecks() -> None:
     assert attrs == [
         [
             'Check number NOT A VALID IDENTIFIER',
-            '98238cdc',
+            'check_invalid_identifiers_item_0',
             'Identifier NOT A VALID IDENTIFIER was checked',
         ],
         [
             'Check number •••••',
-            '144838d5',
+            'check_invalid_identifiers_item_1',
             'Identifier ••••• was checked',
         ],
     ]
@@ -642,9 +661,37 @@ async def test_handles_method_attrs() -> None:
     class Other:
         def test(self):
             ...
-    
+
     class MethodAttrsCheck(BaseChecks):
         other: Callable[..., None]
-    
+
     checker = MethodAttrsCheck(BaseConfiguration(), other=Other().test)
     results = await checker.run_()
+
+
+class WarningChecks(BaseChecks):
+    @check("warning-1", severity=Severity.warning)
+    def check_one(self) -> None:
+        raise RuntimeError("Failure")
+
+    @warn("warning-2")
+    def check_two(self) -> Tuple[bool, str]:
+        return (False, "Something may not be quite right")
+
+async def test_warnings() -> None:
+    results = await WarningChecks.run(BaseConfiguration())
+    attrs = list(map(lambda c: [c.name, c.id, c.success, c.message], results))
+    assert attrs == [
+        [
+            'warning-1',
+            'check_one',
+            False,
+            "caught exception: Failure",
+        ],
+        [
+            'warning-2',
+            'check_two',
+            False,
+            'Something may not be quite right',
+        ],
+    ]

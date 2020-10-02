@@ -15,6 +15,8 @@ from servo.servo import Events, connector
 from servo.types import Measurement
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
+from servo.types import Component, Description, RangeSetting, EnumSetting
+
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
 
@@ -38,12 +40,27 @@ class MeasureConnector(BaseConnector):
     def after_measure(self, *args, **kwargs) -> None:
         pass
 
-
 class AdjustConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @on_event()
-    def adjust(self, *args, **kwargs) -> None:
+    async def describe(self) -> Description:
+        components = await self.components()
+        return Description(components=components)
+
+    @on_event()
+    async def components(self) -> List[Component]:
+        return [
+            Component(
+                name="main",
+                settings=[
+                    RangeSetting(name="cpu", min=0, max=10, step=1, value=3)
+                ]
+            )
+        ]
+
+    @on_event()
+    def adjust(self, *args, **kwargs) -> Description:
         pass
 
 

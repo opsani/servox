@@ -10,14 +10,65 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
+import orjson
 import semver
+import pydantic
 from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator, Field, conlist, ValidationError, StrictInt, StrictFloat
 from pydantic.error_wrappers import ErrorWrapper
+
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.logging import logger
 from servo.utilities import microseconds_from_duration_str, timedelta_to_duration_str
 
+
+def _orjson_dumps(v, *, default, indent: Optional[int] = None, sort_keys: bool = False) -> str:
+    """Serializes an input object into JSON via the `orjson` library.
+
+    Returns:
+        A JSON string representation of the input object.
+
+    Raises:
+        TypeError: Raised if the input object could not be serialized to a JSON representation.
+    """
+    option = orjson.OPT_PASSTHROUGH_SUBCLASS
+    if indent and indent == 2:
+        option |= orjson.OPT_INDENT_2
+    if sort_keys:
+        option |= orjson.OPT_SORT_KEYS
+
+    def default_handler(obj) -> Any:
+        try:
+            if isinstance(obj, HumanReadable):
+                return obj.human_readable()
+
+            return default(obj)
+        except TypeError as err:
+            return orjson.dumps(obj).decode()
+
+    try:
+        return orjson.dumps(v, default=default_handler, option=option).decode()
+    except TypeError as err:
+        raise err
+
+DEFAULT_JSON_ENCODERS = {}
+
+class BaseModelConfig:
+    """The `BaseModelConfig` class provides a common set of Pydantic model
+    configuration shared across the library.
+    """
+    json_encoders = DEFAULT_JSON_ENCODERS
+    json_loads = orjson.loads
+    json_dumps = _orjson_dumps
+    validate_assignment = True
+
+class BaseModel(pydantic.BaseModel):
+    """The `BaseModel` class is the base class implementation of Pydantic model
+    types utilized throughout the library.
+    """
+
+    class Config(BaseModelConfig):
+        ...
 
 class License(Enum):
     """The License enumeration defines a set of licenses that describe the
@@ -30,7 +81,7 @@ class License(Enum):
     @classmethod
     def from_str(cls, identifier: str) -> "License":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `License` for the given string identifier (e.g., "MIT").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -47,9 +98,9 @@ class Maturity(Enum):
 
     EXPERIMENTAL = "Experimental"
     """Experimental components are in an early state of development or are
-otherwise not fully supported by the developers. 
+otherwise not fully supported by the developers.
 
-    APIs should be considered as potentially volatile and documentation, testing, 
+    APIs should be considered as potentially volatile and documentation, testing,
     and deployment concerns may not yet be fully addressed.
     """
 
@@ -57,19 +108,19 @@ otherwise not fully supported by the developers.
     """Stable components can be considered production ready and released under
 Semantic Versioning expectations.
 
-    APIs should be considered stable and the component is fully supported by 
+    APIs should be considered stable and the component is fully supported by
     the developers and recommended for use in a production environment.
     """
 
     ROBUST = "Robust"
-    """Robust components are fully mature, stable, well documented, and battle 
+    """Robust components are fully mature, stable, well documented, and battle
     tested in a variety of production environments.
     """
 
     @classmethod
     def from_str(cls, identifier: str) -> "Maturity":
         """
-        Returns a `License` for the given string identifier (e.g. "MIT").
+        Returns a `Maturity` object for the given string identifier (e.g., "Stable").
         """
         for _, env in cls.__members__.items():
             if env.value == identifier:
@@ -161,12 +212,15 @@ class Duration(timedelta):
 
         return False
 
+    def human_readable(self) -> str:
+        return str(self)
+
 
 class DurationProgress(BaseModel):
     """
     DurationProgress objects track progress across a fixed time duration.
     """
-    
+
     duration: Duration
     """The duration of the operation for which progress is being tracked.
     """
@@ -247,7 +301,7 @@ class DurationProgress(BaseModel):
 
     def annotate(self, str_to_annotate: str, prefix=True) -> str:
         """
-        Returns a string annotated with details about progress status.
+        Annotates and returns a string with details about progress status.
 
         Args:
             str_to_annotate: The string to annotate with progress status.
@@ -278,11 +332,11 @@ optimizable metrics.
     REQUESTS_PER_MINUTE = "rpm"
     """Application throughput in terms of requests processed per minute.
     """
-    
+
     REQUESTS_PER_SECOND = "rps"
     """Application throughput in terms of requests processed per second.
     """
-    
+
     PERCENTAGE = "%"
     """A ratio of one value as compared to another (e.g., errors as compared to
 total requests processed).
@@ -328,7 +382,7 @@ class DataPoint(BaseModel):
     Returns:
         A new DataPoint object modeling a scalar value reading of a Metric.
     """
-    
+
     metric: Metric
     """The metric being measured.
     """
@@ -361,7 +415,7 @@ over a period of time.
     """An optional advisory annotation providing supplemental context
 information about the time series.
     """
-    
+
     id: Optional[str]
     """An optional identifier contextualizing the source of the time series
 among a set of peers.
@@ -432,7 +486,7 @@ class Setting(BaseModel, abc.ABC):
     @property
     def human_readable_value(self, **kwargs) -> str:
         """
-        Return a human readable representation of the value for use in output.
+        Returns a human readable representation of the value for use in output.
 
         The default implementation calls the `human_readable` method on the value
         property if one exists, else coerces the value into a string. Subclasses
@@ -726,9 +780,9 @@ semantics.
             # NOTE: past is an alias for delay in the API
             if 'delay' in values:
                 assert values['past'] == values['delay'], "past and delay attributes must be equal"
-            
+
             values['delay'] = values.pop('past')
-        
+
         return values
 
     @validator('duration', 'warmup', 'delay', always=True, pre=True)
@@ -810,8 +864,8 @@ a set of readings for the metrics that were measured.
     readings: Readings = []
     """A list of readings taken of target metrics during the measurement
 operation.
-    
-    Readings can either be `DataPoint` objects modeling scalar values or 
+
+    Readings can either be `DataPoint` objects modeling scalar values or
     `TimeSeries` objects modeling a sequence of values captured over time.
     """
     annotations: Dict[str, str] = {}
@@ -825,9 +879,9 @@ operation.
                     assert isinstance(obj, reading_type), f"all readings must be of the same type: expected \"{reading_type.__name__}\" but found \"{obj.__class__.__name__}\""
                 else:
                     reading_type = obj.__class__
-        
+
         return value
-    
+
     @validator('readings', always=True, pre=True)
     def validate_time_series_dimensionality(cls, value) -> Readings:
         if value:
@@ -835,12 +889,11 @@ operation.
             for obj in value:
                 if isinstance(obj, TimeSeries):
                     actual_count = len(obj.values)
-                    if expected_count: 
-                        if actual_count != expected_count:
-                            logger.warning(f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\"")
+                    if expected_count and actual_count != expected_count:
+                        logger.warning(f"all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id \"{obj.id}\"")
                     else:
                         expected_count = actual_count
-        
+
         return value
 
     def __opsani_repr__(self) -> dict:

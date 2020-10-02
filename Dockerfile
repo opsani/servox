@@ -27,6 +27,8 @@ COPY --from=vegeta /bin/vegeta /bin/vegeta
 # Build Servo
 WORKDIR /servo
 
+RUN pip install --upgrade pip setuptools
+
 # The entry point is copied in ahead of the main sources
 # so that the servo CLI is installed by Poetry. The sequencing
 # here accelerates builds by ensuring that only essential

@@ -128,7 +128,7 @@ def test_check_verbose(
     request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
-    assert result.exit_code == 0    
+    assert result.exit_code == 0
     assert re.search("CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout)
 
 
@@ -168,7 +168,7 @@ def test_show_events_all(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show events -a", catch_exceptions=False)
-    assert result.exit_code == 0    
+    assert result.exit_code == 0
     assert re.match("EVENT\\s+CONNECTORS", result.stdout)
     assert re.search("^check", result.stdout, flags=re.MULTILINE)
     assert re.search("^adjust\\s.+", result.stdout, flags=re.MULTILINE)

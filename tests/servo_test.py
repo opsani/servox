@@ -35,9 +35,8 @@ from servo.configuration import BackoffSettings, ServoConfiguration, Timeouts
 from servo import Duration
 from servo.assembly import BaseAssemblyConfiguration, Assembly
 from servo.servo import Events, Servo
-from servo.types import Control, Measurement
+from servo.types import Control, Description, Measurement
 from tests.test_helpers import MeasureConnector, environment_overrides
-
 
 def test_version():
     assert __version__
@@ -387,7 +386,7 @@ def test_registering_event_with_wrong_handler_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected None, but found dict"
+        == "Invalid return type annotation for 'adjust' event handler: expected Description, but found dict"
     )
 
 
@@ -419,18 +418,17 @@ def test_event_decorator_disallows_var_positional_args() -> None:
         == "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
     )
 
-
 def test_registering_event_handler_with_missing_positional_param_fails() -> None:
     with pytest.raises(TypeError) as error:
 
         @on_event("adjust")
-        def invalid_adjust(self) -> None:
+        def invalid_adjust(self) -> Description:
             pass
 
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None, userdata=None)) -> 'None'"
+        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[Adjustment]', control: 'Control' = Control(duration=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), load=None, userdata=None)) -> 'Description'"
     )
 
 
@@ -945,7 +943,10 @@ class TestAssembly:
                     },
                     'duration': {
                         'title': 'Duration',
-                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'description': (
+                            'Specifies the amount of time to issue requests to the targets. This value can be overridd'
+                            'en by the server.'
+                        ),
                         'env_names': [
                             'SERVO_OTHER_DURATION',
                         ],
@@ -1017,7 +1018,6 @@ class TestAssembly:
                             'The maximum number of workers used to sustain the attack. This can be used to control the'
                             ' concurrency of the attack to simulate a target number of clients.'
                         ),
-                        'default': 18446744073709551615,
                         'env_names': [
                             'SERVO_OTHER_MAX_WORKERS',
                         ],
@@ -1115,7 +1115,10 @@ class TestAssembly:
                     },
                     'duration': {
                         'title': 'Duration',
-                        'description': 'Specifies the amount of time to issue requests to the targets.',
+                        'description': (
+                            'Specifies the amount of time to issue requests to the targets. This value can be overridd'
+                            'en by the server.'
+                        ),
                         'env_names': [
                             'SERVO_VEGETA_DURATION',
                         ],
@@ -1187,7 +1190,6 @@ class TestAssembly:
                             'The maximum number of workers used to sustain the attack. This can be used to control the'
                             ' concurrency of the attack to simulate a target number of clients.'
                         ),
-                        'default': 18446744073709551615,
                         'env_names': [
                             'SERVO_VEGETA_MAX_WORKERS',
                         ],

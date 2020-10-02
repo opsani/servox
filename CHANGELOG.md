@@ -1,18 +1,19 @@
 # CHANGELOG
 
-Servo is an Open Source framework supporting Continuous Optimization of infrastructure
-and applications via the Opsani optimization engine. Opsani provides a software as a
-service platform that optimizes the resourcing and configuration of cloud native
-applications to reduce operational costs and increase performance. Servo instances are
-responsible for connecting the optimizer service with the application under optimization
-by linking with the metrics system (e.g. Prometheus, Thanos, DataDog, etc) and the
-orchestration system (e.g. Kubernetes, CloudFormation, etc) in order to apply changes
-and evaluate their impact on cost and performance.
+Servo is an Open Source framework supporting Continuous Optimization of
+infrastructure and applications via the Opsani optimization engine. Opsani
+provides a software as a service platform that optimizes the resourcing and
+configuration of cloud native applications to reduce operational costs and
+increase performance. Servo instances are responsible for connecting the
+optimizer service with the application under optimization by linking with the
+metrics system (e.g. Prometheus, Thanos, DataDog, etc) and the orchestration
+system (e.g. Kubernetes, CloudFormation, etc) in order to apply changes and
+evaluate their impact on cost and performance.
 
 Servo is distributed under the terms of the Apache 2.0 license.
 
-This changelog catalogs all notable changes made to the project. The format
-is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
+This changelog catalogs all notable changes made to the project. The format is
+based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -25,10 +26,19 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   rather than automatically deriving names from Deployment/Container.
 - Kubernetes Optimization Strategy classes can now accept options from the
   config file (currently supports `alias` for canaries).
+- Integrated orjson to gain control over JSON/YAML serialization for classes 
+  that inherit from built-in types (e.g., str, int, float).
+- The `ProgressHandler` now handles exceptions and optionally notifies an 
+  external exception handler.
+- Servo will now interrupt operations when it detects losing sync with the 
+  backend by encountering unexpected operation errors.
+- Critical checks can be declared via the `require` decorator.
+- Added the `warn` decorator for creating checks that emit warnings rather than failing.
 
 ### Removed
 - Subprocess methods have been removed from `servo.connector.Connector` in
   favor of directly importing the subprocess module from the utilities module.
+- The `required` attribute from the `servo.checks` module in favor of `severity`.
 
 ### Changed
 - The `servo.logging` module has been generalized for use outside of the
@@ -44,10 +54,25 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     optimizer settings
   - Validate numerous behaviors (range inclusion, enum inclusion, type
     agreement, etc)
-
+- JSON and YAML serializations now favor human readable representations by
+  default whenever possible.
+- Multicheck methods now yield more readable IDs based off the parent multicheck
+  method name (e.g., `check_resource_requirements_item_0`). 
+- Checks now have a severity described by the `servo.checks.Severity` enumeration, replacing required.
+- Required check nomenclature has been replaced with the `critical` severity level to clarify
+  expectations and eliminate ambiguity in check behavior.
 
 ### Fixed
-- Progress tracking now handled zero length durations appropriately (e.g., in warmup, settlement, etc).
+- Progress tracking now handles zero length durations appropriately (e.g., in warmup, settlement, etc).
+- Model objects that inherit from builtin classes can now be serialized to custom representations.
+- Kubernetes configuration values now serialize to human readable values instead
+  of numerics.
+- Multicheck expanded methods are now filterable and taggable.
+- Progress logging and reporting will no longer trigger unhandled exceptions.
+- Adjust operations now return a state descriptor rather than parroting back    
+  the requested state.
+- Kubernetes Connector is now aware of out of band changes such as those made 
+  by Horizontal Pod Autoscalers.
 
 ## [0.7.0] "nice for what?" - 2020-09-09
 
@@ -59,9 +84,9 @@ environment variable.
 - The `SERVO_NO_COLOR` and `NO_COLOR` environment variables are respected to
   disable coloring.
 - The API URL can be now be overridden via the hidden `--url` CLI option or the `OPSANI_URL` environment variable.
-- Introduce the `multicheck` decorator for use in checks implementations. A 
+- Introduce the `multicheck` decorator for use in checks implementations. A
   multicheck is method that returns an iterable collection of checkable objects
-  and a `CheckHandler` callable that can evaluate each item. Each item in the 
+  and a `CheckHandler` callable that can evaluate each item. Each item in the
   iterable collection is wrapped into an individual check and run independently.
   This provides a simple mechanism for checking configurations that have a mix
   of settings that need to be handled specifically and homogenous collections

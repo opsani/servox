@@ -10,6 +10,8 @@ from servo.types import Adjustment, Control, Duration, Numeric
 
 USER_AGENT = "github.com/opsani/servox"
 
+class UnexpectedEventError(RuntimeError):
+    pass
 
 class Command(str, Enum):
     DESCRIBE = "DESCRIBE"
@@ -51,7 +53,9 @@ class Request(BaseModel):
 class Status(BaseModel):
     status: str
     message: Optional[str]
+    reason: Optional[str]
 
+UNEXPECTED_EVENT = 'unexpected-event'
 
 class SleepResponse(BaseModel):
     pass
@@ -69,7 +73,7 @@ class MeasureParams(BaseModel):
     def coerce_metrics(cls, value) -> List[str]:
         if isinstance(value, dict):
             return list(value.keys())
-        
+
         return value
 
 class CommandResponse(BaseModel):
@@ -99,34 +103,34 @@ class Mixin:
             "User-Agent": USER_AGENT,
             "Content-Type": "application/json",
         }
-    
+
     @property
     def api_client_options(self) -> Dict[str, Any]:
         return dict(base_url=self.optimizer.api_url, headers=self.api_headers)
-    
+
     def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         if not self.optimizer:
             raise RuntimeError(f"cannot construct API client: optimizer is not configured")
         return httpx.AsyncClient(**{ **self.api_client_options, **kwargs })
-    
+
     def api_client_sync(self, **kwargs) -> httpx.Client:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         if not self.optimizer:
-            raise RuntimeError(f"cannot construct API client: optimizer is not configured")        
+            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
         return httpx.Client(**{ **self.api_client_options, **kwargs })
-    
-    # TODO: Clean this up...
+
     async def report_progress(self, **kwargs):
-        try:
-            request = self.progress_request(**kwargs)
-            return await self._post_event(*request)
-        except Exception as e:
-            debug(e)
+        request = self.progress_request(**kwargs)
+        status = await self._post_event(*request)
+
+        if status.status == UNEXPECTED_EVENT:
+            # We have lost sync with the backend, raise an exception to halt broken execution
+            raise UnexpectedEventError(status.reason)
 
     def progress_request(self,
-        operation: str, 
-        progress: Numeric, 
+        operation: str,
+        progress: Numeric,
         started_at: datetime,
         message: Optional[str],
         *,
@@ -137,11 +141,11 @@ class Mixin:
     ) -> None:
         def set_if(d: Dict, k: str, v: Any):
             if v is not None: d[k] = v
-        
+
         # Normalize progress to positive percentage
         if progress < 1.0:
             progress = progress * 100
-        
+
         # Calculate runtime
         runtime = Duration(datetime.now() - started_at)
 
@@ -158,10 +162,10 @@ class Mixin:
             time_remaining_in_seconds = None
 
         params = dict(
-            connector=self.name, 
+            connector=self.name,
             operation=operation,
             progress=progress,
-            runtime=str(runtime), 
+            runtime=str(runtime),
             runtime_in_seconds=runtime.total_seconds()
         )
         set_if(params, 'connector', connector)
@@ -170,21 +174,24 @@ class Mixin:
         set_if(params, 'time_remaining_in_seconds', str(time_remaining_in_seconds) if time_remaining_in_seconds else None)
         set_if(params, 'message', message)
         set_if(params, 'logs', logs)
-        
+
         return (operation, params)
 
-    
+
     # NOTE: Opsani API primitive
     # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
-    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
-        event_request = Request(event=event, param=param)
-        self.logger.trace(f"POST event request: {pformat(event_request)}")
+    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:        
         async with self.api_client() as client:
+            event_request = Request(event=event, param=param)
+            self.logger.trace(f"POST event request: {pformat(event_request)}")
+
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
                 response_json = response.json()
                 self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {pformat(response_json)}")
+
+                return parse_obj_as(Union[CommandResponse, Status], response_json)
             except httpx.HTTPError:
                 self.logger.error(
                     f"HTTP error encountered while posting {event} event"
@@ -192,8 +199,7 @@ class Mixin:
                 self.logger.trace(pformat(event_request))
                 raise
 
-        return parse_obj_as(Union[CommandResponse, Status], response_json)
-    
+
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
         with self.servo.api_client_sync() as client:
@@ -214,7 +220,7 @@ def descriptor_to_adjustments(descriptor: dict) -> List[Adjustment]:
     for component_name, component in descriptor["application"]["components"].items():
         for setting_name, attrs in component["settings"].items():
             adjustment = Adjustment(
-                component_name=component_name, 
+                component_name=component_name,
                 setting_name=setting_name,
                 value=attrs["value"]
             )

@@ -9,9 +9,9 @@ from pydantic import ValidationError, AnyHttpUrl
 import servo
 from servo.connectors.prometheus import (
     PrometheusChecks,
-    PrometheusConfiguration, 
-    PrometheusConnector, 
-    PrometheusMetric, 
+    PrometheusConfiguration,
+    PrometheusConnector,
+    PrometheusMetric,
     PrometheusRequest
 )
 from servo.types import *
@@ -249,7 +249,7 @@ class TestPrometheusChecks:
             query="throughput",
             step="45m",
         )
-    
+
     @pytest.fixture
     def go_memstats_gc_sys_bytes(self) -> dict:
         return {'status': 'success', 'data': {'resultType': 'matrix', 'result': [{'metric': {'__name__': 'go_memstats_gc_sys_bytes', 'instance': 'localhost:9090', 'job': 'prometheus'}, 'values': [[1595142421.024, '3594504'], [1595142481.024, '3594504']]}]}}
@@ -263,36 +263,36 @@ class TestPrometheusChecks:
             respx_mock.get(re.compile(r"/api/v1/query_range.+"), alias="query", content=go_memstats_gc_sys_bytes)
             # respx_mock.get("/api/v1/query_range", alias="query", content=go_memstats_gc_sys_bytes)
             yield respx_mock
-    
+
     @pytest.fixture
     def checks(self, metric) -> PrometheusChecks:
         config = PrometheusConfiguration(base_url="http://localhost:9090", metrics=[metric])
         return PrometheusChecks(config=config)
 
-    async def test_check_base_url(self, mocked_api, checks) -> None:        
+    async def test_check_base_url(self, mocked_api, checks) -> None:
         request = mocked_api["targets"]
-        check = await checks.check_base_url()        
+        check = await checks.check_base_url()
         assert request.called
         assert check
         assert check.name == 'Connect to "http://localhost:9090"'
         assert check.id == 'check_base_url'
-        assert check.required
+        assert check.critical
         assert check.success
         assert check.message is None
-    
+
     async def test_check_base_url_failing(self, checks) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
             request = respx_mock.get("/api/v1/targets", status_code=503)
-            check = await checks.check_base_url()        
+            check = await checks.check_base_url()
             assert request.called
             assert check
             assert check.name == 'Connect to "http://localhost:9090"'
             assert check.id == 'check_base_url'
-            assert check.required
+            assert check.critical
             assert not check.success
             assert check.message is not None
             assert isinstance(check.exception, httpx.HTTPStatusError)
-        
+
     @respx.mock
     async def test_check_queries(self, mocked_api, checks) -> None:
         request = mocked_api["query"]
@@ -301,13 +301,13 @@ class TestPrometheusChecks:
         assert request.called
         assert check
         assert check.name == 'Run query "throughput"'
-        assert check.id == '009f1d6e'
-        assert not check.required
+        assert check.id == 'check_queries_item_0'
+        assert not check.critical
         assert check.success
         assert check.message == "returned 2 results"
-    
+
     @pytest.mark.parametrize(
-        "targets, success, message", 
+        "targets, success, message",
         [
             ({ 'status': 'success', "data": {"activeTargets": [] } }, False, "caught exception: AssertionError()"),
             (envoy_sidecars(), True, "found 1 targets")
@@ -317,11 +317,11 @@ class TestPrometheusChecks:
     async def test_check_targets(self, checks, targets, success, message) -> str:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
             request = respx_mock.get("/api/v1/targets", content=targets)
-            check = await checks.check_targets()        
+            check = await checks.check_targets()
             assert request.called
             assert check
             assert check.name == 'Active targets'
             assert check.id == 'check_targets'
-            assert not check.required
+            assert not check.critical
             assert check.success == success
             assert check.message == message

@@ -27,6 +27,7 @@ bullet = "^2.1.0"
 jsonschema = "^3.2.0"
 timeago = "^1.0.14"
 kubernetes_asyncio = "^11.3.0"
+orjson = "^3.3.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.0.1"
@@ -38,6 +39,7 @@ asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.12.1"
 kubetest = "^0.8.1"
 pytest-freezegun = "^0.4.2"
+yamlpath = "^2.3.7"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
