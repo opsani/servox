@@ -594,8 +594,11 @@ class TestCPU:
             }
         }
     
-    def test_validates_value_in_range(self, cpu) -> None:
-        ...
+    def test_resolving_equivalent_units(self) -> None:
+        cpu = CPU(min="100m", max=4.0, step=0.125)
+        assert cpu.min == 100
+        assert cpu.max == 4000
+        assert cpu.step == 125
 
 class TestMemory:
     @pytest.fixture
@@ -640,8 +643,11 @@ class TestMemory:
             }
         }
     
-    def test_validates_value_in_range(self, memory) -> None:
-        ...
+    def test_resolving_equivalent_units(self) -> None:
+        memory = Memory(min="128 MiB", max=4.0, step=268435456)
+        assert memory.min == 134217728
+        assert memory.max == 4294967296
+        assert memory.step == 268435456
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:

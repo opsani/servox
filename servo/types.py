@@ -513,7 +513,7 @@ class RangeSetting(Setting):
     step: Numeric = Field(..., description="The step value of adjustments up or down within the range. Adjustments will always be a multiplier of the step. The step defines the size of the adjustable range by constraining the available options to multipliers of the step within the range.")
     value: Optional[Numeric] = Field(None, description="The optional value of the setting as reported by the servo")
 
-    @root_validator(pre=True)
+    @root_validator(skip_on_failure=True)
     @classmethod
     def range_must_be_of_same_type(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         range_types: Dict[TypeVar[int, float], List[str]] = {}
