@@ -198,7 +198,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             control = Control(**cmd_response.param.get("control", {}))
             description = await self.adjust(adjustments, control)
 
-            reply = { "status": "ok", "state": description.opsani_dict() }
+            reply = { "status": "ok", "state": description.__opsani_repr__() }
 
             components_count = len(description.components)
             settings_count = sum(
