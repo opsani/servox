@@ -472,7 +472,7 @@ class EnumSetting(Setting):
     Raises:
         ValidationError: Raised if any field fails validation.
     """
-    type = Field("enum", const=True, description="Declares that the setting is an EnumSetting.")
+    type = Field("enum", const=True, description="Identifies the setting as an enumeration setting.")
     unit: Optional[str] = Field(None, description="An optional unit describing the semantics or context of the values.")
     values: conlist(Union[str, Numeric], min_items=1) = Field(..., description="A list of the available options for the value of the setting.")
     value: Optional[Union[str, Numeric]] = Field(None, description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment. When set, must a value in the `values` attribute.")
@@ -507,7 +507,7 @@ class RangeSetting(Setting):
     Raises:
         ValidationError: Raised if any field fails validation.            
     """
-    type = Field("range", const=True, description="Declares that the setting is a RangeSetting.")
+    type = Field("range", const=True, description="Identifies the setting as a range setting.")
     min: Numeric = Field(..., description="The inclusive minimum of the adjustable range of values for the setting.")
     max: Numeric = Field(..., description="The inclusive maximum of the adjustable range of values for the setting.")
     step: Numeric = Field(..., description="The step value of adjustments up or down within the range. Adjustments will always be a multiplier of the step. The step defines the size of the adjustable range by constraining the available options to multipliers of the step within the range.")
@@ -596,11 +596,11 @@ class CPU(RangeSetting):
     heuristics. Always representing computing resources as a CPU object or
     type derived thereof.
     """
-    name = Field("cpu", const=True, description="...")
-    min: float = Field(..., gt=0, description="...")
-    max: float = Field(..., description="...")
-    step: float = Field(0.125, description="...")
-    value: Optional[float] = Field(None, description="...")
+    name = Field("cpu", const=True, description="Identifies the setting as a CPU setting.")
+    min: float = Field(..., gt=0, description="The inclusive minimum number of vCPUs or cores to run.")
+    max: float = Field(..., description="The inclusive maximum number of vCPUs or cores to run.")
+    step: float = Field(0.125, description="The multiplier of vCPUs or cores to add or remove during adjustments.")
+    value: Optional[float] = Field(None, description="The number of vCPUs or cores as measured by the servo or adjusted by the optimizer, if any.")
 
 class Memory(RangeSetting):
     """Memory is a Setting that describes an adjustable range of values for 
@@ -611,7 +611,7 @@ class Memory(RangeSetting):
     heuristics. Always representing memory resources as a Memory object or
     type derived thereof.
     """
-    name = Field("mem", const=True, description="...")
+    name = Field("mem", const=True, description="Identifies the setting as a Memory setting.")
 
     @validator('min')
     @classmethod
@@ -630,11 +630,11 @@ class Replicas(RangeSetting):
     heuristics. Always representing memory resources as a Memory object or
     type derived thereof.
     """
-    name = Field("replicas", const=True, description="...")
-    min: StrictInt = Field(..., description="...")
-    max: StrictInt = Field(..., description="...")
-    step: StrictInt = Field(1, description="...")
-    value: Optional[StrictInt] = Field(None, description="...")
+    name = Field("replicas", const=True, description="Identifies the setting as a replicas setting.")
+    min: StrictInt = Field(..., description="The inclusive minimum number of replicas to of the application to run.")
+    max: StrictInt = Field(..., description="The inclusive maximum number of replicas to of the application to run.")
+    step: StrictInt = Field(1, description="The multiplier of instances to add or remove during adjustments.")
+    value: Optional[StrictInt] = Field(None, description="The optional number of replicas running as measured by the servo or to be adjusted to as commanded by the optimizer.")
 
 class InstanceTypeUnits(str, Enum):
     """
@@ -650,8 +650,8 @@ class InstanceType(EnumSetting):
     heuristics. Always representing memory resources as a Memory object or
     type derived thereof.
     """
-    name = Field("inst_type", const=True, description="...")
-    unit: InstanceTypeUnits = Field(InstanceTypeUnits.EC2, description="...")
+    name = Field("inst_type", const=True, description="Identifies the setting as an instance type enum setting.")
+    unit: InstanceTypeUnits = Field(InstanceTypeUnits.EC2, description="The unit of instance types identifying the provider.")
 
 class Component(BaseModel):
     """Component objects describe optimizable applications or services that
