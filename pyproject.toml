@@ -48,7 +48,6 @@ servo = "servo.entry_points:run_cli"
 "vegeta" = "servo.connectors.vegeta:VegetaConnector"
 "kubernetes" = "servo.connectors.kubernetes:KubernetesConnector"
 "prometheus" = "servo.connectors.prometheus:PrometheusConnector"
-"formation" = "servo.connectors.formation:FormationConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
