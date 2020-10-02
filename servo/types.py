@@ -2,6 +2,7 @@
 consumers of the servo package.
 """
 from __future__ import annotations
+import abc
 import asyncio
 
 import time
@@ -10,7 +11,8 @@ from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
 
 import semver
-from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator
+from pydantic import BaseModel, Extra, validator, datetime_parse, root_validator, Field, conlist, ValidationError, StrictInt, StrictFloat
+from pydantic.error_wrappers import ErrorWrapper
 from pygments.lexers import JsonLexer, PythonLexer, YamlLexer
 
 from servo.logging import logger
@@ -80,8 +82,8 @@ Semantic Versioning expectations.
 
 Version = semver.VersionInfo
 
-
-Numeric = Union[float, int]
+# NOTE: Strict values will not be type coerced by Pydantic (e.g., from "1" to 1)
+Numeric = Union[StrictFloat, StrictInt]
 NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 
 
@@ -378,50 +380,55 @@ metrics provider, etc.).
 Reading = Union[DataPoint, TimeSeries]
 Readings = List[Reading]
 
-class SettingType(str, Enum):
-    """The SettingType enumeration defines type of adjustable settings supported
-by the servo.
-    """
-
-    RANGE = "range"
-    """Range settings describe an inclusive span of numeric values that can be
-applied to a setting.
-    """
-
-    ENUM = "enum"
-    """Enum settings describe a fixed set of values that can be applied to a
-setting. Enum settings are not necessarily numeric and cover use-cases such as
-instance types where the applicable values are part of a fixed taxonomy.
-    """
-
 @runtime_checkable
 class HumanReadable(Protocol):
     """
     HumanReadable is a protocol that declares the `human_readable` method for objects
     that can be represented as a human readable string for user output.
     """
+    
     def human_readable(**kwargs) -> str:
         """
         Return a human readable representation of the object.
         """
         ...
 
-class Setting(BaseModel):
-    # ...
-    name: str
-    type: SettingType
-    min: Numeric
-    max: Numeric
-    step: Numeric
-    value: Optional[Union[Numeric, str]]
-    pinned: bool = False
+@runtime_checkable
+class OpsaniRepr(Protocol):
+    """OpsaniRepr is a protocol that declares the `__opsani_repr__` method for
+    objects that can be serialized into a representation usable in Opsani API
+    requests.
+    """
 
-    def __str__(self):
-        if self.type == SettingType.RANGE:
-            return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
+    def __opsani_repr__(self) -> dict:
+        """Return a representation of the object serialized for use in Opsani
+        API requests.
+        """
+        ...
 
-        return f"{self.name} ({self.type})"
+class Setting(BaseModel, abc.ABC):
+    """Setting is an abstract base class for models that represent adjustable 
+    parameters of an application under optimization.
 
+    Concrete implementations of `RangeSetting` and `EnumSetting` are also 
+    provided in the `servo.types` module.
+
+    Setting subclasses must define a `type` string identifier unique to the
+    new setting and must be understandable by the optimizer backend the servo
+    is collaborating with.
+    """
+    name: str = Field(..., description="Name of the setting.")
+    type: str = Field(..., description="Type of the setting, defining the attributes and semantics.")    
+    pinned: bool = Field(False, description="Whether the value of the setting has been pinned, marking it as off limits for modification by the optimizer.")
+    value: Optional[Union[Numeric, str]] = Field(None, description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment.")
+
+    @abc.abstractmethod
+    def __opsani_repr__(self) -> dict:
+        """Return a representation of the setting serialized for use in Opsani
+        API requests.
+        """
+        ...
+    
     @property
     def human_readable_value(self, **kwargs) -> str:
         """
@@ -435,11 +442,227 @@ class Setting(BaseModel):
             return cast(HumanReadable, self.value).human_readable(**kwargs)
         return str(self.value)
 
-    def opsani_dict(self) -> dict:
+    def __setattr__(self, name, value) -> None:
+        if name == 'value':
+            self._validate_pinned_values_cannot_be_changed(value)
+        super().__setattr__(name, value)
+    
+    def _validate_pinned_values_cannot_be_changed(self, new_value) -> None:
+        if not self.pinned or self.value is None:
+            return
+        
+        if new_value != self.value:
+            error = ValueError(f"value of pinned settings cannot be changed: assigned value {repr(new_value)} is not equal to existing value {repr(self.value)}")
+            error_ = ErrorWrapper(error, loc="value")
+            raise ValidationError([error_], self.__class__)
+    
+    class Config:
+        validate_all = True
+        validate_assignment = True
+
+class EnumSetting(Setting):
+    """EnumSetting objects describe a fixed set of values that can be applied to an
+    adjustable parameter. Enum settings are not necessarily numeric and cover use-cases such as
+    instance types where the applicable values are part of a fixed taxonomy.
+
+    Validations:
+        values: Cannot be an empty list.
+        value:  Must be a value that appears in the `values` list.
+
+    Raises:
+        ValidationError: Raised if any field fails validation.
+    """
+    type = Field("enum", const=True, description="Declares that the setting is an EnumSetting.")
+    unit: Optional[str] = Field(None, description="An optional unit describing the semantics or context of the values.")
+    values: conlist(Union[str, Numeric], min_items=1) = Field(..., description="A list of the available options for the value of the setting.")
+    value: Optional[Union[str, Numeric]] = Field(None, description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment. When set, must a value in the `values` attribute.")
+    
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def validate_value_in_values(
+        cls, values: dict
+    ) -> Optional[Union[str, Numeric]]:
+        value, options = values["value"], values["values"]
+        if value is not None and value not in options:
+            raise ValueError(f"invalid value: {repr(value)} is not in the values list {repr(options)}")
+        
+        return values
+        
+    def __opsani_repr__(self) -> dict:
+        return {
+            self.name: self.dict(include={"type", "unit", "values", "pinned", "value"}, exclude_none=True)
+        }
+
+class RangeSetting(Setting):
+    """RangeSetting objects describe an inclusive span of numeric values that can be
+    applied to an adjustable parameter.
+
+    Validations:
+        min, max, step: Each element of the range must be of the same Numeric type.
+        value: Must inclusively fall within the range defined by min and max.
+    
+    **NOTE** - Because of how Pydantic parses Union values, RangeSetting objects
+    will coerce the value of min, max, step, and value fields into floats. If
+    you require integer values, inherit from RangeSetting and redeclare the
+    fields with explicit types like so:
+
+        class IntegerRange(RangeSetting):
+            min: int
+            max: int
+            step: int
+            value: int
+
+    A warning is emitted if the value is not aligned with the step (division
+    modulus > 0).
+
+    Raises:
+        ValidationError: Raised if any field fails validation.            
+    """
+    type = Field("range", const=True, description="Declares that the setting is a RangeSetting.")
+    min: Numeric = Field(..., description="The inclusive minimum of the adjustable range of values for the setting.")
+    max: Numeric = Field(..., description="The inclusive maximum of the adjustable range of values for the setting.")
+    step: Numeric = Field(..., description="The step value of adjustments up or down within the range. Adjustments will always be a multiplier of the step. The step defines the size of the adjustable range by constraining the available options to multipliers of the step within the range.")
+    value: Optional[Numeric] = Field(None, description="The optional value of the setting as reported by the servo")
+
+    @root_validator(pre=True)
+    @classmethod
+    def range_must_be_of_same_type(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        range_types: Dict[TypeVar[int, float], List[str]] = {}
+        for attr in ("min", "max", "step"):
+            value = values[attr] if attr in values else cls.__fields__[attr].default
+            attr_cls = value.__class__
+            if attr_cls in range_types:
+                range_types[attr_cls].append(attr)
+            else:
+                range_types[attr_cls] = [attr]
+
+        if len(range_types) > 1:
+            desc = ""
+            for type_, fields in range_types.items():
+                if len(desc): desc += " "
+                names = ", ".join(fields)
+                desc += f"{type_.__name__}: {names}."
+
+            raise TypeError(f"invalid range: min, max, and step must all be of the same Numeric type ({desc})")
+        
+        return values
+    
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def value_must_fall_in_range(cls, values) -> Numeric:
+        value, min, max = values["value"], values["min"], values["max"]
+        if (value is not None and
+            (value < min or value > max)):
+                raise ValueError(f"invalid value: {value} is outside of the range {min}-{max}")
+
+        return values
+        
+    @validator('max')
+    @classmethod
+    def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:
+        if not "min" in values:
+            # can't validate if we don't have a min (likely failed validation)
+            return value
+
+        max_ = value
+        min_ = values["min"]
+
+        if min_ == max_:
+            raise ValueError(f"min and max cannot be equal ({min_} == {max_})")
+        
+        if min_ > max_:
+            raise ValueError(f"min cannot be greater than max ({min_} > {max_})")
+
+        return value
+
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def warn_if_value_is_not_step_aligned(cls, values: dict) -> dict:
+        name, min_, max_, step, value = (
+            values["name"], values["min"], values["max"], 
+            values["step"], values["value"]
+        )
+
+        if value is not None and value % step != 0:
+            from servo.logging import logger
+            desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
+            logger.warning(f"{desc} value is not step aligned: {value} is not divisible by {step}")
+
+        return values
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
+
+    def __opsani_repr__(self) -> dict:
         return {
             self.name: self.dict(include={"type", "min", "max", "step", "pinned", "value"})
         }
 
+class CPU(RangeSetting):
+    """CPU is a Setting that describes an adjustable range of values for CPU
+    resources on a container or virtual machine.
+
+    CPU is a default setting known to the Opsani optimization engine that is
+    used for calculating cost impacts and carries specialized semantics and 
+    heuristics. Always representing computing resources as a CPU object or
+    type derived thereof.
+    """
+    name = Field("cpu", const=True, description="...")
+    min: float = Field(..., gt=0, description="...")
+    max: float = Field(..., description="...")
+    step: float = Field(0.125, description="...")
+    value: Optional[float] = Field(None, description="...")
+
+class Memory(RangeSetting):
+    """Memory is a Setting that describes an adjustable range of values for 
+    memory resources on a container or virtual machine.
+
+    Memory is a default setting known to the Opsani optimization engine that is
+    used for calculating cost impacts and carries specialized semantics and 
+    heuristics. Always representing memory resources as a Memory object or
+    type derived thereof.
+    """
+    name = Field("mem", const=True, description="...")
+
+    @validator('min')
+    @classmethod
+    def ensure_min_greater_than_zero(cls, value: Numeric) -> Numeric:
+        if value == 0:
+            raise ValueError("min must be greater than zero")
+        
+        return value
+
+class Replicas(RangeSetting):
+    """Memory is a Setting that describes an adjustable range of values for 
+    memory resources on a container or virtual machine.
+
+    Memory is a default setting known to the Opsani optimization engine that is
+    used for calculating cost impacts and carries specialized semantics and 
+    heuristics. Always representing memory resources as a Memory object or
+    type derived thereof.
+    """
+    name = Field("replicas", const=True, description="...")
+    min: StrictInt = Field(..., description="...")
+    max: StrictInt = Field(..., description="...")
+    step: StrictInt = Field(1, description="...")
+    value: Optional[StrictInt] = Field(None, description="...")
+
+class InstanceTypeUnits(str, Enum):
+    """
+    """
+    EC2 = "ec2"
+
+class InstanceType(EnumSetting):
+    """InstanceType is a Setting that describes an adjustable enumeration of 
+    values for instance types of nodes or virtual machines.
+
+    Memory is a default setting known to the Opsani optimization engine that is
+    used for calculating cost impacts and carries specialized semantics and 
+    heuristics. Always representing memory resources as a Memory object or
+    type derived thereof.
+    """
+    name = Field("inst_type", const=True, description="...")
+    unit: InstanceTypeUnits = Field(InstanceTypeUnits.EC2, description="...")
 
 class Component(BaseModel):
     """Component objects describe optimizable applications or services that
@@ -470,10 +693,10 @@ component.
         """
         return next(filter(lambda m: m.name == name, self.settings), None)
 
-    def opsani_dict(self) -> dict:
+    def __opsani_repr__(self) -> dict:
         settings_dict = {"settings": {}}
         for setting in self.settings:
-            settings_dict["settings"].update(setting.opsani_dict())
+            settings_dict["settings"].update(setting.__opsani_repr__())
         return {self.name: settings_dict}
 
 
@@ -581,10 +804,10 @@ could not be found.
         """
         return next(filter(lambda m: m.name == name, self.metrics), None)
 
-    def opsani_dict(self) -> dict:
+    def __opsani_repr__(self) -> dict:
         dict = {"application": {"components": {}}, "measurement": {"metrics": {}}}
         for component in self.components:
-            dict["application"]["components"].update(component.opsani_dict())
+            dict["application"]["components"].update(component.__opsani_repr__())
         for metric in self.metrics:
             dict["measurement"]["metrics"][metric.name] = {"unit": metric.unit.value}
         return dict
@@ -631,7 +854,7 @@ operation.
         
         return value
 
-    def opsani_dict(self) -> dict:
+    def __opsani_repr__(self) -> dict:
         readings = {}
 
         for reading in self.readings:

@@ -171,7 +171,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
             self.logger.trace(pformat(description))
-            param = dict(descriptor=description.opsani_dict(), status="ok")
+            param = dict(descriptor=description.__opsani_repr__(), status="ok")
             await self._post_event(api.Event.DESCRIPTION, param)
 
         elif cmd_response.command == api.Command.MEASURE:
@@ -180,7 +180,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
             self.logger.trace(pformat(measurement))
-            param = measurement.opsani_dict()
+            param = measurement.__opsani_repr__()
             await self._post_event(api.Event.MEASUREMENT, param)
 
         elif cmd_response.command == api.Command.ADJUST:

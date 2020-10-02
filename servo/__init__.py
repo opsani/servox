@@ -33,8 +33,7 @@ from .events import (
     after_event,
     event_handler,
 )
-from .connector import (    
-    AbstractBaseConfiguration,
+from .connector import (
     BaseConfiguration,
     BaseConnector,
     Optimizer,
