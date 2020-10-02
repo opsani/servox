@@ -498,19 +498,8 @@ class RangeSetting(Setting):
     applied to an adjustable parameter.
 
     Validations:
-        min, max, step: Each element of the range must be of the same Numeric type.
+        min, max, step: Each element of the range must be of the same type.
         value: Must inclusively fall within the range defined by min and max.
-    
-    **NOTE** - Because of how Pydantic parses Union values, RangeSetting objects
-    will coerce the value of min, max, step, and value fields into floats. If
-    you require integer values, inherit from RangeSetting and redeclare the
-    fields with explicit types like so:
-
-        class IntegerRange(RangeSetting):
-            min: int
-            max: int
-            step: int
-            value: int
 
     A warning is emitted if the value is not aligned with the step (division
     modulus > 0).
