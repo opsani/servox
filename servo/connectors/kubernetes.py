@@ -39,7 +39,6 @@ from servo import (
     Maturity,
     Memory as BaseMemory,
     Replicas,
-    Setting,
     check,
     connector,
     join_to_series,
@@ -1498,7 +1497,7 @@ class Memory(BaseMemory):
 
 # TODO: The Adjustment needs to marshal value appropriately on ingress
 def _qualify(value, unit):
-    if unit == "memory":
+    if unit == "mem":
         return f"{value}Gi"# if value.isnumeric() else value
     elif unit == "cpu":
         return str(Millicore.parse(value))
@@ -1729,11 +1728,12 @@ class DeploymentOptimization(BaseOptimization):
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
         self.logger.trace(f"adjusting {name} to {value}")
-        if name in ("cpu", "memory"):
-            requirements = getattr(self.container_config, name).requirements
+        if name in ("cpu", "mem"):
+            resource_name = "memory" if name == "mem" else name
+            requirements = getattr(self.container_config, resource_name).requirements
             self.container.set_resource_requirements(name, value, requirements, clear_others=True)
 
-        elif adjustment.setting_name == "replicas":
+        elif name == "replicas":
             self.deployment.replicas = int(value)
 
         else:
@@ -1923,8 +1923,9 @@ class CanaryOptimization(BaseOptimization):
         value = _qualify(adjustment.value, name)
 
         if name in ("cpu", "memory"):
-            requirements = getattr(self.target_container_config, name).requirements
-            self.canary_container.set_resource_requirements(name, value, requirements, clear_others=True)
+            resource_name = "memory" if name == "mem" else name
+            requirements = getattr(self.target_container_config, resource_name).requirements
+            self.canary_container.set_resource_requirements(resource_name, value, requirements, clear_others=True)
 
         elif name == "replicas":
             if int(value) != 1:
