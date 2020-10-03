@@ -57,8 +57,10 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          key: ${{ runner.os }}-buildx-${{ steps.prep.outputs.build_args }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-buildx--
+            ${{ runner.os }}-buildx-SERVO_ENV=production-
             ${{ runner.os }}-buildx-
       -
         name: Login to DockerHub
@@ -77,7 +79,7 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.prep.outputs.tags }}
-          build-args: ${{ steps.prep.outputs.build_args }}          
+          build-args: ${{ steps.prep.outputs.build_args }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
           labels: |
