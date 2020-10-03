@@ -8,6 +8,8 @@ on:
       - '**'
     tags:
       - 'v*.*.*'
+  release:
+    types: [published]
   pull_request:
 
 jobs:
@@ -23,6 +25,7 @@ jobs:
         run: |
           DOCKER_IMAGE=opsani/servox
           VERSION=noop
+          BUILD_ARGS="BUILDKIT_INLINE_CACHE=1"
           if [ "${{ github.event_name }}" = "schedule" ]; then
             VERSION=nightly
           elif [[ $GITHUB_REF == refs/tags/* ]]; then
@@ -40,9 +43,11 @@ jobs:
             MINOR=${VERSION%.*}
             MAJOR=${MINOR%.*}
             TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
+            BUILD_ARGS="${BUILD_ARGS},SERVO_ENV=production"
           fi
           echo ::set-output name=version::${VERSION}
           echo ::set-output name=tags::${TAGS}
+          echo ::set-output name=build_args::${BUILD_ARGS}
           echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
       -
         name: Set up Docker Buildx
@@ -64,6 +69,8 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.prep.outputs.tags }}
+          build-args: ${{ steps.prep.outputs.build_args }}
+          cache-from: opsani/servox:latest
           labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
