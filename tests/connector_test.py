@@ -1408,7 +1408,7 @@ async def test_logging() -> None:
     await asyncio.sleep(0.00001)
 
     await connector.logger.complete()
-    await asyncio.gather(*handler.tasks)
+    await handler.shutdown()
     reset_to_defaults()
     assert request.called
     assert request.stats.call_count == 3

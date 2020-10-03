@@ -241,7 +241,6 @@ class PrometheusConnector(BaseConnector):
         """
         return Description(metrics=self.config.metrics)
 
-    @property
     @on_event()
     def metrics(self) -> List[Metric]:
         """Returns the list of Metrics measured through Prometheus queries.
@@ -270,9 +269,9 @@ class PrometheusConnector(BaseConnector):
             queried from Prometheus.
         """
         if metrics:
-            metrics__ = list(filter(lambda m: m.name in metrics, self.metrics))
+            metrics__ = list(filter(lambda m: m.name in metrics, self.metrics()))
         else:
-            metrics__ = self.metrics
+            metrics__ = self.metrics()
         measuring_names = list(map(lambda m: m.name, metrics__))
         self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {join_to_series(measuring_names)}")
 
