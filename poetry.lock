@@ -155,13 +155,17 @@ description = "Google Authentication Library"
 name = "google-auth"
 optional = false
 python-versions = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*"
-version = "1.21.3"
+version = "1.22.0"
 
 [package.dependencies]
 cachetools = ">=2.0.0,<5.0"
 pyasn1-modules = ">=0.2.1"
 setuptools = ">=40.3.0"
 six = ">=1.9.0"
+
+[package.dependencies.aiohttp]
+python = ">=3.6"
+version = ">=3.6.2,<4.0.0dev"
 
 [package.dependencies.rsa]
 python = ">=3.5"
@@ -756,7 +760,7 @@ description = "Read and change YAML/Compatible data using powerful, intuitive, c
 name = "yamlpath"
 optional = false
 python-versions = ">3.6.0"
-version = "2.3.7"
+version = "2.4.3"
 
 [package.dependencies]
 "ruamel.yaml" = ">=0.15.96"
@@ -879,8 +883,8 @@ freezegun = [
     {file = "freezegun-1.0.0.tar.gz", hash = "sha256:1cf08e441f913ff5e59b19cc065a8faa9dd1ddc442eaf0375294f344581a0643"},
 ]
 google-auth = [
-    {file = "google-auth-1.21.3.tar.gz", hash = "sha256:31941bf019fb242c04d0de32845da10180788bfddb0de87d78c4bdf55555dda1"},
-    {file = "google_auth-1.21.3-py2.py3-none-any.whl", hash = "sha256:873051a6317294b083795cffc467bcd05b6df483ef542bfe0069ddbfbac0a096"},
+    {file = "google-auth-1.22.0.tar.gz", hash = "sha256:a73e6fb6d232ed1293ef9a5301e6f8aada7880d19c65d7f63e130dc50ec05593"},
+    {file = "google_auth-1.22.0-py2.py3-none-any.whl", hash = "sha256:e86e72142d939a8d90a772947268aacc127ab7a1d1d6f3e0fecca7a8d74d8257"},
 ]
 h11 = [
     {file = "h11-0.9.0-py2.py3-none-any.whl", hash = "sha256:4bc6d6a1238b7615b266ada57e0618568066f57dd6fa967d1290ec9309b2f2f1"},
@@ -1167,7 +1171,7 @@ win32-setctime = [
     {file = "win32_setctime-1.0.2.tar.gz", hash = "sha256:47aa7c43548c1fc0a4f026d1944b748b37036df116c7c4cf908e82638d854313"},
 ]
 yamlpath = [
-    {file = "yamlpath-2.3.7.tar.gz", hash = "sha256:67f2b410d4b4d871c0d7fedd2d516e216372176cf08619c3748810b1e660950d"},
+    {file = "yamlpath-2.4.3.tar.gz", hash = "sha256:4c9228703026b01e59668ad1333d48cd3ef4558009e10c448308b28f3aecb0fb"},
 ]
 yarl = [
     {file = "yarl-1.6.0-cp35-cp35m-macosx_10_14_x86_64.whl", hash = "sha256:db9eb8307219d7e09b33bcb43287222ef35cbcf1586ba9472b0a4b833666ada1"},
