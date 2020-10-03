@@ -17,6 +17,16 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] "pass the calimari" - 2020-10-02
+
+Maintenance release to remove development packages from Docker images.
+
+### Changed
+
+- Reworked Docker build automation to decouple from release process.
+- Fixed breakage in production builds.
+- Updated Poetry dependency to v1.1.0 in Dockerfile.
+
 ## [0.8.0] "pass the calimari" - 2020-10-02
 
 ### Added
@@ -26,19 +36,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   rather than automatically deriving names from Deployment/Container.
 - Kubernetes Optimization Strategy classes can now accept options from the
   config file (currently supports `alias` for canaries).
-- Integrated orjson to gain control over JSON/YAML serialization for classes 
+- Integrated orjson to gain control over JSON/YAML serialization for classes
   that inherit from built-in types (e.g., str, int, float).
-- The `ProgressHandler` now handles exceptions and optionally notifies an 
+- The `ProgressHandler` now handles exceptions and optionally notifies an
   external exception handler.
-- Servo will now interrupt operations when it detects losing sync with the 
+- Servo will now interrupt operations when it detects losing sync with the
   backend by encountering unexpected operation errors.
 - Critical checks can be declared via the `require` decorator.
-- Added the `warn` decorator for creating checks that emit warnings rather than failing.
+- Added the `warn` decorator for creating checks that emit warnings rather than
+  failing.
 
 ### Removed
-- Subprocess methods have been removed from `servo.connector.Connector` in
-  favor of directly importing the subprocess module from the utilities module.
-- The `required` attribute from the `servo.checks` module in favor of `severity`.
+- Subprocess methods have been removed from `servo.connector.Connector` in favor
+  of directly importing the subprocess module from the utilities module.
+- The `required` attribute from the `servo.checks` module in favor of
+  `severity`.
 
 ### Changed
 - The `servo.logging` module has been generalized for use outside of the
@@ -58,21 +70,24 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   default whenever possible.
 - Multicheck methods now yield more readable IDs based off the parent multicheck
   method name (e.g., `check_resource_requirements_item_0`). 
-- Checks now have a severity described by the `servo.checks.Severity` enumeration, replacing required.
-- Required check nomenclature has been replaced with the `critical` severity level to clarify
-  expectations and eliminate ambiguity in check behavior.
+- Checks now have a severity described by the `servo.checks.Severity`
+  enumeration, replacing required.
+- Required check nomenclature has been replaced with the `critical` severity
+  level to clarify expectations and eliminate ambiguity in check behavior.
 
 ### Fixed
-- Progress tracking now handles zero length durations appropriately (e.g., in warmup, settlement, etc).
-- Model objects that inherit from builtin classes can now be serialized to custom representations.
+- Progress tracking now handles zero length durations appropriately (e.g., in
+  warmup, settlement, etc).
+- Model objects that inherit from builtin classes can now be serialized to
+  custom representations.
 - Kubernetes configuration values now serialize to human readable values instead
   of numerics.
 - Multicheck expanded methods are now filterable and taggable.
 - Progress logging and reporting will no longer trigger unhandled exceptions.
 - Adjust operations now return a state descriptor rather than parroting back    
   the requested state.
-- Kubernetes Connector is now aware of out of band changes such as those made 
-  by Horizontal Pod Autoscalers.
+- Kubernetes Connector is now aware of out of band changes such as those made by
+  Horizontal Pod Autoscalers.
 
 ## [0.7.0] "nice for what?" - 2020-09-09
 
