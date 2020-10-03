@@ -4,7 +4,6 @@
 [![PyPI](https://img.shields.io/pypi/v/servox.svg)](https://pypi.org/project/servox/)
 [![release](https://img.shields.io/github/release/opsani/servox.svg)](https://github.com/opsani/servox/releases/latest)
 [![GitHub release date](https://img.shields.io/github/release-date/opsani/servox.svg)](https://github.com/opsani/servox/releases)
-[![Dependabot Status](https://api.dependabot.com/badges/status?host=github&repo=opsani/servox)](https://dependabot.com)
 
 This repository contains the source code of the next generation Opsani Servo technology.
 
