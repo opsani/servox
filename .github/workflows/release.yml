@@ -28,15 +28,4 @@ jobs:
       run: poetry build
     - name: Publish to PyPI
       run: poetry publish --username=__token__ --password=${{ secrets.PYPI_TOKEN }}
-    - name: Build and push Docker images
-      uses: docker/build-push-action@v1
-      env:
-        DOCKER_BUILDKIT: 1
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-        repository: opsani/servox
-        tag_with_ref: true
-        add_git_labels: true
-        cache_froms: opsani/servox:latest
-        build_args: BUILDKIT_INLINE_CACHE=1,SERVO_ENV=production
+    
