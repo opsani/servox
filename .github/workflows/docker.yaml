@@ -25,7 +25,7 @@ jobs:
         run: |
           DOCKER_IMAGE=opsani/servox
           VERSION=noop
-          BUILD_ARGS="BUILDKIT_INLINE_CACHE=1"
+          BUILD_ARGS=""
           if [ "${{ github.event_name }}" = "schedule" ]; then
             VERSION=nightly
           elif [[ $GITHUB_REF == refs/tags/* ]]; then
@@ -43,7 +43,7 @@ jobs:
             MINOR=${VERSION%.*}
             MAJOR=${MINOR%.*}
             TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
-            BUILD_ARGS="${BUILD_ARGS},SERVO_ENV=production"
+            BUILD_ARGS="SERVO_ENV=production"
           fi
           echo ::set-output name=version::${VERSION}
           echo ::set-output name=tags::${TAGS}
@@ -52,6 +52,14 @@ jobs:
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
+      -
+        name: Cache Docker layers
+        uses: actions/cache@v2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
       -
         name: Login to DockerHub
         if: github.event_name != 'pull_request'
@@ -69,8 +77,9 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.prep.outputs.tags }}
-          build-args: ${{ steps.prep.outputs.build_args }}
-          cache-from: opsani/servox:latest
+          build-args: ${{ steps.prep.outputs.build_args }}          
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
           labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
