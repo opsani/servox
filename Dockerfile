@@ -36,15 +36,14 @@ RUN pip install --upgrade pip setuptools
 COPY poetry.lock pyproject.toml ./
 COPY servo/entry_points.py servo/entry_points.py
 
-RUN pip install poetry==1.0.* \
+RUN pip install poetry==1.1.* \
+  # Add common connectors distributed as standalone libraries
+  && poetry add servo-webhooks \
   && poetry install \
     $(if [ "$SERVO_ENV" = 'production' ]; then echo '--no-dev'; fi) \
     --no-interaction \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
-
-# Add common connectors distributed as standalone libraries
-RUN poetry add servo-webhooks
 
 # Copy the servo sources
 COPY . ./
