@@ -298,6 +298,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         logger.info("Dispatching shutdown event...")
         await self.servo.shutdown()
+        await self.progress_handler.shutdown()
 
         tasks = [t for t in asyncio.all_tasks() if t is not
                 asyncio.current_task()]

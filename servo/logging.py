@@ -68,22 +68,20 @@ class ProgressHandler:
         progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]], 
         error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
         exception_handler: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None
-
     ) -> None:
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
-        self._exception_handler = exception_handler
-        self._tasks = set()
-    
-    @property
-    def tasks(self) -> Set[asyncio.Task]:
-        return cast(Set[asyncio.Task], self._tasks.copy())
+        self._exception_handler = exception_handler        
+        self._queue = asyncio.Queue()
+        self._queue_processor = None
     
     async def sink(self, message: loguru.Message) -> None:
-        """
-        An asynchronous loguru sink handling the progress reporting.
+        """An asynchronous loguru sink handling the progress reporting.
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
         """
+        if self._queue_processor is None:
+            self._queue_processor = asyncio.create_task(self._process_queue())
+
         record = message.record
         extra = record["extra"]
         progress = extra.get("progress", None)
@@ -111,40 +109,45 @@ class ProgressHandler:
 
         connector_name = connector.name if hasattr(connector, "name") else connector
 
-        await self._report_progress(
-            operation=operation,
-            progress=progress,
-            connector=connector_name,
-            event_context=event_context,
-            started_at=started_at,
-            message=message
+        self._queue.put_nowait(
+            dict(
+                operation=operation,
+                progress=progress,
+                connector=connector_name,
+                event_context=event_context,
+                started_at=started_at,
+                message=message
+            )            
         )
-    
-    async def _report_progress(self, **kwargs) -> None:
-        """
-        Report progress about a log message that was processed.
-        """
 
-        def _handle_task_result(task: asyncio.Task) -> None:
+    async def shutdown(self) -> None:
+        """Shutdown the progress handler by emptying the queue and releasing the queue processor.
+        """
+        await self._queue.join()
+        self._queue_processor.cancel()
+        await asyncio.gather(self._queue_processor, return_exceptions=True)
+
+    async def _process_queue(self) -> None:
+        while True:
             try:
-                self._tasks.remove(task)
-                task.result()
+                progress = await self._queue.get()
+                if progress is None:
+                    break
+
+                if asyncio.iscoroutinefunction(self._progress_reporter):
+                    await self._progress_reporter(**progress)
+                else:
+                    self._progress_reporter(**progress)
             except asyncio.CancelledError:
                 pass  # Task cancellation should not be logged as an error.
             except Exception as error:  # pylint: disable=broad-except
                 if self._exception_handler:
                     if asyncio.iscoroutinefunction(self._exception_handler):
-                        asyncio.create_task(self._exception_handler(error))
+                        await self._exception_handler(error)
                     else:
                         self._exception_handler(error)
-
-        if self._progress_reporter:
-            if asyncio.iscoroutinefunction(self._progress_reporter):
-                task = asyncio.create_task(self._progress_reporter(**kwargs))
-                task.add_done_callback(_handle_task_result)
-                self._tasks.add(task)
-            else:
-                self._progress_reporter(**kwargs)
+            finally:
+                self._queue.task_done()
 
     async def _report_error(self, message: str, record) -> None:
         """
@@ -153,7 +156,7 @@ class ProgressHandler:
         message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:
             if asyncio.iscoroutinefunction(self._error_reporter):
-                self._tasks.add(asyncio.create_task(self._error_reporter(message)))
+                await self._error_reporter(message)
             else:
                 self._error_reporter(message)
 

@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- Simplified `servo.logging.ProgressHandler` implementation with an asyncio
+  queue and producer/consumer pattern.
+
 ## [0.8.1] "pass the calimari" - 2020-10-02
 
 Maintenance release to remove development packages from Docker images.

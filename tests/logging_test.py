@@ -144,8 +144,10 @@ class TestProgressHandler:
         return asynctest.Mock(name="error reporter")
 
     @pytest.fixture()
-    def handler(self, progress_reporter, error_reporter) -> ProgressHandler:
-        return ProgressHandler(progress_reporter, error_reporter)
+    async def handler(self, progress_reporter, error_reporter, event_loop) -> ProgressHandler:
+        handler = ProgressHandler(progress_reporter, error_reporter)
+        yield handler
+        await handler.shutdown()
 
     @pytest.fixture()
     def logger(self, handler: ProgressHandler) -> loguru.Logger:
