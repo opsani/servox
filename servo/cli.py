@@ -748,7 +748,7 @@ class ServoCLI(CLI):
             for result in results:
                 for component in result.value:
                     settings_list = sorted(
-                        list(map(lambda s: s.human_readable_value, component.settings))
+                        list(map(lambda s: f"{s.name}={s.human_readable_value}", component.settings))
                     )
                     row = [
                         component.name,
