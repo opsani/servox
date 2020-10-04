@@ -21,7 +21,7 @@ except ImportError:
 from servo.configuration import Optimizer
 from servo.cli import ServoCLI
 from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
-
+from kubernetes_asyncio import config as kubernetes_asyncio_config
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -115,10 +115,16 @@ def random_string() -> str:
 
 
 @pytest.fixture
-def kubeconfig() -> str:
+async def kubeconfig() -> str:
     config_path = Path(__file__).parents[0] / 'kubeconfig'
     if not config_path.exists():
         raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
+    
+    # Load the test config into async kubernetes
+    await kubernetes_asyncio_config.load_kube_config(
+        config_file=str(config_path),
+    )
+
     return str(config_path)
 
 
