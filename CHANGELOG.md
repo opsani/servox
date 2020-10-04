@@ -19,10 +19,20 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Added
+
+- Connectors can now be dynamically added and removed from the servo via the 
+  `servo.servo.Servo` methods `add_connector` and `remove_connector`.
+
 ### Changed
 
 - Simplified `servo.logging.ProgressHandler` implementation with an asyncio
   queue and producer/consumer pattern.
+
+### Fixed
+
+- `servo show components` now includes the setting names instead of naked 
+  values.
 
 ## [0.8.1] "pass the calimari" - 2020-10-02
 

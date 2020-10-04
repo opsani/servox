@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple, Union, Sequence
 
+import pydantic
 import httpx
 
 import servo
@@ -207,6 +208,56 @@ class Servo(BaseConnector):
                 if connector.name == name:
                     connectors.append(connector)
             return connectors
+    
+    async def add_connector(self, name: str, connector: BaseConnector) -> None:
+        """Adds a connector to the servo.
+
+        The connector is added to the servo event bus and is initialized with
+        the startup event to prepare for execution.
+
+        Args:
+            name: A unique name for the connector in the servo.
+            connector: The connector to be added to the servo.
+        
+        Raises:
+            ValueError: Raised if the name is not unique in the servo.
+        """
+        if self.get_connector(name):
+            raise ValueError(f"invalid name: a connector named '{name}' already exists in the servo")
+        
+        connector.name = name
+        self.connectors.append(connector)
+        self.__connectors__.append(connector)
+
+        with extra(self.config):
+            setattr(self.config, name, connector.config)
+
+        await self.dispatch_event(Events.STARTUP, prepositions=Preposition.ON, include=[connector])
+    
+    async def remove_connector(self, connector: Union[str, BaseConnector]) -> None:
+        """Removes a connector from the servo.
+
+        The connector is removed from the servo event bus and is finalized with
+        the shutdown event to prepare for eviction.
+
+        Args:
+            connector: The connector or name to remove from the servo.
+        
+        Raises:
+            ValueError: Raised if the connector does not exist in the servo.
+        """
+        connector_ = connector if isinstance(connector, BaseConnector) else self.get_connector(connector)
+        if not connector_ in self.connectors:
+            name = connector_.name if connector_ else connector
+            raise ValueError(f"invalid connector: a connector named '{name}' does not exist in the servo")
+        
+        await self.dispatch_event(Events.SHUTDOWN, prepositions=Preposition.ON, include=[connector_])
+
+        self.connectors.remove(connector_)
+        self.__connectors__.remove(connector_)
+
+        with extra(self.config):
+            delattr(self.config, connector_.name)
 
     ##
     # Event handlers

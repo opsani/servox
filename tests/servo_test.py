@@ -1669,3 +1669,77 @@ async def test_proxy_utilization(proxies) -> None:
 
 def test_codename() -> None:
     assert __codename__
+
+async def test_add_connector(servo: Servo) -> None:
+    connector = FirstTestServoConnector(config=BaseConfiguration())
+    assert connector not in servo.connectors
+    await servo.add_connector("whatever", connector)
+    assert connector in servo.connectors
+    assert servo.config.whatever == connector.config
+
+async def test_add_connector_sends_startup_event(servo: Servo) -> None:
+    connector = FirstTestServoConnector(config=BaseConfiguration())
+    assert connector.started_up is False
+    await servo.add_connector("whatever", connector)
+    assert connector.started_up is True
+
+async def test_add_connector_can_handle_events(servo: Servo) -> None:
+    results = await servo.dispatch_event("this_is_an_event")
+    assert len(results) == 2
+
+    connector = FirstTestServoConnector(config=BaseConfiguration())
+    await servo.add_connector("whatever", connector)
+
+    results = await servo.dispatch_event("this_is_an_event")
+    assert len(results) == 3
+
+async def test_add_connector_raises_if_name_exists(servo: Servo) -> None:
+    connector_1 = FirstTestServoConnector(config=BaseConfiguration())
+    await servo.add_connector("whatever", connector_1)
+
+    connector_2 = FirstTestServoConnector(config=BaseConfiguration())
+    with pytest.raises(ValueError) as error:
+        await servo.add_connector("whatever", connector_2)
+
+    assert str(error.value) == "invalid name: a connector named 'whatever' already exists in the servo"
+
+async def test_remove_connector(servo: Servo) -> None:
+    connector = servo.get_connector('first_test_servo')
+    assert connector in servo.connectors
+    assert servo.config.first_test_servo == connector.config
+    await servo.remove_connector(connector)
+    assert connector not in servo.connectors
+
+    with pytest.raises(AttributeError):
+        assert servo.config.first_test_servo
+
+async def test_remove_connector_by_name(servo: Servo) -> None:
+    connector = servo.get_connector('first_test_servo')
+    assert connector in servo.connectors
+    assert servo.config.first_test_servo == connector.config
+    await servo.remove_connector('first_test_servo')
+    assert connector not in servo.connectors
+
+    with pytest.raises(AttributeError):
+        assert servo.config.first_test_servo
+
+async def test_remove_connector_sends_shutdown_event(servo: Servo, mocker) -> None:
+    connector = servo.get_connector('first_test_servo')
+    on_handler = connector.get_event_handlers("shutdown", Preposition.ON)[0]
+    on_spy = mocker.spy(on_handler, "handler")
+    assert connector.started_up is False
+    await servo.remove_connector(connector)
+    on_spy.assert_called()
+
+async def test_remove_connector_raises_if_name_does_not_exists(servo: Servo) -> None:
+    with pytest.raises(ValueError) as error:
+        await servo.remove_connector("whatever")
+
+    assert str(error.value) == "invalid connector: a connector named 'whatever' does not exist in the servo"
+
+async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> None:
+    connector = FirstTestServoConnector(config=BaseConfiguration())
+    with pytest.raises(ValueError) as error:
+        await servo.remove_connector(connector)
+
+    assert str(error.value) == "invalid connector: a connector named 'first_test_servo' does not exist in the servo"
