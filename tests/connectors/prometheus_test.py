@@ -155,16 +155,19 @@ class TestPrometheusRequest:
 
 
 class TestPrometheusConnector:
-    def test_describe(self):
+    async def test_describe(self) -> None:
         pass
 
-    def test_measure(self):
+    async def test_measure(self) -> None:
         pass
 
-    def test_metrics(self):
+    async def test_metrics(self) -> None:
+        # TODO: This was broken because of the @property
+        # TODO: should I figure out how to allow properties as event handlers?
+        # TODO: Add mocks to stub out
         pass
 
-    def test_check(self):
+    async def test_check(self) -> None:
         pass
 
 

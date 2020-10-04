@@ -1,6 +1,8 @@
+from datetime import datetime
 import servo
 import servo.connectors.kubernetes as kubernetes_connector
 from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesChecks, KubernetesConnector
+import os
 import sys
 
 from pathlib import Path
@@ -246,7 +248,7 @@ class TestChecks:
     
     async def test_check_deployment(self, config) -> None:
         await config.load_kubeconfig()
-        results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.Filter(id="check_deployments_item_0"))
+        results = await kubernetes_connector.KubernetesChecks.run(config, matching=servo.checks.Filter(id="check_deployments_item_0"))
         assert results
         result = results[-1]
         assert result.id == "check_deployments_item_0"
@@ -269,7 +271,7 @@ class TestChecks:
         results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.Filter(id="check_resource_requirements_item_0"))
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.matching, "check_resource_requirements_item_0"
         assert result.success
 
     # TODO: Create deployment without CPU, check it
@@ -277,4 +279,36 @@ class TestChecks:
     async def check_deployments_are_ready(self, config) -> None:
         ...
         # TODO: How do I force a deployment to be non-ready?
+
+@pytest.fixture()
+async def kubeconfig() -> None:
+    """
+    Asynchronously load the Kubernetes configuration
+    """
+    from kubernetes_asyncio import client, config as kubernetes_asyncio_config
+    from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
+
+    config_file = Path(KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
+    if config_file.exists():
+        await kubernetes_asyncio_config.load_kube_config(
+            config_file=str(config_file),
+        )
+    elif os.getenv('KUBERNETES_SERVICE_HOST'):
+        kubernetes_asyncio_config.load_incluster_config()
+    else:
+        raise RuntimeError(f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found")
+
+async def test_read_service(kubeconfig) -> None:
+    svc = await kubernetes_connector.Service.read("fiber-http", "default")
+    assert svc.obj.metadata.name == "fiber-http"
+    assert svc.obj.metadata.namespace == "default"
+
+async def test_patch_service(kubeconfig) -> None:
+    from hashlib import blake2b
     
+    svc = await kubernetes_connector.Service.read("fiber-http", "default")    
+    sentinel_value = blake2b(str(datetime.now()).encode('utf-8'), digest_size=4).hexdigest()
+    svc.obj.metadata.labels["testing.opsani.com"] = sentinel_value
+    await svc.patch()
+    await svc.refresh()
+    assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value

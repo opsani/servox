@@ -656,14 +656,14 @@ class Container(servo.logging.Mixin):
         """
         return self.obj.image
 
-    def get_restart_count(self) -> int:
+    async def get_restart_count(self) -> int:
         """Get the number of times the Container has been restarted.
 
         Returns:
             The number of times the Container has been restarted.
         """
         container_name = self.obj.name
-        pod_status = self.pod.status()
+        pod_status = await self.pod.get_status()
 
         # If there are no container status, the container hasn't started
         # yet, so there cannot be any restarts.
@@ -1327,7 +1327,6 @@ class Deployment(KubernetesModel):
                 raise
 
         return None
-
 
     async def ensure_canary_pod(self, *, timeout: Numeric = 600) -> Pod:
         """
@@ -2487,7 +2486,7 @@ class KubernetesChecks(BaseChecks):
     async def check_connectivity(self) -> None:
         async with ApiClient() as api:
             v1 = client.VersionApi(api)
-            await v1.get_code()            
+            await v1.get_code()
 
     @warn("Kubernetes version")
     async def check_version(self) -> None:
@@ -2643,3 +2642,348 @@ def selector_kwargs(
         kwargs['label_selector'] = selector_string(labels)
 
     return kwargs
+
+
+class Service(KubernetesModel):
+    """Kubetest wrapper around a Kubernetes `Service`_ API Object.
+
+    The actual ``kubernetes.client.V1Service`` instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Service`_.
+
+    .. _Service:
+        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#service-v1-core
+    """
+
+    obj_type = client.V1Service
+
+    api_clients = {
+        'preferred': client.CoreV1Api,
+        'v1': client.CoreV1Api,
+    }
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the underlying Kubernetes resource in the cluster
+        under the given namespace.
+
+        Args:
+            namespace: The namespace to create the resource under.
+                If no namespace is provided, it will use the instance's
+                namespace member, which is set when the object is created
+                via the kubetest client.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        logger.info(f'creating service "{self.name}" in namespace "{self.namespace}"')
+        logger.debug(f'service: {self.obj}')
+
+        self.obj = self.api_client.create_namespaced_service(
+            namespace=namespace,
+            body=self.obj,
+        )
+
+    async def patch(self) -> None:
+        """Partially update the underlying Kubernetes resource in the cluster.
+        """
+        logger.info(f'patching service "{self.name}"')
+        logger.trace(f'service: {self.obj}')
+        async with self.api_client() as api_client:
+            await api_client.patch_namespaced_service(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+
+    async def delete(self, options: client.V1DeleteOptions) -> client.V1Status:
+        if options is None:
+            options = client.V1DeleteOptions()
+
+        logger.info(f'deleting service "{self.name}"')
+        logger.debug(f'delete options: {options}')
+        logger.debug(f'service: {self.obj}')
+
+        return self.api_client.delete_namespaced_service(
+            name=self.name,
+            namespace=self.namespace,
+            body=options,
+        )
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "Service":
+        """Read the Service from the cluster under the given namespace.
+
+        Args:
+            name: The name of the Pod to read.
+            namespace: The namespace to read the Pod from.
+        """
+        logger.info(f'reading service "{name}" in namespace "{namespace}"')
+
+        async with cls.preferred_client() as api_client:
+            obj = await asyncio.wait_for(
+                api_client.read_namespaced_service(name, namespace),
+                5.0
+            )
+            logger.trace("service: ", obj)
+            return cls(obj)
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Service resource."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.read_namespaced_service(
+                name=self.name,
+                namespace=self.namespace,
+            )
+
+    async def is_ready(self) -> bool:
+        """Check if the Service is in the ready state.
+
+        The readiness state is not clearly available from the Service
+        status, so to see whether or not the Service is ready this
+        will check whether the endpoints of the Service are ready.
+
+        This comes with the caveat that in order for a Service to
+        have endpoints, there needs to be some backend hooked up to it.
+        If there is no backend, the Service will never have endpoints,
+        so this will never resolve to True.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        await self.refresh()
+
+        # check the status. if there is no status, the service is
+        # definitely not ready.
+        if self.obj.status is None:
+            return False
+
+        endpoints = await self.get_endpoints()
+
+        # if the Service has no endpoints, its not ready.
+        if len(endpoints) == 0:
+            return False
+
+        # get the service endpoints and check that they are all ready.
+        for endpoint in endpoints:
+            # if we have an endpoint, but there are no subsets, we
+            # consider the endpoint to be not ready.
+            if endpoint.subsets is None:
+                return False
+
+            for subset in endpoint.subsets:
+                # if the endpoint has no addresses setup yet, its not ready
+                if subset.addresses is None or len(subset.addresses) == 0:
+                    return False
+
+                # if there are still addresses that are not ready, the
+                # service is not ready
+                not_ready = subset.not_ready_addresses
+                if not_ready is not None and len(not_ready) > 0:
+                    return False
+
+        # if we got here, then all endpoints are ready, so the service
+        # must also be ready
+        return True
+
+    async def status(self) -> client.V1ServiceStatus:
+        """Get the status of the Service.
+
+        Returns:
+            The status of the Service.
+        """
+        logger.info(f'checking status of service "{self.name}"')
+        # first, refresh the service state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the service
+        return self.obj.status
+
+    async def get_endpoints(self) -> List[client.V1Endpoints]:
+        """Get the endpoints for the Service.
+
+        This can be useful for checking internal IP addresses used
+        in containers, e.g. for container auto-discovery.
+
+        Returns:
+            A list of endpoints associated with the Service.
+        """
+        logger.info(f'getting endpoints for service "{self.name}"')
+        endpoints = await self.api_client.list_namespaced_endpoints(
+            namespace=self.namespace,
+        )
+
+        svc_endpoints = []
+        for endpoint in endpoints.items:
+            # filter to include only the endpoints with the same
+            # name as the service.
+            if endpoint.metadata.name == self.name:
+                svc_endpoints.append(endpoint)
+
+        logger.debug(f'endpoints: {svc_endpoints}')
+        return svc_endpoints
+
+    async def _proxy_http_request(self, method, path, **kwargs) -> tuple:
+        """Template request to proxy of a Service.
+
+        Args:
+            method: The http request method e.g. 'GET', 'POST' etc.
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_get function.
+
+        Returns:
+            The response data
+        """
+        path_params = {
+            "name": f'{self.name}:{self.obj.spec.ports[0].port}',
+            "namespace": self.namespace,
+            "path": path
+        }
+        return await client.CoreV1Api().api_client.call_api(
+            '/api/v1/namespaces/{namespace}/services/{name}/proxy/{path}',
+            method,
+            path_params=path_params,
+            **kwargs
+        )
+
+    async def proxy_http_get(self, path: str, **kwargs) -> tuple:
+        """Issue a GET request to proxy of a Service.
+
+        Args:
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_get function.
+
+        Returns:
+            The response data
+        """
+        return await self._proxy_http_request('GET', path, **kwargs)
+
+    async def proxy_http_post(self, path: str, **kwargs) -> tuple:
+        """Issue a POST request to proxy of a Service.
+
+        Args:
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_post function.
+
+        Returns:
+            The response data
+        """
+        return await self._proxy_http_request('POST', path, **kwargs)
+
+
+class ConfigMap(KubernetesModel):
+    """Kubetest wrapper around a Kubernetes `ConfigMap`_ API Object.
+
+    The actual ``kubernetes.client.V1ConfigMap`` instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `ConfigMap`_.
+
+    .. _ConfigMap:
+        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#configmap-v1-core
+    """
+
+    obj_type = client.V1ConfigMap
+
+    api_clients = {
+        'preferred': client.CoreV1Api,
+        'v1': client.CoreV1Api,
+    }
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "ConfigMap":
+        """Read a ConfigMap by name under the given namespace.
+
+        Args:
+            name: The name of the Deployment to read.
+            namespace: The namespace to read the Deployment from.
+        """
+
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.read_namespaced_config_map(name, namespace)
+            return ConfigMap(obj)
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the ConfigMap under the given namespace.
+
+        Args:
+            namespace: The namespace to create the ConfigMap under.
+                If the ConfigMap was loaded via the kubetest client, the
+                namespace will already be set, so it is not needed here.
+                Otherwise, the namespace will need to be provided.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        logger.info(f'creating configmap "{self.name}" in namespace "{self.namespace}"')
+        logger.debug(f'configmap: {self.obj}')
+
+        self.obj = await self.api_client.create_namespaced_config_map(
+            namespace=namespace,
+            body=self.obj,
+        )
+    
+    async def patch(self) -> None:
+        """
+        Patches a ConfigMap.
+        """
+        self.logger.info(f'patching ConfigMap "{self.name}"')
+        self.logger.trace(f'ConfigMap: {self.obj}')
+        async with self.api_client() as api_client:
+            await api_client.patch_namespaced_config_map(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+
+    async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
+        """Delete the ConfigMap.
+
+        This method expects the ConfigMap to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+
+        Args:
+             options: Options for ConfigMap deletion.
+
+        Returns:
+            The status of the delete operation.
+        """
+        if options is None:
+            options = client.V1DeleteOptions()
+
+        logger.info(f'deleting configmap "{self.name}"')
+        logger.debug(f'delete options: {options}')
+        logger.debug(f'configmap: {self.obj}')
+
+        return await self.api_client.delete_namespaced_config_map(
+            name=self.name,
+            namespace=self.namespace,
+            body=options,
+        )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes ConfigMap resource."""
+        self.obj = await self.api_client.read_namespaced_config_map(
+            name=self.name,
+            namespace=self.namespace,
+        )
+
+    async def is_ready(self) -> bool:
+        """Check if the ConfigMap is in the ready state.
+
+        ConfigMaps do not have a "status" field to check, so we will
+        measure their readiness status by whether or not they exist
+        on the cluster.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        try:
+            await self.refresh()
+        except:  # noqa
+            return False
+        else:
+            return True
