@@ -91,7 +91,7 @@ async def test_run_as_instance() -> None:
 
     config = BaseConfiguration()
     checker = MeasureChecks(config)
-    checks = await checker.run_()
+    checks = await checker.run_all()
     assert checks == [Check(name='Test', success=True, created_at=datetime(2020, 8, 24, 0, 0))]
 
 async def test_check_ordering() -> None:
@@ -291,13 +291,35 @@ async def test_decorate_async() -> None:
     assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
     assert check_.runtime == "15s"
 
-async def test_run_check_by_name() -> None:
+async def test_run_check_by_name_filter() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run_(Filter(name="Check connectivity"))
+    checks = await nc.run_all(matching=Filter(name="Check connectivity"))
     check = checks[0]
     assert check
     assert check.name == "Check connectivity"
     assert check.success
+
+async def test_run_check_by_name() -> None:
+    nc = NamedChecks(BaseConfiguration())
+    check = await nc.run_one(name="Check connectivity")
+    assert check
+    assert check.name == "Check connectivity"
+    assert check.success
+
+@pytest.mark.parametrize(
+    "attr",
+    [
+        "id",
+        "name"
+    ]
+)
+async def test_run_check_by_invalid_value(attr) -> None:
+    selector = {attr: "INVALID"}
+    nc = NamedChecks(BaseConfiguration())
+    with pytest.raises(ValueError) as e:
+        await nc.run_one(**selector)
+    
+    assert str(e.value) == f"failed running check: no check found with {attr} = 'INVALID'"
 
 def test_generate_check_id() -> None:
     check = Check(name="Ensure adequate resources", success=True)
@@ -307,11 +329,18 @@ def test_decorator_sets_id_to_method_name() -> None:
     checks = NamedChecks(BaseConfiguration())
     assert checks.check_connectivity.__check__.id == "check_connectivity"
 
-async def test_run_check_by_id() -> None:
+async def test_run_check_by_id_filter() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run_(Filter(id="check_connectivity"))
+    checks = await nc.run_all(matching=Filter(id="check_connectivity"))
     assert len(checks) == 1
     check = checks[0]
+    assert check
+    assert check.name == "Check connectivity"
+    assert check.success
+
+async def test_run_check_by_id() -> None:
+    nc = NamedChecks(BaseConfiguration())
+    check = await nc.run_one(id="check_connectivity")
     assert check
     assert check.name == "Check connectivity"
     assert check.success
@@ -368,7 +397,7 @@ class FilterableChecks(BaseChecks):
     ]
 )
 async def test_filtering(name, id, tags, expected_ids) -> None:
-    checks = await FilterableChecks.run(BaseConfiguration(), Filter(name=name, id=id, tags=tags))
+    checks = await FilterableChecks.run(BaseConfiguration(), matching=Filter(name=name, id=id, tags=tags))
     ids = list(map(lambda c: c.id, checks))
     assert len(ids) == len(expected_ids)
     assert ids == expected_ids
@@ -446,7 +475,7 @@ class RequirementChecks(BaseChecks):
     ]
 )
 async def test_running_requirements(name, halt_on, expected_results) -> None:
-    checks = await RequirementChecks.run(BaseConfiguration(), Filter(name=name), halt_on=halt_on)
+    checks = await RequirementChecks.run(BaseConfiguration(), matching=Filter(name=name), halt_on=halt_on)
     actual_results = dict(map(lambda c: (c.name, c.success), checks))
     assert actual_results == expected_results
 
@@ -474,7 +503,7 @@ class MixedChecks(BaseChecks):
     ]
 )
 async def test_mixed_checks(name, expected_results) -> None:
-    checks = await MixedChecks.run(BaseConfiguration(), Filter(name=name))
+    checks = await MixedChecks.run(BaseConfiguration(), matching=Filter(name=name))
     actual_results = list(map(lambda c: c.name, checks))
     assert actual_results == expected_results
 
@@ -483,7 +512,7 @@ async def test_generate_checks() -> None:
     items = ["one", "two", "three"]
     ItemChecks = create_checks_from_iterable(handler, items)
     checker = ItemChecks(BaseConfiguration())
-    results = await checker.run_()
+    results = await checker.run_all()
     assert len(results) == 3
     messages = list(map(lambda c: c.message, results))
     assert messages == ["so_check_it_one", "so_check_it_two", "so_check_it_three"]
@@ -493,7 +522,7 @@ async def test_add_checks_to_existing_class() -> None:
     items = ["five", "six", "seven"]
     ExtendedChecks = create_checks_from_iterable(handler, items, base_class=MixedChecks)
     checker = ExtendedChecks(BaseConfiguration())
-    results = await checker.run_()
+    results = await checker.run_all()
     assert len(results) == 7
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
@@ -524,7 +553,7 @@ class MultiChecks(BaseChecks):
 
 async def test_multichecks() -> None:
     checker = MultiChecks(BaseConfiguration())
-    results = await checker.run_()
+    results = await checker.run_all()
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
         [
@@ -561,7 +590,7 @@ async def test_multichecks() -> None:
 
 async def test_multichecks_filtering() -> None:
     checker = MultiChecks(BaseConfiguration())
-    results = await checker.run_(Filter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
+    results = await checker.run_all(matching=Filter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
         [
@@ -578,7 +607,7 @@ async def test_multichecks_filtering() -> None:
 
 async def test_multichecks_async() -> None:
     checker = MultiChecks(BaseConfiguration())
-    results = await checker.run_()
+    results = await checker.run_all()
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
         [
@@ -642,7 +671,7 @@ class InvalidMultichecks(BaseChecks):
 
 async def test_invalid_multichecks() -> None:
     checker = InvalidMultichecks(BaseConfiguration())
-    results = await checker.run_()
+    results = await checker.run_all()
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
         [
@@ -666,7 +695,7 @@ async def test_handles_method_attrs() -> None:
         other: Callable[..., None]
 
     checker = MethodAttrsCheck(BaseConfiguration(), other=Other().test)
-    results = await checker.run_()
+    results = await checker.run_all()
 
 
 class WarningChecks(BaseChecks):

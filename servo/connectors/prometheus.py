@@ -211,7 +211,7 @@ class PrometheusConnector(BaseConnector):
 
     @on_event()
     async def check(self,
-        filter_: Optional[Filter] = None,
+        matching: Optional[Filter] = None,
         halt_on: Optional[Severity] = Severity.critical
     ) -> List[Check]:
         """Checks that the configuration is valid and the connector can capture
@@ -220,7 +220,7 @@ class PrometheusConnector(BaseConnector):
         Checks are implemented in the PrometheusChecks class.
 
         Args:
-            filter_ (Optional[Filter], optional): A filter for limiting the
+            matching (Optional[Filter], optional): A filter for limiting the
                 checks that are run. Defaults to None.
             halt_on (Severity, optional): When to halt running checks.
                 Defaults to Severity.critical.
@@ -229,7 +229,7 @@ class PrometheusConnector(BaseConnector):
             List[Check]: A list of check objects that report the outcomes of the
                 checks that were run.
         """
-        return await PrometheusChecks.run(self.config, filter_, halt_on=halt_on)
+        return await PrometheusChecks.run(self.config, matching=matching, halt_on=halt_on)
 
     @on_event()
     def describe(self) -> Description:

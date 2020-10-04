@@ -467,8 +467,8 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
     @classmethod
     async def run(cls,
         config: BaseConfiguration,
-        filter_: Optional[Filter] = None,
         *,
+        matching: Optional[Filter] = None,
         halt_on: Optional[Severity] = Severity.critical,
         **kwargs
     ) -> List[Check]:
@@ -480,25 +480,25 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
         Args:
             config: The connector configuration to initialize the checks instance with.
-            filter_: An optional filter to limit the set of checks that are run.
+            matching: An optional filter to limit the set of checks that are run.
             halt_on: The severity of check failure that should halt the run.
             kwargs: Additional arguments to initialize the checks instance with.
 
         Returns:
             A list of `Check` objects that reflect the outcome of the checks executed.
         """
-        return await cls(config).run_(filter_=filter_, halt_on=halt_on)
+        return await cls(config).run_all(matching=matching, halt_on=halt_on)
 
-    async def run_(self,
-        filter_: Optional[Filter] = None,
+    async def run_all(self,        
         *,
+        matching: Optional[Filter] = None,
         halt_on: Optional[Severity] = Severity.critical
     ) -> List[Check]:
         """
-        Runs checks and returns the results.
+        Runs all checks matching a filter and returns the results.
 
         Args:
-            filter_: An optional filter to limit the set of checks that are run.
+            matching: An optional filter to limit the set of checks that are run.
             halt_on: The severity of check failure that should halt the run.
 
         Returns:
@@ -510,22 +510,22 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
         # identify methods that match the filter
         filtered_methods  = []
-        for method_name, method in self.check_methods():            
-            if filter_ and filter_.any:
+        for method_name, method in self._check_methods():            
+            if matching and matching.any:
                 if isinstance(method, Checkable):
                     spec = method.__check__
                 else:
                     self.logger.warning(f"filtering requested but encountered non-filterable check method \"{method_name}\"")
                     continue
 
-                if not filter_.matches(spec):
+                if not matching.matches(spec):
                     continue
 
             filtered_methods.append(method)
 
         # iterate a second time to run filtered and required checks
         checks = []
-        for method_name, method in self.check_methods():
+        for method_name, method in self._check_methods():
             if method in filtered_methods:
                 filtered_methods.remove(method)
             else:
@@ -552,17 +552,65 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
                     break
 
         return checks
+    
+    async def run_one(self, *, 
+        id: Optional[str] = None, 
+        name: Optional[str] = None,
+        halt_on: Optional[Severity] = Severity.critical
+    ) -> Check:
+        """Runs a single check by id or name and returns the result.
 
-    def check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
+        Args:
+            id: The id of the check to run. Defaults to None.
+            name: The name of the check. Defaults to None.
+
+        Raises:
+            ValueError: Raised if no check exists with the given id or name.
+            RuntimeError: Raised if the check was not run do to a prerequisite failure.
+
+        Returns:
+            A Check object representing the result of the check.
         """
-        Enumerates all check methods and yields the check method names and callable instances
+        if id is None and name is None:
+            raise ValueError("unable to run check: an id or name must be given (both are None)")
+        
+        if id is not None and name is not None:
+            raise ValueError(f"unable to run check: id and name cannot both be given (id={repr(id)}, name={repr(name)})")
+        
+        for attr in ("id", "name"):
+            value = locals().get(attr, None)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"unable to run check: {attr} must be a string (got {repr(value)})")
+        
+        results = await self.run_all(matching=Filter(id=id, name=name), halt_on=halt_on)
+        if not results:
+            for attr in ("id", "name"):
+                value = locals().get(attr, None)
+                if value is not None:
+                    raise ValueError(f"failed running check: no check found with {attr} = {repr(value)}")
+        
+        result = results[-1]
+        if result.id != id and result.name != name:
+            for attr in ("id", "name"):
+                value = locals().get(attr, None)
+                if value is not None:
+                    raise RuntimeError(f"failed running check: check {attr} {repr(value)} was not run due to a prerequisite failure")
+
+        return result
+
+    def _check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
+        """
+        Iterates over all check methods and yields the method name and callable method instance
         in method definition order.
 
         Check method names are prefixed with "check_", accept no parameters, and return a
         `Check` object reporting the outcome of the check operation.
+
+        Yields:
+            A tuple containing a string method name and a callable method that runs a check.
         """
         for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
-            if name.startswith("_") or name in ("run_", "check_methods") or method.__self__ != self:
+            if name.startswith(("_", "run_")) or method.__self__ != self:
                 continue
 
             if not name.startswith(("_", "check_")):

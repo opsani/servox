@@ -23,11 +23,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Connectors can now be dynamically added and removed from the servo via the 
   `servo.servo.Servo` methods `add_connector` and `remove_connector`.
+- Individual checks can now be run by ID or name via the 
+  `servo.checks.BaseChecks.run_one` method.
 
 ### Changed
 
 - Simplified `servo.logging.ProgressHandler` implementation with an asyncio
   queue and producer/consumer pattern.
+- Renamed `servo.checks.BaseChecks.run_` method to `servo.checks.BaseChecks.run_all`.
+- Renamed the `filter_` argument of check runners to `matching`.
 
 ### Fixed
 

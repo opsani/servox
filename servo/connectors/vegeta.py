@@ -332,13 +332,13 @@ class VegetaConnector(BaseConnector):
         return METRICS
 
     @on_event()
-    async def check(self, filter_: Optional[Filter] = None, halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+    async def check(self, matching: Optional[Filter] = None, halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
         # Take the current config and run a 5 second check against it
         check_config = self.config.copy()
         check_config.duration = "5s"
         check_config.reporting_interval = "1s"
 
-        return await VegetaChecks.run(check_config, filter_, halt_on=halt_on)
+        return await VegetaChecks.run(check_config, matching=matching, halt_on=halt_on)
 
     @on_event()
     async def measure(

@@ -1068,9 +1068,8 @@ class ServoCLI(CLI):
             while True:
                 args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                 constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-                filter_ = Filter(**constraints)
                 results: List[EventResult] = sync(context.servo.dispatch_event(
-                    Events.CHECK, filter_, include=connectors, halt_on=halt_on
+                    Events.CHECK, Filter(**constraints), include=connectors, halt_on=halt_on
                 ))
 
                 def check_status_to_str(check: Check) -> str:

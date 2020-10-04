@@ -80,7 +80,7 @@ class _EventDefinitions(Protocol):
         yield
 
     @event(Events.CHECK)
-    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+    async def check(self, matching: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
         ...
 
     @event(Events.DESCRIBE)
@@ -263,7 +263,7 @@ class Servo(BaseConnector):
     # Event handlers
 
     @on_event()
-    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+    async def check(self, matching: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
         try:
             async with self.api_client() as client:
                 event_request = api.Request(event=api.Event.HELLO)

@@ -204,17 +204,17 @@ To support these enhancements, the method signature of the `check` event handler
 class NewEventConnector(BaseConnector):
     @on_event()
     async def check(self, 
-        filter_: Optional[Filter] = None, 
+        matching: Optional[Filter] = None, 
         halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
         ...
 ```
 
-There are a few things going on here. We have two new positional parameters: `filter_` and `halt_on`. Let's look at these one at a time.
+There are a few things going on here. We have two new positional parameters: `matching` and `halt_on`. Let's look at these one at a time.
 
 ### Filtering checks
 
-The `filter_` argument is an instance of `servo.checks.Filter` which looks like this (edited down for brevity and clarity):
+The `matching` argument is an instance of `servo.checks.Filter` which looks like this (edited down for brevity and clarity):
 
 ```python
 class Filter(BaseModel):
@@ -366,7 +366,7 @@ class PrometheusConnector(BaseConnector):
 
     @on_event()
     async def check(self, 
-        filter_: Optional[Filter] = None, 
+        matching: Optional[Filter] = None, 
         halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
         start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
@@ -376,7 +376,7 @@ class PrometheusConnector(BaseConnector):
 
         # wrap all queries into checks and verify that they work
         PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
-        return await PrometheusChecks.run(self.config, filter_, halt_on=halt_on)
+        return await PrometheusChecks.run(self.config, matching=matching, halt_on=halt_on)
 ```
 
 Here the `check_query` inner function is going to be used just like earlier examples that were "checkified" via the `@check` decorator and the `self.config.metrics` collection is going to be treated like a list of methods in a `BaseChecks` subclass.

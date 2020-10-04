@@ -2602,8 +2602,8 @@ class KubernetesConnector(BaseConnector):
         return description
 
     @on_event()
-    async def check(self, filter_: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:        
-        return await KubernetesChecks.run(self.config, filter_, halt_on=halt_on)
+    async def check(self, matching: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:        
+        return await KubernetesChecks.run(self.config, matching=matching, halt_on=halt_on)
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
