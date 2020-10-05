@@ -201,7 +201,7 @@ determine if it is ready for use in an optimization run.
     version="1.5.0",
     homepage="https://github.com/opsani/prometheus-connector",
     license=License.APACHE2,
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
 )
 class PrometheusConnector(BaseConnector):
     """PrometheusConnector objects enable servo assemblies to capture

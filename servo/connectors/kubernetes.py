@@ -2567,7 +2567,7 @@ class KubernetesChecks(BaseChecks):
     version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
     license=License.APACHE2,
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
 )
 class KubernetesConnector(BaseConnector):
     config: KubernetesConfiguration
