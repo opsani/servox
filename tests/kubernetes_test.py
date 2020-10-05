@@ -172,9 +172,9 @@ class TestChecks:
                                 step="125m"
                             ),
                             memory=kubernetes_connector.Memory(
-                                min="256 MiB",
-                                max="4.0 GiB",
-                                step="128 MiB"
+                                min="256MiB",
+                                max="4.0GiB",
+                                step="128MiB"
                             )
                         )
                     ]

@@ -32,10 +32,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   queue and producer/consumer pattern.
 - Renamed `servo.checks.BaseChecks.run_` method to `servo.checks.BaseChecks.run_all`.
 - Renamed the `filter_` argument of check runners to `matching`.
+- Millicore values are now serialized to strings as simple integers when evenly
+  divisible by 1000 (e.g., `str(Millicore(3000)) == "3"`).
 
 ### Fixed
 
-- `servo show components` now includes the setting names instead of naked 
+- `servo show components` now includes the setting names instead of naked
   values.
 
 ## [0.8.1] "pass the calimari" - 2020-10-02

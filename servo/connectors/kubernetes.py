@@ -1413,7 +1413,7 @@ class Millicore(int):
     @classmethod
     def parse(cls, v: 'StrIntFloat') -> 'Millicore':
         """
-        Parse an input value into Millicore units.
+        Parses a string, integer, or float input value into Millicore units.
 
         Returns:
             The input value in Millicore units.
@@ -1432,7 +1432,10 @@ class Millicore(int):
             raise ValueError("could not parse millicore value")
 
     def __str__(self) -> str:
-        return f'{int(self)}m'
+        if self % 1000 == 0:
+            return str(int(self) // 1000)
+        else:
+            return f'{int(self)}m'
 
     def __float__(self) -> float:
         return self / 1000.0
@@ -2405,13 +2408,13 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                             name="opsani/fiber-http:latest",
                             cpu=CPU(
                                 min="250m",
-                                max="4000m",
+                                max=4,
                                 step="125m"
                             ),
                             memory=Memory(
-                                min="256 MiB",
-                                max="4.0 GiB",
-                                step="128 MiB"
+                                min="256MiB",
+                                max="4GiB",
+                                step="128MiB"
                             )
                         )
                     ]

@@ -308,7 +308,7 @@ class TestKubernetesConfiguration:
         [
             # CPU in millicores
             ("deployments[0].containers[0].cpu.min", "250m"),
-            ("deployments[0].containers[0].cpu.max", "4000m"),
+            ("deployments[0].containers[0].cpu.max", "4"),
             ("deployments[0].containers[0].cpu.step", "125m"),
 
             # Memory
@@ -649,10 +649,42 @@ class TestCPU:
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
         serialization = json.loads(cpu.json())
         assert serialization['min'] == "100m"
-        assert serialization['max'] == "4000m"
+        assert serialization['max'] == "4"
         assert serialization['step'] == "125m"
         # TODO: Requirements also needs to serialize
 
+class TestMillicore:
+    @pytest.mark.parametrize(
+        "input, millicores",
+        [
+            ("100m", 100),
+            ("1", 1000),
+            (1, 1000),
+            ("0.1", 100),
+            (0.1, 100),
+            (2.0, 2000),
+            ("2.0", 2000),
+        ]
+    )
+    def test_parsing(self, input: Union[str, int, float], millicores: int) -> None:
+        assert Millicore.parse(input) == millicores
+    
+    @pytest.mark.parametrize(
+        "input, output",
+        [
+            ("100m", "100m"),
+            ("1", "1"),
+            ("1.0", "1"),
+            (1, "1"),
+            ("0.1", "100m"),
+            (0.1, "100m"),
+            (2.5, "2500m"),
+            ("123m", "123m"),
+        ]
+    )
+    def test_string_serialization(self, input: Union[str, int, float], output: str) -> None:
+        millicores = Millicore.parse(input)
+        assert str(millicores) == output
 
 class TestMemory:
     @pytest.fixture
@@ -708,7 +740,6 @@ class TestMemory:
         assert serialization['min'] == "128.0MiB"
         assert serialization['max'] == "4.0GiB"
         assert serialization['step'] == "256.0MiB"
-        # TODO: Requirements also needs to serialize
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:
