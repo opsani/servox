@@ -7,7 +7,7 @@ for pkg in {"servo", "servox"}:
     except importlib.metadata.PackageNotFoundError:
         pass
 
-__codename__ = "pass the calimari"
+__codename__ = "pass the calamari"
 
 import servo.assembly
 import servo.connector
