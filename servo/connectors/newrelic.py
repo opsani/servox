@@ -8,7 +8,7 @@ from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tup
 
 import httpx
 import httpcore._exceptions
-from pydantic import BaseModel, AnyHttpUrl, validator
+from pydantic import BaseModel, AnyHttpUrl, SecretStr, validator
 
 from servo import (
     BaseChecks,
@@ -39,13 +39,8 @@ from servo.utilities import join_to_series
 DEFAULT_BASE_URL = 'https://api.newrelic.com'
 API_PATH = "/v2"
 
-# TODO: how are secrets handled?
-NEWRELIC_ACCOUNT_ID = str(open('/run/secrets/optune_newrelic_account_id').read()).strip()
-NEWRELIC_APM_API_KEY = str(open('/run/secrets/optune_newrelic_apm_api_key').read()).strip()
-NEWRELIC_APM_APP_ID = str(open('/run/secrets/optune_newrelic_apm_app_id').read()).strip()
-
 class NewrelicMetric(Metric):
-    """NewrelicMetric objects describe metrics that can be measure from the Newrelic apm api."""    
+    """NewrelicMetric objects describe metrics that can be measure from the Newrelic APM API."""    
     
     fetch_name: str
     """The name of the APM metric containing the values for this Metric
@@ -55,11 +50,8 @@ class NewrelicMetric(Metric):
 
     values_selector: str
     """
-    Values selector  of resultant time series
+    Values selector of resultant time series
     """
-
-    def __init__(self, name: str, unit: Unit, fetch_name: str, values_selector: str) -> None:
-        super().__init__(name=name, unit=unit, fetch_name=fetch_name, values_selector=values_selector, **kwargs)
 
     def __check__(self) -> Check:
         return Check(
@@ -67,14 +59,20 @@ class NewrelicMetric(Metric):
             description=f"Run Newrelic get \"{self.fetch_name}: {self.values_selector}\""
         ) # TODO Checker class
 
-# TODO: what is this used for?
-# class NewrelicTarget():
-#     pass # TODO
-
 class NewrelicConfiguration(BaseConfiguration):
     """NewrelicConfiguration objects describe how NewrelicConnector objects
 capture measurements from the Newrelic metrics server. 
     """
+
+    # TODO: only needed for insights API query support
+    # account_id: str
+    # """The Account ID for accessing the Newrelic metrics API."""
+
+    app_id: str
+    """The Application ID for accessing the Newrelic metrics API."""
+
+    api_key: SecretStr
+    """The API key for accessing the Newrelic metrics API."""
 
     base_url: AnyHttpUrl = DEFAULT_BASE_URL
     """The base URL for accessing the Newrelic metrics API.
@@ -94,11 +92,6 @@ capture measurements from the Newrelic metrics server.
     
     The step resolution determines the number of data points captured across a
     query range.
-    """
-
-    # targets: Optional[List[NewrelicTarget]] TODO: what is this used for?
-    """An optional set of Newrelic target descriptors that are expected to be
-    scraped by the Newrelic instance being queried.
     """
 
     @classmethod # TODO
@@ -125,7 +118,7 @@ capture measurements from the Newrelic metrics server.
             **kwargs,
         )
     
-    @validator("base_url", allow_reuse=True)
+    @validator("base_url")
     @classmethod
     def rstrip_base_url(cls, base_url):
         return base_url.rstrip("/")
@@ -229,9 +222,9 @@ class NewrelicConnector(BaseConnector):
         canary_hostname = f"ip-{canary_ip}.ec2.internal"
 
         async with httpx.AsyncClient(
-            base_url=self.config.api_url + 'applications/{newrelic_app_id}/instances.json'.format(NEWRELIC_APM_APP_ID), 
+            base_url=self.config.api_url + 'applications/{newrelic_app_id}/instances.json'.format(self.config.app_id), 
             params={'filter[hostname]': canary_hostname},
-            headers={'X-Api-Key': NEWRELIC_APM_API_KEY},
+            headers={'X-Api-Key': self.config.api_key},
         ) as client:
             try:
                 response = await client.get()
@@ -305,12 +298,12 @@ class NewrelicConnector(BaseConnector):
         readings = []
         # TODO asyncio gather this instead
         for i in instance_ids:
-            api_path = '/applications/{app_id}/instances/{instance_id}/metrics/data.json'.format(NEWRELIC_APM_APP_ID, i)
+            api_path = '/applications/{app_id}/instances/{instance_id}/metrics/data.json'.format(self.config.app_id, i)
             self.logger.trace(f"Querying Newrelic for instance: {i}")
             async with httpx.AsyncClient(
                 base_url=self.config.api_url + api_path, 
                 params=newrelic_request.params,
-                headers={'X-Api-Key': NEWRELIC_APM_API_KEY},
+                headers={'X-Api-Key': self.config.api_key},
             ) as client:
                 try:
                     response = await client.get()
