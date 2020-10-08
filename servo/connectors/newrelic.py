@@ -137,7 +137,7 @@ class NewrelicRequest(BaseModel):
     @property
     def params(self) -> Dict[str, str]:
         return { 
-            'names[]': '+'.join(self.fetches.keys()), # TODO can these be lists and httpx will extrapolate?
+            'names[]': '+'.join(self.fetches.keys()),
             'values[]': '+'.join(reduce(lambda x, y: x+y, self.fetches.values())),
             'from': self.start.isoformat(),
             'to': self.end.isoformat(),
@@ -146,8 +146,37 @@ class NewrelicRequest(BaseModel):
             'raw': True,
         }
 
-class NewrelicChecks():
-    pass # TODO
+class NewrelicChecks(BaseChecks):
+    """NewrelicChecks objects check the state of a NewrelicConfiguration to
+determine if it is ready for use in an optimization run.
+    """
+    config: NewrelicConfiguration
+
+    @require("Connect to \"{self.config.base_url}\"")
+    async def check_base_url(self) -> None:
+        """Checks that the Newrelic base URL is valid and reachable.
+        """
+        async with httpx.AsyncClient(base_url=self.config.api_url) as client:
+            response = await client.get(f"applications/{self.config.app_id}.json") # TODO may not always have permissions to do this
+            response.raise_for_status()
+
+    # TODO: how to structure multicheck to iterate a list of instances and request multiple NR metrics in a single request
+    # @multicheck("Run fetch \"{item.query}\"")
+    # async def check_fetches(self) -> Tuple[Iterable, CheckHandler]:
+    #     """Checks that all metrics have valid, well-formed PromQL queries.
+    #     """
+    #     async def query_for_metric(metric: NewrelicMetric) -> str:
+    #         start, end = datetime.now() - timedelta(minutes=10), datetime.now()
+    #         newrelic_request = NewrelicRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
+
+    #         logger.trace(f"Querying Newrelic (`{metric.query}`): {newrelic_request.url}")
+    #         async with httpx.AsyncClient() as client:
+    #             response = await client.get(newrelic_request.url)
+    #             response.raise_for_status()
+    #             result = response.json()
+    #             return f"returned {len(result)} results"
+
+    #     return self.config.metrics, query_for_metric
 
 @metadata(
     description="Newrelic Connector for Opsani",
