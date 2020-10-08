@@ -1,26 +1,27 @@
 import asyncio
-import enum
+import datetime
 import functools
+import hashlib
+import inspect
 import types
 
-from datetime import datetime
-from hashlib import blake2b
-from inspect import Signature, isclass
-from typing import Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, Type, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, Type, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
 
-from pydantic import BaseModel, Extra, StrictStr, validator, constr
-from servo.configuration import BaseConfiguration
+import pydantic
+import servo.configuration
 import servo.logging
-from servo.types import Any, Duration
-from servo.utilities.inspect import get_instance_methods
+import servo.types
+import servo.utilities
+from servo.types import Duration, ErrorSeverity
+
 
 __all__ = [
     "BaseChecks",
     "Check",
+    "CheckFilter",
     "CheckHandler",
     "CheckHandlerResult",
-    "Filter",
-    "Severity",
+    "ErrorSeverity",
     "check",
     "multicheck",
     "require",
@@ -30,44 +31,11 @@ __all__ = [
 
 CheckHandlerResult = Union[bool, str, Tuple[bool, str], None]
 CheckHandler = TypeVar("CheckHandler", Callable[..., CheckHandlerResult], Callable[..., Awaitable[CheckHandlerResult]])
-CHECK_HANDLER_SIGNATURE = Signature(return_annotation=CheckHandlerResult)
+CHECK_HANDLER_SIGNATURE = inspect.Signature(return_annotation=CheckHandlerResult)
 
-Tag = constr(strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$")
+Tag = pydantic.constr(strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$")
 
-class Severity(str, enum.Enum):
-    """Severity is an enumeration the describes the severity and handling of a
-    check upon failure."""
-
-    warning = "warning"
-    """At warning severity, check failure is advisory and do not indicate an
-inability to operate. By default, warnings will not halt execution and emit
-actionable messages about potential problems.
-    """
-
-    error = "error"
-    """At error severity, check failures are atomic and have no bearing on the
-outcome of other checks. By default, errors are non-blocking and other available
-checks will be executed.
-    """
-
-    critical = "critical"
-    """At critical severity, check failures block the execution of dependent
-    checks until the required condition is met.
-
-    Critical failures halt the execution of a sequence of checks that are part
-    of a `Checks` object. For example, given a connector that connects to a
-    remote service such as a metrics provider, you may wish to check that each
-    metrics query is well formed and returns results. In order for any of the
-    query checks to succeed, the servo must be able to connect to the service.
-    During failure modes such as network partitions, service outage, or simple
-    configuration errors this can result in an arbitrary number of failing
-    checks with an identical root cause that make it harder to identify the
-    issue. Required checks allow you to declare these sorts of pre-conditions
-    and the servo will test them before running any dependent checks, ensuring
-    that you get a single failure that identifies the root cause.
-    """
-
-class Check(BaseModel, servo.logging.Mixin):
+class Check(pydantic.BaseModel, servo.logging.Mixin):
     """
     Check objects represent the status of required runtime conditions.
 
@@ -80,19 +48,19 @@ class Check(BaseModel, servo.logging.Mixin):
     starting optimization and report on health and readiness during operation.
     """
 
-    name: StrictStr
+    name: pydantic.StrictStr
     """An arbitrary descriptive name of the condition being checked.
     """
 
-    id: StrictStr = None
+    id: pydantic.StrictStr = None
     """A short identifier for the check. Generated automatically if unset.
     """
 
-    description: Optional[StrictStr]
+    description: Optional[pydantic.StrictStr]
     """An optional detailed description about the condition being checked.
     """
 
-    severity: Severity = Severity.error
+    severity: ErrorSeverity = ErrorSeverity.COMMON
     """The relative importance of the check determining failure handling.
     """
 
@@ -109,7 +77,7 @@ class Check(BaseModel, servo.logging.Mixin):
     Indicates if the condition being checked was met or not.
     """
 
-    message: Optional[StrictStr]
+    message: Optional[pydantic.StrictStr]
     """
     An optional message describing the outcome of the check.
 
@@ -126,11 +94,11 @@ class Check(BaseModel, servo.logging.Mixin):
     can be presented to the user.
     """
 
-    created_at: datetime = None
+    created_at: datetime.datetime = None
     """When the check was created (set automatically).
     """
 
-    run_at: Optional[datetime]
+    run_at: Optional[datetime.datetime]
     """An optional timestamp indicating when the check was run.
     """
 
@@ -139,7 +107,8 @@ class Check(BaseModel, servo.logging.Mixin):
     """
 
     @classmethod
-    async def run(cls,
+    async def run(
+        cls,
         name: str,
         *,
         handler: CheckHandler,
@@ -194,24 +163,24 @@ class Check(BaseModel, servo.logging.Mixin):
         """
         Indicates if the check is of critical severity.
         """
-        return self.severity == Severity.critical
+        return self.severity == ErrorSeverity.CRITICAL
 
     @property
     def warning(self) -> bool:
         """
         Indicates if the check is of warning severity.
         """
-        return self.severity == Severity.warning
+        return self.severity == ErrorSeverity.WARNING
 
-    @validator("created_at", pre=True, always=True)
+    @pydantic.validator("created_at", pre=True, always=True)
     @classmethod
     def _set_created_at_now(cls, v):
-        return v or datetime.now()
+        return v or datetime.datetime.now()
 
-    @validator("id", pre=True, always=True)
+    @pydantic.validator("id", pre=True, always=True)
     @classmethod
     def _generated_id(cls, v,  values):
-        return v or blake2b(values["name"].encode('utf-8'), digest_size=4).hexdigest()
+        return v or hashlib.blake2b(values["name"].encode('utf-8'), digest_size=4).hexdigest()
 
     class Config:
         validate_assignment = True
@@ -239,8 +208,9 @@ def check(
     *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    severity: Severity = Severity.error,
-    tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
+    severity: ErrorSeverity = ErrorSeverity.COMMON,
+    tags: Optional[List[str]] = None
+) -> Callable[[CheckHandler], CheckRunner]:
     """
     Transforms a function or method into a check.
 
@@ -308,42 +278,44 @@ def require(
     *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
+    tags: Optional[List[str]] = None
+) -> Callable[[CheckHandler], CheckRunner]:
     """Transforms a function or method into a critical check.
 
     The require decorator is syntactic sugar for the `check` decorator to declare
-    a check as being of the `Severity.critical` severity. Refer to the check documentation
+    a check as being of the `ErrorSeverity.critical` severity. Refer to the check documentation
     for detailed information.
     """
-    return check(name, description=description, id=id, tags=tags, severity=Severity.critical)
+    return check(name, description=description, id=id, tags=tags, severity=ErrorSeverity.CRITICAL)
 
 def warn(
     name: str,
     *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    tags: Optional[List[str]] = None) -> Callable[[CheckHandler], CheckRunner]:
+    tags: Optional[List[str]] = None
+) -> Callable[[CheckHandler], CheckRunner]:
     """Transforms a function or method into a warning check.
 
     The warn decorator is syntactic sugar for the `check` decorator to declare
-    a check as being of the `Severity.warning` severity. Refer to the check documentation
+    a check as being of the `ErrorSeverity.warning` severity. Refer to the check documentation
     for detailed information.
     """
-    return check(name, description=description, id=id, tags=tags, severity=Severity.warning)
+    return check(name, description=description, id=id, tags=tags, severity=ErrorSeverity.WARNING)
 
-CHECK_SIGNATURE = Signature(return_annotation=Check)
-CHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Check')
+CHECK_SIGNATURE = inspect.Signature(return_annotation=Check)
+CHECK_SIGNATURE_ANNOTATED = inspect.Signature(return_annotation='Check')
 
-MULTICHECK_SIGNATURE = Signature(return_annotation=Tuple[Iterable, CheckHandler])
-MULTICHECK_SIGNATURE_ANNOTATED = Signature(return_annotation='Tuple[Iterable, CheckHandler]')
+MULTICHECK_SIGNATURE = inspect.Signature(return_annotation=Tuple[Iterable, CheckHandler])
+MULTICHECK_SIGNATURE_ANNOTATED = inspect.Signature(return_annotation='Tuple[Iterable, CheckHandler]')
 
 
-class Filter(BaseModel):
-    """Filter objects are used to select a subset of available checks for execution.
+class CheckFilter(pydantic.BaseModel):
+    """CheckFilter objects are used to select a subset of available checks for execution.
 
-    Specific checks can be targetted for execution using the metadata attributes of `name`,
+    Specific checks can be targeted for execution using the metadata attributes of `name`,
     `id`, and `tags`. Metadata filters are evaluated using AND semantics. Names and ids
-    are matched case-sensitively. Tags are always lowercase. Names and ids can be targetted
+    are matched case-sensitively. Tags are always lowercase. Names and ids can be targeted
     using regular expression patterns.
     """
 
@@ -368,7 +340,7 @@ class Filter(BaseModel):
 
     @property
     def empty(self) -> bool:
-        """Return true if no constraints are in effect.
+        """Returns true if no constraints are in effect.
         """
         return bool(
             self.name is None
@@ -431,7 +403,7 @@ class Filter(BaseModel):
         arbitrary_types_allowed = True
 
 
-class BaseChecks(BaseModel, servo.logging.Mixin):
+class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
     """
     Base class for collections of Check objects.
 
@@ -460,16 +432,17 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
         config: The configuration object for the connector being checked.
     """
 
-    config: BaseConfiguration
+    config: servo.configuration.BaseConfiguration
     """The configuration object for the connector being checked.
     """
 
     @classmethod
-    async def run(cls,
-        config: BaseConfiguration,
+    async def run(
+        cls,
+        config: servo.configuration.BaseConfiguration,
         *,
-        matching: Optional[Filter] = None,
-        halt_on: Optional[Severity] = Severity.critical,
+        matching: Optional[CheckFilter] = None,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
         **kwargs
     ) -> List[Check]:
         """
@@ -489,10 +462,11 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
         """
         return await cls(config).run_all(matching=matching, halt_on=halt_on)
 
-    async def run_all(self,        
+    async def run_all(
+        self,        
         *,
-        matching: Optional[Filter] = None,
-        halt_on: Optional[Severity] = Severity.critical
+        matching: Optional[CheckFilter] = None,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL
     ) -> List[Check]:
         """
         Runs all checks matching a filter and returns the results.
@@ -546,17 +520,19 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
             # halt the run if necessary
             if check.failed and halt_on:
-                if (halt_on == Severity.warning
-                or (halt_on == Severity.error and not check.warning)
-                or (halt_on == Severity.critical and check.critical)):
+                if (halt_on == ErrorSeverity.WARNING
+                or (halt_on == ErrorSeverity.COMMON and not check.warning)
+                or (halt_on == ErrorSeverity.CRITICAL and check.critical)):
                     break
 
         return checks
     
-    async def run_one(self, *, 
-        id: Optional[str] = None, 
+    async def run_one(
+        self,
+        *,
+        id: Optional[str] = None,
         name: Optional[str] = None,
-        halt_on: Optional[Severity] = Severity.critical
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL
     ) -> Check:
         """Runs a single check by id or name and returns the result.
 
@@ -582,7 +558,7 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
             if value is not None and not isinstance(value, str):
                 raise ValueError(f"unable to run check: {attr} must be a string (got {repr(value)})")
         
-        results = await self.run_all(matching=Filter(id=id, name=name), halt_on=halt_on)
+        results = await self.run_all(matching=CheckFilter(id=id, name=name), halt_on=halt_on)
         if not results:
             for attr in ("id", "name"):
                 value = locals().get(attr, None)
@@ -609,14 +585,14 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
         Yields:
             A tuple containing a string method name and a callable method that runs a check.
         """
-        for name, method in get_instance_methods(self, stop_at_parent=BaseChecks).items():
+        for name, method in servo.utilities.inspect.get_instance_methods(self, stop_at_parent=BaseChecks).items():
             if name.startswith(("_", "run_")) or method.__self__ != self:
                 continue
 
             if not name.startswith(("_", "check_")):
                 raise ValueError(f'invalid method name "{name}": method names of Checks subtypes must start with "_" or "check_"')
 
-            sig = Signature.from_callable(method)
+            sig = inspect.Signature.from_callable(method)
 
             # skip multicheck source methods as they are atomized into instance methods
             if hasattr(method, "__multicheck__"):
@@ -630,13 +606,13 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
             yield (name, method)
 
-    def __init__(self, config: BaseConfiguration, *args, **kwargs) -> None:
+    def __init__(self, config: servo.configuration.BaseConfiguration, *args, **kwargs) -> None:
         super().__init__(config=config, *args, **kwargs)
 
     async def _expand_multichecks(self) -> List[types.MethodType]:
         # search for any instance methods decorated by multicheck and expand them
         checks = []
-        for method_name, method in get_instance_methods(self).items():            
+        for method_name, method in servo.utilities.inspect.get_instance_methods(self).items():            
             if hasattr(method, "__multicheck__"):
                 check_template = method.__multicheck__
                 checks_fns = await method()
@@ -649,7 +625,7 @@ class BaseChecks(BaseModel, servo.logging.Mixin):
 
     class Config:
         arbitrary_types_allowed = True
-        extra = Extra.allow
+        extra = pydantic.Extra.allow
 
 
 def _validate_check_handler(fn: CheckHandler) -> None:
@@ -665,7 +641,7 @@ def _validate_check_handler(fn: CheckHandler) -> None:
     Raises:
         TypeError: Raised if the handler function is invalid.
     """
-    signature = Signature.from_callable(fn)
+    signature = inspect.Signature.from_callable(fn)
     if len(signature.parameters) >= 1:
         for param in signature.parameters.values():
             if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
@@ -688,7 +664,7 @@ def _validate_check_handler(fn: CheckHandler) -> None:
         else:
             raise error
     else:
-        cls = signature.return_annotation if isclass(signature.return_annotation) else signature.return_annotation.__class__
+        cls = signature.return_annotation if inspect.isclass(signature.return_annotation) else signature.return_annotation.__class__
         if not cls in acceptable_types:
             raise error
 
@@ -715,7 +691,7 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
         if len(args):
             check.name = check.name.format(item=args[0], self=args[0])
 
-        check.run_at = datetime.now()
+        check.run_at = datetime.datetime.now()
         if asyncio.iscoroutinefunction(handler):
             result = await handler(*args, **kwargs)
         else:
@@ -725,7 +701,7 @@ async def run_check_handler(check: Check, handler: CheckHandler, *args, **kwargs
         _set_check_result(check, error)
     finally:
         if check.run_at:
-            check.runtime = Duration(datetime.now() - check.run_at)
+            check.runtime = Duration(datetime.datetime.now() - check.run_at)
 
 def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs) -> None:
     """Runs a check handler and records the result into a Check object.
@@ -740,12 +716,12 @@ def run_check_handler_sync(check: Check, handler: CheckHandler, *args, **kwargs)
         ValueError: Raised if an invalid value is returned by the handler.
     """
     try:
-        check.run_at = datetime.now()
+        check.run_at = datetime.datetime.now()
         _set_check_result(check, handler(*args, **kwargs))
     except Exception as error:
         _set_check_result(check, error)
     finally:
-        check.runtime = Duration(datetime.now() - check.run_at)
+        check.runtime = Duration(datetime.datetime.now() - check.run_at)
 
 def _set_check_result(check: Check, result: Union[None, bool, str, Tuple[bool, str], Exception]) -> None:
     """Sets the result of a check handler run on a check instance."""
@@ -824,7 +800,7 @@ MultiCheckHandler = Callable[..., Tuple[Iterable, CheckHandler]]
 MultiCheckExpander = Callable[..., Awaitable[Tuple[Iterable, CheckHandler]]]
 
 def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
-    sig = Signature.from_callable(fn)
+    sig = inspect.Signature.from_callable(fn)
     if len(sig.parameters) > 0:
         for param in sig.parameters.values():
             if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
@@ -833,7 +809,7 @@ def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
             raise TypeError(f"invalid multicheck handler \"{fn.__name__}\": unexpected parameter \"{param.name}\" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}")
 
     if sig.return_annotation == 'Tuple[Iterable, CheckHandler]':
-        # fast return if the type annotation is already a string (depends on `from __future__ import annotations`)
+        # fast return if the type annotation is already a string (depends on `# from __future__ import annotations`)
         return
 
     origin = get_origin(sig.return_annotation)
@@ -845,7 +821,7 @@ def multicheck(
     base_name: str,
     *,
     description: Optional[str] = None,
-    severity: Severity = Severity.error,
+    severity: ErrorSeverity = ErrorSeverity.COMMON,
     tags: Optional[List[str]] = None
 ) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
     """Expands a method into a series of checks from a returned iterable and

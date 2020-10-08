@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from inspect import Signature
 from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, Filter, Severity, check, create_checks_from_iterable, require, multicheck, warn
+from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, CheckFilter, ErrorSeverity, check, create_checks_from_iterable, require, multicheck, warn
 from servo.configuration import BaseConfiguration
 from servo.utilities.inspect import get_instance_methods
 from typing import Callable, Iterable, List, Tuple, Union, Optional
@@ -19,7 +19,7 @@ def test_serialize_with_exception() -> None:
     exception = RuntimeError("Testing")
     check = Check(name="Test", success=False, exception=exception)
     assert check.json() == (
-        '{"name": "Test", "id": "1bab7e8d", "description": null, "severity": "error", "tags": null, "success": false, "message": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
+        '{"name": "Test", "id": "1bab7e8d", "description": null, "severity": "common", "tags": null, "success": false, "message": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
     )
 
 async def test_inline_check() -> None:
@@ -116,7 +116,7 @@ async def test_check_aborts_on_failed_requirement() -> None:
             return Check(name="1", success=True)
 
         def check_two(self) -> Check:
-            return Check(name="2", success=False, severity=Severity.critical)
+            return Check(name="2", success=False, severity=ErrorSeverity.CRITICAL)
 
         def check_three(self) -> Check:
             return Check(name="3", success=True)
@@ -293,7 +293,7 @@ async def test_decorate_async() -> None:
 
 async def test_run_check_by_name_filter() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run_all(matching=Filter(name="Check connectivity"))
+    checks = await nc.run_all(matching=CheckFilter(name="Check connectivity"))
     check = checks[0]
     assert check
     assert check.name == "Check connectivity"
@@ -331,7 +331,7 @@ def test_decorator_sets_id_to_method_name() -> None:
 
 async def test_run_check_by_id_filter() -> None:
     nc = NamedChecks(BaseConfiguration())
-    checks = await nc.run_all(matching=Filter(id="check_connectivity"))
+    checks = await nc.run_all(matching=CheckFilter(id="check_connectivity"))
     assert len(checks) == 1
     check = checks[0]
     assert check
@@ -397,13 +397,13 @@ class FilterableChecks(BaseChecks):
     ]
 )
 async def test_filtering(name, id, tags, expected_ids) -> None:
-    checks = await FilterableChecks.run(BaseConfiguration(), matching=Filter(name=name, id=id, tags=tags))
+    checks = await FilterableChecks.run(BaseConfiguration(), matching=CheckFilter(name=name, id=id, tags=tags))
     ids = list(map(lambda c: c.id, checks))
     assert len(ids) == len(expected_ids)
     assert ids == expected_ids
 
 class RequirementChecks(BaseChecks):
-    @check("required-1", severity=Severity.critical)
+    @check("required-1", severity=ErrorSeverity.CRITICAL)
     def check_one(self) -> None:
         ...
 
@@ -431,7 +431,7 @@ class RequirementChecks(BaseChecks):
     "name, halt_on, expected_results",
     [
         # no filter, halt at not-required-2
-        (None, Severity.critical, {
+        (None, ErrorSeverity.CRITICAL, {
             'required-1': True,
             'not-required-1': True,
             'not-required-2': False,
@@ -447,11 +447,11 @@ class RequirementChecks(BaseChecks):
             'not-required-3': True,
         }),
         # run not-required-1, trigger 1 requirement, no failures
-        ("not-required-1", Severity.critical, {'not-required-1': True, 'required-1': True}),
+        ("not-required-1", ErrorSeverity.CRITICAL, {'not-required-1': True, 'required-1': True}),
         # run not-required-2, trigger 1 requirement, fail
         ("not-required-2", None, {'not-required-2': False, 'required-1': True}),
         # run required-3, trigger 2 requirements, halt at required-2
-        ("not-required-3", Severity.critical, {'required-1': True, 'required-2': False}),
+        ("not-required-3", ErrorSeverity.CRITICAL, {'required-1': True, 'required-2': False}),
         # run all required-3, trigger 2 requirements, required-2 fails
         ("not-required-3", None, {
             'required-1': True,
@@ -460,7 +460,7 @@ class RequirementChecks(BaseChecks):
             'not-required-3': True,
         }),
         # run not-required-1 and not-required-3
-        (("not-required-1", "not-required-3"), Severity.critical, {
+        (("not-required-1", "not-required-3"), ErrorSeverity.CRITICAL, {
             'required-1': True,
             'not-required-1': True,
             'required-2': False,
@@ -475,7 +475,7 @@ class RequirementChecks(BaseChecks):
     ]
 )
 async def test_running_requirements(name, halt_on, expected_results) -> None:
-    checks = await RequirementChecks.run(BaseConfiguration(), matching=Filter(name=name), halt_on=halt_on)
+    checks = await RequirementChecks.run(BaseConfiguration(), matching=CheckFilter(name=name), halt_on=halt_on)
     actual_results = dict(map(lambda c: (c.name, c.success), checks))
     assert actual_results == expected_results
 
@@ -503,7 +503,7 @@ class MixedChecks(BaseChecks):
     ]
 )
 async def test_mixed_checks(name, expected_results) -> None:
-    checks = await MixedChecks.run(BaseConfiguration(), matching=Filter(name=name))
+    checks = await MixedChecks.run(BaseConfiguration(), matching=CheckFilter(name=name))
     actual_results = list(map(lambda c: c.name, checks))
     assert actual_results == expected_results
 
@@ -590,7 +590,7 @@ async def test_multichecks() -> None:
 
 async def test_multichecks_filtering() -> None:
     checker = MultiChecks(BaseConfiguration())
-    results = await checker.run_all(matching=Filter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
+    results = await checker.run_all(matching=CheckFilter(id=["check_numbers_item_0", "check_numbers_async_item_1"]))
     attrs = list(map(lambda c: [c.name, c.id, c.message], results))
     assert attrs == [
         [
@@ -699,7 +699,7 @@ async def test_handles_method_attrs() -> None:
 
 
 class WarningChecks(BaseChecks):
-    @check("warning-1", severity=Severity.warning)
+    @check("warning-1", severity=ErrorSeverity.WARNING)
     def check_one(self) -> None:
         raise RuntimeError("Failure")
 

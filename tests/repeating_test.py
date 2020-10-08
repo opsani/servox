@@ -1,15 +1,15 @@
 import asyncio
 import pytest
 from pydantic import Extra, ValidationError
-from servo.connector import (
+from servo import (
     BaseConfiguration,
     BaseConnector,
     License,
     Maturity,
     Optimizer,
     Version,
-    _connector_subclasses,    
 )
+from servo.connector import _connector_subclasses
 from servo import Duration
 from servo.repeating import Mixin, repeating
 

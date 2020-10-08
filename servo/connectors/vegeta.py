@@ -1,100 +1,71 @@
-from __future__ import annotations
 import json
 import re
-from datetime import datetime, timedelta
-from enum import Enum
-from io import StringIO
-from pathlib import Path
+import datetime
+import enum
+import io
+import pathlib
+
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
 import jsonschema
-from devtools import pformat
-from pydantic import BaseModel, Field, FilePath, root_validator, validator
-
-from servo import (
-    HTTP_METHODS,
-    BaseConfiguration,
-    Check,
-    BaseChecks,
-    BaseConnector,
-    Control,
-    Description,
-    Duration,
-    DurationProgress,
-    Filter,
-    License,
-    Maturity,
-    Measurement,
-    Metric,
-    Numeric,
-    Severity,
-    TimeSeries,
-    Unit,
-    check,
-    cli,
-    logger,
-    metadata,
-    on_event,
-    require,
-    stream_subprocess_shell,
-    values_for_keys,
-    value_for_key_path,
-)
+import devtools
+import pydantic
+import servo
 
 
 METRICS = [
-    Metric("throughput", Unit.REQUESTS_PER_MINUTE),
-    Metric("error_rate", Unit.PERCENTAGE),
-    Metric("latency_total", Unit.MILLISECONDS),
-    Metric("latency_mean", Unit.MILLISECONDS),
-    Metric("latency_50th", Unit.MILLISECONDS),
-    Metric("latency_90th", Unit.MILLISECONDS),
-    Metric("latency_95th", Unit.MILLISECONDS),
-    Metric("latency_99th", Unit.MILLISECONDS),
-    Metric("latency_max", Unit.MILLISECONDS),
-    Metric("latency_min", Unit.MILLISECONDS),
+    servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
+    servo.Metric("error_rate", servo.Unit.PERCENTAGE),
+    servo.Metric("latency_total", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_mean", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_50th", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_90th", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_95th", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_99th", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_max", servo.Unit.MILLISECONDS),
+    servo.Metric("latency_min", servo.Unit.MILLISECONDS),
 ]
 
 
-class TargetFormat(str, Enum):
-    http = "http"
-    json = "json"
+class TargetFormat(str, enum.Enum):
+    HTTP = "http"
+    JSON = "json"
 
     def __str__(self):
         return self.value
 
 
-class Latencies(BaseModel):
+class Latencies(pydantic.BaseModel):
     total: int
     mean: int
-    p50: int = Field(alias="50th")
-    p90: int = Field(alias="90th")
-    p95: int = Field(alias="95th")
-    p99: int = Field(alias="99th")
+    p50: int = pydantic.Field(alias="50th")
+    p90: int = pydantic.Field(alias="90th")
+    p95: int = pydantic.Field(alias="95th")
+    p99: int = pydantic.Field(alias="99th")
     max: int
     min: int
 
-    @validator("*")
+    @pydantic.validator("*")
     @classmethod
     def convert_nanoseconds_to_milliseconds(cls, latency):
         # Convert Nanonsecond -> Millisecond
         return (latency * 0.000001) if latency is not None else -1
 
 
-class Bytes(BaseModel):
+class Bytes(pydantic.BaseModel):
     total: int
     mean: float
 
 
-class VegetaReport(BaseModel):
+class VegetaReport(pydantic.BaseModel):
     latencies: Latencies
     bytes_in: Bytes
     bytes_out: Bytes
-    earliest: datetime
-    latest: datetime
-    end: datetime
-    duration: timedelta
-    wait: timedelta
+    earliest: datetime.datetime
+    latest: datetime.datetime
+    end: datetime.datetime
+    duration: datetime.timedelta
+    wait: datetime.timedelta
     requests: int
     rate: float
     throughput: float
@@ -103,12 +74,12 @@ class VegetaReport(BaseModel):
     status_codes: Dict[str, int]
     errors: List[str]
 
-    @validator("throughput")
+    @pydantic.validator("throughput")
     @classmethod
     def convert_throughput_to_rpm(cls, throughput: float) -> float:
         return throughput * 60
 
-    @validator("error_rate", always=True, pre=True)
+    @pydantic.validator("error_rate", always=True, pre=True)
     @classmethod
     def calculate_error_rate_from_success(cls, v, values: Dict[str, Any]) -> float:
         success_rate = values["success"]
@@ -117,63 +88,63 @@ class VegetaReport(BaseModel):
         )  # Fraction of success inverted into % of error
 
 
-class VegetaConfiguration(BaseConfiguration):
+class VegetaConfiguration(servo.BaseConfiguration):
     """
     Configuration of the Vegeta connector
     """
 
-    rate: str = Field(
+    rate: str = pydantic.Field(
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
     )
-    duration: Duration = Field(
+    duration: servo.Duration = pydantic.Field(
         description="Specifies the amount of time to issue requests to the targets. This value can be overridden by the server.",
     )
-    format: TargetFormat = Field(
-        TargetFormat.http,
+    format: TargetFormat = pydantic.Field(
+        TargetFormat.HTTP,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
     )
-    target: Optional[str] = Field(
+    target: Optional[str] = pydantic.Field(
         description="Specifies a single formatted Vegeta target to load. See the format option to learn about available target formats. This option is exclusive of the targets option and will provide a target to Vegeta via stdin."
     )
-    targets: Optional[FilePath] = Field(
+    targets: Optional[pydantic.FilePath] = pydantic.Field(
         description="Specifies the file from which to read targets. See the format option to learn about available target formats. This option is exclusive of the target option and will provide targets to via through a file on disk."
     )
-    connections: int = Field(
+    connections: int = pydantic.Field(
         10000,
         description="Specifies the maximum number of idle open connections per target host.",
     )
-    workers: int = Field(
+    workers: int = pydantic.Field(
         10,
         description="Specifies the initial number of workers used in the attack. The workers will automatically increase to achieve the target request rate, up to max-workers.",
     )
-    max_workers: Optional[int] = Field(
+    max_workers: Optional[int] = pydantic.Field(
         None,
         description="The maximum number of workers used to sustain the attack. This can be used to control the concurrency of the attack to simulate a target number of clients.",
     )
-    max_body: int = Field(
+    max_body: int = pydantic.Field(
         -1,
         description="Specifies the maximum number of bytes to capture from the body of each response. Remaining unread bytes will be fully read but discarded.",
     )
-    http2: bool = Field(
+    http2: bool = pydantic.Field(
         True,
         description="Specifies whether to enable HTTP/2 requests to servers which support it.",
     )
-    keepalive: bool = Field(
+    keepalive: bool = pydantic.Field(
         True,
         description="Specifies whether to reuse TCP connections between HTTP requests.",
     )
-    insecure: bool = Field(
+    insecure: bool = pydantic.Field(
         False,
         description="Specifies whether to ignore invalid server TLS certificates.",
     )
-    reporting_interval: Duration = Field(
+    reporting_interval: servo.Duration = pydantic.Field(
         "15s", description="How often to report metrics during a measurement cycle.",
     )
 
-    @root_validator(pre=True)
+    @pydantic.root_validator(pre=True)
     @classmethod
     def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        target, targets = values_for_keys(values, ("target", "targets"))
+        target, targets = servo.values_for_keys(values, ("target", "targets"))
         if target is None and targets is None:
             raise ValueError("target or targets must be configured")
 
@@ -187,26 +158,26 @@ class VegetaConfiguration(BaseConfiguration):
         """
         Returns the parsed JSON Schema for validating Vegeta targets in the JSON format.
         """
-        schema_path = Path(__file__).parent / "vegeta_target_schema.json"
+        schema_path = pathlib.Path(__file__).parent / "vegeta_target_schema.json"
         return json.load(open(schema_path))
 
-    @validator("target", "targets")
+    @pydantic.validator("target", "targets")
     @classmethod
     def validate_target_format(
-        cls, value: Union[str, FilePath], field: Field, values: Dict[str, Any]
+        cls, value: Union[str, pydantic.FilePath], field: pydantic.Field, values: Dict[str, Any]
     ) -> str:
         if value is None:
             return value
 
         format: TargetFormat = values.get("format")
         if field.name == "target":
-            value_stream = StringIO(value)
+            value_stream = io.StringIO(value)
         elif field.name == "targets":
             value_stream = open(value)
         else:
             raise ValueError(f"unknown field '{field.name}'")
 
-        if format == TargetFormat.http:
+        if format == TargetFormat.HTTP:
             # Scan through the targets and run basic heuristics
             # We don't validate ordering to avoid building a full parser
             count = 0
@@ -219,7 +190,7 @@ class VegetaConfiguration(BaseConfiguration):
                 maybe_method_and_url = line.split(" ", 2)
                 if (
                     len(maybe_method_and_url) == 2
-                    and maybe_method_and_url[0] in HTTP_METHODS
+                    and maybe_method_and_url[0] in servo.HTTP_METHODS
                 ):
                     if re.match("https?://*", maybe_method_and_url[1]):
                         continue
@@ -233,7 +204,7 @@ class VegetaConfiguration(BaseConfiguration):
             if count == 0:
                 raise ValueError(f"no targets found")
 
-        elif format == TargetFormat.json:
+        elif format == TargetFormat.JSON:
             try:
                 data = json.load(value_stream)
             except json.JSONDecodeError as e:
@@ -249,7 +220,7 @@ class VegetaConfiguration(BaseConfiguration):
 
         return value
 
-    @validator("rate")
+    @pydantic.validator("rate")
     @classmethod
     def validate_rate(cls, v: Union[int, str]) -> str:
         assert isinstance(
@@ -270,7 +241,7 @@ class VegetaConfiguration(BaseConfiguration):
 
         # Try to parse it from Golang duration string
         try:
-            Duration(duration)
+            servo.Duration(duration)
         except ValueError as e:
             raise ValueError(f"Invalid duration '{duration}' in rate '{v}'") from e
 
@@ -287,52 +258,55 @@ class VegetaConfiguration(BaseConfiguration):
         )
 
     class Config:
-        json_encoders = BaseConfiguration.json_encoders(
+        json_encoders = servo.BaseConfiguration.json_encoders(
             {TargetFormat: lambda t: t.value()}
         )
 
-class VegetaChecks(BaseChecks):
+class VegetaChecks(servo.BaseChecks):
     config: VegetaConfiguration
     reports: Optional[List[VegetaReport]] = None
 
-    @require("Vegeta execution")
+    @servo.require("Vegeta execution")
     async def check_execution(self) -> Tuple[bool, str]:
         exit_code, reports = await _run_vegeta(config=self.config)
         self.reports = reports
         return (exit_code == 0, f"Vegeta exit code: {exit_code}")
 
-    @check("Report aggregation")
+    @servo.check("Report aggregation")
     def check_report_aggregation(self) -> Tuple[bool, str]:
         return (len(self.reports) > 0, f"Collected {len(self.reports)} reports")
 
-    @check("Error rate < 5.0%")
+    @servo.check("Error rate < 5.0%")
     def check_error_rates(self) -> Tuple[bool, str]:
         vegeta_report = self.reports[-1]
         return (vegeta_report.error_rate < 5.0, f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%")
 
-@metadata(
+@servo.metadata(
     description="Vegeta load testing connector",
     version="0.5.0",
     homepage="https://github.com/opsani/vegeta-connector",
-    license=License.APACHE2,
-    maturity=Maturity.STABLE,
+    license=servo.License.APACHE2,
+    maturity=servo.Maturity.STABLE,
 )
-class VegetaConnector(BaseConnector):
+class VegetaConnector(servo.BaseConnector):
     config: VegetaConfiguration
 
-    @on_event()
-    def describe(self) -> Description:
+    @servo.on_event()
+    def describe(self) -> servo.Description:
         """
         Describes the metrics and components exported by the connector.
         """
-        return Description(metrics=METRICS, components=[])
+        return servo.Description(metrics=METRICS, components=[])
 
-    @on_event()
-    def metrics(self) -> List[Metric]:
+    @servo.on_event()
+    def metrics(self) -> List[servo.Metric]:
         return METRICS
 
-    @on_event()
-    async def check(self, matching: Optional[Filter] = None, halt_on: Optional[Severity] = Severity.critical) -> List[Check]:
+    @servo.on_event()
+    async def check(self, 
+        matching: Optional[servo.CheckFilter] = None, 
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL
+    ) -> List[servo.Check]:
         # Take the current config and run a 5 second check against it
         check_config = self.config.copy()
         check_config.duration = "5s"
@@ -340,11 +314,13 @@ class VegetaConnector(BaseConnector):
 
         return await VegetaChecks.run(check_config, matching=matching, halt_on=halt_on)
 
-    @on_event()
-    async def measure(
-        self, *, metrics: List[str] = None, control: Control = Control()
-    ) -> Measurement:
-        warmup_until = datetime.now() + control.warmup
+    @servo.on_event()
+    async def measure(self, 
+        *, 
+        metrics: List[str] = None, 
+        control: servo.Control = servo.Control()
+    ) -> servo.Measurement:
+        warmup_until = datetime.datetime.now() + control.warmup
 
         number_of_urls = (
             1 if self.config.target else _number_of_lines_in_file(self.config.targets)
@@ -363,48 +339,48 @@ class VegetaConnector(BaseConnector):
             if vegeta_reports
             else []
         )
-        measurement = Measurement(
+        measurement = servo.Measurement(
             readings=readings, annotations={"load_profile": summary,}
         )
-        self.logger.trace(f"Reporting time series metrics {pformat(measurement)}")
+        self.logger.trace(f"Reporting time series metrics {devtools.pformat(measurement)}")
 
         return measurement
 
 async def _run_vegeta(
     config: VegetaConfiguration,
-    warmup_until: Optional[datetime] = None
+    warmup_until: Optional[datetime.datetime] = None
 ) -> Tuple[int, List[VegetaReport]]:
     vegeta_reports: List[VegetaReport] = []
     vegeta_cmd = _build_vegeta_command(config)
     ansi_escape = re.compile(r"(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]")
-    progress = DurationProgress(config.duration)
+    progress = servo.DurationProgress(config.duration)
 
     async def process_stdout(output: str) -> None:
         json_report = ansi_escape.sub("", output)
         vegeta_report = VegetaReport(**json.loads(json_report))
 
-        if warmup_until is None or datetime.now() > warmup_until:
+        if warmup_until is None or datetime.datetime.now() > warmup_until:
             if not progress.started:
                 progress.start()
 
             vegeta_reports.append(vegeta_report)
             summary = _summarize_report(vegeta_report, config)
-            logger.info(progress.annotate(summary), progress=progress.progress)
+            servo.logger.info(progress.annotate(summary), progress=progress.progress)
         else:
-            logger.debug(
+            servo.logger.debug(
                 f"Vegeta metrics excluded (warmup in effect): {vegeta_report}"
             )
 
-    logger.debug(f"Vegeta started: `{vegeta_cmd}`")
-    exit_code = await stream_subprocess_shell(
+    servo.logger.debug(f"Vegeta started: `{vegeta_cmd}`")
+    exit_code = await servo.stream_subprocess_shell(
         vegeta_cmd,
         stdout_callback=process_stdout,
-        stderr_callback=lambda m: logger.error(f"Vegeta stderr: {m}")
+        stderr_callback=lambda m: servo.logger.error(f"Vegeta stderr: {m}")
     )
 
-    logger.debug(f"Vegeta exited with exit code: {exit_code}")
+    servo.logger.debug(f"Vegeta exited with exit code: {exit_code}")
     if exit_code != 0:
-        logger.error(
+        servo.logger.error(
             f"Vegeta command `{vegeta_cmd}` failed with exit code {exit_code}"
         )
 
@@ -465,7 +441,7 @@ def _build_vegeta_command(config: VegetaConfiguration) -> str:
 def _time_series_readings_from_vegeta_reports(
     metrics: Optional[List[str]],
     vegeta_reports: List[VegetaReport]
-) -> List[TimeSeries]:
+) -> List[servo.TimeSeries]:
     readings = []
 
     for metric in METRICS:
@@ -479,28 +455,28 @@ def _time_series_readings_from_vegeta_reports(
         else:
             raise NameError(f'Unexpected metric name "{metric.name}"')
 
-        values: List[Tuple[datetime, Numeric]] = []
+        values: List[Tuple[datetime.datetime, servo.Numeric]] = []
         for report in vegeta_reports:
-            value = value_for_key_path(report.dict(by_alias=True), key)
+            value = servo.value_for_key_path(report.dict(by_alias=True), key)
             values.append((report.end, value,))
 
-        readings.append(TimeSeries(metric, values))
+        readings.append(servo.TimeSeries(metric, values))
 
     return readings
 
 def _summarize_report(report: VegetaReport, config: VegetaConfiguration) -> str:
-    def format_metric(value: Numeric, unit: Unit) -> str:
+    def format_metric(value: servo.Numeric, unit: servo.Unit) -> str:
         return f"{value:.2f}{unit.value}"
 
-    throughput = format_metric(report.throughput, Unit.REQUESTS_PER_MINUTE)
-    error_rate = format_metric(report.error_rate, Unit.PERCENTAGE)
-    latency_50th = format_metric(report.latencies.p50, Unit.MILLISECONDS)
-    latency_90th = format_metric(report.latencies.p90, Unit.MILLISECONDS)
-    latency_95th = format_metric(report.latencies.p95, Unit.MILLISECONDS)
-    latency_99th = format_metric(report.latencies.p99, Unit.MILLISECONDS)
+    throughput = format_metric(report.throughput, servo.Unit.REQUESTS_PER_MINUTE)
+    error_rate = format_metric(report.error_rate, servo.Unit.PERCENTAGE)
+    latency_50th = format_metric(report.latencies.p50, servo.Unit.MILLISECONDS)
+    latency_90th = format_metric(report.latencies.p90, servo.Unit.MILLISECONDS)
+    latency_95th = format_metric(report.latencies.p95, servo.Unit.MILLISECONDS)
+    latency_99th = format_metric(report.latencies.p99, servo.Unit.MILLISECONDS)
     return f'Vegeta attacking "{config.target}" @ {config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
 
-def _number_of_lines_in_file(filename: Path) -> int:
+def _number_of_lines_in_file(filename: pathlib.Path) -> int:
     count = 0
     with open(filename, "r") as f:
         for _ in f:
@@ -508,12 +484,12 @@ def _number_of_lines_in_file(filename: Path) -> int:
     return count
 
 
-app = cli.ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
+app = servo.cli.ConnectorCLI(VegetaConnector, help="Load testing with Vegeta")
 
 
 @app.command()
 def attack(
-    context: cli.Context,
+    context: servo.cli.Context,
 ):
     """
     Run an adhoc load generation

@@ -1,13 +1,21 @@
 import asyncio
+import datetime
+import weakref
+
 from typing import Union, Callable, Optional, List, Dict
+
+import servo.utilities.key_paths
 from servo.types import Duration, NoneCallable, Numeric
-from servo.utilities import values_for_keys
-from datetime import timedelta
-from weakref import WeakKeyDictionary, WeakValueDictionary
+
+__all__ = [
+    "Every",
+    "Mixin",
+    "repeating"
+]
 
 Every = Union[Numeric, str, Duration]
 
-_repeating_tasks_registry = WeakKeyDictionary()
+_repeating_tasks_registry = weakref.WeakKeyDictionary()
 
 class Mixin:
     def __init_subclass__(cls, **kwargs):        
@@ -22,13 +30,13 @@ class Mixin:
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        repeating_tasks: WeakValueDictionary[str, asyncio.Task] = WeakValueDictionary()
+        repeating_tasks: weakref.WeakValueDictionary[str, asyncio.Task] = weakref.WeakValueDictionary()
         _repeating_tasks_registry[self] = repeating_tasks
 
         # Start tasks for any methods decorated via `repeating`
         for method, repeat_params in self.__class__.__repeaters__.items():
             if repeat_params := getattr(method, "__repeating__", None):
-                name, duration = values_for_keys(repeat_params, "name", "duration")
+                name, duration = servo.utilities.key_paths.values_for_keys(repeat_params, "name", "duration")
                 self.start_repeating_task(name, duration, method)
 
     def start_repeating_task(self, name: str, every: Every, callable: Callable[[None], None]) -> asyncio.Task:
@@ -47,7 +55,7 @@ class Mixin:
         async def repeating_async_fn() -> None:
             while True:
                 callable()
-                await asyncio.sleep(every / timedelta(microseconds=1))
+                await asyncio.sleep(every / datetime.timedelta(microseconds=1))
         
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self.repeating_tasks[name] = asyncio_task
@@ -67,6 +75,7 @@ class Mixin:
                 return False
             task.cancel()
             return True
+        
         return None
 
     @property
@@ -75,6 +84,7 @@ class Mixin:
         if tasks is None:
             tasks = {}
             _repeating_tasks_registry[self] = tasks
+        
         return tasks
 
 

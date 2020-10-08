@@ -1,46 +1,20 @@
-from __future__ import annotations
 import asyncio
-from functools import reduce
-from datetime import datetime, timedelta
+import datetime
+import functools
+
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 import httpcore._exceptions
-from pydantic import BaseModel, AnyHttpUrl, validator
 
-from servo import (
-    BaseChecks,
-    BaseConfiguration,
-    BaseConnector,
-    Control,
-    Check,
-    CheckHandler,
-    Description,
-    Duration,
-    Filter,
-    License,
-    Maturity,
-    Measurement,
-    Metric,
-    Severity,
-    Unit,
-    check,
-    logger,
-    metadata,
-    on_event,
-    require,
-    TimeSeries,
-    DurationProgress,
-)
-from servo.checks import create_checks_from_iterable, multicheck
-from servo.utilities import join_to_series
-
+import pydantic
+import servo
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
 
 
-class PrometheusMetric(Metric):
+class PrometheusMetric(servo.Metric):
     """PrometheusMetric objects describe metrics that can be measured by querying
 Prometheus.
     """
@@ -52,30 +26,30 @@ Prometheus.
     documentation.
     """
 
-    step: Duration = "1m"
+    step: servo.types.Duration = "1m"
     """The resolution of the query.
 
     The step resolution determines the number of data points captured across a
     query range.
     """
 
-    def __check__(self) -> Check:
-        return Check(
+    def __check__(self) -> servo.Check:
+        return servo.Check(
             name=f"Check {self.name}",
             description=f"Run Prometheus query \"{self.query}\""
         )
 
-class PrometheusTarget(BaseModel):
+class PrometheusTarget(pydantic.BaseModel):
     """PrometheusTarget objects describe targets that are scraped by Prometheus jobs.
     """
     labels: Optional[Dict[str, str]]
 
-class PrometheusConfiguration(BaseConfiguration):
+class PrometheusConfiguration(servo.BaseConfiguration):
     """PrometheusConfiguration objects describe how PrometheusConnector objects
 capture measurements from the Prometheus metrics server.
     """
 
-    base_url: AnyHttpUrl = DEFAULT_BASE_URL
+    base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
     """The base URL for accessing the Prometheus metrics API.
 
     The URL must point to the root of the Prometheus deployment. Resource paths
@@ -106,18 +80,20 @@ capture measurements from the Prometheus metrics server.
             metrics=[
                 PrometheusMetric(
                     "throughput",
-                    Unit.REQUESTS_PER_SECOND,
+                    servo.Unit.REQUESTS_PER_SECOND,
                     query="rate(http_requests_total[5m])",
                     step="1m",
                 ),
                 PrometheusMetric(
-                    "error_rate", Unit.PERCENTAGE, query="rate(errors[5m])", step="1m"
+                    "error_rate", servo.Unit.PERCENTAGE, 
+                    query="rate(errors[5m])", 
+                    step="1m"
                 ),
             ],
             **kwargs,
         )
 
-    @validator("base_url", allow_reuse=True)
+    @pydantic.validator("base_url")
     @classmethod
     def rstrip_base_url(cls, base_url):
         return base_url.rstrip("/")
@@ -127,18 +103,18 @@ capture measurements from the Prometheus metrics server.
         return f"{self.base_url}{API_PATH}"
 
 
-class PrometheusRequest(BaseModel):
-    base_url: AnyHttpUrl
+class PrometheusRequest(pydantic.BaseModel):
+    base_url: pydantic.AnyHttpUrl
     metric: PrometheusMetric
-    start: datetime
-    end: datetime
+    start: datetime.datetime
+    end: datetime.datetime
 
     @property
     def query(self) -> str:
         return self.metric.query
 
     @property
-    def step(self) -> Duration:
+    def step(self) -> servo.Duration:
         return self.metric.step
 
     @property
@@ -151,13 +127,13 @@ class PrometheusRequest(BaseModel):
             f"&step={self.metric.step}"
         )
 
-class PrometheusChecks(BaseChecks):
+class PrometheusChecks(servo.BaseChecks):
     """PrometheusChecks objects check the state of a PrometheusConfiguration to
 determine if it is ready for use in an optimization run.
     """
     config: PrometheusConfiguration
 
-    @require("Connect to \"{self.config.base_url}\"")
+    @servo.require("Connect to \"{self.config.base_url}\"")
     async def check_base_url(self) -> None:
         """Checks that the Prometheus base URL is valid and reachable.
         """
@@ -165,15 +141,15 @@ determine if it is ready for use in an optimization run.
             response = await client.get("targets")
             response.raise_for_status()
 
-    @multicheck("Run query \"{item.query}\"")
-    async def check_queries(self) -> Tuple[Iterable, CheckHandler]:
+    @servo.multicheck("Run query \"{item.query}\"")
+    async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries.
         """
         async def query_for_metric(metric: PrometheusMetric) -> str:
-            start, end = datetime.now() - timedelta(minutes=10), datetime.now()
+            start, end = datetime.datetime.now() - datetime.timedelta(minutes=10), datetime.datetime.now()
             prometheus_request = PrometheusRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
 
-            logger.trace(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
+            self.logger.trace(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
             async with httpx.AsyncClient() as client:
                 response = await client.get(prometheus_request.url)
                 response.raise_for_status()
@@ -182,7 +158,7 @@ determine if it is ready for use in an optimization run.
 
         return self.config.metrics, query_for_metric
 
-    @check("Active targets")
+    @servo.check("Active targets")
     async def check_targets(self) -> str:
         """Checks that all targets are being scraped by Prometheus and report as
         healthy.
@@ -196,24 +172,24 @@ determine if it is ready for use in an optimization run.
         assert target_count > 0
         return f"found {target_count} targets"
 
-@metadata(
+@servo.metadata(
     description="Prometheus Connector for Opsani",
     version="1.5.0",
     homepage="https://github.com/opsani/prometheus-connector",
-    license=License.APACHE2,
-    maturity=Maturity.STABLE,
+    license=servo.License.APACHE2,
+    maturity=servo.Maturity.STABLE,
 )
-class PrometheusConnector(BaseConnector):
+class PrometheusConnector(servo.BaseConnector):
     """PrometheusConnector objects enable servo assemblies to capture
     measurements from the [Prometheus](https://prometheus.io/) metrics server.
     """
     config: PrometheusConfiguration
 
-    @on_event()
+    @servo.on_event()
     async def check(self,
-        matching: Optional[Filter] = None,
-        halt_on: Optional[Severity] = Severity.critical
-    ) -> List[Check]:
+        matching: Optional[servo.CheckFilter] = None,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL
+    ) -> List[servo.Check]:
         """Checks that the configuration is valid and the connector can capture
         measurements from Prometheus.
 
@@ -231,18 +207,18 @@ class PrometheusConnector(BaseConnector):
         """
         return await PrometheusChecks.run(self.config, matching=matching, halt_on=halt_on)
 
-    @on_event()
-    def describe(self) -> Description:
+    @servo.on_event()
+    def describe(self) -> servo.Description:
         """Describes the current state of Metrics measured by querying Prometheus.
 
         Returns:
             Description: An object describing the current state of metrics
                 queried from Prometheus.
         """
-        return Description(metrics=self.config.metrics)
+        return servo.Description(metrics=self.config.metrics)
 
-    @on_event()
-    def metrics(self) -> List[Metric]:
+    @servo.on_event()
+    def metrics(self) -> List[servo.Metric]:
         """Returns the list of Metrics measured through Prometheus queries.
 
         Returns:
@@ -250,10 +226,10 @@ class PrometheusConnector(BaseConnector):
         """
         return self.config.metrics
 
-    @on_event()
+    @servo.on_event()
     async def measure(
-        self, *, metrics: List[str] = None, control: Control = Control()
-    ) -> Measurement:
+        self, *, metrics: List[str] = None, control: servo.Control = servo.Control()
+    ) -> servo.Measurement:
         """Queries Prometheus for metrics as time series values and returns a
         Measurement object that aggregates the readings for processing by the
         optimizer.
@@ -273,17 +249,17 @@ class PrometheusConnector(BaseConnector):
         else:
             metrics__ = self.metrics()
         measuring_names = list(map(lambda m: m.name, metrics__))
-        self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {join_to_series(measuring_names)}")
+        self.logger.info(f"Starting measurement of {len(metrics__)} metrics: {servo.utilities.join_to_series(measuring_names)}")
 
-        start = datetime.now() + control.warmup
+        start = datetime.datetime.now() + control.warmup
         end = start + control.duration
 
-        sleep_duration = Duration(control.warmup + control.duration)
+        sleep_duration = servo.Duration(control.warmup + control.duration)
         self.logger.info(
             f"Waiting {sleep_duration} during metrics collection ({control.warmup} warmup + {control.duration} duration)..."
         )
 
-        progress = DurationProgress(sleep_duration)
+        progress = servo.DurationProgress(sleep_duration)
         notifier = lambda p: self.logger.info(p.annotate(f"waiting {sleep_duration} during metrics collection...", False), progress=p.progress)
         await progress.watch(notifier)
         self.logger.info(f"Done waiting {sleep_duration} for metrics collection, resuming optimization.")
@@ -293,13 +269,13 @@ class PrometheusConnector(BaseConnector):
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prom(m, start, end), metrics__))
         )
-        all_readings = reduce(lambda x, y: x+y, readings) if readings else []
-        measurement = Measurement(readings=all_readings)
+        all_readings = functools.reduce(lambda x, y: x+y, readings) if readings else []
+        measurement = servo.Measurement(readings=all_readings)
         return measurement
 
     async def _query_prom(
         self, metric: PrometheusMetric, start: datetime, end: datetime
-    ) -> List[TimeSeries]:
+    ) -> List[servo.TimeSeries]:
         prometheus_request = PrometheusRequest(base_url=self.config.api_url, metric=metric, start=start, end=end)
 
         self.logger.trace(f"Querying Prometheus (`{metric.query}`): {prometheus_request.url}")
@@ -327,7 +303,7 @@ class PrometheusConnector(BaseConnector):
             job = m_.get("job")
             annotation = " ".join(map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0])))
             readings.append(
-                TimeSeries(
+                servo.TimeSeries(
                     metric=metric,
                     annotation=annotation,
                     values=result_dict["values"],

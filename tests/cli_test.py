@@ -1,4 +1,4 @@
-from __future__ import annotations
+# from __future__ import annotations
 import json
 import os
 import re
@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 
 import servo
 from servo.cli import CLI, Context, ServoCLI
-from servo.connector import BaseConfiguration, ConnectorLoader, Optimizer
+from servo import BaseConfiguration, Optimizer
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 
@@ -358,7 +358,9 @@ def test_config_configmap_file(
     mocker.patch.object(Servo, "version", "100.0.0")
     mocker.patch.object(VegetaConnector, "version", "100.0.0")
     path = tmp_path / "settings.yaml"
-    cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
+    result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
+    debug(result.stdout, result.stderr)
+    assert result.exit_code == 0    
     assert path.read_text() == (
         '---\n'
         'apiVersion: v1\n'
@@ -740,10 +742,10 @@ class TestCLIFoundation:
 
 
 def test_command_name_for_nested_connectors() -> None:
-    from servo.cli import commandify
+    from servo.utilities import strings
 
-    assert commandify("fake") == "fake"
-    assert commandify("another_fake") == "another-fake"
+    assert strings.commandify("fake") == "fake"
+    assert strings.commandify("another_fake") == "another-fake"
 
 
 def test_ordering_of_ops_commands(servo_cli: CLI, cli_runner: CliRunner) -> None:

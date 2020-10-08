@@ -16,14 +16,14 @@ from typer.testing import CliRunner
 from servo import Duration
 from servo.cli import ServoCLI
 from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
-from servo.connector import (
+from servo import (
     BaseConnector,
     License,
     Maturity,
     Optimizer,
     Version,
-    _connector_subclasses,
 )
+from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
@@ -259,7 +259,7 @@ class TestVegetaConfiguration:
         s = VegetaConfiguration(
             rate="0", duration="0", format="http", target="GET http://example.com"
         )
-        assert s.format == TargetFormat.http
+        assert s.format == TargetFormat.HTTP
 
     def test_validate_target_with_json_format(self) -> None:
         s = VegetaConfiguration(
@@ -268,7 +268,7 @@ class TestVegetaConfiguration:
             format="json",
             target='{ "url": "http://example.com", "method": "GET" }',
         )
-        assert s.format == TargetFormat.json
+        assert s.format == TargetFormat.JSON
 
     def test_validate_target_http_doesnt_match_schema(self) -> None:
         with pytest.raises(ValidationError) as e:

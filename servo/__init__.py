@@ -9,39 +9,23 @@ for pkg in {"servo", "servox"}:
 
 __codename__ = "pass the calimari"
 
-import servo.assembly
-import servo.connector
-import servo.connectors
-import servo.errors
-import servo.events
-import servo.types
-import servo.cli
-import servo.utilities
+# Add the devtools debug() function to builtins if available
+try:
+    import builtins
+    import devtools
+    
+    builtins.debug = devtools.debug
+except ImportError:
+    pass
 
-# Import the core classes
-# These are what most developers will need
-from .events import (
-    Event,
-    EventHandler,
-    EventResult,
-    Preposition,
-    create_event,
-    event,
-    before_event,
-    on_event,
-    after_event,
-    event_handler,
-)
-from .connector import (
-    BaseConfiguration,
-    BaseConnector,
-    Optimizer,
-    metadata,
-)
-
+# Promote all symbols from submodules to the top-level package
+from .assembly import *
 from .configuration import *
+from .connector import *
 from .checks import *
+from .events import *
 from .errors import *
 from .logging import *
+from .servo import *
 from .types import *
 from .utilities import *

@@ -1,19 +1,20 @@
-from datetime import datetime
-from enum import Enum
+import datetime
+import enum
+
 from typing import Any, Dict, List, Optional, Union
 
-from devtools import pformat
+import devtools
 import httpx
-from pydantic import BaseModel, Field, parse_obj_as, validator
+import pydantic
 
-from servo.types import Adjustment, Control, Duration, Numeric
+import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
 
 class UnexpectedEventError(RuntimeError):
     pass
 
-class Command(str, Enum):
+class Command(str, enum.Enum):
     DESCRIBE = "DESCRIBE"
     MEASURE = "MEASURE"
     ADJUST = "ADJUST"
@@ -31,7 +32,7 @@ class Command(str, Enum):
             return None
 
 
-class Event(str, Enum):
+class Event(str, enum.Enum):
     HELLO = "HELLO"
     GOODBYE = "GOODBYE"
     DESCRIPTION = "DESCRIPTION"
@@ -40,7 +41,7 @@ class Event(str, Enum):
     MEASUREMENT = "MEASUREMENT"
 
 
-class Request(BaseModel):
+class Request(pydantic.BaseModel):
     event: Union[Event, str] # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
@@ -50,25 +51,25 @@ class Request(BaseModel):
         }
 
 
-class Status(BaseModel):
+class Status(pydantic.BaseModel):
     status: str
     message: Optional[str]
     reason: Optional[str]
 
 UNEXPECTED_EVENT = 'unexpected-event'
 
-class SleepResponse(BaseModel):
+class SleepResponse(pydantic.BaseModel):
     pass
 
 
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
 # Instructions from servo on what to measure
-class MeasureParams(BaseModel):
+class MeasureParams(pydantic.BaseModel):
     metrics: List[str]
-    control: Control
+    control: servo.types.Control
 
-    @validator('metrics', always=True, pre=True)
+    @pydantic.validator('metrics', always=True, pre=True)
     @classmethod
     def coerce_metrics(cls, value) -> List[str]:
         if isinstance(value, dict):
@@ -76,8 +77,8 @@ class MeasureParams(BaseModel):
 
         return value
 
-class CommandResponse(BaseModel):
-    command: Command = Field(alias="cmd",)
+class CommandResponse(pydantic.BaseModel):
+    command: Command = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
     ]  # TODO: Switch to a union of supported types
@@ -88,7 +89,7 @@ class CommandResponse(BaseModel):
         }
 
 
-class StatusMessage(BaseModel):
+class StatusMessage(pydantic.BaseModel):
     status: str
     message: Optional[str]
 
@@ -130,13 +131,13 @@ class Mixin:
 
     def progress_request(self,
         operation: str,
-        progress: Numeric,
+        progress: servo.types.Numeric,
         started_at: datetime,
         message: Optional[str],
         *,
         connector: Optional[str] = None,
-        event_context: Optional['EventContext'] = None,
-        time_remaining: Optional[Union[Numeric, Duration]] = None,
+        event_context: Optional['servo.events.EventContext'] = None,
+        time_remaining: Optional[Union[servo.types.Numeric, servo.types.Duration]] = None,
         logs: Optional[List[str]] = None,
     ) -> None:
         def set_if(d: Dict, k: str, v: Any):
@@ -147,14 +148,14 @@ class Mixin:
             progress = progress * 100
 
         # Calculate runtime
-        runtime = Duration(datetime.now() - started_at)
+        runtime = servo.types.Duration(datetime.datetime.now() - started_at)
 
         # Produce human readable and remaining time in seconds values (if given)
         if time_remaining:
             if isinstance(time_remaining, (int, float)):
                 time_remaining_in_seconds = time_remaining
-                time_remaining = Duration(time_remaining_in_seconds)
-            elif isinstance(time_remaining, timedelta):
+                time_remaining = servo.types.Duration(time_remaining_in_seconds)
+            elif isinstance(time_remaining, datetime.timedelta):
                 time_remaining_in_seconds = time_remaining.total_seconds()
             else:
                 raise ValueError(f"Unknown value of type '{time_remaining.__class__.__name__}' for parameter 'time_remaining'")
@@ -183,20 +184,20 @@ class Mixin:
     async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:        
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
-            self.logger.trace(f"POST event request: {pformat(event_request)}")
+            self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
 
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
                 response_json = response.json()
-                self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {pformat(response_json)}")
+                self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}")
 
-                return parse_obj_as(Union[CommandResponse, Status], response_json)
+                return pydantic.parse_obj_as(Union[CommandResponse, Status], response_json)
             except httpx.HTTPError:
                 self.logger.error(
                     f"HTTP error encountered while posting {event} event"
                 )
-                self.logger.trace(pformat(event_request))
+                self.logger.trace(devtools.pformat(event_request))
                 raise
 
 
@@ -210,16 +211,16 @@ class Mixin:
                 self.logger.error(
                     f"HTTP error encountered while posting {event.value} event"
                 )
-                self.logger.trace(pformat(event_request))
+                self.logger.trace(devtools.pformat(event_request))
                 raise
 
-        return parse_obj_as(Union[CommandResponse, Status], response.json())
+        return pydantic.parse_obj_as(Union[CommandResponse, Status], response.json())
 
-def descriptor_to_adjustments(descriptor: dict) -> List[Adjustment]:
+def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     adjustments = []
     for component_name, component in descriptor["application"]["components"].items():
         for setting_name, attrs in component["settings"].items():
-            adjustment = Adjustment(
+            adjustment = servo.types.Adjustment(
                 component_name=component_name,
                 setting_name=setting_name,
                 value=attrs["value"]

@@ -1,16 +1,14 @@
-from __future__ import annotations
+# from __future__ import annotations
 import os
+from typing import List, Optional
 import httpx
-from servo.connectors.prometheus import PrometheusConnector
-from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesConnector
-from servo.events import on_event
-from typing import Generator, List, Optional, Tuple
 import servo
-from servo import connector, configuration, checks
 from servo.connectors import kubernetes, prometheus
-from servo import Check, Filter, Severity
-from servo.servo import Servo
-from servo.logging import logger
+# from servo import connector, configuration, checks
+# from servo.connectors import kubernetes, prometheus
+# from servo import Check, Filter, ErrorSeverity
+# from servo.servo import Servo
+# from servo.logging import logger
 
 class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     namespace: str
@@ -28,12 +26,13 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             service="app"
         )
 
-    def generate_kubernetes_config(self, **kwargs) -> KubernetesConfiguration:
+    def generate_kubernetes_config(self, **kwargs) -> kubernetes.KubernetesConfiguration:
         """Generates a configuration for running an Opsani Dev optimization under Kubernetes.
+        
         Returns:
             A tuple of connector name and a Kubernetes connector configuration object.
         """
-        return KubernetesConfiguration(
+        return kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             deployments=[
@@ -66,6 +65,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     def generate_prometheus_config(self, **kwargs) -> prometheus.PrometheusConfiguration:
         """Generates a configuration for running an Opsani Dev optimization that utilizes
         Prometheus and Envoy sidecars to produce and aggregate the necessary metrics.
+        
         Returns:
             A tuple of connector name and a Prometheus connector configuration object.
         """
@@ -138,36 +138,36 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         )
 
 # TODO: Support a decorator for setting class level tags
-class OpsaniDevChecks(checks.BaseChecks):
+class OpsaniDevChecks(servo.BaseChecks):
     config: OpsaniDevConfiguration
 
     ##
     # Kubernetes essentials
 
-    async def _run_kubernetes(self) -> List[Check]:
+    async def _run_kubernetes(self) -> List[servo.Check]:
         ...
         # Should I yield here instead of returning? may help with filtering, etc.
         #return await KubernetesEssentialChecks(self.config).run()
 
-    @checks.require("namespace")
+    @servo.checks.require("namespace")
     async def check_kubernetes_namespace(self) -> None:
         await kubernetes.Namespace.read(self.config.namespace)
     
-    @checks.require("deployment")
+    @servo.checks.require("deployment")
     async def check_kubernetes_deployment(self) -> None:
         await kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
     
-    @checks.require("container")
+    @servo.checks.require("container")
     async def check_kubernetes_container(self) -> None:
         deployment = await kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container, f"failed reading Container '{self.config.container}' in Deployment '{self.config.deployment}'"
 
-    @checks.require("service")
+    @servo.checks.require("service")
     async def check_kubernetes_service(self) -> None:
         await kubernetes.Service.read(self.config.service, self.config.namespace)
     
-    @checks.warn("service type")
+    @servo.checks.warn("service type")
     async def check_kubernetes_service_type(self) -> None:
         service = await kubernetes.Service.read(self.config.service, self.config.namespace)
         if not service.spec.type in ("ClusterIP", "LoadBalancer"):
@@ -180,13 +180,13 @@ class OpsaniDevChecks(checks.BaseChecks):
     ##
     # Prometheus sidecar
 
-    @checks.require("Prometheus ConfigMap exists")
+    @servo.checks.require("Prometheus ConfigMap exists")
     async def check_prometheus_config_map(self) -> None:
         config = await kubernetes.ConfigMap.read("prometheus-config", self.config.namespace)
-        logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
+        self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
         assert config, "failed: no config map named 'prometheus-config'"
 
-    @checks.check("Prometheus sidecar injected")
+    @servo.checks.check("Prometheus sidecar injected")
     async def check_prometheus_sidecar_exists(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
@@ -195,7 +195,7 @@ class OpsaniDevChecks(checks.BaseChecks):
         if not pod.get_container("prometheus"):
             raise RuntimeError(f"failed: no 'prometheus' container found in pod '{pod.name}'")
     
-    @checks.check("Prometheus sidecar is ready")
+    @servo.checks.check("Prometheus sidecar is ready")
     async def check_prometheus_sidecar_is_ready(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
@@ -204,7 +204,7 @@ class OpsaniDevChecks(checks.BaseChecks):
         if not await pod.is_ready():
             raise RuntimeError(f"failed: pod '{pod.name}' is not ready")
     
-    @checks.warn("Prometheus sidecar is stable")
+    @servo.checks.warn("Prometheus sidecar is stable")
     async def check_prometheus_restart_count(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
@@ -215,7 +215,7 @@ class OpsaniDevChecks(checks.BaseChecks):
         restart_count = await container.get_restart_count()
         assert restart_count == 0, f"container 'prometheus' in pod '{pod.name}' has restarted {restart_count} times"
 
-    @checks.require("Prometheus has container port on 9090")
+    @servo.checks.require("Prometheus has container port on 9090")
     async def check_prometheus_container_port(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
@@ -228,8 +228,8 @@ class OpsaniDevChecks(checks.BaseChecks):
         port = container.obj.ports[0].container_port
         assert port == 9090, f"expected Prometheus container port on 9090 but found {port}"
     
-    @checks.require("Prometheus is accessible")
-    async def check_prometheus_is_accessible(self) -> None:
+    @servo.checks.require("Prometheus is accessible")
+    async def check_prometheus_is_accessible(self) -> str:
         pod = await self._read_servo_pod()
         if pod is None:
             raise RuntimeError(f"failed: no servo pod was found")
@@ -238,7 +238,7 @@ class OpsaniDevChecks(checks.BaseChecks):
         assert container
         assert len(container.obj.ports) == 1, f"expected 1 container port but found {len(container.obj.ports)}"
 
-        servo_ = Servo.current()
+        servo_ = servo.Servo.current()
         async with httpx.AsyncClient(base_url=servo_.config.prometheus.base_url) as client:
             response = await client.get("/api/v1/targets")
             response.raise_for_status()
@@ -304,26 +304,26 @@ class OpsaniDevChecks(checks.BaseChecks):
     ##
     # Kubernetes Deployment edits
 
-    @checks.require("validate service")
+    @servo.checks.require("validate service")
     async def check_deployment_annotations(self) -> None:
         ...
     
-    @checks.require("validate service")
+    @servo.checks.require("validate service")
     async def check_deployment_labels(self) -> None:
         ...
     
-    @checks.require("validate service")
+    @servo.checks.require("validate service")
     async def check_deployment_envoy_sidecars(self) -> None:
         ...
     
     ##
     # Connecting the dots
 
-    @checks.require("validate service")
+    @servo.require("validate service")
     async def check_prometheus_scraping_envoys(self) -> None:
         ...
     
-    @checks.require("validate service")
+    @servo.require("validate service")
     async def check_prometheus_queries_make_sense(self) -> None:
         ...
 
@@ -332,7 +332,7 @@ class OpsaniDevChecks(checks.BaseChecks):
     # async def check_metrics(self) -> None:
     #     ...
     # TODO: Fetch and look at the Prometheus targets
-    @checks.check("Envoy proxies are being scraped")
+    @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
         # TODO: Ask Prometheus? Get its config or do I ask it to do something
         ...
@@ -344,28 +344,28 @@ class OpsaniDevChecks(checks.BaseChecks):
     # async def check_pod_load_balancing(self) -> str:
     #     ...
 
-@connector.metadata(
+@servo.metadata(
     description="Run connectors in a specific formation",
     version="0.0.1",
     homepage="https://github.com/opsani/servox",
-    license=connector.License.APACHE2,
-    maturity=connector.Maturity.EXPERIMENTAL,
+    license=servo.License.APACHE2,
+    maturity=servo.Maturity.EXPERIMENTAL,
 )
-class OpsaniDevConnector(connector.BaseConnector):
+class OpsaniDevConnector(servo.BaseConnector):
     """Opsani Dev is a tunkey solution for optimizing a single service.
     """
     config: OpsaniDevConfiguration
 
-    @on_event()
+    @servo.on_event()
     async def startup(self) -> None:
-        servo_ = Servo.current()
+        servo_ = servo.Servo.current()
         await servo_.add_connector("kubernetes", kubernetes.KubernetesConnector(optimizer=self.optimizer, config=self.config.generate_kubernetes_config()))
         await servo_.add_connector("prometheus", prometheus.PrometheusConnector(optimizer=self.optimizer, config=self.config.generate_prometheus_config()))
 
     @servo.on_event()
     async def check(
         self,
-        matching: Optional[Filter],
-        halt_on: Optional[Severity] = checks.Severity.critical
-    ) -> List[Check]:
+        matching: Optional[servo.Filter],
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL
+    ) -> List[servo.Check]:
         return await OpsaniDevChecks.run(self.config, matching=matching, halt_on=halt_on)

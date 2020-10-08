@@ -6,10 +6,10 @@ introducing new attributes that need to be considered in the schema and validati
 logic.
 """
 
+import weakref
 from typing import Any, Dict, Protocol, runtime_checkable
-from weakref import WeakKeyDictionary
 
-_associations = WeakKeyDictionary()
+_associations = weakref.WeakKeyDictionary()
 
 class Mixin:
     def __init__(self, *args, **kwargs) -> None:
@@ -67,4 +67,3 @@ class Associative(Protocol):
         ...
     def _associations(self) -> Dict[str, Any]:
         ...
-    

@@ -1,14 +1,12 @@
-from __future__ import annotations
 import asyncio
 import signal
+
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
+import devtools
 import httpx
 import typer
-
-from devtools import pformat
-from pydantic import BaseModel, Field, parse_obj_as
 
 import servo
 from servo import api
@@ -121,7 +119,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             base_url = typer.style(f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED)
             typer.secho(f"base url: {base_url}")
         if self.config.servo.proxies:
-            proxies = typer.style(f"{pformat(self.config.servo.proxies)}", bold=True, fg=typer.colors.CYAN)
+            proxies = typer.style(f"{devtools.pformat(self.config.servo.proxies)}", bold=True, fg=typer.colors.CYAN)
             typer.secho(f"proxies: {proxies}")
         typer.secho()
 
@@ -139,7 +137,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     async def measure(self, param: api.MeasureParams) -> Measurement:
         logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
-        logger.trace(pformat(param))
+        logger.trace(devtools.pformat(param))
 
         aggregate_measurement = Measurement.construct()
         results: List[EventResult] = await self.servo.dispatch_event(
@@ -155,7 +153,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
     async def adjust(self, adjustments: List[Adjustment], control: Control) -> Description:
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
         logger.info(f"Adjusting... {summary}")
-        logger.trace(pformat(adjustments))
+        logger.trace(devtools.pformat(adjustments))
         
         aggregate_description = Description.construct()
         results = await self.servo.dispatch_event(Events.ADJUST, adjustments)
@@ -169,10 +167,10 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     # backoff and retry for an hour on transient request failures
     @backoff.on_exception(backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time)
-    async def exec_command(self) -> servo.api.Status:
+    async def exec_command(self) -> api.Status:
         cmd_response = await self._post_event(api.Event.WHATS_NEXT, None)
         logger.info(f"What's Next? => {cmd_response.command}")
-        logger.trace(pformat(cmd_response))
+        logger.trace(devtools.pformat(cmd_response))
 
         if cmd_response.command == api.Command.DESCRIBE:
             description = await self.describe()
@@ -231,7 +229,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             while True:
                 try:
                     status = await self.exec_command()
-                    if status.status == servo.api.UNEXPECTED_EVENT:
+                    if status.status == api.UNEXPECTED_EVENT:
                         logger.warning(f"server reported unexpected event: {status.reason}")
                 except Exception as error:
                     logger.exception(f"failed with unrecoverable error: {error}")
@@ -239,7 +237,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, servo.api.UnexpectedEventError):
+            if isinstance(error, api.UnexpectedEventError):
                 logger.error("servo has lost synchronization with the optimizer: restarting operations")
 
                 tasks = [t for t in asyncio.all_tasks() if t is not

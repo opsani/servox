@@ -38,7 +38,7 @@ from servo import (
     Maturity,
     Memory as BaseMemory,
     Replicas,
-    Severity,
+    ErrorSeverity,
     check,
     connector,
     join_to_series,
@@ -2604,7 +2604,7 @@ class KubernetesConnector(BaseConnector):
         return description
 
     @on_event()
-    async def check(self, matching: Optional[Filter], halt_on: Optional[Severity] = Severity.critical) -> List[Check]:        
+    async def check(self, matching: Optional[servo.CheckFilter], halt_on: Optional[servo.ErrorSeverity] = ErrorSeverity.CRITICAL) -> List[Check]:
         return await KubernetesChecks.run(self.config, matching=matching, halt_on=halt_on)
 
 

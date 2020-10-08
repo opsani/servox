@@ -2,7 +2,7 @@ import pytest
 import respx
 import httpx
 import re
-from datetime import timedelta
+import datetime
 
 from pydantic import ValidationError, AnyHttpUrl
 
@@ -25,14 +25,14 @@ class TestPrometheusMetric:
             query="throughput",
             step="45m",
         )
-        assert metric.step == timedelta(seconds=2700)  # 45 mins
+        assert metric.step == datetime.timedelta(seconds=2700)  # 45 mins
 
     def test_accepts_step_as_integer_of_seconds(self):
         metric = PrometheusMetric(
             name="test", unit=Unit.REQUESTS_PER_MINUTE, query="throughput", step=180,
         )
         assert metric.step
-        assert metric.step == timedelta(seconds=180)
+        assert metric.step == datetime.timedelta(seconds=180)
 
     # Query
     def test_query_required(self):
@@ -137,8 +137,8 @@ class TestPrometheusRequest:
     def test_url(self):
         request = PrometheusRequest(
             base_url="http://prometheus.default.svc.cluster.local:9090/api/v1/",
-            start=datetime.now(),
-            end=datetime.now() + Duration("36h"),
+            start=datetime.datetime.now(),
+            end=datetime.datetime.now() + Duration("36h"),
             metric=PrometheusMetric("go_memstats_heap_inuse_bytes", Unit.BYTES, query="go_memstats_heap_inuse_bytes"),
             )
         assert request.url == "http://prometheus.default.svc.cluster.local:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
@@ -147,8 +147,8 @@ class TestPrometheusRequest:
     def test_other_url(self):
         request = PrometheusRequest(
             base_url="http://localhost:9090/api/v1/",
-            start=datetime.now(),
-            end=datetime.now() + Duration("36h"),
+            start=datetime.datetime.now(),
+            end=datetime.datetime.now() + Duration("36h"),
             metric=PrometheusMetric("go_memstats_heap_inuse_bytes", Unit.BYTES, query="go_memstats_heap_inuse_bytes"),
             )
         assert request.url == "http://localhost:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"

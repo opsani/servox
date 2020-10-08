@@ -5,17 +5,19 @@ Logging is implemented on top of the
 [loguru](https://loguru.readthedocs.io/en/stable/) library.
 """
 from __future__ import annotations
+
 import asyncio
 import functools
 import logging
+import pathlib
 import sys
 import time
 import traceback
-from pathlib import Path
+
 from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
 
 import loguru
-from servo.events import EventContext, _connector_context_var, _event_context_var
+import servo.events
 
 __all__ = (
     "Mixin",
@@ -89,11 +91,11 @@ class ProgressHandler:
             return
 
         # Favor explicit connector in extra (see Mixin) else use the context var
-        connector = extra.get("connector", _connector_context_var.get())
+        connector = extra.get("connector", servo.events._connector_context_var.get())
         if not connector:
             return await self._report_error("declining request to report progress for record without a connector attribute", record)
 
-        event_context: Optional[EventContext] = _event_context_var.get()
+        event_context: Optional[servo.events.EventContext] = servo.events._event_context_var.get()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:
@@ -202,13 +204,13 @@ class Formatter:
         # Respect an explicit component 
         if not "component" in record["extra"]:        
             # Favor explicit connector from the extra dict or use the context var
-            if connector := extra.get("connector", _connector_context_var.get()):
+            if connector := extra.get("connector", servo.events._connector_context_var.get()):
                 component = connector.name
             else:
                 component = "servo"
             
             # Append event context if available
-            if event_context := _event_context_var.get():
+            if event_context := servo.events._event_context_var.get():
                 component += f"[{event_context}]"
             
             extra["component"] = component
@@ -231,7 +233,7 @@ DEFAULT_STDERR_HANDLER = {
 
 
 # Persistent disk logging to logs/
-root_path = Path(__file__).parents[1]
+root_path = pathlib.Path(__file__).parents[1]
 logs_path = root_path / "logs" / f"servo.log"
 
 

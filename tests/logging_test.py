@@ -1,11 +1,9 @@
 from __future__ import annotations
 from datetime import datetime
-import logging
 
 import asynctest
 import pytest
 import loguru
-import respx
 
 from freezegun import freeze_time
 from servo import BaseConfiguration

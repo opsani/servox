@@ -8,13 +8,15 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 import yaml
 from pydantic.json import pydantic_encoder
 
-from servo.connector import BaseConfiguration, BaseConnector
+from servo.configuration import BaseConfiguration
+from servo.connector import BaseConnector
 from servo.events import before_event, on_event, after_event
 from servo.logging import logger
 from servo.servo import Events, connector
 from servo.types import Measurement
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
-
+import servo.events
+import servo.types
 from servo.types import Component, Description, RangeSetting, EnumSetting
 
 class StubBaseConfiguration(BaseConfiguration):
@@ -29,15 +31,15 @@ class MeasureConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @before_event(Events.MEASURE)
-    def before_measure(self, *args, **kwargs) -> None:
+    def before_measure(self) -> None:
         pass
 
     @on_event()
-    def measure(self, *args, **kwargs) -> Measurement:
+    def measure(self, metrics: List[str] = None, control: servo.types.Control = servo.types.Control()) -> Measurement:
         pass
 
     @after_event(Events.MEASURE)
-    def after_measure(self, *args, **kwargs) -> None:
+    def after_measure(self, results: List[servo.events.EventResult]) -> None:
         pass
 
 class AdjustConnector(BaseConnector):

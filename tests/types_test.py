@@ -283,7 +283,6 @@ class TestSetting:
                 setting.value = new_value
             
             assert error
-            debug(error.value.errors())
             assert "1 validation error for BasicSetting" in str(error.value)
             assert error.value.errors()[0]["loc"] == ("value",)
             assert error.value.errors()[0]["msg"] == error_message

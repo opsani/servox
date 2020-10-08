@@ -186,14 +186,14 @@ class TestChecks:
     async def test_check_version(self, config) -> None:
         await config.load_kubeconfig()
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id="check_version"))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id="check_version"))
         assert results
         assert results[-1].success
 
     async def test_check_connectivity_success(self, config) -> None:
         await config.load_kubeconfig()
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id="check_connectivity"))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id="check_connectivity"))
         assert len(results) == 1
         assert results[0].success
     
@@ -207,7 +207,7 @@ class TestChecks:
         KubernetesAsyncioConfiguration.set_default(loaded_config)
 
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id="check_connectivity"))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id="check_connectivity"))
         assert len(results) == 1
         result = results[0]        
         assert not result.success
@@ -216,7 +216,7 @@ class TestChecks:
     async def test_check_permissions_success(self, config: KubernetesConfiguration) -> None:
         await config.load_kubeconfig()
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id=["check_permissions"]))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id=["check_permissions"]))
         assert len(results)
         result = results[-1]
         assert result.id == "check_permissions"
@@ -228,7 +228,7 @@ class TestChecks:
     async def test_check_namespace_success(self, config) -> None:
         await config.load_kubeconfig()
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id=["check_namespace"]))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id=["check_namespace"]))
         assert len(results)
         result = results[-1]
         assert result.id == "check_namespace"
@@ -238,7 +238,7 @@ class TestChecks:
         await config.load_kubeconfig()
         config.namespace = "INVALID"
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id=["check_namespace"]))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id=["check_namespace"]))
         assert len(results)
         result = results[-1]
         assert result.id == "check_namespace"
@@ -248,7 +248,7 @@ class TestChecks:
     
     async def test_check_deployment(self, config) -> None:
         await config.load_kubeconfig()
-        results = await kubernetes_connector.KubernetesChecks.run(config, matching=servo.checks.Filter(id="check_deployments_item_0"))
+        results = await kubernetes_connector.KubernetesChecks.run(config, matching=servo.checks.CheckFilter(id="check_deployments_item_0"))
         assert results
         result = results[-1]
         assert result.id == "check_deployments_item_0"
@@ -258,7 +258,7 @@ class TestChecks:
         await config.load_kubeconfig()
         config.deployments[0].name = "INVALID"
         checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(matching=servo.checks.Filter(id=["check_deployments_item_0"]))
+        results = await checks.run_all(matching=servo.checks.CheckFilter(id=["check_deployments_item_0"]))
         assert len(results)
         result = results[-1]
         assert result.id == "check_deployments_item_0"
@@ -268,7 +268,7 @@ class TestChecks:
 
     async def test_check_resource_requirements(self, config) -> None:
         await config.load_kubeconfig()
-        results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.Filter(id="check_resource_requirements_item_0"))
+        results = await kubernetes_connector.KubernetesChecks.run(config, servo.checks.CheckFilter(id="check_resource_requirements_item_0"))
         assert results
         result = results[-1]
         assert result.matching, "check_resource_requirements_item_0"
