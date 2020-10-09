@@ -40,6 +40,7 @@ import typer
 import yaml
 
 import servo
+import servo.runner
 import servo.utilities.yaml
 
 
@@ -983,7 +984,7 @@ class ServoCLI(CLI):
                 )
 
             if context.assembly:
-                servo.Runner(context.assembly).run()
+                servo.runner.Runner(context.assembly).run()
             else:
                 raise typer.Abort("failed to assemble servo")
 
