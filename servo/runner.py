@@ -99,7 +99,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         names = []
         for c in types:
             name = typer.style(
-                commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False
+                servo.utilities.strings.commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False
             )
             version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
             names.append(f"{name}-{version}")
@@ -224,8 +224,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == api.Command.SLEEP:
             # TODO: Model this
             duration = Duration(cmd_response.param.get("duration", 120))
-            status = value_for_key_path(cmd_response.param, "data.status", None)
-            reason = value_for_key_path(
+            status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
+            reason = servo.utilities.key_paths.value_for_key_path(
                 cmd_response.param, "data.reason", "unknown reason"
             )
             msg = f"{status}: {reason}" if status else f"{reason}"
