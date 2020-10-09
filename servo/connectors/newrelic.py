@@ -8,7 +8,7 @@ from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tup
 
 import httpx
 import httpcore._exceptions
-from pydantic import BaseModel, AnyHttpUrl, SecretStr, validator
+from pydantic import BaseModel, AnyHttpUrl, constr, SecretStr, validator
 
 from servo import (
     BaseChecks,
@@ -42,15 +42,12 @@ API_PATH = "/v2"
 class NewrelicMetric(Metric):
     """NewrelicMetric objects describe metrics that can be measure from the Newrelic APM API."""    
     
-    fetch_name: str
-    """The name of the APM metric containing the values for this Metric
+    query: constr(
+        regex=r"^[a-zA-Z]+:[a-z_]+$"
+    )
+    """The name and value of the APM data containing this Metric, seperated by a colon `name:value`
 
     For details, see the [TODO better Newrelic resource](https://docs.newrelic.com/docs/apis/rest-api-v2/application-examples-v2/average-response-time-examples-v2) documentation.
-    """
-
-    values_selector: str
-    """
-    Values selector of resultant time series
     """
 
     def __check__(self) -> Check:
@@ -92,6 +89,10 @@ capture measurements from the Newrelic metrics server.
     
     The step resolution determines the number of data points captured across a
     query range.
+    """
+
+    hostname_filter_format: str = "ip-{}.us-west-2.compute.internal"
+    """Used when responding to the instances event, determines how the `filter[hostname]` string is formatted
     """
 
     @classmethod # TODO
@@ -239,6 +240,7 @@ class NewrelicConnector(BaseConnector):
         async with self.api_client as client:
             try:
                 response = await client.get('/config')
+                # response = await client.get(f'/assets/opsani.com/{component}') # TODO
                 response.raise_for_status()
             except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:                
                 self.logger.trace(f"HTTP error encountered during oco config GET {self.optimizer.api_url}/config: {error}")
@@ -246,9 +248,10 @@ class NewrelicConnector(BaseConnector):
 
         opsani_config = response.json()
         canary = opsani_config.get('adjustment', {}).get('control', {}).get('userdata', {}).get('canary')
+        # canary = opsani_config.get('data') # TODO
         canary_ip = canary.get('ip')
         canary_ip = re.sub(r"\.", "-", canary_ip)
-        canary_hostname = f"ip-{canary_ip}.ec2.internal"
+        canary_hostname = self.config.hostname_filter_format.format(canary_ip)
 
         async with httpx.AsyncClient(
             base_url=self.config.api_url + 'applications/{newrelic_app_id}/instances.json'.format(self.config.app_id), 
@@ -315,8 +318,9 @@ class NewrelicConnector(BaseConnector):
         f_names_to_ms: Dict[str, List[NewrelicMetric]] = defaultdict(list)
         fetches: Dict[str, Set[str]] = defaultdict(set)
         for m in metrics:
-            f_names_to_ms[m.fetch_name].append(m)
-            fetches[m.fetch_name].add(m.values_selector)
+            fetch_name, values_selector = m.query.split(':')
+            f_names_to_ms[fetch_name].append(m)
+            fetches[fetch_name].add(values_selector)
 
         newrelic_request = NewrelicRequest(base_url=self.config.api_url, fetches=fetches, start=start, end=end, step=self.config.step)
 
@@ -346,10 +350,11 @@ class NewrelicConnector(BaseConnector):
 
             for fetched_m in data.get('metric_data', {}).get('metrics', []):
                 m_readings: Dict[NewrelicMetric, List[Tuple[datetime, Numeric]]] = defaultdict(list)
-                for ts in fetched_m.get('timeslices', []):
-                    for m in f_names_to_ms[fetched_m['name']]:
-                        m_readings[m].append((date_parser.parse(ts['from']), ts['values'][m.values_selector]))
                 for m in f_names_to_ms[fetched_m['name']]:
+                    _, values_selector = m.query.split(':')
+                for ts in fetched_m.get('timeslices', []):
+                        m_readings[m].append((date_parser.parse(ts['from']), ts['values'][values_selector]))
+
                     readings.append(
                         TimeSeries(
                             metric=m,
