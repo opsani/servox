@@ -33,4 +33,5 @@ push: build
 
 .PHONY: format
 format:
-	poetry run isort --force-single-line-imports app tests
+	poetry run isort .
+

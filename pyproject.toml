@@ -54,3 +54,7 @@ servo = "servo.entry_points:run_cli"
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.isort]
+profile = "hug"
+src_paths = ["servo", "tests"]
