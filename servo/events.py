@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections
 import contextlib
 import contextvars
 import datetime
@@ -9,7 +8,6 @@ import enum
 import functools
 import inspect
 import sys
-import typing
 import weakref
 from typing import (
     Any,
@@ -17,17 +15,12 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
-    ForwardRef,
     List,
-    Mapping,
     Optional,
     Sequence,
     Type,
     TypeVar,
     Union,
-    _eval_type,
-    get_args,
-    get_origin,
 )
 
 import pydantic
@@ -37,38 +30,42 @@ import servo.utilities.inspect
 import servo.utilities.strings
 
 __all__ = [
-    'Event',
-    'EventHandler',
-    'EventResult',
-    'Preposition',
-    'create_event',
-    'event',
-    'before_event',
-    'on_event',
-    'after_event',
-    'event_handler',
+    "Event",
+    "EventHandler",
+    "EventResult",
+    "Preposition",
+    "create_event",
+    "event",
+    "before_event",
+    "on_event",
+    "after_event",
+    "event_handler",
 ]
 
 _signature_cache: Dict[str, inspect.Signature] = {}
+
 
 class Event(pydantic.BaseModel):
     """
     The Event class defines a named event that can be dispatched and
     processed with before, on, and after handlers.
     """
+
     name: str
     """Unique name of the event.
     """
-    
+
     module: Optional[str] = None
     """Module that defined the event.
     """
-    
+
     on_handler_context_manager: Callable[[None], AsyncContextManager]
     """Context manager callable providing a default on event handler for the event.
     """
 
-    def __init__(self, name: str, signature: inspect.Signature, *args, **kwargs) -> None:
+    def __init__(
+        self, name: str, signature: inspect.Signature, *args, **kwargs
+    ) -> None:
         _signature_cache[name] = signature
         super().__init__(name=name, *args, **kwargs)
 
@@ -78,7 +75,12 @@ class Event(pydantic.BaseModel):
         return _signature_cache[self.name]
 
     def __hash__(self):
-        return hash((self.name, self.signature,))
+        return hash(
+            (
+                self.name,
+                self.signature,
+            )
+        )
 
     def __str__(self):
         return self.name
@@ -111,7 +113,7 @@ class Event(pydantic.BaseModel):
             skip_defaults=skip_defaults,
             exclude_unset=exclude_unset,
             exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none
+            exclude_none=exclude_none,
         )
 
     class Config:
@@ -126,7 +128,6 @@ class Preposition(enum.Flag):
     ON = enum.auto()
     AFTER = enum.auto()
     ALL = BEFORE | ON | AFTER
-
 
     @classmethod
     def from_str(cls, prep: str) -> "Preposition":
@@ -156,13 +157,10 @@ class EventContext(pydantic.BaseModel):
     preposition: Preposition
     created_at: datetime.datetime = None
 
-    @classmethod # Usable as a validator
-    def from_str(cls, event_str) -> Optional['EventContext']:
+    @classmethod  # Usable as a validator
+    def from_str(cls, event_str) -> Optional["EventContext"]:
         if event := get_event(event_str, None):
-            return EventContext(
-                preposition=Preposition.ON,
-                event=event
-            )
+            return EventContext(preposition=Preposition.ON, event=event)
 
         components = event_str.split(":", 1)
         if len(components) < 2:
@@ -178,11 +176,7 @@ class EventContext(pydantic.BaseModel):
         if not event:
             return None
 
-        return EventContext(
-            preposition=Preposition.from_str(preposition),
-            event=event
-        )
-
+        return EventContext(preposition=Preposition.from_str(preposition), event=event)
 
     @pydantic.validator("created_at", pre=True, always=True)
     @classmethod
@@ -225,7 +219,7 @@ class EventContext(pydantic.BaseModel):
 def validate_event_contexts(
     cls,
     value: Union[str, EventContext, Sequence[Union[str, EventContext]]],
-    field: pydantic.ModelField
+    field: pydantic.ModelField,
 ) -> Union[str, List[str]]:
     """
     A Pydantic validator function that ensures that the input value or values are
@@ -249,7 +243,7 @@ class EventHandler(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type['BaseConnector']] # NOTE: Optional due to decorator
+    connector_type: Optional[Type["BaseConnector"]]  # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -264,7 +258,7 @@ class EventResult(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: 'BaseConnector'
+    connector: "BaseConnector"
     created_at: datetime.datetime = None
     value: Any
 
@@ -309,11 +303,11 @@ def create_event(
     name: str,
     signature: Union[Callable[[Any], Awaitable], inspect.Signature],
     *,
-    module: Optional[str] = None
+    module: Optional[str] = None,
 ) -> Event:
     """
     Create an event programmatically from a name and function signature.
-    
+
     Args:
         name: The name of the event to be created.
         signature: The method signature of on event handlers of the event.
@@ -336,7 +330,9 @@ def create_event(
             on_handler_context_manager = contextlib.asynccontextmanager(signature)
 
         elif not inspect.iscoroutinefunction(signature):
-            raise ValueError(f"events must be async: add `async` prefix to your function declaration and await as necessary ({signature})")
+            raise ValueError(
+                f"events must be async: add `async` prefix to your function declaration and await as necessary ({signature})"
+            )
 
         else:
             # Sanity check callables that don't yield are stubs
@@ -345,14 +341,19 @@ def create_event(
                 lines = inspect.getsourcelines(signature)
                 last = lines[0][-1]
                 if not last.strip() in ("pass", "..."):
-                    raise ValueError("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")
+                    raise ValueError(
+                        "function body of event declaration must be an async generator or a stub using `...` or `pass` keywords"
+                    )
 
                 # use the default since our input doesn't yield
                 on_handler_context_manager = _default_context_manager()
 
-            except OSError as error:
+            except OSError:
                 from servo.logging import logger
-                logger.warning(f"unable to inspect event declaration for '{name}': dropping event body and proceeding")
+
+                logger.warning(
+                    f"unable to inspect event declaration for '{name}': dropping event body and proceeding"
+                )
                 on_handler_context_manager = _default_context_manager()
 
     else:
@@ -373,13 +374,18 @@ def create_event(
         raise TypeError(
             f"Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
         )
-    
+
     # Get the module from the calling stack frame
     if module is None:
         localns = inspect.currentframe().f_back.f_locals
-        module = localns.get('__module__', None)
+        module = localns.get("__module__", None)
 
-    event = Event(name=name, signature=signature, module=module, on_handler_context_manager=on_handler_context_manager)
+    event = Event(
+        name=name,
+        signature=signature,
+        module=module,
+        on_handler_context_manager=on_handler_context_manager,
+    )
     _events[name] = event
     return event
 
@@ -398,7 +404,7 @@ def event(
 
     def decorator(fn: EventCallable) -> EventCallable:
         event_name = name if name else fn.__name__
-        module = inspect.currentframe().f_back.f_locals.get('__module__', None)
+        module = inspect.currentframe().f_back.f_locals.get("__module__", None)
         if handler:
             # If the method body is a handler, pass the signature directly into `create_event`
             # as we are going to pass the method body into `on_event`
@@ -485,39 +491,71 @@ def event_handler(
             raise ValueError(f"Unknown event '{name}'")
         if preposition != Preposition.ON:
             name = f"{preposition}:{name}"
-        
+
         # Build namespaces that can resolve names for the event definition and handler
-        event_globalns = sys.modules[event.module].__dict__.copy() if event.module else {}
+        event_globalns = (
+            sys.modules[event.module].__dict__.copy() if event.module else {}
+        )
         event_globalns.update(globals())
         handler_signature = inspect.Signature.from_callable(fn)
         handler_globalns = inspect.currentframe().f_back.f_globals
         handler_localns = inspect.currentframe().f_back.f_locals
-        
-        handler_mod_name = handler_localns.get('__module__', None)
-        handler_module = sys.modules[handler_mod_name] if handler_mod_name else None      
+
+        handler_mod_name = handler_localns.get("__module__", None)
+        handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
 
         if preposition == Preposition.BEFORE:
             before_handler_signature = inspect.Signature.from_callable(__before_handler)
             servo.utilities.inspect.assert_equal_callable_descriptors(
-                servo.utilities.inspect.CallableDescriptor(signature=before_handler_signature, module=event.module, globalns=event_globalns, localns=locals()),
-                servo.utilities.inspect.CallableDescriptor(signature=handler_signature, module=handler_module, globalns=handler_globalns, localns=handler_localns),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=before_handler_signature,
+                    module=event.module,
+                    globalns=event_globalns,
+                    localns=locals(),
+                ),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=handler_signature,
+                    module=handler_module,
+                    globalns=handler_globalns,
+                    localns=handler_localns,
+                ),
                 name=name,
-                method=True
+                method=True,
             )
         elif preposition == Preposition.ON:
             servo.utilities.inspect.assert_equal_callable_descriptors(
-                servo.utilities.inspect.CallableDescriptor(signature=event.signature, module=event.module, globalns=event_globalns, localns=locals()),
-                servo.utilities.inspect.CallableDescriptor(signature=handler_signature, module=handler_module, globalns=handler_globalns, localns=handler_localns),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=event.signature,
+                    module=event.module,
+                    globalns=event_globalns,
+                    localns=locals(),
+                ),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=handler_signature,
+                    module=handler_module,
+                    globalns=handler_globalns,
+                    localns=handler_localns,
+                ),
                 name=name,
-                method=True
+                method=True,
             )
         elif preposition == Preposition.AFTER:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
             servo.utilities.inspect.assert_equal_callable_descriptors(
-                servo.utilities.inspect.CallableDescriptor(signature=after_handler_signature, module=event.module, globalns=event_globalns, localns=locals()),
-                servo.utilities.inspect.CallableDescriptor(signature=handler_signature, module=handler_module, globalns=handler_globalns, localns=handler_localns),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=after_handler_signature,
+                    module=event.module,
+                    globalns=event_globalns,
+                    localns=locals(),
+                ),
+                servo.utilities.inspect.CallableDescriptor(
+                    signature=handler_signature,
+                    module=handler_module,
+                    globalns=handler_globalns,
+                    localns=handler_localns,
+                ),
                 name=name,
-                method=True
+                method=True,
             )
         else:
             assert "Undefined preposition value"
@@ -540,13 +578,14 @@ def __after_handler(self, results: List[EventResult]) -> None:
 
 
 # Context vars for asyncio tasks managed by run_event_handlers
-_event_context_var = contextvars.ContextVar('servo.event', default=None)
-_connector_context_var = contextvars.ContextVar('servo.connector', default=None)
+_event_context_var = contextvars.ContextVar("servo.event", default=None)
+_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
 _connector_event_bus = weakref.WeakKeyDictionary()
 
 
 # NOTE: Boolean flag to know if we can safely reference base class from the metaclass
 _is_base_class_defined = False
+
 
 class Metaclass(pydantic.main.ModelMetaclass):
     def __new__(mcs, name, bases, namespace, **kwargs):
@@ -554,11 +593,7 @@ class Metaclass(pydantic.main.ModelMetaclass):
         event_handlers: List[EventHandler] = []
 
         for base in reversed(bases):
-            if (
-                _is_base_class_defined
-                and issubclass(base, Mixin)
-                and base is not Mixin
-            ):
+            if _is_base_class_defined and issubclass(base, Mixin) and base is not Mixin:
                 event_handlers.extend(base.__event_handlers__)
 
         new_namespace = {
@@ -588,11 +623,12 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List['servo.connector.BaseConnector'] = None,
+        __connectors__: List["servo.connector.BaseConnector"] = None,
         **kwargs,
     ):
         super().__init__(
-            *args, **kwargs,
+            *args,
+            **kwargs,
         )
 
         # NOTE: Connector references are held off the model so
@@ -649,7 +685,7 @@ class Mixin:
         return handler
 
     @property
-    def __connectors__(self) -> List['servo.connector.BaseConnector']:
+    def __connectors__(self) -> List["servo.connector.BaseConnector"]:
         return _connector_event_bus[self]
 
     def broadcast_event(
@@ -657,8 +693,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List['servo.connector.BaseConnector']] = None,
-        exclude: Optional[List['servo.connector.BaseConnector']] = None,
+        include: Optional[List["servo.connector.BaseConnector"]] = None,
+        exclude: Optional[List["servo.connector.BaseConnector"]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -680,7 +716,7 @@ class Mixin:
                 exclude=exclude,
                 prepositions=prepositions,
                 return_exceptions=return_exceptions,
-                **kwargs
+                **kwargs,
             )
         )
 
@@ -689,8 +725,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List['servo.connector.BaseConnector']] = None,
-        exclude: Optional[List['servo.connector.BaseConnector']] = None,
+        include: Optional[List["servo.connector.BaseConnector"]] = None,
+        exclude: Optional[List["servo.connector.BaseConnector"]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -724,7 +760,9 @@ class Mixin:
         if prepositions & Preposition.BEFORE:
             try:
                 for connector in connectors:
-                    await connector.run_event_handlers(event, Preposition.BEFORE, *args, **kwargs)
+                    await connector.run_event_handlers(
+                        event, Preposition.BEFORE, *args, **kwargs
+                    )
             except CancelEventError as error:
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
@@ -734,23 +772,39 @@ class Mixin:
             if first:
                 # A single responder has been requested
                 for connector in connectors:
-                    results = await connector.run_event_handlers(event, Preposition.ON, *args, **kwargs)
+                    results = await connector.run_event_handlers(
+                        event, Preposition.ON, *args, **kwargs
+                    )
                     if results:
                         break
             else:
                 group = asyncio.gather(
-                    *list(map(lambda c: c.run_event_handlers(event, Preposition.ON, *args, **kwargs), connectors)),
+                    *list(
+                        map(
+                            lambda c: c.run_event_handlers(
+                                event, Preposition.ON, *args, **kwargs
+                            ),
+                            connectors,
+                        )
+                    ),
                     return_exceptions=return_exceptions,
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
                 if results:
-                    results = functools.reduce(lambda x, y: x+y, results)
+                    results = functools.reduce(lambda x, y: x + y, results)
 
         # Invoke the after event handlers
         if prepositions & Preposition.AFTER:
             await asyncio.gather(
-                *list(map(lambda c: c.run_event_handlers(event, Preposition.AFTER, results, *args, **kwargs), connectors))
+                *list(
+                    map(
+                        lambda c: c.run_event_handlers(
+                            event, Preposition.AFTER, results, *args, **kwargs
+                        ),
+                        connectors,
+                    )
+                )
             )
 
         if first:
@@ -764,13 +818,15 @@ class Mixin:
         preposition: Preposition,
         *args,
         return_exceptions: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Optional[List[EventResult]]:
         """
         Run handlers for the given event and preposition and return the results or None if there are no handlers.
         """
         if not isinstance(event, Event):
-            raise ValueError(f"event must be an Event object, got {event.__class__.__name__}")
+            raise ValueError(
+                f"event must be an Event object, got {event.__class__.__name__}"
+            )
 
         event_handlers = self.get_event_handlers(event, preposition)
         if not event_handlers:
@@ -779,7 +835,9 @@ class Mixin:
         results: List[EventResult] = []
         try:
             prev_connector_token = _connector_context_var.set(self)
-            prev_event_token = _event_context_var.set(EventContext(event=event, preposition=preposition))
+            prev_event_token = _event_context_var.set(
+                EventContext(event=event, preposition=preposition)
+            )
             for event_handler in event_handlers:
                 # NOTE: Explicit kwargs take precendence over those defined during handler declaration
                 handler_kwargs = event_handler.kwargs.copy()
@@ -787,7 +845,10 @@ class Mixin:
                 try:
                     async with event.on_handler_context_manager(self):
                         if asyncio.iscoroutinefunction(event_handler.handler):
-                            value = await asyncio.create_task(event_handler.handler(self, *args, **kwargs), name=f"{preposition}:{event}")
+                            value = await asyncio.create_task(
+                                event_handler.handler(self, *args, **kwargs),
+                                name=f"{preposition}:{event}",
+                            )
                         else:
                             value = event_handler.handler(self, *args, **kwargs)
 
@@ -843,5 +904,6 @@ class Mixin:
         easily checking current state.
         """
         return _event_context_var.get()
+
 
 _is_base_class_defined = True

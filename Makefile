@@ -34,7 +34,11 @@ push: build
 .PHONY: format
 format:
 	poetry run isort .
-	poetry run autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests
+	poetry run autoflake --recursive \
+		--ignore-init-module-imports \
+		--remove-all-unused-imports  \
+		--remove-unused-variables    \
+		--in-place servo tests
 	poetry run black servo tests
 
 .PHONY: lint

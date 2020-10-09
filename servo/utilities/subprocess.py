@@ -31,7 +31,7 @@ __all__ = (
     "run_subprocess_exec",
     "stream_subprocess_shell",
     "run_subprocess_shell",
-    "stream_subprocess_output"
+    "stream_subprocess_output",
 )
 
 
@@ -40,7 +40,9 @@ _DEFAULT_LIMIT = 2 ** 16  # 64 KiB
 
 # Type definition for streaming output callbacks.
 # Must accept a single string positional argument and returns nothing. Optionally asynchronous.
-OutputStreamCallback = TypeVar("OutputStreamCallback", bound=Callable[[str], Union[None, Awaitable[None]]])
+OutputStreamCallback = TypeVar(
+    "OutputStreamCallback", bound=Callable[[str], Union[None, Awaitable[None]]]
+)
 
 # Timeouts can be expressed as nummeric values in seconds or timedelta/Duration values
 Timeout = Union[int, float, timedelta, None]
@@ -50,9 +52,10 @@ class SubprocessResult(NamedTuple):
     """
     An object that encapsulates the results of a subprocess execution.
 
-    The `stdout` and `stderr` attributes will have a value of `None` when the corresponding 
+    The `stdout` and `stderr` attributes will have a value of `None` when the corresponding
     attribute of the parent subprocess is not a pipe.
     """
+
     return_code: int
     stdout: Optional[List[str]]
     stderr: Optional[List[str]]
@@ -61,7 +64,7 @@ class SubprocessResult(NamedTuple):
 async def stream_subprocess_exec(
     program: str,
     *args,
-    cwd: Path = Path.cwd(), 
+    cwd: Path = Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -108,10 +111,11 @@ async def stream_subprocess_exec(
         stderr_callback=stderr_callback,
     )
 
+
 async def run_subprocess_exec(
     program: str,
     *args,
-    cwd: Path = Path.cwd(), 
+    cwd: Path = Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
@@ -157,15 +161,16 @@ async def run_subprocess_exec(
             stdout_callback=lambda m: stdout_list.append(m),
             stderr_callback=lambda m: stderr_list.append(m),
             **kwargs,
-        ), 
-        stdout_list, 
-        stderr_list
+        ),
+        stdout_list,
+        stderr_list,
     )
+
 
 async def run_subprocess_shell(
     cmd: str,
     *,
-    cwd: Path = Path.cwd(), 
+    cwd: Path = Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
@@ -209,16 +214,16 @@ async def run_subprocess_shell(
             stdout_callback=lambda m: stdout_list.append(m),
             stderr_callback=lambda m: stderr_list.append(m),
             **kwargs,
-        ), 
-        stdout_list, 
-        stderr_list
+        ),
+        stdout_list,
+        stderr_list,
     )
 
 
 async def stream_subprocess_shell(
     cmd: str,
     *,
-    cwd: Path = Path.cwd(), 
+    cwd: Path = Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -245,7 +250,7 @@ async def stream_subprocess_shell(
 
     :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
     :return: The exit status of the subprocess.
-    """                    
+    """
     process = await asyncio.create_subprocess_shell(
         cmd,
         cwd=cwd,
@@ -255,8 +260,9 @@ async def stream_subprocess_shell(
         stderr=stderr,
         limit=limit,
         **kwargs,
-    )    
+    )
     from servo.types import Duration
+
     try:
         start = time.time()
         timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
@@ -269,12 +275,14 @@ async def stream_subprocess_shell(
         )
         end = time.time()
         duration = Duration(end - start)
-        logger.info(f"Subprocess finished with return code {result} in {duration} (`{cmd}`)")
+        logger.info(
+            f"Subprocess finished with return code {result} in {duration} (`{cmd}`)"
+        )
         return result
     except asyncio.TimeoutError as error:
         logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
         raise error
-    
+
 
 async def stream_subprocess_output(
     process: asyncio.subprocess.Process,
@@ -284,7 +292,7 @@ async def stream_subprocess_output(
     stderr_callback: Optional[OutputStreamCallback] = None,
 ) -> int:
     """
-    Asynchronously read the stdout and stderr output streams of a subprocess and 
+    Asynchronously read the stdout and stderr output streams of a subprocess and
     and optionally invoke a callback with each line of text read.
 
     :param process: An asyncio subprocess created with `create_subprocess_exec` or `create_subprocess_shell`.
@@ -297,14 +305,24 @@ async def stream_subprocess_output(
     """
     tasks = []
     if process.stdout:
-        tasks.append(asyncio.create_task(_read_lines_from_output_stream(process.stdout, stdout_callback)))
+        tasks.append(
+            asyncio.create_task(
+                _read_lines_from_output_stream(process.stdout, stdout_callback)
+            )
+        )
     if process.stderr:
-        tasks.append(asyncio.create_task(_read_lines_from_output_stream(process.stderr, stderr_callback)))
+        tasks.append(
+            asyncio.create_task(
+                _read_lines_from_output_stream(process.stderr, stderr_callback)
+            )
+        )
 
     if timeout is None:
         await asyncio.wait([process.wait(), *tasks])
     else:
-        timeout_in_seconds = timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+        timeout_in_seconds = (
+            timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+        )
         try:
             await asyncio.wait_for(process.wait(), timeout=timeout_in_seconds)
             await asyncio.wait(tasks)
@@ -317,10 +335,10 @@ async def stream_subprocess_output(
 
 
 async def _read_lines_from_output_stream(
-    stream: StreamReader, 
+    stream: StreamReader,
     callback: Optional[OutputStreamCallback],
     *,
-    encoding: str = 'utf-8'
+    encoding: str = "utf-8",
 ) -> None:
     """
     Asynchronouysly read a subprocess output stream line by line,
@@ -341,4 +359,3 @@ async def _read_lines_from_output_stream(
                     callback(line)
         else:
             break
-        

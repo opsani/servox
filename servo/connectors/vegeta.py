@@ -4,7 +4,7 @@ import io
 import json
 import pathlib
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import devtools
 import jsonschema
@@ -137,7 +137,8 @@ class VegetaConfiguration(servo.BaseConfiguration):
         description="Specifies whether to ignore invalid server TLS certificates.",
     )
     reporting_interval: servo.Duration = pydantic.Field(
-        "15s", description="How often to report metrics during a measurement cycle.",
+        "15s",
+        description="How often to report metrics during a measurement cycle.",
     )
 
     @pydantic.root_validator(pre=True)
@@ -163,7 +164,10 @@ class VegetaConfiguration(servo.BaseConfiguration):
     @pydantic.validator("target", "targets")
     @classmethod
     def validate_target_format(
-        cls, value: Union[str, pydantic.FilePath], field: pydantic.Field, values: Dict[str, Any]
+        cls,
+        value: Union[str, pydantic.FilePath],
+        field: pydantic.Field,
+        values: Dict[str, Any],
     ) -> str:
         if value is None:
             return value
@@ -261,6 +265,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
             {TargetFormat: lambda t: t.value()}
         )
 
+
 class VegetaChecks(servo.BaseChecks):
     config: VegetaConfiguration
     reports: Optional[List[VegetaReport]] = None
@@ -278,7 +283,11 @@ class VegetaChecks(servo.BaseChecks):
     @servo.check("Error rate < 5.0%")
     def check_error_rates(self) -> Tuple[bool, str]:
         vegeta_report = self.reports[-1]
-        return (vegeta_report.error_rate < 5.0, f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%")
+        return (
+            vegeta_report.error_rate < 5.0,
+            f"Vegeta reported an error rate of {vegeta_report.error_rate:.2f}%",
+        )
+
 
 @servo.metadata(
     description="Vegeta load testing connector",
@@ -302,9 +311,10 @@ class VegetaConnector(servo.BaseConnector):
         return METRICS
 
     @servo.on_event()
-    async def check(self, 
-        matching: Optional[servo.CheckFilter] = None, 
-        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL
+    async def check(
+        self,
+        matching: Optional[servo.CheckFilter] = None,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
     ) -> List[servo.Check]:
         # Take the current config and run a 5 second check against it
         check_config = self.config.copy()
@@ -314,10 +324,8 @@ class VegetaConnector(servo.BaseConnector):
         return await VegetaChecks.run(check_config, matching=matching, halt_on=halt_on)
 
     @servo.on_event()
-    async def measure(self, 
-        *, 
-        metrics: List[str] = None, 
-        control: servo.Control = servo.Control()
+    async def measure(
+        self, *, metrics: List[str] = None, control: servo.Control = servo.Control()
     ) -> servo.Measurement:
         warmup_until = datetime.datetime.now() + control.warmup
 
@@ -328,7 +336,9 @@ class VegetaConnector(servo.BaseConnector):
         self.logger.info(summary)
 
         # Run the load generation
-        _, vegeta_reports = await _run_vegeta(config=self.config, warmup_until=warmup_until)
+        _, vegeta_reports = await _run_vegeta(
+            config=self.config, warmup_until=warmup_until
+        )
 
         self.logger.info(
             f"Producing time series readings from {len(vegeta_reports)} Vegeta reports"
@@ -339,15 +349,20 @@ class VegetaConnector(servo.BaseConnector):
             else []
         )
         measurement = servo.Measurement(
-            readings=readings, annotations={"load_profile": summary,}
+            readings=readings,
+            annotations={
+                "load_profile": summary,
+            },
         )
-        self.logger.trace(f"Reporting time series metrics {devtools.pformat(measurement)}")
+        self.logger.trace(
+            f"Reporting time series metrics {devtools.pformat(measurement)}"
+        )
 
         return measurement
 
+
 async def _run_vegeta(
-    config: VegetaConfiguration,
-    warmup_until: Optional[datetime.datetime] = None
+    config: VegetaConfiguration, warmup_until: Optional[datetime.datetime] = None
 ) -> Tuple[int, List[VegetaReport]]:
     vegeta_reports: List[VegetaReport] = []
     vegeta_cmd = _build_vegeta_command(config)
@@ -374,7 +389,7 @@ async def _run_vegeta(
     exit_code = await servo.stream_subprocess_shell(
         vegeta_cmd,
         stdout_callback=process_stdout,
-        stderr_callback=lambda m: servo.logger.error(f"Vegeta stderr: {m}")
+        stderr_callback=lambda m: servo.logger.error(f"Vegeta stderr: {m}"),
     )
 
     servo.logger.debug(f"Vegeta exited with exit code: {exit_code}")
@@ -430,16 +445,13 @@ def _build_vegeta_command(config: VegetaConfiguration) -> str:
 
     echo_cmd = f'echo "{config.target}" | ' if config.target else ""
     vegeta_cmd = (
-        echo_cmd
-        + " ".join(vegeta_attack_args)
-        + " | "
-        + " ".join(vegeta_report_args)
+        echo_cmd + " ".join(vegeta_attack_args) + " | " + " ".join(vegeta_report_args)
     )
     return vegeta_cmd
 
+
 def _time_series_readings_from_vegeta_reports(
-    metrics: Optional[List[str]],
-    vegeta_reports: List[VegetaReport]
+    metrics: Optional[List[str]], vegeta_reports: List[VegetaReport]
 ) -> List[servo.TimeSeries]:
     readings = []
 
@@ -447,7 +459,10 @@ def _time_series_readings_from_vegeta_reports(
         if metrics and metric.name not in metrics:
             continue
 
-        if metric.name in ("throughput", "error_rate",):
+        if metric.name in (
+            "throughput",
+            "error_rate",
+        ):
             key = metric.name
         elif metric.name.startswith("latency_"):
             key = "latencies" + "." + metric.name.replace("latency_", "")
@@ -457,11 +472,17 @@ def _time_series_readings_from_vegeta_reports(
         values: List[Tuple[datetime.datetime, servo.Numeric]] = []
         for report in vegeta_reports:
             value = servo.value_for_key_path(report.dict(by_alias=True), key)
-            values.append((report.end, value,))
+            values.append(
+                (
+                    report.end,
+                    value,
+                )
+            )
 
         readings.append(servo.TimeSeries(metric, values))
 
     return readings
+
 
 def _summarize_report(report: VegetaReport, config: VegetaConfiguration) -> str:
     def format_metric(value: servo.Numeric, unit: servo.Unit) -> str:
@@ -474,6 +495,7 @@ def _summarize_report(report: VegetaReport, config: VegetaConfiguration) -> str:
     latency_95th = format_metric(report.latencies.p95, servo.Unit.MILLISECONDS)
     latency_99th = format_metric(report.latencies.p99, servo.Unit.MILLISECONDS)
     return f'Vegeta attacking "{config.target}" @ {config.rate}: ~{throughput} ({error_rate} errors) [latencies: 50th={latency_50th}, 90th={latency_90th}, 95th={latency_95th}, 99th={latency_99th}]'
+
 
 def _number_of_lines_in_file(filename: pathlib.Path) -> int:
     count = 0

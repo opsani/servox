@@ -28,7 +28,10 @@ from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--integration", action="store_true", default=False, help="run integration tests"
+        "--integration",
+        action="store_true",
+        default=False,
+        help="run integration tests",
     )
     parser.addoption(
         "--system", action="store_true", default=False, help="run system tests"
@@ -36,17 +39,23 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "integration: marks integration tests with outside dependencies")    
-    config.addinivalue_line("markers", "system: marks system tests with end to end dependencies")
+    config.addinivalue_line(
+        "markers", "integration: marks integration tests with outside dependencies"
+    )
+    config.addinivalue_line(
+        "markers", "system: marks system tests with end to end dependencies"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
-    skip_itegration = pytest.mark.skip(reason="add --integration option to run integration tests")
+    skip_itegration = pytest.mark.skip(
+        reason="add --integration option to run integration tests"
+    )
     skip_system = pytest.mark.skip(reason="add --system to run system tests")
-    
+
     for item in items:
         # Set asyncio as a default marker across the suite
-        item.add_marker('asyncio')
+        item.add_marker("asyncio")
 
         # Skip slow/sensitive integration & system tests by default
         if "integration" in item.keywords and not config.getoption("--integration"):
@@ -79,6 +88,7 @@ def optimizer_env() -> Iterator[None]:
 def optimizer() -> Optimizer:
     return Optimizer(id="dev.opsani.com/servox", token="123456789")
 
+
 @pytest.fixture()
 def servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
@@ -90,7 +100,13 @@ def servo_yaml(tmp_path: Path) -> Path:
 def stub_servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
     settings = StubBaseConfiguration(name="stub")
-    measure_config_json = json.loads(json.dumps(settings.dict(by_alias=True,)))
+    measure_config_json = json.loads(
+        json.dumps(
+            settings.dict(
+                by_alias=True,
+            )
+        )
+    )
     config = {"connectors": ["measure"], "measure": measure_config_json}
     config = yaml.dump(config)
     config_path.write_text(config)
@@ -119,10 +135,12 @@ def random_string() -> str:
 
 @pytest.fixture
 async def kubeconfig() -> str:
-    config_path = Path(__file__).parents[0] / 'kubeconfig'
+    config_path = Path(__file__).parents[0] / "kubeconfig"
     if not config_path.exists():
-        raise FileNotFoundError(f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file")
-    
+        raise FileNotFoundError(
+            f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file"
+        )
+
     # Load the test config into async kubernetes
     await kubernetes_asyncio_config.load_kube_config(
         config_file=str(config_path),
@@ -137,11 +155,11 @@ async def subprocess() -> SubprocessTestHelper:
 
 
 async def build_docker_image(
-    tag: str = "servox:latest", 
-    *, 
-    preamble: Optional[str] = None, 
-    print_output: bool = True, 
-    **kwargs
+    tag: str = "servox:latest",
+    *,
+    preamble: Optional[str] = None,
+    print_output: bool = True,
+    **kwargs,
 ) -> str:
     root_path = Path(__file__).parents[1]
     subprocess = SubprocessTestHelper()
@@ -151,14 +169,18 @@ async def build_docker_image(
         **kwargs,
     )
     if exit_code != 0:
-        error = '\n'.join(stderr)
-        raise RuntimeError(f"Docker build failed with exit code {exit_code}: error: {error}")
-    
+        error = "\n".join(stderr)
+        raise RuntimeError(
+            f"Docker build failed with exit code {exit_code}: error: {error}"
+        )
+
     return tag
+
 
 @pytest.fixture()
 async def servo_image() -> str:
     return await build_docker_image()
+
 
 @pytest.fixture()
 async def minikube_servo_image(servo_image: str) -> str:

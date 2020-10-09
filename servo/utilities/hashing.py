@@ -37,4 +37,3 @@ def dump_container(c, func):
         else:
             c = str(c).encode("utf-8")  # convert to string (e.g., if integer)
         func(c)  # simple value, string or convertible-to-string
-    

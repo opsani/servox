@@ -4,7 +4,6 @@ import abc
 import importlib
 import re
 from typing import (
-    IO,
     Any,
     ClassVar,
     Generator,
@@ -28,8 +27,8 @@ import servo.utilities.associations
 from servo.types import *
 
 __all__ = [
-    'BaseConnector',
-    'metadata',
+    "BaseConnector",
+    "metadata",
 ]
 
 _connector_subclasses: Set[Type["BaseConnector"]] = set()
@@ -37,14 +36,14 @@ _connector_subclasses: Set[Type["BaseConnector"]] = set()
 
 # NOTE: Initialize mixins first to control initialization graph
 class BaseConnector(
-    servo.utilities.associations.Mixin, 
-    servo.api.Mixin, 
-    servo.events.Mixin, 
-    servo.logging.Mixin, 
-    servo.repeating.Mixin, 
-    pydantic.BaseModel, 
-    abc.ABC, 
-    metaclass=servo.events.Metaclass
+    servo.utilities.associations.Mixin,
+    servo.api.Mixin,
+    servo.events.Mixin,
+    servo.logging.Mixin,
+    servo.repeating.Mixin,
+    pydantic.BaseModel,
+    abc.ABC,
+    metaclass=servo.events.Metaclass,
 ):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
@@ -116,7 +115,9 @@ class BaseConnector(
             if name := _name_for_connector_class(cls):
                 cls.__default_name__ = name
             else:
-                raise ValueError(f"A default connector name could not be constructed for class '{cls}'")
+                raise ValueError(
+                    f"A default connector name could not be constructed for class '{cls}'"
+                )
         return v
 
     @pydantic.validator("name")
@@ -139,7 +140,7 @@ class BaseConnector(
         config_cls = hints["config"]
         return config_cls
 
-    def __init_subclass__(cls: Type['BaseConnector'], **kwargs):
+    def __init_subclass__(cls: Type["BaseConnector"], **kwargs):
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
@@ -155,22 +156,27 @@ class BaseConnector(
         name: Optional[str] = None,
         **kwargs,
     ):
-        name = (
-            name if name is not None else self.__class__.__default_name__
-        )
+        name = name if name is not None else self.__class__.__default_name__
         super().__init__(
-            *args, name=name, **kwargs,
+            *args,
+            name=name,
+            **kwargs,
         )
 
     def __hash__(self):
-        return hash((self.name, id(self),))
+        return hash(
+            (
+                self.name,
+                id(self),
+            )
+        )
 
     @property
     def api_client_options(self) -> Dict[str, Any]:
         return self.__dict__.get("api_client_options", super().api_client_options)
 
     @property
-    def logger(self) -> 'loguru.Logger':
+    def logger(self) -> "loguru.Logger":
         """Returns a contextualized logger"""
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
@@ -199,7 +205,9 @@ def metadata(
         if name:
             if isinstance(name, tuple):
                 if len(name) != 2:
-                    raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
+                    raise ValueError(
+                        f"Connector names given as tuples must contain exactly 2 elements: full name and alias"
+                    )
                 cls.name, cls.__default_name__ = name
             else:
                 cls.name = name
@@ -212,15 +220,23 @@ def metadata(
         if homepage:
             cls.homepage = homepage
         if license:
-            cls.license = license if isinstance(license, License) else License.from_str(license)
+            cls.license = (
+                license if isinstance(license, License) else License.from_str(license)
+            )
         if maturity:
-            cls.maturity = maturity if isinstance(maturity, Maturity) else Maturity.from_str(maturity)
+            cls.maturity = (
+                maturity
+                if isinstance(maturity, Maturity)
+                else Maturity.from_str(maturity)
+            )
         return cls
 
     return decorator
 
+
 ##
 # Utility functions
+
 
 def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
     for name in (cls.name, cls.__name__):
@@ -281,6 +297,7 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
     else:
         raise ValueError(f"Invalid connectors value: {connectors}")
 
+
 def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
     if connectors is None:
         # None indicates that all available connectors should be activated
@@ -337,9 +354,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             if name in _reserved_keys():
                 if c := _default_routes().get(name, None):
                     if connector_class != c:
-                        raise ValueError(
-                            f'Name "{name}" is reserved by `{c.__name__}`'
-                        )
+                        raise ValueError(f'Name "{name}" is reserved by `{c.__name__}`')
                 else:
                     raise ValueError(f'Name "{name}" is reserved')
 
@@ -351,6 +366,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
         raise ValueError(
             f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
         )
+
 
 def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector"]]:
     if not isinstance(connector, str):
@@ -388,6 +404,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector
 
     return None
 
+
 def _validate_class(connector: type) -> bool:
     if connector is None or not isinstance(connector, type):
         return False
@@ -409,6 +426,7 @@ def _reserved_keys() -> List[str]:
 
 def _default_routes() -> Dict[str, Type[BaseConnector]]:
     from servo.servo import Servo
+
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:

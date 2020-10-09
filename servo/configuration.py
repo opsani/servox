@@ -5,7 +5,7 @@ import inspect
 import json
 import pathlib
 import re
-from typing import Any, Callable, Dict, Iterable, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 import pydantic
 import yaml
@@ -14,13 +14,14 @@ import servo.logging
 import servo.types
 from servo import types
 
-__all__ = [    
+__all__ = [
     "AbstractBaseConfiguration",
     "BaseConfiguration",
     "BaseAssemblyConfiguration",
     "Optimizer",
     "ServoConfiguration",
 ]
+
 
 class Optimizer(pydantic.BaseSettings):
     """
@@ -85,7 +86,8 @@ class Optimizer(pydantic.BaseSettings):
         Returns a complete URL for interacting with the optimizer API.
         """
         return (
-            self.url or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+            self.url
+            or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
         )
 
     class Config:
@@ -93,9 +95,14 @@ class Optimizer(pydantic.BaseSettings):
         case_sensitive = True
         extra = pydantic.Extra.forbid
         fields = {
-            "token": {"env": "OPSANI_TOKEN",},
-            "base_url": {"env": "OPSANI_BASE_URL",},
+            "token": {
+                "env": "OPSANI_TOKEN",
+            },
+            "base_url": {
+                "env": "OPSANI_BASE_URL",
+            },
         }
+
 
 DEFAULT_TITLE = "Base Connector Configuration Schema"
 
@@ -204,6 +211,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
         are merged into the returned dict and take precedence over the defaults.
         """
         from servo.types import DEFAULT_JSON_ENCODERS
+
         return {**DEFAULT_JSON_ENCODERS, **encoders}
 
     class Config(servo.types.BaseModelConfig):
@@ -288,14 +296,18 @@ class Timeouts(BaseConfiguration):
     number of allowable connections in the connection pool, which is configured by the pool_limits.
     """
 
-    def __init__(self, timeout: Optional[Union[str, int, float, servo.types.Duration]] = None, **kwargs) -> None:
+    def __init__(
+        self,
+        timeout: Optional[Union[str, int, float, servo.types.Duration]] = None,
+        **kwargs,
+    ) -> None:
         for attr in ("connect", "read", "write", "pool"):
             if not attr in kwargs:
                 kwargs[attr] = timeout
         super().__init__(**kwargs)
 
 
-ProxyKey = pydantic.constr(regex=r'^(https?|all)://')
+ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
 
 
 class ServoConfiguration(BaseConfiguration):
@@ -303,10 +315,12 @@ class ServoConfiguration(BaseConfiguration):
     settings for shared services such as networking and logging.
     """
 
-    backoff: Dict[str, BackoffSettings] = pydantic.Field({
-        "__default__": { "max_time": "10m", "max_tries": None },
-        "connect": { "max_time": "1h", "max_tries": None },
-    })
+    backoff: Dict[str, BackoffSettings] = pydantic.Field(
+        {
+            "__default__": {"max_time": "10m", "max_tries": None},
+            "connect": {"max_time": "1h", "max_tries": None},
+        }
+    )
     """A mapping of named operations to settings for the backoff library, which provides backoff
     and retry capabilities to the servo.
 
@@ -380,8 +394,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
     """
 
     servo: Optional[ServoConfiguration] = pydantic.Field(
-        None,
-        description="Configuration of the Servo connector"
+        None, description="Configuration of the Servo connector"
     )
     """Configuration of the Servo itself.
 
@@ -390,8 +403,8 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
 
     @classmethod
     def generate(
-        cls: Type['BaseAssemblyConfiguration'], **kwargs
-    ) -> Optional['BaseAssemblyConfiguration']:
+        cls: Type["BaseAssemblyConfiguration"], **kwargs
+    ) -> Optional["BaseAssemblyConfiguration"]:
         """
         Generates configuration for the servo assembly.
         """
@@ -404,7 +417,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
                 if inspect.isgeneratorfunction(field.type_.generate):
                     for name, config in field.type_.generate():
                         kwargs[name] = config
-                else:    
+                else:
                     if config := field.type_.generate():
                         kwargs[name] = config
 
@@ -431,7 +444,10 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
             connectors = decoded_value
 
         # import late until dependencies are untangled
-        from servo.connector import _normalize_connectors, _routes_for_connectors_descriptor
+        from servo.connector import (
+            _normalize_connectors,
+            _routes_for_connectors_descriptor,
+        )
 
         connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if descriptor is invalid, failing validation

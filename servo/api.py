@@ -10,8 +10,10 @@ import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
 
+
 class UnexpectedEventError(RuntimeError):
     pass
+
 
 class Command(str, enum.Enum):
     DESCRIBE = "DESCRIBE"
@@ -41,7 +43,7 @@ class Event(str, enum.Enum):
 
 
 class Request(pydantic.BaseModel):
-    event: Union[Event, str] # TODO: Needs to be rethought -- used adhoc in some cases
+    event: Union[Event, str]  # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
     class Config:
@@ -55,7 +57,9 @@ class Status(pydantic.BaseModel):
     message: Optional[str]
     reason: Optional[str]
 
-UNEXPECTED_EVENT = 'unexpected-event'
+
+UNEXPECTED_EVENT = "unexpected-event"
+
 
 class SleepResponse(pydantic.BaseModel):
     pass
@@ -68,13 +72,14 @@ class MeasureParams(pydantic.BaseModel):
     metrics: List[str]
     control: servo.types.Control
 
-    @pydantic.validator('metrics', always=True, pre=True)
+    @pydantic.validator("metrics", always=True, pre=True)
     @classmethod
     def coerce_metrics(cls, value) -> List[str]:
         if isinstance(value, dict):
             return list(value.keys())
 
         return value
+
 
 class CommandResponse(pydantic.BaseModel):
     command: Command = pydantic.Field(alias="cmd")
@@ -97,7 +102,9 @@ class Mixin:
     @property
     def api_headers(self) -> Dict[str, str]:
         if not self.optimizer:
-            raise RuntimeError(f"cannot construct API headers: optimizer is not configured")
+            raise RuntimeError(
+                f"cannot construct API headers: optimizer is not configured"
+            )
         return {
             "Authorization": f"Bearer {self.optimizer.token}",
             "User-Agent": USER_AGENT,
@@ -111,14 +118,18 @@ class Mixin:
     def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         if not self.optimizer:
-            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
-        return httpx.AsyncClient(**{ **self.api_client_options, **kwargs })
+            raise RuntimeError(
+                f"cannot construct API client: optimizer is not configured"
+            )
+        return httpx.AsyncClient(**{**self.api_client_options, **kwargs})
 
     def api_client_sync(self, **kwargs) -> httpx.Client:
         """Yields an httpx.Client instance configured to talk to Opsani API"""
         if not self.optimizer:
-            raise RuntimeError(f"cannot construct API client: optimizer is not configured")
-        return httpx.Client(**{ **self.api_client_options, **kwargs })
+            raise RuntimeError(
+                f"cannot construct API client: optimizer is not configured"
+            )
+        return httpx.Client(**{**self.api_client_options, **kwargs})
 
     async def report_progress(self, **kwargs):
         request = self.progress_request(**kwargs)
@@ -128,19 +139,23 @@ class Mixin:
             # We have lost sync with the backend, raise an exception to halt broken execution
             raise UnexpectedEventError(status.reason)
 
-    def progress_request(self,
+    def progress_request(
+        self,
         operation: str,
         progress: servo.types.Numeric,
         started_at: datetime,
         message: Optional[str],
         *,
         connector: Optional[str] = None,
-        event_context: Optional['servo.events.EventContext'] = None,
-        time_remaining: Optional[Union[servo.types.Numeric, servo.types.Duration]] = None,
+        event_context: Optional["servo.events.EventContext"] = None,
+        time_remaining: Optional[
+            Union[servo.types.Numeric, servo.types.Duration]
+        ] = None,
         logs: Optional[List[str]] = None,
     ) -> None:
         def set_if(d: Dict, k: str, v: Any):
-            if v is not None: d[k] = v
+            if v is not None:
+                d[k] = v
 
         # Normalize progress to positive percentage
         if progress < 1.0:
@@ -157,7 +172,9 @@ class Mixin:
             elif isinstance(time_remaining, datetime.timedelta):
                 time_remaining_in_seconds = time_remaining.total_seconds()
             else:
-                raise ValueError(f"Unknown value of type '{time_remaining.__class__.__name__}' for parameter 'time_remaining'")
+                raise ValueError(
+                    f"Unknown value of type '{time_remaining.__class__.__name__}' for parameter 'time_remaining'"
+                )
         else:
             time_remaining_in_seconds = None
 
@@ -166,21 +183,26 @@ class Mixin:
             operation=operation,
             progress=progress,
             runtime=str(runtime),
-            runtime_in_seconds=runtime.total_seconds()
+            runtime_in_seconds=runtime.total_seconds(),
         )
-        set_if(params, 'connector', connector)
-        set_if(params, 'event', str(event_context))
-        set_if(params, 'time_remaining', str(time_remaining) if time_remaining else None)
-        set_if(params, 'time_remaining_in_seconds', str(time_remaining_in_seconds) if time_remaining_in_seconds else None)
-        set_if(params, 'message', message)
-        set_if(params, 'logs', logs)
+        set_if(params, "connector", connector)
+        set_if(params, "event", str(event_context))
+        set_if(
+            params, "time_remaining", str(time_remaining) if time_remaining else None
+        )
+        set_if(
+            params,
+            "time_remaining_in_seconds",
+            str(time_remaining_in_seconds) if time_remaining_in_seconds else None,
+        )
+        set_if(params, "message", message)
+        set_if(params, "logs", logs)
 
         return (operation, params)
 
-
     # NOTE: Opsani API primitive
     # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
-    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:        
+    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
             self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
@@ -189,16 +211,17 @@ class Mixin:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
                 response_json = response.json()
-                self.logger.trace(f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}")
-
-                return pydantic.parse_obj_as(Union[CommandResponse, Status], response_json)
-            except httpx.HTTPError:
-                self.logger.error(
-                    f"HTTP error encountered while posting {event} event"
+                self.logger.trace(
+                    f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
+
+                return pydantic.parse_obj_as(
+                    Union[CommandResponse, Status], response_json
+                )
+            except httpx.HTTPError:
+                self.logger.error(f"HTTP error encountered while posting {event} event")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
-
 
     def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
@@ -215,6 +238,7 @@ class Mixin:
 
         return pydantic.parse_obj_as(Union[CommandResponse, Status], response.json())
 
+
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     adjustments = []
     for component_name, component in descriptor["application"]["components"].items():
@@ -222,7 +246,7 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
             adjustment = servo.types.Adjustment(
                 component_name=component_name,
                 setting_name=setting_name,
-                value=attrs["value"]
+                value=attrs["value"],
             )
             adjustments.append(adjustment)
     return adjustments

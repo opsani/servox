@@ -1,47 +1,54 @@
 import pathlib
 
-import httpx
 import pytest
-import respx
-import yaml
 
 import servo
+
 # from servo import Assembly, Optimizer
-from servo import assembly, configuration, connectors, runner
-from servo.connectors import kubernetes, prometheus
-from tests.test_helpers import AdjustConnector, MeasureConnector
+from servo import assembly, configuration, runner
+from tests.test_helpers import AdjustConnector
 
 # import servo.runner
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
+
 @pytest.fixture()
 def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
-    config_model = servo.assembly._create_config_model_from_routes({ 
-        "prometheus": servo.connectors.prometheus.PrometheusConnector,
-        "adjust": AdjustConnector,
-    })
+    config_model = servo.assembly._create_config_model_from_routes(
+        {
+            "prometheus": servo.connectors.prometheus.PrometheusConnector,
+            "adjust": AdjustConnector,
+        }
+    )
     config = config_model.generate()
     servo_yaml.write_text(config.yaml())
 
-    optimizer = configuration.Optimizer(id="dev.opsani.com/blake-ignite", token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604")
+    optimizer = configuration.Optimizer(
+        id="dev.opsani.com/blake-ignite",
+        token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+    )
     assembly_, _, _ = servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly_
 
+
 @pytest.fixture
 def runner(assembly) -> servo.runner.Runner:
     return servo.runner.Runner(assembly)
+
 
 import asyncio
 
 
 async def test_test_out_of_order_operations(runner) -> None:
     await runner.servo.startup()
-    response = await runner._post_event(servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT))
+    response = await runner._post_event(
+        servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
+    )
     debug(response)
-    assert response.status == 'ok'
+    assert response.status == "ok"
 
     response = await runner._post_event(servo.api.Event.WHATS_NEXT, None)
     debug(response)
@@ -52,27 +59,34 @@ async def test_test_out_of_order_operations(runner) -> None:
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     debug(param)
     response = await runner._post_event(servo.api.Event.DESCRIPTION, param)
-    debug(response)    
+    debug(response)
 
     response = await runner._post_event(servo.api.Event.WHATS_NEXT, None)
     debug(response)
     assert response.command == servo.api.Command.MEASURE
 
     # Send out of order adjust
-    reply = { "status": "ok" }
+    reply = {"status": "ok"}
     response = await runner._post_event(servo.api.Event.ADJUSTMENT, reply)
     debug(response)
 
-    assert response.status == 'unexpected-event'
-    assert response.reason == 'Out of order event "ADJUSTMENT", expected "MEASUREMENT"; ignoring'
+    assert response.status == "unexpected-event"
+    assert (
+        response.reason
+        == 'Out of order event "ADJUSTMENT", expected "MEASUREMENT"; ignoring'
+    )
 
     runner.logger.info("test logging", operation="ADJUST", progress=55)
 
     await asyncio.sleep(5)
 
+
 async def test_hello(runner) -> None:
-    response = await runner._post_event(servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT))
-    assert response.status == 'ok'
+    response = await runner._post_event(
+        servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
+    )
+    assert response.status == "ok"
+
 
 # async def test_describe() -> None:
 #     pass
@@ -95,7 +109,7 @@ async def test_hello(runner) -> None:
 # @pytest.mark.parametrize(
 #     ("proxies"),
 #     [
-#         "http://localhost:1234", 
+#         "http://localhost:1234",
 #         {"all://": "http://localhost:1234"},
 #         {"https://": "http://localhost:1234"},
 #         {"https://api.opsani.com": "http://localhost:1234"},

@@ -32,11 +32,13 @@ def optimizer() -> Optimizer:
 def servo_cli() -> ServoCLI:
     return ServoCLI()
 
+
 @pytest.fixture(autouse=True)
 def servo_yaml(tmp_path: Path) -> Path:
     config_path: Path = tmp_path / "servo.yaml"
     config_path.touch()
     return config_path
+
 
 @pytest.fixture()
 def vegeta_config_file(servo_yaml: Path) -> Path:
@@ -102,7 +104,8 @@ def test_connectors_all_verbose(
     result = cli_runner.invoke(servo_cli, "connectors --all -v")
     assert result.exit_code == 0
     assert re.match(
-        "DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR", result.stdout
+        "DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR",
+        result.stdout,
     )
 
 
@@ -111,25 +114,35 @@ def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     assert result.exit_code == 2
     assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
+
 @respx.mock
 def test_check(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
+    request = respx.post(
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo",
+        status_code=200,
+    )
     result = cli_runner.invoke(servo_cli, "check")
     assert request.called
     assert result.exit_code == 0
     assert re.search("CONNECTOR\\s+STATUS", result.stdout)
 
+
 @respx.mock
 def test_check_verbose(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo", status_code=200)
+    request = respx.post(
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo",
+        status_code=200,
+    )
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
     assert result.exit_code == 0
-    assert re.search("CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout)
+    assert re.search(
+        "CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout
+    )
 
 
 def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
@@ -306,7 +319,10 @@ def test_config(
 
 
 def test_run_with_empty_config_file(
-    cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    servo_yaml: Path,
+    optimizer_env: None,
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert result.exit_code == 0, f"RESULT: {result.stderr}"
@@ -314,7 +330,10 @@ def test_run_with_empty_config_file(
 
 
 def test_run_with_malformed_config_file(
-    cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path, optimizer_env: None,
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    servo_yaml: Path,
+    optimizer_env: None,
 ) -> None:
     servo_yaml.write_text("</\n\n..:989890j\n___*")
     with pytest.raises(ValueError) as e:
@@ -360,29 +379,29 @@ def test_config_configmap_file(
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     debug(result.stdout, result.stderr)
-    assert result.exit_code == 0    
+    assert result.exit_code == 0
     assert path.read_text() == (
-        '---\n'
-        'apiVersion: v1\n'
-        'kind: ConfigMap\n'
-        'metadata:\n'
-        '  name: opsani-servo-config\n'
-        '  labels:\n'
-        '    app.kubernetes.io/name: servo\n'
-        '    app.kubernetes.io/version: 100.0.0\n'
-        '  annotations:\n'
+        "---\n"
+        "apiVersion: v1\n"
+        "kind: ConfigMap\n"
+        "metadata:\n"
+        "  name: opsani-servo-config\n"
+        "  labels:\n"
+        "    app.kubernetes.io/name: servo\n"
+        "    app.kubernetes.io/version: 100.0.0\n"
+        "  annotations:\n"
         "    servo.opsani.com/configured_at: '2020-01-01T00:00:00+00:00'\n"
         '    servo.opsani.com/connectors: \'[{"name": "vegeta", "type": "Vegeta Connector",\n'
         '      "description": "Vegeta load testing connector", "version": "100.0.0", "url":\n'
         '      "https://github.com/opsani/vegeta-connector"}]\'\n'
-        'data:\n'
-        '  servo.yaml: |\n'
-        '    connectors:\n'
-        '    - vegeta\n'
-        '    vegeta:\n'
-        '      duration: 25m\n'
+        "data:\n"
+        "  servo.yaml: |\n"
+        "    connectors:\n"
+        "    - vegeta\n"
+        "    vegeta:\n"
+        "      duration: 25m\n"
         "      rate: '0'\n"
-        '      target: https://opsani.com/\n'
+        "      target: https://opsani.com/\n"
     )
 
 

@@ -14,7 +14,7 @@ try:
     import builtins
 
     import devtools
-    
+
     builtins.debug = devtools.debug
 except ImportError:
     pass

@@ -21,7 +21,9 @@ def run_cli():
         for connector in servo.connector.ConnectorLoader().load():
             servo.logger.debug(f"Loaded {connector.__qualname__}")
     except Exception:
-        servo.logger.exception("failed loading connectors via discovery", backtrace=True, diagnose=True)
+        servo.logger.exception(
+            "failed loading connectors via discovery", backtrace=True, diagnose=True
+        )
 
     cli = servo.cli.ServoCLI()
     cli()

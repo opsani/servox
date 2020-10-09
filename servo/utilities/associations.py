@@ -11,6 +11,7 @@ from typing import Any, Dict, Protocol, runtime_checkable
 
 _associations = weakref.WeakKeyDictionary()
 
+
 class Mixin:
     def __init__(self, *args, **kwargs) -> None:
         # NOTE: we are not hashable until after init
@@ -25,7 +26,6 @@ class Mixin:
             obj: The object to associate with.
         """
         _associations[self][name] = obj
-
 
     def _get_association(self, name: str, default: Any = ...) -> Any:
         """Returns an associated object by name.
@@ -45,7 +45,7 @@ class Mixin:
             return _associations[self][name]
         else:
             return _associations[self].get(name, default)
-    
+
     @property
     def _associations(self) -> Dict[str, Any]:
         """Returns all associated objects as dictionary.
@@ -53,17 +53,20 @@ class Mixin:
         Returns:
             A dictionary mapping of associated object names and values.
         """
-        return _associations[self]#.copy()
-    
+        return _associations[self]  # .copy()
+
 
 @runtime_checkable
 class Associative(Protocol):
     """
     Associative is a protocol that describes objects that support associations.
     """
+
     def _set_association(self, name: str, obj: Any) -> None:
         ...
+
     def _get_association(self, name: str, default: Any = ...) -> Any:
         ...
+
     def _associations(self) -> Dict[str, Any]:
         ...
