@@ -30,3 +30,7 @@ run: build
 .PHONY: push
 push: build
 	docker push ${IMAGE_NAME}
+
+.PHONY: format
+format:
+	poetry run isort --force-single-line-imports app tests

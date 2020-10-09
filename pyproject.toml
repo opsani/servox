@@ -40,6 +40,7 @@ respx = "^0.12.1"
 kubetest = "^0.8.1"
 pytest-freezegun = "^0.4.2"
 yamlpath = "^2.3.7"
+isort = "^5.6.1"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
