@@ -87,12 +87,11 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         banner = (
             "   _____                      _  __\n"
             "  / ___/___  ______   ______ | |/ /\n"
-            "  \\__ \\/ _ \\/ ___/ \\| / / __ \\|   /\n"
+            "  \__ \/ _ \/ ___/ | / / __ \|   /\n"
             " ___/ /  __/ /   | |/ / /_/ /   |\n"
-            "/____/\\___/_/    |___/\\____/_/|_|"
+            "/____/\___/_/    |___/\____/_/|_|"
         )
         typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
-
         types = Assembly.all_connector_types()
         types.remove(Servo)
 
