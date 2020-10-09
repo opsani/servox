@@ -34,4 +34,12 @@ push: build
 .PHONY: format
 format:
 	poetry run isort .
+	poetry run autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests
+	poetry run black servo tests
 
+.PHONY: lint
+lint:
+	poetry run flake8 servo
+	poetry run mypy servo
+	poetry run black --check servo --diff
+	poetry run isort --recursive --check-only servo
