@@ -1,22 +1,23 @@
 from __future__ import annotations
+
 import abc
 import importlib
-import pkg_resources
 import re
 from typing import (
+    IO,
     Any,
     ClassVar,
-    IO,
-    Iterable,
     Generator,
+    Iterable,
     Optional,
     Set,
-    Type,
     Tuple,
+    Type,
     get_type_hints,
 )
 
 import loguru
+import pkg_resources
 import pydantic
 
 import servo.api

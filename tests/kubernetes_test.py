@@ -1,18 +1,21 @@
-from datetime import datetime
-import servo
-import servo.connectors.kubernetes as kubernetes_connector
-from servo.connectors.kubernetes import KubernetesConfiguration, KubernetesChecks, KubernetesConnector
 import os
 import sys
-
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import pytest
 from kubernetes import client
 from kubernetes.client.rest import ApiException
-
 from kubetest import condition, response, utils
+
+import servo
+import servo.connectors.kubernetes as kubernetes_connector
+from servo.connectors.kubernetes import (
+    KubernetesChecks,
+    KubernetesConfiguration,
+    KubernetesConnector,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -285,7 +288,8 @@ async def kubeconfig() -> None:
     """
     Asynchronously load the Kubernetes configuration
     """
-    from kubernetes_asyncio import client, config as kubernetes_asyncio_config
+    from kubernetes_asyncio import client
+    from kubernetes_asyncio import config as kubernetes_asyncio_config
     from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 
     config_file = Path(KUBE_CONFIG_DEFAULT_LOCATION).expanduser()

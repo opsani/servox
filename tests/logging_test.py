@@ -1,27 +1,29 @@
 from __future__ import annotations
+
 from datetime import datetime
 
 import asynctest
-import pytest
 import loguru
-
+import pytest
 from freezegun import freeze_time
+
 from servo import BaseConfiguration
 from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.logging import (
+    DEFAULT_FILTER,
     DEFAULT_FORMAT,
     DEFAULT_FORMATTER,
-    Mixin,
-    DEFAULT_FILTER,
     Filter,
+    Mixin,
     ProgressHandler,
     log_execution,
     log_execution_time,
     logger,
     reset_to_defaults,
-    set_level
+    set_level,
 )
 from tests.test_helpers import MeasureConnector
+
 
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:

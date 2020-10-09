@@ -1,10 +1,12 @@
+import collections
 import dataclasses
 import inspect
 import typing
 import warnings
-import collections
-from typing import Any, Dict, Callable, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+
 import servo.utilities.strings
+
 
 def get_instance_methods(obj, *, stop_at_parent: Optional[Type[Any]] = None) -> Dict[str, Callable]:
     """

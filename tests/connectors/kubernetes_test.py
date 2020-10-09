@@ -1,17 +1,38 @@
-from pydantic.error_wrappers import ValidationError
-import pytest
+from typing import Type
 
-from kubernetes_asyncio import client
 import pydantic
+import pytest
+from kubernetes_asyncio import client
+from pydantic import BaseModel
+from pydantic.error_wrappers import ValidationError
 
 from servo.api import descriptor_to_adjustments
-from servo.connectors.kubernetes import CanaryOptimization, Container, CPU, CanaryOptimizationStrategyConfiguration, DefaultOptimizationStrategyConfiguration, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName, OptimizationStrategy
-from servo.connectors.kubernetes import KubernetesChecks, Millicore
-
-from servo.types import Adjustment, Component, Setting, HumanReadable
+from servo.connectors.kubernetes import (
+    CPU,
+    CanaryOptimization,
+    CanaryOptimizationStrategyConfiguration,
+    Container,
+    ContainerConfiguration,
+    ContainerTagName,
+    DefaultOptimizationStrategyConfiguration,
+    Deployment,
+    DeploymentConfiguration,
+    DNSLabelName,
+    DNSSubdomainName,
+    FailureMode,
+    KubernetesChecks,
+    KubernetesConfiguration,
+    KubernetesConnector,
+    Memory,
+    Millicore,
+    OptimizationStrategy,
+    Pod,
+    Replicas,
+    ResourceRequirements,
+)
+from servo.types import Adjustment, Component, HumanReadable, Setting
 from tests.test_helpers import *
-from pydantic import BaseModel
-from typing import Type
+
 
 class TestDNSSubdomainName:
     @pytest.fixture
@@ -325,20 +346,17 @@ class TestKubernetesConfiguration:
 
         import sys
 
+        import yamlpath.patches
         from ruamel.yaml import YAML
         from ruamel.yaml.parser import ParserError
-
-        import yamlpath.patches
+        from yamlpath import Processor, YAMLPath
+        from yamlpath.exceptions import YAMLPathException
         from yamlpath.func import get_yaml_data, get_yaml_editor
         from yamlpath.wrappers import ConsolePrinter
-        from yamlpath import Processor
-        from yamlpath import YAMLPath
-        from yamlpath.exceptions import YAMLPathException
 
         # Process command-line arguments and initialize the output writer
         # args = processcli()
         # log = ConsolePrinter(args)
-
         # Prep the YAML parser and round-trip editor (tweak to your needs)
         yaml = get_yaml_editor()
 

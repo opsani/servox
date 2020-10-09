@@ -1,8 +1,8 @@
 import asyncio
-from inspect import Signature, iscoroutinefunction
 import json
 import os
 from datetime import datetime, timedelta
+from inspect import Signature, iscoroutinefunction
 from pathlib import Path
 from typing import Coroutine
 
@@ -13,21 +13,22 @@ from freezegun import freeze_time
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
-from servo import Duration
+from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.cli import ServoCLI
 from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
-from servo import (
-    BaseConnector,
-    License,
-    Maturity,
-    Optimizer,
-    Version,
-)
 from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
+from servo.events import (
+    EventContext,
+    Preposition,
+    _connector_context_var,
+    _events,
+    create_event,
+    event,
+)
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
+
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -1227,6 +1228,8 @@ def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
     pass
 
 from contextlib import asynccontextmanager
+
+
 class TestConnectorEvents:
     class FakeConnector(BaseConnector):
         @event(handler=True)

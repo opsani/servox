@@ -1,16 +1,10 @@
 import asyncio
+
 import pytest
 from pydantic import Extra, ValidationError
-from servo import (
-    BaseConfiguration,
-    BaseConnector,
-    License,
-    Maturity,
-    Optimizer,
-    Version,
-)
+
+from servo import BaseConfiguration, BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.connector import _connector_subclasses
-from servo import Duration
 from servo.repeating import Mixin, repeating
 
 pytestmark = pytest.mark.asyncio

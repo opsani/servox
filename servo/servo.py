@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import enum
-
-from typing import Any, Dict, List, Optional, Protocol, Tuple, Union, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, Union
 
 import httpx
 

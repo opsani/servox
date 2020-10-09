@@ -1,14 +1,16 @@
-import pytest
-import httpx
-import respx
 import pathlib
+
+import httpx
+import pytest
+import respx
 import yaml
 
 import servo
 # from servo import Assembly, Optimizer
-from servo import assembly, configuration, runner, connectors
-from servo.connectors import prometheus, kubernetes
-from tests.test_helpers import MeasureConnector, AdjustConnector
+from servo import assembly, configuration, connectors, runner
+from servo.connectors import kubernetes, prometheus
+from tests.test_helpers import AdjustConnector, MeasureConnector
+
 # import servo.runner
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -33,6 +35,7 @@ def runner(assembly) -> servo.runner.Runner:
     return servo.runner.Runner(assembly)
 
 import asyncio
+
 
 async def test_test_out_of_order_operations(runner) -> None:
     await runner.servo.startup()

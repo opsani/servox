@@ -1,25 +1,49 @@
 from __future__ import annotations, print_function
 
 import abc
-from abc import abstractclassmethod, abstractmethod
 import asyncio
 import copy
 import enum
 import itertools
 import os
-import backoff
-
-from pydantic import Extra, validator
-
-from pydantic.types import StrictInt, constr
-from servo.types import BaseModelConfig, HumanReadable, Numeric
 import time
+from abc import abstractclassmethod, abstractmethod
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Callable, Collection, List, NamedTuple, Optional, Dict, Any, Sequence, Tuple
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+    get_type_hints,
+    runtime_checkable,
+)
 
+import backoff
 import pydantic
-from pydantic import BaseModel, ByteSize, Field, FilePath
+from kubernetes_asyncio import client
+from kubernetes_asyncio import config as kubernetes_asyncio_config
+from kubernetes_asyncio import watch
+from kubernetes_asyncio.client.api_client import ApiClient
+from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
+from pydantic import BaseModel, ByteSize, Extra, Field, FilePath, validator
+from pydantic.types import StrictInt, constr
 
+import servo.logging
+from servo import CPU as BaseCPU
 from servo import (
     Adjustment,
     BaseChecks,
@@ -29,34 +53,29 @@ from servo import (
     CheckHandler,
     Component,
     Control,
-    CPU as BaseCPU,    
     Description,
     Duration,
     DurationProgress,
+    ErrorSeverity,
     Filter,
     License,
     Maturity,
-    Memory as BaseMemory,
+)
+from servo import Memory as BaseMemory
+from servo import (
     Replicas,
-    ErrorSeverity,
     check,
     connector,
+    get_hash,
     join_to_series,
     logger,
     multicheck,
     on_event,
-    get_hash,
     require,
-    warn
+    warn,
 )
-from kubernetes_asyncio import client, config as kubernetes_asyncio_config, watch
-from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
-from kubernetes_asyncio.client.api_client import ApiClient
-
-import servo.logging
 from servo.logging import logger
-from typing import ClassVar, Iterable, Generator, Mapping, Protocol, Type, Union, cast, get_type_hints, runtime_checkable
-from contextlib import asynccontextmanager
+from servo.types import BaseModelConfig, HumanReadable, Numeric
 
 
 class Condition(servo.logging.Mixin):

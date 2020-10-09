@@ -1,21 +1,26 @@
 import asyncio
 import json
 import os
+import ssl
 from inspect import Signature
 from pathlib import Path
-import ssl
 from typing import List
 
+import httpx
 import pytest
 import yaml
-import httpx
 from pydantic import Extra, ValidationError
 
-from servo import __version__, __codename__, connector
-from servo.configuration import BaseConfiguration, Optimizer
-from servo.connector import (
-    BaseConnector,
+from servo import BaseAssemblyConfiguration, Duration, __codename__, __version__, connector
+from servo.assembly import Assembly
+from servo.configuration import (
+    BackoffSettings,
+    BaseConfiguration,
+    Optimizer,
+    ServoConfiguration,
+    Timeouts,
 )
+from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (
     CancelEventError,
@@ -29,12 +34,10 @@ from servo.events import (
     event,
     on_event,
 )
-from servo.configuration import BackoffSettings, ServoConfiguration, Timeouts
-from servo import Duration, BaseAssemblyConfiguration
-from servo.assembly import Assembly
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
 from tests.test_helpers import MeasureConnector, environment_overrides
+
 
 def test_version():
     assert __version__
@@ -180,6 +183,7 @@ def test_get_event_handlers_all(servo: servo) -> None:
     assert list(map(lambda h: f"{h.preposition}:{h.event}", event_handlers)) == ['before:promote', 'on:promote', 'after:promote']
 
 from servo.events import event_handler, get_event
+
 
 async def test_add_event_handler_programmatically(mocker, servo: servo) -> None:
     async def fn(self, results: List[EventResult]) -> None:

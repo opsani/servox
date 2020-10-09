@@ -1,17 +1,31 @@
 from __future__ import annotations
+
 import asyncio
 import datetime
 import enum
 import functools
-import pathlib
 import json
+import pathlib
 import re
 import shlex
 import subprocess
 import sys
+import textwrap
 import time
-
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Type, Tuple, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Pattern,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import bullet
 import click
@@ -24,10 +38,10 @@ import tabulate
 import timeago
 import typer
 import yaml
-import textwrap
 
 import servo
 import servo.utilities.yaml
+
 
 class Section(str, enum.Enum):
     ASSEMBLY = "Assembly Commands"

@@ -4,16 +4,37 @@ import functools
 import hashlib
 import inspect
 import types
-
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterable, Generator, List, Optional, Pattern, Protocol, Sequence, Set, Type, TypeVar, Tuple, Union, cast, get_args, get_origin, runtime_checkable
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Pattern,
+    Protocol,
+    Sequence,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+    runtime_checkable,
+)
 
 import pydantic
+
 import servo.configuration
 import servo.logging
 import servo.types
 import servo.utilities
 from servo.types import Duration, ErrorSeverity
-
 
 __all__ = [
     "BaseChecks",

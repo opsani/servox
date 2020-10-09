@@ -1,17 +1,16 @@
-import json
-import re
 import datetime
 import enum
 import io
+import json
 import pathlib
-
+import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 
-import jsonschema
 import devtools
+import jsonschema
 import pydantic
-import servo
 
+import servo
 
 METRICS = [
     servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),

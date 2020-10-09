@@ -1,8 +1,7 @@
 import asyncio
 import datetime
 import weakref
-
-from typing import Union, Callable, Optional, List, Dict
+from typing import Callable, Dict, List, Optional, Union
 
 import servo.utilities.key_paths
 from servo.types import Duration, NoneCallable, Numeric

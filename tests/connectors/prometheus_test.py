@@ -1,10 +1,11 @@
+import datetime
+import re
+
+import httpx
 import pytest
 import respx
-import httpx
-import re
-import datetime
-
-from pydantic import ValidationError, AnyHttpUrl
+from freezegun import freeze_time
+from pydantic import AnyHttpUrl, ValidationError
 
 import servo
 from servo.connectors.prometheus import (
@@ -12,10 +13,10 @@ from servo.connectors.prometheus import (
     PrometheusConfiguration,
     PrometheusConnector,
     PrometheusMetric,
-    PrometheusRequest
+    PrometheusRequest,
 )
 from servo.types import *
-from freezegun import freeze_time
+
 
 class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):

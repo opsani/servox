@@ -1,12 +1,25 @@
-import pytest
 import re
 from datetime import datetime
 from inspect import Signature
-from servo.configuration import BaseConfiguration
-from servo.checks import BaseChecks, Check, CheckHandler, CheckHandlerResult, CheckFilter, ErrorSeverity, check, create_checks_from_iterable, require, multicheck, warn
+from typing import Callable, Iterable, List, Optional, Tuple, Union
+
+import pytest
+
+from servo.checks import (
+    BaseChecks,
+    Check,
+    CheckFilter,
+    CheckHandler,
+    CheckHandlerResult,
+    ErrorSeverity,
+    check,
+    create_checks_from_iterable,
+    multicheck,
+    require,
+    warn,
+)
 from servo.configuration import BaseConfiguration
 from servo.utilities.inspect import get_instance_methods
-from typing import Callable, Iterable, List, Tuple, Union, Optional
 
 pytestmark = pytest.mark.freeze_time('2020-08-24')
 

@@ -2,13 +2,26 @@
 consumers of the servo package.
 """
 from __future__ import annotations
+
 import abc
 import asyncio
 import datetime
 import enum
 import time
-
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple, TypeVar, Union, cast, runtime_checkable
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Protocol,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+    runtime_checkable,
+)
 
 import orjson
 import pydantic
@@ -17,6 +30,7 @@ import pygments.lexers
 import semver
 
 import servo.utilities.duration_str
+
 
 def _orjson_dumps(v, *, default, indent: Optional[int] = None, sort_keys: bool = False) -> str:
     """Serializes an input object into JSON via the `orjson` library.

@@ -13,10 +13,10 @@ import pathlib
 import sys
 import time
 import traceback
-
-from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
+from typing import Any, Awaitable, Callable, Dict, Optional, Set, Union, cast
 
 import loguru
+
 import servo.events
 
 __all__ = (

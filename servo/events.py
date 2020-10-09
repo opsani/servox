@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import collections
 import contextlib
@@ -8,17 +9,32 @@ import enum
 import functools
 import inspect
 import sys
+import typing
 import weakref
+from typing import (
+    Any,
+    AsyncContextManager,
+    Awaitable,
+    Callable,
+    Dict,
+    ForwardRef,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+    _eval_type,
+    get_args,
+    get_origin,
+)
 
 import pydantic
 import pydantic.main
 
-import typing
-from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, ForwardRef, Mapping, Optional, Sequence, Type, TypeVar, List, Union, get_origin, get_args, _eval_type
-
 import servo.utilities.inspect
 import servo.utilities.strings
-
 
 __all__ = [
     'Event',

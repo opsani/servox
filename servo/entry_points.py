@@ -7,8 +7,10 @@
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
 import dotenv
+
 import servo
 import servo.cli
+
 
 def run_cli():
     dotenv.load_dotenv(dotenv.find_dotenv(usecwd=True))

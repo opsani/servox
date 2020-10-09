@@ -1,13 +1,12 @@
 import asyncio
 import datetime
 import functools
-
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
-import httpx
 import httpcore._exceptions
-
+import httpx
 import pydantic
+
 import servo
 
 DEFAULT_BASE_URL = "http://prometheus:9090"

@@ -1,9 +1,12 @@
 # from __future__ import annotations
 import os
 from typing import List, Optional
+
 import httpx
+
 import servo
 from servo.connectors import kubernetes, prometheus
+
 # from servo import connector, configuration, checks
 # from servo.connectors import kubernetes, prometheus
 # from servo import Check, Filter, ErrorSeverity

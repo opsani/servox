@@ -4,7 +4,9 @@ import sys
 import types
 
 import pytest
+
 import servo.utilities.inspect
+
 
 class OneClass:
     def one(self) -> None:
@@ -139,6 +141,7 @@ def test_aliased_types() -> None:
 # )
 import typing
 from typing import Any, Dict, List
+
 
 def test_equal_callable_descriptors() -> None:
     import servo

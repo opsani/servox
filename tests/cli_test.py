@@ -5,15 +5,15 @@ import re
 from pathlib import Path
 
 import pytest
+import respx
 import yaml
 from freezegun import freeze_time
-import respx
 from typer import Typer
 from typer.testing import CliRunner
 
 import servo
-from servo.cli import CLI, Context, ServoCLI
 from servo import BaseConfiguration, Optimizer
+from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 

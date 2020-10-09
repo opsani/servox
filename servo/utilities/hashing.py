@@ -1,5 +1,6 @@
 import hashlib
 
+
 def get_hash(data):
     """md5 hash of Python data. This is limited to scalars that are convertible to string and container
     structures (list, dict) containing such scalars. Some data items are not distinguishable, if they have

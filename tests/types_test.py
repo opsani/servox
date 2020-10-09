@@ -1,9 +1,22 @@
 from datetime import datetime, timedelta
+from typing import Optional, Union
 
 import pytest
-from pydantic import create_model, StrictInt, StrictFloat
-from typing import Union, Optional
-from servo.types import Adjustment, Component, Control, DataPoint, Duration, DurationProgress, Measurement, Metric, TimeSeries, Unit, InstanceTypeUnits
+from pydantic import StrictFloat, StrictInt, create_model
+
+from servo.types import (
+    Adjustment,
+    Component,
+    Control,
+    DataPoint,
+    Duration,
+    DurationProgress,
+    InstanceTypeUnits,
+    Measurement,
+    Metric,
+    TimeSeries,
+    Unit,
+)
 
 
 class TestDuration:
@@ -76,8 +89,10 @@ def test_adjustment_str() -> None:
 
 # TODO: Move to api_test.py
 def test_parse_measure_command_response_including_units() -> None:
-    from pydantic import parse_obj_as
     from typing import Union
+
+    from pydantic import parse_obj_as
+
     from servo.api import CommandResponse, MeasureParams, Status
     payload = {
         'cmd': 'MEASURE',
@@ -209,8 +224,20 @@ class TestControl:
         assert control.delay == Duration("2m3s")
 
 import abc
-from servo.types import Setting, EnumSetting, RangeSetting, CPU, Memory, Replicas, InstanceType, Numeric
+
 import pydantic
+
+from servo.types import (
+    CPU,
+    EnumSetting,
+    InstanceType,
+    Memory,
+    Numeric,
+    RangeSetting,
+    Replicas,
+    Setting,
+)
+
 
 class BasicSetting(Setting):
     name = "foo"

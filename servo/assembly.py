@@ -1,18 +1,17 @@
 from __future__ import annotations
+
 import contextvars
 import json
 import os
 import pathlib
 import re
-import yaml
-
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import pydantic
 import pydantic.json
+import yaml
 
 from servo import configuration, connector, servo, utilities
-
 
 __all__ = [
     "Assembly",

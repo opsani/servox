@@ -1,6 +1,5 @@
 import asyncio
 import signal
-
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
@@ -17,9 +16,8 @@ from servo.errors import ConnectorError
 from servo.events import EventResult
 from servo.logging import ProgressHandler, logger
 from servo.servo import Events, Servo
-from servo.types import Adjustment, Control, Duration, Description, Measurement
+from servo.types import Adjustment, Control, Description, Duration, Measurement
 from servo.utilities import commandify, value_for_key_path
-
 
 DEFAULT_CONTEXT = "__default__"
 

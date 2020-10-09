@@ -1,5 +1,7 @@
 import pytest
-from servo.utilities.associations import Mixin, Associative
+
+from servo.utilities.associations import Associative, Mixin
+
 
 class AssociativeObject(Mixin):
     pass

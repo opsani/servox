@@ -12,16 +12,19 @@ from typer.testing import CliRunner
 # Add the devtools debug() function globally in tests
 try:
     import builtins
+
     from devtools import debug
 
     builtins.debug = debug
 except ImportError:
     pass
 
-from servo.configuration import Optimizer
-from servo.cli import ServoCLI
-from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 from kubernetes_asyncio import config as kubernetes_asyncio_config
+
+from servo.cli import ServoCLI
+from servo.configuration import Optimizer
+from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
+
 
 def pytest_addoption(parser):
     parser.addoption(
