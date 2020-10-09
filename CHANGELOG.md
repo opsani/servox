@@ -34,6 +34,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Renamed the `filter_` argument of check runners to `matching`.
 - Millicore values are now serialized to strings as simple integers when evenly
   divisible by 1000 (e.g., `str(Millicore(3000)) == "3"`).
+- The canonical coding style for the project has been evolved to directly
+  import packages and modules instead of class and functions.
 
 ### Fixed
 
