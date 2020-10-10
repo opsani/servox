@@ -365,9 +365,9 @@ def test_creating_event_programmatically(random_string: str) -> None:
 
 
 def test_creating_event_programmatically_from_callable(random_string: str) -> None:
-    create_event(random_string, test_event)
-    event = _events[random_string]
-    assert event.name == random_string
+    create_event("test_creating_event_programmatically_from_callable", test_event)
+    event = _events["test_creating_event_programmatically_from_callable"]
+    assert event.name == "test_creating_event_programmatically_from_callable"
     assert event.signature == Signature.from_callable(test_event)
 
 

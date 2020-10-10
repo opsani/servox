@@ -188,16 +188,6 @@ def test_show_events_all(
     assert re.search("^components\\s.+", result.stdout, flags=re.MULTILINE)
 
 
-def test_show_events_all(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --all", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("after measure\\s+Measure", result.stdout)
-    assert len(result.stdout.split("\n")) > 3
-
-
 def test_show_events_includes_servo(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
 ) -> None:
