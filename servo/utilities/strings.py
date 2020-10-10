@@ -1,3 +1,6 @@
+"""Miscellaneous utility functions for working with strings.
+"""
+
 from typing import Sequence
 
 

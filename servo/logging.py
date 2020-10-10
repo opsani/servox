@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
 import loguru
 
+import servo.assembly
 import servo.events
 
 __all__ = (
@@ -240,6 +241,11 @@ class Formatter:
             event_context = servo.events._event_context_var.get()
             if event_context:
                 component += f"[{event_context}]"
+
+            # If we are running multiservo, annotate that as well
+            assembly = servo.assembly.Assembly.current()
+            if len(assembly.servos) > 1 and servo.servo.Servo.current():
+                component = f"{servo.servo.Servo.current().config.optimizer.id}({component})"
 
             extra["component"] = component
 

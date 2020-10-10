@@ -18,7 +18,7 @@ from servo import types
 __all__ = [
     "AbstractBaseConfiguration",
     "BaseConfiguration",
-    "BaseAssemblyConfiguration",
+    "BaseServoConfiguration",
     "Optimizer",
     "ServoConfiguration",
 ]
@@ -412,15 +412,24 @@ class ServoConfiguration(BaseConfiguration):
     class Config(servo.types.BaseModelConfig):
         validate_assignment = True
 
-class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
-    """
-    Abstract base class for Servo assembly settings.
 
-    Note that the concrete BaseAssemblyConfiguration class is built dynamically at runtime
+class BaseServoConfiguration(BaseConfiguration, abc.ABC):
+    """
+    Abstract base class for Servo instances.
+
+    Note that the concrete BaseServoConfiguration class is built dynamically at runtime
     based on the avilable connectors and configuration in effect.
 
     See `Assembly` for details on how the concrete model is built.
     """
+
+    name: Optional[str]
+    description: Optional[str]
+
+    optimizer: Optional[Optimizer] = pydantic.Field(
+        None, description="Configuration of the Servo connector"
+    )
+    """The Opsani optimizer backend to collaborate with."""
 
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
@@ -450,8 +459,8 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
 
     @classmethod
     def generate(
-        cls: Type["BaseAssemblyConfiguration"], **kwargs
-    ) -> Optional["BaseAssemblyConfiguration"]:
+        cls: Type["BaseServoConfiguration"], **kwargs
+    ) -> Optional["BaseServoConfiguration"]:
         """
         Generates configuration for the servo assembly.
         """
@@ -478,7 +487,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
         if isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
             try:
-                decoded_value = BaseAssemblyConfiguration.__config__.json_loads(connectors)  # type: ignore
+                decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
             except ValueError as e:
                 raise ValueError(f'error parsing JSON for "{connectors}"') from e
 

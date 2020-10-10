@@ -148,7 +148,7 @@ class Servo(servo.connector.BaseConnector):
     and are instead built through the `Assembly.assemble` method.
     """
 
-    config: servo.configuration.BaseAssemblyConfiguration
+    config: servo.configuration.BaseServoConfiguration
     """Configuration of the Servo assembly.
 
     Note that the configuration is built dynamically at Servo assembly time.
@@ -161,17 +161,31 @@ class Servo(servo.connector.BaseConnector):
     """
 
     @staticmethod
-    def current() -> "Servo":
+    def current() -> Optional["Servo"]:
         """Return the active servo for the current execution context.
 
         The value is managed by a contextvar and is concurrency safe.
         """
-        return _servo_context_var.get()
+        return _servo_context_var.get(None)
 
     @staticmethod
-    def set_current(servo_: "Servo") -> None:
-        """Set the current servo execution context."""
-        _servo_context_var.set(servo_)
+    def set_current(servo_: "Servo") -> contextvars.Token:
+        """Set the current servo execution context.
+        
+        Returns:
+            A Token object object that can be used for restoring the previously active servo.
+        """
+        return _servo_context_var.set(servo_)
+
+    async def dispatch_event(self, *args, **kwargs) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+        prev_servo_token = _servo_context_var.set(self)
+        try:
+            results = await super().dispatch_event(*args, **kwargs)
+        finally:
+            _servo_context_var.reset(prev_servo_token)
+
+        return results
+
 
     def __init__(
         self, *args, connectors: List[servo.connector.BaseConnector], **kwargs

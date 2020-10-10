@@ -24,21 +24,22 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         self.assembly = assembly
 
         # initialize default servo options if not configured
-        if self.config.servo is None:
-            self.config.servo = servo.ServoConfiguration()
+        # if self.config.servo is None:
+        #     self.config.servo = servo.ServoConfiguration()
 
         super().__init__()
 
     @property
     def optimizer(self) -> servo.Optimizer:
-        return self.servo.optimizer
+        return self.servo.config.optimizer
 
     @property
     def servo(self) -> servo.Servo:
-        return self.assembly.servo
+        # return self.assembly.servo
+        return servo.servo.Servo.current()
 
     @property
-    def config(self) -> servo.BaseAssemblyConfiguration:
+    def config(self) -> servo.BaseServoConfiguration:
         return self.servo.config
 
     @property
@@ -85,13 +86,13 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED
             )
             typer.secho(f"base url: {base_url}")
-        if self.config.servo.proxies:
-            proxies = typer.style(
-                f"{devtools.pformat(self.config.servo.proxies)}",
-                bold=True,
-                fg=typer.colors.CYAN,
-            )
-            typer.secho(f"proxies: {proxies}")
+        # if self.config.servo.proxies:
+        #     proxies = typer.style(
+        #         f"{devtools.pformat(self.config.servo.proxies)}",
+        #         bold=True,
+        #         fg=typer.colors.CYAN,
+        #     )
+        #     typer.secho(f"proxies: {proxies}")
         typer.secho()
 
     async def describe(self) -> Description:
@@ -207,11 +208,12 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
-    async def main(self) -> None:
+    async def main(self, servo_: servo.servo.Servo) -> None:
         # Main run loop for processing commands from the optimizer
         async def main_loop() -> None:
             while True:
                 try:
+                    servo.servo.Servo.set_current(servo_)
                     status = await self.exec_command()
                     if status.status == servo.api.UNEXPECTED_EVENT:
                         self.logger.warning(
@@ -243,11 +245,13 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 asyncio.create_task(main_loop(), name="main loop")
 
         # Setup logging
+        servo.servo.Servo.set_current(servo_)
         self.progress_handler = servo.logging.ProgressHandler(
             self.servo.report_progress, self.logger.warning, handle_progress_exception
         )
         self.logger.add(self.progress_handler.sink, catch=True)
 
+        self.display_banner()
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
@@ -272,7 +276,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 self.connected = True
 
             self.logger.info("Dispatching startup event...")
-            await self.servo.startup()
+            await servo_.startup()
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
@@ -293,7 +297,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             self.logger.exception(f"Exception occurred during GOODBYE request")
 
         self.logger.info("Dispatching shutdown event...")
-        await self.servo.shutdown()
+        await self.assembly.shutdown()
         await self.progress_handler.shutdown()
 
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -317,8 +321,6 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         asyncio.create_task(self.shutdown(loop))
 
     def run(self) -> None:
-        self.display_banner()
-
         # Setup async event loop
         loop = asyncio.get_event_loop()
 
@@ -331,7 +333,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         loop.set_exception_handler(self.handle_exception)
 
         try:
-            loop.create_task(self.main())
+            for servo_ in self.assembly.servos:
+                loop.create_task(self.main(servo_))
             loop.run_forever()
         finally:
             loop.close()
