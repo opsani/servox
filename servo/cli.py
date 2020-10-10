@@ -659,7 +659,6 @@ class ServoCLI(CLI):
         self.add_config_commands()
         self.add_assembly_commands()
         self.add_connector_commands()
-        self.add_other_commands()
 
     @property
     def logger(self) -> loguru.Logger:
@@ -1800,44 +1799,7 @@ class ServoCLI(CLI):
         for cli in ConnectorCLI.__clis__:
             self.add_cli(cli, section=Section.CONNECTORS)
 
-    def add_other_commands(self, section=Section.OTHER) -> None:
-        # TODO: This should auto-detect if we are in a dev copy
-        dev_cli = CLI(name="dev", help="Developer utilities", callback=None)
-
-        @dev_cli.command()
-        def test() -> None:
-            """Run automated tests"""
-            _run(
-                "pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests"
-            )
-
-        @dev_cli.command()
-        def lint() -> None:
-            """Emit opinionated linter warnings and suggestions"""
-            cmds = [
-                "flake8 servo",
-                "mypy servo",
-                "black --check servo --diff",
-                "isort --recursive --check-only servo",
-            ]
-            for cmd in cmds:
-                _run(cmd)
-
-        @dev_cli.command()
-        def format() -> None:
-            """Apply automatic formatting to the codebase"""
-            cmds = [
-                "isort --recursive  --force-single-line-imports servo tests",
-                "autoflake --recursive --remove-all-unused-imports --remove-unused-variables --in-place servo tests",
-                "black servo tests",
-                "isort --recursive servo tests",
-            ]
-            for cmd in cmds:
-                _run(cmd)
-
-        self.add_cli(dev_cli, section=Section.OTHER)
-
-        @self.command(section=section)
+        @self.command(section=Section.OTHER)
         def version(
             context: Context,
             connector: Optional[str] = typer.Argument(
