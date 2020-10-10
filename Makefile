@@ -40,15 +40,20 @@ format:
 		--remove-unused-variables    \
 		--in-place servo tests
 
+.PHONY: typecheck
+typecheck:
+	poetry run mypy servo || true
+
+lint-docs:
+	poetry run flake8-markdown "**/*.md" || true
+
 .PHONY: lint
-lint:
-	poetry run flake8 .
-	poetry run mypy .
-	poetry run isort --recursive --check-only .
+lint: typecheck
+	poetry run flakehell lint --count
 
 .PHONY: test
 test:
-	poetry run pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests
+	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg tests
 
 .PHONY: pre-commit
 pre-commit:

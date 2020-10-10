@@ -230,7 +230,8 @@ class Formatter:
                 component = "servo"
 
             # Append event context if available
-            if event_context := servo.events._event_context_var.get():
+            event_context = servo.events._event_context_var.get()
+            if event_context:
                 component += f"[{event_context}]"
 
             extra["component"] = component
