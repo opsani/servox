@@ -39,11 +39,17 @@ format:
 		--remove-all-unused-imports  \
 		--remove-unused-variables    \
 		--in-place servo tests
-	poetry run black servo tests
 
 .PHONY: lint
 lint:
-	poetry run flake8 servo
-	poetry run mypy servo
-	poetry run black --check servo --diff
-	poetry run isort --recursive --check-only servo
+	poetry run flake8 .
+	poetry run mypy .
+	poetry run isort --recursive --check-only .
+
+.PHONY: test
+test:
+	poetry run pytest --cov=servo --cov=tests --cov-report=term-missing --cov-config=setup.cfg tests
+
+.PHONY: pre-commit
+pre-commit:
+	poetry run pre-commit run --hook-stage manual --all-files

@@ -1,0 +1,6 @@
+["pyproject.toml".tool.isort]
+profile = "hug"
+
+["setup.cfg".flake8]
+max-line-length = 120
+inline-quotes = "double"
