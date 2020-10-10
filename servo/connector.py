@@ -1,42 +1,40 @@
 from __future__ import annotations
+
 import abc
 import importlib
 import re
-from pkg_resources import EntryPoint, iter_entry_points
-from typing import (
-    Any,
-    ClassVar,
-    IO,
-    Iterable,
-    Generator,
-    Optional,
-    Set,
-    Type,
-    Tuple,
-    get_type_hints,
-)
+from typing import Any, ClassVar, Generator, Iterable, Optional, Set, Tuple, Type, get_type_hints
 
 import loguru
-from pydantic import (
-    BaseModel,
-    HttpUrl,
-    root_validator,
-    validator,
-)
+import pkg_resources
+import pydantic
 
-
-from servo import api, events, logging, repeating
-from servo.configuration import BaseConfiguration, Optimizer
-from servo.events import EventHandler, EventResult
+import servo.api
+import servo.events
+import servo.logging
+import servo.repeating
+import servo.utilities.associations
 from servo.types import *
-from servo.utilities import associations
 
+__all__ = [
+    "BaseConnector",
+    "metadata",
+]
 
 _connector_subclasses: Set[Type["BaseConnector"]] = set()
 
 
 # NOTE: Initialize mixins first to control initialization graph
-class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, repeating.Mixin, BaseModel, abc.ABC, metaclass=events.Metaclass):
+class BaseConnector(
+    servo.utilities.associations.Mixin,
+    servo.api.Mixin,
+    servo.events.Mixin,
+    servo.logging.Mixin,
+    servo.repeating.Mixin,
+    pydantic.BaseModel,
+    abc.ABC,
+    metaclass=servo.events.Metaclass,
+):
     """
     Connectors expose functionality to Servo assemblies by connecting external services and resources.
     """
@@ -60,7 +58,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     """Optional textual description of the connector.
     """
 
-    homepage: ClassVar[Optional[HttpUrl]] = None
+    homepage: ClassVar[Optional[pydantic.HttpUrl]] = None
     """Link to the homepage of the connector.
     """
 
@@ -76,7 +74,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     ##
     # Instance configuration
 
-    optimizer: Optional[Optimizer]
+    optimizer: Optional[servo.configuration.Optimizer]
     """Name of the command for interacting with the connector instance via the CLI.
 
     Note that optimizers are attached as configuration to Connector instance because
@@ -84,14 +82,14 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
     provided via environment variablesm, commandline arguments, or secrets management.
     """
 
-    config: BaseConfiguration
+    config: servo.configuration.BaseConfiguration
     """Configuration for the connector set explicitly or loaded from a config file.
     """
 
     ##
     # Validators
 
-    @root_validator(pre=True)
+    @pydantic.root_validator(pre=True)
     @classmethod
     def validate_metadata(cls, v):
         assert cls.name is not None, "name must be provided"
@@ -107,10 +105,12 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
             if name := _name_for_connector_class(cls):
                 cls.__default_name__ = name
             else:
-                raise ValueError(f"A default connector name could not be constructed for class '{cls}'")
+                raise ValueError(
+                    f"A default connector name could not be constructed for class '{cls}'"
+                )
         return v
 
-    @validator("name")
+    @pydantic.validator("name")
     @classmethod
     def validate_name(cls, v):
         assert bool(
@@ -119,7 +119,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         return v
 
     @classmethod
-    def config_model(cls) -> Type["BaseConfiguration"]:
+    def config_model(cls) -> Type[servo.configuration.BaseConfiguration]:
         """
         Return the configuration model backing the connector.
 
@@ -130,7 +130,7 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         config_cls = hints["config"]
         return config_cls
 
-    def __init_subclass__(cls: Type['BaseConnector'], **kwargs):
+    def __init_subclass__(cls: Type["BaseConnector"], **kwargs):
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
@@ -146,30 +146,35 @@ class BaseConnector(associations.Mixin, api.Mixin, events.Mixin, logging.Mixin, 
         name: Optional[str] = None,
         **kwargs,
     ):
-        name = (
-            name if name is not None else self.__class__.__default_name__
-        )
+        name = name if name is not None else self.__class__.__default_name__
         super().__init__(
-            *args, name=name, **kwargs,
+            *args,
+            name=name,
+            **kwargs,
         )
 
     def __hash__(self):
-        return hash((self.name, id(self),))
+        return hash(
+            (
+                self.name,
+                id(self),
+            )
+        )
 
     @property
     def api_client_options(self) -> Dict[str, Any]:
         return self.__dict__.get("api_client_options", super().api_client_options)
 
     @property
-    def logger(self) -> loguru.Logger:
+    def logger(self) -> "loguru.Logger":
         """Returns a contextualized logger"""
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
         return super().logger.bind(connector=self)
 
 
-EventResult.update_forward_refs(BaseConnector=BaseConnector)
-EventHandler.update_forward_refs(BaseConnector=BaseConnector)
+servo.events.EventResult.update_forward_refs(BaseConnector=BaseConnector)
+servo.events.EventHandler.update_forward_refs(BaseConnector=BaseConnector)
 
 
 def metadata(
@@ -177,7 +182,7 @@ def metadata(
     description: Optional[str] = None,
     version: Optional[Union[str, Version]] = None,
     *,
-    homepage: Optional[Union[str, HttpUrl]] = None,
+    homepage: Optional[Union[str, pydantic.HttpUrl]] = None,
     license: Optional[Union[str, License]] = None,
     maturity: Optional[Union[str, Maturity]] = None,
 ):
@@ -190,7 +195,9 @@ def metadata(
         if name:
             if isinstance(name, tuple):
                 if len(name) != 2:
-                    raise ValueError(f"Connector names given as tuples must contain exactly 2 elements: full name and alias")
+                    raise ValueError(
+                        f"Connector names given as tuples must contain exactly 2 elements: full name and alias"
+                    )
                 cls.name, cls.__default_name__ = name
             else:
                 cls.name = name
@@ -203,15 +210,23 @@ def metadata(
         if homepage:
             cls.homepage = homepage
         if license:
-            cls.license = license if isinstance(license, License) else License.from_str(license)
+            cls.license = (
+                license if isinstance(license, License) else License.from_str(license)
+            )
         if maturity:
-            cls.maturity = maturity if isinstance(maturity, Maturity) else Maturity.from_str(maturity)
+            cls.maturity = (
+                maturity
+                if isinstance(maturity, Maturity)
+                else Maturity.from_str(maturity)
+            )
         return cls
 
     return decorator
 
+
 ##
 # Utility functions
+
 
 def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
     for name in (cls.name, cls.__name__):
@@ -237,8 +252,8 @@ class ConnectorLoader:
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
         self.group = group
 
-    def iter_entry_points(self) -> Generator[EntryPoint, None, None]:
-        yield from iter_entry_points(group=self.group, name=None)
+    def iter_entry_points(self) -> Generator[pkg_resources.EntryPoint, None, None]:
+        yield from pkg_resources.iter_entry_points(group=self.group, name=None)
 
     def load(self) -> Generator[Any, None, None]:
         for entry_point in self.iter_entry_points():
@@ -271,6 +286,7 @@ def _normalize_connectors(connectors: Optional[Iterable]) -> Optional[Iterable]:
         return normalized_dict
     else:
         raise ValueError(f"Invalid connectors value: {connectors}")
+
 
 def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
     if connectors is None:
@@ -328,9 +344,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             if name in _reserved_keys():
                 if c := _default_routes().get(name, None):
                     if connector_class != c:
-                        raise ValueError(
-                            f'Name "{name}" is reserved by `{c.__name__}`'
-                        )
+                        raise ValueError(f'Name "{name}" is reserved by `{c.__name__}`')
                 else:
                     raise ValueError(f'Name "{name}" is reserved')
 
@@ -342,6 +356,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
         raise ValueError(
             f"Unexpected type `{type(connectors).__qualname__}`` encountered (connectors: {connectors})"
         )
+
 
 def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector"]]:
     if not isinstance(connector, str):
@@ -379,6 +394,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector
 
     return None
 
+
 def _validate_class(connector: type) -> bool:
     if connector is None or not isinstance(connector, type):
         return False
@@ -400,6 +416,7 @@ def _reserved_keys() -> List[str]:
 
 def _default_routes() -> Dict[str, Type[BaseConnector]]:
     from servo.servo import Servo
+
     routes = {}
     for connector in _connector_subclasses:
         if connector is not Servo:

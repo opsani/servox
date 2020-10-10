@@ -95,15 +95,15 @@ class SomeConnector(BaseConnector):
         @check("one")
         def check_one() -> None:
             ...
-        
+
         @check("two")
         def check_two() -> None:
             ...
-        
+
         @check("three")
         def check_three() -> None:
             ...
-        
+
         return [check_one(), check_two(), check_three()]
 ```
 
@@ -116,11 +116,11 @@ class SomeChecks(BaseChecks):
     @check("one")
     async def check_one(self) -> None:
         ...
-    
+
     @check("two")
     async def check_two(self) -> None:
         ...
-    
+
     @check("three")
     async def check_three(self) -> None:
         ...
@@ -140,7 +140,7 @@ class ValidExampleChecks(BaseChecks):
     @check("valid")
     async def check_valid(self) -> None:
         ...
-    
+
     def _reverse_string(self, input: str) -> str:
         return input.reverse()
 
@@ -148,10 +148,10 @@ class InvalidExampleChecks(BaseChecks):
     # Forgot to decorate -- wrong return value
     async def check_valid(self) -> None:
         ...
-    
+
     def not_a_check(self) -> None:
         ...
-    
+
     @check("not checkable return value")
     async def check_invalid_return(self) -> int:
         # Cannot be coerced into a check result
@@ -174,19 +174,19 @@ class KubernetesChecks(BaseChecks):
     @check("API connectivity", required=True)
     def check_api(self) -> None:
         raise RuntimeError("can't reach API")
-    
+
     @check("read namespace")
     def check_read_namespace(self) -> None:
         ...
-    
+
     @check("has running Pods")
     def check_pods(self) -> None:
         ...
-    
+
     @check("read deployments", required=True)
     def check_read_deployments(self) -> None:
         raise RuntimeError("can't read Deployments")
-    
+
     @check("containers have resource limits")
     def check_resource_limits(self) -> None:
         ...
@@ -203,18 +203,18 @@ To support these enhancements, the method signature of the `check` event handler
 ```python
 class NewEventConnector(BaseConnector):
     @on_event()
-    async def check(self, 
-        filter_: Optional[Filter] = None, 
+    async def check(self,
+        matching: Optional[Filter] = None,
         halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
         ...
 ```
 
-There are a few things going on here. We have two new positional parameters: `filter_` and `halt_on`. Let's look at these one at a time.
+There are a few things going on here. We have two new positional parameters: `matching` and `halt_on`. Let's look at these one at a time.
 
 ### Filtering checks
 
-The `filter_` argument is an instance of `servo.checks.Filter` which looks like this (edited down for brevity and clarity):
+The `matching` argument is an instance of `servo.checks.Filter` which looks like this (edited down for brevity and clarity):
 
 ```python
 class Filter(BaseModel):
@@ -365,18 +365,18 @@ class PrometheusConnector(BaseConnector):
     config: PrometheusConfiguration
 
     @on_event()
-    async def check(self, 
-        filter_: Optional[Filter] = None, 
+    async def check(self,
+        matching: Optional[Filter] = None,
         halt_on: HaltOnFailed = HaltOnFailed.requirement
     ) -> List[Check]:
-        start, end = datetime.now() - timedelta(minutes=10), datetime.now()        
+        start, end = datetime.now() - timedelta(minutes=10), datetime.now()
         async def check_query(metric: PrometheusMetric) -> str:
             result = await self._query_prom(metric, start, end)
             return f"returned {len(result)} TimeSeries readings"
 
         # wrap all queries into checks and verify that they work
         PrometheusChecks = create_checks_from_iterable(check_query, self.config.metrics)
-        return await PrometheusChecks.run(self.config, filter_, halt_on=halt_on)
+        return await PrometheusChecks.run(self.config, matching=matching, halt_on=halt_on)
 ```
 
 Here the `check_query` inner function is going to be used just like earlier examples that were "checkified" via the `@check` decorator and the `self.config.metrics` collection is going to be treated like a list of methods in a `BaseChecks` subclass.
@@ -393,7 +393,7 @@ The `servo.checks.Checkable` protocol defines a single method called `__check__`
 
 ### Safe and productive by default
 
-The checks subsystem works really hard to make the easy thing delightful and the wrong impossible. There is extensive enforcement around type hint contracts to avoid typo bugs. The code is extensively documented and covered with tests. 
+The checks subsystem works really hard to make the easy thing delightful and the wrong impossible. There is extensive enforcement around type hint contracts to avoid typo bugs. The code is extensively documented and covered with tests.
 
 ## Open Questions
 

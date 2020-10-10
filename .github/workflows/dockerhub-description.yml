@@ -18,4 +18,3 @@ jobs:
         DOCKERHUB_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         DOCKERHUB_REPOSITORY: opsani/servox
         README_FILEPATH: ./docs/README-DOCKER_HUB.md
-        

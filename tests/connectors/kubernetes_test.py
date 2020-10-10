@@ -1,23 +1,44 @@
-from pydantic.error_wrappers import ValidationError
-import pytest
+from typing import Type
 
-from kubernetes_asyncio import client
 import pydantic
+import pytest
+from kubernetes_asyncio import client
+from pydantic import BaseModel
+from pydantic.error_wrappers import ValidationError
 
 from servo.api import descriptor_to_adjustments
-from servo.connectors.kubernetes import CanaryOptimization, Container, CPU, CanaryOptimizationStrategyConfiguration, DefaultOptimizationStrategyConfiguration, Deployment, ResourceRequirements, Memory, Replicas, DeploymentConfiguration, ContainerConfiguration, KubernetesConfiguration, KubernetesConnector, Replicas, Pod, FailureMode, DNSSubdomainName, DNSLabelName, ContainerTagName, OptimizationStrategy
-from servo.connectors.kubernetes import KubernetesChecks, Millicore
-
-from servo.types import Adjustment, Component, Setting, HumanReadable
+from servo.connectors.kubernetes import (
+    CPU,
+    CanaryOptimization,
+    CanaryOptimizationStrategyConfiguration,
+    Container,
+    ContainerConfiguration,
+    ContainerTagName,
+    DefaultOptimizationStrategyConfiguration,
+    Deployment,
+    DeploymentConfiguration,
+    DNSLabelName,
+    DNSSubdomainName,
+    KubernetesChecks,
+    KubernetesConfiguration,
+    KubernetesConnector,
+    Memory,
+    Millicore,
+    OptimizationStrategy,
+    Pod,
+    Replicas,
+    ResourceRequirements,
+)
+from servo.types import Adjustment
 from tests.test_helpers import *
-from pydantic import BaseModel
-from typing import Type
+
 
 class TestDNSSubdomainName:
     @pytest.fixture
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
             name: DNSSubdomainName
+
         return Model
 
     def test_cannot_be_blank(self, model) -> None:
@@ -29,11 +50,11 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': 'ensure this value has at least 1 characters',
-            'type': 'value_error.any_str.min_length',
-            'ctx': {
-                'limit_value': 1,
+            "loc": ("name",),
+            "msg": "ensure this value has at least 1 characters",
+            "type": "value_error.any_str.min_length",
+            "ctx": {
+                "limit_value": 1,
             },
         } in e.value.errors()
 
@@ -50,14 +71,13 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': 'ensure this value has at most 253 characters',
-            'type': 'value_error.any_str.max_length',
-            'ctx': {
-                'limit_value': 253,
+            "loc": ("name",),
+            "msg": "ensure this value has at most 253 characters",
+            "type": "value_error.any_str.max_length",
+            "ctx": {
+                "limit_value": 253,
             },
         } in e.value.errors()
-
 
     def test_can_only_contain_alphanumerics_hyphens_and_dots(self, model) -> None:
         valid_name = "abcd1234.-sss"
@@ -68,11 +88,11 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSSubdomainName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSSubdomainName.regex.pattern,
             },
         } in e.value.errors()
 
@@ -85,11 +105,11 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSSubdomainName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSSubdomainName.regex.pattern,
             },
         } in e.value.errors()
 
@@ -102,11 +122,11 @@ class TestDNSSubdomainName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSSubdomainName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSSubdomainName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSSubdomainName.regex.pattern,
             },
         } in e.value.errors()
 
@@ -116,6 +136,7 @@ class TestDNSLabelName:
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
             name: DNSLabelName
+
         return Model
 
     def test_cannot_be_blank(self, model) -> None:
@@ -127,11 +148,11 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': 'ensure this value has at least 1 characters',
-            'type': 'value_error.any_str.min_length',
-            'ctx': {
-                'limit_value': 1,
+            "loc": ("name",),
+            "msg": "ensure this value has at least 1 characters",
+            "type": "value_error.any_str.min_length",
+            "ctx": {
+                "limit_value": 1,
             },
         } in e.value.errors()
 
@@ -148,14 +169,13 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': 'ensure this value has at most 63 characters',
-            'type': 'value_error.any_str.max_length',
-            'ctx': {
-                'limit_value': 63,
+            "loc": ("name",),
+            "msg": "ensure this value has at most 63 characters",
+            "type": "value_error.any_str.max_length",
+            "ctx": {
+                "limit_value": 63,
             },
         } in e.value.errors()
-
 
     def test_can_only_contain_alphanumerics_and_hyphens(self, model) -> None:
         valid_name = "abcd1234-sss"
@@ -166,11 +186,11 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSLabelName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSLabelName.regex.pattern,
             },
         } in e.value.errors()
 
@@ -183,11 +203,11 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSLabelName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSLabelName.regex.pattern,
             },
         } in e.value.errors()
 
@@ -200,19 +220,21 @@ class TestDNSLabelName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': f'string does not match regex "{DNSLabelName.regex.pattern}"',
-            'type': 'value_error.str.regex',
-            'ctx': {
-                'pattern': DNSLabelName.regex.pattern,
+            "loc": ("name",),
+            "msg": f'string does not match regex "{DNSLabelName.regex.pattern}"',
+            "type": "value_error.str.regex",
+            "ctx": {
+                "pattern": DNSLabelName.regex.pattern,
             },
         } in e.value.errors()
+
 
 class TestContainerTagName:
     @pytest.fixture
     def model(self) -> Type[BaseModel]:
         class Model(BaseModel):
             name: ContainerTagName
+
         return Model
 
     def test_cant_be_more_than_128_characters(self, model) -> None:
@@ -224,11 +246,11 @@ class TestContainerTagName:
             model(name=invalid_name)
         assert e
         assert {
-            'loc': ('name',),
-            'msg': 'ensure this value has at most 128 characters',
-            'type': 'value_error.any_str.max_length',
-            'ctx': {
-                'limit_value': 128,
+            "loc": ("name",),
+            "msg": "ensure this value has at most 128 characters",
+            "type": "value_error.any_str.max_length",
+            "ctx": {
+                "limit_value": 128,
             },
         } in e.value.errors()
 
@@ -242,10 +264,13 @@ class TestContainerTagName:
             ("image/tag", True),
             ("image", True),
             ("image:v1.1.1-patch", True),
-            ("ubuntu@sha256:45b23dee08af5e43a7fea6c4cf9c25ccf269ee113168c19722f87876677c5cb2", True),
+            (
+                "ubuntu@sha256:45b23dee08af5e43a7fea6c4cf9c25ccf269ee113168c19722f87876677c5cb2",
+                True,
+            ),
             ("-", False),
             (".", False),
-        ]
+        ],
     )
     def test_tags(self, model, tag_name, valid) -> None:
         if valid:
@@ -255,19 +280,22 @@ class TestContainerTagName:
                 model(name=tag_name)
             assert e
             assert {
-                'loc': ('name',),
-                'msg': f'string does not match regex "{ContainerTagName.regex.pattern}"',
-                'type': 'value_error.str.regex',
-                'ctx': {
-                    'pattern': ContainerTagName.regex.pattern,
+                "loc": ("name",),
+                "msg": f'string does not match regex "{ContainerTagName.regex.pattern}"',
+                "type": "value_error.str.regex",
+                "ctx": {
+                    "pattern": ContainerTagName.regex.pattern,
                 },
             } in e.value.errors()
+
 
 class TestEnvironmentConfiguration:
     pass
 
+
 class TestCommandConfiguration:
     pass
+
 
 class TestKubernetesConfiguration:
     @pytest.fixture
@@ -277,7 +305,12 @@ class TestKubernetesConfiguration:
     def test_cascading_defaults(self, config: KubernetesConfiguration) -> None:
         # Verify that by default we get a null namespace
         assert DeploymentConfiguration.__fields__["namespace"].default is None
-        assert DeploymentConfiguration(name="testing", containers=[], replicas=Replicas(min=0, max=1)).namespace is None
+        assert (
+            DeploymentConfiguration(
+                name="testing", containers=[], replicas=Replicas(min=0, max=1)
+            ).namespace
+            is None
+        )
 
         # Verify that we inherit when nested
         assert config.namespace == "default"
@@ -308,37 +341,28 @@ class TestKubernetesConfiguration:
         [
             # CPU in millicores
             ("deployments[0].containers[0].cpu.min", "250m"),
-            ("deployments[0].containers[0].cpu.max", "4000m"),
+            ("deployments[0].containers[0].cpu.max", "4"),
             ("deployments[0].containers[0].cpu.step", "125m"),
-
             # Memory
             ("deployments[0].containers[0].memory.min", "256.0MiB"),
             ("deployments[0].containers[0].memory.max", "4.0GiB"),
             ("deployments[0].containers[0].memory.step", "128.0MiB"),
-        ]
+        ],
     )
-    def test_generate_emits_human_readable_values(self, yaml_path, expected_value) -> None:
+    def test_generate_emits_human_readable_values(
+        self, yaml_path, expected_value
+    ) -> None:
         # import yamlpath
         config = KubernetesConfiguration.generate()
 
         # assert yaml_key_path(config.yaml(), key_path) == expected_value
 
-        import sys
-
-        from ruamel.yaml import YAML
-        from ruamel.yaml.parser import ParserError
-
-        import yamlpath.patches
-        from yamlpath.func import get_yaml_data, get_yaml_editor
-        from yamlpath.wrappers import ConsolePrinter
-        from yamlpath import Processor
-        from yamlpath import YAMLPath
-        from yamlpath.exceptions import YAMLPathException
+        from yamlpath import Processor, YAMLPath
+        from yamlpath.func import get_yaml_editor
 
         # Process command-line arguments and initialize the output writer
         # args = processcli()
         # log = ConsolePrinter(args)
-
         # Prep the YAML parser and round-trip editor (tweak to your needs)
         yaml = get_yaml_editor()
 
@@ -358,73 +382,79 @@ class TestKubernetesConfiguration:
 class TestKubernetesConnector:
     pass
 
+
 class TestContainerConfiguration:
     pass
+
 
 class TestDeploymentConfiguration:
     def test_inheritance_of_default_namespace(self) -> None:
         ...
-    
+
     def test_strategy_enum(self) -> None:
         config = DeploymentConfiguration(
-            name="testing", 
-            containers=[], 
+            name="testing",
+            containers=[],
             replicas=Replicas(min=1, max=4),
-            strategy=OptimizationStrategy.DEFAULT
-        )        
-        assert config.yaml(exclude_unset=True) == (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy: default\n'
+            strategy=OptimizationStrategy.DEFAULT,
         )
-    
+        assert config.yaml(exclude_unset=True) == (
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy: default\n"
+        )
+
     def test_strategy_object_default(self) -> None:
         config = DeploymentConfiguration(
-            name="testing", 
-            containers=[], 
+            name="testing",
+            containers=[],
             replicas=Replicas(min=1, max=4),
-            strategy=DefaultOptimizationStrategyConfiguration(type=OptimizationStrategy.DEFAULT)
+            strategy=DefaultOptimizationStrategyConfiguration(
+                type=OptimizationStrategy.DEFAULT
+            ),
         )
         assert config.yaml(exclude_unset=True) == (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy:\n'
-            '  type: default\n'
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy:\n"
+            "  type: default\n"
         )
-    
+
     def test_strategy_object_canary(self) -> None:
         config = DeploymentConfiguration(
-            name="testing", 
-            containers=[], 
+            name="testing",
+            containers=[],
             replicas=Replicas(min=1, max=4),
-            strategy=CanaryOptimizationStrategyConfiguration(type=OptimizationStrategy.CANARY, alias="tuning")
+            strategy=CanaryOptimizationStrategyConfiguration(
+                type=OptimizationStrategy.CANARY, alias="tuning"
+            ),
         )
         assert config.yaml(exclude_unset=True) == (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy:\n'
-            '  alias: tuning\n'
-            '  type: canary\n'
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy:\n"
+            "  alias: tuning\n"
+            "  type: canary\n"
         )
-    
+
     def test_strategy_object_default_parsing(self) -> None:
         config_yaml = (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy:\n'
-            '  type: default\n'
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy:\n"
+            "  type: default\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
@@ -433,36 +463,37 @@ class TestDeploymentConfiguration:
 
     def test_strategy_object_canary_parsing(self) -> None:
         config_yaml = (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy:\n'
-            '  type: canary\n'
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy:\n"
+            "  type: canary\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.CANARY
         assert config.strategy.alias is None
-    
+
     def test_strategy_object_canary_parsing_with_alias(self) -> None:
         config_yaml = (
-            'containers: []\n'
-            'name: testing\n'
-            'replicas:\n'
-            '  max: 4\n'
-            '  min: 1\n'
-            'strategy:\n'
-            '  alias: tuning\n'
-            '  type: canary\n'
+            "containers: []\n"
+            "name: testing\n"
+            "replicas:\n"
+            "  max: 4\n"
+            "  min: 1\n"
+            "strategy:\n"
+            "  alias: tuning\n"
+            "  type: canary\n"
         )
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.CANARY
-        assert config.strategy.alias == 'tuning'
+        assert config.strategy.alias == "tuning"
+
 
 class TestCanaryOptimization:
     @pytest.mark.xfail
@@ -471,33 +502,38 @@ class TestCanaryOptimization:
         optimization = CanaryOptimization.construct(
             name="fiber-http-deployment/opsani/fiber-http:latest-canary",
             target_deployment_config=config.deployments[0],
-            target_container_config=config.deployments[0].containers[0]
+            target_container_config=config.deployments[0].containers[0],
         )
-        assert optimization.target_name == "fiber-http-deployment/opsani/fiber-http:latest"
-        assert optimization.canary_name == "fiber-http-deployment/opsani/fiber-http:latest-canary"
+        assert (
+            optimization.target_name == "fiber-http-deployment/opsani/fiber-http:latest"
+        )
+        assert (
+            optimization.canary_name
+            == "fiber-http-deployment/opsani/fiber-http:latest-canary"
+        )
 
     @pytest.mark.xfail
     def test_to_components_respects_aliases(self, config) -> None:
         config.deployments[0].strategy = CanaryOptimizationStrategyConfiguration(
-            type=OptimizationStrategy.CANARY, 
-            alias="tuning"
+            type=OptimizationStrategy.CANARY, alias="tuning"
         )
         config.deployments[0].containers[0].alias = "main"
         optimization = CanaryOptimization.construct(
             name="fiber-http-deployment/opsani/fiber-http:latest-canary",
             target_deployment_config=config.deployments[0],
-            target_container_config=config.deployments[0].containers[0]
+            target_container_config=config.deployments[0].containers[0],
         )
         assert optimization.target_name == "main"
         assert optimization.canary_name == "tuning"
 
+
 def test_compare_strategy() -> None:
     config = CanaryOptimizationStrategyConfiguration(
-        type=OptimizationStrategy.CANARY, 
-        alias="tuning"
+        type=OptimizationStrategy.CANARY, alias="tuning"
     )
     assert config == OptimizationStrategy.CANARY
-    
+
+
 class TestResourceRequirements:
     @pytest.mark.parametrize(
         "requirement, val",
@@ -505,7 +541,7 @@ class TestResourceRequirements:
             (ResourceRequirements.limit, True),
             (ResourceRequirements.request, True),
             (ResourceRequirements.compute, False),
-        ]
+        ],
     )
     def test_flag_introspection(self, requirement, val) -> None:
         assert requirement.flag is val
@@ -515,8 +551,8 @@ class TestResourceRequirements:
 class TestContainer:
     @pytest.fixture
     def container(self, mocker) -> Container:
-        stub_pod = mocker.stub(name='Pod')
-        return Container(client.V1Container(name='container'), stub_pod)
+        stub_pod = mocker.stub(name="Pod")
+        return Container(client.V1Container(name="container"), stub_pod)
 
     @pytest.mark.parametrize(
         "name, requirements, kwargs, value",
@@ -525,24 +561,39 @@ class TestContainer:
             ("cpu", ResourceRequirements.compute, ..., ("100m", "15000m")),
             ("cpu", ResourceRequirements.request, ..., ("100m",)),
             ("cpu", ResourceRequirements.limit, dict(first=True), "15000m"),
-            ("cpu", ResourceRequirements.compute, dict(first=True, reverse=True), "15000m"),
-
+            (
+                "cpu",
+                ResourceRequirements.compute,
+                dict(first=True, reverse=True),
+                "15000m",
+            ),
             ("memory", ..., ..., ("3G", None)),
             ("memory", ResourceRequirements.compute, ..., ("3G", None)),
             ("memory", ResourceRequirements.request, ..., ("3G",)),
             ("memory", ResourceRequirements.compute, dict(first=True), "3G"),
             ("memory", ResourceRequirements.request, dict(first=True), "3G"),
             ("memory", ResourceRequirements.limit, dict(first=True), None),
-            ("memory", ResourceRequirements.limit, dict(first=True, default="1TB"), "1TB"),
-
+            (
+                "memory",
+                ResourceRequirements.limit,
+                dict(first=True, default="1TB"),
+                "1TB",
+            ),
             ("invalid", ResourceRequirements.compute, ..., (None, None)),
-            ("invalid", ResourceRequirements.compute, dict(first=True, default="3.125"), "3.125"),
-        ]
+            (
+                "invalid",
+                ResourceRequirements.compute,
+                dict(first=True, default="3.125"),
+                "3.125",
+            ),
+        ],
     )
-    def test_get_resource_requirements(self, container, name, requirements, kwargs, value) -> None:
+    def test_get_resource_requirements(
+        self, container, name, requirements, kwargs, value
+    ) -> None:
         resources = client.V1ResourceRequirements()
-        resources.requests = { "cpu": "100m", "memory": "3G" }
-        resources.limits = { "cpu": "15000m" }
+        resources.requests = {"cpu": "100m", "memory": "3G"}
+        resources.limits = {"cpu": "15000m"}
         container.resources = resources
 
         # Support testing default arguments
@@ -551,22 +602,38 @@ class TestContainer:
         if kwargs == ...:
             kwargs = container.get_resource_requirements.__kwdefaults__
 
-        assert container.get_resource_requirements(name, requirements, **kwargs) == value
+        assert (
+            container.get_resource_requirements(name, requirements, **kwargs) == value
+        )
 
     @pytest.mark.parametrize(
         "name, value, requirements, kwargs, resources_dict",
         [
-            ("cpu", ("50m", "250m"), ..., ..., {'limits': {'cpu': '250m'}, 'requests': {'cpu': '50m', 'memory': '3G'}}),
-            ("cpu", "500m", ResourceRequirements.limit, dict(clear_others=True), {'limits': {'cpu': '500m'}, 'requests': {'memory': '3G'}}),
-        ]
+            (
+                "cpu",
+                ("50m", "250m"),
+                ...,
+                ...,
+                {"limits": {"cpu": "250m"}, "requests": {"cpu": "50m", "memory": "3G"}},
+            ),
+            (
+                "cpu",
+                "500m",
+                ResourceRequirements.limit,
+                dict(clear_others=True),
+                {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
+            ),
+        ],
     )
-    def test_set_resource_requirements(self, container, name, value, requirements, kwargs, resources_dict) -> None:
+    def test_set_resource_requirements(
+        self, container, name, value, requirements, kwargs, resources_dict
+    ) -> None:
         resources = client.V1ResourceRequirements()
-        resources.requests = { "cpu": "100m", "memory": "3G" }
-        resources.limits = { "cpu": "15000m" }
+        resources.requests = {"cpu": "100m", "memory": "3G"}
+        resources.limits = {"cpu": "15000m"}
         container.resources = resources
 
-         # Support testing default arguments
+        # Support testing default arguments
         if requirements == ...:
             requirements = container.set_resource_requirements.__defaults__[0]
         if kwargs == ...:
@@ -579,7 +646,11 @@ class TestContainer:
         container.resources = client.V1ResourceRequirements()
 
         container.set_resource_requirements("cpu", "1000m")
-        assert container.resources.to_dict() == {'limits': {'cpu': '1000m'}, 'requests': {'cpu': '1000m'}}
+        assert container.resources.to_dict() == {
+            "limits": {"cpu": "1000m"},
+            "requests": {"cpu": "1000m"},
+        }
+
 
 class TestReplicas:
     @pytest.fixture
@@ -588,27 +659,28 @@ class TestReplicas:
 
     def test_parsing(self, replicas) -> None:
         assert {
-            'name': 'replicas',
-            'type': "range",
-            'min': 1,
-            'max': 4,
-            'step': 1,
-            'value': None,
-            'pinned': False,
+            "name": "replicas",
+            "type": "range",
+            "min": 1,
+            "max": 4,
+            "step": 1,
+            "value": None,
+            "pinned": False,
         } == replicas.dict()
-    
+
     def test_to___opsani_repr__(self, replicas) -> None:
         replicas.value = 3
         assert replicas.__opsani_repr__() == {
-            'replicas': {
-                'max': 4.0,
-                'min': 1.0,
-                'step': 1,
-                'value': 3.0,
-                'type': "range",
-                'pinned': False
+            "replicas": {
+                "max": 4.0,
+                "min": 1.0,
+                "step": 1,
+                "value": 3.0,
+                "type": "range",
+                "pinned": False,
             }
         }
+
 
 class TestCPU:
     @pytest.fixture
@@ -617,29 +689,29 @@ class TestCPU:
 
     def test_parsing(self, cpu) -> None:
         assert {
-            'name': 'cpu',
-            'type': "range",
-            'min': 100,
-            'max': 4000,
-            'step': 125,
-            'value': None,
-            'pinned': False,
-            'requirements': ResourceRequirements.compute,
+            "name": "cpu",
+            "type": "range",
+            "min": 100,
+            "max": 4000,
+            "step": 125,
+            "value": None,
+            "pinned": False,
+            "requirements": ResourceRequirements.compute,
         } == cpu.dict()
-    
+
     def test_to___opsani_repr__(self, cpu) -> None:
         cpu.value = "3"
         assert cpu.__opsani_repr__() == {
-            'cpu': {
-                'max': 4.0,
-                'min': 0.1,
-                'step': 0.125,
-                'value': 3.0,
-                'type': "range",
-                'pinned': False
+            "cpu": {
+                "max": 4.0,
+                "min": 0.1,
+                "step": 0.125,
+                "value": 3.0,
+                "type": "range",
+                "pinned": False,
             }
         }
-    
+
     def test_resolving_equivalent_units(self) -> None:
         cpu = CPU(min="100m", max=4.0, step=0.125)
         assert cpu.min == 100
@@ -648,10 +720,46 @@ class TestCPU:
 
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
         serialization = json.loads(cpu.json())
-        assert serialization['min'] == "100m"
-        assert serialization['max'] == "4000m"
-        assert serialization['step'] == "125m"
+        assert serialization["min"] == "100m"
+        assert serialization["max"] == "4"
+        assert serialization["step"] == "125m"
         # TODO: Requirements also needs to serialize
+
+
+class TestMillicore:
+    @pytest.mark.parametrize(
+        "input, millicores",
+        [
+            ("100m", 100),
+            ("1", 1000),
+            (1, 1000),
+            ("0.1", 100),
+            (0.1, 100),
+            (2.0, 2000),
+            ("2.0", 2000),
+        ],
+    )
+    def test_parsing(self, input: Union[str, int, float], millicores: int) -> None:
+        assert Millicore.parse(input) == millicores
+
+    @pytest.mark.parametrize(
+        "input, output",
+        [
+            ("100m", "100m"),
+            ("1", "1"),
+            ("1.0", "1"),
+            (1, "1"),
+            ("0.1", "100m"),
+            (0.1, "100m"),
+            (2.5, "2500m"),
+            ("123m", "123m"),
+        ],
+    )
+    def test_string_serialization(
+        self, input: Union[str, int, float], output: str
+    ) -> None:
+        millicores = Millicore.parse(input)
+        assert str(millicores) == output
 
 
 class TestMemory:
@@ -661,42 +769,42 @@ class TestMemory:
 
     def test_parsing(self, memory) -> None:
         assert {
-            'name': 'mem',
-            'type': "range",
-            'min': 134217728,
-            'max': 4294967296,
-            'step': 268435456,
-            'value': None,
-            'pinned': False,
-            'requirements': ResourceRequirements.compute,
+            "name": "mem",
+            "type": "range",
+            "min": 134217728,
+            "max": 4294967296,
+            "step": 268435456,
+            "value": None,
+            "pinned": False,
+            "requirements": ResourceRequirements.compute,
         } == memory.dict()
-    
+
     def test_to___opsani_repr__(self, memory) -> None:
         memory.value = "3.0 GiB"
         assert memory.__opsani_repr__() == {
-            'mem': {
-                'max': 4.0, 
-                'min': 0.125, 
-                'step': 0.25, 
-                'value': 3.0,
-                'type': "range",
-                'pinned': False
+            "mem": {
+                "max": 4.0,
+                "min": 0.125,
+                "step": 0.25,
+                "value": 3.0,
+                "type": "range",
+                "pinned": False,
             }
         }
 
     def test_handling_float_input(self) -> None:
         memory = Memory(min=0.5, max=4.0, step=0.125, value="3.0 GiB")
         assert memory.__opsani_repr__() == {
-            'mem': {
-                'max': 4.0, 
-                'min': 0.5, 
-                'step': 0.125, 
-                'value': 3.0,
-                'type': "range",
-                'pinned': False
+            "mem": {
+                "max": 4.0,
+                "min": 0.5,
+                "step": 0.125,
+                "value": 3.0,
+                "type": "range",
+                "pinned": False,
             }
         }
-    
+
     def test_resolving_equivalent_units(self) -> None:
         memory = Memory(min="128 MiB", max=4.0, step=268435456)
         assert memory.min == 134217728
@@ -705,10 +813,10 @@ class TestMemory:
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization['min'] == "128.0MiB"
-        assert serialization['max'] == "4.0GiB"
-        assert serialization['step'] == "256.0MiB"
-        # TODO: Requirements also needs to serialize
+        assert serialization["min"] == "128.0MiB"
+        assert serialization["max"] == "4.0GiB"
+        assert serialization["step"] == "256.0MiB"
+
 
 @pytest.mark.integration
 class TestKubernetesConnectorIntegration:
@@ -718,7 +826,6 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("fiber-http-deployment.cpu").value == 1.0
         assert description.get_setting("fiber-http-deployment.memory").value == "3G"
         assert description.get_setting("fiber-http-deployment.replicas").value == 1
-
 
     async def test_adjust(self, config, adjustment):
         connector = KubernetesConnector(config=config)
@@ -762,40 +869,49 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
+
 async def test_apply_no_changes():
     # resource_version stays the same and early exits
     pass
+
 
 async def test_apply_metadata_changes():
     # Update labels or something that doesn't matter
     # Detect by never getting a progressing event
     pass
 
+
 async def test_apply_replica_change():
     # bump the count, observed_generation goes up
     # wait for the counts to settle
     ...
+
 
 async def test_apply_memory_change():
     # bump the count, observed_generation goes up
     # wait for the counts to settle
     ...
 
+
 async def test_apply_cpu_change():
     # bump the count, observed_generation goes up
     # wait for the counts to settle
     ...
+
 
 async def test_apply_unschedulable_memory_request():
     # bump the count, observed_generation goes up
     # wait for the counts to settle
     ...
 
+
 async def test_apply_restart_strategy():
     # Make sure we can watch a non-rolling update
     # .spec.strategy specifies the strategy used to replace old Pods by new ones. .spec.strategy.type can be "Recreate" or "RollingUpdate". "RollingUpdate" is the default value.
     # Recreate Deployment
     ...
+
+
 # TODO: Put a fiber-http deployment live. Create a config and describe it.
 # TODO: Test talking to multiple namespaces. Test kubeconfig file
 # Test describe an empty config.
@@ -814,8 +930,10 @@ async def test_apply_restart_strategy():
 # did not affect the deployment
 # Handle: CreateContainerError
 
+
 async def test_checks(config: KubernetesConfiguration):
     await KubernetesChecks.run(config)
+
 
 def test_millicpu():
     class Model(pydantic.BaseModel):
@@ -830,12 +948,14 @@ def test_millicpu():
     assert Model(cpu=0.1).cpu == "100m"
     assert Model(cpu="100m").cpu == 0.1
 
+
 @pytest.fixture
 def canary_config(config) -> KubernetesConfiguration:
     canary_config = config.copy()
     for dep in canary_config.deployments:
         dep.strategy = "canary"
     return canary_config
+
 
 @pytest.fixture
 def web_config() -> KubernetesConfiguration:
@@ -851,21 +971,14 @@ def web_config() -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="main",
-                        cpu=CPU(
-                            min="100m",
-                            max="800m",
-                            step="125m"
-                        ),
-                        memory=Memory(
-                            min="100 Mi",
-                            max="0.8 Gi",
-                            step="128 Mi"
-                        )
+                        cpu=CPU(min="100m", max="800m", step="125m"),
+                        memory=Memory(min="100 Mi", max="0.8 Gi", step="128 Mi"),
                     )
-                ]
+                ],
             )
-        ]
+        ],
     )
+
 
 @pytest.fixture
 def config() -> KubernetesConfiguration:
@@ -881,45 +994,37 @@ def config() -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="opsani/fiber-http:latest",
-                        cpu=CPU(
-                            min="100m",
-                            max="800m",
-                            step="125m"
-                        ),
-                        memory=Memory(
-                            min="100 MiB",
-                            max="0.8 GiB",
-                            step="128 MiB"
-                        )
+                        cpu=CPU(min="100m", max="800m", step="125m"),
+                        memory=Memory(min="100 MiB", max="0.8 GiB", step="128 MiB"),
                     )
-                ]
+                ],
             )
-        ]
+        ],
     )
+
 
 @pytest.fixture
 def adjustment() -> dict:
     return {
-        'application': {
-            'components': {
-                'fiber-http-deployment': {
-                    'settings': {
-                        'cpu': {
-                            'value': 1.80, #0.725,
+        "application": {
+            "components": {
+                "fiber-http-deployment": {
+                    "settings": {
+                        "cpu": {
+                            "value": 1.80,  # 0.725,
                         },
-                        'mem': {
-                            'value': "2.5G", #2.25,
+                        "mem": {
+                            "value": "2.5G",  # 2.25,
                         },
-                        'replicas': {
-                            'value': 3.0,
+                        "replicas": {
+                            "value": 3.0,
                         },
                     },
                 },
             },
         },
-        'control': {},
+        "control": {},
     }
-
 
     # servo/connectors/kubernetes.py:1394 adjust
     # data:  (dict) len=2

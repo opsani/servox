@@ -1,29 +1,24 @@
 from __future__ import annotations
+
 from datetime import datetime
-import logging
 
 import asynctest
-import pytest
 import loguru
-import respx
-
+import pytest
 from freezegun import freeze_time
-from servo import BaseConfiguration
+
 from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.logging import (
-    DEFAULT_FORMAT,
-    DEFAULT_FORMATTER,
-    Mixin,
     DEFAULT_FILTER,
-    Filter,
+    DEFAULT_FORMATTER,
     ProgressHandler,
     log_execution,
     log_execution_time,
     logger,
     reset_to_defaults,
-    set_level
+    set_level,
 )
-from tests.test_helpers import MeasureConnector
+
 
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:
@@ -33,6 +28,7 @@ def reset_logging() -> None:
     logger.remove(None)
     yield
     reset_to_defaults()
+
 
 class TestFilter:
     def test_logging_to_trace(self) -> None:
@@ -49,6 +45,7 @@ class TestFilter:
 
     def test_filtering_by_level(self) -> None:
         messages = []
+
         def raw_messages() -> List[str]:
             return list(map(lambda m: m.record["message"], messages))
 
@@ -74,6 +71,7 @@ class TestFilter:
         logger.debug("debug")
         logger.error("error")
         assert raw_messages() == ["Another", "Info", "trace", "debug", "error"]
+
 
 class TestFormatting:
     @property
@@ -132,7 +130,8 @@ class TestFormatting:
         assert message.record["message"] == "Test"
         assert message.record["extra"]["traceback"]
         message_with_traceback = message.split("\n")
-        assert len(message_with_traceback) > 5 # arbitrary check of depth
+        assert len(message_with_traceback) > 5  # arbitrary check of depth
+
 
 class TestProgressHandler:
     @pytest.fixture()
@@ -144,8 +143,12 @@ class TestProgressHandler:
         return asynctest.Mock(name="error reporter")
 
     @pytest.fixture()
-    def handler(self, progress_reporter, error_reporter) -> ProgressHandler:
-        return ProgressHandler(progress_reporter, error_reporter)
+    async def handler(
+        self, progress_reporter, error_reporter, event_loop
+    ) -> ProgressHandler:
+        handler = ProgressHandler(progress_reporter, error_reporter)
+        yield handler
+        await handler.shutdown()
 
     @pytest.fixture()
     def logger(self, handler: ProgressHandler) -> loguru.Logger:
@@ -153,7 +156,9 @@ class TestProgressHandler:
         logger.add(handler.sink)
         return logger
 
-    async def test_ignored_without_progress_attribute(self, logger, progress_reporter, error_reporter):
+    async def test_ignored_without_progress_attribute(
+        self, logger, progress_reporter, error_reporter
+    ):
         logger.critical("Test...")
         await logger.complete()
         progress_reporter.assert_not_called()
@@ -163,34 +168,52 @@ class TestProgressHandler:
         logger.critical("Test...", progress=50, connector=None)
         await logger.complete()
         progress_reporter.assert_not_called()
-        assert "declining request to report progress for record without a connector attribute"  in error_reporter.call_args.args[0]
+        assert (
+            "declining request to report progress for record without a connector attribute"
+            in error_reporter.call_args.args[0]
+        )
 
     async def test_error_no_operation(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo")
         await logger.complete()
         progress_reporter.assert_not_called()
-        assert "declining request to report progress for record without an operation parameter or inferrable value from event context" in error_reporter.call_args.args[0]
+        assert (
+            "declining request to report progress for record without an operation parameter or inferrable value from event context"
+            in error_reporter.call_args.args[0]
+        )
 
     async def test_error_no_started_at(self, logger, progress_reporter, error_reporter):
         logger.critical("Test...", progress=50, connector="foo", operation="hacking")
         await logger.complete()
         progress_reporter.assert_not_called()
-        assert "declining request to report progress for record without a started_at parameter or inferrable value from event context" in error_reporter.call_args.args[0]
+        assert (
+            "declining request to report progress for record without a started_at parameter or inferrable value from event context"
+            in error_reporter.call_args.args[0]
+        )
 
     async def test_success(self, logger, progress_reporter, error_reporter):
-        logger.critical("Test...", progress=50, connector="foo", operation="hacking", started_at=datetime.now())
+        logger.critical(
+            "Test...",
+            progress=50,
+            connector="foo",
+            operation="hacking",
+            started_at=datetime.now(),
+        )
         await logger.complete()
         progress_reporter.assert_called()
         error_reporter.assert_not_called()
 
     # NOTE: Inference tests dependent on context vars (operation and started_at)
-    async def test_success_inference_from_context_var(self, logger, progress_reporter, error_reporter):
+    async def test_success_inference_from_context_var(
+        self, logger, progress_reporter, error_reporter
+    ):
         event_context = EventContext.from_str("before:measure")
         _event_context_var.set(event_context)
         logger.critical("Test...", progress=50, connector="foo")
         await logger.complete()
         progress_reporter.assert_called()
         error_reporter.assert_not_called()
+
 
 def test_log_execution() -> None:
     @log_execution
@@ -203,6 +226,7 @@ def test_log_execution() -> None:
     assert messages[0].record["message"] == "Entering 'log_me' (args=(), kwargs={})"
     assert messages[1].record["message"] == "Exiting 'log_me' (result=None)"
 
+
 @freeze_time("July 26th, 2020", auto_tick_seconds=15)
 def test_log_execution_time() -> None:
     @log_execution_time(level="INFO")
@@ -214,6 +238,7 @@ def test_log_execution_time() -> None:
     log_me()
     assert messages[0].record["message"] == "Function 'log_me' executed in 15s"
     assert messages[0].record["level"].name == "INFO"
+
 
 @freeze_time("July 26th, 2020", auto_tick_seconds=15)
 def test_log_execution_time_no_args() -> None:

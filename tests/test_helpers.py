@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import json
 import os
 from contextlib import contextmanager
@@ -8,14 +9,16 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 import yaml
 from pydantic.json import pydantic_encoder
 
-from servo.connector import BaseConfiguration, BaseConnector
-from servo.events import before_event, on_event, after_event
+import servo.events
+import servo.types
+from servo.configuration import BaseConfiguration
+from servo.connector import BaseConnector
+from servo.events import after_event, before_event, on_event
 from servo.logging import logger
-from servo.servo import Events, connector
-from servo.types import Measurement
+from servo.servo import Events
+from servo.types import Component, Description, Measurement, RangeSetting
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
-from servo.types import Component, Description, RangeSetting, EnumSetting
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
@@ -29,16 +32,21 @@ class MeasureConnector(BaseConnector):
     config: StubBaseConfiguration
 
     @before_event(Events.MEASURE)
-    def before_measure(self, *args, **kwargs) -> None:
+    def before_measure(self) -> None:
         pass
 
     @on_event()
-    def measure(self, *args, **kwargs) -> Measurement:
+    def measure(
+        self,
+        metrics: List[str] = None,
+        control: servo.types.Control = servo.types.Control(),
+    ) -> Measurement:
         pass
 
     @after_event(Events.MEASURE)
-    def after_measure(self, *args, **kwargs) -> None:
+    def after_measure(self, results: List[servo.events.EventResult]) -> None:
         pass
+
 
 class AdjustConnector(BaseConnector):
     config: StubBaseConfiguration
@@ -53,9 +61,7 @@ class AdjustConnector(BaseConnector):
         return [
             Component(
                 name="main",
-                settings=[
-                    RangeSetting(name="cpu", min=0, max=10, step=1, value=3)
-                ]
+                settings=[RangeSetting(name="cpu", min=0, max=10, step=1, value=3)],
             )
         ]
 
@@ -77,7 +83,7 @@ def environment_overrides(env: Dict[str, str]) -> None:
 def generate_config_yaml(
     config: Dict[str, Union[BaseConfiguration, dict]],
     cls: Type[BaseConfiguration] = BaseConfiguration,
-    **dict_kwargs
+    **dict_kwargs,
 ) -> str:
     """
     Generate configuration YAML from a dict of string to configuration objects or dicts.
@@ -98,7 +104,7 @@ def write_config_yaml(
     config: Dict[str, BaseConfiguration],
     file: Path,
     cls: Type[BaseConfiguration] = BaseConfiguration,
-    **dict_kwargs
+    **dict_kwargs,
 ) -> str:
     config_yaml = generate_config_yaml(config)
     file.write_text(config_yaml)
@@ -128,7 +134,7 @@ def json_key_path(json_str: str, key_path: str) -> Any:
     return dict_key_path(obj, key_path)
 
 
-class SubprocessTestHelper:    
+class SubprocessTestHelper:
     async def shell(
         self,
         cmd: str,
@@ -136,12 +142,14 @@ class SubprocessTestHelper:
         timeout: Timeout = None,
         print_output: bool = False,
         log_output: bool = True,
-        **kwargs,        
+        **kwargs,
     ) -> SubprocessResult:
         stdout: List[str] = []
         stderr: List[str] = []
 
-        def create_output_callback(name: str, output: List[str]) -> Callable[[str], Awaitable[None]]:
+        def create_output_callback(
+            name: str, output: List[str]
+        ) -> Callable[[str], Awaitable[None]]:
             async def output_callback(msg: str) -> None:
                 output.append(msg)
                 m = f"[{name}] {msg}"
@@ -151,7 +159,7 @@ class SubprocessTestHelper:
                     logger.debug(m)
 
             return output_callback
-        
+
         print(f"\n❯ Executing `{cmd}`")
         return_code = await stream_subprocess_shell(
             cmd,
@@ -168,6 +176,12 @@ class SubprocessTestHelper:
         timeout: Timeout = None,
         print_output: bool = False,
         log_output: bool = True,
-        **kwargs,        
+        **kwargs,
     ) -> SubprocessResult:
-        return await self.shell(cmd, timeout=timeout, print_output=print_output, log_output=log_output, **kwargs)
+        return await self.shell(
+            cmd,
+            timeout=timeout,
+            print_output=print_output,
+            log_output=log_output,
+            **kwargs,
+        )

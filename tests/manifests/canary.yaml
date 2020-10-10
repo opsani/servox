@@ -4,10 +4,10 @@ kind: ConfigMap
 metadata:
   name: opsani-servo-config
 data:
-  servo.yaml: |    
+  servo.yaml: |
     kubernetes:
       namespace: default
-      settlement: 2s        
+      settlement: 2s
       deployments:
       - name: fiber-http-deployment
         strategy: canary

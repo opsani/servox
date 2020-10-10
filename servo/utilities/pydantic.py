@@ -20,10 +20,12 @@ def append_pydantic_validator(
         if _validator[0] == type_:
             _validator[1].append(validator)
 
+
 @contextmanager
-def extra(obj: BaseModel, extra: Extra = Extra.allow) -> Generator[BaseModel, None, None]:
-    """Temporarily overrides the value of the `extra` setting on a Pydantic model.
-    """
+def extra(
+    obj: BaseModel, extra: Extra = Extra.allow
+) -> Generator[BaseModel, None, None]:
+    """Temporarily overrides the value of the `extra` setting on a Pydantic model."""
     original = obj.__config__.extra
     obj.__config__.extra = extra
     yield obj

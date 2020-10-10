@@ -1,9 +1,7 @@
 from typing import Any, List, Tuple, Union
 
-__all__ = [
-    "values_for_keys",
-    "value_for_key_path"
-]
+__all__ = ["values_for_keys", "value_for_key_path"]
+
 
 def values_for_keys(obj: dict, *keys: Union[List[str], Tuple[str]]) -> List[Any]:
     """
@@ -11,9 +9,13 @@ def values_for_keys(obj: dict, *keys: Union[List[str], Tuple[str]]) -> List[Any]
     """
     return list(map(obj.get, *keys))
 
+
 DEFAULT_SENTINEL = object()
 
-def value_for_key_path(obj: object, key_path: str, default: Any = DEFAULT_SENTINEL) -> Any:
+
+def value_for_key_path(
+    obj: object, key_path: str, default: Any = DEFAULT_SENTINEL
+) -> Any:
     if hasattr(obj, key_path):
         if default is not DEFAULT_SENTINEL:
             return getattr(obj, key_path, default)

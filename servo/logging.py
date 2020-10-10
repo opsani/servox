@@ -5,17 +5,19 @@ Logging is implemented on top of the
 [loguru](https://loguru.readthedocs.io/en/stable/) library.
 """
 from __future__ import annotations
+
 import asyncio
 import functools
 import logging
+import pathlib
 import sys
 import time
 import traceback
-from pathlib import Path
-from typing import Awaitable, Any, Callable, Dict, Optional, Set, Union, cast
+from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
 import loguru
-from servo.events import EventContext, _connector_context_var, _event_context_var
+
+import servo.events
 
 __all__ = (
     "Mixin",
@@ -25,16 +27,18 @@ __all__ = (
     "log_execution",
     "log_execution_time",
     "reset_to_defaults",
-    "set_level"
+    "set_level",
 )
 
 # Alias the loguru default logger
 logger = loguru.logger
 
+
 class Mixin:
     """The `servo.logging.Mixin` class is a convenience class for adding
     logging capabilities to arbitrary classes through multiple inheritance.
     """
+
     @property
     def logger(self) -> loguru.Logger:
         """Returns the servo package logger"""
@@ -47,10 +51,10 @@ class Filter:
     NOTE: The level on the sink needs to be set to 0.
     """
 
-    def __init__(self, level = "INFO") -> None:
+    def __init__(self, level="INFO") -> None:
         self.level = level
 
-    def __call__(self, record) -> bool:        
+    def __call__(self, record) -> bool:
         levelno = logger.level(self.level).no
         return record["level"].no >= levelno
 
@@ -64,26 +68,28 @@ class ProgressHandler:
     NOTE: We call the logger re-entrantly for misconfigured progress logging attempts. The
         `progress` must be excluded on logger calls to avoid recursion.
     """
-    def __init__(self, 
-        progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]], 
-        error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
-        exception_handler: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None
 
+    def __init__(
+        self,
+        progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]],
+        error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
+        exception_handler: Optional[
+            Callable[[Exception], Union[None, Awaitable[None]]]
+        ] = None,
     ) -> None:
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
         self._exception_handler = exception_handler
-        self._tasks = set()
-    
-    @property
-    def tasks(self) -> Set[asyncio.Task]:
-        return cast(Set[asyncio.Task], self._tasks.copy())
-    
+        self._queue = asyncio.Queue()
+        self._queue_processor = None
+
     async def sink(self, message: loguru.Message) -> None:
-        """
-        An asynchronous loguru sink handling the progress reporting.
+        """An asynchronous loguru sink handling the progress reporting.
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
         """
+        if self._queue_processor is None:
+            self._queue_processor = asyncio.create_task(self._process_queue())
+
         record = message.record
         extra = record["extra"]
         progress = extra.get("progress", None)
@@ -91,15 +97,23 @@ class ProgressHandler:
             return
 
         # Favor explicit connector in extra (see Mixin) else use the context var
-        connector = extra.get("connector", _connector_context_var.get())
+        connector = extra.get("connector", servo.events._connector_context_var.get())
         if not connector:
-            return await self._report_error("declining request to report progress for record without a connector attribute", record)
+            return await self._report_error(
+                "declining request to report progress for record without a connector attribute",
+                record,
+            )
 
-        event_context: Optional[EventContext] = _event_context_var.get()
+        event_context: Optional[
+            servo.events.EventContext
+        ] = servo.events._event_context_var.get()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:
-                return await self._report_error("declining request to report progress for record without an operation parameter or inferrable value from event context", record)
+                return await self._report_error(
+                    "declining request to report progress for record without an operation parameter or inferrable value from event context",
+                    record,
+                )
             operation = event_context.operation()
 
         started_at = extra.get("started_at", None)
@@ -107,44 +121,51 @@ class ProgressHandler:
             if event_context:
                 started_at = event_context.created_at
             else:
-                return await self._report_error("declining request to report progress for record without a started_at parameter or inferrable value from event context", record)
+                return await self._report_error(
+                    "declining request to report progress for record without a started_at parameter or inferrable value from event context",
+                    record,
+                )
 
         connector_name = connector.name if hasattr(connector, "name") else connector
 
-        await self._report_progress(
-            operation=operation,
-            progress=progress,
-            connector=connector_name,
-            event_context=event_context,
-            started_at=started_at,
-            message=message
+        self._queue.put_nowait(
+            dict(
+                operation=operation,
+                progress=progress,
+                connector=connector_name,
+                event_context=event_context,
+                started_at=started_at,
+                message=message,
+            )
         )
-    
-    async def _report_progress(self, **kwargs) -> None:
-        """
-        Report progress about a log message that was processed.
-        """
 
-        def _handle_task_result(task: asyncio.Task) -> None:
+    async def shutdown(self) -> None:
+        """Shutdown the progress handler by emptying the queue and releasing the queue processor."""
+        await self._queue.join()
+        self._queue_processor.cancel()
+        await asyncio.gather(self._queue_processor, return_exceptions=True)
+
+    async def _process_queue(self) -> None:
+        while True:
             try:
-                self._tasks.remove(task)
-                task.result()
+                progress = await self._queue.get()
+                if progress is None:
+                    break
+
+                if asyncio.iscoroutinefunction(self._progress_reporter):
+                    await self._progress_reporter(**progress)
+                else:
+                    self._progress_reporter(**progress)
             except asyncio.CancelledError:
                 pass  # Task cancellation should not be logged as an error.
             except Exception as error:  # pylint: disable=broad-except
                 if self._exception_handler:
                     if asyncio.iscoroutinefunction(self._exception_handler):
-                        asyncio.create_task(self._exception_handler(error))
+                        await self._exception_handler(error)
                     else:
                         self._exception_handler(error)
-
-        if self._progress_reporter:
-            if asyncio.iscoroutinefunction(self._progress_reporter):
-                task = asyncio.create_task(self._progress_reporter(**kwargs))
-                task.add_done_callback(_handle_task_result)
-                self._tasks.add(task)
-            else:
-                self._progress_reporter(**kwargs)
+            finally:
+                self._queue.task_done()
 
     async def _report_error(self, message: str, record) -> None:
         """
@@ -153,7 +174,7 @@ class ProgressHandler:
         message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:
             if asyncio.iscoroutinefunction(self._error_reporter):
-                self._tasks.add(asyncio.create_task(self._error_reporter(message)))
+                await self._error_reporter(message)
             else:
                 self._error_reporter(message)
 
@@ -172,7 +193,9 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 DEFAULT_FORMAT = (
@@ -196,18 +219,21 @@ class Formatter:
         else:
             extra["traceback"] = ""
 
-        # Respect an explicit component 
-        if not "component" in record["extra"]:        
+        # Respect an explicit component
+        if not "component" in record["extra"]:
             # Favor explicit connector from the extra dict or use the context var
-            if connector := extra.get("connector", _connector_context_var.get()):
+            if connector := extra.get(
+                "connector", servo.events._connector_context_var.get()
+            ):
                 component = connector.name
             else:
                 component = "servo"
-            
+
             # Append event context if available
-            if event_context := _event_context_var.get():
+            event_context = servo.events._event_context_var.get()
+            if event_context:
                 component += f"[{event_context}]"
-            
+
             extra["component"] = component
 
         return DEFAULT_FORMAT + "\n{exception}"
@@ -228,7 +254,7 @@ DEFAULT_STDERR_HANDLER = {
 
 
 # Persistent disk logging to logs/
-root_path = Path(__file__).parents[1]
+root_path = pathlib.Path(__file__).parents[1]
 logs_path = root_path / "logs" / f"servo.log"
 
 
@@ -254,6 +280,7 @@ def set_level(level: str) -> None:
     """
     DEFAULT_FILTER.level = level
 
+
 def set_colors(colors: bool) -> None:
     """Sets whether ANSI colored output will be emitted to the logs.
 
@@ -264,6 +291,7 @@ def set_colors(colors: bool) -> None:
     loguru.logger.remove()
     loguru.logger.configure(handlers=DEFAULT_HANDLERS)
 
+
 def reset_to_defaults() -> loguru.Logger:
     """
     Resets the logging subsystem to the default configuration and returns the logger instance.
@@ -272,22 +300,24 @@ def reset_to_defaults() -> loguru.Logger:
     DEFAULT_STDERR_HANDLER["colorize"] = None
 
     loguru.logger.remove()
-    loguru.logger.configure(handlers=DEFAULT_HANDLERS)    
+    loguru.logger.configure(handlers=DEFAULT_HANDLERS)
 
     # Intercept messages from backoff library
-    logging.getLogger('backoff').addHandler(InterceptHandler())
+    logging.getLogger("backoff").addHandler(InterceptHandler())
 
     return logger
+
 
 def friendly_decorator(f):
     """
     Returns a "decorator decorator" that wraps a decorator function such that it can be invoked
     with or without parentheses such as:
-   
+
         @decorator(with, arguments, and=kwargs)
         or
         @decorator
     """
+
     @functools.wraps(f)
     def decorator(*args, **kwargs):
         if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
@@ -299,11 +329,13 @@ def friendly_decorator(f):
 
     return decorator
 
+
 @friendly_decorator
 def log_execution(func, *, entry=True, exit=True, level="DEBUG"):
     """
     Log the execution of the decorated function.
     """
+
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
         name = func.__name__
@@ -317,11 +349,13 @@ def log_execution(func, *, entry=True, exit=True, level="DEBUG"):
 
     return wrapped
 
+
 @friendly_decorator
 def log_execution_time(func, *, level="DEBUG"):
     """
     Log the execution time upon exit from the decorated function.
     """
+
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
         from servo.types import Duration
@@ -338,6 +372,7 @@ def log_execution_time(func, *, level="DEBUG"):
         return result
 
     return wrapped
+
 
 # Alias the loguru logger to hide implementation details
 logger = reset_to_defaults()

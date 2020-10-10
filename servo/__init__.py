@@ -1,6 +1,6 @@
 import importlib.metadata
 
-for pkg in {"servo", "servox"}:
+for pkg in {"servo", "servox"}: # pragma: no cover
     try:
         __version__ = importlib.metadata.version(pkg)
         break
@@ -9,39 +9,20 @@ for pkg in {"servo", "servox"}:
 
 __codename__ = "pass the calamari"
 
-import servo.assembly
-import servo.connector
-import servo.connectors
-import servo.errors
-import servo.events
-import servo.types
-import servo.cli
-import servo.utilities
+# Add the devtools debug() function to builtins if available
+import builtins
+import devtools
 
-# Import the core classes
-# These are what most developers will need
-from .events import (
-    Event,
-    EventHandler,
-    EventResult,
-    Preposition,
-    create_event,
-    event,
-    before_event,
-    on_event,
-    after_event,
-    event_handler,
-)
-from .connector import (
-    BaseConfiguration,
-    BaseConnector,
-    Optimizer,
-    metadata,
-)
+builtins.debug = devtools.debug
 
-from .configuration import *
+# Promote all symbols from submodules to the top-level package
+from .assembly import *
 from .checks import *
+from .configuration import *
+from .connector import *
 from .errors import *
+from .events import *
 from .logging import *
+from .servo import *
 from .types import *
 from .utilities import *

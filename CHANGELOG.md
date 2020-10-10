@@ -17,6 +17,40 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Connectors can now be dynamically added and removed from the servo via the
+  `servo.servo.Servo` methods `add_connector` and `remove_connector`.
+- Individual checks can now be run by ID or name via the
+  `servo.checks.BaseChecks.run_one` method.
+- Developer Makefile tasks `format`, `lint`, and `test`.
+- Introduced pre-commit hooks for enforcing style guides and engineering
+  standards.
+
+### Changed
+
+- Code across the library is now referenced by package and module rather than
+  importing individual classes and functions. This reduces the amount of
+  boilerplate code in any given module and makes the code more accessible by
+  making implicit references explicit and unambiguous.
+- Simplified `servo.logging.ProgressHandler` implementation with an asyncio
+  queue and producer/consumer pattern.
+- Renamed `servo.checks.BaseChecks.run_` method to `servo.checks.BaseChecks.run_all`.
+- Renamed the `filter_` argument of check runners to `matching`.
+- Millicore values are now serialized to strings as simple integers when evenly
+  divisible by 1000 (e.g., `str(Millicore(3000)) == "3"`).
+- The canonical coding style for the project has been evolved to directly
+  import packages and modules instead of class and functions.
+
+### Fixed
+
+- `servo show components` now includes the setting names instead of naked
+  values.
+- Type resolution (used in eventing and checks) is now able to flexibly handle
+  arbitrary imports path and type aliases.
+
 ## [0.8.1] "pass the calamari" - 2020-10-02
 
 Maintenance release to remove development packages from Docker images.
@@ -69,7 +103,7 @@ Maintenance release to remove development packages from Docker images.
 - JSON and YAML serializations now favor human readable representations by
   default whenever possible.
 - Multicheck methods now yield more readable IDs based off the parent multicheck
-  method name (e.g., `check_resource_requirements_item_0`). 
+  method name (e.g., `check_resource_requirements_item_0`).
 - Checks now have a severity described by the `servo.checks.Severity`
   enumeration, replacing required.
 - Required check nomenclature has been replaced with the `critical` severity
@@ -84,7 +118,7 @@ Maintenance release to remove development packages from Docker images.
   of numerics.
 - Multicheck expanded methods are now filterable and taggable.
 - Progress logging and reporting will no longer trigger unhandled exceptions.
-- Adjust operations now return a state descriptor rather than parroting back    
+- Adjust operations now return a state descriptor rather than parroting back
   the requested state.
 - Kubernetes Connector is now aware of out of band changes such as those made by
   Horizontal Pod Autoscalers.

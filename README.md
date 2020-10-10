@@ -9,7 +9,7 @@ This repository contains the source code of the next generation Opsani Servo tec
 
 A servo is a deployable unit of software that connects an application or service to the
 Opsani cloud optimization engine in order to identify cost savings and performance enhancements
-by applying machine learning technology. Servos are lightweight Python applications and are 
+by applying machine learning technology. Servos are lightweight Python applications and are
 typically deployed as standalone containers or on a Kubernetes cluster.
 
 Servos are composed of connectors, which provide the core functionality for integrating with metrics,
@@ -19,7 +19,7 @@ shared by all servos and a rich library supporting the development of connectors
 ## Quick Start
 
 ServoX is a modern Python application distributed as an installable Python package. Development is done
-in a Python install managed with [Pyenv](https://github.com/pyenv/pyenv) and a virtual environment managed by [Poetry](https://python-poetry.org/). 
+in a Python install managed with [Pyenv](https://github.com/pyenv/pyenv) and a virtual environment managed by [Poetry](https://python-poetry.org/).
 This is the path of least resistance but any Python package management system should work.
 
 * Clone the repo: `git clone git@github.com:opsani/servox`
@@ -35,11 +35,11 @@ This is the path of least resistance but any Python package management system sh
 ### Project Status
 
 ServoX is currently in beta. Not all Opsani connectors are currently supported. The current focus is on Kubernetes, Prometheus, and
-Vegeta. The connectors are bundled within the repository in the `connectors` directory. These packages will be migrated out to 
+Vegeta. The connectors are bundled within the repository in the `connectors` directory. These packages will be migrated out to
 standalone modules as development progresses.
 
-Putting these caveats aside, ServoX is fairly mature and provides some significant advantages and new capabilities above the 
-production Servo module. If your target system is supported by the available connectors you may want to explore a ServoX 
+Putting these caveats aside, ServoX is fairly mature and provides some significant advantages and new capabilities above the
+production Servo module. If your target system is supported by the available connectors you may want to explore a ServoX
 deployment.
 
 ServoX will be released as Servo 2.0.0 during the summer of 2020.
@@ -112,7 +112,7 @@ under control. The init command will generate one for you.
 
 ## Architecture
 
-ServoX has been designed to provide a delightful experience for engineers integrating cloud optimization into their systems and 
+ServoX has been designed to provide a delightful experience for engineers integrating cloud optimization into their systems and
 workflow. Developer ergonomics and operator efficiency are primary concerns as integrating and orchestrating disparate components
 can quickly become tiresome and complex. As a library, ServoX aspires to be as "batteries included" as possible and support developers
 with well designed, implemented, and tested solutions for common concerns. As a tool, ServoX strives to support system operators and
@@ -121,7 +121,7 @@ devops engineers with strong support for common tasks and a high-velocity workfl
 There are a few key components that form the foundation of the architecture:
 
 * **Connectors** - Connectors are pluggable components that enable the servo to interact with external systems such as metrics providers
-(Prometheus, Datadog, New Relic, etc), orchestration technologies (Kubernetes, cloud provider APIs, etc), or load generators. Every major 
+(Prometheus, Datadog, New Relic, etc), orchestration technologies (Kubernetes, cloud provider APIs, etc), or load generators. Every major
 functional component (including the servo itself) is a connector that inherits from the `Connector` base class. Connectors can process events
 dispatched from the servo (see Events below), provide services to the user (see CLI below), and interact with other connectors.
 * **Servo** - The Servo class models the active set of connectors and configuration that is executing. The servo handles connectivity with
@@ -141,11 +141,11 @@ an optimized configuration to the broader system.
 * **Checks** - Checks provide a mechanism for verifying the correctness and health of connector configuration and opeations. They are designed to support a high throughput integration and debugging experience by providing feedback loop driven workflow. Checks are implemented on top of the events subsystem and provide a rich interface via the `servo check` CLI command. The design of the checks subsystem is covered in depth [in the docs](docs/checks.md).
 * **Assembly** - The Servo Assembly models the runtime environment of the servo outside of a particular configuration. The assembly is the parent
 of the servo and is responsible for "assembling" it by instantiating connectors as configured by the operator. Connectors can be used multiple times
-(e.g. you may want to connect to multiple discrete Prometheus services) or may not be used at all (e.g. you have a New Relic connector in the 
+(e.g. you may want to connect to multiple discrete Prometheus services) or may not be used at all (e.g. you have a New Relic connector in the
 container image but aren't using it).
 * **CLI** - The CLI provides the primary interface for interacting with the servo. The CLI is modular and contains a number of root level commands
 and connectors can optionally register additional commands. Most of the root level commands are driven through the event
-subsystem and connectors which respond to the relevant events will automatically become accessible through the CLI. For example, executing `servo schema` will emit a complete JSON Schema document for the assembly while `servo schema kubernetes` will emit a JSON Schema specific to the Kubernetes connector. 
+subsystem and connectors which respond to the relevant events will automatically become accessible through the CLI. For example, executing `servo schema` will emit a complete JSON Schema document for the assembly while `servo schema kubernetes` will emit a JSON Schema specific to the Kubernetes connector.
 
 ### Understanding Events
 
@@ -156,9 +156,9 @@ Events are simple strings identifiers that are bound to a Python
 signature is used when event handlers are registered to enforce a contract around the parameter
 and return types, method arity, etc.
 
-Any connector can define an event provided that no other connector has already registered an event 
+Any connector can define an event provided that no other connector has already registered an event
 with the desired name. The `Servo` class defines several basic events covering essential functionality
-such as declaring metrics and components, capturing measurements, and performing adjustments. These 
+such as declaring metrics and components, capturing measurements, and performing adjustments. These
 events are integrated into the CLI and readily accessible. For example, executing `servo show metrics`
 dispatches the `metrics` event to all active connectors and displays the aggregate results in a table.
 More substantial commands such as `measure` and `adjust` work in the same manner -- dispatching events
@@ -185,8 +185,8 @@ The default events are available on the `servo.servo.Events` enumeration and inc
 
 Event handlers are easily registered via a set of method decorators available on the `servo.connector`
 module. Handlers are registered with a *preposition* which determines if it is invoked before, on,
-or after the event has been processed. Handlers are invoked when the servo or another connector dispatches 
-an event. Event handlers can be implemented either synchronously or asynchronously depending on if 
+or after the event has been processed. Handlers are invoked when the servo or another connector dispatches
+an event. Event handlers can be implemented either synchronously or asynchronously depending on if
 the method is a coroutined declared with the async prefix.
 
 ```python
@@ -201,7 +201,7 @@ class SomeConnector(BaseConnector):
   @on_event('metrics')
   def metrics(self) -> List[Metric]:
     return [Metric('throughput', Unit.REQUESTS_PER_MINUTE)]
-  
+
   @after_event('adjust')
   def analyze_results(self, results: List[EventResult]) -> None:
     self.logger.info(f"We got some results: {results}")
@@ -226,7 +226,7 @@ class EventExample(BaseConnector):
     ...
 ```
 
-The `event` decorator uses the parameters and return type of the decorated method to 
+The `event` decorator uses the parameters and return type of the decorated method to
 define the signature requirements for on event handlers registered against the event.
 The body of the decorated method must be `...`, `pass`, or an async generator that defines
 setup and tear-down behavior for on event handlers.
@@ -248,7 +248,7 @@ class SetupAndTearDownExample(BaseConnector):
 ```
 
 The event decorator can also be used to create an event and register a handler for the
-event at the same time. In this example, the `handler=True` keyword argument is provided to 
+event at the same time. In this example, the `handler=True` keyword argument is provided to
 created the event **and** register the decorated method as an on event handler for the new event.
 
 
@@ -289,9 +289,9 @@ Interacting with the CLI is much cleaner if you drop in a dotenv file to avoid h
 
 ### Logging
 
-The servo base library provides logging services for all connectors and core 
+The servo base library provides logging services for all connectors and core
 components. By default, the `servo` CLI utility runs at the `INFO` log level
-which is designed to provide balanced output that informs you of what is 
+which is designed to provide balanced output that informs you of what is
 happening operationally without becoming overwhelming and pedantic. During
 development, debugging, or troubleshooting it may become desirable to run at
 an elevated log level. The log level can be set via a commandline option on
@@ -313,15 +313,15 @@ subdirectory relative to the servo root. Backtraces are preformatted and as much
 context as possible is provided when an exception is logged.
 
 The `servo.logging` module exposes some interesting functionality for operators
-and developers alike. Logging is aware of the eventing subsystem and will 
+and developers alike. Logging is aware of the eventing subsystem and will
 automatically attribute log messages to the currently executing connector and
 event context. Long running operations can be automatically reported to the
 Opsani API by including a `progress` key with a numeric percentage value ranging
-from 0.0 to 100.0. There are several function decorators available that can 
+from 0.0 to 100.0. There are several function decorators available that can
 provide automatic logging output for entry and exit, execution timing, etc.
 
 Dependent libraries such as `backoff` have been configured to emit their logs
-into the servo logging module. Every component that has logging support is 
+into the servo logging module. Every component that has logging support is
 intercepted and handled by the logging subsystem and conforms to the log levels
 outlined above.
 
@@ -458,7 +458,7 @@ a connector, reach out to us at Opsani as we have connector developer guides tha
 
 ### Connecting to Development APIs
 
-By default, the servo will connect to the primary Opsani API hosted on 
+By default, the servo will connect to the primary Opsani API hosted on
 https://api.opsani.com. This behavior can be overridden via CLI options and
 environment variables:
 
@@ -473,7 +473,7 @@ environment variables:
 development and deployment workflows. Configuration file mounts and environment variables can be used to influence the behavior
 of the servo within the container.
 
-The `SERVO_ENV` build argument controls the target environment for the built image. 
+The `SERVO_ENV` build argument controls the target environment for the built image.
 Building with `SERVO_ENV=production` excludes development packages from the image
 to reduce size and build time.
 

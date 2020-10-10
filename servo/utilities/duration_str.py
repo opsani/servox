@@ -63,7 +63,7 @@ def timedelta_from_duration_str(duration: str) -> timedelta:
 
     Raises a ValueError if the string cannot be parsed.
 
-    A duration string is a possibly signed sequence of decimal numbers, 
+    A duration string is a possibly signed sequence of decimal numbers,
     each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m".
 
     Valid units are :
@@ -84,7 +84,7 @@ def timedelta_to_duration_str(delta: timedelta, extended: bool = False) -> str:
     """
     Return a Golang duration string representation of a timedelta value.
 
-    A duration string is a possibly signed sequence of decimal numbers, 
+    A duration string is a possibly signed sequence of decimal numbers,
     each with optional fraction and a unit suffix, such as "300ms", "-1.5h" or "2h45m".
 
     Components of the returned string are:

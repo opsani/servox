@@ -1,33 +1,24 @@
 import asyncio
-from inspect import Signature, iscoroutinefunction
 import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Coroutine
 
 import pytest
 import respx
 import yaml
-from freezegun import freeze_time
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
-from servo import Duration
+from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.cli import ServoCLI
 from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
-from servo.connector import (
-    BaseConnector,
-    License,
-    Maturity,
-    Optimizer,
-    Version,
-    _connector_subclasses,
-)
+from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
+
 
 class TestOptimizer:
     def test_org_domain_valid(self) -> None:
@@ -77,7 +68,7 @@ class TestOptimizer:
         [
             (None, "https://api.opsani.com/accounts/example.com/applications/my-app/"),
             ("http://localhost:1234", "http://localhost:1234"),
-        ]
+        ],
     )
     def test_api_url(self, url, expected_api_url) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456", url=url)
@@ -152,11 +143,18 @@ class TestBaseConfiguration:
         duration_prop = schema["properties"]["duration"]
         assert duration_prop == {
             "title": "Duration",
-            "env_names": {"SOME_DURATION",},
+            "env_names": {
+                "SOME_DURATION",
+            },
             "type": "string",
             "format": "duration",
             "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
-            "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
+            "examples": [
+                "300ms",
+                "5m",
+                "2h45m",
+                "72h3m0.5s",
+            ],
         }
 
     def test_configuring_with_environment_variables(self) -> None:
@@ -259,7 +257,7 @@ class TestVegetaConfiguration:
         s = VegetaConfiguration(
             rate="0", duration="0", format="http", target="GET http://example.com"
         )
-        assert s.format == TargetFormat.http
+        assert s.format == TargetFormat.HTTP
 
     def test_validate_target_with_json_format(self) -> None:
         s = VegetaConfiguration(
@@ -268,7 +266,7 @@ class TestVegetaConfiguration:
             format="json",
             target='{ "url": "http://example.com", "method": "GET" }',
         )
-        assert s.format == TargetFormat.json
+        assert s.format == TargetFormat.JSON
 
     def test_validate_target_http_doesnt_match_schema(self) -> None:
         with pytest.raises(ValidationError) as e:
@@ -338,13 +336,19 @@ class TestVegetaConfiguration:
     )
     def test_validate_target_http_valid_cases(self, http_target):
         s = VegetaConfiguration(
-            rate="0", duration="0", format="http", target=http_target,
+            rate="0",
+            duration="0",
+            format="http",
+            target=http_target,
         )
 
     def test_validate_target_http_empty(self):
         with pytest.raises(ValidationError) as e:
             VegetaConfiguration(
-                rate="0", duration="0", format="http", target="",
+                rate="0",
+                duration="0",
+                format="http",
+                target="",
             )
         assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("target",)
@@ -401,7 +405,10 @@ class TestVegetaConfiguration:
     def test_validate_target_http_invalid_cases(self, http_target, error_message):
         with pytest.raises(ValidationError) as e:
             VegetaConfiguration(
-                rate="0", duration="0", format="http", target=http_target,
+                rate="0",
+                duration="0",
+                format="http",
+                target=http_target,
             )
         assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("target",)
@@ -503,20 +510,16 @@ class TestVegetaConnector:
 
     @pytest.fixture(autouse=True)
     def mock_run_vegeta(self, mocker) -> None:
-        mocker.patch(
-            "servo.connectors.vegeta._run_vegeta", return_value=(1, [])
-        )
+        mocker.patch("servo.connectors.vegeta._run_vegeta", return_value=(1, []))
 
-    async def test_vegeta_check(self, vegeta_connector: VegetaConnector, mocker) -> None:
-        mocker.patch(
-            "servo.connectors.vegeta._run_vegeta", return_value=(0, [])
-        )
+    async def test_vegeta_check(
+        self, vegeta_connector: VegetaConnector, mocker
+    ) -> None:
+        mocker.patch("servo.connectors.vegeta._run_vegeta", return_value=(0, []))
         await vegeta_connector.check()
 
     def test_vegeta_metrics(self, vegeta_connector: VegetaConnector, mocker) -> None:
-        mocker.patch(
-            "servo.connectors.vegeta._run_vegeta", return_value=(0, [])
-        )
+        mocker.patch("servo.connectors.vegeta._run_vegeta", return_value=(0, []))
         vegeta_connector.metrics()
 
     async def test_vegeta_check_failed(self, vegeta_connector: VegetaConnector) -> None:
@@ -663,9 +666,18 @@ def test_vegeta_cli_help(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
 
 def test_env_variable_prefixing() -> None:
     schema_title_and_description_envs = [
-        ["Base Connector Configuration Schema", "BASE_DESCRIPTION",],
-        ["Vegeta Connector Configuration Schema", "VEGETA_DESCRIPTION",],
-        ["Abstract Servo Configuration Schema", "SERVO_DESCRIPTION",],
+        [
+            "Base Connector Configuration Schema",
+            "BASE_DESCRIPTION",
+        ],
+        [
+            "Vegeta Connector Configuration Schema",
+            "VEGETA_DESCRIPTION",
+        ],
+        [
+            "Abstract Servo Configuration Schema",
+            "SERVO_DESCRIPTION",
+        ],
     ]
     schemas = [
         BaseConfiguration.schema(),
@@ -699,7 +711,9 @@ def test_vegeta_cli_schema_json(
             "description": {
                 "title": "Description",
                 "description": "An optional annotation describing the configuration.",
-                "env_names": ["VEGETA_DESCRIPTION",],
+                "env_names": [
+                    "VEGETA_DESCRIPTION",
+                ],
                 "type": "string",
             },
             "rate": {
@@ -708,19 +722,30 @@ def test_vegeta_cli_schema_json(
                     "Specifies the request rate per time unit to issue against the targets. Given in the format of req"
                     "uest/time unit."
                 ),
-                "env_names": ["VEGETA_RATE",],
+                "env_names": [
+                    "VEGETA_RATE",
+                ],
                 "type": "string",
             },
             "duration": {
                 "title": "Duration",
                 "description": "Specifies the amount of time to issue requests to the targets. This value can be overridden by the server.",
-                "env_names": ["VEGETA_DURATION",],
+                "env_names": [
+                    "VEGETA_DURATION",
+                ],
                 "type": "string",
                 "format": "duration",
                 "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
-                "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
+                "examples": [
+                    "300ms",
+                    "5m",
+                    "2h45m",
+                    "72h3m0.5s",
+                ],
             },
-            "format": {"$ref": "#/definitions/TargetFormat",},
+            "format": {
+                "$ref": "#/definitions/TargetFormat",
+            },
             "target": {
                 "title": "Target",
                 "description": (
@@ -728,7 +753,9 @@ def test_vegeta_cli_schema_json(
                     "e target formats. This option is exclusive of the targets option and will provide a target to Veg"
                     "eta via stdin."
                 ),
-                "env_names": ["VEGETA_TARGET",],
+                "env_names": [
+                    "VEGETA_TARGET",
+                ],
                 "type": "string",
             },
             "targets": {
@@ -738,7 +765,9 @@ def test_vegeta_cli_schema_json(
                     "get formats. This option is exclusive of the target option and will provide targets to via throug"
                     "h a file on disk."
                 ),
-                "env_names": ["VEGETA_TARGETS",],
+                "env_names": [
+                    "VEGETA_TARGETS",
+                ],
                 "format": "file-path",
                 "type": "string",
             },
@@ -746,7 +775,9 @@ def test_vegeta_cli_schema_json(
                 "title": "Connections",
                 "description": "Specifies the maximum number of idle open connections per target host.",
                 "default": 10000,
-                "env_names": ["VEGETA_CONNECTIONS",],
+                "env_names": [
+                    "VEGETA_CONNECTIONS",
+                ],
                 "type": "integer",
             },
             "workers": {
@@ -756,7 +787,9 @@ def test_vegeta_cli_schema_json(
                     "se to achieve the target request rate, up to max-workers."
                 ),
                 "default": 10,
-                "env_names": ["VEGETA_WORKERS",],
+                "env_names": [
+                    "VEGETA_WORKERS",
+                ],
                 "type": "integer",
             },
             "max_workers": {
@@ -765,7 +798,9 @@ def test_vegeta_cli_schema_json(
                     "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
                     "ency of the attack to simulate a target number of clients."
                 ),
-                "env_names": ["VEGETA_MAX_WORKERS",],
+                "env_names": [
+                    "VEGETA_MAX_WORKERS",
+                ],
                 "type": "integer",
             },
             "max_body": {
@@ -775,48 +810,69 @@ def test_vegeta_cli_schema_json(
                     " bytes will be fully read but discarded."
                 ),
                 "default": -1,
-                "env_names": ["VEGETA_MAX_BODY",],
+                "env_names": [
+                    "VEGETA_MAX_BODY",
+                ],
                 "type": "integer",
             },
             "http2": {
                 "title": "Http2",
                 "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
                 "default": True,
-                "env_names": ["VEGETA_HTTP2",],
+                "env_names": [
+                    "VEGETA_HTTP2",
+                ],
                 "type": "boolean",
             },
             "keepalive": {
                 "title": "Keepalive",
                 "description": "Specifies whether to reuse TCP connections between HTTP requests.",
                 "default": True,
-                "env_names": ["VEGETA_KEEPALIVE",],
+                "env_names": [
+                    "VEGETA_KEEPALIVE",
+                ],
                 "type": "boolean",
             },
             "insecure": {
                 "title": "Insecure",
                 "description": "Specifies whether to ignore invalid server TLS certificates.",
                 "default": False,
-                "env_names": ["VEGETA_INSECURE",],
+                "env_names": [
+                    "VEGETA_INSECURE",
+                ],
                 "type": "boolean",
             },
             "reporting_interval": {
                 "title": "Reporting Interval",
                 "description": "How often to report metrics during a measurement cycle.",
                 "default": "15s",
-                "env_names": ["VEGETA_REPORTING_INTERVAL",],
+                "env_names": [
+                    "VEGETA_REPORTING_INTERVAL",
+                ],
                 "type": "string",
                 "format": "duration",
                 "pattern": "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?",
-                "examples": ["300ms", "5m", "2h45m", "72h3m0.5s",],
+                "examples": [
+                    "300ms",
+                    "5m",
+                    "2h45m",
+                    "72h3m0.5s",
+                ],
             },
         },
-        "required": ["rate", "duration",],
+        "required": [
+            "rate",
+            "duration",
+        ],
         "additionalProperties": False,
         "definitions": {
             "TargetFormat": {
                 "title": "TargetFormat",
                 "description": "An enumeration.",
-                "enum": ["http", "json",],
+                "enum": [
+                    "http",
+                    "json",
+                ],
                 "type": "string",
             },
         },
@@ -955,7 +1011,10 @@ def test_vegeta_cli_generate_aliases(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        "connectors": {"one": "vegeta", "two": "vegeta",},
+        "connectors": {
+            "one": "vegeta",
+            "two": "vegeta",
+        },
         "one": {
             "description": "Update the rate, duration, and target/targets to match your load profile",
             "duration": "5m",
@@ -1226,7 +1285,7 @@ def test_vegeta_cli_version_short(servo_cli: ServoCLI, cli_runner: CliRunner) ->
 def test_vegeta_cli_loadgen(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
     pass
 
-from contextlib import asynccontextmanager
+
 class TestConnectorEvents:
     class FakeConnector(BaseConnector):
         @event(handler=True)
@@ -1263,29 +1322,40 @@ class TestConnectorEvents:
 
     def test_assert_on_non_async_event(self):
         with pytest.raises(ValueError) as e:
+
             class NonAsyncEvent(TestConnectorEvents.FakeConnector):
                 @event()
                 def invalid_event(self):
                     pass
+
         assert e
-        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+        assert str(e.value).startswith(
+            "events must be async: add `async` prefix to your function declaration and await as necessary"
+        )
 
     async def test_register_non_generator_method(self):
         with pytest.raises(ValueError) as e:
+
             class NonGeneratorEvent(TestConnectorEvents.FakeConnector):
                 @event()
                 async def invalid_event(self):
                     print("We don't yield and are not a stub")
+
         assert e
-        assert str(e.value).startswith("function body of event declaration must be an async generator or a stub using `...` or `pass` keywords")
+        assert str(e.value).startswith(
+            "function body of event declaration must be an async generator or a stub using `...` or `pass` keywords"
+        )
 
     def test_create_event_non_async_method(self):
         def foo():
             pass
+
         with pytest.raises(ValueError) as e:
             create_event("foo", foo)
         assert e
-        assert str(e.value).startswith("events must be async: add `async` prefix to your function declaration and await as necessary")
+        assert str(e.value).startswith(
+            "events must be async: add `async` prefix to your function declaration and await as necessary"
+        )
 
     async def test_on_handler_context_manager(self, mocker):
         event = _events["wrapped_event"]
@@ -1344,7 +1414,9 @@ class TestConnectorEvents:
         assert result.value.event == event
         assert result.value.preposition is not None
         assert result.value.preposition == Preposition.ON
-        assert result.value.created_at.replace(microsecond=0) == result.value.created_at.replace(microsecond=0)
+        assert result.value.created_at.replace(
+            microsecond=0
+        ) == result.value.created_at.replace(microsecond=0)
 
     async def test_event_invoke_not_supported(self) -> None:
         config = BaseConfiguration.construct()
@@ -1390,10 +1462,17 @@ class TestConnectorEvents:
         assert context != "before:example_event"
         assert context != "after:example_event"
 
+
 @respx.mock
 async def test_logging() -> None:
-    request = respx.post("https://api.opsani.com/accounts/example.com/applications/my-app/servo", content={"status": "ok"})
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    request = respx.post(
+        "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
+        content={"status": "ok"},
+    )
+    connector = MeasureConnector(
+        optimizer=Optimizer(id="example.com/my-app", token="123456"),
+        config=BaseConfiguration(),
+    )
     _connector_context_var.set(connector)
     handler = ProgressHandler(connector.report_progress, lambda m: print(m))
     connector.logger.add(handler.sink)
@@ -1408,7 +1487,7 @@ async def test_logging() -> None:
     await asyncio.sleep(0.00001)
 
     await connector.logger.complete()
-    await asyncio.gather(*handler.tasks)
+    await handler.shutdown()
     reset_to_defaults()
     assert request.called
     assert request.stats.call_count == 3
@@ -1416,11 +1495,14 @@ async def test_logging() -> None:
     last_progress_report = json.loads(request.stats.call_args.args[0].content)
     assert last_progress_report["param"]["progress"] == 100.0
 
+
 def test_report_progress_numeric() -> None:
     pass
 
+
 def test_report_progress_duration() -> None:
     pass
+
 
 # TODO: int progress, float progress
 # TODO: int time_remaining, float time_remaining, duration
@@ -1428,9 +1510,13 @@ def test_report_progress_duration() -> None:
 # TODO: float of < 1, float of < 100
 # TODO: no time remaining given
 
+
 def test_logger_binds_connector_name() -> None:
     messages = []
-    connector = MeasureConnector(optimizer = Optimizer(id="example.com/my-app", token="123456"), config=BaseConfiguration())
+    connector = MeasureConnector(
+        optimizer=Optimizer(id="example.com/my-app", token="123456"),
+        config=BaseConfiguration(),
+    )
     logger = connector.logger
     logger.add(lambda m: messages.append(m), level=0)
     logger.info("Testing")

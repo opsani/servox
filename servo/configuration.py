@@ -1,23 +1,20 @@
+from __future__ import annotations
+
 import abc
 import inspect
-import re
 import json
-import yaml
-from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Type, Union
-from pydantic import (
-    BaseSettings,
-    Extra,
-    Field,
-    HttpUrl,
-    constr,
-)
-from pydantic import AnyHttpUrl, BaseModel, Extra, Field, FilePath, validator, constr
-from servo.types import Duration, HumanReadable
-import servo.logging
-from servo.types import HumanReadable, BaseModelConfig
+import pathlib
+import re
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
-__all__ = [    
+import pydantic
+import yaml
+
+import servo.logging
+import servo.types
+from servo import types
+
+__all__ = [
     "AbstractBaseConfiguration",
     "BaseConfiguration",
     "BaseAssemblyConfiguration",
@@ -25,14 +22,15 @@ __all__ = [
     "ServoConfiguration",
 ]
 
-class Optimizer(BaseSettings):
+
+class Optimizer(pydantic.BaseSettings):
     """
     An Optimizer models an Opsani optimization engines that the Servo can connect to
     in order to access the Opsani machine learning technology for optimizing system infrastructure
     and application workloads.
     """
 
-    org_domain: constr(
+    org_domain: pydantic.constr(
         regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
     )
     """
@@ -42,7 +40,7 @@ class Optimizer(BaseSettings):
     deployed under this domain name umbrella for easy access and autocompletion ergonomics.
     """
 
-    app_name: constr(regex=r"^[a-z\-\.0-9]{3,64}$")
+    app_name: pydantic.constr(regex=r"^[a-z\-\.0-9]{3,64}$")
     """
     The symbolic name of the application or service under optimization in a string of URL-safe characters between 3 and 64
     characters in length.
@@ -53,13 +51,13 @@ class Optimizer(BaseSettings):
     An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
     """
 
-    base_url: AnyHttpUrl = "https://api.opsani.com/"
+    base_url: pydantic.AnyHttpUrl = "https://api.opsani.com/"
     """
     The base URL for accessing the Opsani API. This option is typically only useful to Opsani developers or in the context
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
     """
 
-    url: Optional[AnyHttpUrl]
+    url: Optional[pydantic.AnyHttpUrl]
     """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
     and automated testing to bind the servo to a fixed URL.
     """
@@ -88,22 +86,28 @@ class Optimizer(BaseSettings):
         Returns a complete URL for interacting with the optimizer API.
         """
         return (
-            self.url or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+            self.url
+            or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
         )
 
     class Config:
         env_file = ".env"
         case_sensitive = True
-        extra = Extra.forbid
+        extra = pydantic.Extra.forbid
         fields = {
-            "token": {"env": "OPSANI_TOKEN",},
-            "base_url": {"env": "OPSANI_BASE_URL",},
+            "token": {
+                "env": "OPSANI_TOKEN",
+            },
+            "base_url": {
+                "env": "OPSANI_BASE_URL",
+            },
         }
+
 
 DEFAULT_TITLE = "Base Connector Configuration Schema"
 
 
-class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
+class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
     """
     AbstractBaseConfiguration is the root of the servo configuration class hierarchy.
     It does not define any concrete configuration model fields but provides a number
@@ -122,7 +126,7 @@ class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
 
     @classmethod
     def parse_file(
-        cls, file: Path, *, key: Optional[str] = None
+        cls, file: pathlib.Path, *, key: Optional[str] = None
     ) -> "AbstractBaseConfiguration":
         """
         Parse a YAML configuration file and return a configuration object with the contents.
@@ -168,8 +172,8 @@ class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
     def yaml(
         self,
         *,
-        include: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
-        exclude: Union["AbstractSetIntStr", "MappingIntStrAny"] = None,
+        include: Union[pydantic.AbstractSetIntStr, pydantic.MappingIntStrAny] = None,
+        exclude: Union[pydantic.AbstractSetIntStr, pydantic.MappingIntStrAny] = None,
         by_alias: bool = False,
         skip_defaults: bool = None,
         exclude_unset: bool = False,
@@ -207,12 +211,13 @@ class AbstractBaseConfiguration(BaseSettings, servo.logging.Mixin):
         are merged into the returned dict and take precedence over the defaults.
         """
         from servo.types import DEFAULT_JSON_ENCODERS
+
         return {**DEFAULT_JSON_ENCODERS, **encoders}
 
-    class Config(BaseModelConfig):
+    class Config(servo.types.BaseModelConfig):
         env_file = ".env"
         case_sensitive = True
-        extra = Extra.forbid
+        extra = pydantic.Extra.forbid
         title = DEFAULT_TITLE
 
 
@@ -228,7 +233,7 @@ class BaseConfiguration(AbstractBaseConfiguration):
     configuration for the connector to function.
     """
 
-    description: Optional[str] = Field(
+    description: Optional[str] = pydantic.Field(
         None, description="An optional annotation describing the configuration."
     )
     """An optional textual description of the configuration stanza useful for differentiating
@@ -252,7 +257,7 @@ class BackoffSettings(BaseConfiguration):
     See https://github.com/litl/backoff
     """
 
-    max_time: Optional[Duration]
+    max_time: Optional[servo.types.Duration]
     """
     The maximum amount of time to retry before giving up.
     """
@@ -270,35 +275,39 @@ class Timeouts(BaseConfiguration):
     See https://www.python-httpx.org/advanced/#timeout-configuration
     """
 
-    connect: Optional[Duration]
+    connect: Optional[servo.types.Duration]
     """Specifies the maximum amount of time to wait until a connection to the requested host is established. If HTTPX is unable
     to connect within this time frame, a ConnectTimeout exception is raised.
     """
 
-    read: Optional[Duration]
+    read: Optional[servo.types.Duration]
     """Specifies the maximum duration to wait for a chunk of data to be received (for example, a chunk of the response body).
     If HTTPX is unable to receive data within this time frame, a ReadTimeout exception is raised.
     """
 
-    write: Optional[Duration]
+    write: Optional[servo.types.Duration]
     """Specifies the maximum duration to wait for a chunk of data to be sent (for example, a chunk of the request body).
     If HTTPX is unable to send data within this time frame, a WriteTimeout exception is raised.
     """
 
-    pool: Optional[Duration]
+    pool: Optional[servo.types.Duration]
     """Specifies the maximum duration to wait for acquiring a connection from the connection pool. If HTTPX is unable to
     acquire a connection within this time frame, a PoolTimeout exception is raised. A related configuration here is the maximum
     number of allowable connections in the connection pool, which is configured by the pool_limits.
     """
 
-    def __init__(self, timeout: Optional[Union[str, int, float, Duration]] = None, **kwargs) -> None:
+    def __init__(
+        self,
+        timeout: Optional[Union[str, int, float, servo.types.Duration]] = None,
+        **kwargs,
+    ) -> None:
         for attr in ("connect", "read", "write", "pool"):
             if not attr in kwargs:
                 kwargs[attr] = timeout
         super().__init__(**kwargs)
 
 
-ProxyKey = constr(regex=r'^(https?|all)://')
+ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
 
 
 class ServoConfiguration(BaseConfiguration):
@@ -306,17 +315,19 @@ class ServoConfiguration(BaseConfiguration):
     settings for shared services such as networking and logging.
     """
 
-    backoff: Dict[str, BackoffSettings] = Field({
-        "__default__": { "max_time": "10m", "max_tries": None },
-        "connect": { "max_time": "1h", "max_tries": None },
-    })
+    backoff: Dict[str, BackoffSettings] = pydantic.Field(
+        {
+            "__default__": {"max_time": "10m", "max_tries": None},
+            "connect": {"max_time": "1h", "max_tries": None},
+        }
+    )
     """A mapping of named operations to settings for the backoff library, which provides backoff
     and retry capabilities to the servo.
 
     See https://github.com/litl/backoff
     """
 
-    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[AnyHttpUrl]]]
+    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[pydantic.AnyHttpUrl]]]
     """Proxy configuration for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
@@ -328,7 +339,7 @@ class ServoConfiguration(BaseConfiguration):
     servo.
     """
 
-    ssl_verify: Union[None, bool, FilePath]
+    ssl_verify: Union[None, bool, pydantic.FilePath]
     """SSL verification settings for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
@@ -341,7 +352,7 @@ class ServoConfiguration(BaseConfiguration):
     See https://www.python-httpx.org/advanced/#ssl-certificates
     """
 
-    @validator("timeouts", pre=True)
+    @pydantic.validator("timeouts", pre=True)
     def parse_timeouts(cls, v):
         if isinstance(v, (str, int, float)):
             return Timeouts(v)
@@ -351,7 +362,7 @@ class ServoConfiguration(BaseConfiguration):
     def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
         return None
 
-    class Config(BaseModelConfig):
+    class Config(servo.types.BaseModelConfig):
         validate_assignment = True
 
 
@@ -365,7 +376,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
     See `Assembly` for details on how the concrete model is built.
     """
 
-    connectors: Optional[Union[List[str], Dict[str, str]]] = Field(
+    connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
         description=(
             "An optional, explicit configuration of the active connectors.\n"
@@ -382,9 +393,8 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
     An optional list of connector names or a mapping of connector names to connector class names
     """
 
-    servo: Optional[ServoConfiguration] = Field(
-        None,
-        description="Configuration of the Servo connector"
+    servo: Optional[ServoConfiguration] = pydantic.Field(
+        None, description="Configuration of the Servo connector"
     )
     """Configuration of the Servo itself.
 
@@ -407,13 +417,13 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
                 if inspect.isgeneratorfunction(field.type_.generate):
                     for name, config in field.type_.generate():
                         kwargs[name] = config
-                else:    
+                else:
                     if config := field.type_.generate():
                         kwargs[name] = config
 
         return cls(**kwargs)
 
-    @validator("connectors", pre=True)
+    @pydantic.validator("connectors", pre=True)
     @classmethod
     def validate_connectors(
         cls, connectors
@@ -442,7 +452,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
 
         return connectors
 
-    class Config(BaseModelConfig):
-        extra = Extra.forbid
+    class Config(types.BaseModelConfig):
+        extra = pydantic.Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"

@@ -30,3 +30,31 @@ run: build
 .PHONY: push
 push: build
 	docker push ${IMAGE_NAME}
+
+.PHONY: format
+format:
+	poetry run isort .
+	poetry run autoflake --recursive \
+		--ignore-init-module-imports \
+		--remove-all-unused-imports  \
+		--remove-unused-variables    \
+		--in-place servo tests
+
+.PHONY: typecheck
+typecheck:
+	poetry run mypy servo || true
+
+lint-docs:
+	poetry run flake8-markdown "**/*.md" || true
+
+.PHONY: lint
+lint: typecheck
+	poetry run flakehell lint --count
+
+.PHONY: test
+test:
+	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg tests
+
+.PHONY: pre-commit
+pre-commit:
+	poetry run pre-commit run --hook-stage manual --all-files
