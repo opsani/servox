@@ -471,6 +471,11 @@ During local development, you may wish to invoke these tools as follows:
   with the engineering standards and style of the project.
 * `make format` - Automatically apply changes to the working copy to conform
   with project standards where possible (e.g., reformatting imports).
+* `make pre-commit` - Run all pre-commit hooks in the manual hook stage. There
+  are a number of standards that are currently soft enforced in the interest of
+  pragmatism. Eventually the set of pre-commit and lint checks will form
+  a perfect union but we are not there yet. Most hooks set in manual mode have
+  to do with fit and finish concerns such as docstring tone/formatting.
 * `make test` - Execute the test suite and generate a code coverage report.
 
 Linting is automatically performed when a new branch is pushed or a PR is opened
