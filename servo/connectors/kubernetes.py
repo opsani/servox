@@ -1,3 +1,5 @@
+"""Optimize services and applications deployed on Kubernetes with Opsani.
+"""
 from __future__ import annotations, print_function
 
 import abc
@@ -2345,17 +2347,19 @@ DNSSubdomainName = constr(
     max_length=253,
     regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
 )
-"""
-DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
+DNSSubdomainName.__doc__ = (
+    """DNSSubdomainName models a Kubernetes DNS Subdomain Name used as the name for most resource types.
 
-Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
-    * contain no more than 253 characters
-    * contain only lowercase alphanumeric characters, '-' or '.'
-    * start with an alphanumeric character
-    * end with an alphanumeric character
+    Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+        * contain no more than 253 characters
+        * contain only lowercase alphanumeric characters, '-' or '.'
+        * start with an alphanumeric character
+        * end with an alphanumeric character
 
-See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
-"""
+    See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+    """
+)
+
 
 
 DNSLabelName = constr(
@@ -2364,17 +2368,18 @@ DNSLabelName = constr(
     max_length=63,
     regex="^[0-9a-zA-Z]([0-9a-zA-Z-])*[0-9A-Za-z]$",
 )
-"""
-DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
+DNSLabelName.__doc__ = (
+    """DNSLabelName models a Kubernetes DNS Label Name identified used to name some resource types.
 
-Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
-    * contain at most 63 characters
-    * contain only lowercase alphanumeric characters or '-'
-    * start with an alphanumeric character
-    * end with an alphanumeric character
+    Valid DNS Label Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+        * contain at most 63 characters
+        * contain only lowercase alphanumeric characters or '-'
+        * start with an alphanumeric character
+        * end with an alphanumeric character
 
-See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
-"""
+    See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
+    """
+)
 
 
 ContainerTagName = constr(
@@ -2383,14 +2388,15 @@ ContainerTagName = constr(
     max_length=128,
     regex="^[0-9a-zA-Z]([0-9a-zA-Z_\\.\\-/:@])*$",
 )  # NOTE: This regex is not a full validation
-"""
-ContainerTagName models the name of a container referenced in a Kubernetes manifest.
+ContainerTagName.__doc__ = (
+    """ContainerTagName models the name of a container referenced in a Kubernetes manifest.
 
-Valid container tags must:
-    * be valid ASCII and may contain lowercase and uppercase letters, digits, underscores, periods and dashes.
-    * not start with a period or a dash
-    * may contain a maximum of 128 characters
-"""
+    Valid container tags must:
+        * be valid ASCII and may contain lowercase and uppercase letters, digits, underscores, periods and dashes.
+        * not start with a period or a dash
+        * may contain a maximum of 128 characters
+    """
+)
 
 
 class EnvironmentConfiguration(BaseConfiguration):
