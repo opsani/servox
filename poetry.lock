@@ -576,7 +576,7 @@ python-versions = "*"
 
 [[package]]
 name = "isort"
-version = "5.6.1"
+version = "5.6.2"
 description = "A Python utility / library to sort Python imports."
 category = "dev"
 optional = false
@@ -1433,7 +1433,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "549cffdc242bbf9884bf63ab27abcbb1116d01e53e2a36134eb9f44573fa27fc"
+content-hash = "2a6108a8f127cae0c7cea2bf58b74263be70f4a5d4e90c618b297eb35b445b44"
 
 [metadata.files]
 aiohttp = [
@@ -1677,8 +1677,8 @@ iniconfig = [
     {file = "iniconfig-1.0.1.tar.gz", hash = "sha256:e5f92f89355a67de0595932a6c6c02ab4afddc6fcdc0bfc5becd0d60884d3f69"},
 ]
 isort = [
-    {file = "isort-5.6.1-py3-none-any.whl", hash = "sha256:dd3211f513f4a92ec1ec1876fc1dc3c686649c349d49523f5b5adbb0814e5960"},
-    {file = "isort-5.6.1.tar.gz", hash = "sha256:2f510f34ae18a8d0958c53eec51ef84fd099f07c4c639676525acbcd7b5bd3ff"},
+    {file = "isort-5.6.2-py3-none-any.whl", hash = "sha256:a30c567b88d7b73e448b0f30526eaf2f943f0627809e4f34b9c3271918d96c3e"},
+    {file = "isort-5.6.2.tar.gz", hash = "sha256:c2cfe5b621f62932677004f96f93c4b128dc457d957b0531f204641fe8adc8a6"},
 ]
 jmespath = [
     {file = "jmespath-0.10.0-py2.py3-none-any.whl", hash = "sha256:cdf6525904cc597730141d61b36f2e4b8ecc257c420fa2f4549bac2c2d0cb72f"},
