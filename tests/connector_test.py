@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 
 from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.cli import ServoCLI
-from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
+from servo.configuration import BaseConfiguration, BaseServoConfiguration
 from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
@@ -682,7 +682,7 @@ def test_env_variable_prefixing() -> None:
     schemas = [
         BaseConfiguration.schema(),
         VegetaConfiguration.schema(),
-        BaseAssemblyConfiguration.schema(),
+        BaseServoConfiguration.schema(),
     ]
     # NOTE: popping the env_names without copying is a mistake you will only make once
     values = list(

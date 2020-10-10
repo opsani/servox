@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from typing import Type
 
 import pydantic
@@ -854,7 +855,7 @@ class TestKubernetesConnectorIntegration:
         await config.load_kubeconfig()
         # dep = await Deployment.read("opsani-servo", "default")
         # debug(dep)
-        pod = await Pod.read("web-canary", "default")
+        await Pod.read("web-canary", "default")
         # debug(pod)
         # description = await connector.adjust(descriptor_to_adjustments(adjustment))
         # debug(description)

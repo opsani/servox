@@ -12,7 +12,7 @@ import servo
 import servo.cli
 
 
-def run_cli():
+def run_cli() -> None:
     dotenv.load_dotenv(dotenv.find_dotenv(usecwd=True))
 
     # NOTE: We load connectors here because waiting until assembly

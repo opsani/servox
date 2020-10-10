@@ -8,6 +8,7 @@ import enum
 import functools
 import inspect
 import sys
+import types
 import weakref
 from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
 
@@ -713,8 +714,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List["servo.connector.BaseConnector"]] = None,
-        exclude: Optional[List["servo.connector.BaseConnector"]] = None,
+        include: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
+        exclude: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
         prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
@@ -734,15 +735,24 @@ class Mixin:
         :param return_exceptions: When True, exceptions returned by on event handlers are returned as results.
         """
         results: List[EventResult] = []
-        connectors = include if include is not None else self.__connectors__
+        connectors: List["servo.connector.BaseConnector"] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
-        if exclude:
-            # NOTE: We filter by name to avoid recursive hell in Pydantic
-            excluded_names = list(map(lambda c: c.name, exclude))
+        if include is not None:
+            included_names = list(map(lambda c: c if isinstance(c, str) else c.name, include))
+            connectors = list(
+                filter(lambda c: c.name in included_names, connectors)
+            )
+
+        if exclude is not None:
+            excluded_names = list(map(lambda c: c if isinstance(c, str) else c.name, exclude))
             connectors = list(
                 filter(lambda c: c.name not in excluded_names, connectors)
             )
+
+        # Validate that we are dispatching to connectors that are in our graph
+        if not set(connectors).issubset(self.__connectors__):
+            raise ValueError(f"invalid target connectors: cannot dispatch events to connectors that are in the active servo")
 
         # Invoke the before event handlers
         if prepositions & Preposition.BEFORE:
@@ -831,14 +841,15 @@ class Mixin:
                 handler_kwargs = event_handler.kwargs.copy()
                 handler_kwargs.update(kwargs)
                 try:
+                    method = types.MethodType(event_handler.handler, self)
                     async with event.on_handler_context_manager(self):
-                        if asyncio.iscoroutinefunction(event_handler.handler):
+                        if asyncio.iscoroutinefunction(method):
                             value = await asyncio.create_task(
-                                event_handler.handler(self, *args, **kwargs),
+                                method(*args, **kwargs),
                                 name=f"{preposition}:{event}",
                             )
                         else:
-                            value = event_handler.handler(self, *args, **kwargs)
+                            value = method(*args, **kwargs)
 
                 except CancelEventError as error:
                     if preposition != Preposition.BEFORE:

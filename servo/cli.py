@@ -457,19 +457,21 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         # Assemble the Servo
         try:
-            assembly, servo_, ServoConfiguration = servo.Assembly.assemble(
+            assembly = servo.Assembly.assemble(
                 config_file=ctx.config_file, optimizer=optimizer
             )
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
 
-        # Dispatch the startup event
-        sync(servo_.startup())
-
         # Populate the context for use by other commands
+        servo_ = assembly.servos[0]
         ctx.assembly = assembly
         ctx.servo_ = servo_
+
+        # TODO: Add assembly.startup() and shutdown()
+        for servo_ in assembly.servos:
+            sync(servo_.startup())
 
     @staticmethod
     def connectors_instance_callback(
@@ -1352,12 +1354,14 @@ class ServoCLI(CLI):
                     )
                 )
 
-            # TODO: Test combination of metrics + connector options
+            # TODO: Connector names should support namespacing by servo instance
+            connector_names = list(map(lambda c: c.name, connectors))
+
             if metrics:
                 # Filter target connectors by metrics
                 results: List[servo.EventResult] = sync(
-                    context.servo.dispatch_event(
-                        servo.Events.METRICS, include=connectors
+                    context.assembly.dispatch_event(
+                        servo.Events.METRICS, include=connector_names
                     )
                 )
                 for result in results:
@@ -1368,11 +1372,11 @@ class ServoCLI(CLI):
 
             # Capture the measurements
             results: List[servo.EventResult] = sync(
-                context.servo.dispatch_event(
+                context.assembly.dispatch_event(
                     servo.Events.MEASURE,
                     metrics=metrics,
                     control=servo.Control(duration=duration),
-                    include=connectors,
+                    include=connector_names,
                 )
             )
 

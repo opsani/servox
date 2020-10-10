@@ -11,7 +11,6 @@ import itertools
 import os
 import pathlib
 import time
-
 from typing import (
     Any,
     Callable,
@@ -35,12 +34,11 @@ from typing import (
 
 import backoff
 import kubernetes_asyncio
-import pydantic
-
 import kubernetes_asyncio.client
-import kubernetes_asyncio.watch
 import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.config.kube_config
+import kubernetes_asyncio.watch
+import pydantic
 
 import servo
 from servo import (
