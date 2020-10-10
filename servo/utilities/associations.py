@@ -1,7 +1,7 @@
 """Associations are virtual attributes maintained outside of an object instance.
 
 Associations provide the ability to manage state for an object without polluting
-its namespace. They are very useful for supporting Pydantic models without 
+its namespace. They are very useful for supporting Pydantic models without
 introducing new attributes that need to be considered in the schema and validation
 logic.
 """
