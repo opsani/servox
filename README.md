@@ -456,6 +456,26 @@ email to coordinate efforts.
 It is expected that most Open Source contributions will come in the form of new connectors. Should you wish to develop
 a connector, reach out to us at Opsani as we have connector developer guides that are in pre-release while ServoX matures.
 
+### Linting and Formatting
+
+The project is structured to support and enforce consistent, idiomatic code. A
+number of tools have been integrated to provide linting and automatic
+reformatting when possible/appropriate.
+
+This functionality is exposed via tasks in the `Makefile`, Git commit hooks,
+and GitHub Actions.
+
+During local development, you may wish to invoke these tools as follows:
+
+* `make lint` - Run the linters and output actionable feedback for conformance
+  with the engineering standards and style of the project.
+* `make format` - Automatically apply changes to the working copy to conform
+  with project standards where possible (e.g., reformatting imports).
+* `make test` - Execute the test suite and generate a code coverage report.
+
+Linting is automatically performed when a new branch is pushed or a PR is opened
+and conformance can be remediated during post-implementation code review.
+
 ### Connecting to Development APIs
 
 By default, the servo will connect to the primary Opsani API hosted on
