@@ -16,7 +16,7 @@ For other versions see [releases](https://github.com/opsani/servox/releases) on 
 
 The servo requires an optimizer, an API token, and a config file to run. The
 image is configured to accept these parameters through a combination of environment
-variables and mounts. 
+variables and mounts.
 
 The API token can be configured through an environment variable *or* a mount. When
 the `OPSANI_TOKEN` environment variable is not set, the servo will search for a
@@ -29,7 +29,7 @@ token file mounted at `/servo/opsani.token`.
 | **`OPSANI_OPTIMIZER`** | Configures the Opsani optimizer for the servo (required). Format is `example.com/app`. |
 | `OPSANI_TOKEN` | Configures the Opsani API token for authenticating with the optimizer service (optional). |
 
-Servo connectors support setting values through environment variables for every 
+Servo connectors support setting values through environment variables for every
 attribute of their configuration class. See `servo schema` for details.
 
 ### Mounts
@@ -87,7 +87,7 @@ services:
     restart: always
     environment:
       - OPSANI_OPTIMIZER=${OPSANI_OPTIMIZER:?Opsani Optimizer must be configured}
-      - OPSANI_TOKEN=${OPSANI_TOKEN}      
+      - OPSANI_TOKEN=${OPSANI_TOKEN}
     volumes:
       - type: bind
         source: ./servo.yaml
@@ -102,7 +102,7 @@ services:
 ## Adding connectors via inheritance
 
 Additional connectors can be included into a servo assembly image by using `opsani/servox` as a parent
-image. The servo image uses the [Poetry](https://python-poetry.org/) package manager for Python and connectors 
+image. The servo image uses the [Poetry](https://python-poetry.org/) package manager for Python and connectors
 can be installed through standard package management. The servo uses Python setuptools entrypoints to auto-discover connectors that are available in the environment.
 
 ```dockerfile

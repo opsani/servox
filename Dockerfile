@@ -3,11 +3,11 @@ FROM python:3.8-slim
 
 ARG SERVO_ENV=development
 
-ENV SERVO_ENV=${SERVO_ENV} \    
+ENV SERVO_ENV=${SERVO_ENV} \
     # Python
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \    
+    PYTHONHASHSEED=random \
     # PIP
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \

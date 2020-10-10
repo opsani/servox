@@ -28,4 +28,3 @@ jobs:
       run: poetry build
     - name: Publish to PyPI
       run: poetry publish --username=__token__ --password=${{ secrets.PYPI_TOKEN }}
-    

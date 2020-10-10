@@ -26,4 +26,3 @@ jobs:
       run: poetry run pytest tests
     - name: Test CLI entrypoints
       run: poetry run servo version
-      
