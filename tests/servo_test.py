@@ -13,12 +13,7 @@ from pydantic import Extra, ValidationError
 
 from servo import BaseAssemblyConfiguration, Duration, __codename__, __version__
 from servo.assembly import Assembly
-from servo.configuration import (
-    BaseConfiguration,
-    Optimizer,
-    ServoConfiguration,
-    Timeouts,
-)
+from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (

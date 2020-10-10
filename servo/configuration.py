@@ -444,10 +444,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
             connectors = decoded_value
 
         # import late until dependencies are untangled
-        from servo.connector import (
-            _normalize_connectors,
-            _routes_for_connectors_descriptor,
-        )
+        from servo.connector import _normalize_connectors, _routes_for_connectors_descriptor
 
         connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if descriptor is invalid, failing validation

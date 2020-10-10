@@ -15,14 +15,7 @@ from servo.cli import ServoCLI
 from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
 from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import (
-    EventContext,
-    Preposition,
-    _connector_context_var,
-    _events,
-    create_event,
-    event,
-)
+from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.test_helpers import *
 

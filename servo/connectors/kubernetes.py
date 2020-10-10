@@ -59,17 +59,7 @@ from servo import (
     Maturity,
 )
 from servo import Memory as BaseMemory
-from servo import (
-    Replicas,
-    connector,
-    get_hash,
-    join_to_series,
-    logger,
-    multicheck,
-    on_event,
-    require,
-    warn,
-)
+from servo import Replicas, connector, get_hash, join_to_series, logger, multicheck, on_event, require, warn
 from servo.logging import logger
 from servo.types import Numeric
 

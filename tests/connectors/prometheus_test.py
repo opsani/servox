@@ -7,12 +7,7 @@ import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
 
-from servo.connectors.prometheus import (
-    PrometheusChecks,
-    PrometheusConfiguration,
-    PrometheusMetric,
-    PrometheusRequest,
-)
+from servo.connectors.prometheus import PrometheusChecks, PrometheusConfiguration, PrometheusMetric, PrometheusRequest
 from servo.types import *
 
 

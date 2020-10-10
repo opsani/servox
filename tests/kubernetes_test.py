@@ -198,9 +198,7 @@ class TestChecks:
 
     async def test_check_connectivity_bad_hostname(self, config) -> None:
         # TODO: Generalize this into a helper
-        from kubernetes_asyncio.client import (
-            Configuration as KubernetesAsyncioConfiguration,
-        )
+        from kubernetes_asyncio.client import Configuration as KubernetesAsyncioConfiguration
 
         await config.load_kubeconfig()
 

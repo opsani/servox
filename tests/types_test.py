@@ -257,16 +257,7 @@ import abc
 
 import pydantic
 
-from servo.types import (
-    CPU,
-    EnumSetting,
-    InstanceType,
-    Memory,
-    Numeric,
-    RangeSetting,
-    Replicas,
-    Setting,
-)
+from servo.types import CPU, EnumSetting, InstanceType, Memory, Numeric, RangeSetting, Replicas, Setting
 
 
 class BasicSetting(Setting):

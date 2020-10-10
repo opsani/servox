@@ -3,18 +3,7 @@ import dataclasses
 import inspect
 import typing
 import warnings
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import servo.utilities.strings
 

@@ -9,19 +9,7 @@ import functools
 import inspect
 import sys
 import weakref
-from typing import (
-    Any,
-    AsyncContextManager,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
 
 import pydantic
 import pydantic.main

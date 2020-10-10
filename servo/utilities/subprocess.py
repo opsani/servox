@@ -7,19 +7,7 @@ import time
 from asyncio.streams import StreamReader
 from datetime import timedelta
 from pathlib import Path
-from typing import (
-    IO,
-    Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    NamedTuple,
-    Optional,
-    TypeVar,
-    Union,
-    cast,
-)
+from typing import IO, Any, Awaitable, Callable, Dict, List, NamedTuple, Optional, TypeVar, Union, cast
 
 from loguru import logger
 

@@ -12,20 +12,7 @@ import subprocess
 import sys
 import textwrap
 import time
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Pattern,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click

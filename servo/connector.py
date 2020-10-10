@@ -3,17 +3,7 @@ from __future__ import annotations
 import abc
 import importlib
 import re
-from typing import (
-    Any,
-    ClassVar,
-    Generator,
-    Iterable,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    get_type_hints,
-)
+from typing import Any, ClassVar, Generator, Iterable, Optional, Set, Tuple, Type, get_type_hints
 
 import loguru
 import pkg_resources

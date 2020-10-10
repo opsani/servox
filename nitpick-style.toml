@@ -1,5 +1,7 @@
 ["pyproject.toml".tool.isort]
-profile = "hug"
+profile = "black"
+line_length = 120
+known_first_party = "tests"
 
 ["setup.cfg".flake8]
 max-line-length = 120
