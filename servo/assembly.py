@@ -11,7 +11,9 @@ import pydantic
 import pydantic.json
 import yaml
 
-from servo import configuration, connector, servo
+import servo.configuration
+import servo.connector
+import servo.servo
 
 __all__ = ["Assembly", "_assembly_context_var"]
 
@@ -43,11 +45,11 @@ class Assembly(pydantic.BaseModel):
 
     ## Configuration
     config_file: pathlib.Path
-    optimizer: configuration.Optimizer
+    optimizer: servo.configuration.Optimizer
 
     ## Assembled settings & Servo
-    config_model: Type[configuration.BaseAssemblyConfiguration]
-    servo: servo.Servo
+    config_model: Type[servo.configuration.BaseAssemblyConfiguration]
+    servo: servo.servo.Servo
 
     @staticmethod
     def current() -> "Assembly":
@@ -63,10 +65,10 @@ class Assembly(pydantic.BaseModel):
         cls,
         *,
         config_file: pathlib.Path,
-        optimizer: configuration.Optimizer,
+        optimizer: servo.configuration.Optimizer,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> Tuple["Assembly", servo.Servo, Type[configuration.BaseAssemblyConfiguration]]:
+    ) -> Tuple["Assembly", servo.Servo, Type[servo.configuration.BaseAssemblyConfiguration]]:
         """Assembles a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
@@ -102,7 +104,7 @@ class Assembly(pydantic.BaseModel):
                 connectors.append(connector)
 
         # Build the servo object
-        servo_ = servo.Servo(
+        servo_ = servo.servo.Servo(
             config=assembly_config,
             connectors=connectors.copy(),  # Avoid self-referential reference to servo
             optimizer=optimizer,
@@ -118,7 +120,7 @@ class Assembly(pydantic.BaseModel):
 
         # Set the context vars
         _assembly_context_var.set(assembly)
-        servo._servo_context_var.set(servo_)
+        servo.servo.Servo.set_current(servo_)
 
         return assembly, servo_, AssemblyConfiguration
 
@@ -132,12 +134,12 @@ class Assembly(pydantic.BaseModel):
     # Utility functions
 
     @classmethod
-    def all_connector_types(cls) -> Set[Type[connector.BaseConnector]]:
+    def all_connector_types(cls) -> Set[Type[servo.connector.BaseConnector]]:
         """Returns a set of all connector types in the assembly excluding the Servo"""
-        return connector._connector_subclasses.copy()
+        return servo.connector._connector_subclasses.copy()
 
     @property
-    def connectors(self) -> List[connector.BaseConnector]:
+    def connectors(self) -> List[servo.connector.BaseConnector]:
         """
         Returns a list of all active connectors in the assembly including the Servo.
         """

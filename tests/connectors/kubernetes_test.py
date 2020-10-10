@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Type
 
 import pydantic
@@ -26,7 +27,6 @@ from servo.connectors.kubernetes import (
     Millicore,
     OptimizationStrategy,
     Pod,
-    Replicas,
     ResourceRequirements,
 )
 from servo.types import Adjustment
@@ -307,7 +307,7 @@ class TestKubernetesConfiguration:
         assert DeploymentConfiguration.__fields__["namespace"].default is None
         assert (
             DeploymentConfiguration(
-                name="testing", containers=[], replicas=Replicas(min=0, max=1)
+                name="testing", containers=[], replicas=servo.Replicas(min=0, max=1)
             ).namespace
             is None
         )
@@ -395,7 +395,7 @@ class TestDeploymentConfiguration:
         config = DeploymentConfiguration(
             name="testing",
             containers=[],
-            replicas=Replicas(min=1, max=4),
+            replicas=servo.Replicas(min=1, max=4),
             strategy=OptimizationStrategy.DEFAULT,
         )
         assert config.yaml(exclude_unset=True) == (
@@ -411,7 +411,7 @@ class TestDeploymentConfiguration:
         config = DeploymentConfiguration(
             name="testing",
             containers=[],
-            replicas=Replicas(min=1, max=4),
+            replicas=servo.Replicas(min=1, max=4),
             strategy=DefaultOptimizationStrategyConfiguration(
                 type=OptimizationStrategy.DEFAULT
             ),
@@ -430,7 +430,7 @@ class TestDeploymentConfiguration:
         config = DeploymentConfiguration(
             name="testing",
             containers=[],
-            replicas=Replicas(min=1, max=4),
+            replicas=servo.Replicas(min=1, max=4),
             strategy=CanaryOptimizationStrategyConfiguration(
                 type=OptimizationStrategy.CANARY, alias="tuning"
             ),
@@ -654,8 +654,8 @@ class TestContainer:
 
 class TestReplicas:
     @pytest.fixture
-    def replicas(self) -> Replicas:
-        return Replicas(min=1, max=4)
+    def replicas(self) -> servo.Replicas:
+        return servo.Replicas(min=1, max=4)
 
     def test_parsing(self, replicas) -> None:
         assert {
@@ -855,7 +855,7 @@ class TestKubernetesConnectorIntegration:
         # dep = await Deployment.read("opsani-servo", "default")
         # debug(dep)
         pod = await Pod.read("web-canary", "default")
-        debug(pod)
+        # debug(pod)
         # description = await connector.adjust(descriptor_to_adjustments(adjustment))
         # debug(description)
 
@@ -964,7 +964,7 @@ def web_config() -> KubernetesConfiguration:
         deployments=[
             DeploymentConfiguration(
                 name="web",
-                replicas=Replicas(
+                replicas=servo.Replicas(
                     min=1,
                     max=2,
                 ),
@@ -987,7 +987,7 @@ def config() -> KubernetesConfiguration:
         deployments=[
             DeploymentConfiguration(
                 name="fiber-http-deployment",
-                replicas=Replicas(
+                replicas=servo.Replicas(
                     min=1,
                     max=2,
                 ),

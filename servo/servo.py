@@ -14,7 +14,7 @@ import servo.connector
 import servo.events
 import servo.types
 import servo.utilities
-from servo import api, checks, configuration, connector, events, types, utilities
+import servo.utilities.pydantic
 
 _servo_context_var = contextvars.ContextVar("servo.Servo.current", default=None)
 
@@ -48,25 +48,25 @@ class _EventDefinitions(Protocol):
     """
 
     # Lifecycle events
-    @events.event(Events.STARTUP)
+    @servo.events.event(Events.STARTUP)
     async def startup(self) -> None:
         ...
 
-    @events.event(Events.SHUTDOWN)
+    @servo.events.event(Events.SHUTDOWN)
     async def shutdown(self) -> None:
         ...
 
     # Informational events
-    @events.event(Events.METRICS)
+    @servo.events.event(Events.METRICS)
     async def metrics(self) -> List[servo.types.Metric]:
         ...
 
-    @events.event(Events.COMPONENTS)
+    @servo.events.event(Events.COMPONENTS)
     async def components(self) -> List[servo.types.Component]:
         ...
 
     # Operational events
-    @events.event(Events.MEASURE)
+    @servo.events.event(Events.MEASURE)
     async def measure(
         self,
         *,
@@ -77,7 +77,7 @@ class _EventDefinitions(Protocol):
             await asyncio.sleep(control.delay.total_seconds())
         yield
 
-    @events.event(Events.CHECK)
+    @servo.events.event(Events.CHECK)
     async def check(
         self,
         matching: Optional[servo.checks.CheckFilter],
@@ -87,11 +87,11 @@ class _EventDefinitions(Protocol):
     ) -> List[servo.checks.Check]:
         ...
 
-    @events.event(Events.DESCRIBE)
+    @servo.events.event(Events.DESCRIBE)
     async def describe(self) -> servo.types.Description:
         ...
 
-    @events.event(Events.ADJUST)
+    @servo.events.event(Events.ADJUST)
     async def adjust(
         self,
         adjustments: List[servo.types.Adjustment],
@@ -99,7 +99,7 @@ class _EventDefinitions(Protocol):
     ) -> servo.types.Description:
         ...
 
-    @events.event(Events.PROMOTE)
+    @servo.events.event(Events.PROMOTE)
     async def promote(self) -> None:
         ...
 
@@ -107,23 +107,23 @@ class _EventDefinitions(Protocol):
 _servo_context_var = contextvars.ContextVar("servo.servo", default=None)
 
 
-class ServoChecks(checks.BaseChecks):
+class ServoChecks(servo.checks.BaseChecks):
     async def check_connectivity(self) -> Tuple[bool, str]:
         async with self.api_client() as client:
-            event_request = api.Request(event=api.Event.HELLO)
+            event_request = servo.api.Request(event=servo.api.Event.HELLO)
             response = await client.post("servo", data=event_request.json())
             success = response.status_code == httpx.codes.OK
             return (success, f"Response status code: {response.status_code}")
 
 
-@connector.metadata(
+@servo.connector.metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
-    maturity=types.Maturity.ROBUST,
-    license=types.License.APACHE2,
+    maturity=servo.types.Maturity.ROBUST,
+    license=servo.types.License.APACHE2,
     version=servo.__version__,
 )
-class Servo(connector.BaseConnector):
+class Servo(servo.connector.BaseConnector):
     """
     A connector that interacts with the Opsani API to perform optimization.
 
@@ -138,7 +138,7 @@ class Servo(connector.BaseConnector):
     and are instead built through the `Assembly.assemble` method.
     """
 
-    config: configuration.BaseAssemblyConfiguration
+    config: servo.configuration.BaseAssemblyConfiguration
     """Configuration of the Servo assembly.
 
     Note that the configuration is built dynamically at Servo assembly time.
@@ -146,7 +146,7 @@ class Servo(connector.BaseConnector):
     connector.
     """
 
-    connectors: List[connector.BaseConnector]
+    connectors: List[servo.connector.BaseConnector]
     """
     The active connectors in the Servo.
     """
@@ -160,8 +160,14 @@ class Servo(connector.BaseConnector):
         """
         return _servo_context_var.get()
 
+    @staticmethod
+    def set_current(servo_: "Servo") -> None:
+        """Set the current servo execution context.
+        """
+        _servo_context_var.set(servo_)
+
     def __init__(
-        self, *args, connectors: List[connector.BaseConnector], **kwargs
+        self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
     ) -> None:
         super().__init__(*args, connectors=[], **kwargs)
 
@@ -173,7 +179,7 @@ class Servo(connector.BaseConnector):
         for connector in connectors:
             connector._set_association("servo_config", self.config.servo)
 
-            with utilities.pydantic.extra(connector):
+            with servo.utilities.pydantic.extra(connector):
                 connector.api_client_options = self.api_client_options
 
     @property
@@ -190,17 +196,17 @@ class Servo(connector.BaseConnector):
         """
         Notifies all connectors that the servo is starting up.
         """
-        await self.dispatch_event(Events.STARTUP, prepositions=events.Preposition.ON)
+        await self.dispatch_event(Events.STARTUP, prepositions=servo.events.Preposition.ON)
 
     async def shutdown(self):
         """
         Notifies all connectors that the servo is shutting down.
         """
-        await self.dispatch_event(Events.SHUTDOWN, prepositions=events.Preposition.ON)
+        await self.dispatch_event(Events.SHUTDOWN, prepositions=servo.events.Preposition.ON)
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
-    ) -> Optional[Union[connector.BaseConnector, List[connector.BaseConnector]]]:
+    ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
         """
         Returns one or more connectors by name.
 
@@ -222,7 +228,7 @@ class Servo(connector.BaseConnector):
             return connectors
 
     async def add_connector(
-        self, name: str, connector: connector.BaseConnector
+        self, name: str, connector: servo.connector.BaseConnector
     ) -> None:
         """Adds a connector to the servo.
 
@@ -245,15 +251,15 @@ class Servo(connector.BaseConnector):
         self.connectors.append(connector)
         self.__connectors__.append(connector)
 
-        with utilities.extra(self.config):
+        with servo.utilities.pydantic.extra(self.config):
             setattr(self.config, name, connector.config)
 
         await self.dispatch_event(
-            Events.STARTUP, prepositions=events.Preposition.ON, include=[connector]
+            Events.STARTUP, prepositions=servo.events.Preposition.ON, include=[connector]
         )
 
     async def remove_connector(
-        self, connector: Union[str, connector.BaseConnector]
+        self, connector: Union[str, servo.connector.BaseConnector]
     ) -> None:
         """Removes a connector from the servo.
 
@@ -278,31 +284,31 @@ class Servo(connector.BaseConnector):
             )
 
         await self.dispatch_event(
-            Events.SHUTDOWN, prepositions=events.Preposition.ON, include=[connector_]
+            Events.SHUTDOWN, prepositions=servo.events.Preposition.ON, include=[connector_]
         )
 
         self.connectors.remove(connector_)
         self.__connectors__.remove(connector_)
 
-        with utilities.pydantic.extra(self.config):
+        with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)
 
     ##
     # Event handlers
 
-    @events.on_event()
+    @servo.events.on_event()
     async def check(
         self,
-        matching: Optional[checks.CheckFilter],
-        halt_on: Optional[types.ErrorSeverity] = types.ErrorSeverity.CRITICAL,
-    ) -> List[checks.Check]:
+        matching: Optional[servo.checks.CheckFilter],
+        halt_on: Optional[servo.types.ErrorSeverity] = servo.types.ErrorSeverity.CRITICAL,
+    ) -> List[servo.checks.Check]:
         try:
             async with self.api_client() as client:
-                event_request = api.Request(event=api.Event.HELLO)
+                event_request = servo.api.Request(event=servo.api.Event.HELLO)
                 response = await client.post("servo", data=event_request.json())
                 success = response.status_code == httpx.codes.OK
                 return [
-                    checks.Check(
+                    servo.checks.Check(
                         name="Opsani API connectivity",
                         success=success,
                         message=f"Response status code: {response.status_code}",
@@ -310,7 +316,7 @@ class Servo(connector.BaseConnector):
                 ]
         except Exception as error:
             return [
-                checks.Check(
+                servo.checks.Check(
                     name="Opsani API connectivity",
                     success=False,
                     message=str(error),

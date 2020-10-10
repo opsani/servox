@@ -3,13 +3,13 @@ execution of subprocesses with support for timeouts, streaming output, error
 management, and logging.
 """
 import asyncio
+import datetime
+import pathlib
 import time
-from asyncio.streams import StreamReader
-from datetime import timedelta
-from pathlib import Path
+
 from typing import IO, Any, Awaitable, Callable, Dict, List, NamedTuple, Optional, TypeVar, Union, cast
 
-from loguru import logger
+import loguru
 
 __all__ = (
     "OutputStreamCallback",
@@ -33,7 +33,7 @@ OutputStreamCallback = TypeVar(
 )
 
 # Timeouts can be expressed as nummeric values in seconds or timedelta/Duration values
-Timeout = Union[int, float, timedelta, None]
+Timeout = Union[int, float, datetime.timedelta, None]
 
 
 class SubprocessResult(NamedTuple):
@@ -52,7 +52,7 @@ class SubprocessResult(NamedTuple):
 async def stream_subprocess_exec(
     program: str,
     *args,
-    cwd: Path = Path.cwd(),
+    cwd: pathlib.Path = pathlib.Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -103,7 +103,7 @@ async def stream_subprocess_exec(
 async def run_subprocess_exec(
     program: str,
     *args,
-    cwd: Path = Path.cwd(),
+    cwd: pathlib.Path = pathlib.Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
@@ -158,7 +158,7 @@ async def run_subprocess_exec(
 async def run_subprocess_shell(
     cmd: str,
     *,
-    cwd: Path = Path.cwd(),
+    cwd: pathlib.Path = pathlib.Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
@@ -211,7 +211,7 @@ async def run_subprocess_shell(
 async def stream_subprocess_shell(
     cmd: str,
     *,
-    cwd: Path = Path.cwd(),
+    cwd: pathlib.Path = pathlib.Path.cwd(),
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -254,7 +254,7 @@ async def stream_subprocess_shell(
     try:
         start = time.time()
         timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
-        logger.info(f"Running subprocess command `{cmd}`{timeout_note}")
+        loguru.logger.info(f"Running subprocess command `{cmd}`{timeout_note}")
         result = await stream_subprocess_output(
             process,
             timeout=timeout,
@@ -263,12 +263,12 @@ async def stream_subprocess_shell(
         )
         end = time.time()
         duration = Duration(end - start)
-        logger.info(
+        loguru.logger.info(
             f"Subprocess finished with return code {result} in {duration} (`{cmd}`)"
         )
         return result
     except asyncio.TimeoutError as error:
-        logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
+        loguru.logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
         raise error
 
 
@@ -309,7 +309,7 @@ async def stream_subprocess_output(
         await asyncio.wait([process.wait(), *tasks])
     else:
         timeout_in_seconds = (
-            timeout.total_seconds() if isinstance(timeout, timedelta) else timeout
+            timeout.total_seconds() if isinstance(timeout, datetime.timedelta) else timeout
         )
         try:
             await asyncio.wait_for(process.wait(), timeout=timeout_in_seconds)
@@ -323,7 +323,7 @@ async def stream_subprocess_output(
 
 
 async def _read_lines_from_output_stream(
-    stream: StreamReader,
+    stream: asyncio.streams.StreamReader,
     callback: Optional[OutputStreamCallback],
     *,
     encoding: str = "utf-8",

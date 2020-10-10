@@ -1,14 +1,24 @@
-from contextlib import contextmanager
+import contextlib
 from typing import Any, Callable, Generator, Type
 
-from pydantic import BaseModel, Extra
-from pydantic.validators import _VALIDATORS
+import pydantic
+import pydantic.validators
+
+__all__ = [
+    "prepend_pydantic_validator",
+    "append_pydantic_validator",
+    "extra"
+]
 
 
 def prepend_pydantic_validator(
     type_: Type[Any], validator: Callable[[Any], Any]
 ) -> None:
-    for _validator in _VALIDATORS:
+    """Prepend a validator type to the list of standard Pydantic validators.
+
+    Prepending validators can override default behaviors provided by Pydantic.
+    """
+    for _validator in pydantic.validators._VALIDATORS:
         if _validator[0] == type_:
             _validator[1].insert(0, validator)
 
@@ -16,16 +26,20 @@ def prepend_pydantic_validator(
 def append_pydantic_validator(
     type_: Type[Any], validator: Callable[[Any], Any]
 ) -> None:
-    for _validator in _VALIDATORS:
+    """Append a validator to the list of standard Pydantic validators.
+
+    Appending a validator will introduce new behavior common to all Pydantic models.
+    """
+    for _validator in pydantic.validators._VALIDATORS:
         if _validator[0] == type_:
             _validator[1].append(validator)
 
 
-@contextmanager
+@contextlib.contextmanager
 def extra(
-    obj: BaseModel, extra: Extra = Extra.allow
-) -> Generator[BaseModel, None, None]:
-    """Temporarily overrides the value of the `extra` setting on a Pydantic model."""
+    obj: pydantic.BaseModel, extra: pydantic.Extra = pydantic.Extra.allow
+) -> Generator[pydantic.BaseModel, None, None]:
+    """Temporarily override the value of the `extra` setting on a Pydantic model."""
     original = obj.__config__.extra
     obj.__config__.extra = extra
     yield obj

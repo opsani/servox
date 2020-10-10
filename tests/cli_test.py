@@ -367,7 +367,6 @@ def test_config_configmap_file(
     mocker.patch.object(VegetaConnector, "version", "100.0.0")
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
-    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     assert path.read_text() == (
         "---\n"
