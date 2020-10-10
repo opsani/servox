@@ -53,11 +53,11 @@ class Mixin:
         Returns:
             A dictionary mapping of associated object names and values.
         """
-        return _associations[self]  # .copy()
+        return _associations[self]
 
 
 @runtime_checkable
-class Associative(Protocol):
+class Associative(Protocol): # pragma: no cover
     """
     Associative is a protocol that describes objects that support associations.
     """

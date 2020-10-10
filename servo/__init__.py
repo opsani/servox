@@ -1,6 +1,6 @@
 import importlib.metadata
 
-for pkg in {"servo", "servox"}:
+for pkg in {"servo", "servox"}: # pragma: no cover
     try:
         __version__ = importlib.metadata.version(pkg)
         break
@@ -10,14 +10,10 @@ for pkg in {"servo", "servox"}:
 __codename__ = "pass the calimari"
 
 # Add the devtools debug() function to builtins if available
-try:
-    import builtins
+import builtins
+import devtools
 
-    import devtools
-
-    builtins.debug = devtools.debug
-except ImportError:
-    pass
+builtins.debug = devtools.debug
 
 # Promote all symbols from submodules to the top-level package
 from .assembly import *
