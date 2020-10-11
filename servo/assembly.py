@@ -51,7 +51,7 @@ class Assembly(pydantic.BaseModel):
     @staticmethod
     def current() -> "Assembly":
         """
-        Returns the active assembly for the current execution context.
+        Return the active assembly for the current execution context.
 
         The value is managed by a contextvar and is concurrency safe.
         """
@@ -66,7 +66,7 @@ class Assembly(pydantic.BaseModel):
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
     ) -> "Assembly":
-        """Assembles a Servo by processing configuration and building a dynamic settings model"""
+        """Assemble a Servo by processing configuration and building a dynamic settings model"""
 
         _discover_connectors()
 
@@ -153,6 +153,7 @@ class Assembly(pydantic.BaseModel):
         return_exceptions: bool = False,
         **kwargs,
     ) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+        """Dispatch an event to all servos active in the assembly."""
 
         group = asyncio.gather(
             *list(
@@ -183,13 +184,13 @@ class Assembly(pydantic.BaseModel):
 
     @classmethod
     def all_connector_types(cls) -> Set[Type[servo.connector.BaseConnector]]:
-        """Returns a set of all connector types in the assembly excluding the Servo"""
+        """Return a set of all connector types in the assembly excluding the Servo"""
         return servo.connector._connector_subclasses.copy()
 
     @property
     def connectors(self) -> List[servo.connector.BaseConnector]:
         """
-        Returns a list of all active connectors in the assembly including the Servo.
+        Return a list of all active connectors in the assembly including the Servo.
         """
         return [self.servo, *self.servo.connectors]
 
@@ -197,16 +198,31 @@ class Assembly(pydantic.BaseModel):
     def servo(self) -> servo.servo.Servo:
         return self.servos[0]
 
-    # TODO: WIP
-    def add_servo(self) -> None:
-        ...
+    async def add_servo(self, servo_: servo.servo.Servo) -> None:
+        """Add a servo to the assembly.
 
-    def remove_servo(self) -> None:
-        ...
+        Once added, the servo is sent the startup event to prepare for execution.
+
+        Args:
+            servo_: The servo to add to the assembly.
+        """
+        self.servos.append(servo_)
+        await servo.startup()
+
+    async def remove_servo(self, servo_: servo.servo.Servo) -> None:
+        """Remove a servo from the assembly.
+
+        Before removal, the servo is sent the shutdown event to prepare for
+        eviction from the assembly.
+
+        Args:
+            servo_: The servo to remove from the assembly.
+        """
+        await servo.shutdown()
+        self.servos.remove(servo_)
 
     async def startup(self):
-        """
-        Notifies all servos that the assembly is starting up.
+        """Notify all servos that the assembly is starting up.
         """
         await asyncio.gather(
                 *list(
@@ -218,8 +234,7 @@ class Assembly(pydantic.BaseModel):
             )
 
     async def shutdown(self):
-        """
-        Notifies all servos that the assembly is shutting down.
+        """Notify all servos that the assembly is shutting down.
         """
         await asyncio.gather(
                 *list(
@@ -231,7 +246,7 @@ class Assembly(pydantic.BaseModel):
             )
 
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
-        """Returns a schema that only includes connector model definitions"""
+        """Return a schema that only includes connector model definitions"""
         connectors = self.all_connector_types() if all else self.servo.connectors
         config_models = list(map(lambda c: c.config_model(), connectors))
         return pydantic.schema.schema(config_models, title="Servo Schema")
@@ -254,7 +269,7 @@ def _module_path(cls: Type) -> str:
 
 def _discover_connectors() -> Set[Type[servo.connector.BaseConnector]]:
     """
-    Discovers available connectors that are registered via setuptools entry points.
+    Discover available connectors that are registered via setuptools entry points.
 
     See ConnectorLoader for details.
     """
