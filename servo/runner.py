@@ -184,7 +184,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             self.logger.info(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
-            self.trace(devtools.pformat(description))
+            self.logger.trace(devtools.pformat(description))
 
             param = dict(descriptor=description.__opsani_repr__(), status="ok")
             return await self._post_event(servo.api.Event.DESCRIPTION, param)
@@ -194,7 +194,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             self.info(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
-            self.trace(devtools.pformat(measurement))
+            self.logger.trace(devtools.pformat(measurement))
             param = measurement.__opsani_repr__()
             return await self._post_event(servo.api.Event.MEASUREMENT, param)
 
@@ -237,7 +237,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             while True:
                 try:
                     status = await self.exec_command()
-                    if status.status == servo.UNEXPECTED_EVENT:
+                    if status.status == servo.api.UNEXPECTED_EVENT:
                         self.logger.warning(
                             f"server reported unexpected event: {status.reason}"
                         )
