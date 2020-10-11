@@ -199,7 +199,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             return await self._post_event(servo.api.Event.MEASUREMENT, param)
 
         elif cmd_response.command == servo.api.Command.ADJUST:
-            adjustments = servo.descriptor_to_adjustments(cmd_response.param["state"])
+            adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
             description = await self.adjust(adjustments, control)
 
