@@ -25,6 +25,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   event loops.
 - Initial release of Wavefront Connector.
 - Support for marking adjustments as failed or rejected via exceptions.
+- Multiple servos can now be run within a single assembly. If the config file is
+  a compound YAML document, multiple servos will be instantiated allowing the
+  concurrent optimization of multiple applications.
+- Introduced emulator connector, which pretends to take measurements and make
+  adjustments with randomly sampled data but does not do any real work.
 
 ### Changed
 
@@ -46,6 +51,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   implementation of the `api_client_options` method.
 - Configuration of backoff/retry behaviors has been reimplemented for clarity
   and simplicity.
+- The `servo.assembly.Assembly` class now maintains a collection of servos
+  rather than a singleton.
+- The optimizer settings are now part of the configuration.
 
 ### Removed
 
@@ -64,6 +72,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   traceback context is not lost.
 - An invalid key was referenced during adjustment of Kubernetes container memory
   request/limits.
+- Scalar `servo.types.DataPoint` objects are now serialized for processing by
+  the optimizer service rather than raising an exception.
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
