@@ -197,7 +197,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         elif cmd_response.command == servo.api.Command.MEASURE:
             measurement = await self.measure(cmd_response.param)
-            self.info(
+            self.logger.info(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
             self.logger.trace(devtools.pformat(measurement))
