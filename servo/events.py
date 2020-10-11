@@ -749,7 +749,7 @@ class Mixin:
             try:
                 for connector in connectors:
                     await connector.run_event_handlers(
-                        event, Preposition.BEFORE, *args, **kwargs
+                        event, Preposition.BEFORE
                     )
             except CancelEventError as error:
                 # Cancelled by a before event handler. Unpack the result and return it
@@ -788,7 +788,7 @@ class Mixin:
                 *list(
                     map(
                         lambda c: c.run_event_handlers(
-                            event, Preposition.AFTER, results, *args, **kwargs
+                            event, Preposition.AFTER, results
                         ),
                         connectors,
                     )
