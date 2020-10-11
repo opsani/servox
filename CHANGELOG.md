@@ -28,6 +28,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Developer Makefile tasks `format`, `lint`, and `test`.
 - Introduced pre-commit hooks for enforcing style guides and engineering
   standards.
+- Multiple servos can now be run within a single assembly. If the config file is
+  a compound YAML document, multiple servos will be instantiated allowing the
+  concurrent optimization of multiple applications.
+- Introduced emulator connector, which pretends to take measurements and make
+  adjustments with randomly sampled data but does not do any real work.
 
 ### Changed
 
@@ -43,6 +48,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   divisible by 1000 (e.g., `str(Millicore(3000)) == "3"`).
 - The canonical coding style for the project has been evolved to directly
   import packages and modules instead of class and functions.
+- The `servo.assembly.Assembly` class now maintains a collection of servos
+  rather than a singleton.
+- The optimizer settings are now part of the configuration.
 
 ### Fixed
 
@@ -50,6 +58,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   values.
 - Type resolution (used in eventing and checks) is now able to flexibly handle
   arbitrary imports path and type aliases.
+- Scalar `servo.types.DataPoint` objects are now serialized for processing by
+  the optimizer service rather than raising an exception.
 
 ## [0.8.1] "pass the calamari" - 2020-10-02
 
