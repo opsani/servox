@@ -1080,6 +1080,12 @@ class Measurement(BaseModel):
                     data["values"][0]["data"].append([int(date.timestamp()), value])
 
                 readings[reading.metric.name] = data
+            elif isinstance(reading, DataPoint):
+                data = {
+                    "unit": reading.metric.unit.value,
+                    "value": reading.value,
+                }
+                readings[reading.metric.name] = data
             else:
                 raise NotImplementedError("Not done yet")
 
