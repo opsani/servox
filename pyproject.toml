@@ -71,6 +71,7 @@ servo = "servo.entry_points:run_cli"
 "kubernetes" = "servo.connectors.kubernetes:KubernetesConnector"
 "prometheus" = "servo.connectors.prometheus:PrometheusConnector"
 "wavefront" = "servo.connectors.wavefront:WavefrontConnector"
+"emulator" = "servo.connectors.emulator:EmulatorConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
