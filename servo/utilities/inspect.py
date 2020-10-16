@@ -242,7 +242,12 @@ def assert_equal_callable_descriptors(
                 localns=descriptor.localns,
             )
 
-            assert_equal_types(reference_return_type, descriptor_return_type)
+            try:
+                assert_equal_types(reference_return_type, descriptor_return_type)
+            except TypeError as e:
+                raise TypeError(
+                    f"Invalid return type annotation for '{name}' event handler: expected {reference_descriptor.signature.return_annotation}, but found {descriptor.signature.return_annotation}"
+                ) from e
 
         # Check for extraneous positional parameters on the handler
         descriptor_positional_only = list(
@@ -286,7 +291,7 @@ def assert_equal_callable_descriptors(
         for index, (parameter_name, reference_parameter) in enumerate(
             reference_parameters.items()
         ):
-            reference_parameter_type = resolve_type_annotations(
+            (reference_parameter_type,) = resolve_type_annotations(
                 reference_parameter.annotation,
                 globalns=reference_descriptor.globalns,
                 localns=reference_descriptor.localns,
@@ -376,14 +381,25 @@ def assert_equal_types(*types_: List[Type]) -> None:
 
     type_ = types_[0]
     for comparable_type in types_[1:]:
-        if comparable_type == type_:
+        if typing.Any in {type_, comparable_type} or comparable_type == type_:
             continue
 
-        type_origin = typing.get_origin(type_) or type_
-        comparable_origin = typing.get_origin(comparable_type) or comparable_type
+        type_origin = typing.get_origin(type_)
+        comparable_origin = typing.get_origin(comparable_type)
 
-        if type_origin == comparable_origin:
-            break
+        # Handle subclass equality (origin must be checked first to ensure non-subscripted comparison)
+        if (type_origin is None and comparable_origin is None
+            and issubclass(comparable_type, type_)):
+            continue
+
+        # Handle special forms
+        if type_origin == comparable_origin and type_origin in {Union, Tuple}:
+            pass
+        else:
+            if None in (type_origin, comparable_origin) or issubclass(comparable_origin, type_origin) is False:
+                raise TypeError(
+                    f"Incompatible type annotations: expected {repr(type_)}, but found {repr(comparable_type)}"
+                )
 
         # compare args
         type_args = typing.get_args(type_)
@@ -393,7 +409,7 @@ def assert_equal_types(*types_: List[Type]) -> None:
             continue
 
         for type_arg, comp_arg in zip(type_args, comparable_args):
-            if type_arg == comp_arg or typing.Any in {type_arg, comp_arg}:
+            if typing.Any in {type_arg, comp_arg} or issubclass(comp_arg, type_arg):
                 continue
 
             raise TypeError(

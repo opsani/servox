@@ -388,13 +388,13 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 
         class InvalidConnector:
             @on_event("adjust")
-            def invalid_adjust(self) -> dict:
+            def invalid_adjust(self, *args, **kwargs) -> dict:
                 pass
 
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected Description, but found dict"
+        == "Invalid return type annotation for 'adjust' event handler: expected servo.types.Description, but found <class 'dict'>"
     )
 
 

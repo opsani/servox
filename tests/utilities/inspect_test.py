@@ -1,6 +1,7 @@
 import functools
 import inspect
 import types
+from typing import Dict, List, Optional, Type, Union
 
 import pytest
 
@@ -186,7 +187,7 @@ def test_equal_callable_descriptors() -> None:
     import servo
     import servo.types
 
-    def test_one() -> dict:
+    def test_one() -> typing.Dict:
         ...
 
     def test_two() -> typing.Dict[str, Any]:
@@ -231,3 +232,48 @@ def test_equal_callable_descriptors() -> None:
     # )
     # servo.utilities.inspect.assert_equal_callable_descriptors()
     # ...
+
+MaybeNumeric = Optional[Union[float, int]]
+
+@pytest.mark.parametrize(
+    "types_, error_message",
+    [
+        # Success cases
+        ([dict, dict], None),
+        ([str, str], None),
+        ([None, None], None),
+        ([List[str], List[str]], None),
+        ([Dict[str, int], Dict[str, int]], None),
+        ([Any, str], None),
+        ([Any, List[str]], None),
+        ([List[Any], List[str]], None),
+        ([Dict[str, Any], Dict[str, int]], None),
+
+        # Subclassing
+        ([OneClass, TwoClass], None),
+        ([List[OneClass], List[TwoClass]], None),
+        ([Dict[str, OneClass], Dict[str, TwoClass]], None),
+
+        # Special forms
+        ([MaybeNumeric, MaybeNumeric], None),
+        ([MaybeNumeric, Optional[Union[int, float]]], None),
+
+        # ---
+        # Failure cases
+        ([dict, int], "Incompatible type annotations: expected <class 'dict'>, but found <class 'int'>"),
+        ([Dict[str, int], dict], "Incompatible type annotations: expected typing.Dict[str, int], but found <class 'dict'>"),
+        ([List[str], List[int]], "Incompatible type annotations: expected typing.List[str], but found <class 'str'>"),
+        ([MaybeNumeric, float], "Incompatible type annotations: expected typing.Union[float, int, NoneType], but found <class 'float'>"),
+        ([dict, Dict[str, Any]], "Incompatible type annotations: expected <class 'dict'>, but found typing.Dict[str, typing.Any]"),
+        ([TwoClass, MaybeNumeric], "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found typing.Union[float, int, NoneType]"),
+        ([TwoClass, OneClass], "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found <class 'inspect_test.OneClass'>"),
+    ]
+)
+def test_assert_equal_types(types_: List[Type], error_message: Optional[str]) -> None:
+    if error_message:
+        with pytest.raises(TypeError) as e:
+            servo.utilities.inspect.assert_equal_types(*types_)
+        assert str(e.value) == error_message
+
+    else:
+        servo.utilities.inspect.assert_equal_types(*types_)

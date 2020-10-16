@@ -901,7 +901,7 @@ class Control(BaseModel):
     duration: Duration = cast(Duration, 0)
     """How long the operation should execute.
     """
-    
+
     delay: Duration = cast(Duration, 0)
     """How long to wait beyond the duration in order to ensure that the metrics
     for the target interval have been aggregated and are available for reading.
@@ -913,7 +913,7 @@ class Control(BaseModel):
     class files into memory, just-in-time compilation being appliied to critical
     code paths, etc.).
     """
-    
+
     settlement: Optional[Duration] = None
     """How long to wait after performing an operation in order to allow the
     application to reach a steady state (e.g., filling read through caches, loading
