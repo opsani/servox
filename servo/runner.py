@@ -247,7 +247,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, servo.UnexpectedEventError):
+            if isinstance(error, servo.api.UnexpectedEventError):
                 self.logger.error(
                     "servo has lost synchronization with the optimizer: restarting operations"
                 )
