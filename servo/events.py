@@ -231,7 +231,7 @@ class EventHandler(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["BaseConnector"]]  # NOTE: Optional due to decorator
+    connector_type: Optional[Type["servo.connector.BaseConnector"]]  # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
