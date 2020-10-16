@@ -190,20 +190,20 @@ an event. Event handlers can be implemented either synchronously or asynchronous
 the method is a coroutined declared with the async prefix.
 
 ```python
-from servo.connector import BaseConnector, EventResult, before_event, after_event, on_event
-from servo.types import Metric, Unit
+from typing import List
+import servo
 
-class SomeConnector(BaseConnector):
-  @before_event('measure')
+class SomeConnector(servo.BaseConnector):
+  @servo.before_event('measure')
   def notify_before_measure(self) -> None:
     self.logger.info("We are about to measure...")
 
-  @on_event('metrics')
-  def metrics(self) -> List[Metric]:
-    return [Metric('throughput', Unit.REQUESTS_PER_MINUTE)]
+  @servo.on_event('metrics')
+  def metrics(self) -> List[servo.Metric]:
+    return [servo.Metric('throughput', servo.Unit.REQUESTS_PER_MINUTE)]
 
-  @after_event('adjust')
-  def analyze_results(self, results: List[EventResult]) -> None:
+  @servo.after_event('adjust')
+  def analyze_results(self, results: List[servo.EventResult]) -> None:
     self.logger.info(f"We got some results: {results}")
 ```
 
@@ -218,10 +218,10 @@ Events can be created either programmatically via the `Connector.create_event()`
 declaratively via the `event()` decorator:
 
 ```python
-from servo.connector import BaseConnector, event
+import servo
 
-class EventExample(BaseConnector):
-  @event()
+class EventExample(servo.BaseConnector):
+  @servo.event()
   async def trace(self, url: str) -> str:
     ...
 ```
@@ -237,10 +237,10 @@ the event creator. This is achieved by implementing the body of the decorated me
 async generator that yields control to the on event handler:
 
 ```python
-from servo.connector import BaseConnector, event
+import servo
 
-class SetupAndTearDownExample(BaseConnector):
-  @event()
+class SetupAndTearDownExample(servo.BaseConnector):
+  @servo.event()
   async def trace(self, url: str) -> str:
     print("Entering event handler...")
     yield
@@ -253,10 +253,10 @@ created the event **and** register the decorated method as an on event handler f
 
 
 ```python
-from servo.connector import BaseConnector, event
+import servo
 
-class AnotherConnector(BaseConnector):
-  @event('load_test', handler=True)
+class AnotherConnector(servo.BaseConnector):
+  @servo.event('load_test', handler=True)
   async def run_load_test(self, url: str, duration: int = 60) -> str:
     return "Do something..."
 ```
@@ -271,10 +271,10 @@ assembled, an event bus is transparently established between the connectors to f
 driven interaction.
 
 ```python
-class ExampleConnector(BaseConnector):
+class ExampleConnector(servo.BaseConnector):
   async def do_something(self) -> None:
     # Gather metrics from other connectors
-    results: List[EventResult] = await self.dispatch_event("metrics")
+    results: List[servo.EventResult] = await self.dispatch_event("metrics")
     for result in results:
       print(f"Gathered metrics: {result.value}")
 ```
