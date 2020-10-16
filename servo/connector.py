@@ -173,10 +173,6 @@ class BaseConnector(
         return super().logger.bind(connector=self)
 
 
-servo.events.EventResult.update_forward_refs(BaseConnector=BaseConnector)
-servo.events.EventHandler.update_forward_refs(BaseConnector=BaseConnector)
-
-
 def metadata(
     name: Optional[Union[str, Tuple[str, str]]] = None,
     description: Optional[str] = None,

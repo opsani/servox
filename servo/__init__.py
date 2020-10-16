@@ -26,3 +26,7 @@ from .logging import *
 from .servo import *
 from .types import *
 from .utilities import *
+
+# Resolve forward references
+servo.events.EventResult.update_forward_refs()
+servo.events.EventHandler.update_forward_refs()
