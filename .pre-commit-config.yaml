@@ -22,3 +22,7 @@ repos:
     -   id: pydocstyle
         exclude: tests
         stages: [manual]
+-   repo: https://github.com/johnfraney/flake8-markdown
+    rev: v0.2.0
+    hooks:
+    -   id: flake8-markdown
