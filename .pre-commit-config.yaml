@@ -26,3 +26,4 @@ repos:
     rev: v0.2.0
     hooks:
     -   id: flake8-markdown
+        exclude: docs
