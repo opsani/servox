@@ -246,7 +246,7 @@ class EventResult(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "BaseConnector"
+    connector: "servo.connector.BaseConnector"
     created_at: datetime.datetime = None
     value: Any
 
