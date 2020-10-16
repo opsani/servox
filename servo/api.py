@@ -178,25 +178,27 @@ class Mixin:
         else:
             time_remaining_in_seconds = None
 
+        # FIXME: Tied off until reconciled with new oco-e enforcement (see https://github.com/opsani/oco/blob/wfc-devel/transport/protocol.py#L62)
         params = dict(
-            connector=self.name,
-            operation=operation,
-            progress=progress,
-            runtime=str(runtime),
-            runtime_in_seconds=runtime.total_seconds(),
+            # connector=self.name,
+            # operation=operation,
+            progress=float(progress),
+            runtime=float(runtime.total_seconds()),
+            # runtime=str(runtime),
+            # runtime_in_seconds=runtime.total_seconds(),
         )
-        set_if(params, "connector", connector)
-        set_if(params, "event", str(event_context))
-        set_if(
-            params, "time_remaining", str(time_remaining) if time_remaining else None
-        )
-        set_if(
-            params,
-            "time_remaining_in_seconds",
-            str(time_remaining_in_seconds) if time_remaining_in_seconds else None,
-        )
+        # set_if(params, "connector", connector)
+        # set_if(params, "event", str(event_context))
+        # set_if(
+        #     params, "time_remaining", str(time_remaining) if time_remaining else None
+        # )
+        # set_if(
+        #     params,
+        #     "time_remaining_in_seconds",
+        #     str(time_remaining_in_seconds) if time_remaining_in_seconds else None,
+        # )
         set_if(params, "message", message)
-        set_if(params, "logs", logs)
+        # set_if(params, "logs", logs)
 
         return (operation, params)
 
