@@ -138,7 +138,7 @@ async def app_factory(endpoint: str, account: str, token: str, cluster: str, tem
             latest_create_state = await httpx_req(client.get, f'applications/{app_keys[-1]}', lambda j: j['data']['state'])
             if latest_create_state != 'active':
                 click.echo(f"Highest numbered app {app_keys[-1]} in status {latest_create_state}, waiting for 'active' status...")
-                await asyncio.gather((lifecycle_status(client, app, 'active') for app in app_keys))
+                await asyncio.gather(*(lifecycle_status(client, app, 'active') for app in app_keys))
 
             if low_app_ver != latest_version:
                 click.echo(f"App {app_keys[0]} template version {low_app_ver} did not match latest version {latest_version}. Destroying all {cur_num_apps} existing apps...")
