@@ -97,7 +97,7 @@ async def test_run_servo_on_minikube(
     )
     exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=20)
     assert exit_code == 0, f"servo image execution failed: {stderr}"
-    assert "https://opsani.com/" in "".join(stdout)
+    assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
 
 async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> None:
@@ -117,7 +117,7 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
         print_output=True,
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
-    assert "https://opsani.com/" in "".join(stdout)
+    assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
 
 def test_deploy_servo_fiberhttp_vegeta_measure() -> None:
