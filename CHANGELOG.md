@@ -50,6 +50,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   values.
 - Type resolution (used in eventing and checks) is now able to flexibly handle
   arbitrary imports path and type aliases.
+- Settlement time can now be supplied to adjust operations by the optimizer via
+  the `servo.types.Control` type.
 
 ## [0.8.1] "pass the calamari" - 2020-10-02
 

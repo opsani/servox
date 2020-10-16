@@ -2511,7 +2511,7 @@ class BaseKubernetesConfiguration(BaseConfiguration):
         description="Kubernetes namespace where the target deployments are running.",
     )
     settlement: Optional[Duration] = pydantic.Field(
-        description="Duration to observe the application after an adjust to ensure the deployment is stable."
+        description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
         FailureMode.ROLLBACK,
@@ -2770,7 +2770,7 @@ class KubernetesConnector(BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
-        settlement = self.config.settlement
+        settlement = control.settlement or self.config.settlement
         if settlement:
             self.logger.info(
                 f"Settlement duration of {settlement} requested, waiting for pods to settle..."
