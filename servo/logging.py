@@ -373,4 +373,4 @@ def log_execution_time(func, *, level="DEBUG"):
 
 
 # Alias the loguru logger to hide implementation details
-logger = reset_to_defaults()
+reset_to_defaults()

@@ -91,7 +91,7 @@ class BaseConnector(
 
     @pydantic.root_validator(pre=True)
     @classmethod
-    def validate_metadata(cls, v):
+    def _validate_metadata(cls, v):
         assert cls.name is not None, "name must be provided"
         assert cls.version is not None, "version must be provided"
         if isinstance(cls.version, str):
@@ -112,7 +112,7 @@ class BaseConnector(
 
     @pydantic.validator("name")
     @classmethod
-    def validate_name(cls, v):
+    def _validate_name(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
         ), "names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
@@ -130,7 +130,7 @@ class BaseConnector(
         config_cls = hints["config"]
         return config_cls
 
-    def __init_subclass__(cls: Type["BaseConnector"], **kwargs):
+    def __init_subclass__(cls: Type["BaseConnector"], **kwargs) -> None: # noqa: D105
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
@@ -153,7 +153,7 @@ class BaseConnector(
             **kwargs,
         )
 
-    def __hash__(self): # noqa: D107
+    def __hash__(self): # noqa: D105
         return hash(
             (
                 self.name,
@@ -167,7 +167,7 @@ class BaseConnector(
 
     @property
     def logger(self) -> "loguru.Logger":
-        """Returns a contextualized logger"""
+        """Return a logger object bound to the connector."""
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
         return super().logger.bind(connector=self)
@@ -182,7 +182,7 @@ def metadata(
     license: Optional[Union[str, License]] = None,
     maturity: Optional[Union[str, Maturity]] = None,
 ):
-    """Decorate a Connector class with metadata"""
+    """Decorate a Connector class with metadata."""
 
     def decorator(cls):
         if not issubclass(cls, BaseConnector):
@@ -241,8 +241,7 @@ ENTRY_POINT_GROUP = "servo.connectors"
 
 
 class ConnectorLoader:
-    """
-    Dynamically discovers and loads connectors via Python setuptools entry points
+    """Discover and load connectors via Python setuptools entry points.
     """
 
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None: # noqa: D107
@@ -324,7 +323,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
 
             # Validate the name
             try:
-                BaseConnector.validate_name(name)
+                BaseConnector._validate_name(name)
             except AssertionError as e:
                 raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
 
