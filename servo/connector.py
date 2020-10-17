@@ -1,3 +1,10 @@
+"""Provides an extensible, event-driven interface for connecting Servo assemblies with external systems.
+
+Connectors are the foundational unit of functionality within the Servo. Connectors emit and respond to events
+such as measure and adjust in order to drive optimization activities. Because there are so many sources of metrics
+data and ways to orchestrate cloud infrastructure, the servo exposes a flexible plugin interface that enables
+integration with arbitrary systems via the connector module.
+"""
 from __future__ import annotations
 
 import abc
@@ -35,9 +42,7 @@ class BaseConnector(
     abc.ABC,
     metaclass=servo.events.Metaclass,
 ):
-    """
-    Connectors expose functionality to Servo assemblies by connecting external services and resources.
-    """
+    """Connectors expose functionality to Servo assemblies by connecting external services and resources."""
 
     ##
     # Connector metadata
@@ -162,7 +167,7 @@ class BaseConnector(
         )
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
+    def api_client_options(self) -> Dict[str, Any]: # noqa: D102
         return self.__dict__.get("api_client_options", super().api_client_options)
 
     @property
@@ -241,8 +246,7 @@ ENTRY_POINT_GROUP = "servo.connectors"
 
 
 class ConnectorLoader:
-    """Discover and load connectors via Python setuptools entry points.
-    """
+    """Discover and load connectors via Python setuptools entry points."""
 
     def __init__(self, group: str = ENTRY_POINT_GROUP) -> None: # noqa: D107
         self.group = group
