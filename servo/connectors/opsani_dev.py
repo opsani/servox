@@ -398,7 +398,7 @@ class OpsaniDevConnector(servo.BaseConnector):
     @servo.on_event()
     async def check(
         self,
-        matching: Optional[servo.Filter],
+        matching: Optional[servo.CheckFilter],
         halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
     ) -> List[servo.Check]:
         return await OpsaniDevChecks.run(
