@@ -124,7 +124,7 @@ class Assembly(pydantic.BaseModel):
 
         return assembly, servo_, AssemblyConfiguration
 
-    def __init__(self, *args, servo: servo.Servo, **kwargs) -> None:
+    def __init__(self, *args, servo: servo.Servo, **kwargs) -> None: # noqa: D107
         super().__init__(*args, servo=servo, **kwargs)
 
         # Ensure object is shared by identity
@@ -272,7 +272,7 @@ class SettingModelCacheEntry:
         connector_type: Type[servo.connector.BaseConnector],
         connector_name: str,
         config_model: Type[servo.configuration.BaseConfiguration],
-    ) -> None:
+    ) -> None: # noqa: D107
         self.connector_type = connector_type
         self.connector_name = connector_name
         self.config_model = config_model

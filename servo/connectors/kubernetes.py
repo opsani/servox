@@ -86,7 +86,7 @@ class Condition(servo.logging.Mixin):
         ValueError: The given ``fn`` is not callable.
     """
 
-    def __init__(self, name: str, fn: Callable, *args, **kwargs) -> None:
+    def __init__(self, name: str, fn: Callable, *args, **kwargs) -> None: # noqa: D107
         if not callable(fn):
             raise ValueError("The Condition function must be callable")
 
@@ -289,7 +289,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
     is not specified for the resource.
     """
 
-    def __init__(self, obj, **kwargs) -> None:
+    def __init__(self, obj, **kwargs) -> None: # noqa: D107
         self.obj = obj
         self._logger = servo.logger
 
@@ -646,7 +646,7 @@ class Container(servo.logging.Mixin):
         https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#container-v1-core
     """
 
-    def __init__(self, api_object, pod) -> None:
+    def __init__(self, api_object, pod) -> None: # noqa: D107
         self.obj = api_object
         self.pod = pod
 
@@ -2576,7 +2576,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             **kwargs,
         )
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None: # noqa: D107
         super().__init__(*args, **kwargs)
         self.cascade_common_settings()
 

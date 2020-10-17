@@ -145,7 +145,7 @@ class BaseConnector(
         *args,
         name: Optional[str] = None,
         **kwargs,
-    ):
+    ) -> None: # noqa: D107
         name = name if name is not None else self.__class__.__default_name__
         super().__init__(
             *args,
@@ -153,7 +153,7 @@ class BaseConnector(
             **kwargs,
         )
 
-    def __hash__(self):
+    def __hash__(self): # noqa: D107
         return hash(
             (
                 self.name,
@@ -245,7 +245,7 @@ class ConnectorLoader:
     Dynamically discovers and loads connectors via Python setuptools entry points
     """
 
-    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
+    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None: # noqa: D107
         self.group = group
 
     def iter_entry_points(self) -> Generator[pkg_resources.EntryPoint, None, None]:

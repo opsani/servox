@@ -5,7 +5,7 @@ from servo.events import CancelEventError, EventError
 class ConnectorError(Exception):
     """Exception indicating that a connector failed"""
 
-    def __init__(self, *args, status="failed", reason="unknown"):
+    def __init__(self, *args, status="failed", reason="unknown") -> None: # noqa: D107
         self.status = status
         self.reason = reason
         super().__init__(*args)

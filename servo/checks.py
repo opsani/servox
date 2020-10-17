@@ -672,7 +672,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
     def __init__(
         self, config: servo.configuration.BaseConfiguration, *args, **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         super().__init__(config=config, *args, **kwargs)
 
     async def _expand_multichecks(self) -> List[types.MethodType]:

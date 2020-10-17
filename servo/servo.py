@@ -1,3 +1,4 @@
+"""The servo module is responsible for interacting with the Opsani optimizer API."""
 from __future__ import annotations
 
 import asyncio
@@ -20,9 +21,7 @@ _servo_context_var = contextvars.ContextVar("servo.Servo.current", default=None)
 
 
 class Events(str, enum.Enum):
-    """
-    Events is an enumeration of the names of standard events defined by the servo.
-    """
+    """An enumeration of the names of standard events defined by the servo."""
 
     # Lifecycle events
     STARTUP = "startup"
@@ -41,8 +40,7 @@ class Events(str, enum.Enum):
 
 
 class _EventDefinitions(Protocol):
-    """
-    Defines the default events. This class is declarative and is never directly referenced.
+    """Defines the default events. This class is declarative and is never directly referenced.
 
     The event signature is inferred from the decorated function.
     """
@@ -108,7 +106,19 @@ _servo_context_var = contextvars.ContextVar("servo.servo", default=None)
 
 
 class ServoChecks(servo.checks.BaseChecks):
+    """Check that a servo is ready to perform optimization.
+
+    Args:
+        servo: The servo to be checked.
+    """
+
     async def check_connectivity(self) -> Tuple[bool, str]:
+        """Check that the servo has connectivity to the Opsani API.
+
+        Returns:
+            A tuple value containing a boolean that indicates if connectivity is
+            available and an advisory string describing the status encountered.
+        """
         async with self.api_client() as client:
             event_request = servo.api.Request(event=servo.api.Event.HELLO)
             response = await client.post("servo", data=event_request.json())
@@ -124,8 +134,7 @@ class ServoChecks(servo.checks.BaseChecks):
     version=servo.__version__,
 )
 class Servo(servo.connector.BaseConnector):
-    """
-    A connector that interacts with the Opsani API to perform optimization.
+    """A connector that interacts with the Opsani API to perform optimization.
 
     The `Servo` is a core object of the `servo` package. It manages a set of
     connectors that provide integration and interactivity to external services
@@ -147,14 +156,12 @@ class Servo(servo.connector.BaseConnector):
     """
 
     connectors: List[servo.connector.BaseConnector]
-    """
-    The active connectors in the Servo.
+    """The active connectors in the Servo.
     """
 
     @staticmethod
     def current() -> "Servo":
-        """
-        Returns the active servo for the current execution context.
+        """Return the active servo for the current execution context.
 
         The value is managed by a contextvar and is concurrency safe.
         """
@@ -162,13 +169,12 @@ class Servo(servo.connector.BaseConnector):
 
     @staticmethod
     def set_current(servo_: "Servo") -> None:
-        """Set the current servo execution context.
-        """
+        """Set the current servo execution context."""
         _servo_context_var.set(servo_)
 
     def __init__(
         self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         super().__init__(*args, connectors=[], **kwargs)
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
@@ -184,6 +190,7 @@ class Servo(servo.connector.BaseConnector):
 
     @property
     def api_client_options(self) -> Dict[str, Any]:
+        """Return a dictionary of options for configuring proxies, timeouts, and SSL verification of an HTTP client."""
         options = super().api_client_options
         if self.config.servo:
             options["proxies"] = self.config.servo.proxies
@@ -193,22 +200,17 @@ class Servo(servo.connector.BaseConnector):
         return options
 
     async def startup(self):
-        """
-        Notifies all connectors that the servo is starting up.
-        """
+        """Notify all active connectors that the servo is starting up."""
         await self.dispatch_event(Events.STARTUP, prepositions=servo.events.Preposition.ON)
 
     async def shutdown(self):
-        """
-        Notifies all connectors that the servo is shutting down.
-        """
+        """Notify all active connectors that the servo is shutting down."""
         await self.dispatch_event(Events.SHUTDOWN, prepositions=servo.events.Preposition.ON)
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
-        """
-        Returns one or more connectors by name.
+        """Return one or more connectors by name.
 
         This is a convenience method equivalent to iterating `connectors` and comparing by name.
 
@@ -230,7 +232,7 @@ class Servo(servo.connector.BaseConnector):
     async def add_connector(
         self, name: str, connector: servo.connector.BaseConnector
     ) -> None:
-        """Adds a connector to the servo.
+        """Add a connector to the servo.
 
         The connector is added to the servo event bus and is initialized with
         the startup event to prepare for execution.
@@ -261,7 +263,7 @@ class Servo(servo.connector.BaseConnector):
     async def remove_connector(
         self, connector: Union[str, servo.connector.BaseConnector]
     ) -> None:
-        """Removes a connector from the servo.
+        """Remove a connector from the servo.
 
         The connector is removed from the servo event bus and is finalized with
         the shutdown event to prepare for eviction.
@@ -302,6 +304,15 @@ class Servo(servo.connector.BaseConnector):
         matching: Optional[servo.checks.CheckFilter],
         halt_on: Optional[servo.types.ErrorSeverity] = servo.types.ErrorSeverity.CRITICAL,
     ) -> List[servo.checks.Check]:
+        """Check that the servo is ready to perform optimization.
+
+        Args:
+            matching: An optional filter to limit the checks that are executed.
+            halt_on: The severity level of errors that should halt execution of checks.
+
+        Returns:
+            A list of check objects that describe the outcomes of the checks that were run.
+        """
         try:
             async with self.api_client() as client:
                 event_request = servo.api.Request(event=servo.api.Event.HELLO)

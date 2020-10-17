@@ -13,7 +13,7 @@ _associations = weakref.WeakKeyDictionary()
 
 
 class Mixin:
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None: # noqa: D107
         # NOTE: we are not hashable until after init
         super().__init__(*args, **kwargs)
         _associations[self] = {}

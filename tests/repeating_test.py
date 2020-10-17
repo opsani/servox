@@ -97,7 +97,7 @@ async def test_start_repeating_task_for_done_task(optimizer: Optimizer):
 
 async def test_repeating_task_decorator():
     class RepeatedDecorator(Mixin):
-        def __init__(self):
+        def __init__(self) -> None: # noqa: D107
             self.called = False
 
         @repeating("1ms")

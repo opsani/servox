@@ -51,7 +51,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
     assembly: servo.Assembly
     connected: bool = False
 
-    def __init__(self, assembly: servo.Assembly) -> None:
+    def __init__(self, assembly: servo.Assembly) -> None: # noqa: D107
         self.assembly = assembly
 
         # initialize default servo options if not configured

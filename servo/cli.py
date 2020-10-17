@@ -132,7 +132,7 @@ class Context(typer.Context):
         base_url: Optional[str] = None,
         url: Optional[str] = None,
         **kwargs,
-    ) -> None:
+    ) -> None: # noqa: D107
         self.config_file = config_file
         self.optimizer = optimizer
         self.assembly = assembly
@@ -258,7 +258,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         callback: Optional[Callable] = typer.models.Default(None),
         section: Section = Section.COMMANDS,
         **kwargs,
-    ):
+    ) -> None: # noqa: D107
 
         # NOTE: Set default command class to get custom context
         if command_type is None:
@@ -594,7 +594,7 @@ class ConnectorCLI(CLI):
         callback: Optional[Callable] = typer.models.Default(None),
         section: Section = Section.COMMANDS,
         **kwargs,
-    ):
+    ) -> None: # noqa: D107
         # Register for automated inclusion in the ServoCLI
         ConnectorCLI.__clis__.add(self)
 
@@ -636,7 +636,7 @@ class ServoCLI(CLI):
         add_completion: bool = True,
         no_args_is_help: bool = True,
         **kwargs,
-    ) -> None:
+    ) -> None: # noqa: D107
         # NOTE: We pass OrderedGroup to suppress sorting of commands alphabetically
         if command_type is None:
             command_type = OrderedGroup
