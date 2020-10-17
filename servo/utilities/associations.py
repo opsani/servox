@@ -13,13 +13,15 @@ _associations = weakref.WeakKeyDictionary()
 
 
 class Mixin:
+    """Provides support for virtual attributes."""
+
     def __init__(self, *args, **kwargs) -> None: # noqa: D107
         # NOTE: we are not hashable until after init
         super().__init__(*args, **kwargs)
         _associations[self] = {}
 
     def _set_association(self, name: str, obj: Any) -> None:
-        """Sets an object association by name.
+        """Set an object association by name.
 
         Args:
             name: A name for the association.
@@ -28,7 +30,7 @@ class Mixin:
         _associations[self][name] = obj
 
     def _get_association(self, name: str, default: Any = ...) -> Any:
-        """Returns an associated object by name.
+        """Return an associated object by name.
 
         Args:
             name: The name of the association to retrieve.
@@ -48,7 +50,7 @@ class Mixin:
 
     @property
     def _associations(self) -> Dict[str, Any]:
-        """Returns all associated objects as dictionary.
+        """Return all associated objects as a dictionary.
 
         Returns:
             A dictionary mapping of associated object names and values.
@@ -58,9 +60,7 @@ class Mixin:
 
 @runtime_checkable
 class Associative(Protocol): # pragma: no cover
-    """
-    Associative is a protocol that describes objects that support associations.
-    """
+    """A protocol that describes objects that support associations."""
 
     def _set_association(self, name: str, obj: Any) -> None:
         ...
