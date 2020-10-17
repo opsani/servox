@@ -59,11 +59,12 @@ jobs:
         uses: actions/cache@v2
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ steps.prep.outputs.build_args }}-${{ github.sha }}
+          key: ${{ runner.os }}-buildx-${{ steps.prep.outputs.build_args }}-${{ hashFiles('**/poetry.lock') }}
+
           restore-keys: |
-            ${{ runner.os }}-buildx--
-            ${{ runner.os }}-buildx-SERVO_ENV=production-
+            ${{ runner.os }}-buildx-${{ steps.prep.outputs.build_args }}-
             ${{ runner.os }}-buildx-
+            ${{ runner.os }}-
       -
         name: Login to DockerHub
         if: github.event_name != 'pull_request'
