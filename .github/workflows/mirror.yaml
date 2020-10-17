@@ -4,6 +4,7 @@ on: [push, create, delete]
 
 jobs:
   mirror:
+    if: ${{ github.repository == 'opsani/servox' }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
