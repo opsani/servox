@@ -1,3 +1,4 @@
+# noqa
 # Entry points for executing functionality defined in other modules
 # This wrapping is necessary for keeping Docker builds fast because
 # the entry points must be present on the filesystem during package
@@ -13,6 +14,7 @@ import servo.cli
 
 
 def run_cli() -> None:
+    """Run the Servo CLI."""
     dotenv.load_dotenv(dotenv.find_dotenv(usecwd=True))
 
     # NOTE: We load connectors here because waiting until assembly
