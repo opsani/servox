@@ -14,7 +14,7 @@ _repeating_tasks_registry = weakref.WeakKeyDictionary()
 
 
 class Mixin:
-    def __init_subclass__(cls, **kwargs): # noqa: D107
+    def __init_subclass__(cls, **kwargs) -> None: # noqa: D107
         super().__init_subclass__(**kwargs)
 
         repeaters = {}

@@ -42,7 +42,7 @@ class Mixin:
 
     @property
     def logger(self) -> loguru.Logger:
-        """Return the servo package logger"""
+        """Return the servo package logger."""
         global logger
         return logger
 
@@ -56,7 +56,7 @@ class Filter:
     def __init__(self, level="INFO") -> None: # noqa: D107
         self.level = level
 
-    def __call__(self, record) -> bool:
+    def __call__(self, record) -> bool: # noqa: D102
         levelno = logger.level(self.level).no
         return record["level"].no >= levelno
 
@@ -87,7 +87,9 @@ class ProgressHandler:
         self._queue_processor = None
 
     async def sink(self, message: loguru.Message) -> None:
-        """An asynchronous loguru sink responsible for handling progress reporting.
+        """Enqueue asynchronous tasks for reporting status of operations in progress.
+
+        An asynchronous loguru sink responsible for handling progress reporting.
 
         Implemented as a sink versus a `logging.Handler` because the Python stdlib logging package isn't async.
         """
@@ -172,8 +174,7 @@ class ProgressHandler:
                 self._queue.task_done()
 
     async def _report_error(self, message: str, record) -> None:
-        """Report an error message about processing a log message annotated with a `progress` attribute.
-        """
+        """Report an error message about processing a log message annotated with a `progress` attribute."""
         message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:
             if asyncio.iscoroutinefunction(self._error_reporter):
@@ -183,12 +184,10 @@ class ProgressHandler:
 
 
 class InterceptHandler(logging.Handler):
-    """A logging handler that intercepts messages from the Python stdlib logging
-    module and forwards it on to loguru for processing.
-    """
+    """A logging handler that forwards messages from Python stdlib logging to loguru."""
+
     def emit(self, record) -> None:
-        """Emit a log record from Python stdlib logging facilities into loguru.
-        """
+        """Emit a log record from Python stdlib logging facilities into loguru."""
         # Get corresponding Loguru level if it exists
         try:
             level = logger.level(record.levelname).name
@@ -215,9 +214,10 @@ DEFAULT_FORMAT = (
 
 
 class Formatter:
-    def __call__(self, record: dict) -> str:
-        """Formats a log message with contextual information from the servo assembly.
-        """
+    """A logging formatter that is aware of assemblies, servos, and connectors."""
+
+    def __call__(self, record: dict) -> str: # noqa: D107
+        """Format a log message with contextual information about the servo assembly."""
         extra = record["extra"]
 
         # Add optional traceback
@@ -282,8 +282,7 @@ DEFAULT_HANDLERS = [
 
 
 def set_level(level: str) -> None:
-    """Set the logging threshold to the given level for all log handlers.
-    """
+    """Set the logging threshold to the given level for all log handlers."""
     DEFAULT_FILTER.level = level
 
 
@@ -299,8 +298,7 @@ def set_colors(colors: bool) -> None:
 
 
 def reset_to_defaults() -> None:
-    """Reset the logging subsystem to the default configuration.
-    """
+    """Reset the logging subsystem to the default configuration."""
     DEFAULT_FILTER.level = "INFO"
     DEFAULT_STDERR_HANDLER["colorize"] = None
 
@@ -312,7 +310,9 @@ def reset_to_defaults() -> None:
 
 
 def friendly_decorator(f):
-    """Return a "decorator decorator" that wraps a decorator function such that it can be invoked
+    """Transform a decorated function into a decorator that can be called with or without parameters.
+
+    The returned function wraps a decorator function such that it can be invoked
     with or without parentheses such as:
 
         @decorator(with, arguments, and=kwargs)
@@ -334,8 +334,7 @@ def friendly_decorator(f):
 
 @friendly_decorator
 def log_execution(func, *, entry=True, exit=True, level="DEBUG"):
-    """Log the execution of the decorated function.
-    """
+    """Log the execution of the decorated function."""
 
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
@@ -353,8 +352,7 @@ def log_execution(func, *, entry=True, exit=True, level="DEBUG"):
 
 @friendly_decorator
 def log_execution_time(func, *, level="DEBUG"):
-    """Log the execution time upon exit from the decorated function.
-    """
+    """Log the execution time upon exit from the decorated function."""
 
     @functools.wraps(func)
     def wrapped(*args, **kwargs):
