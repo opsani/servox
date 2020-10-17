@@ -1,3 +1,8 @@
+"""Support for scheduling asynchronous, repeating tasks within Opsani Servo connectors.
+
+The `servo.repeating.Mixin` provides connectors with the ability to easily manage tasks
+that require periodic execution or the observation of particular runtime conditions.
+"""
 import asyncio
 import datetime
 import weakref
@@ -14,7 +19,9 @@ _repeating_tasks_registry = weakref.WeakKeyDictionary()
 
 
 class Mixin:
-    def __init_subclass__(cls, **kwargs) -> None: # noqa: D107
+    """Provides convenience interfaces for working with asyncrhonously repeating tasks."""
+
+    def __init_subclass__(cls, **kwargs) -> None: # noqa: D105
         super().__init_subclass__(**kwargs)
 
         repeaters = {}
@@ -43,6 +50,11 @@ class Mixin:
         self, name: str, every: Every, callable: Callable[[None], None]
     ) -> asyncio.Task:
         """Start a repeating task with the given name and duration.
+
+        Args:
+            name: A name for identifying the repeating task.
+            every: The duration at which the task will repeatedly run.
+            callable: A callable to be executed repeatedly on the desired interval.
         """
         if task := self.repeating_tasks.get(name, None):
             if not task.done():
