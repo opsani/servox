@@ -1,4 +1,3 @@
-# noqa
 # Entry points for executing functionality defined in other modules
 # This wrapping is necessary for keeping Docker builds fast because
 # the entry points must be present on the filesystem during package
@@ -7,6 +6,8 @@
 # reinstalls of all package dependencies.
 # Do not implement meaningful functionality here. Instead import and
 # dispatch the intent into focused modules to do the real work.
+# noqa
+
 import dotenv
 
 import servo
