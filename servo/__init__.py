@@ -7,10 +7,11 @@ for pkg in {"servo", "servox"}: # pragma: no cover
     except importlib.metadata.PackageNotFoundError:
         pass
 
-__codename__ = "pass the calamari"
+__codename__ = "serenity now"
 
 # Add the devtools debug() function to builtins if available
 import builtins
+
 import devtools
 
 builtins.debug = devtools.debug
