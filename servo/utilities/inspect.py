@@ -8,6 +8,16 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, T
 
 import servo.utilities.strings
 
+__all__ = [
+    "get_instance_methods",
+    "get_methods",
+    "get_defining_class",
+    "resolve_type_annotations",
+    "assert_equal_callable_descriptors",
+    "assert_equal_types",
+    "CallableDescriptor",
+]
+
 
 def get_instance_methods(
     obj, *, stop_at_parent: Optional[Type[Any]] = None
@@ -143,7 +153,6 @@ class CallableDescriptor:
 def assert_equal_callable_descriptors(
     *descriptors: Tuple[CallableDescriptor, ...],
     name: Optional[str] = None,
-    method: bool = False,
     callable_description: str = "callable"
 ) -> None:
     """Validate that the given collection of callable descriptors have equivalent type signatures."""
@@ -159,11 +168,19 @@ def assert_equal_callable_descriptors(
     # Build the reference params
     reference_parameters: typing.Mapping[
         str, inspect.Parameter
-    ] = reference_descriptor.signature.parameters
+    ] = dict(
+        filter(
+            lambda item: item[0] not in {"self", "cls"},
+            reference_descriptor.signature.parameters.items()
+        )
+    )
     reference_positional_parameters = list(
         filter(
             lambda param: param.kind
-            in [inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.VAR_POSITIONAL],
+            in [
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.VAR_POSITIONAL
+            ],
             reference_parameters.values(),
         )
     )
@@ -200,7 +217,12 @@ def assert_equal_callable_descriptors(
     for descriptor in descriptors[1:]:
         descriptor_parameters: typing.Mapping[
             str, inspect.Parameter
-        ] = descriptor.signature.parameters
+        ] = dict(
+            filter(
+                lambda item: item[0] not in {"self", "cls"},
+                descriptor.signature.parameters.items()
+            )
+        )
         descriptor_positional_parameters = list(
             filter(
                 lambda param: param.kind
@@ -222,15 +244,6 @@ def assert_equal_callable_descriptors(
                 descriptor_parameters.items(),
             )
         )
-
-        # We assume instance methods
-        if method:
-            args = list(descriptor_parameters.keys())
-            first_arg = args.pop(0) if args else None
-            if first_arg != "self":
-                raise TypeError(
-                    f"invalid {callable_description} \"{name}\": \"self\" is not the first parameter in callable signature \"{descriptor.signature}\""
-                )
 
         # Check for extraneous positional parameters on the handler
         descriptor_positional_only = list(
@@ -334,9 +347,10 @@ def assert_equal_callable_descriptors(
                             reference_parameter_type, descriptor_parameter_type
                         )
                 else:
-                    # Check if the last parameter is a VAR_KEYWORD
+                    # Check if the parameter is missing and has not been rolled up into a VAR_KEYWORD
                     if (
-                        list(descriptor_keyword_parameters.values())[-1].kind
+                        len(descriptor_keyword_parameters) == 0
+                        or list(descriptor_keyword_parameters.values())[-1].kind
                         != inspect.Parameter.VAR_KEYWORD
                     ):
                         raise TypeError(

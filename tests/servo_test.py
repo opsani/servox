@@ -397,21 +397,6 @@ def test_registering_event_with_wrong_handler_fails() -> None:
         == """invalid event handler "adjust": incompatible return type annotation "<class 'dict'>" in callable signature "(self, *args, **kwargs) -> dict", expected "servo.types.Description\""""
     )
 
-
-def test_registering_event_handler_fails_with_no_self() -> None:
-    with pytest.raises(TypeError) as error:
-
-        @on_event("adjust")
-        def invalid_adjust() -> None:
-            pass
-
-    assert error
-    assert (
-        str(error.value)
-        == "invalid event handler \"adjust\": \"self\" is not the first parameter in callable signature \"() -> None\""
-    )
-
-
 def test_event_decorator_disallows_var_positional_args() -> None:
     with pytest.raises(TypeError) as error:
 
@@ -471,7 +456,7 @@ def test_registering_event_handler_with_too_many_positional_params_fails() -> No
     assert error
     assert (
         str(error.value)
-        == "invalid event handler \"startup\": encountered unexpected parameters \"invalid and self\" in callable signature \"(self, invalid, /) -> None\", expected \"(self) -> 'None'\""
+        == "invalid event handler \"startup\": encountered unexpected parameter \"invalid\" in callable signature \"(self, invalid, /) -> None\", expected \"(self) -> 'None'\""
     )
 
 

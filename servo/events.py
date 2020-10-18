@@ -499,7 +499,6 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                method=True,
                 callable_description="before event handler"
             )
         elif preposition == Preposition.ON:
@@ -517,7 +516,6 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                method=True,
                 callable_description="event handler"
             )
         elif preposition == Preposition.AFTER:
@@ -536,7 +534,6 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                method=True,
                 callable_description="after event handler"
             )
         else:
