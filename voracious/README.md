@@ -54,12 +54,41 @@ As long as the average, min and max are close, this means the application reques
 
 ## Test
 
+### Servo-emulator
 While Voracious is intended to be used with the phase 2 load generator (multi-servo emulator), you can see it work against one or a few traditional servo emulators. Use the attached `emu.sh` script to run the servo emulator, using the `master` branch of the `oco` repository. (Don't forget to download or symlink `servo` in the `servo-emulator` directory). To run multiple servo emulators, run each in a separate shell and set the application name like this:
 
 `APP=app01234 ./emu.sh`
 
 Note that the servo-emulator has a lot of 3rd party package requirements (requests, numpy, scipy, json_merge_patch, etc.);
 it makes sense to test with it only if you have an oco environment set up.
+
+Voracious was tested with up to 4 servo-emulators working concurrently.
+
+### Performance
+
+I was unable to get 100 of them working well but that seems to be a problem with the servo emulator, not voracious.
+
+Voracious was tested with the `hey` load generator and it reached 812 req/sec with median response time of 120 msec. 
+
+Test setup:
+
+* laptop with 8-core Intel i5 CPU
+* running Windows 10 and Ubuntu in the WSL subsystem (essentially, in a VM)
+* running both voracious and hey on the same host
+* single application emulated, with the app state manually advanced to measurement progress (so testing the full state machine but not the indexing into large set of applications)
+
+Setup commands:
+```
+curl -X POST -d '{ "event" : "HELLO" }' http://localhost:8080/accounts/a/applications/app00000/servo
+curl -X POST -d '{ "event" : "DESCRIPTION" }' http://localhost:8080/accounts/a/applications/app00000/servo
+curl -X POST -d '{ "event" : "MEASUREMENT", "param": { "progress": 10 } }' http://localhost:8080/accounts/a/applications/app00000/servo
+```
+
+Test command:
+```
+hey -c 100 -n 10000 -m POST -d '{ "event" : "MEASUREMENT", "param": { "progress": 10 } }' http://localhost:808
+0/accounts/a/applications/app00000/servo
+```
 
 ## Potential improvements
 
