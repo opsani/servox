@@ -2484,7 +2484,12 @@ STANDARD_PERMISSIONS = [
     ),
     PermissionSet(
         group="",
-        resources=["pods", "pods/logs", "pods/status", "namespaces"],
+        resources=["namespaces"],
+        verbs=["get", "list", "watch"],
+    ),
+    PermissionSet(
+        group="",
+        resources=["pods", "pods/logs", "pods/status"],
         verbs=["create", "delete", "get", "list", "watch"],
     ),
 ]
