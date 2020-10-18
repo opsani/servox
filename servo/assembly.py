@@ -48,7 +48,7 @@ class Assembly(pydantic.BaseModel):
     optimizer: servo.configuration.Optimizer
 
     ## Assembled settings & Servo
-    config_model: Type[servo.configuration.BaseAssemblyConfiguration]
+    config_model: Type['servo.configuration.BaseAssemblyConfiguration']
     servo: servo.servo.Servo
 
     @staticmethod
