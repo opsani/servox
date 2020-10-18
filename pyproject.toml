@@ -28,6 +28,7 @@ jsonschema = "^3.2.0"
 timeago = "^1.0.14"
 kubernetes_asyncio = "^11.3.0"
 orjson = "^3.3.1"
+uvloop = "^0.14.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.1.1"

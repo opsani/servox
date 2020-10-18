@@ -9,6 +9,7 @@
 # noqa
 
 import dotenv
+import uvloop
 
 import servo
 import servo.cli
@@ -16,6 +17,7 @@ import servo.cli
 
 def run_cli() -> None:
     """Run the Servo CLI."""
+    uvloop.install()
     dotenv.load_dotenv(dotenv.find_dotenv(usecwd=True))
 
     # NOTE: We load connectors here because waiting until assembly
