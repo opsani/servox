@@ -64,6 +64,13 @@ class ServoCommandResponse(BaseModel):
     cmd: str
     param: Dict
 
+class VoraciousStatistics(BaseModel):
+    n: int
+    average: Optional[float]
+    min: Optional[int]
+    max: Optional[int]
+
+
 class SeqError(Exception):
     pass
 
@@ -145,21 +152,34 @@ class App:
 
         return ServoNotifyResponse(status = "ok")
 
-# --- Server
+# --- API Server
 
 app = FastAPI()
 state = {} # TODO determine if state needs to be guarded from concurrent access
 
 @app.get("/")
-async def root():
+async def root() -> VoraciousStatistics:
+    cycles = [ x.n_cycles for x in state.values() ]
+    n_apps = len(cycles)
+    if n_apps == 0:
+        return VoraciousStatistics(n = 0)
+    min_ = max_ = sum_ = None
+    for c in cycles:
+        if min_ is None:
+            min_ = max_ = sum_ = c
+        else:
+            if c < min_: min_ = c
+            if c > max_: max_ = c
+            sum_ += c
+    return VoraciousStatistics(n = n_apps, average = float(sum_)/n_apps, min = min_, max = max_)
+
+
     return {"message": "Hello World... Oh, my!"}
 
 @app.get("/accounts/{account}/application-overrides")
 async def list(account: str):
-    apps = dict()
-    for n in range(N_APPS):
-        apps[app_name(n)] = AppListItem(state = "active")
-    return apps
+    app = AppListItem(state = "active")
+    return { app_name(n):app for n in range(N_APPS)}
 
 @app.post("/accounts/{account}/applications/{app}/servo")
 async def servo_get(account: str, app: str, ev: ServoEvent) -> Union[ServoNotifyResponse, ServoCommandResponse]:

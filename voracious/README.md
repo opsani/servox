@@ -2,12 +2,15 @@
 
 This utility emulates large number of oco backends for the purpose of testing the phase 2 load generator (multi-servo emulator).
 
-Voracious responds to two endpoints:
+Voracious responds to thee endpoints:
 
 * list of applications: returns a preconfigured number of applications (change N_APPS)
 * servo: follows a very strict sequence of events (change ADJUST_PAYLOAD to adapt to emulator descriptor)
+* statistics: returns statistics across all applications (this is just for human observation, not expected to be called by the multi-servo emulator)
 
 It consumes a reasonably high number of servo streams (keep in mind that state is kept in memory for each application; the intended number of backends to be emulated is 5000)
+
+To see the swagger documentation/exerciser for Voracious, open http://localhost:8080/docs#/
 
 ## Installation
 
@@ -27,11 +30,25 @@ There are 3 items that need to be adjusted in `voracious.py` to match the servo 
 * number of applications to return when asked to list (the default is 5)
 * adjust payload with setting values (needs to match the descriptor sent by the servo emulator) (the default is the kubecon2018 demo configuration)
 
+Voracious runs on port 8080 by default. Modify `run.sh` and `run-dev.sh` to modify.
+
 ## Usage
 
-Run `uvicorn voracious:app --port=8080`
+Run `uvicorn voracious:app --port=8080` or simply `./run.sh` (if modifying voracious.py, usr `./run-dev.sh` as it will reload the app whever the source file changes).
 
-Note that it is very strict on the expected sequence of events from each app's servo (much stricter than the protocol, as it is trying to test the emulator). After restarting voracious, all servos need to start with HELLO (this can be fixed if too limiting)
+Note that Voracious is very strict on the expected sequence of events from each app's servo (much stricter than the protocol, as it is trying to test the emulator). After restarting voracious, all servos need to start with HELLO (this can be fixed if too limiting)
+
+## Statistics
+
+Voracious keeps count of how many adjust/measure cycles each application has gone through. It can return statistics over the 
+counts so that the operation and evenness of the distribution of requests across apps can be verified.
+
+Voracious returns the statistics on its root endpoint: e.g., `curl localhost:8080`. It can be watched, for example like this: 
+`watch -n 3 curl -s localhost:8080`.
+
+The payload looks like this: `{"n":4,"average":49.5,"min":47,"max":52}`
+
+As long as the average, min and max are close, this means the application requests were reasonably evenly distributed. Check the number of apps, `n`, to confirm all expected applications are being reported.
 
 ## Test
 
@@ -44,5 +61,3 @@ While Voracious is intended to be used with the phase 2 load generator (multi-se
 * Create requirements.txt and test in a clean environment
 * Allow voracious to be restarted without restarting the servo emulators (sync state with all servos, without requiring HELLO)
 * Determine if the `state` variable needs to be guarded against concurrent access (generally not expected to be needed)
-* Collect and display statistics to demonstrate smooth and even load
-* Package to be used without uvicorn (standalone) (TBD)
