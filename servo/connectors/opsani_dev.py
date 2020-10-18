@@ -37,7 +37,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             deployments=[
                 kubernetes.DeploymentConfiguration(
                     name=self.deployment,
-                    replicas=kubernetes.Replicas(
+                    replicas=servo.Replicas(
                         min=1,
                         max=2,
                     ),
@@ -172,7 +172,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         service = await kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
-        if not service.spec.type in ("ClusterIP", "LoadBalancer"):
+        if not service.obj.spec.type in ("ClusterIP", "LoadBalancer"):
             raise ValueError(
                 f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
             )
