@@ -4,7 +4,7 @@ import dataclasses
 import inspect
 import typing
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union, cast
 
 import servo.utilities.strings
 
@@ -144,6 +144,7 @@ def assert_equal_callable_descriptors(
     *descriptors: Tuple[CallableDescriptor, ...],
     name: Optional[str] = None,
     method: bool = False,
+    callable_description: str = "callable"
 ) -> None:
     """Validate that the given collection of callable descriptors have equivalent type signatures."""
     if not descriptors:
@@ -228,25 +229,8 @@ def assert_equal_callable_descriptors(
             first_arg = args.pop(0) if args else None
             if first_arg != "self":
                 raise TypeError(
-                    f"Invalid signature for '{name}' event handler: {descriptor.signature}, \"self\" must be the first argument"
+                    f"invalid {callable_description} \"{name}\": \"self\" is not the first parameter in callable signature \"{descriptor.signature}\""
                 )
-
-        if (
-            descriptor.signature.return_annotation
-            != reference_descriptor.signature.return_annotation
-        ):
-            (descriptor_return_type,) = resolve_type_annotations(
-                descriptor.signature.return_annotation,
-                globalns=descriptor.globalns,
-                localns=descriptor.localns,
-            )
-
-            try:
-                assert_equal_types(reference_return_type, descriptor_return_type)
-            except TypeError as e:
-                raise TypeError(
-                    f"Invalid return type annotation for '{name}' event handler: expected {reference_descriptor.signature.return_annotation}, but found {descriptor.signature.return_annotation}"
-                ) from e
 
         # Check for extraneous positional parameters on the handler
         descriptor_positional_only = list(
@@ -264,7 +248,7 @@ def assert_equal_callable_descriptors(
                 )
             )
             raise TypeError(
-                f"Invalid type annotation for '{name}' event handler: encountered extra positional parameters ({servo.utilities.strings.join_to_series(extra_param_names)})"
+                f"invalid {callable_description} \"{name}\": encountered unexpected {_quanitfy_parameters(extra_param_names)} \"{servo.utilities.strings.join_to_series(extra_param_names)}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
             )
 
         # Check for extraneous keyword parameters on the handler
@@ -283,7 +267,7 @@ def assert_equal_callable_descriptors(
         )
         if extraneous_keywords:
             raise TypeError(
-                f"Invalid type annotation for '{name}' event handler: encountered extra parameters ({servo.utilities.strings.join_to_series(extraneous_keywords)})"
+                f"invalid {callable_description} \"{name}\": encountered unexpected {_quanitfy_parameters(extraneous_keywords)} \"{servo.utilities.strings.join_to_series(extraneous_keywords)}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
             )
 
         # Iterate the event signature parameters and see if the handler's signature satisfies each one
@@ -303,7 +287,7 @@ def assert_equal_callable_descriptors(
                         != inspect.Parameter.VAR_POSITIONAL
                     ):
                         raise TypeError(
-                            f"Missing required positional parameter: '{parameter_name}'"
+                            f"invalid {callable_description} \"{name}\": missing required parameter \"{parameter_name}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
                         )
 
                 descriptor_parameter = descriptor_positional_parameters[index]
@@ -356,7 +340,7 @@ def assert_equal_callable_descriptors(
                         != inspect.Parameter.VAR_KEYWORD
                     ):
                         raise TypeError(
-                            f"Missing required parameter: '{parameter_name}': expected signature: {reference_descriptor.signature}"
+                            f"invalid {callable_description} \"{name}\": missing required parameter \"{parameter_name}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
                         )
 
             elif reference_parameter.kind == inspect.Parameter.VAR_KEYWORD:
@@ -366,6 +350,24 @@ def assert_equal_callable_descriptors(
                 assert (
                     reference_parameter.kind == inspect.Parameter.VAR_KEYWORD
                 ), reference_parameter.kind
+
+        # Validate the return type annotation
+        if (
+            descriptor.signature.return_annotation
+            != reference_descriptor.signature.return_annotation
+        ):
+            (descriptor_return_type,) = resolve_type_annotations(
+                descriptor.signature.return_annotation,
+                globalns=descriptor.globalns,
+                localns=descriptor.localns,
+            )
+
+            try:
+                assert_equal_types(reference_return_type, descriptor_return_type)
+            except TypeError as e:
+                raise TypeError(
+                    f"invalid {callable_description} \"{name}\": incompatible return type annotation \"{descriptor.signature.return_annotation}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature.return_annotation}\""
+                ) from e
 
 
 def assert_equal_types(*types_: List[Type]) -> None:
@@ -414,3 +416,7 @@ def assert_equal_types(*types_: List[Type]) -> None:
             raise TypeError(
                 f"Incompatible type annotations: expected {repr(type_)}, but found {repr(type_arg)}"
             )
+
+def _quanitfy_parameters(params: Sequence[Any]) -> str:
+    assert params, "cannot quantify empty parameters"
+    return "parameter" if len(params) == 1 else "parameters"

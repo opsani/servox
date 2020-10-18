@@ -270,16 +270,12 @@ _events: Dict[str, Event] = {}
 
 
 def get_events() -> List[Event]:
-    """
-    Return all registered events.
-    """
+    """Return all registered events."""
     return list(_events.values())
 
 
 def get_event(name: str, default=...) -> Optional[Event]:
-    """
-    Retrieve an event by name.
-    """
+    """Retrieve an event by name."""
     if default is Ellipsis:
         return _events[name]
     else:
@@ -380,8 +376,7 @@ def create_event(
 def event(
     name: Optional[str] = None, *, handler: bool = False
 ) -> Callable[[EventCallable], EventCallable]:
-    """
-    Creates a new event using the signature of the decorated function.
+    """Create a new event using the signature of a decorated function.
 
     Events must be defined before handlers can be registered using before_event, on_event, after_event, or
     event_handler.
@@ -412,8 +407,7 @@ def event(
 def before_event(
     event: Optional[str] = None, **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run before the specified event.
+    """Register a decorated function as an event handler to be run before the specified event.
 
     Before event handlers require no arguments positional or keyword arguments and return `None`. Any arguments
     provided via the `kwargs` parameter are passed through at invocation time. Before event handlers
@@ -429,8 +423,7 @@ def before_event(
 def on_event(
     event: Optional[str] = None, **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run on the specified event.
+    """Register a decorated function as an event handler to be run on the specified event.
 
     :param event: The event or name of the event to run the handler on.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
@@ -441,8 +434,7 @@ def on_event(
 def after_event(
     event: Optional[str] = None, **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler to run after the specified event.
+    """Register a decorated function as an event handler to be run after the specified event.
 
     After event handlers are invoked with the event results as their first argument (type `List[EventResult]`)
     and return `None`.
@@ -458,8 +450,7 @@ def event_handler(
     preposition: Preposition = Preposition.ON,
     **kwargs,
 ) -> Callable[[EventCallable], EventCallable]:
-    """
-    Registers the decorated function as an event handler.
+    """Register a decorated function as an event handler.
 
     Event handlers are the foundational mechanism for connectors to provide functionality
     to the servo assembly. As events occur during operation, handlers are invoked and the
@@ -508,6 +499,7 @@ def event_handler(
                 ),
                 name=name,
                 method=True,
+                callable_description="before event handler"
             )
         elif preposition == Preposition.ON:
             servo.utilities.inspect.assert_equal_callable_descriptors(
@@ -525,6 +517,7 @@ def event_handler(
                 ),
                 name=name,
                 method=True,
+                callable_description="event handler"
             )
         elif preposition == Preposition.AFTER:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
@@ -543,6 +536,7 @@ def event_handler(
                 ),
                 name=name,
                 method=True,
+                callable_description="after event handler"
             )
         else:
             assert "Undefined preposition value"
