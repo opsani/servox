@@ -3,6 +3,7 @@ import datetime
 import functools
 import hashlib
 import inspect
+import sys
 import types
 from typing import (
     Any,
@@ -654,6 +655,8 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
             # skip multicheck source methods as they are atomized into instance methods
             if hasattr(method, "__multicheck__"):
+                # _validate_multicheck_handler(method)
+                # continue
                 if sig in (MULTICHECK_SIGNATURE, MULTICHECK_SIGNATURE_ANNOTATED):
                     continue
                 else:
@@ -661,10 +664,36 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                         f'invalid signature for method "{name}": expected {repr(MULTICHECK_SIGNATURE)}, but found {repr(sig)}'
                     )
 
+            # TODO: Update this to use the inspect module
             if sig not in (CHECK_SIGNATURE, CHECK_SIGNATURE_ANNOTATED):
                 raise TypeError(
                     f'invalid signature for method "{name}" (did you forget to decorate with @check?): expected {repr(CHECK_SIGNATURE)}, but found {repr(sig)}'
                 )
+
+            # multicheck_handler_signature = inspect.Signature.from_callable(__multicheck_handler)
+            # handler_signature = inspect.Signature.from_callable(method)
+            # handler_globalns = inspect.currentframe().f_back.f_globals
+            # handler_localns = inspect.currentframe().f_back.f_locals
+
+            # handler_mod_name = handler_localns.get("__module__", None)
+            # handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
+            # servo.utilities.inspect.assert_equal_callable_descriptors(
+            #     servo.utilities.inspect.CallableDescriptor(
+            #         signature=CHECK_SIGNATURE,
+            #         module='servo.checks',
+            #         globalns=globals(),
+            #         localns=locals(),
+            #     ),
+            #     servo.utilities.inspect.CallableDescriptor(
+            #         signature=handler_signature,
+            #         module=handler_module,
+            #         globalns=handler_globalns,
+            #         localns=handler_localns,
+            #     ),
+            #     name=name,
+            #     method=True,
+            #     callable_description="check"
+            # )
 
             yield (name, method)
 
@@ -888,28 +917,35 @@ def create_checks_from_iterable(
 MultiCheckHandler = Callable[..., Tuple[Iterable, CheckHandler]]
 MultiCheckExpander = Callable[..., Awaitable[Tuple[Iterable, CheckHandler]]]
 
+def __multicheck_handler(self) -> Tuple[Iterable, CheckHandler]:
+    ...
 
 def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
-    sig = inspect.Signature.from_callable(fn)
-    if len(sig.parameters) > 0:
-        for param in sig.parameters.values():
-            if param.name == "self" and param.kind == param.POSITIONAL_OR_KEYWORD:
-                continue
+    handler_signature = inspect.Signature.from_callable(fn)
+    handler_globalns = inspect.currentframe().f_back.f_globals
+    handler_localns = inspect.currentframe().f_back.f_locals
 
-            raise TypeError(
-                f'invalid multicheck handler "{fn.__name__}": unexpected parameter "{param.name}" in signature {repr(sig)}, expected {repr(MULTICHECK_SIGNATURE)}'
-            )
+    handler_mod_name = handler_localns.get("__module__", None)
+    handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
 
-    if sig.return_annotation == "Tuple[Iterable, CheckHandler]":
-        # fast return if the type annotation is already a string (depends on `# from __future__ import annotations`)
-        return
-
-    origin = get_origin(sig.return_annotation)
-    args = get_args(sig.return_annotation)
-    if origin is not tuple or (args != (Iterable, CheckHandler)):
-        raise TypeError(
-            f'invalid multicheck handler "{fn.__name__}": incompatible return type annotation in signature {repr(sig)}, expected to match {repr(MULTICHECK_SIGNATURE)}'
-        )
+    multicheck_handler_signature = inspect.Signature.from_callable(__multicheck_handler)
+    servo.utilities.inspect.assert_equal_callable_descriptors(
+        servo.utilities.inspect.CallableDescriptor(
+            signature=multicheck_handler_signature,
+            module='servo.checks',
+            globalns=globals(),
+            localns=locals(),
+        ),
+        servo.utilities.inspect.CallableDescriptor(
+            signature=handler_signature,
+            module=handler_module,
+            globalns=handler_globalns,
+            localns=handler_localns,
+        ),
+        name=fn.__name__,
+        method=True,
+        callable_description="multicheck handler"
+    )
 
 
 def multicheck(

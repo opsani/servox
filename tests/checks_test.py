@@ -793,7 +793,7 @@ def test_multicheck_invalid_args() -> None:
     assert e is not None
     assert (
         str(e.value)
-        == 'invalid multicheck handler "check_invalid": unexpected parameter "foo" in signature <Signature (self, foo: int) -> int>, expected <Signature () -> Tuple[Iterable, ~CheckHandler]>'
+        == """invalid multicheck handler "check_invalid": encountered unexpected parameter "foo" in callable signature "(self, foo: int) -> int", expected "(self) -> Tuple[Iterable, ~CheckHandler]\""""
     )
 
 
@@ -808,7 +808,7 @@ def test_multicheck_invalid_return_type() -> None:
     assert e is not None
     assert (
         str(e.value)
-        == 'invalid multicheck handler "check_invalid": incompatible return type annotation in signature <Signature (self) -> int>, expected to match <Signature () -> Tuple[Iterable, ~CheckHandler]>'
+        == """invalid multicheck handler "check_invalid": incompatible return type annotation "<class 'int'>" in callable signature "(self) -> int", expected "typing.Tuple[typing.Iterable, ~CheckHandler]\""""
     )
 
 
