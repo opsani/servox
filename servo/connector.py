@@ -59,6 +59,10 @@ class BaseConnector(
     """Semantic Versioning string of the connector.
     """
 
+    cryptonym: ClassVar[Optional[str]] = None
+    """Optional code name of the version.
+    """
+
     description: ClassVar[Optional[str]] = None
     """Optional textual description of the connector.
     """
@@ -135,6 +139,21 @@ class BaseConnector(
         config_cls = hints["config"]
         return config_cls
 
+    @classmethod
+    def version_summary(cls) -> str:
+        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        return f"{cls.full_name} v{cls.version}{cryptonym_}"
+
+    @classmethod
+    def summary(cls) -> str:
+        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        return (
+            f"{cls.full_name} v{cls.version}{cryptonym_} ({cls.maturity})\n"
+            f"{cls.description}\n"
+            f"{cls.homepage}\n"
+            f"Licensed under the terms of {cls.license}"
+        )
+
     def __init_subclass__(cls: Type["BaseConnector"], **kwargs) -> None: # noqa: D105
         super().__init_subclass__(**kwargs)
 
@@ -186,6 +205,7 @@ def metadata(
     homepage: Optional[Union[str, pydantic.HttpUrl]] = None,
     license: Optional[Union[str, License]] = None,
     maturity: Optional[Union[str, Maturity]] = None,
+    cryptonym: Optional[str] = None,
 ):
     """Decorate a Connector class with metadata."""
 
@@ -208,6 +228,7 @@ def metadata(
             cls.version = (
                 version if isinstance(version, Version) else Version.parse(version)
             )
+        cls.cryptonym = cryptonym
         if homepage:
             cls.homepage = homepage
         if license:

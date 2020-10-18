@@ -11,7 +11,7 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
-from servo import BaseAssemblyConfiguration, Duration, __codename__, __version__
+from servo import BaseAssemblyConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
 from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
 from servo.connector import BaseConnector
@@ -1699,7 +1699,7 @@ async def test_proxy_utilization(proxies) -> None:
 
 
 def test_codename() -> None:
-    assert __codename__
+    assert __cryptonym__
 
 
 async def test_add_connector(servo: Servo) -> None:

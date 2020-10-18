@@ -24,6 +24,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
 
+### Changed
+
+- The `__codename__` support has been generalized as `cryptonym` attribute for
+  all connectors.
+- Version output now includes the cryptonym.
+
+### Fixed
+
+- Local versions are now resolved via the `pyproject.toml` file to accurately
+  reflect pre-release versioning and local work in progress.
+
 ## [0.8.2] "pass the calamari" - 2020-10-16
 
 ### Added

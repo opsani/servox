@@ -100,7 +100,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             names.append(f"{name}-{version}")
 
         version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
-        codename = typer.style(servo.__codename__, fg=typer.colors.MAGENTA, bold=False)
+        codename = typer.style(servo.__cryptonym__, fg=typer.colors.MAGENTA, bold=False)
         initialized = typer.style(
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )

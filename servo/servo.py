@@ -132,6 +132,7 @@ class ServoChecks(servo.checks.BaseChecks):
     maturity=servo.types.Maturity.ROBUST,
     license=servo.types.License.APACHE2,
     version=servo.__version__,
+    cryptonym=servo.__cryptonym__,
 )
 class Servo(servo.connector.BaseConnector):
     """A connector that interacts with the Opsani API to perform optimization.
