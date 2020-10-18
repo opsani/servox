@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import functools
+import re
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import httpcore._exceptions
@@ -32,6 +33,10 @@ class PrometheusMetric(servo.Metric):
     The step resolution determines the number of data points captured across a
     query range.
     """
+
+    @property
+    def query_escaped(self) -> str:
+        return re.sub(r"\{(.*?)\}", r"{{\1}}", self.query)
 
     def __check__(self) -> servo.Check:
         return servo.Check(
@@ -146,7 +151,7 @@ class PrometheusChecks(servo.BaseChecks):
             response = await client.get("targets")
             response.raise_for_status()
 
-    @servo.multicheck('Run query "{item.query}"')
+    @servo.multicheck('Run query "{item.query_escaped}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries."""
 
