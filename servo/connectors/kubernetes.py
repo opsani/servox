@@ -11,7 +11,6 @@ import itertools
 import os
 import pathlib
 import time
-
 from typing import (
     Any,
     Callable,
@@ -37,28 +36,7 @@ import backoff
 import kubernetes_asyncio
 import pydantic
 
-import kubernetes_asyncio.client
-import kubernetes_asyncio.watch
-import kubernetes_asyncio.client.api_client
-import kubernetes_asyncio.config.kube_config
-
 import servo
-from servo import (
-    Adjustment,
-    BaseChecks,
-    BaseConfiguration,
-    BaseConnector,
-    Check,
-    CheckHandler,
-    Component,
-    Control,
-    Description,
-    Duration,
-    DurationProgress,
-    ErrorSeverity,
-    License,
-    Maturity,
-)
 
 
 class Condition(servo.logging.Mixin):
@@ -173,7 +151,7 @@ async def wait_for_condition(
         await asyncio.sleep(interval)
 
     end = time.time()
-    servo.logger.info(f"wait completed (total={Duration(end-start)}) {condition}")
+    servo.logger.info(f"wait completed (total={servo.Duration(end-start)}) {condition}")
 
 
 class ResourceRequirements(enum.Flag):
@@ -1577,7 +1555,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     """
 
     name: str
-    timeout: Duration
+    timeout: servo.Duration
 
     @abc.abstractclassmethod
     async def create(
@@ -1588,8 +1566,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
     @abc.abstractmethod
     async def adjust(
-        self, adjustment: Adjustment, control: Control = Control()
-    ) -> Description:
+        self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()
+    ) -> servo.Description:
         """
         Adjust a setting on the underlying Deployment/Pod or Container.
         """
@@ -1667,7 +1645,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         ...
 
     @abc.abstractmethod
-    def to_components(self) -> List[Component]:
+    def to_components(self) -> List[servo.Component]:
         """
         Return a list of Component representations of the Optimization.
 
@@ -1783,12 +1761,12 @@ class DeploymentOptimization(BaseOptimization):
             timeout=self.timeout.total_seconds(),
         )
 
-    def to_components(self) -> List[Component]:
+    def to_components(self) -> List[servo.Component]:
         return [
-            Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
+            servo.Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
         ]
 
-    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+    def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
         """
         Adjust the settings on the Deployment or a component Container.
 
@@ -2017,7 +1995,7 @@ class CanaryOptimization(BaseOptimization):
             "deployment configuration must have one or more containers"
         )
 
-    def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
+    def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
         name = adjustment.setting_name
         value = _qualify(adjustment.value, name)
 
@@ -2081,7 +2059,7 @@ class CanaryOptimization(BaseOptimization):
             pinned=True,
         )
 
-    def to_components(self) -> List[Component]:
+    def to_components(self) -> List[servo.Component]:
         """
         Return a Component representation of the canary and its reference target.
 
@@ -2112,7 +2090,7 @@ class CanaryOptimization(BaseOptimization):
         target_replicas.value = self.target_deployment.replicas
 
         return [
-            Component(
+            servo.Component(
                 name=target_name,
                 settings=[
                     target_cpu,
@@ -2120,7 +2098,7 @@ class CanaryOptimization(BaseOptimization):
                     target_replicas,
                 ],
             ),
-            Component(
+            servo.Component(
                 name=self.name,
                 settings=[
                     self.cpu,
@@ -2243,7 +2221,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             version_id=version_id,
         )
 
-    def to_components(self) -> List[Component]:
+    def to_components(self) -> List[servo.Component]:
         """
         Return a list of Component objects modeling the state of local optimization activities.
 
@@ -2253,7 +2231,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         components = list(map(lambda opt: opt.to_components(), self.optimizations))
         return list(itertools.chain(*components))
 
-    def to_description(self) -> Description:
+    def to_description(self) -> servo.Description:
         """
         Return a representation of the current state as a Description object.
 
@@ -2263,7 +2241,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         Returns:
             A Description of the current state.
         """
-        return Description(components=self.to_components())
+        return servo.Description(components=self.to_components())
 
     def find_optimization(self, name: str) -> Optional[BaseOptimization]:
         """
@@ -2271,7 +2249,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         """
         return next(filter(lambda a: a.name == name, self.optimizations), None)
 
-    async def apply(self, adjustments: List[Adjustment]) -> None:
+    async def apply(self, adjustments: List[servo.Adjustment]) -> None:
         """
         Apply a sequence of adjustments and wait for them to take effect on the cluster.
         """
@@ -2393,15 +2371,15 @@ ContainerTagName.__doc__ = (
 )
 
 
-class EnvironmentConfiguration(BaseConfiguration):
+class EnvironmentConfiguration(servo.BaseConfiguration):
     ...
 
 
-class CommandConfiguration(BaseConfiguration):
+class CommandConfiguration(servo.BaseConfiguration):
     ...
 
 
-class ContainerConfiguration(BaseConfiguration):
+class ContainerConfiguration(servo.BaseConfiguration):
     """
     The ContainerConfiguration class models the configuration of an optimizable container within a Kubernetes Deployment.
     """
@@ -2490,7 +2468,7 @@ STANDARD_PERMISSIONS = [
 ]
 
 
-class BaseKubernetesConfiguration(BaseConfiguration):
+class BaseKubernetesConfiguration(servo.BaseConfiguration):
     """
     BaseKubernetesConfiguration provides a set of configuration primitives for optimizable Kubernetes resources.
 
@@ -2510,14 +2488,14 @@ class BaseKubernetesConfiguration(BaseConfiguration):
     namespace: Optional[DNSSubdomainName] = pydantic.Field(
         description="Kubernetes namespace where the target deployments are running.",
     )
-    settlement: Optional[Duration] = pydantic.Field(
+    settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
         FailureMode.ROLLBACK,
         description=f"How to handle a failed adjustment. Options are: {servo.utilities.strings.join_to_series(list(FailureMode.__members__.values()))}",
     )
-    timeout: Optional[Duration] = pydantic.Field(
+    timeout: Optional[servo.Duration] = pydantic.Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
     )
 
@@ -2542,7 +2520,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
-    timeout: Duration = "5m"
+    timeout: servo.Duration = "5m"
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,
         description="Permissions required by the connector to operate in Kubernetes.",
@@ -2602,7 +2580,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                         field_name,
                         field,
                     ) in BaseKubernetesConfiguration.__fields__.items():
-                        if field_name in BaseConfiguration.__fields__:
+                        if field_name in servo.BaseConfiguration.__fields__:
                             # don't cascade from the base class
                             continue
 
@@ -2648,7 +2626,7 @@ DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 
 
-class KubernetesChecks(BaseChecks):
+class KubernetesChecks(servo.BaseChecks):
     """Checks for ensuring that the Kubernetes connector is ready to run."""
 
     config: KubernetesConfiguration
@@ -2705,14 +2683,14 @@ class KubernetesChecks(BaseChecks):
         await Namespace.read(self.config.namespace)
 
     @servo.multicheck('Deployment "{item.name}" is readable')
-    async def check_deployments(self) -> Tuple[Iterable, CheckHandler]:
+    async def check_deployments(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_dep(dep_config: DeploymentConfiguration) -> str:
             await Deployment.read(dep_config.name, dep_config.namespace)
 
         return self.config.deployments, check_dep
 
     @servo.multicheck('Containers in the "{item.name}" Deployment have resource requirements')
-    async def check_resource_requirements(self) -> Tuple[Iterable, CheckHandler]:
+    async def check_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_dep_resource_requirements(
             dep_config: DeploymentConfiguration,
         ) -> str:
@@ -2729,7 +2707,7 @@ class KubernetesChecks(BaseChecks):
         return self.config.deployments, check_dep_resource_requirements
 
     @servo.multicheck('Deployment "{item.name}" is ready')
-    async def check_deployments_are_ready(self) -> Tuple[Iterable, CheckHandler]:
+    async def check_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_deployment(dep_config: DeploymentConfiguration) -> None:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
             if not deployment.is_ready:
@@ -2742,10 +2720,10 @@ class KubernetesChecks(BaseChecks):
     description="Kubernetes adjust connector",
     version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
-    license=License.APACHE2,
-    maturity=Maturity.STABLE,
+    license=servo.License.APACHE2,
+    maturity=servo.Maturity.STABLE,
 )
-class KubernetesConnector(BaseConnector):
+class KubernetesConnector(servo.BaseConnector):
     config: KubernetesConfiguration
 
     @servo.on_event()
@@ -2754,19 +2732,19 @@ class KubernetesConnector(BaseConnector):
         await self.config.load_kubeconfig()
 
     @servo.on_event()
-    async def describe(self) -> Description:
+    async def describe(self) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
         return state.to_description()
 
     @servo.on_event()
-    async def components(self) -> List[Component]:
+    async def components(self) -> List[servo.Component]:
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
 
     @servo.on_event()
     async def adjust(
-        self, adjustments: List[Adjustment], control: Control = Control()
-    ) -> Description:
+        self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
+    ) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
         await state.apply(adjustments)
 
@@ -2775,7 +2753,7 @@ class KubernetesConnector(BaseConnector):
             self.logger.info(
                 f"Settlement duration of {settlement} requested, waiting for pods to settle..."
             )
-            progress = DurationProgress(settlement)
+            progress = servo.DurationProgress(settlement)
             progress_logger = lambda p: self.logger.info(
                 p.annotate(f"waiting {settlement} for pods to settle...", False),
                 progress=p.progress,
@@ -2792,8 +2770,8 @@ class KubernetesConnector(BaseConnector):
     async def check(
         self,
         matching: Optional[servo.CheckFilter],
-        halt_on: Optional[servo.ErrorSeverity] = ErrorSeverity.CRITICAL,
-    ) -> List[Check]:
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+    ) -> List[servo.Check]:
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
