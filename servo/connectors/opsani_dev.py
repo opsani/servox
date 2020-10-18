@@ -6,6 +6,7 @@ import httpx
 import servo
 from servo.connectors import kubernetes, prometheus
 
+
 class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     namespace: str
     deployment: str
