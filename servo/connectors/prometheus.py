@@ -186,7 +186,7 @@ class PrometheusChecks(servo.BaseChecks):
             result = response.json()
 
         target_count = len(result["data"]["activeTargets"])
-        assert target_count > 0
+        assert target_count > 0, "no targets are being scraped by Prometheus"
         return f"found {target_count} targets"
 
 
