@@ -177,9 +177,8 @@ class PrometheusChecks(servo.BaseChecks):
 
     @servo.check("Active targets")
     async def check_targets(self) -> str:
-        """Checks that all targets are being scraped by Prometheus and report as
-        healthy.
-        """
+        """Check that all targets are being scraped by Prometheus and report as healthy."""
+
         async with httpx.AsyncClient(base_url=self.config.base_url) as client:
             response = await client.get("/api/v1/targets")
             response.raise_for_status()
