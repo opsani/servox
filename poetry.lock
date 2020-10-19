@@ -624,7 +624,7 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "kubernetes-asyncio"
-version = "11.3.0"
+version = "12.0.0"
 description = "Kubernetes asynchronous python client"
 category = "main"
 optional = false
@@ -1398,7 +1398,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "a882340942dff334a8e4c9f0684da0a98f363043a0b9907c1f4e0cd81db79c46"
+content-hash = "ff140b721e583972d88f8f42ba1679c4445006ba658371093f45bd9094345e89"
 
 [metadata.files]
 aiohttp = [
@@ -1654,7 +1654,7 @@ kubernetes = [
     {file = "kubernetes-11.0.0.tar.gz", hash = "sha256:1a2472f8b01bc6aa87e3a34781f859bded5a5c8ff791a53d889a8bd6cc550430"},
 ]
 kubernetes-asyncio = [
-    {file = "kubernetes_asyncio-11.3.0.tar.gz", hash = "sha256:475f22c01f2b07581f719552b656886c8c9f19c8afebe17bafe32f57dc5ee9fd"},
+    {file = "kubernetes_asyncio-12.0.0.tar.gz", hash = "sha256:1a6fb459d16701c6712809e0d4dbd7c60a39ae8e81cd379e7d5fcbf332d588bb"},
 ]
 kubetest = [
     {file = "kubetest-0.8.1-py2.py3-none-any.whl", hash = "sha256:b0848afb2f262a6bd09b7a0dc7693bc10e06dfe59e63b4c653b5f8a2265c4f4f"},
