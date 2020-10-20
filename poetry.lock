@@ -1374,8 +1374,8 @@ dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [[package]]
 name = "yamlpath"
-version = "3.1.0"
-description = "Command-line get/set/merge/scan/convert processors for YAML/JSON/Compatible data using powerful, intuitive, command-line friendly syntax"
+version = "3.2.0"
+description = "Command-line get/set/merge/validate/scan/convert processors for YAML/JSON/Compatible data using powerful, intuitive, command-line friendly syntax"
 category = "dev"
 optional = false
 python-versions = ">3.6.0"
@@ -1398,7 +1398,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "ff140b721e583972d88f8f42ba1679c4445006ba658371093f45bd9094345e89"
+content-hash = "5001eba5507f4578c84c8689ab49804a0b23639d8ee896b57ad0e2f628008a96"
 
 [metadata.files]
 aiohttp = [
@@ -2050,7 +2050,7 @@ win32-setctime = [
     {file = "win32_setctime-1.0.3.tar.gz", hash = "sha256:4e88556c32fdf47f64165a2180ba4552f8bb32c1103a2fafd05723a0bd42bd4b"},
 ]
 yamlpath = [
-    {file = "yamlpath-3.1.0.tar.gz", hash = "sha256:86e0dd90840115165f83c91f57e637720190a060f4bfacd42c365433ffaa5d88"},
+    {file = "yamlpath-3.2.0.tar.gz", hash = "sha256:4fd6b0861cab7f66198246778e106e553dcceffbbaf48b8e476ec9c34eebbfce"},
 ]
 yarl = [
     {file = "yarl-1.6.0-cp35-cp35m-macosx_10_14_x86_64.whl", hash = "sha256:db9eb8307219d7e09b33bcb43287222ef35cbcf1586ba9472b0a4b833666ada1"},
