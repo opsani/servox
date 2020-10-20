@@ -4,7 +4,7 @@ on: [push, create, delete]
 
 jobs:
   mirror:
-    if: ${{ github.repository == 'opsani/servox' }}
+    if: github.repository == 'opsani/servox' && github.actor != 'dependabot'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
