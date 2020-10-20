@@ -465,7 +465,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
             raise typer.Exit(2) from error
 
         # Populate the context for use by other commands
-        servo_ = assembly.servos[0]
+        servo_ = assembly.servos and assembly.servos[0]
         ctx.assembly = assembly
         ctx.servo_ = servo_
 

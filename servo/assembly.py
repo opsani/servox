@@ -128,10 +128,10 @@ class Assembly(pydantic.BaseModel):
         # Activate the servo if we are in the common case single player mode
         if len(servos) == 1:
             servo.servo.Servo.set_current(servos[0])
-        
+
         return assembly
 
-    def __init__(self, *args, servos: List[servo.Servo], **kwargs) -> None: # noqa: D107
+    def __init__(self, *args, servos: List[servo.Servo], **kwargs) -> None:
         super().__init__(*args, servos=servos, **kwargs)
 
         # Ensure object is shared by identity
@@ -370,7 +370,7 @@ class SettingModelCacheEntry:
         connector_type: Type[servo.connector.BaseConnector],
         connector_name: str,
         config_model: Type[servo.configuration.BaseConfiguration],
-    ) -> None: # noqa: D107
+    ) -> None:
         self.connector_type = connector_type
         self.connector_name = connector_name
         self.config_model = config_model
