@@ -1173,7 +1173,7 @@ python-versions = "*"
 
 [[package]]
 name = "semver"
-version = "2.11.0"
+version = "2.12.0"
 description = "Python helper for Semantic Versioning (http://semver.org/)"
 category = "main"
 optional = false
@@ -1943,8 +1943,8 @@ rsa = [
     {file = "ruamel.yaml.clib-0.2.2.tar.gz", hash = "sha256:2d24bd98af676f4990c4d715bcdc2a60b19c56a3fb3a763164d2d8ca0e806ba7"},
 ]
 semver = [
-    {file = "semver-2.11.0-py2.py3-none-any.whl", hash = "sha256:c0591b618be648a22e9cd0ce381a7076e5d52e19f53d568543c3afcf17d5dcbc"},
-    {file = "semver-2.11.0.tar.gz", hash = "sha256:ef6614e75c1526784580ed0a2939272fcd36f4aad472617774e588c4adbc08a3"},
+    {file = "semver-2.12.0-py2.py3-none-any.whl", hash = "sha256:a7b14edf94747ebdd08a5ee7c1d0366b039cf144f0e0eba6553b2c6d2bf9b6f8"},
+    {file = "semver-2.12.0.tar.gz", hash = "sha256:9661f6920fe546b70c7cdde8ca6420d852516efdfa2dbc1e58ab5972e773f43d"},
 ]
 six = [
     {file = "six-1.15.0-py2.py3-none-any.whl", hash = "sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced"},
