@@ -17,6 +17,15 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] "pass the calamari" - 2020-10-21
+
+### Fixed
+
+- Initialize Kubernetes optimizations before taking a measurement. This ensures
+  that the Kubernetes Connector has an opportunity to set up the environment
+  before a measurement is taken that is reliant on the setup (e.g. all canaries
+  have been created).
+
 ## [0.8.2] "pass the calamari" - 2020-10-16
 
 ### Added
