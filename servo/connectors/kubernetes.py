@@ -2762,6 +2762,11 @@ class KubernetesConnector(BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
 
+    @servo.before_event(servo.Events.MEASURE)
+    async def before_measure(self) -> None:
+        # Build state before a measurement to ensure all necessary setup is done (e.g., canary is up)
+        await KubernetesOptimizations.create(self.config)
+
     @servo.on_event()
     async def adjust(
         self, adjustments: List[Adjustment], control: Control = Control()
