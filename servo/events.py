@@ -53,7 +53,7 @@ class Event(pydantic.BaseModel):
 
     def __init__(
         self, name: str, signature: inspect.Signature, *args, **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         _signature_cache[name] = signature
         super().__init__(name=name, *args, **kwargs)
 
@@ -613,7 +613,7 @@ class Mixin:
         *args,
         __connectors__: List["servo.connector.BaseConnector"] = None,
         **kwargs,
-    ):
+    ) -> None: # noqa: D107
         super().__init__(
             *args,
             **kwargs,

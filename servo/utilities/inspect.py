@@ -1,3 +1,4 @@
+"""Utilities that provide class, method, and type introspection capabilities."""
 import collections
 import dataclasses
 import inspect
@@ -11,9 +12,7 @@ import servo.utilities.strings
 def get_instance_methods(
     obj, *, stop_at_parent: Optional[Type[Any]] = None
 ) -> Dict[str, Callable]:
-    """
-    Returns a mapping of method names to method callables in definition order, optionally traversing
-    the inheritance hierarchy in method dispatch order.
+    """Return a mapping of method names to method callables in method definition order.
 
     Note that the semantics of the values in the dictionary returned are dependent on the input object.
     When `obj` is an object instance, the values are bound method objects (as returned by `get_methods`).
@@ -62,8 +61,7 @@ def get_instance_methods(
 
 
 def get_methods(cls: Type[Any]) -> List[Tuple[str, Any]]:
-    """
-    Return a list of tuple of methods for the given class in alphabetical order.
+    """Return a list of tuples of methods for the given class in alphabetical order.
 
     Args:
         cls: The class to retrieve the methods of.
@@ -78,8 +76,7 @@ def get_methods(cls: Type[Any]) -> List[Tuple[str, Any]]:
 
 
 def get_defining_class(method: Callable) -> Optional[Type[Any]]:
-    """
-    Return the class that defined the given method.
+    """Return the class that defined the given method.
 
     Args:
         method: The method to return the defining class of.
@@ -108,7 +105,7 @@ def resolve_type_annotations(
     globalns: Optional[Dict[str, Any]] = None,
     localns: Optional[Dict[str, Any]] = None,
 ) -> List[Type]:
-    """Resolves a sequence of type annotations and returns the canonical types.
+    """Resolve a sequence of type annotations and return the canonical types.
 
     Args:
         annotations: A variadic sequence of type annotations in object or string form to be resolved.
@@ -135,6 +132,8 @@ def resolve_type_annotations(
 
 @dataclasses.dataclass
 class CallableDescriptor:
+    """A data class that describes the runtime context of a callable."""
+
     signature: inspect.signature
     module: Optional[str] = None
     globalns: Optional[Dict[str, Any]] = None
@@ -146,7 +145,7 @@ def assert_equal_callable_descriptors(
     name: Optional[str] = None,
     method: bool = False,
 ) -> None:
-    """Validates that the given collection of callable descriptors have equivalent type signatures."""
+    """Validate that the given collection of callable descriptors have equivalent type signatures."""
     if not descriptors:
         raise ValueError("cannot validate an empty list of callable descriptors")
 
@@ -370,7 +369,7 @@ def assert_equal_callable_descriptors(
 
 
 def assert_equal_types(*types_: List[Type]) -> None:
-    """Verifies that all of the given types are equivalent or raises a TypeError.
+    """Verify that all of the given types are equivalent or raise a TypeError.
 
     Raises:
         ValueError: Raised if the types list is empty.

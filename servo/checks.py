@@ -144,7 +144,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
         args: List[Any] = [],
         kwargs: Dict[Any, Any] = {},
     ) -> "Check":
-        """Runs a check handler and returns a Check object reporting the outcome.
+        """Run a check handler and return a Check object reporting the outcome.
 
         This method is useful for quickly implementing checks in connectors that
         do not have enough checkable conditions to warrant implementing a `Checks`
@@ -174,29 +174,27 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
 
     @property
     def passed(self) -> bool:
-        """
-        Indicates if the check is passing due to evaluating positively or being a warning.
+        """Return a boolean value that Indicates if the check passed.
+
+        Checks can pass by evaluating positively or being a warning.
         """
         return self.success or self.warning
 
     @property
     def failed(self) -> bool:
-        """
-        Indicates if the check is failing.
+        """Return a boolean value that indicates if the check failed.
         """
         return not self.success and not self.warning
 
     @property
     def critical(self) -> bool:
-        """
-        Indicates if the check is of critical severity.
+        """Return a boolean value that indicates if the check is of critical severity.
         """
         return self.severity == ErrorSeverity.CRITICAL
 
     @property
     def warning(self) -> bool:
-        """
-        Indicates if the check is of warning severity.
+        """Return a boolean value that indicates if the check is of warning severity.
         """
         return self.severity == ErrorSeverity.WARNING
 
@@ -228,7 +226,7 @@ class Checkable(Protocol):
     """Checkable objects can be represented as a Check."""
 
     def __check__() -> Check:
-        """Returns a Check representation of the object."""
+        """Return a Check representation of the object."""
         ...
 
 
@@ -244,7 +242,7 @@ def check(
     tags: Optional[List[str]] = None,
 ) -> Callable[[CheckHandler], CheckRunner]:
     """
-    Transforms a function or method into a check.
+    Transform a function or method into a check.
 
     Checks are used to test the availability, readiness, and health of resources and
     services that used during optimization. The `Check` class models the status of a
@@ -317,7 +315,7 @@ def require(
     id: Optional[str] = None,
     tags: Optional[List[str]] = None,
 ) -> Callable[[CheckHandler], CheckRunner]:
-    """Transforms a function or method into a critical check.
+    """Transform a function or method into a critical check.
 
     The require decorator is syntactic sugar for the `check` decorator to declare
     a check as being of the `ErrorSeverity.critical` severity. Refer to the check documentation
@@ -335,7 +333,7 @@ def warn(
     id: Optional[str] = None,
     tags: Optional[List[str]] = None,
 ) -> Callable[[CheckHandler], CheckRunner]:
-    """Transforms a function or method into a warning check.
+    """Transform a function or method into a warning check.
 
     The warn decorator is syntactic sugar for the `check` decorator to declare
     a check as being of the `ErrorSeverity.warning` severity. Refer to the check documentation
@@ -381,16 +379,16 @@ class CheckFilter(pydantic.BaseModel):
 
     @property
     def any(self) -> bool:
-        """Returns true if any constraints are in effect."""
+        """Return True if any constraints are in effect."""
         return not self.empty
 
     @property
     def empty(self) -> bool:
-        """Returns true if no constraints are in effect."""
+        """Return True if no constraints are in effect."""
         return bool(self.name is None and self.id is None and self.tags is None)
 
     def matches(self, check: Check) -> bool:
-        """Matches a check against the filter.
+        """Matche a check against the filter.
 
         Args:
             check: The check to match against the filter.
@@ -487,7 +485,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         **kwargs,
     ) -> List[Check]:
         """
-        Runs checks and returns a list of Check objects reflecting the results.
+        Run checks and return a list of Check objects reflecting the results.
 
         Checks are implemented as instance methods prefixed with `check_` that return a `Check`
         object. Please refer to the `BaseChecks` class documentation for details.
@@ -510,7 +508,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
     ) -> List[Check]:
         """
-        Runs all checks matching a filter and returns the results.
+        Run all checks matching a filter and return the results.
 
         Args:
             matching: An optional filter to limit the set of checks that are run.
@@ -578,7 +576,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         name: Optional[str] = None,
         halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
     ) -> Check:
-        """Runs a single check by id or name and returns the result.
+        """Run a single check by id or name and returns the result.
 
         Args:
             id: The id of the check to run. Defaults to None.
@@ -632,7 +630,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
     def _check_methods(self) -> Generator[Tuple[str, CheckRunner], None, None]:
         """
-        Iterates over all check methods and yields the method name and callable method instance
+        Iterate over all check methods and yield the method name and callable method instance
         in method definition order.
 
         Check method names are prefixed with "check_", accept no parameters, and return a
@@ -672,7 +670,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
     def __init__(
         self, config: servo.configuration.BaseConfiguration, *args, **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         super().__init__(config=config, *args, **kwargs)
 
     async def _expand_multichecks(self) -> List[types.MethodType]:
@@ -698,7 +696,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
 def _validate_check_handler(fn: CheckHandler) -> None:
     """
-    Validates that a function or method is usable as a check handler.
+    Validate that a function or method is usable as a check handler.
 
     Check handlers accept no arguments and return a `bool`, `str`,
     `Tuple[bool, str]`, or `None`.
@@ -748,7 +746,7 @@ def _validate_check_handler(fn: CheckHandler) -> None:
 async def run_check_handler(
     check: Check, handler: CheckHandler, *args, **kwargs
 ) -> None:
-    """Runs a check handler and records the result into a Check object.
+    """Run a check handler and records the result into a Check object.
 
     The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item"
     in order to support building dynamic, context specific values that are assigned as attributes of
@@ -785,7 +783,7 @@ async def run_check_handler(
 def run_check_handler_sync(
     check: Check, handler: CheckHandler, *args, **kwargs
 ) -> None:
-    """Runs a check handler and records the result into a Check object.
+    """Run a check handler and record the result into a Check object.
 
     Args:
         check: The check to record execution results.
@@ -835,7 +833,7 @@ def create_checks_from_iterable(
     *,
     base_class: Type[BaseChecks] = BaseChecks,
 ) -> BaseChecks:
-    """Returns a class wrapping each item in an iterable collection into check instance methods.
+    """Return a class wrapping each item in an iterable collection into check instance methods.
 
     Building a checks subclass implementation with this function is semantically equivalent to
     iterating through every item in the collection, defining a new `check_` prefixed method,
@@ -921,7 +919,7 @@ def multicheck(
     severity: ErrorSeverity = ErrorSeverity.COMMON,
     tags: Optional[List[str]] = None,
 ) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
-    """Expands a method into a series of checks from a returned iterable and
+    """Expand a method into a sequence of checks from a returned iterable and
     check handler.
 
     This method provides an alternative to `create_checks_from_iterable` that is

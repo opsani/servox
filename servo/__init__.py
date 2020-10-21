@@ -1,16 +1,28 @@
 import importlib.metadata
+import pathlib
+import toml
+from typing import Optional
 
-for pkg in {"servo", "servox"}: # pragma: no cover
-    try:
-        __version__ = importlib.metadata.version(pkg)
-        break
-    except importlib.metadata.PackageNotFoundError:
-        pass
+def __get_version() -> Optional[str]:
+    path = pathlib.Path(__file__).resolve().parents[1] / 'pyproject.toml'
 
-__codename__ = "pass the calamari"
+    if path.exists():
+        pyproject = toml.loads(open(str(path)).read())
+        return pyproject['tool']['poetry']['version']
+    else:
+        try:
+            return importlib.metadata.version("servox")
+        except importlib.metadata.PackageNotFoundError:
+            pass
+
+    return None
+
+__version__ = __get_version() or "0.0.0"
+__cryptonym__ = "serenity now"
 
 # Add the devtools debug() function to builtins if available
 import builtins
+
 import devtools
 
 builtins.debug = devtools.debug

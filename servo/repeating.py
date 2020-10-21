@@ -1,3 +1,8 @@
+"""Support for scheduling asynchronous, repeating tasks within Opsani Servo connectors.
+
+The `servo.repeating.Mixin` provides connectors with the ability to easily manage tasks
+that require periodic execution or the observation of particular runtime conditions.
+"""
 import asyncio
 import datetime
 import weakref
@@ -14,7 +19,9 @@ _repeating_tasks_registry = weakref.WeakKeyDictionary()
 
 
 class Mixin:
-    def __init_subclass__(cls, **kwargs):
+    """Provides convenience interfaces for working with asyncrhonously repeating tasks."""
+
+    def __init_subclass__(cls, **kwargs) -> None: # noqa: D105
         super().__init_subclass__(**kwargs)
 
         repeaters = {}
@@ -24,7 +31,7 @@ class Mixin:
 
         cls.__repeaters__ = repeaters
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, **kwargs) -> None: # noqa: D107
         super().__init__(*args, **kwargs)
         repeating_tasks: weakref.WeakValueDictionary[
             str, asyncio.Task
@@ -42,8 +49,12 @@ class Mixin:
     def start_repeating_task(
         self, name: str, every: Every, callable: Callable[[None], None]
     ) -> asyncio.Task:
-        """
-        Starts a repeating task with given name to repeatedly execute on `every` duration.
+        """Start a repeating task with the given name and duration.
+
+        Args:
+            name: A name for identifying the repeating task.
+            every: The duration at which the task will repeatedly run.
+            callable: A callable to be executed repeatedly on the desired interval.
         """
         if task := self.repeating_tasks.get(name, None):
             if not task.done():
@@ -64,8 +75,7 @@ class Mixin:
         return asyncio_task
 
     def cancel_repeating_task(self, name: str) -> Optional[bool]:
-        """
-        Cancel a repeating task with the given name.
+        """Cancel a repeating task with the given name.
 
         Returns True if the task was cancelled, False if it was found but could not be cancelled, or None if
         no task with the given name could be found.
@@ -82,6 +92,7 @@ class Mixin:
 
     @property
     def repeating_tasks(self) -> Dict[str, asyncio.Task]:
+        """Return a dictionary of repeating tasks keyed by task name."""
         tasks = _repeating_tasks_registry.get(self, None)
         if tasks is None:
             tasks = {}
@@ -91,8 +102,7 @@ class Mixin:
 
 
 def repeating(every: Every, *, name=None) -> Callable[[NoneCallable], NoneCallable]:
-    """
-    Decorates a function for repeated execution on the given duration.
+    """Decorate a function for repeated execution on a given duration.
 
     Note that the decorated function must be a method on a subclass of `servo.repeating.Mixin` or
     the decoration will have no effect.

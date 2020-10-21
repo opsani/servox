@@ -195,7 +195,7 @@ class Duration(datetime.timedelta):
 
     def __init__(
         self, duration: Union[str, datetime.timedelta, Numeric] = 0, **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
         ...
 
@@ -262,7 +262,7 @@ class DurationProgress(BaseModel):
     """The time that progress tracking was started.
     """
 
-    def __init__(self, duration: "Duration", **kwargs) -> None:
+    def __init__(self, duration: "Duration", **kwargs) -> None: # noqa: D107
         super().__init__(duration=duration, **kwargs)
 
     def start(self) -> None:
@@ -403,7 +403,7 @@ class Metric(BaseModel):
     """The unit that the metric is measured in (e.g., requests per second).
     """
 
-    def __init__(self, name: str, unit: Unit, **kwargs) -> None:
+    def __init__(self, name: str, unit: Unit, **kwargs) -> None: # noqa: D107
         super().__init__(name=name, unit=unit, **kwargs)
 
     def __hash__(self):
@@ -434,7 +434,7 @@ class DataPoint(BaseModel):
     """The value that was read for the metric.
     """
 
-    def __init__(self, metric: Metric, value: float, **kwargs) -> None:
+    def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
         super().__init__(metric=metric, value=value, **kwargs)
 
     def __str__(self) -> str:
@@ -473,7 +473,7 @@ class TimeSeries(BaseModel):
 
     def __init__(
         self, metric: Metric, values: List[Tuple[datetime.datetime, float]], **kwargs
-    ) -> None:
+    ) -> None: # noqa: D107
         super().__init__(metric=metric, values=values, **kwargs)
 
 
@@ -871,7 +871,7 @@ class Component(BaseModel):
 component.
     """
 
-    def __init__(self, name: str, settings: List[Setting], **kwargs) -> None:
+    def __init__(self, name: str, settings: List[Setting], **kwargs) -> None: # noqa: D107
         super().__init__(name=name, settings=settings, **kwargs)
 
     def get_setting(self, name: str) -> Optional[Setting]:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import signal
 from typing import Any, Dict, List, Optional
@@ -51,7 +52,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
     assembly: servo.Assembly
     connected: bool = False
 
-    def __init__(self, assembly: servo.Assembly) -> None:
+    def __init__(self, assembly: servo.Assembly) -> None: # noqa: D107
         self.assembly = assembly
 
         # initialize default servo options if not configured
@@ -99,7 +100,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             names.append(f"{name}-{version}")
 
         version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
-        codename = typer.style(servo.__codename__, fg=typer.colors.MAGENTA, bold=False)
+        codename = typer.style(servo.__cryptonym__, fg=typer.colors.MAGENTA, bold=False)
         initialized = typer.style(
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )

@@ -62,7 +62,7 @@ class Optimizer(pydantic.BaseSettings):
     and automated testing to bind the servo to a fixed URL.
     """
 
-    def __init__(self, id: str = None, **kwargs):
+    def __init__(self, id: str = None, **kwargs) -> None: # noqa: D107
         if isinstance(id, str):
             org_domain, app_name = id.split("/")
         else:
@@ -300,7 +300,7 @@ class Timeouts(BaseConfiguration):
         self,
         timeout: Optional[Union[str, int, float, servo.types.Duration]] = None,
         **kwargs,
-    ) -> None:
+    ) -> None: # noqa: D107
         for attr in ("connect", "read", "write", "pool"):
             if not attr in kwargs:
                 kwargs[attr] = timeout

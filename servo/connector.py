@@ -1,3 +1,10 @@
+"""Provides an extensible, event-driven interface for connecting Servo assemblies with external systems.
+
+Connectors are the foundational unit of functionality within the Servo. Connectors emit and respond to events
+such as measure and adjust in order to drive optimization activities. Because there are so many sources of metrics
+data and ways to orchestrate cloud infrastructure, the servo exposes a flexible plugin interface that enables
+integration with arbitrary systems via the connector module.
+"""
 from __future__ import annotations
 
 import abc
@@ -35,9 +42,7 @@ class BaseConnector(
     abc.ABC,
     metaclass=servo.events.Metaclass,
 ):
-    """
-    Connectors expose functionality to Servo assemblies by connecting external services and resources.
-    """
+    """Connectors expose functionality to Servo assemblies by connecting external services and resources."""
 
     ##
     # Connector metadata
@@ -52,6 +57,10 @@ class BaseConnector(
 
     version: ClassVar[Version] = None
     """Semantic Versioning string of the connector.
+    """
+
+    cryptonym: ClassVar[Optional[str]] = None
+    """Optional code name of the version.
     """
 
     description: ClassVar[Optional[str]] = None
@@ -91,7 +100,7 @@ class BaseConnector(
 
     @pydantic.root_validator(pre=True)
     @classmethod
-    def validate_metadata(cls, v):
+    def _validate_metadata(cls, v):
         assert cls.name is not None, "name must be provided"
         assert cls.version is not None, "version must be provided"
         if isinstance(cls.version, str):
@@ -112,7 +121,7 @@ class BaseConnector(
 
     @pydantic.validator("name")
     @classmethod
-    def validate_name(cls, v):
+    def _validate_name(cls, v):
         assert bool(
             re.match("^[0-9a-zA-Z-_/\\.]{3,128}$", v)
         ), "names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores"
@@ -130,7 +139,22 @@ class BaseConnector(
         config_cls = hints["config"]
         return config_cls
 
-    def __init_subclass__(cls: Type["BaseConnector"], **kwargs):
+    @classmethod
+    def version_summary(cls) -> str:
+        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        return f"{cls.full_name} v{cls.version}{cryptonym_}"
+
+    @classmethod
+    def summary(cls) -> str:
+        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        return (
+            f"{cls.full_name} v{cls.version}{cryptonym_} ({cls.maturity})\n"
+            f"{cls.description}\n"
+            f"{cls.homepage}\n"
+            f"Licensed under the terms of {cls.license}"
+        )
+
+    def __init_subclass__(cls: Type["BaseConnector"], **kwargs) -> None: # noqa: D105
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
@@ -145,7 +169,7 @@ class BaseConnector(
         *args,
         name: Optional[str] = None,
         **kwargs,
-    ):
+    ) -> None: # noqa: D107
         name = name if name is not None else self.__class__.__default_name__
         super().__init__(
             *args,
@@ -153,7 +177,7 @@ class BaseConnector(
             **kwargs,
         )
 
-    def __hash__(self):
+    def __hash__(self): # noqa: D105
         return hash(
             (
                 self.name,
@@ -162,12 +186,12 @@ class BaseConnector(
         )
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
+    def api_client_options(self) -> Dict[str, Any]: # noqa: D102
         return self.__dict__.get("api_client_options", super().api_client_options)
 
     @property
     def logger(self) -> "loguru.Logger":
-        """Returns a contextualized logger"""
+        """Return a logger object bound to the connector."""
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
         return super().logger.bind(connector=self)
@@ -181,8 +205,9 @@ def metadata(
     homepage: Optional[Union[str, pydantic.HttpUrl]] = None,
     license: Optional[Union[str, License]] = None,
     maturity: Optional[Union[str, Maturity]] = None,
+    cryptonym: Optional[str] = None,
 ):
-    """Decorate a Connector class with metadata"""
+    """Decorate a Connector class with metadata."""
 
     def decorator(cls):
         if not issubclass(cls, BaseConnector):
@@ -203,6 +228,7 @@ def metadata(
             cls.version = (
                 version if isinstance(version, Version) else Version.parse(version)
             )
+        cls.cryptonym = cryptonym
         if homepage:
             cls.homepage = homepage
         if license:
@@ -241,11 +267,9 @@ ENTRY_POINT_GROUP = "servo.connectors"
 
 
 class ConnectorLoader:
-    """
-    Dynamically discovers and loads connectors via Python setuptools entry points
-    """
+    """Discover and load connectors via Python setuptools entry points."""
 
-    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:
+    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None: # noqa: D107
         self.group = group
 
     def iter_entry_points(self) -> Generator[pkg_resources.EntryPoint, None, None]:
@@ -324,7 +348,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
 
             # Validate the name
             try:
-                BaseConnector.validate_name(name)
+                BaseConnector._validate_name(name)
             except AssertionError as e:
                 raise ValueError(f'"{name}" is not a valid connector name: {e}') from e
 

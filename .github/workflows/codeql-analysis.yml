@@ -17,6 +17,7 @@ on:
 jobs:
   analyze:
     name: Analyze
+    if: ${{ github.repository == 'opsani/servox' }}
     runs-on: ubuntu-latest
 
     strategy:

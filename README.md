@@ -169,7 +169,7 @@ There are a few key components that form the foundation of the architecture:
   making changes to the application under optimization, or promoting an
   optimized configuration to the broader system.
 * **Checks** - Checks provide a mechanism for verifying the correctness and
-  health of connector configuration and opeations. They are designed to support
+  health of connector configuration and operations. They are designed to support
   a high throughput integration and debugging experience by providing feedback
   loop driven workflow. Checks are implemented on top of the events subsystem
   and provide a rich interface via the `servo check` CLI command. The design of

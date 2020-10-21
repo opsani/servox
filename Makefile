@@ -1,4 +1,4 @@
-IMAGE_NAME ?= "opsani/servox:latest"
+IMAGE_NAME ?= "opsani/servox:edge"
 
 ifneq (,$(wildcard ./.env))
     include .env
