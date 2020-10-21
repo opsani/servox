@@ -43,7 +43,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   that the Kubernetes Connector has an opportunity to set up the environment
   before a measurement is taken that is reliant on the setup (e.g. all canaries
   have been created).
-  
+
 ## [0.8.2] "pass the calamari" - 2020-10-16
 
 ### Added
