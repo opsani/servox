@@ -215,6 +215,9 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                     )
             except httpx.TimeoutException as error:
                 self.logger.warning(f"ignoring HTTP timeout error: {error}")
+            
+            except httpx.HTTPStatusError as error:
+                self.logger.warning(f"ignoring HTTP response error: {error}")
                 
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
