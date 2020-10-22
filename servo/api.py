@@ -272,8 +272,8 @@ class Mixin(abc.ABC):
                 return pydantic.parse_obj_as(
                     Union[CommandResponse, Status], response_json
                 )
-            except httpx.HTTPError:
-                self.logger.error(f"HTTP error encountered while posting {event} event")
+            except httpx.HTTPError as error:
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
@@ -283,9 +283,9 @@ class Mixin(abc.ABC):
             try:
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError:
+            except httpx.HTTPError as error:
                 self.logger.error(
-                    f"HTTP error encountered while posting {event.value} event"
+                    f"HTTP error \"{error.__class__.__name__}\" encountered while posting {event.value} event: {error}"
                 )
                 self.logger.trace(devtools.pformat(event_request))
                 raise
