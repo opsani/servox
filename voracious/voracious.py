@@ -1,7 +1,8 @@
 from typing import Dict, List, Optional, Union
+
+import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import yaml
 
 # -------------------
 # Responses - EDIT ME

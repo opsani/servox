@@ -4,16 +4,15 @@ import asyncio
 import contextlib
 import pathlib
 import random
-import sys
 import time
 from typing import AsyncGenerator, Callable, List, Optional, Union
 
-import backoff
 import httpx
 import pydantic
+import typer
+
 import servo
 import servo.cli
-import typer
 
 METRICS = [
     servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
@@ -137,8 +136,8 @@ cli = servo.cli.ConnectorCLI(EmulatorConnector, help="Emulate servos for testing
 @cli.callback()
 def callback(
     ctx: typer.Context,
-    environment: str = typer.Option( # TODO what is the staging domain?
-        "api.opsani.com",
+    environment: str = typer.Option(
+        "api.opsani.com", # api-stage.opsani.com
         "--environment",
         "-e",
         envvar="EMULATOR_ENVIRONMENT",
@@ -199,20 +198,45 @@ def callback(
 
 @cli.command(help="List optimizers")
 def list_optimizers(ctx: typer.Context) -> None:
+    debug(ctx.obj)
     factory = OptimizerFactory(context=ctx.obj)
-    optimizers = servo.cli.sync(factory.create())
+    optimizers = servo.cli.run_async(factory.list())
     debug(optimizers)
 
 @cli.command(help="Create optimizers")
-def create_optimizers(ctx: typer.Context) -> None:
+def create_optimizers(
+    ctx: typer.Context,
+    name: str = typer.Argument(
+        ...,
+        help="Name of the optimizer to provision."
+    ),
+    template: str = typer.Option(
+        "live-traffic-opsani-dev",
+        "--template",
+        "-t",
+        show_envvar=True,
+        show_default=True,
+        metavar="NAME",
+        help="Template to use for optimizer configuration.",
+    ),
+    version: Optional[str] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        show_envvar=True,
+        show_default=True,
+        metavar="NAME",
+        help="Template to use for optimizer configuration.",
+    ),
+) -> None:
     factory = OptimizerFactory(context=ctx.obj)
-    optimizers = servo.cli.sync(factory.delete())
+    optimizers = servo.cli.run_async(factory.create(name=name, template=template, version=version))
     debug(optimizers)
 
 @cli.command(help="Delete optimizers")
 def delete_optimizers(ctx: typer.Context) -> None:
     factory = OptimizerFactory(context=ctx.obj)
-    optimizers = servo.cli.sync(factory.list())
+    optimizers = servo.cli.run_async(factory.list())
     debug(optimizers)
 
 @cli.command(help="Scale optimizers to match an objective")
@@ -257,7 +281,7 @@ def scale_optimizers(
         help="Desired number of applications; applications will be created and destroyed as needed.",
     )
 ) -> None:
-    interval = servo.types.Duration(interval_) if interval_ else None
+    servo.types.Duration(interval_) if interval_ else None
     ...
 
 @cli.command(help="Display details about a template")
@@ -270,8 +294,12 @@ def show_template(
     ),
 ) -> None:
     ...
+    factory = OptimizerFactory(context=ctx.obj)
+    template = servo.cli.run_async(factory.get_template(name=name))
+    debug(template)
 
 class OptimizerFactory(pydantic.BaseModel):
+    # TODO: just inline all of these fields...
     context: EmulatorContext
     
     async def list(self) -> dict:        
@@ -281,9 +309,14 @@ class OptimizerFactory(pydantic.BaseModel):
             return response.json()['data'] # TODO: Load this into a model
     
     # TODO: name and template are ambiguous...
-    async def create(self, name: str, template: str, *, count: int = 1, batch_size: int = 1, interval: Optional[servo.types.Duration] = None) -> None:
+    async def create(self, name: str, *, template: str, version: Optional[str] = None) -> None:
         # TODO: Model and serialize...
-        # TODO: This needs to handle batch + count appropriately...
+        
+        if version is None:
+            # TODO: model the template
+            template_obj = await self.get_template(template)
+            version = template_obj["version"]
+        
         create_json = {
             "name": name,
             "tags": {
@@ -291,7 +324,7 @@ class OptimizerFactory(pydantic.BaseModel):
             },
             "template": {
                 "name": template,
-                # "version": template_version, # TODO: Can we ignore???
+                "version": version,
             },
         }
 
@@ -299,21 +332,26 @@ class OptimizerFactory(pydantic.BaseModel):
             response = await client.post('applications', json=create_json)
             response.raise_for_status()
             
-            await self.wait_for(name, status='active') # TODO: Should be an enum
+            await self.wait_for(name, state='active') # TODO: Should be an enum
     
-    async def wait_for(self, name: str, *, desired_state: str) -> None:
+    # TODO: provision several at once?
+    async def create_many(self, count: int = 1, batch_size: int = 1, interval: Optional[servo.types.Duration] = None) -> None:
+        # TODO: This needs to handle batch + count appropriately.../
+        ...
+    
+    async def wait_for(self, name: str, *, state: str) -> None:
         async with self._client() as client:
             while True: # TODO add timeout, backoff, iterations
                 response = await client.get(f'applications/{name}')
                 response.raise_for_status()
                 
                 current_state = response.json()['data']['state']
-                if current_state == desired_state:
+                if current_state == state:
                     # TODO: Add logging...
                     # print("\n{} is now {}.".format(app, desired_state))
                     break
                 # print("Waiting for {} to reach {} state...".format(app, desired_state))
-                if desired_state == 'active' and current_state == 'inactive':
+                if state == 'active' and current_state == 'inactive':
                     raise Exception(f'Optimizer {name} became inactive during wait for "active" state')
                 await asyncio.sleep(10)
         
@@ -324,7 +362,11 @@ class OptimizerFactory(pydantic.BaseModel):
         ...
     
     async def get_template(self, name: str) -> dict:
-        ...
+        async with self._client() as client:
+            response = await client.get(f'templates/{name}')
+            response.raise_for_status()
+            return response.json()['data'] # TODO: Load this into a model
+        latest_version: str = await httpx_req(client.get, f'templates/{template}', lambda j: j['data']['version'])
     
     @contextlib.asynccontextmanager
     async def _client(self) -> AsyncGenerator[httpx.AsyncClient, None, None]:

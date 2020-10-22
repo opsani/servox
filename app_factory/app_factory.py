@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 import asyncio
-import click
-import httpx
 import json
 import os
 import sys
 import time
 from typing import Callable, List, Optional, Union
+
+import click
+import httpx
+
 
 async def httpx_req(client_method: Callable, url: str, extractor: Callable[[dict], Union[str, dict]], json: Optional[dict] = None) -> Union[str, dict]:
     if json:

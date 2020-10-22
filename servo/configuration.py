@@ -48,13 +48,10 @@ class Optimizer(pydantic.BaseSettings):
     """
 
     token: str
-    """
-    An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
-    """
+    """An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication."""
 
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com/"
-    """
-    The base URL for accessing the Opsani API. This option is typically only useful to Opsani developers or in the context
+    """The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
     """
 
@@ -72,14 +69,6 @@ class Optimizer(pydantic.BaseSettings):
             values["app_name"] = app_name
         
         return values
-
-    # def __init__(self, id: str = None, **kwargs) -> None: # noqa: D107
-    #     if isinstance(id, str):
-    #         org_domain, app_name = id.split("/")
-    #     else:
-    #         org_domain = kwargs.pop("org_domain", None)
-    #         app_name = kwargs.pop("app_name", None)
-    #     super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
 
     @property
     def id(self) -> str:

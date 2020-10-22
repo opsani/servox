@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 import backoff
 import devtools
 import httpx
+import pydantic
 import typer
 
 import servo as servox
@@ -16,84 +17,33 @@ import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 
-class Runner(servo.logging.Mixin, servo.api.Mixin):
-    assembly: servo.Assembly
-    connected: bool = False
 
-    def __init__(self, assembly: servo.Assembly) -> None: # noqa: D107
-        self.assembly = assembly
+class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
+    servo: servo.Servo
+    connected: bool = False
+    
+    def __init__(self, servo: servo) -> None: # noqa: D107
+        self.servo = servo
 
         # initialize default servo options if not configured
         # if self.config.servo is None:
         #     self.config.servo = servo.ServoConfiguration()
 
         super().__init__()
-
+    
     @property
     def optimizer(self) -> servo.Optimizer:
+        # TODO: should have servo.optimizer property
         return self.servo.config.optimizer
-
-    @property
-    def servo(self) -> servo.Servo:
-        # return self.assembly.servo
-        return servo.servo.Servo.current()
-
+    
     @property
     def config(self) -> servo.BaseServoConfiguration:
         return self.servo.config
-
+    
     @property
     def api_client_options(self) -> Dict[str, Any]:
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
-
-    def display_banner(self) -> None:
-        banner = "\n".join([
-            r"   _____                      _  __",
-            r"  / ___/___  ______   ______ | |/ /",
-            r"  \__ \/ _ \/ ___/ | / / __ \|   /",
-            r" ___/ /  __/ /   | |/ / /_/ /   |",
-            r"/____/\___/_/    |___/\____/_/|_|",
-        ])
-        typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
-        types = servo.Assembly.all_connector_types()
-        types.remove(servo.Servo)
-
-        names = []
-        for c in types:
-            name = typer.style(
-                servo.utilities.strings.commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False
-            )
-            version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
-            names.append(f"{name}-{version}")
-
-        version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
-        codename = typer.style(servo.__cryptonym__, fg=typer.colors.MAGENTA, bold=False)
-        initialized = typer.style(
-            "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
-        )
-
-        typer.secho(f'{version} "{codename}" {initialized}')
-        typer.secho()
-        typer.secho(f"connectors:  {', '.join(sorted(names))}")
-        typer.secho(
-            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
-        )
-        id = typer.style(self.optimizer.id, bold=True, fg=typer.colors.WHITE)
-        typer.secho(f"optimizer:   {id}")
-        if self.optimizer.base_url != "https://api.opsani.com/":
-            base_url = typer.style(
-                f"{self.optimizer.base_url}", bold=True, fg=typer.colors.RED
-            )
-            typer.secho(f"base url: {base_url}")
-        # if self.config.servo.proxies:
-        #     proxies = typer.style(
-        #         f"{devtools.pformat(self.config.servo.proxies)}",
-        #         bold=True,
-        #         fg=typer.colors.CYAN,
-        #     )
-        #     typer.secho(f"proxies: {proxies}")
-        typer.secho()
 
     async def describe(self) -> Description:
         self.logger.info("Describing...")
@@ -208,50 +158,67 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
-    async def main(self, servo_: servo.servo.Servo) -> None:
-        # Main run loop for processing commands from the optimizer
-        async def main_loop() -> None:
-            while True:
-                try:
-                    servo.servo.Servo.set_current(servo_)
-                    status = await self.exec_command()
-                    if status.status == servo.api.UNEXPECTED_EVENT:
-                        self.logger.warning(
-                            f"server reported unexpected event: {status.reason}"
-                        )
-                except Exception as error:
-                    self.logger.exception(f"failed with unrecoverable error: {error}")
-                    raise error
+    # async def main(self, servo_: servo.servo.Servo) -> None:
+    #     # Main run loop for processing commands from the optimizer
+    #     async def main_loop() -> None:
+    #         while True:
+    #             try:
+    #                 servo.servo.Servo.set_current(servo_)
+    #                 status = await self.exec_command()
+    #                 if status.status == servo.api.UNEXPECTED_EVENT:
+    #                     self.logger.warning(
+    #                         f"server reported unexpected event: {status.reason}"
+    #                     )
+    #             except Exception as error:
+    #                 self.logger.exception(f"failed with unrecoverable error: {error}")
+    #                 raise error
 
-        def handle_progress_exception(error: Exception) -> None:
-            # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
-                if isinstance(error, servo.api.UnexpectedEventError):
-                    self.logger.error(
-                        "servo has lost synchronization with the optimizer: restarting"
+    #     def handle_progress_exception(error: Exception) -> None:
+    #         # Restart the main event loop if we get out of sync with the server
+    #         if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
+    #             if isinstance(error, servo.api.UnexpectedEventError):
+    #                 self.logger.error(
+    #                     "servo has lost synchronization with the optimizer: restarting"
+    #                 )
+    #             elif isinstance(error, servo.api.EventCancelledError):
+    #                 self.logger.error(
+    #                     "optimizer has cancelled operation in progress: restarting"
+    #                 )
+
+    #             tasks = [
+    #                 t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+    #             ]
+    #             self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+    #             [task.cancel() for task in tasks]
+
+    #             # Restart a fresh main loop
+    #             asyncio.create_task(main_loop(), name="main loop")
+
+    #     # Setup logging
+    #     servo.servo.Servo.set_current(servo_)
+    #     self.progress_handler = servo.logging.ProgressHandler(
+    #         self.servo.report_progress, self.logger.warning, handle_progress_exception
+    #     )
+    #     self.logger.add(self.progress_handler.sink, catch=True)
+
+    #     self.display_banner()
+
+    # Main run loop for processing commands from the optimizer
+    async def main_loop(self) -> None:
+        while True:
+            try:
+                servo.servo.Servo.set_current(self.servo)
+                status = await self.exec_command()
+                if status.status == servo.api.UNEXPECTED_EVENT:
+                    self.logger.warning(
+                        f"server reported unexpected event: {status.reason}"
                     )
-                elif isinstance(error, servo.api.EventCancelledError):
-                    self.logger.error(
-                        "optimizer has cancelled operation in progress: restarting"
-                    )
-
-                tasks = [
-                    t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-                ]
-                self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
-                [task.cancel() for task in tasks]
-
-                # Restart a fresh main loop
-                asyncio.create_task(main_loop(), name="main loop")
-
-        # Setup logging
-        servo.servo.Servo.set_current(servo_)
-        self.progress_handler = servo.logging.ProgressHandler(
-            self.servo.report_progress, self.logger.warning, handle_progress_exception
-        )
-        self.logger.add(self.progress_handler.sink, catch=True)
-
-        self.display_banner()
+            except Exception as error:
+                self.logger.exception(f"failed with unrecoverable error: {error}")
+                raise error
+            
+    async def run(self) -> None:
+        servo.servo.Servo.set_current(self.servo)
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
@@ -262,7 +229,6 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             asyncio.create_task(self.shutdown(loop))
 
         try:
-
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
@@ -276,25 +242,165 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 self.connected = True
 
             self.logger.info("Dispatching startup event...")
-            await servo_.startup()
+            await self.servo.startup()
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
         except:
             pass
 
-        await asyncio.create_task(main_loop(), name="main loop")
-
-    async def shutdown(self, loop, signal=None):
-        if signal:
-            self.logger.info(f"Received exit signal {signal.name}...")
-
+        await asyncio.create_task(self.main_loop(), name="main loop")
+    
+    async def shutdown(self, *, reason: Optional[str] = None) -> None:
+        """Shutdown the running servo."""
         try:
             if self.connected:
-                reason = signal.name if signal else "shutdown"
                 await self._post_event(servo.api.Event.GOODBYE, dict(reason=reason))
         except Exception:
-            self.logger.exception(f"Exception occurred during GOODBYE request")
+            self.logger.exception(f"Exception occurred during GOODBYE request")        
+
+class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
+    assembly: servo.Assembly
+    runners: List[ServoRunner] = []
+    progress_handler: Optional[servo.logging.ProgressHandler] = None
+    
+    class Config:
+        arbitrary_types_allowed = True
+    
+    def __init__(self, assembly: servo.Assembly, **kwargs) -> None:
+        super().__init__(assembly=assembly, **kwargs)
+    
+    def _runner_for_servo(self, servo: servo.Servo) -> ServoRunner:
+        for runner in self.runners:
+            if runner.servo == servo:
+                return runner
+        
+        raise KeyError(f"no runner was found for the servo: \"{servo}\"")
+    
+    def run(self) -> None:
+        """Asynchronously run all servos active within the assembly.
+        
+        Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.
+        """
+        loop = asyncio.get_event_loop()
+
+        # Setup signal handling
+        signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
+        for s in signals:
+            loop.add_signal_handler(
+                s, lambda s=s: asyncio.create_task(self._shutdown(loop, signal=s))
+            )
+
+        loop.set_exception_handler(self._handle_exception)
+        
+        # Setup logging
+        # TODO: encapsulate all this shit
+        async def report_progress(self, **kwargs) -> None:
+            # Forward to the active servo...
+            servo.Servo.current().report_progress(**kwargs)
+            
+        def handle_progress_exception(error: Exception) -> None:
+            # FIXME: This needs to be made multi-servo aware
+            # Restart the main event loop if we get out of sync with the server
+            if isinstance(error, servo.api.UnexpectedEventError):
+                self.logger.error(
+                    "servo has lost synchronization with the optimizer: restarting operations"
+                )
+
+                tasks = [
+                    t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+                ]
+                self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+                [task.cancel() for task in tasks]
+
+                # Restart a fresh main loop
+                runner = self._runner_for_servo(servo.Servo.current())
+                asyncio.create_task(runner.main_loop(), name="main loop")
+        
+        self.progress_handler = servo.logging.ProgressHandler(
+            report_progress, self.logger.warning, handle_progress_exception
+        )
+        self.logger.add(self.progress_handler.sink, catch=True)
+
+        self._display_banner()
+
+        try:
+            # TODO: we need a CLI option to limit the number of servos to run, then emit log if config # is greater
+            # for servo_ in self.assembly.servos[0:100]:
+            for servo_ in self.assembly.servos:
+                servo_runner = ServoRunner(servo_)
+                loop.create_task(servo_runner.run())
+                self.runners.append(servo_runner)
+            
+            loop.run_forever()
+        finally:
+            loop.close()
+    
+    def _display_banner(self) -> None:
+        banner = "\n".join([
+            r"   _____                      _  __",
+            r"  / ___/___  ______   ______ | |/ /",
+            r"  \__ \/ _ \/ ___/ | / / __ \|   /",
+            r" ___/ /  __/ /   | |/ / /_/ /   |",
+            r"/____/\___/_/    |___/\____/_/|_|",
+        ])
+        typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
+        types = servo.Assembly.all_connector_types()
+        types.remove(servo.Servo)
+
+        names = []
+        for c in types:
+            name = typer.style(
+                servo.utilities.strings.commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False
+            )
+            version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
+            names.append(f"{name}-{version}")
+
+        version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
+        codename = typer.style(servo.__cryptonym__, fg=typer.colors.MAGENTA, bold=False)
+        initialized = typer.style(
+            "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
+        )
+
+        typer.secho(f'{version} "{codename}" {initialized}')
+        typer.secho()
+        typer.secho(f"connectors:  {', '.join(sorted(names))}")
+        typer.secho(
+            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
+        )
+        
+        if len(self.assembly.servos) == 1:
+            servo_ = self.assembly.servos[0]
+            optimizer = servo_.config.optimizer
+            
+            id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
+            typer.secho(f"optimizer:   {id}")
+            if optimizer.base_url != "https://api.opsani.com/":
+                base_url = typer.style(
+                    f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
+                )
+                typer.secho(f"base url: {base_url}")
+            # if self.config.servo.proxies:
+            #     proxies = typer.style(
+            #         f"{devtools.pformat(self.config.servo.proxies)}",
+            #         bold=True,
+            #         fg=typer.colors.CYAN,
+            #     )
+            #     typer.secho(f"proxies: {proxies}")
+        else:
+            servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
+            typer.secho(f"servos:   {servo_count}")
+            
+        typer.secho()
+    
+    async def _shutdown(self, loop, signal=None):
+        if signal:
+            self.logger.info(f"Received exit signal {signal.name}...")
+        
+        reason = signal.name if signal else "shutdown"
+        self.logger.info(f"Shutting down {len(self.runners)} running servos...")
+        for runner in self.runners:
+            await runner.shutdown(reason=reason)
 
         self.logger.info("Dispatching shutdown event...")
         await self.assembly.shutdown()
@@ -302,7 +408,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
 
-        [task.cancel() for task in tasks]
+        [task.cancel() for task in tasks]        
 
         self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -312,29 +418,10 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         loop.stop()
 
-    def handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         self.logger.error(f"asyncio exception handler triggered with context: {context}")
 
         self.logger.critical(
             "Shutting down due to unhandled exception in asyncio event loop..."
         )
-        asyncio.create_task(self.shutdown(loop))
-
-    def run(self) -> None:
-        # Setup async event loop
-        loop = asyncio.get_event_loop()
-
-        signals = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGUSR1)
-        for s in signals:
-            loop.add_signal_handler(
-                s, lambda s=s: asyncio.create_task(self.shutdown(loop, signal=s))
-            )
-
-        loop.set_exception_handler(self.handle_exception)
-
-        try:
-            for servo_ in self.assembly.servos:
-                loop.create_task(self.main(servo_))
-            loop.run_forever()
-        finally:
-            loop.close()
+        asyncio.create_task(self._shutdown(loop))

@@ -472,7 +472,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         # TODO: Add assembly.startup() and shutdown()
         for servo_ in assembly.servos:
-            sync(servo_.startup())
+            run_async(servo_.startup())
 
     @staticmethod
     def connectors_instance_callback(
@@ -761,7 +761,7 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = sync(context.servo.dispatch_event(servo.Events.COMPONENTS))
+            results = run_async(context.servo.dispatch_event(servo.Events.COMPONENTS))
             headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
             table = []
             for result in results:
@@ -932,7 +932,7 @@ class ServoCLI(CLI):
             Display measurable metrics
             """
             metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
-            results = sync(context.servo.dispatch_event("metrics"))
+            results = run_async(context.servo.dispatch_event("metrics"))
             for result in results:
                 for metric in result.value:
                     units_and_connectors = metrics_to_connectors.get(
@@ -1031,7 +1031,7 @@ class ServoCLI(CLI):
                 )
 
             if context.assembly:
-                servo.runner.Runner(context.assembly).run()
+                servo.runner.AssemblyRunner(context.assembly).run()
             else:
                 raise typer.Abort("failed to assemble servo")
 
@@ -1139,7 +1139,7 @@ class ServoCLI(CLI):
             while True:
                 args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                 constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-                results: List[servo.EventResult] = sync(
+                results: List[servo.EventResult] = run_async(
                     context.servo.dispatch_event(
                         servo.Events.CHECK,
                         servo.CheckFilter(**constraints),
@@ -1255,7 +1255,7 @@ class ServoCLI(CLI):
             else:
                 connectors = context.assembly.connectors
 
-            results: List[servo.EventResult] = sync(
+            results: List[servo.EventResult] = run_async(
                 context.servo.dispatch_event(servo.Events.DESCRIBE, include=connectors)
             )
             headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
@@ -1290,7 +1290,7 @@ class ServoCLI(CLI):
                 return value
 
             all_metrics_by_name: Dict[str, servo.Metric] = {}
-            results = sync(context.servo.dispatch_event("metrics"))
+            results = run_async(context.servo.dispatch_event("metrics"))
             for result in results:
                 for metric in result.value:
                     all_metrics_by_name[metric.name] = metric
@@ -1360,7 +1360,7 @@ class ServoCLI(CLI):
 
             if metrics:
                 # Filter target connectors by metrics
-                results: List[servo.EventResult] = sync(
+                results: List[servo.EventResult] = run_async(
                     context.assembly.dispatch_event(
                         servo.Events.METRICS, include=connector_names
                     )
@@ -1372,7 +1372,7 @@ class ServoCLI(CLI):
                         connectors.remove(result.connector)
 
             # Capture the measurements
-            results: List[servo.EventResult] = sync(
+            results: List[servo.EventResult] = run_async(
                 context.assembly.dispatch_event(
                     servo.Events.MEASURE,
                     metrics=metrics,
@@ -1469,7 +1469,7 @@ class ServoCLI(CLI):
                 )
                 adjustments.append(adjustment)
 
-            results: List[servo.EventResult] = sync(
+            results: List[servo.EventResult] = run_async(
                 context.servo.dispatch_event(servo.Events.ADJUST, adjustments)
             )
             for result in results:
@@ -1874,16 +1874,18 @@ def _run(args: Union[str, List[str]], **kwargs) -> None:
         sys.exit(process.returncode)
 
 
-def sync(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
-    """
-    Run the asyncio event loop until Future is complete.
+def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
+    """Run the asyncio event loop until Future is done.
 
-    This function is a convenience alias for `asyncio.get_event_loop().run_until_complete`.
+    This function is a convenience alias for `asyncio.get_event_loop().run_until_complete(future)`.
+    
+    Args:
+        future: The future to run.
 
     Returns:
         Any: The Future's result.
 
     Raises:
-        Exception:
+        Exception: Any exception raised during execution of the future.
     """
     return asyncio.get_event_loop().run_until_complete(future)
