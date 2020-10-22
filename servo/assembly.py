@@ -62,7 +62,6 @@ class Assembly(pydantic.BaseModel):
         cls,
         *,
         config_file: pathlib.Path,
-        optimizer: Optional[servo.configuration.Optimizer], # TODO: Move this into the config model?
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
     ) -> "Assembly":

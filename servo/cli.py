@@ -423,6 +423,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 CLI.assemble_from_context(ctx)
             except pydantic.ValidationError as error:
                 typer.echo(f"Invalid configuration: {error}", err=True)
+                raise error
                 raise typer.Exit(2)
 
     @staticmethod
@@ -433,32 +434,32 @@ class CLI(typer.Typer, servo.logging.Mixin):
         if not ctx.config_file.exists():
             raise typer.BadParameter(f"Config file '{ctx.config_file}' does not exist")
 
-        if ctx.optimizer is None:
-            raise typer.BadParameter("An optimizer must be specified")
+        # if ctx.optimizer is None:
+        #     raise typer.BadParameter("An optimizer must be specified")
 
-        # Resolve token
-        if ctx.token is None and ctx.token_file is None:
-            raise typer.BadParameter(
-                "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
-            )
+        # # Resolve token
+        # if ctx.token is None and ctx.token_file is None:
+        #     raise typer.BadParameter(
+        #         "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
+        #     )
 
-        if ctx.token is not None and ctx.token_file is not None:
-            raise typer.BadParameter("--token and --token-file cannot both be given")
+        # if ctx.token is not None and ctx.token_file is not None:
+        #     raise typer.BadParameter("--token and --token-file cannot both be given")
 
-        if ctx.token_file is not None and ctx.token_file.exists():
-            ctx.token = ctx.token_file.read_text().strip()
+        # if ctx.token_file is not None and ctx.token_file.exists():
+        #     ctx.token = ctx.token_file.read_text().strip()
 
-        if len(ctx.token) == 0 or ctx.token.isspace():
-            raise typer.BadParameter("token cannot be blank")
+        # if len(ctx.token) == 0 or ctx.token.isspace():
+        #     raise typer.BadParameter("token cannot be blank")
 
-        optimizer = servo.Optimizer(
-            ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
-        )
+        # optimizer = servo.Optimizer(
+        #     ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
+        # )
 
         # Assemble the Servo
         try:
             assembly = servo.Assembly.assemble(
-                config_file=ctx.config_file, optimizer=optimizer
+                config_file=ctx.config_file
             )
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)

@@ -11,21 +11,26 @@ OPSANI_TOKEN_FILE ?= "/dev/null"
 build:
 	DOCKER_BUILDKIT=1 docker build -t ${IMAGE_NAME} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
 
+.PHONY: generate
+generate:
+	@$(MAKE) -e SERVO_ARGS="generate --force" run
+
 .PHONY: config
 config:
-	@$(MAKE) -e SERVO_ARGS="servo generate --force" run
+	@$(MAKE) -e SERVO_ARGS="config" run
 
 .PHONY: run
 run: build
+	# TODO: Figure out how to handle optional .env better (Docker will auto-create a directory)
+	# -v $(CURDIR)/.env:/root/.env:ro \ 
+	# -v ${OPSANI_TOKEN_FILE:-/dev/null}:/servo/opsani.token \ 
 	docker run -it \
 		-v $(CURDIR)/servo.yaml:/servo/servo.yaml \
-		-v $(CURDIR)/.env:/root/.env:ro \
 		-v ${HOME}/.kube:/root/.kube:ro \
 		-v ${HOME}/.aws:/root/.aws:ro 	\
-		-v ${OPSANI_TOKEN_FILE:-/dev/null}:/servo/opsani.token \
 		$(ENV_FILE_PARAM) \
 		$(IMAGE_NAME) \
-		$(SERVO_ARGS)
+		${SERVO_ARGS:-run}
 
 .PHONY: push
 push: build

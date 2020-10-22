@@ -62,14 +62,24 @@ class Optimizer(pydantic.BaseSettings):
     """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
     and automated testing to bind the servo to a fixed URL.
     """
-
-    def __init__(self, id: str = None, **kwargs) -> None: # noqa: D107
-        if isinstance(id, str):
+    
+    @pydantic.root_validator(pre=True)
+    @classmethod
+    def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if id := values.pop("id", None):
             org_domain, app_name = id.split("/")
-        else:
-            org_domain = kwargs.pop("org_domain", None)
-            app_name = kwargs.pop("app_name", None)
-        super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
+            values["org_domain"] = org_domain
+            values["app_name"] = app_name
+        
+        return values
+
+    # def __init__(self, id: str = None, **kwargs) -> None: # noqa: D107
+    #     if isinstance(id, str):
+    #         org_domain, app_name = id.split("/")
+    #     else:
+    #         org_domain = kwargs.pop("org_domain", None)
+    #         app_name = kwargs.pop("app_name", None)
+    #     super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
 
     @property
     def id(self) -> str:
