@@ -279,7 +279,7 @@ class Mixin(abc.ABC):
                 raise
             
             except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={devtools.pformat(error.response.headers)}):\n{error}")
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
