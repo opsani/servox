@@ -21,13 +21,11 @@ config:
 
 .PHONY: run
 run: build
-	# TODO: Figure out how to handle optional .env better (Docker will auto-create a directory)
-	# -v $(CURDIR)/.env:/root/.env:ro \ 
-	# -v ${OPSANI_TOKEN_FILE:-/dev/null}:/servo/opsani.token \ 
 	docker run -it \
 		-v $(CURDIR)/servo.yaml:/servo/servo.yaml \
 		-v ${HOME}/.kube:/root/.kube:ro \
 		-v ${HOME}/.aws:/root/.aws:ro 	\
+		-v ${OPSANI_TOKEN_FILE:-/dev/null}:/servo/opsani.token \
 		$(ENV_FILE_PARAM) \
 		$(IMAGE_NAME) \
 		${SERVO_ARGS:-run}
