@@ -78,8 +78,10 @@ class AdjustConnector(BaseConnector):
         ]
 
     @on_event()
-    def adjust(self, *args, **kwargs) -> Description:
-        pass
+    async def adjust(
+        self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
+    ) -> servo.Description:
+        return await self.describe()
 
 
 @contextmanager

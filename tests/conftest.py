@@ -107,7 +107,7 @@ def stub_servo_yaml(tmp_path: Path) -> Path:
             )
         )
     )
-    config = {"connectors": ["measure"], "measure": measure_config_json}
+    config = {"connectors": ["measure", "adjust"], "measure": measure_config_json, "adjust": {}}
     config = yaml.dump(config)
     config_path.write_text(config)
     return config_path
@@ -133,8 +133,9 @@ def stub_multiservo_yaml(tmp_path: Path) -> Path:
     )
     config1 = {
         "optimizer": optimizer1_config_json,
-        "connectors": ["measure"], 
-        "measure": measure_config_json
+        "connectors": ["measure", "adjust"], 
+        "measure": measure_config_json,
+        "adjust": {}
     }
     optimizer2 = Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
     optimizer2_config_json = json.loads(
@@ -146,8 +147,9 @@ def stub_multiservo_yaml(tmp_path: Path) -> Path:
     )
     config2 = {
         "optimizer": optimizer2_config_json,
-        "connectors": ["measure"], 
-        "measure": measure_config_json
+        "connectors": ["measure", "adjust"], 
+        "measure": measure_config_json,
+        "adjust": {}
     }
     config_yaml = yaml.dump_all([config1, config2])
     config_path.write_text(config_yaml)

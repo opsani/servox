@@ -1561,31 +1561,65 @@ class ServoCLI(CLI):
             """
             Adjust settings for one or more components
             """
-            adjustments: List[servo.Adjustment] = []
-            for descriptor in settings:
-                # TODO: These splits need test coverage
-                component_name, setting_descriptor = descriptor.split(".", 1)
-                setting_name, value = setting_descriptor.split("=", 1)
-                adjustment = servo.Adjustment(
-                    component_name=component_name,
-                    setting_name=setting_name,
-                    value=value,
-                )
-                adjustments.append(adjustment)
-
-            results: List[servo.EventResult] = run_async(
-                context.servo.dispatch_event(servo.Events.ADJUST, adjustments)
-            )
-            for result in results:
-                outcome = result.value
-
-                if isinstance(outcome, Exception):
-                    message = str(outcome.get("message", "undefined"))
-                    raise servo.ConnectorError(
-                        f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
+            
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+                
+                adjustments: List[servo.Adjustment] = []
+                for descriptor in settings:
+                    try:
+                        component_name, setting_descriptor = descriptor.split(".", 1)
+                        setting_name, value = setting_descriptor.split("=", 1)
+                    except ValueError:
+                        raise typer.BadParameter(
+                            f"unable to parse setting descriptor '{descriptor}': expected format is `component.setting=value`"
+                        )
+                        
+                    adjustment = servo.Adjustment(
+                        component_name=component_name,
+                        setting_name=setting_name,
+                        value=value,
                     )
-                else:
-                    self.logger.info(f"{result.connector.name} - Adjustment completed")
+                    adjustments.append(adjustment)
+
+                results: List[servo.EventResult] = run_async(
+                    servo_.dispatch_event(servo.Events.ADJUST, adjustments)
+                )
+                if not results:
+                    typer.echo("adjustment failed: no connector handled the request", err=True)
+                    raise typer.Exit(code=1)
+                
+                for result in results:
+                    outcome = result.value
+
+                    if isinstance(outcome, Exception):
+                        message = str(outcome.get("message", "undefined"))
+                        raise servo.ConnectorError(
+                            f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
+                        )
+                
+                headers = ["CONNECTOR", "SETTINGS"]
+                table = []
+                for result in results:
+                    description: servo.Description = result.value
+                    settings_column = []
+                    for component in description.components:
+                        for setting in component.settings:
+                            settings_column.append(
+                                f"{component.name}.{setting.name}={setting.human_readable_value}"
+                            )
+
+                    result.connector.name
+                    row = [
+                        result.connector.name,
+                        "\n".join(settings_column)
+                    ]
+                    table.append(row)
+
+                    if len(context.assembly.servos) > 1:
+                        typer.echo(f"{servo_.name}")
+                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         @self.command(section=section, hidden=True)
         def promote() -> None:
@@ -1844,6 +1878,12 @@ class ServoCLI(CLI):
                 "-d",
                 help="Include default values in the generated output",
             ),
+            name: Optional[str] = typer.Option(
+                None,
+                "--name",
+                "-n",
+                help="Set the name of the generated configuration",
+            ),
             standalone: bool = typer.Option(
                 False,
                 "--standalone",
@@ -1874,7 +1914,7 @@ class ServoCLI(CLI):
 
             # Build a settings model from our routes
             config_model = servo.assembly._create_config_model_from_routes(routes)
-            config = config_model.generate()
+            config = config_model.generate(name=name)
 
             if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary

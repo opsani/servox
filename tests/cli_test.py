@@ -593,6 +593,17 @@ class TestCommands:
         assert result.exit_code == 0, f"non-zero exit status (result.stdout={result.stdout}, result.stderr={result.stderr})"
         assert re.match(f"√ Valid configuration in {stub_multiservo_yaml}", result.stdout)
 
+    def test_generate_with_name(
+        self, cli_runner: CliRunner, servo_cli: Typer
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "generate --name foo -f servo.yaml measure", input="y\n"
+        )
+        assert result.exit_code == 0
+        assert "already exists. Overwrite it?" in result.stdout
+        content = yaml.full_load(open("servo.yaml"))
+        assert content == {"connectors": ["measure"], "measure": {}, "name": "foo"}
+        
     def test_generate_prompts_to_overwrite(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
     ) -> None:
@@ -632,15 +643,6 @@ class TestCommands:
         optimizer_env: None,
         stub_servo_yaml: Path,
     ) -> None:
-        pass
-
-    def test_developer_test(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
-        pass
-
-    def test_developer_lint(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
-        pass
-
-    def test_developer_format(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
         pass
 
     ## CLI Lifecycle tests
@@ -866,3 +868,37 @@ def test_measure_multiservo_named(
     assert re.search("METRIC\\s+UNIT\\s+READINGS", result.stdout)
     assert re.search("Some Metric\\s+rpm\\s+31337.00 \\(just now\\)", result.stdout)
 
+def test_adjust_incomplete_identifier(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "adjust setting=value", catch_exceptions=False)
+    assert result.exit_code == 2
+    assert re.search("Error: Invalid value: unable to parse setting descriptor 'setting=value'", result.stderr)
+    
+def test_adjust(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "adjust component.setting=value", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("CONNECTOR\\s+SETTINGS", result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+
+def test_adjust_multiservo(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "adjust component.setting=value", catch_exceptions=False)
+    assert result.exit_code == 0, f"failed with non-zero exit code (stdout={result.stdout}, stderr={result.stderr})"
+    assert re.search("CONNECTOR\\s+SETTINGS", result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+
+def test_adjust_multiservo_named(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 adjust component.setting=value", catch_exceptions=False)
+    assert result.exit_code == 0, f"failed with non-zero exit code (stdout={result.stdout}, stderr={result.stderr})"
+    assert re.search("CONNECTOR\\s+SETTINGS", result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
