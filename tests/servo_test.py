@@ -106,7 +106,7 @@ def assembly(servo_yaml: Path) -> Assembly:
 
 @pytest.fixture()
 def servo(assembly: Assembly) -> Servo:
-    return assembly.servo
+    return assembly.servos[0]
 
 
 def test_all_connector_types() -> None:
@@ -581,13 +581,6 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
 
 
 class TestAssembly:
-    def test_assemble_empty_config_active_connectors(self, servo_yaml: Path):
-        optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
-        assembly = Assembly.assemble(
-            config_file=servo_yaml, optimizer=optimizer
-        )
-        assert assembly.connectors == [assembly.servos[0].servo]
-
     def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
         config = {
             "connectors": {"vegeta": "vegeta"},
@@ -1331,6 +1324,7 @@ def test_generating_schema_with_test_connectors(
     assembly = Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
+    assert len(assembly.servos) == 1, "servo was not assembled"
     DynamicServoConfiguration = assembly.servos[0].config.__class__
     DynamicServoConfiguration.schema()
     # NOTE: Covers naming conflicts between settings models -- will raise if misconfigured

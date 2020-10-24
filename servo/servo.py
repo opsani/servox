@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import enum
+import json
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, Union
 
 import httpx
+import pydantic
 
 import servo.api
 import servo.checks
@@ -217,6 +219,11 @@ class Servo(servo.connector.BaseConnector):
         """Notify all active connectors that the servo is shutting down."""
         await self.dispatch_event(Events.SHUTDOWN, _prepositions=servo.events.Preposition.ON)
 
+    @property
+    def all_connectors(self) -> List[servo.connector.BaseConnector]:
+        """Return a list of all active connectors including the Servo."""
+        return [self, *self.connectors]
+    
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
@@ -306,6 +313,20 @@ class Servo(servo.connector.BaseConnector):
 
         with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)
+    
+    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
+        """Return a schema that only includes connector model definitions"""
+        connectors = servo.Assembly.all_connector_types() if all else self.connectors
+        config_models = list(map(lambda c: c.config_model(), connectors))
+        return pydantic.schema.schema(config_models, title="Servo Schema")
+
+    def top_level_schema_json(self, *, all: bool = False) -> str:
+        """Return a JSON string representation of the top level schema"""
+        return json.dumps(
+            self.top_level_schema(all=all),
+            indent=2,
+            default=pydantic.json.pydantic_encoder,
+        )
 
     ##
     # Event handlers

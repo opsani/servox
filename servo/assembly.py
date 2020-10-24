@@ -45,7 +45,7 @@ class Assembly(pydantic.BaseModel):
     of the schema family of methods. See the method docstrings for specific details.
     """
 
-    config_file: pathlib.Path
+    config_file: Optional[pathlib.Path]
     servos: List[servo.servo.Servo]
 
     @staticmethod
@@ -57,31 +57,46 @@ class Assembly(pydantic.BaseModel):
         """
         return _assembly_context_var.get()
 
+    @staticmethod
+    def set_current(assembly: "Assembly") -> None:
+        """Set the active assembly for the current execution context."""
+        _assembly_context_var.set(assembly)
+
     @classmethod
     def assemble(
         cls,
         *,
-        config_file: pathlib.Path,
+        config_file: Optional[pathlib.Path] = None,
+        configs: Optional[List[Dict[str, Any]]] = None,
+        optimizer: Optional[servo.configuration.Optimizer] = None,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
     ) -> "Assembly":
         """Assemble a Servo by processing configuration and building a dynamic settings model"""
-
+        
+        if config_file is None and configs is None:
+            raise ValueError(f"cannot assemble with a config file and config objects")        
+        
         _discover_connectors()
 
-        # Build our Servo configuration from the config file + environment
-        if not config_file.exists():
-            raise FileNotFoundError(f"config file '{config_file}' does not exist")
+        if config_file:
+            # Build our Servo configuration from the config file + environment
+            if not config_file.exists():
+                raise FileNotFoundError(f"config file '{config_file}' does not exist")
 
-        configs = yaml.load_all(open(config_file), Loader=yaml.FullLoader)
-        if not isinstance(configs, Iterator):
-            raise ValueError(
-                f'error: config file "{config_file}" parsed to an unexpected value of type "{configs.__class__}"'
-            )
-
-        # if len(configs) > 1 and optimizer is not None:
-        #     raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
-
+            configs = list(yaml.load_all(open(config_file), Loader=yaml.FullLoader))
+            if not isinstance(configs, list):
+                raise ValueError(
+                    f'error: config file "{config_file}" parsed to an unexpected value of type "{configs.__class__}"'
+                )
+            
+            # If we parsed an empty file, add an empty dict to work with
+            if not configs:
+                configs.append({})
+        
+        if len(configs) > 1 and optimizer is not None:
+            raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
+                
         servos: List[servo.servo.Servo] = []
         for config in configs:
             # TODO: Needs to be public / have a better name
@@ -90,8 +105,7 @@ class Assembly(pydantic.BaseModel):
                 config=config, env=env
             )
             servo_config = servo_config_model.parse_obj(config)
-            # TODO: Can probably dump the optimizer option
-            # servo_config.optimizer = optimizer
+            servo_optimizer = servo_config.optimizer or optimizer
 
             # Initialize all active connectors
             connectors: List[servo.connector.BaseConnector] = []
@@ -101,7 +115,7 @@ class Assembly(pydantic.BaseModel):
                     connector = connector_type(
                         name=name,
                         config=connector_config,
-                        optimizer=servo_config.optimizer,
+                        optimizer=servo_optimizer,
                         __connectors__=connectors,
                     )
                     connectors.append(connector)
@@ -110,19 +124,19 @@ class Assembly(pydantic.BaseModel):
             servo_ = servo.servo.Servo(
                 config=servo_config,
                 connectors=connectors.copy(),  # Avoid self-referential reference to servo
-                optimizer=servo_config.optimizer,
+                optimizer=servo_optimizer,
                 __connectors__=connectors,
             )
             connectors.append(servo_)
             servos.append(servo_)
 
-        assembly = Assembly(
+        assembly = cls(
             config_file=config_file,
             servos=servos,
         )
 
         # Set the context vars
-        _assembly_context_var.set(assembly)
+        cls.set_current(assembly)        
 
         # Activate the servo if we are in the common case single player mode
         if len(servos) == 1:
@@ -186,17 +200,6 @@ class Assembly(pydantic.BaseModel):
         """Return a set of all connector types in the assembly excluding the Servo"""
         return servo.connector._connector_subclasses.copy()
 
-    @property
-    def connectors(self) -> List[servo.connector.BaseConnector]:
-        """
-        Return a list of all active connectors in the assembly including the Servo.
-        """
-        return [self.servo, *self.servo.connectors]
-
-    @property
-    def servo(self) -> servo.servo.Servo:
-        return self.servos[0]
-
     async def add_servo(self, servo_: servo.servo.Servo) -> None:
         """Add a servo to the assembly.
 
@@ -243,20 +246,6 @@ class Assembly(pydantic.BaseModel):
                     )
                 )
             )
-
-    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
-        """Return a schema that only includes connector model definitions"""
-        connectors = self.all_connector_types() if all else self.servo.connectors
-        config_models = list(map(lambda c: c.config_model(), connectors))
-        return pydantic.schema.schema(config_models, title="Servo Schema")
-
-    def top_level_schema_json(self, *, all: bool = False) -> str:
-        """Return a JSON string representation of the top level schema"""
-        return json.dumps(
-            self.top_level_schema(all=all),
-            indent=2,
-            default=pydantic.json.pydantic_encoder,
-        )
 
 
 def _module_path(cls: Type) -> str:
@@ -323,7 +312,6 @@ def _create_config_model_from_routes(
     return servo_config_model
 
 # TODO: This needs a public API and better name. Prolly moves to configuration module
-# TODO: Is this actually different from _create_config_model_from_routes?
 def _create_config_model(
     *,
     config: Dict[str, Any], # TODO: Could be optional?

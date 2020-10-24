@@ -60,6 +60,14 @@ class Optimizer(pydantic.BaseSettings):
     and automated testing to bind the servo to a fixed URL.
     """
     
+    def __init__(self, id: str = None, **kwargs):
+        if isinstance(id, str):
+            org_domain, app_name = id.split("/")
+        else:
+            org_domain = kwargs.pop("org_domain", None)
+            app_name = kwargs.pop("app_name", None)
+        super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
+    
     @pydantic.root_validator(pre=True)
     @classmethod
     def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:

@@ -320,7 +320,7 @@ def test_run_with_malformed_config_file(
     optimizer_env: None,
 ) -> None:
     servo_yaml.write_text("</\n\n..:989890j\n___*")
-    with pytest.raises(ValueError) as e:
+    with pytest.raises(TypeError) as e:
         cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert "parsed to an unexpected value of type" in str(e)
 
@@ -534,8 +534,8 @@ def test_schema_top_level_dict_file_output(
     servo_cli: Typer, cli_runner: CliRunner, tmp_path: Path, optimizer_env: None
 ) -> None:
     path = tmp_path / "output.dict"
-    result = cli_runner.invoke(servo_cli, f"schema -f dict --top-level -o {path}")
-    assert result.exit_code == 0
+    result = cli_runner.invoke(servo_cli, f"schema -f dict --top-level -o {path}", catch_exceptions=False)
+    assert result.exit_code == 0, f"failed with non-zero exit code: stderr={result.stderr}, stdout={result.stdout}"
     schema = eval(path.read_text())
     assert schema["title"] == "Servo Schema"
 

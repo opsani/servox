@@ -244,7 +244,7 @@ class Formatter:
 
             # If we are running multiservo, annotate that as well
             assembly = servo.assembly.Assembly.current()
-            if len(assembly.servos) > 1 and servo.servo.Servo.current():
+            if assembly and len(assembly.servos) > 1 and servo.servo.Servo.current():
                 component = f"{servo.servo.Servo.current().config.optimizer.id}({component})"
 
             extra["component"] = component

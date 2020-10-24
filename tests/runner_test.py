@@ -33,8 +33,8 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 
 
 @pytest.fixture
-def runner(assembly) -> servo.runner.Runner:
-    return servo.runner.Runner(assembly)
+def runner(assembly) -> servo.runner.AssemblyRunner:
+    return servo.runner.AssemblyRunner(assembly)
 
 
 async def test_test_out_of_order_operations(runner) -> None:

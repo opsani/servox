@@ -22,19 +22,18 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     servo: servo.Servo
     connected: bool = False
     
-    def __init__(self, servo: servo) -> None: # noqa: D107
-        self.servo = servo
+    def __init__(self, servo_: servo) -> None: # noqa: D107
+        self.servo = servo_
 
         # initialize default servo options if not configured
-        # if self.config.servo is None:
-        #     self.config.servo = servo.ServoConfiguration()
+        if self.config.servo is None:
+            self.config.servo = servo.ServoConfiguration()
 
         super().__init__()
     
     @property
     def optimizer(self) -> servo.Optimizer:
-        # TODO: should have servo.optimizer property
-        return self.servo.config.optimizer
+        return self.servo.optimizer
     
     @property
     def config(self) -> servo.BaseServoConfiguration:
@@ -331,14 +330,13 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         self._display_banner()
 
         try:
-            # TODO: we need a CLI option to limit the number of servos to run, then emit log if config # is greater
-            # for servo_ in self.assembly.servos[0:100]:
             for servo_ in self.assembly.servos:
                 servo_runner = ServoRunner(servo_)
                 loop.create_task(servo_runner.run())
                 self.runners.append(servo_runner)
             
             loop.run_forever()
+            
         finally:
             loop.close()
     
@@ -377,7 +375,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         
         if len(self.assembly.servos) == 1:
             servo_ = self.assembly.servos[0]
-            optimizer = servo_.config.optimizer
+            optimizer = servo_.optimizer
             
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
             typer.secho(f"optimizer:   {id}")
@@ -386,13 +384,13 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
                 typer.secho(f"base url: {base_url}")
-            # if self.config.servo.proxies:
-            #     proxies = typer.style(
-            #         f"{devtools.pformat(self.config.servo.proxies)}",
-            #         bold=True,
-            #         fg=typer.colors.CYAN,
-            #     )
-            #     typer.secho(f"proxies: {proxies}")
+            if self.config.servo.proxies:
+                proxies = typer.style(
+                    f"{devtools.pformat(self.config.servo.proxies)}",
+                    bold=True,
+                    fg=typer.colors.CYAN,
+                )
+                typer.secho(f"proxies: {proxies}")
         else:
             servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
             typer.secho(f"servos:   {servo_count}")

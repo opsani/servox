@@ -423,7 +423,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 CLI.assemble_from_context(ctx)
             except pydantic.ValidationError as error:
                 typer.echo(f"Invalid configuration: {error}", err=True)
-                raise error
                 raise typer.Exit(2)
 
     @staticmethod
@@ -433,33 +432,62 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         if not ctx.config_file.exists():
             raise typer.BadParameter(f"Config file '{ctx.config_file}' does not exist")
+        
+        # Conditionalize based on multi-servo options
+        optimizer = None
+        configs = list(yaml.full_load_all(open(ctx.config_file)))
+        if not isinstance(configs, list):
+            raise TypeError(
+                f'error: config file "{ctx.config_file}" parsed to an unexpected value of type "{configs.__class__}"'
+            )
+        
+        if len(configs) == 0:
+            configs.append({})
 
-        # if ctx.optimizer is None:
-        #     raise typer.BadParameter("An optimizer must be specified")
+        if len(configs) == 1:
+            config = configs[0]
+            
+            if not isinstance(config, dict):
+                raise TypeError(
+                    f'error: config file "{ctx.config_file}" parsed to an unexpected value of type "{config.__class__}"'
+                )
+            
+            if config.get("optimizer", None) == None:
+                if ctx.optimizer is None:
+                    raise typer.BadParameter("An optimizer must be specified")
 
-        # # Resolve token
-        # if ctx.token is None and ctx.token_file is None:
-        #     raise typer.BadParameter(
-        #         "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
-        #     )
+                # Resolve token
+                if ctx.token is None and ctx.token_file is None:
+                    raise typer.BadParameter(
+                        "API token must be provided via --token (ENV['OPSANI_TOKEN']) or --token-file (ENV['OPSANI_TOKEN_FILE'])"
+                    )
 
-        # if ctx.token is not None and ctx.token_file is not None:
-        #     raise typer.BadParameter("--token and --token-file cannot both be given")
+                if ctx.token is not None and ctx.token_file is not None:
+                    raise typer.BadParameter("--token and --token-file cannot both be given")
 
-        # if ctx.token_file is not None and ctx.token_file.exists():
-        #     ctx.token = ctx.token_file.read_text().strip()
+                if ctx.token_file is not None and ctx.token_file.exists():
+                    ctx.token = ctx.token_file.read_text().strip()
 
-        # if len(ctx.token) == 0 or ctx.token.isspace():
-        #     raise typer.BadParameter("token cannot be blank")
+                if len(ctx.token) == 0 or ctx.token.isspace():
+                    raise typer.BadParameter("token cannot be blank")
 
-        # optimizer = servo.Optimizer(
-        #     ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
-        # )
+                optimizer = servo.Optimizer(
+                    ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
+                )
+                config["optimizer"] = optimizer.dict()
+        else:
+            if ctx.optimizer:
+                raise typer.BadParameter("An optimizer cannot be specified in a multi-servo configuration")
+
+            if ctx.token or ctx.token_file:
+                raise typer.BadParameter("A token cannot be specified in a multi-servo configuration")                        
 
         # Assemble the Servo
         try:
             assembly = servo.Assembly.assemble(
-                config_file=ctx.config_file
+                config_file=ctx.config_file,
+                configs=configs,
+                optimizer=optimizer
             )
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
@@ -470,9 +498,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         ctx.assembly = assembly
         ctx.servo_ = servo_
 
-        # TODO: Add assembly.startup() and shutdown()
-        for servo_ in assembly.servos:
-            run_async(servo_.startup())
+        run_async(assembly.startup())
 
     @staticmethod
     def connectors_instance_callback(
@@ -484,7 +510,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         if value:
             if isinstance(value, str):
                 # Lookup by name
-                for connector in context.assembly.connectors:
+                for connector in context.servo_.all_connectors:
                     if connector.name == value:
                         return connector
                 raise typer.BadParameter(f"no connector found named '{value}'")
@@ -492,7 +518,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 connectors: List[servo.BaseConnector] = []
                 for key in value:
                     size = len(connectors)
-                    for connector in context.assembly.connectors:
+                    for connector in context.servo_.all_connectors:
                         if connector.name == key:
                             connectors.append(connector)
                             break
@@ -818,7 +844,7 @@ class ServoCLI(CLI):
             connectors = (
                 context.assembly.all_connector_types()
                 if all
-                else context.assembly.connectors
+                else context.servo_.all_connectors
             )
             for connector in connectors:
                 event_handlers.extend(connector.__event_handlers__)
@@ -971,7 +997,7 @@ class ServoCLI(CLI):
             connectors = (
                 context.assembly.all_connector_types()
                 if all
-                else context.assembly.connectors
+                else context.servo_.all_connectors
             )
             headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
@@ -1103,7 +1129,7 @@ class ServoCLI(CLI):
             if connectors:
                 validate_connectors_respond_to_event(connectors, servo.Events.CHECK)
             else:
-                connectors = context.assembly.connectors
+                connectors = context.servo_.all_connectors
 
             def parse_re(
                 value: Optional[List[str]],
@@ -1253,7 +1279,7 @@ class ServoCLI(CLI):
             if connectors:
                 validate_connectors_respond_to_event(connectors, servo.Events.DESCRIBE)
             else:
-                connectors = context.assembly.connectors
+                connectors = context.servo_.all_connectors
 
             results: List[servo.EventResult] = run_async(
                 context.servo.dispatch_event(servo.Events.DESCRIBE, include=connectors)
@@ -1351,7 +1377,7 @@ class ServoCLI(CLI):
                 connectors = list(
                     filter(
                         lambda c: c.responds_to_event(servo.Events.MEASURE),
-                        context.assembly.connectors,
+                        context.servo_.all_connectors,
                     )
                 )
 
@@ -1615,11 +1641,11 @@ class ServoCLI(CLI):
                 CLI.assemble_from_context(context)
 
                 if format == SchemaOutputFormat.json:
-                    output_data = context.assembly.top_level_schema_json(all=all)
+                    output_data = context.servo_.top_level_schema_json(all=all)
 
                 elif format == SchemaOutputFormat.dict:
                     output_data = devtools.pformat(
-                        context.assembly.top_level_schema(all=all)
+                        context.servo_.top_level_schema(all=all)
                     )
 
             else:
@@ -1687,14 +1713,26 @@ class ServoCLI(CLI):
         ) -> None:
             """Validate a configuration"""
             try:
+                configs = list(yaml.load_all(open(file), Loader=yaml.FullLoader))
+                if not isinstance(configs, list):
+                    raise ValueError(
+                        f'error: config file "{file}" parsed to an unexpected value of type "{configs.__class__}"'
+                    )
+                
+                # If we parsed an empty file, add an empty dict to work with
+                if not configs:
+                    configs.append({})
+            
                 # NOTE: When connector descriptor is provided the validation is constrained
                 routes = self.connector_routes_callback(
                     context=context, value=connectors
-                )
-                config_model, routes = servo.assembly._create_config_model(
-                    config_file=file, routes=routes
-                )
-                config_model.parse_file(file)
+                )                
+                
+                for config in configs:
+                    config_model, routes = servo.assembly._create_config_model(
+                        config=config, routes=routes
+                    )
+                    config_model.parse_file(file)
             except (pydantic.ValidationError, yaml.scanner.ScannerError, KeyError) as e:
                 if not quiet:
                     typer.echo(f"X Invalid configuration in {file}", err=True)
