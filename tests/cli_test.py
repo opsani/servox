@@ -583,8 +583,15 @@ class TestCommands:
         content = path.read_text()
         assert "'title': 'Servo Configuration Schema'" in content
 
-    def test_validate(self, cli_runner: CliRunner, servo_cli: Typer) -> None:
-        pass
+    def test_validate(self, cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path) -> None:
+        result = cli_runner.invoke(servo_cli, f"validate -f {stub_servo_yaml}", catch_exceptions=False)
+        assert result.exit_code == 0, f"non-zero exit status (result.stdout={result.stdout}, result.stderr={result.stderr})"
+        assert re.match(f"√ Valid configuration in {stub_servo_yaml}", result.stdout)
+    
+    def test_validate_multiservo(self, cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
+        result = cli_runner.invoke(servo_cli, f"validate -f {stub_multiservo_yaml}", catch_exceptions=False)
+        assert result.exit_code == 0, f"non-zero exit status (result.stdout={result.stdout}, result.stderr={result.stderr})"
+        assert re.match(f"√ Valid configuration in {stub_multiservo_yaml}", result.stdout)
 
     def test_generate_prompts_to_overwrite(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
@@ -820,6 +827,7 @@ def test_list(
     result = cli_runner.invoke(servo_cli, "list", catch_exceptions=False)
     assert result.exit_code == 0
     assert re.match("NAME\\s+OPTIMIZER\\s+DESCRIPTION", result.stdout)
+    assert re.search("dev.opsani.com/servox\\s+dev.opsani.com/servox\\s+Continuous Optimization Orchestrator", result.stdout)
 
 def test_list_multiservo(
     cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
@@ -827,4 +835,34 @@ def test_list_multiservo(
     result = cli_runner.invoke(servo_cli, "list", catch_exceptions=False)
     assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
     assert re.match("NAME\\s+OPTIMIZER\\s+DESCRIPTION", result.stdout)
-    
+    assert re.search("dev.opsani.com/multi-servox-1\\s+dev.opsani.com/multi-servox-1\\s+Continuous Optimization Orchestrator", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-2\\s+dev.opsani.com/multi-servox-2\\s+Continuous Optimization Orchestrator", result.stdout)
+
+def test_measure(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "measure", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("METRIC\\s+UNIT\\s+READINGS", result.stdout)
+    assert re.search("Some Metric\\s+rpm\\s+31337.00 \\(just now\\)", result.stdout)
+
+def test_measure_multiservo(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "measure", catch_exceptions=False)
+    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+    assert re.search("METRIC\\s+UNIT\\s+READINGS", result.stdout)
+    assert re.search("Some Metric\\s+rpm\\s+31337.00 \\(just now\\)", result.stdout)
+
+def test_measure_multiservo_named(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 measure", catch_exceptions=False)
+    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+    assert re.search("METRIC\\s+UNIT\\s+READINGS", result.stdout)
+    assert re.search("Some Metric\\s+rpm\\s+31337.00 \\(just now\\)", result.stdout)
+

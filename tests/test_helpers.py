@@ -17,7 +17,7 @@ from servo.connector import BaseConnector
 from servo.events import after_event, before_event, on_event
 from servo.logging import logger
 from servo.servo import Events
-from servo.types import Component, Description, Measurement, RangeSetting
+from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
 uvloop.install()
@@ -43,7 +43,17 @@ class MeasureConnector(BaseConnector):
         metrics: List[str] = None,
         control: servo.types.Control = servo.types.Control(),
     ) -> Measurement:
-        pass
+        return Measurement(
+            readings=[
+                DataPoint(
+                    value=31337,
+                    metric=Metric(
+                        name="Some Metric",
+                        unit=Unit.REQUESTS_PER_MINUTE,                        
+                    )
+                )
+            ]
+        )
 
     @after_event(Events.MEASURE)
     def after_measure(self, results: List[servo.events.EventResult]) -> None:

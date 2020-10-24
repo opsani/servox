@@ -1428,105 +1428,127 @@ class ServoCLI(CLI):
         ) -> None:
             """
             Capture measurements for one or more metrics
-            """
-            if not connectors:
-                connectors = list(
-                    filter(
-                        lambda c: c.responds_to_event(servo.Events.MEASURE),
-                        context.servo_.all_connectors,
-                    )
-                )
-
-            # TODO: Connector names should support namespacing by servo instance
-            connector_names = list(map(lambda c: c.name, connectors))
-
-            if metrics:
-                # Filter target connectors by metrics
-                results: List[servo.EventResult] = run_async(
-                    context.assembly.dispatch_event(
-                        servo.Events.METRICS, include=connector_names
-                    )
-                )
-                for result in results:
-                    result_metrics: List[servo.Metric] = result.value
-                    metric_names: Set[str] = set(map(lambda m: m.name, result_metrics))
-                    if not metric_names | set(metrics):
-                        connectors.remove(result.connector)
-
-            # Capture the measurements
-            results: List[servo.EventResult] = run_async(
-                context.assembly.dispatch_event(
-                    servo.Events.MEASURE,
-                    metrics=metrics,
-                    control=servo.Control(duration=duration),
-                    include=connector_names,
-                )
-            )
-
-            # FIXME: The data that is crossing connector boundaries needs to be validated
-            aggregated_by_metric: Dict[
-                servo.Metric,
-                Dict[
-                    str,
-                    Dict[
-                        servo.BaseConnector, List[Tuple[servo.Numeric, servo.Reading]]
-                    ],
-                ],
-            ] = {}
-            metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
-            headers = ["METRIC", "UNIT", "READINGS"]
-            table = []
-            for result in results:
-                measurement = result.value
-                if not measurement:
+            """            
+            for servo_ in context.assembly.servos:
+                if context.servo_ and servo_ != context.servo_:
                     continue
-                for reading in measurement.readings:  # List[TimeSeries]
-                    metric = reading.metric
+                
+                if not connectors:
+                    connectors = list(
+                        filter(
+                            lambda c: c.responds_to_event(servo.Events.MEASURE),
+                            servo_.all_connectors,
+                        )
+                    )
 
-                    metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                    for value_tuple in reading.values:  # List[Tuple[datetime, Numeric]]
-                        time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
-                        timestamp_to_connector = metric_to_timestamp.get(time_key, {})
-                        values = timestamp_to_connector.get(result.connector, [])
-                        values.append((value_tuple[1], reading))
-                        timestamp_to_connector[result.connector] = values
-                        metric_to_timestamp[time_key] = timestamp_to_connector
+                connector_names = list(map(lambda c: c.name, connectors))
 
-                    aggregated_by_metric[metric] = metric_to_timestamp
+                if metrics:
+                    # Filter target connectors by metrics
+                    results: List[servo.EventResult] = run_async(
+                        servo_.dispatch_event(
+                            servo.Events.METRICS, include=connector_names
+                        )
+                    )
+                    for result in results:
+                        result_metrics: List[servo.Metric] = result.value
+                        metric_names: Set[str] = set(map(lambda m: m.name, result_metrics))
+                        if not metric_names | set(metrics):
+                            connectors.remove(result.connector)
 
-            # Print the table
-            def attribute_connector(connector, reading) -> str:
-                return (
-                    f"[{connector.name}{reading.id or ''}]"
-                    if len(connectors) > 1
-                    else ""
+                # Capture the measurements
+                results: List[servo.EventResult] = run_async(
+                    servo_.dispatch_event(
+                        servo.Events.MEASURE,
+                        metrics=metrics,
+                        control=servo.Control(duration=duration),
+                        include=connector_names,
+                    )
                 )
 
-            headers = ["METRIC", "UNIT", "READINGS"]
-            table = []
-            for metric in sorted(aggregated_by_metric.keys(), key=lambda m: m.name):
-                readings_column = []
-                timestamp_to_connectors = aggregated_by_metric[metric]
-                for timestamp in sorted(timestamp_to_connectors.keys()):
-                    for connector, values in timestamp_to_connectors[
-                        timestamp
-                    ].items():  # Dict[BaseConnector, Tuple[Numeric, Reading]]
-                        readings_column.extend(
-                            list(
-                                map(
-                                    lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
-                                    values,
+                # FIXME: The data that is crossing connector boundaries needs to be validated
+                aggregated_by_metric: Dict[
+                    servo.Metric,
+                    Dict[
+                        str,
+                        Dict[
+                            servo.BaseConnector, List[Tuple[servo.Numeric, servo.Reading]]
+                        ],
+                    ],
+                ] = {}
+                metric_names = list(map(lambda m: m.name, metrics)) if metrics else None
+                headers = ["METRIC", "UNIT", "READINGS"]
+                table = []
+                for result in results:
+                    measurement = result.value
+                    if not measurement:
+                        continue
+                    
+                    for reading in measurement.readings:
+                        metric = reading.metric                        
+                        
+                        if isinstance(reading, servo.TimeSeries):
+                            metric_to_timestamp = aggregated_by_metric.get(metric, {})
+                            for value_tuple in reading.values:
+                                time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
+                                timestamp_to_connector = metric_to_timestamp.get(time_key, {})
+                                values = timestamp_to_connector.get(result.connector, [])
+                                values.append((value_tuple[1], reading))
+                                timestamp_to_connector[result.connector] = values
+                                metric_to_timestamp[time_key] = timestamp_to_connector
+
+                            aggregated_by_metric[metric] = metric_to_timestamp
+                        
+                        elif isinstance(reading, servo.DataPoint):
+                            metric_to_timestamp = aggregated_by_metric.get(metric, {})
+                            time_key = f"{reading.measured_at:%Y-%m-%d %H:%M:%S}"
+                            timestamp_to_connector = metric_to_timestamp.get(time_key, {})
+                            values = timestamp_to_connector.get(result.connector, [])
+                            values.append((reading.value, reading))
+                            timestamp_to_connector[result.connector] = values
+                            metric_to_timestamp[time_key] = timestamp_to_connector
+                            aggregated_by_metric[metric] = metric_to_timestamp
+                            
+                        else:
+                            raise TypeError(f"unknown reading type: {reading.__class__.__name__}")
+                            
+
+                # Print the table
+                def attribute_connector(connector, reading) -> str:
+                    return (
+                        f"[{connector.name}{reading.id or ''}]"
+                        if len(connectors) > 1
+                        else ""
+                    )
+
+                headers = ["METRIC", "UNIT", "READINGS"]
+                table = []
+                for metric in sorted(aggregated_by_metric.keys(), key=lambda m: m.name):
+                    readings_column = []
+                    timestamp_to_connectors = aggregated_by_metric[metric]
+                    for timestamp in sorted(timestamp_to_connectors.keys()):
+                        for connector, values in timestamp_to_connectors[
+                            timestamp
+                        ].items():  # Dict[BaseConnector, Tuple[Numeric, Reading]]
+                            readings_column.extend(
+                                list(
+                                    map(
+                                        lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
+                                        values,
+                                    )
                                 )
                             )
-                        )
 
-                row = [
-                    metric.name,
-                    metric.unit,
-                    "\n".join(readings_column),
-                ]
-                table.append(row)
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                    row = [
+                        metric.name,
+                        metric.unit,
+                        "\n".join(readings_column),
+                    ]
+                    table.append(row)
+                
+                if len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         @self.command(section=section)
         def adjust(

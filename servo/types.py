@@ -433,9 +433,17 @@ class DataPoint(BaseModel):
     value: float
     """The value that was read for the metric.
     """
+    
+    measured_at: datetime.datetime = None
+    """The time that the data point was measured.
+    """
 
     def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
         super().__init__(metric=metric, value=value, **kwargs)
+        
+    @pydantic.validator("measured_at", pre=True, always=True)
+    def _initialize_measured_at(cls, v) -> datetime.datetime:
+        return v or datetime.datetime.now()
 
     def __str__(self) -> str:
         return f"{self.value:.2f}{self.unit.value}"
