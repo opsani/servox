@@ -404,7 +404,7 @@ The bundled connectors are registered and discovered using this mechanism via
 entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
-### Advanced Connector Configuration
+### Running Multiple Connector Instances
 
 ServoX is designed to support assemblies that contain an arbitrary number of
 connectors that may or may not be active and enable the use of multiple
@@ -490,6 +490,79 @@ foo:
   target: https://example.com/
 
 Generated servo.yaml
+```
+
+### Running Multiple Servos
+
+ServoX is capable of running multiple servos within the same assembly and servos
+can be added and removed dynamically at runtime. This is useful for optimizing
+several applications at one time from a single servo deployment to simplify
+operations or more interestingly to support the integration and automation of
+optimization into CI and CD pipelines. For example, it is possible to configure
+the build system to trigger optimization for apps as they head into staging or
+upon emergence into production.
+
+Multi-servo execution mode is straightforward. When the `servo.yaml` config file
+is found to contain multiple documents (delimited by `---`), a servo instance is
+constructed for each entry in the file and added to the assembly. There are
+however a few differences in configuration options.
+
+When multi-servo mode is enabled, the `--optimizer`, `--token`, `--token-file`,
+`--base-url`, and `--url` options are unavailable. The optimizer and
+connectivity configuration must be provided via the `optimizer` stanza within
+each configuration *document* in the config file. The CLI will raise errors if
+these options are utilized with a multi-servo configuration because they are
+ambiguous. This does not preclude a single servo being promoted into a
+multi-servo configuration at runtime -- it is a configuration resolution
+concern.
+
+When running multi-servo, logging is changed to provide context about the servo
+that is active and generating the output. The `servo.Servo.current()` method
+returns the active servo at runtime.
+
+Because ServoX is based on `asyncio` and functions as an orchestrator, it is
+capable of managing a large number of optimizations in parallel (we have tested
+into the thousands). Most operations performed are I/O bound and asynchronous
+but the specifics of the connectors used in a multi-servo configuration will
+have a significant impact on the upper bounds of concurrency.
+
+#### Configuring Multi-servo Mode
+
+Basically all that you need to do is use the `---` delimiter to create multiple
+documents within the `servo.yaml` file and configure an `optimizer` within
+each one. For example:
+
+```yaml
+---
+optimizer:
+  id: newco.com/awesome-app1
+  token: 6686e4c3-2c6a-4c28-9c87-b304d7c1427b
+connectors: [vegeta]
+vegeta:
+  duration: 5m
+  rate: 50/1s
+  target: GET https://app1.example.com/
+---
+optimizer:
+  id: newco.com/awesome-app2
+  token: 5d6e004d-cf7b-4121-b66f-d72f0fd44953
+connectors: [vegeta]
+vegeta:
+  duration: 5m
+  rate: 50/1s
+  target: GET https://app2.example.com/
+```
+
+#### Adding & Removing Servos at Runtime
+
+Servos can be added and removed from the assembly at runtime via methods on the 
+`servo.Assembly` class:
+
+```python
+import servo
+
+servo.Assembly.current().add_servo(new_servo)
+servo.Assembly.current().remove_servo(new_servo)
 ```
 
 ### Extending the CLI
