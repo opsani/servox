@@ -81,6 +81,7 @@ class Context(typer.Context):
     # Basic configuration
     config_file: Optional[pathlib.Path] = None
     optimizer: Optional[servo.Optimizer] = None
+    name: Optional[str] = None
 
     token: Optional[str] = None
     token_file: Optional[pathlib.Path] = None
@@ -122,6 +123,7 @@ class Context(typer.Context):
         command: "Command",
         *args,
         config_file: Optional[pathlib.Path] = None,
+        name: Optional[str] = None,
         optimizer: Optional[servo.Optimizer] = None,
         assembly: Optional[servo.Assembly] = None,
         servo_: Optional[servo.Servo] = None,
@@ -134,6 +136,7 @@ class Context(typer.Context):
         **kwargs,
     ) -> None: # noqa: D107
         self.config_file = config_file
+        self.name = name
         self.optimizer = optimizer
         self.assembly = assembly
         self.servo_ = servo_
@@ -387,6 +390,14 @@ class CLI(typer.Typer, servo.logging.Mixin):
             resolve_path=True,
             help="Servo configuration file",
         ),
+        name: Optional[str] = typer.Option(
+            None,
+            "--name",
+            "-n",
+            envvar="SERVO_NAME",
+            show_envvar=True,
+            help="Name of the servo to use",
+        ),
         log_level: LogLevel = typer.Option(
             LogLevel.INFO,
             "--log-level",
@@ -403,6 +414,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         ),
     ):
         ctx.config_file = config_file
+        ctx.name = name
         ctx.optimizer = optimizer
         ctx.token = token
         ctx.token_file = token_file
@@ -492,11 +504,24 @@ class CLI(typer.Typer, servo.logging.Mixin):
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
-
-        # Populate the context for use by other commands
-        servo_ = assembly.servos and assembly.servos[0]
+        
+        # Target a specific servo if possible
         ctx.assembly = assembly
-        ctx.servo_ = servo_
+        if assembly.servos:
+            if len(assembly.servos) == 1:
+                ctx.servo_ = assembly.servos[0]
+                
+                if ctx.name and ctx.servo_.name != ctx.name:
+                    raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
+                
+            elif ctx.name:
+                for servo_ in assembly.servos:
+                    if servo_.name == ctx.name:
+                        ctx.servo_ = servo_
+                        break
+                
+                if ctx.servo_ is None:
+                    raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
 
         run_async(assembly.startup())
 
@@ -979,6 +1004,24 @@ class ServoCLI(CLI):
             typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
 
         self.add_cli(show_cli, section=Section.ASSEMBLY)
+        
+        @self.command("list", section=Section.ASSEMBLY)
+        def list_(
+            context: Context,
+        ) -> None:
+            """List servos in the assembly"""
+            headers = ["NAME", "OPTIMIZER", "DESCRIPTION"]
+            table = []
+
+            for servo_ in context.assembly.servos:
+                row = [
+                    servo_.name,
+                    servo_.optimizer.id,
+                    servo_.description or "-",
+                ]            
+                table.append(row)
+
+            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
 
         @self.command(section=Section.ASSEMBLY)
         def connectors(
@@ -994,46 +1037,59 @@ class ServoCLI(CLI):
             ),
         ) -> None:
             """Manage connectors"""
-            connectors = (
-                context.assembly.all_connector_types()
-                if all
-                else context.servo_.all_connectors
-            )
+                        
             headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
             if all:
-                headers[0] = "DEFAULT NAME"
-            table = []
-            connectors_by_type = {}
-            for c in connectors:
-                c_type = c.__class__ if isinstance(c, servo.BaseConnector) else c
-                c_list = connectors_by_type.get(c_type, [])
-                c_list.append(c)
-                connectors_by_type[c_type] = c_list
+                headers[0] = "DEFAULT NAME"            
+            
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+                
+                table = []
+                connectors = (
+                    context.assembly.all_connector_types()
+                    if all
+                    else servo_.all_connectors
+                )                                
+                
+                connectors_by_type = {}
+                for c in connectors:
+                    c_type = c.__class__ if isinstance(c, servo.BaseConnector) else c
+                    c_list = connectors_by_type.get(c_type, [])
+                    c_list.append(c)
+                    connectors_by_type[c_type] = c_list
 
-            for connector_type in connectors_by_type.keys():
-                if all:
-                    names = [connector_type.__default_name__]
-                else:
-                    names = list(
-                        map(lambda c: c.name, connectors_by_type[connector_type])
-                    )
-                row = [
-                    "\n".join(names),
-                    connector_type.name,
-                    connector_type.version,
-                    connector_type.description,
-                ]
-                if verbose:
-                    row += [
-                        connector_type.homepage,
-                        connector_type.maturity,
-                        connector_type.license,
+                for connector_type in connectors_by_type.keys():
+                    if all:
+                        names = [connector_type.__default_name__]
+                    else:
+                        names = list(
+                            map(lambda c: c.name, connectors_by_type[connector_type])
+                        )
+                    row = [
+                        "\n".join(names),
+                        connector_type.name,
+                        connector_type.version,
+                        connector_type.description,
                     ]
-                table.append(row)
-
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                    if verbose:
+                        row += [
+                            connector_type.homepage,
+                            connector_type.maturity,
+                            connector_type.license,
+                        ]
+                    table.append(row)
+                
+                if not all and len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                  
+                # if we are printing all we only need one iteration
+                if all:
+                    break
 
     def add_ops_commands(self, section=Section.OPS) -> None:
         @self.command(section=section)

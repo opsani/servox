@@ -1797,3 +1797,15 @@ async def test_backoff() -> None:
     assert config.backoff
     assert config.backoff.max_time()
     # servo.Servo.current().config.backoff.max_time(),
+def test_servo_name_literal(servo: Servo) -> None:
+    servo.name = "hrm"
+    assert servo.name == "hrm"
+    
+def test_servo_name_from_config() -> None:
+    config = BaseServoConfiguration(name="archibald")
+    servo = Servo(config=config, connectors=[])
+    assert servo.name == "archibald"
+
+def test_servo_name_falls_back_to_optimizer_id(servo: Servo) -> None:
+    assert servo.name == "dev.opsani.com/servox"
+    

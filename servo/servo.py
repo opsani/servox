@@ -201,6 +201,13 @@ class Servo(servo.connector.BaseConnector):
         for connector in (connectors + [self]):
             connector._servo_config = self.config.servo
 
+    @pydantic.root_validator()
+    def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values["name"] == "servo":
+            values["name"] = values["config"].name or values["optimizer"].id
+        
+        return values
+    
     @property
     def connector(self) -> Optional[servo.connector.BaseConnector]:
         """Return the active connector in the current execution context."""

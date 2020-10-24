@@ -112,6 +112,47 @@ def stub_servo_yaml(tmp_path: Path) -> Path:
     config_path.write_text(config)
     return config_path
 
+@pytest.fixture()
+def stub_multiservo_yaml(tmp_path: Path) -> Path:
+    config_path: Path = tmp_path / "servo.yaml"
+    settings = StubBaseConfiguration(name="stub")
+    measure_config_json = json.loads(
+        json.dumps(
+            settings.dict(
+                by_alias=True,
+            )
+        )
+    )
+    optimizer1 = Optimizer(id="dev.opsani.com/multi-servox-1", token="123456789")
+    optimizer1_config_json = json.loads(
+        json.dumps(
+            optimizer1.dict(
+                by_alias=True,
+            )
+        )
+    )
+    config1 = {
+        "optimizer": optimizer1_config_json,
+        "connectors": ["measure"], 
+        "measure": measure_config_json
+    }
+    optimizer2 = Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
+    optimizer2_config_json = json.loads(
+        json.dumps(
+            optimizer2.dict(
+                by_alias=True,
+            )
+        )
+    )
+    config2 = {
+        "optimizer": optimizer2_config_json,
+        "connectors": ["measure"], 
+        "measure": measure_config_json
+    }
+    config_yaml = yaml.dump_all([config1, config2])
+    config_path.write_text(config_yaml)
+    return config_path
+
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)

@@ -75,6 +75,19 @@ def test_connectors(
     assert result.exit_code == 0
     assert re.match("NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
+def test_connectors_multiservo(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
+    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+    assert re.match("dev.opsani.com/multi-servox-1\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+
+def test_connectors_multiservo_by_name(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 connectors", catch_exceptions=False)
+    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+    assert re.match("dev.opsani.com/multi-servox-2\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 def test_connectors_all(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
@@ -800,3 +813,18 @@ def test_init_existing(servo_cli: CLI, cli_runner: CliRunner) -> None:
 # TODO: test passing callback as argument to command, via initializer for root callbacks
 # TODO: Test passing of correct context
 # TODO: Test trying to generate against a class that doesn't have settings (should be a warning instead of error!)
+
+def test_list(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "list", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.match("NAME\\s+OPTIMIZER\\s+DESCRIPTION", result.stdout)
+
+def test_list_multiservo(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "list", catch_exceptions=False)
+    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+    assert re.match("NAME\\s+OPTIMIZER\\s+DESCRIPTION", result.stdout)
+    
