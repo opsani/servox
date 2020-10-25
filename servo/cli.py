@@ -838,7 +838,7 @@ class ServoCLI(CLI):
                         settings_list = sorted(
                             list(
                                 map(
-                                    lambda s: f"{s.name}={s.human_readable_value}",
+                                    lambda s: f"{s.name}={s.human_readable_value} {s.summary()}",
                                     component.settings,
                                 )
                             )

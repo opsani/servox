@@ -541,6 +541,9 @@ class Setting(BaseModel, abc.ABC):
         None,
         description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment.",
     )
+    
+    def summary(self) -> str:
+        return repr(self)
 
     @abc.abstractmethod
     def __opsani_repr__(self) -> dict:
@@ -624,6 +627,9 @@ class EnumSetting(Setting):
 
         return values
 
+    def summary(self) -> str:
+        return f"{self.__class__.__name__}(values={repr(self.values)}, unit={self.unit})"
+
     def __opsani_repr__(self) -> dict:
         return {
             self.name: self.dict(
@@ -665,6 +671,9 @@ class RangeSetting(Setting):
     value: Optional[Numeric] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
+    
+    def summary(self) -> str:
+        return f"{self.__class__.__name__}(range=[{self.min}..{self.max}], step={self.step})"
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
