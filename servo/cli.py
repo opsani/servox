@@ -103,6 +103,7 @@ class Context(typer.Context):
         """Returns the names of the attributes to be hydrated by ContextMixin"""
         return {
             "config_file",
+            "name",
             "optimizer",
             "assembly",
             "servo_",
@@ -1123,7 +1124,7 @@ class ServoCLI(CLI):
             for connector in connectors:
                 if not connector.responds_to_event(event):
                     raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not support checks (name '{connector.name}')"
+                        f"connectors of type '{connector.__class__.__name__}' do not respond to the event \"{event}\" (name='{connector.name}')"
                     )
 
         @self.command(section=section)
@@ -1331,39 +1332,45 @@ class ServoCLI(CLI):
             Display current state of servo resources
             """
 
-            # Validate that explicit args support describe events
-            if connectors:
-                validate_connectors_respond_to_event(connectors, servo.Events.DESCRIBE)
-            else:
-                connectors = context.servo_.all_connectors
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+                
+                # Validate that explicit args support describe events
+                connectors_ = (
+                    connectors if connectors
+                    else servo_.all_connectors
+                )
 
-            results: List[servo.EventResult] = run_async(
-                context.servo.dispatch_event(servo.Events.DESCRIBE, include=connectors)
-            )
-            headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
-            table = []
-            for result in results:
-                description: servo.Description = result.value
-                components_column = []
-                for component in description.components:
-                    for setting in component.settings:
-                        components_column.append(
-                            f"{component.name}.{setting.name}={setting.human_readable_value}"
-                        )
+                results: List[servo.EventResult] = run_async(
+                    servo_.dispatch_event(servo.Events.DESCRIBE, include=connectors_)
+                )
+                headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
+                table = []
+                for result in results:
+                    description: servo.Description = result.value
+                    components_column = []
+                    for component in description.components:
+                        for setting in component.settings:
+                            components_column.append(
+                                f"{component.name}.{setting.name}={setting.human_readable_value}"
+                            )
 
-                metrics_column = []
-                for metric in description.metrics:
-                    metrics_column.append(f"{metric.name} ({metric.unit})")
+                    metrics_column = []
+                    for metric in description.metrics:
+                        metrics_column.append(f"{metric.name} ({metric.unit})")
 
-                result.connector.name
-                row = [
-                    result.connector.name,
-                    "\n".join(components_column),
-                    "\n".join(metrics_column),
-                ]
-                table.append(row)
+                    result.connector.name
+                    row = [
+                        result.connector.name,
+                        "\n".join(components_column),
+                        "\n".join(metrics_column),
+                    ]
+                    table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                if len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
 
         def metrics_callback(
             context: typer.Context, value: Optional[List[str]]
@@ -1743,7 +1750,7 @@ class ServoCLI(CLI):
             ),
         ) -> None:
             """Display configuration schema"""
-            output_data = None
+            output_data = ""
 
             if format == SchemaOutputFormat.text or format == SchemaOutputFormat.html:
                 typer.echo("error: not yet implemented", err=True)
@@ -1751,21 +1758,22 @@ class ServoCLI(CLI):
 
             if top_level:
                 CLI.assemble_from_context(context)
-
+                
+                if all is False and context.servo_ is None:
+                    typer.echo("error: schema can only be outputted for all connectors or a single servo", err=True)
+                    raise typer.Exit(1)
+            
                 if format == SchemaOutputFormat.json:
-                    output_data = context.servo_.top_level_schema_json(all=all)
+                    output_data += context.servo_.top_level_schema_json(all=all)
 
                 elif format == SchemaOutputFormat.dict:
-                    output_data = devtools.pformat(
+                    output_data += devtools.pformat(
                         context.servo_.top_level_schema(all=all)
                     )
 
-            else:
-
+            else:                
                 if connector:
                     if isinstance(connector, servo.BaseConnector):
-                        config_model = connector.config.__class__
-                    elif issubclass(connector, servo.BaseConnector):
                         config_model = connector.config_model()
                     else:
                         raise typer.BadParameter(
@@ -1773,18 +1781,23 @@ class ServoCLI(CLI):
                         )
                 else:
                     CLI.assemble_from_context(context)
-                    config_model = context.servo.config.__class__
+                    
+                    if context.servo_ is None:
+                        typer.echo("error: schema can only be outputted for a single servo", err=True)
+                        raise typer.Exit(1)
+                    
+                    config_model = context.servo_.config.__class__
 
                 if format == SchemaOutputFormat.json:
-                    output_data = config_model.schema_json(indent=2)
+                    output_data += config_model.schema_json(indent=2)
                 elif format == SchemaOutputFormat.dict:
-                    output_data = devtools.pformat(config_model.schema())
+                    output_data += devtools.pformat(config_model.schema())
                 else:
                     raise RuntimeError(
                         f"no handler configured for output format {format}"
                     )
 
-            assert output_data is not None, "output_data not assigned"
+            assert output_data, "output_data not assigned"
 
             if output:
                 output.write(output_data)
@@ -1797,7 +1810,6 @@ class ServoCLI(CLI):
                     )
                 )
 
-        # TODO: Specify connectors with `alias:connector` syntax for dictionary
         @self.command(section=section)
         def validate(
             context: Context,

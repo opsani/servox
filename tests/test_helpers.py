@@ -33,6 +33,24 @@ class StubBaseConfiguration(BaseConfiguration):
 class MeasureConnector(BaseConnector):
     config: StubBaseConfiguration
 
+    @on_event()
+    async def metrics(self) -> List[Metric]:
+        return [
+            Metric(
+                name="throughput",
+                unit=Unit.REQUESTS_PER_MINUTE
+            ),
+            Metric(
+                name="error_rate",
+                unit=Unit.REQUESTS_PER_MINUTE
+            )
+        ]
+        
+    @on_event()
+    async def describe(self) -> Description:
+        metrics = await self.metrics()
+        return Description(metrics=metrics)
+    
     @before_event(Events.MEASURE)
     def before_measure(self) -> None:
         pass

@@ -278,7 +278,12 @@ def test_show_events_by_connector(
     assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
     assert re.search("Servo\\s+check\n", result.stdout)
     assert re.search(
-        "Measure\\s+before measure\n\\s+measure\n\\s+after measure",
+        "Adjust\\s+adjust\n\\s+components\n\\s+describe",
+        result.stdout,
+        flags=re.MULTILINE,
+    )
+    assert re.search(
+        "Measure\\s+describe\n\\s+before measure\n\\s+measure\n\\s+after measure\n\\s+metrics",
         result.stdout,
         flags=re.MULTILINE,
     )
@@ -506,6 +511,35 @@ def test_schema_output_to_file(
     schema = json.loads(output_path.read_text())
     assert schema["title"] == "Servo Configuration Schema"
 
+def test_schema_multiservo(cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "schema", catch_exceptions=False)
+    assert (
+        result.exit_code == 1
+    ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert re.search("error: schema can only be outputted for a single servo", result.stderr)
+
+def test_schema_multiservo_by_name(cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 schema", catch_exceptions=False)
+    assert (
+        result.exit_code == 0
+    ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    schema = json.loads(result.stdout)
+    assert schema["title"] == "Servo Configuration Schema"
+
+def test_schema_multiservo_top_level(cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "schema --top-level", catch_exceptions=False)
+    assert (
+        result.exit_code == 1
+    ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    assert re.search("error: schema can only be outputted for all connectors or a single servo", result.stderr)
+    
+def test_schema_multiservo_top_level_by_name(cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 schema --top-level", catch_exceptions=False)
+    assert (
+        result.exit_code == 0
+    ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
+    schema = json.loads(result.stdout)
+    assert schema["title"] == "Servo Schema"
 
 def test_schema_all(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
@@ -902,3 +936,41 @@ def test_adjust_multiservo_named(
     assert re.search("adjust\\s+main.cpu=3", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
     assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+
+
+
+# TODO: add parametertrize for connectors arg
+def test_describe(
+    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "describe", catch_exceptions=False)
+    assert result.exit_code == 0
+    assert re.search("CONNECTOR\\s+COMPONENTS\\s+METRICS", result.stdout)
+    assert re.search('measure\\s+throughput \\(rpm\\)', result.stdout)
+    assert re.search('\\s+error_rate \\(rpm\\)', result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+
+def test_describe_multiservo(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "describe", catch_exceptions=False)
+    assert result.exit_code == 0, f"failed with non-zero exit code (stdout={result.stdout}, stderr={result.stderr})"
+    assert re.search("CONNECTOR\\s+COMPONENTS\\s+METRICS", result.stdout)
+    assert re.search('measure\\s+throughput \\(rpm\\)', result.stdout)
+    assert re.search('\\s+error_rate \\(rpm\\)', result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+
+def test_describe_multiservo_named(
+    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
+) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 describe", catch_exceptions=False)
+    assert result.exit_code == 0, f"failed with non-zero exit code (stdout={result.stdout}, stderr={result.stderr})"
+    assert re.search("CONNECTOR\\s+COMPONENTS\\s+METRICS", result.stdout)
+    assert re.search('measure\\s+throughput \\(rpm\\)', result.stdout)
+    assert re.search('\\s+error_rate \\(rpm\\)', result.stdout)
+    assert re.search("adjust\\s+main.cpu=3", result.stdout)
+    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+    
