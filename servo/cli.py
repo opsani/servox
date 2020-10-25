@@ -87,6 +87,7 @@ class Context(typer.Context):
     token_file: Optional[pathlib.Path] = None
     base_url: Optional[str] = None
     url: Optional[str] = None
+    limit: Optional[int] = None
 
     # Assembled servo
     assembly: Optional[servo.Assembly] = None
@@ -113,6 +114,7 @@ class Context(typer.Context):
             "token_file",
             "base_url",
             "url",
+            "limit",
         }
 
     @property
@@ -134,6 +136,7 @@ class Context(typer.Context):
         token_file: Optional[pathlib.Path] = None,
         base_url: Optional[str] = None,
         url: Optional[str] = None,
+        limit: Optional[int] = None,
         **kwargs,
     ) -> None: # noqa: D107
         self.config_file = config_file
@@ -146,6 +149,7 @@ class Context(typer.Context):
         self.token = token
         self.token_file = token_file
         self.base_url = base_url
+        self.limit = limit
         return super().__init__(command, *args, **kwargs)
 
 
@@ -399,6 +403,11 @@ class CLI(typer.Typer, servo.logging.Mixin):
             show_envvar=True,
             help="Name of the servo to use",
         ),
+        limit: Optional[int] = typer.Option(
+            None,
+            "--limit",
+            help="Limit multi-servo concurrency",
+        ),
         log_level: LogLevel = typer.Option(
             LogLevel.INFO,
             "--log-level",
@@ -421,6 +430,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         ctx.token_file = token_file
         ctx.base_url = base_url
         ctx.url = url
+        ctx.limit = limit
         servo.logging.set_level(log_level)
         servo.logging.set_colors(not no_color)
 
@@ -487,13 +497,18 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 optimizer = servo.Optimizer(
                     ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
                 )
-                config["optimizer"] = optimizer.dict()
+                # config["optimizer"] = optimizer.dict()
         else:
             if ctx.optimizer:
                 raise typer.BadParameter("An optimizer cannot be specified in a multi-servo configuration")
 
             if ctx.token or ctx.token_file:
-                raise typer.BadParameter("A token cannot be specified in a multi-servo configuration")                        
+                raise typer.BadParameter("A token cannot be specified in a multi-servo configuration")
+            
+            if ctx.limit:
+                if len(configs) > ctx.limit:
+                    servo.logger.warning(f"concurrent servo execution limited to {ctx.limit}: declining to run {len(configs) - ctx.limit} configured servos")
+                    configs = configs[0:ctx.limit]
 
         # Assemble the Servo
         try:
