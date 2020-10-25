@@ -158,7 +158,7 @@ class TestChecks:
             deployments=[
                 kubernetes_connector.DeploymentConfiguration(
                     name="app",
-                    replicas=kubernetes_connector.Replicas(
+                    replicas=servo.Replicas(
                         min=1,
                         max=2,
                     ),
