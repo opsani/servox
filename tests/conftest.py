@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Iterator, Optional
 
 import fastapi
+import httpx
 import pytest
 import yaml
 import uvloop
@@ -254,3 +255,14 @@ async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> Asy
     await server.start()
     yield server.base_url
     await server.stop()
+
+@pytest.fixture
+async def fakeapi_client(fakeapi_url: str) -> AsyncGenerator[httpx.AsyncClient, None]:
+    """Yield an httpx client configured to interact with a FakeAPI server."""
+    async with httpx.AsyncClient(
+        headers={
+            'Content-Type': 'application/json',
+        },
+        base_url=fakeapi_url,
+    ) as client:
+        yield client
