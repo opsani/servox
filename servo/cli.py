@@ -813,27 +813,33 @@ class ServoCLI(CLI):
             """
             Display adjustable components
             """
-            results = run_async(context.servo.dispatch_event(servo.Events.COMPONENTS))
-            headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
-            table = []
-            for result in results:
-                for component in result.value:
-                    settings_list = sorted(
-                        list(
-                            map(
-                                lambda s: f"{s.name}={s.human_readable_value}",
-                                component.settings,
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+                
+                results = run_async(servo_.dispatch_event(servo.Events.COMPONENTS))
+                headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
+                table = []
+                for result in results:
+                    for component in result.value:
+                        settings_list = sorted(
+                            list(
+                                map(
+                                    lambda s: f"{s.name}={s.human_readable_value}",
+                                    component.settings,
+                                )
                             )
                         )
-                    )
-                    row = [
-                        component.name,
-                        "\n".join(settings_list),
-                        result.connector.name,
-                    ]
-                    table.append(row)
+                        row = [
+                            component.name,
+                            "\n".join(settings_list),
+                            result.connector.name,
+                        ]
+                        table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                    if len(context.assembly.servos) > 1:
+                        typer.echo(f"{servo_.name}")
+                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def events(
@@ -866,143 +872,156 @@ class ServoCLI(CLI):
             """
             Display event handler info
             """
-            event_handlers: List[servo.EventHandler] = []
-            connectors = (
-                context.assembly.all_connector_types()
-                if all
-                else context.servo_.all_connectors
-            )
-            for connector in connectors:
-                event_handlers.extend(connector.__event_handlers__)
+            for servo_ in context.assembly.servos:
+                if context.servo and context.servo != servo_:
+                    continue
+                
+                event_handlers: List[servo.EventHandler] = []
+                connectors = (
+                    context.assembly.all_connector_types()
+                    if all
+                    else servo_.all_connectors
+                )
+                
+                for connector in connectors:
+                    event_handlers.extend(connector.__event_handlers__)
 
-            # If we have switched any on the preposition only include explicitly flagged
-            preposition_switched = list(
-                filter(lambda s: s is not None, (before, on, after))
-            )
-            if preposition_switched:
-                if False in preposition_switched:
-                    # Handle explicit exclusions
+                # If we have switched any on the preposition only include explicitly flagged
+                preposition_switched = list(
+                    filter(lambda s: s is not None, (before, on, after))
+                )
+                if preposition_switched:
+                    if False in preposition_switched:
+                        # Handle explicit exclusions
+                        prepositions = [
+                            servo.Preposition.BEFORE,
+                            servo.Preposition.ON,
+                            servo.Preposition.AFTER,
+                        ]
+                        if before == False:
+                            prepositions.remove(servo.Preposition.BEFORE)
+                        if on == False:
+                            prepositions.remove(servo.Preposition.ON)
+                        if after == False:
+                            prepositions.remove(servo.Preposition.AFTER)
+                    else:
+                        # Add explicit inclusions
+                        prepositions = []
+                        if before:
+                            prepositions.append(servo.Preposition.BEFORE)
+                        if on:
+                            prepositions.append(servo.Preposition.ON)
+                        if after:
+                            prepositions.append(servo.Preposition.AFTER)
+                else:
                     prepositions = [
                         servo.Preposition.BEFORE,
                         servo.Preposition.ON,
                         servo.Preposition.AFTER,
                     ]
-                    if before == False:
-                        prepositions.remove(servo.Preposition.BEFORE)
-                    if on == False:
-                        prepositions.remove(servo.Preposition.ON)
-                    if after == False:
-                        prepositions.remove(servo.Preposition.AFTER)
-                else:
-                    # Add explicit inclusions
-                    prepositions = []
-                    if before:
-                        prepositions.append(servo.Preposition.BEFORE)
-                    if on:
-                        prepositions.append(servo.Preposition.ON)
-                    if after:
-                        prepositions.append(servo.Preposition.AFTER)
-            else:
-                prepositions = [
-                    servo.Preposition.BEFORE,
-                    servo.Preposition.ON,
-                    servo.Preposition.AFTER,
-                ]
 
-            sorted_event_names = sorted(
-                list(set(map(lambda handler: handler.event.name, event_handlers)))
-            )
-            table = []
-
-            if by_connector:
-                headers = ["CONNECTOR", "EVENTS"]
-                connector_types_by_name = dict(
-                    map(
-                        lambda handler: (
-                            handler.connector_type.name,
-                            connector,
-                        ),
-                        event_handlers,
-                    )
+                sorted_event_names = sorted(
+                    list(set(map(lambda handler: handler.event.name, event_handlers)))
                 )
-                sorted_connector_names = sorted(connector_types_by_name.keys())
-                for connector_name in sorted_connector_names:
-                    connector_types_by_name[connector_name]
-                    event_labels = []
+                table = []
+
+                if by_connector:
+                    headers = ["CONNECTOR", "EVENTS"]
+                    connector_types_by_name = dict(
+                        map(
+                            lambda handler: (
+                                handler.connector_type.name,
+                                connector,
+                            ),
+                            event_handlers,
+                        )
+                    )
+                    sorted_connector_names = sorted(connector_types_by_name.keys())
+                    for connector_name in sorted_connector_names:
+                        connector_types_by_name[connector_name]
+                        event_labels = []
+                        for event_name in sorted_event_names:
+                            for preposition in prepositions:
+                                handlers = list(
+                                    filter(
+                                        lambda h: h.event.name == event_name
+                                        and h.preposition == preposition
+                                        and h.connector_type.name == connector_name,
+                                        event_handlers,
+                                    )
+                                )
+                                if handlers:
+                                    if preposition != servo.Preposition.ON:
+                                        event_labels.append(f"{preposition} {event_name}")
+                                    else:
+                                        event_labels.append(event_name)
+
+                        row = [connector_name, "\n".join(event_labels)]
+                        table.append(row)
+                else:
+                    headers = ["EVENT", "CONNECTORS"]
                     for event_name in sorted_event_names:
                         for preposition in prepositions:
                             handlers = list(
                                 filter(
                                     lambda h: h.event.name == event_name
-                                    and h.preposition == preposition
-                                    and h.connector_type.name == connector_name,
+                                    and h.preposition == preposition,
                                     event_handlers,
                                 )
                             )
                             if handlers:
-                                if preposition != servo.Preposition.ON:
-                                    event_labels.append(f"{preposition} {event_name}")
-                                else:
-                                    event_labels.append(event_name)
-
-                    row = [connector_name, "\n".join(event_labels)]
-                    table.append(row)
-            else:
-                headers = ["EVENT", "CONNECTORS"]
-                for event_name in sorted_event_names:
-                    for preposition in prepositions:
-                        handlers = list(
-                            filter(
-                                lambda h: h.event.name == event_name
-                                and h.preposition == preposition,
-                                event_handlers,
-                            )
-                        )
-                        if handlers:
-                            sorted_connector_names = sorted(
-                                list(
-                                    set(
-                                        map(
-                                            lambda handler: handler.connector_type.name,
-                                            handlers,
+                                sorted_connector_names = sorted(
+                                    list(
+                                        set(
+                                            map(
+                                                lambda handler: handler.connector_type.name,
+                                                handlers,
+                                            )
                                         )
                                     )
                                 )
-                            )
-                            if preposition != servo.Preposition.ON:
-                                label = f"{preposition} {event_name}"
-                            else:
-                                label = event_name
-                            row = [label, "\n".join(sorted(sorted_connector_names))]
-                            table.append(row)
+                                if preposition != servo.Preposition.ON:
+                                    label = f"{preposition} {event_name}"
+                                else:
+                                    label = event_name
+                                row = [label, "\n".join(sorted(sorted_connector_names))]
+                                table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                if len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def metrics(context: Context) -> None:
             """
             Display measurable metrics
             """
-            metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
-            results = run_async(context.servo.dispatch_event("metrics"))
-            for result in results:
-                for metric in result.value:
-                    units_and_connectors = metrics_to_connectors.get(
-                        metric.name, [metric.unit, set()]
-                    )
-                    units_and_connectors[1].add(result.connector.__class__.name)
-                    metrics_to_connectors[metric.name] = units_and_connectors
+            for servo_ in context.assembly.servos:
+                if context.servo and context.servo != servo_:
+                    continue
+                
+                metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
+                results = run_async(servo_.dispatch_event("metrics"))
+                for result in results:
+                    for metric in result.value:
+                        units_and_connectors = metrics_to_connectors.get(
+                            metric.name, [metric.unit, set()]
+                        )
+                        units_and_connectors[1].add(result.connector.__class__.name)
+                        metrics_to_connectors[metric.name] = units_and_connectors
 
-            headers = ["METRIC", "UNIT", "CONNECTORS"]
-            table = []
-            for metric in sorted(metrics_to_connectors.keys()):
-                units_and_connectors = metrics_to_connectors[metric]
-                unit = units_and_connectors[0]
-                unit_str = f"{unit.name} ({unit.value})"
-                row = [metric, unit_str, "\n".join(sorted(units_and_connectors[1]))]
-                table.append(row)
+                headers = ["METRIC", "UNIT", "CONNECTORS"]
+                table = []
+                for metric in sorted(metrics_to_connectors.keys()):
+                    units_and_connectors = metrics_to_connectors[metric]
+                    unit = units_and_connectors[0]
+                    unit_str = f"{unit.name} ({unit.value})"
+                    row = [metric, unit_str, "\n".join(sorted(units_and_connectors[1]))]
+                    table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                if len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         self.add_cli(show_cli, section=Section.ASSEMBLY)
         
