@@ -384,9 +384,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
                 typer.secho(f"base url: {base_url}")
-            if self.config.servo.proxies:
+            
+            if servo_.config.servo and servo_.config.servo.proxies:
                 proxies = typer.style(
-                    f"{devtools.pformat(self.config.servo.proxies)}",
+                    f"{devtools.pformat(servo_.config.servo.proxies)}",
                     bold=True,
                     fg=typer.colors.CYAN,
                 )
