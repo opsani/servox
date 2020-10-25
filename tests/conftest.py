@@ -3,8 +3,9 @@ import os
 import random
 import string
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import AsyncGenerator, Iterator, Optional
 
+import fastapi
 import pytest
 import yaml
 import uvloop
@@ -24,7 +25,7 @@ from kubernetes_asyncio import config as kubernetes_asyncio_config
 
 from servo.cli import ServoCLI
 from servo.configuration import Optimizer
-from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
+from tests.test_helpers import FakeAPI, StubBaseConfiguration, SubprocessTestHelper
 
 uvloop.install()
 
@@ -230,3 +231,26 @@ async def servo_image() -> str:
 @pytest.fixture()
 async def minikube_servo_image(servo_image: str) -> str:
     return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
+
+@pytest.fixture
+def fastapi_app() -> fastapi.FastAPI:
+    """Return a FastAPI instance for testing in the current scope.
+    
+    To utilize the FakeAPI fixtures, define a module local FastAPI object
+    that implements the API interface that you want to work with and return it
+    from an override implementation of the `fastapi_app` fixture.
+    
+    The default implementation is abstract and raises a NotImplementedError.
+    
+    To interact from the FastAPI app within your tests, invoke the `fakeapi_url`
+    fixture to obtain the base URL for a running instance of your fastapi app.
+    """
+    raise NotImplementedError(f"incomplete fixture implementation: build a FastAPI fixture modeling the system you want to fake")
+
+@pytest.fixture        
+async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncGenerator[str, None]:
+    """Run a FakeAPI server as a pytest fixture and yield the base URL for accessing it."""
+    server = FakeAPI(app=fastapi_app, port=unused_tcp_port)
+    await server.start()
+    yield server.base_url
+    await server.stop()

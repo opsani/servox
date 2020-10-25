@@ -1,5 +1,6 @@
 from __future__ import annotations
-
+import asyncio
+import fastapi
 import json
 import os
 from contextlib import contextmanager
@@ -8,6 +9,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 
 import yaml
 from pydantic.json import pydantic_encoder
+import pytest
+import uvicorn
 
 import servo.events
 import servo.types
@@ -214,3 +217,58 @@ class SubprocessTestHelper:
             log_output=log_output,
             **kwargs,
         )
+
+
+class FakeAPI(uvicorn.Server):
+    """Testing server for implementing API fakes on top of Uvicorn and FastAPI.
+    
+    The test server is meant to be paired with pytest fixtures that enable a
+    simple mechanism for utilizing API fakes in testing.
+    
+    A fake is a protocol compliant stand-in for another system that aids in testing
+    by providing stateless, deterministic, and isolated implementations of dependent
+    services. Fakes tend to be easier to develop and less brittle than mocking, which
+    tends to cut out entire subsystems such as network transport. A fake, in contrast,
+    focuses on delivering a request/response compatible stand-in for the real system
+    and supports high velocity development and testing by eliminating concerns such as
+    stateful persistence, cross talk from other users/developers, and the drag of latency.
+
+    Usage:
+        @pytest.fixture        
+        async def fakeapi_url(unused_tcp_port: int) -> AsyncGenerator[str, None]:
+            server = FakeAPI(port=unused_tcp_port)
+            await server.start()
+            yield server.base_url
+            await server.stop()
+    """
+
+    def __init__(self, app: fastapi.FastAPI, host: str = '127.0.0.1', port: int = 8000) -> None:
+        """Initialize a FakeAPI instance by mounting a FastAPI app and starting Uvicorn.
+
+        Args:
+            app (FastAPI, optional): the FastAPI app.
+            host (str, optional): the host ip. Defaults to '127.0.0.1'.
+            port (int, optional): the port. Defaults to 8000.
+        """
+        self._startup_done = asyncio.Event()
+        super().__init__(config=uvicorn.Config(app, host=host, port=port))
+
+    async def startup(self, sockets: Optional[List] = None) -> None:
+        """Override Uvicorn startup to signal any tasks blocking to await startup."""
+        await super().startup(sockets=sockets)
+        self._startup_done.set()
+
+    async def start(self) -> None:
+        """Start up the server and wait for it to initialize."""
+        self._serve_task = asyncio.create_task(self.serve())
+        await self._startup_done.wait()
+
+    async def stop(self) -> None:
+        """Shut down server asynchronously."""
+        self.should_exit = True
+        await self._serve_task
+    
+    @property
+    def base_url(self) -> str:
+        """Return the base URL for accessing the FakeAPI server."""
+        return f"http://{self.config.host}:{self.config.port}"
