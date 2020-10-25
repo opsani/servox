@@ -90,6 +90,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The `ConnectorCLI` class now supports aliased connector instances.
 - Test coverage gaps have been plugged throughout the CLI module.
 - Scalar data points can now be handled by the CLI.
+- Invalid keys in the `connectors` field of a config file will no longer
+  trigger an unhandled exception.
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
