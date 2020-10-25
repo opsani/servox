@@ -1430,13 +1430,6 @@ class ServoCLI(CLI):
 
             return metrics
 
-        @self.command(section=section, hidden=True)
-        def baseline() -> None:
-            """
-            Adjust settings to baseline configuration
-            """
-            self._not_yet_implemented()
-
         @self.command(section=section)
         def measure(
             context: Context,
@@ -1664,13 +1657,6 @@ class ServoCLI(CLI):
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
                     typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
-
-        @self.command(section=section, hidden=True)
-        def promote() -> None:
-            """
-            Promote optimized settings to the cluster
-            """
-            self._not_yet_implemented()
 
     def add_config_commands(self, section=Section.CONFIG) -> None:
         @self.command(section=section)
