@@ -640,12 +640,38 @@ class ConnectorCLI(CLI):
         # Register for automated inclusion in the ServoCLI
         ConnectorCLI.__clis__.add(self)
 
-        # TODO: This will not find the right connector in aliased configurations
-        # TODO: Use the subcommand name to find our instance
-        def connector_callback(context: Context):
-            for connector in context.servo.connectors:
-                if isinstance(connector, connector_type):
-                    context.connector = connector
+        def connector_callback(
+            context: Context, 
+            connector: Optional[str] = typer.Option(
+                None,
+                "--connector",
+                "-c",
+                metavar="CONNECTOR",
+                help="Connector to activate",
+            ),
+        ) -> None:
+            if context.servo is None:
+                raise typer.BadParameter(f"A servo must be selected")
+            
+            instances = list(filter(lambda c: isinstance(c, connector_type), context.servo.connectors))            
+            instance_count = len(instances)
+            if instance_count == 0:
+                raise typer.BadParameter(f"no instances of \"{connector_type.__name__}\" are active the in servo \"{context.servo.name}\"")
+            elif instance_count == 1:
+                context.connector = instances[0]
+            else:
+                names = []
+                for instance in instances:
+                    if instance.name == connector:
+                        context.connector = instance
+                        break
+                    names.append(instance.name)
+                
+                if context.connector is None:
+                    if connector is None:
+                        raise typer.BadParameter(f"multiple instances of \"{connector_type.__name__}\" found in servo \"{context.servo.name}\": select one of {repr(names)}")
+                    else:
+                        raise typer.BadParameter(f"no connector named \"{connector}\" of type \"{connector_type.__name__}\" found in servo \"{context.servo.name}\": select one of {repr(names)}")
 
         if name is None:
             name = servo.utilities.strings.commandify(connector_type.__default_name__)
@@ -692,10 +718,6 @@ class ServoCLI(CLI):
         )
         self.add_commands()
 
-    def _not_yet_implemented(self):
-        typer.echo("error: not yet implemented", err=True)
-        raise typer.Exit(2)
-
     def add_commands(self) -> None:
         self.add_ops_commands()
         self.add_config_commands()
@@ -707,9 +729,6 @@ class ServoCLI(CLI):
         return servo.logger
 
     def add_assembly_commands(self) -> None:
-        # TODO: Generate pyproject.toml, Dockerfile, README.md, LICENSE, and boilerplate
-        # TODO: Options for Docker Compose and Kubernetes?
-
         @self.command(section=Section.ASSEMBLY)
         def init(
             context: Context,
@@ -784,14 +803,6 @@ class ServoCLI(CLI):
             context.invoke(
                 typer_click_object.commands["generate"], connectors=connectors
             )
-
-        @self.command(section=Section.ASSEMBLY, hidden=True)
-        def new() -> None:
-            # TODO: --dotenv --compose
-            """
-            Create a new servo assembly at [PATH]
-            """
-            self._not_yet_implemented()
 
         show_cli = CLI(name="show", help="Display one or more resources")
 
