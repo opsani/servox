@@ -461,6 +461,17 @@ def test_run_with_malformed_config_file(
     assert "parsed to an unexpected value of type" in str(e)
 
 
+def test_config_with_bad_connectors_key(
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    servo_yaml: Path,
+    optimizer_env: None,
+) -> None:
+    servo_yaml.write_text("connectors: [invalid]\n")
+    result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
+    assert "fatal: invalid configuration: no connector found for the identifier \"invalid\"" in result.stderr
+
+
 def test_config_yaml(
     cli_runner: CliRunner,
     servo_cli: Typer,

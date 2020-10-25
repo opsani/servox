@@ -354,7 +354,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             elif connector_class := _connector_class_from_string(connector):
                 connector_routes[connector_class.__default_name__] = connector_class
             else:
-                raise ValueError(f"Missing validation for value {connector}")
+                raise ValueError(f"no connector found for the identifier \"{connector}\"")
 
         return connector_routes
 

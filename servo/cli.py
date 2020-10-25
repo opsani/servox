@@ -444,8 +444,9 @@ class CLI(typer.Typer, servo.logging.Mixin):
         }:
             try:
                 CLI.assemble_from_context(ctx)
-            except pydantic.ValidationError as error:
-                typer.echo(f"Invalid configuration: {error}", err=True)
+            
+            except (ValueError, pydantic.ValidationError) as error:
+                typer.echo(f"fatal: invalid configuration: {error}", err=True)
                 raise typer.Exit(2)
 
     @staticmethod
@@ -497,10 +498,9 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 optimizer = servo.Optimizer(
                     ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
                 )
-                # config["optimizer"] = optimizer.dict()
         else:
             if ctx.optimizer:
-                raise typer.BadParameter("An optimizer cannot be specified in a multi-servo configuration")
+                raise typer.BadParameter(f"An optimizer cannot be specified in a multi-servo configuration (found {ctx.optimizer})")
 
             if ctx.token or ctx.token_file:
                 raise typer.BadParameter("A token cannot be specified in a multi-servo configuration")

@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 
-import uvloop
 import yaml
 from pydantic.json import pydantic_encoder
 
@@ -19,8 +18,6 @@ from servo.logging import logger
 from servo.servo import Events
 from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
-
-uvloop.install()
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]

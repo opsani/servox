@@ -7,6 +7,7 @@ from typing import Iterator, Optional
 
 import pytest
 import yaml
+import uvloop
 from typer.testing import CliRunner
 
 # Add the devtools debug() function globally in tests
@@ -25,6 +26,7 @@ from servo.cli import ServoCLI
 from servo.configuration import Optimizer
 from tests.test_helpers import StubBaseConfiguration, SubprocessTestHelper
 
+uvloop.install()
 
 def pytest_addoption(parser):
     parser.addoption(
