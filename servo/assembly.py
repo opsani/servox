@@ -79,7 +79,7 @@ class Assembly(pydantic.BaseModel):
         
         _discover_connectors()
 
-        if config_file:
+        if config_file and not configs:
             # Build our Servo configuration from the config file + environment
             if not config_file.exists():
                 raise FileNotFoundError(f"config file '{config_file}' does not exist")
