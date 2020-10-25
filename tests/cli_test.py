@@ -319,6 +319,23 @@ def test_config(
     assert result.exit_code == 0
     assert "connectors:" in result.stdout
 
+def test_config_multiservo(
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    stub_multiservo_yaml: Path,
+) -> None:
+    result = cli_runner.invoke(servo_cli, "config")
+    assert result.exit_code == 0
+    assert "connectors:" in result.stdout
+
+def test_config_multiservo_named(
+    cli_runner: CliRunner,
+    servo_cli: Typer,
+    stub_multiservo_yaml: Path,
+) -> None:
+    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 config")
+    assert result.exit_code == 0
+    assert "connectors:" in result.stdout
 
 def test_run_with_empty_config_file(
     cli_runner: CliRunner,

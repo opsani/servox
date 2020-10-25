@@ -1654,74 +1654,78 @@ class ServoCLI(CLI):
             """
             include = set(keys) if keys else None
             export_options = dict(exclude_unset=True, include=include, indent=2)
+            
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
 
-            if format == ConfigOutputFormat.text:
-                pass
-            else:
-                lexer = format.lexer()
-                if format == ConfigOutputFormat.yaml:
-                    data = context.servo.config.yaml(sort_keys=True, **export_options)
-                elif format == ConfigOutputFormat.json:
-                    data = context.servo.config.json(**export_options)
-                elif format == ConfigOutputFormat.dict:
-                    # NOTE: Round-trip through JSON to produce primitives
-                    config_dict = context.servo.config.json(**export_options)
-                    data = devtools.pformat(json.loads(config_dict))
-                elif format == ConfigOutputFormat.configmap:
-                    configured_at = datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat()
-                    connectors = []
-                    for connector in context.servo.connectors:
-                        connectors.append(
-                            {
-                                "name": connector.name,
-                                "type": connector.full_name,
-                                "description": connector.description,
-                                "version": str(connector.version),
-                                "url": str(connector.homepage),
-                            }
-                        )
-                    connectors_json_str = json.dumps(connectors, indent=None)
-
-                    configmap = {
-                        "apiVersion": "v1",
-                        "kind": "ConfigMap",
-                        "metadata": {
-                            "name": "opsani-servo-config",
-                            "labels": {
-                                "app.kubernetes.io/name": "servo",
-                                "app.kubernetes.io/version": str(context.servo.version),
-                            },
-                            "annotations": {
-                                "servo.opsani.com/configured_at": configured_at,
-                                "servo.opsani.com/connectors": connectors_json_str,
-                            },
-                        },
-                        "data": {
-                            "servo.yaml": servo.utilities.yaml.PreservedScalarString(
-                                context.servo.config.yaml(
-                                    sort_keys=True, **export_options
-                                )
+                if format == ConfigOutputFormat.text:
+                    pass
+                else:
+                    lexer = format.lexer()
+                    if format == ConfigOutputFormat.yaml:
+                        data = servo_.config.yaml(sort_keys=True, **export_options)
+                    elif format == ConfigOutputFormat.json:
+                        data = servo_.config.json(**export_options)
+                    elif format == ConfigOutputFormat.dict:
+                        # NOTE: Round-trip through JSON to produce primitives
+                        config_dict = servo_.config.json(**export_options)
+                        data = devtools.pformat(json.loads(config_dict))
+                    elif format == ConfigOutputFormat.configmap:
+                        configured_at = datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat()
+                        connectors = []
+                        for connector in servo_.connectors:
+                            connectors.append(
+                                {
+                                    "name": connector.name,
+                                    "type": connector.full_name,
+                                    "description": connector.description,
+                                    "version": str(connector.version),
+                                    "url": str(connector.homepage),
+                                }
                             )
-                        },
-                    }
-                    data = yaml.dump(
-                        configmap, indent=2, sort_keys=False, explicit_start=True
-                    )
-                else:
-                    raise RuntimeError(
-                        "no handler configured for output format {format}"
-                    )
+                        connectors_json_str = json.dumps(connectors, indent=None)
 
-                if output:
-                    output.write(data)
-                else:
-                    typer.echo(
-                        pygments.highlight(
-                            data, lexer, pygments.formatters.TerminalFormatter()
+                        configmap = {
+                            "apiVersion": "v1",
+                            "kind": "ConfigMap",
+                            "metadata": {
+                                "name": "opsani-servo-config",
+                                "labels": {
+                                    "app.kubernetes.io/name": "servo",
+                                    "app.kubernetes.io/version": str(servo_.version),
+                                },
+                                "annotations": {
+                                    "servo.opsani.com/configured_at": configured_at,
+                                    "servo.opsani.com/connectors": connectors_json_str,
+                                },
+                            },
+                            "data": {
+                                "servo.yaml": servo.utilities.yaml.PreservedScalarString(
+                                    servo_.config.yaml(
+                                        sort_keys=True, **export_options
+                                    )
+                                )
+                            },
+                        }
+                        data = yaml.dump(
+                            configmap, indent=2, sort_keys=False, explicit_start=True
                         )
-                    )
+                    else:
+                        raise RuntimeError(
+                            "no handler configured for output format {format}"
+                        )
+
+                    if output:
+                        output.write(data)
+                    else:
+                        typer.echo(
+                            pygments.highlight(
+                                data, lexer, pygments.formatters.TerminalFormatter()
+                            )
+                        )
 
         @self.command(section=section)
         def schema(
@@ -1774,6 +1778,8 @@ class ServoCLI(CLI):
             else:                
                 if connector:
                     if isinstance(connector, servo.BaseConnector):
+                        config_model = connector.config.__class__
+                    elif issubclass(connector, servo.BaseConnector):
                         config_model = connector.config_model()
                     else:
                         raise typer.BadParameter(

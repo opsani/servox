@@ -689,7 +689,7 @@ def test_vegeta_cli_schema_json(
     servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     result = cli_runner.invoke(servo_cli, "schema vegeta")
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"failed with non-zero exit status (stdout={result.stdout}, stderr={result.stderr})"
     schema = json.loads(result.stdout)
     assert schema == {
         'title': 'Vegeta Connector Configuration Schema',
