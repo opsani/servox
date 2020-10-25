@@ -1182,12 +1182,6 @@ class ServoCLI(CLI):
             if isinstance(context, click.core.Context):
                 context = context.parent
 
-            # Validate that explicit args support check events
-            if connectors:
-                validate_connectors_respond_to_event(connectors, servo.Events.CHECK)
-            else:
-                connectors = context.servo_.all_connectors
-
             def parse_re(
                 value: Optional[List[str]],
             ) -> Union[None, List[str], Pattern[str]]:
@@ -1216,102 +1210,126 @@ class ServoCLI(CLI):
                     return parse_csv(v)
 
                 return v
-
-            progress = servo.DurationProgress(servo.Duration(wait or 0))
-            progress.start()
-            while True:
-                args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
-                constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-                results: List[servo.EventResult] = run_async(
-                    context.servo.dispatch_event(
+            
+            async def check_servo(servo_: servo.Servo) -> bool:
+                # Validate that explicit args support check events
+                # TODO: Turn into an argument
+                # if connectors:
+                #     validate_connectors_respond_to_event(connectors, servo.Events.CHECK)
+                # else:
+                #     connectors = servo_.all_connectors
+                connectors = servo_.all_connectors
+                
+                progress = servo.DurationProgress(servo.Duration(wait or 0))
+                progress.start()
+                
+                while True:
+                    args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
+                    constraints = dict(filter(lambda i: bool(i[1]), args.items()))
+                    results: List[servo.EventResult] = await servo_.dispatch_event(
                         servo.Events.CHECK,
                         servo.CheckFilter(**constraints),
                         include=connectors,
                         halt_on=halt_on,
+                    )                        
+
+                    def check_status_to_str(check: servo.Check) -> str:
+                        if check.success:
+                            return "√ PASSED"
+                        else:
+                            if check.warning:
+                                return "! WARNING"
+                            else:
+                                return "X FAILED"
+
+                    table = []
+                    ready = True
+                    if verbose:
+                        headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
+                        for result in results:
+                            checks: List[servo.Check] = result.value
+                            names, ids, tags, statuses, comments = [], [], [], [], []
+                            for check in checks:
+                                names.append(check.name)
+                                ids.append(check.id)
+                                tags.append(", ".join(check.tags) if check.tags else "-")
+                                statuses.append(check_status_to_str(check))
+                                comments.append(textwrap.shorten(check.message or "-", 70))
+                                ready &= check.success
+
+                            if not names:
+                                continue
+
+                            row = [
+                                result.connector.name,
+                                "\n".join(names),
+                                "\n".join(ids),
+                                "\n".join(tags),
+                                "\n".join(statuses),
+                                "\n".join(comments),
+                            ]
+                            table.append(row)
+                    else:
+                        headers = ["CONNECTOR", "STATUS", "ERRORS"]
+                        for result in results:
+                            checks: List[servo.Check] = result.value
+                            if not checks:
+                                continue
+
+                            success = True
+                            errors = []
+                            for check in checks:
+                                success &= check.passed
+                                check.success or errors.append(
+                                    f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                                )
+                            ready &= success
+                            status = "√ PASSED" if success else "X FAILED"
+                            message = functools.reduce(
+                                lambda m, e: m
+                                + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
+                                errors,
+                                "",
+                            )
+                            row = [result.connector.name, status, message]
+                            table.append(row)
+
+                    # Output table
+                    if not quiet:
+                        typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+
+                    if ready:
+                        return True
+                    elif progress.finished:
+                        # Don't log a timeout if we aren't running in wait mode
+                        if progress.duration:
+                            self.logger.error(
+                                f"timed out waiting for checks to pass {progress.duration}"
+                            )
+                        return False
+
+                    if delay is not None:
+                        self.logger.info(
+                            f"waiting for {delay} before rerunning failing checks"
+                        )
+                        time.sleep(servo.Duration(delay).total_seconds())
+
+            # Check all targeted servos
+            if context.servo:
+                ready = run_async(check_servo(context.servo))
+            else:
+                results = run_async(
+                    asyncio.gather(
+                        *list(
+                            map(
+                                lambda s: check_servo(s), context.assembly.servos
+                            )
+                        ),
+                        return_exceptions=True
                     )
                 )
-
-                def check_status_to_str(check: servo.Check) -> str:
-                    if check.success:
-                        return "√ PASSED"
-                    else:
-                        if check.warning:
-                            return "! WARNING"
-                        else:
-                            return "X FAILED"
-
-                table = []
-                ready = True
-                if verbose:
-                    headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
-                    for result in results:
-                        checks: List[servo.Check] = result.value
-                        names, ids, tags, statuses, comments = [], [], [], [], []
-                        for check in checks:
-                            names.append(check.name)
-                            ids.append(check.id)
-                            tags.append(", ".join(check.tags) if check.tags else "-")
-                            statuses.append(check_status_to_str(check))
-                            comments.append(textwrap.shorten(check.message or "-", 70))
-                            ready &= check.success
-
-                        if not names:
-                            continue
-
-                        row = [
-                            result.connector.name,
-                            "\n".join(names),
-                            "\n".join(ids),
-                            "\n".join(tags),
-                            "\n".join(statuses),
-                            "\n".join(comments),
-                        ]
-                        table.append(row)
-                else:
-                    headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                    for result in results:
-                        checks: List[servo.Check] = result.value
-                        if not checks:
-                            continue
-
-                        success = True
-                        errors = []
-                        for check in checks:
-                            success &= check.passed
-                            check.success or errors.append(
-                                f"{check.name}: {textwrap.wrap(check.message or '-')}"
-                            )
-                        ready &= success
-                        status = "√ PASSED" if success else "X FAILED"
-                        message = functools.reduce(
-                            lambda m, e: m
-                            + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
-                            errors,
-                            "",
-                        )
-                        row = [result.connector.name, status, message]
-                        table.append(row)
-
-                # Output table
-                if not quiet:
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
-
-                if ready:
-                    break
-                elif progress.finished:
-                    # Don't log a timeout if we aren't running in wait mode
-                    if progress.duration:
-                        self.logger.error(
-                            f"timed out waiting for checks to pass {progress.duration}"
-                        )
-                    break
-
-                if delay is not None:
-                    self.logger.info(
-                        f"waiting for {delay} before rerunning failing checks"
-                    )
-                    time.sleep(servo.Duration(delay).total_seconds())
-
+                ready = functools.reduce(lambda x, y: x and y, results)
+            
             # Return instead of exiting if we are being invoked
             if ready and not exit_on_success:
                 return
@@ -1775,7 +1793,7 @@ class ServoCLI(CLI):
                         context.servo_.top_level_schema(all=all)
                     )
 
-            else:                
+            else:
                 if connector:
                     if isinstance(connector, servo.BaseConnector):
                         config_model = connector.config.__class__
