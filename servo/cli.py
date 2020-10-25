@@ -527,32 +527,19 @@ class CLI(typer.Typer, servo.logging.Mixin):
         run_async(assembly.startup())
 
     @staticmethod
-    def connectors_instance_callback(
-        context: typer.Context, value: Optional[Union[str, List[str]]]
-    ) -> Optional[Union[servo.BaseConnector, List[servo.BaseConnector]]]:
-        """
-        Transforms a one or more connector names into Connector instances
-        """
-        if value:
-            if isinstance(value, str):
-                # Lookup by name
-                for connector in context.servo_.all_connectors:
-                    if connector.name == value:
-                        return connector
-                raise typer.BadParameter(f"no connector found named '{value}'")
-            else:
-                connectors: List[servo.BaseConnector] = []
-                for key in value:
-                    size = len(connectors)
-                    for connector in context.servo_.all_connectors:
-                        if connector.name == key:
-                            connectors.append(connector)
-                            break
-                    if len(connectors) == size:
-                        raise typer.BadParameter(f"no connector found named '{key}'")
-                return connectors
-        else:
-            return None
+    def connectors_named(names: List[str], servo_: servo.Servo) -> List[servo.BaseConnector]:
+        connectors: List[servo.BaseConnector] = []
+        for name in names:
+            size = len(connectors)
+            for connector in servo_.all_connectors:
+                if connector.name == name:
+                    connectors.append(connector)
+                    break
+                
+            if len(connectors) == size:
+                raise typer.BadParameter(f"no connector found named '{name}'")
+        
+        return connectors
 
     @staticmethod
     def connectors_type_callback(
@@ -1152,7 +1139,6 @@ class ServoCLI(CLI):
             connectors: Optional[List[str]] = typer.Argument(
                 None,
                 help="Connectors to check",
-                callback=self.connectors_instance_callback,
             ),
             name: Optional[List[str]] = typer.Option(
                 False, "--name", "-n", help="Filter by name"
@@ -1232,12 +1218,17 @@ class ServoCLI(CLI):
             
             async def check_servo(servo_: servo.Servo) -> bool:
                 # Validate that explicit args support check events
-                # TODO: Turn into an argument
-                # if connectors:
-                #     validate_connectors_respond_to_event(connectors, servo.Events.CHECK)
-                # else:
-                #     connectors = servo_.all_connectors
-                connectors = servo_.all_connectors
+                connector_objs = (
+                    self.connectors_named(connectors, servo_) if connectors                    
+                    else list(
+                        filter(
+                            lambda c: c.responds_to_event(servo.Events.CHECK),
+                            servo_.all_connectors,
+                        )
+                    )
+
+                )
+                validate_connectors_respond_to_event(connector_objs, servo.Events.CHECK)
                 
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
                 progress.start()
@@ -1248,7 +1239,7 @@ class ServoCLI(CLI):
                     results: List[servo.EventResult] = await servo_.dispatch_event(
                         servo.Events.CHECK,
                         servo.CheckFilter(**constraints),
-                        include=connectors,
+                        include=connector_objs,
                         halt_on=halt_on,
                     )                        
 
@@ -1361,8 +1352,7 @@ class ServoCLI(CLI):
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
                 None,
-                help="The connectors to describe",
-                callback=self.connectors_instance_callback,
+                help="The connectors to describe"
             ),
         ) -> None:
             """
@@ -1375,7 +1365,7 @@ class ServoCLI(CLI):
                 
                 # Validate that explicit args support describe events
                 connectors_ = (
-                    connectors if connectors
+                    self.connectors_named(connectors, servo_=servo_) if connectors
                     else servo_.all_connectors
                 )
 
@@ -1442,7 +1432,6 @@ class ServoCLI(CLI):
                 "-c",
                 help="Connectors to measure from",
                 metavar="[CONNECTORS]...",
-                callback=self.connectors_instance_callback,
             ),
             duration: Optional[str] = typer.Option(
                 "0",
@@ -1470,21 +1459,21 @@ class ServoCLI(CLI):
                 if context.servo_ and servo_ != context.servo_:
                     continue
                 
-                if not connectors:
-                    connectors = list(
+                connectors_ = (
+                    self.connectors_named(connectors, servo_) if connectors
+                    else list(
                         filter(
                             lambda c: c.responds_to_event(servo.Events.MEASURE),
                             servo_.all_connectors,
                         )
                     )
-
-                connector_names = list(map(lambda c: c.name, connectors))
+                )
 
                 if metrics:
                     # Filter target connectors by metrics
                     results: List[servo.EventResult] = run_async(
                         servo_.dispatch_event(
-                            servo.Events.METRICS, include=connector_names
+                            servo.Events.METRICS, include=connectors_
                         )
                     )
                     for result in results:
@@ -1499,7 +1488,7 @@ class ServoCLI(CLI):
                         servo.Events.MEASURE,
                         metrics=metrics,
                         control=servo.Control(duration=duration),
-                        include=connector_names,
+                        include=connectors_,
                     )
                 )
 
