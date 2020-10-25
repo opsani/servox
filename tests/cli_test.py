@@ -755,6 +755,35 @@ class TestCommands:
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(open("servo.yaml"))
         assert content == {"connectors": ["measure"], "measure": {}, "name": "foo"}
+    
+    def test_generate_with_append(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "generate --name foo -f servo.yaml --append measure", input="y\n"
+        )
+        assert result.exit_code == 0
+        content = list(yaml.full_load_all(open("servo.yaml")))
+        assert content == [
+            {
+                'adjust': {},
+                'connectors': [
+                    'measure',
+                    'adjust',
+                ],
+                'measure': {
+                    'description': None,
+                    'name': 'stub',
+                },
+            },
+            {
+                'connectors': [
+                    'measure',
+                ],
+                'measure': {},
+                'name': 'foo',
+            },
+        ]
         
     def test_generate_prompts_to_overwrite(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path

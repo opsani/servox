@@ -1931,6 +1931,11 @@ class ServoCLI(CLI):
                 "--force",
                 help="Overwrite output file without prompting",
             ),
+            append: bool = typer.Option(
+                False,
+                "--append",
+                help="Append the generated output to an existing file",
+            )
         ) -> None:
             """Generate a configuration"""
             exclude_unset = not defaults
@@ -1971,10 +1976,18 @@ class ServoCLI(CLI):
                 exclude=exclude,
                 exclude_none=True,
             )
-            if file.exists() and force == False:
-                delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
-                if not delete:
-                    raise typer.Abort()
+            if file.exists():
+                if append:
+                    config_docs = list(yaml.full_load_all(file.read_text()))
+                    incoming_doc = yaml.full_load(config_yaml)
+                    config_docs.append(incoming_doc)
+                    config_yaml = yaml.dump_all(config_docs)
+                    
+                elif force == False:
+                    delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
+                    if not delete:
+                        raise typer.Abort()
+                    
             file.write_text(config_yaml)
             if not quiet:
                 typer.echo(
