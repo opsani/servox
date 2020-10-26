@@ -1,34 +1,65 @@
+import asyncio
+import builtins
 import json
 import os
 import random
 import string
-from pathlib import Path
+import pathlib
 from typing import AsyncGenerator, Iterator, Optional
 
+import devtools
 import fastapi
 import httpx
 import pytest
 import yaml
 import uvloop
-from typer.testing import CliRunner
+import typer.testing
+
+import servo
+import servo.cli
+import tests.helpers
 
 # Add the devtools debug() function globally in tests
-try:
-    import builtins
+builtins.debug = devtools.debug
 
-    from devtools import debug
+@pytest.fixture
+def event_loop_policy(request) -> str:
+    """Return the active event loop policy for the test.
+    
+    Valid values are "default" and "uvloop".
+    
+    The default implementation uses the parametrized `event_loop_policy` marker
+    to select the effective policy.
+    """
+    marker = request.node.get_closest_marker("event_loop_policy")
+    if marker:
+        assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
+        event_loop_policy = marker.args[0]
+    else:
+        event_loop_policy = "uvloop"
+    
+    valid_policies = ("default", "uvloop")
+    assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
+    
+    return event_loop_policy
+    
 
-    builtins.debug = debug
-except ImportError:
-    pass
-
-from kubernetes_asyncio import config as kubernetes_asyncio_config
-
-from servo.cli import ServoCLI
-from servo.configuration import Optimizer
-from tests.test_helpers import FakeAPI, StubBaseConfiguration, SubprocessTestHelper
-
-uvloop.install()
+@pytest.fixture
+def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
+    """Yield an instance of the event loop for each test case.
+    
+    The effective event loop policy is determined by the `event_loop_policy` fixture.
+    """
+    if event_loop_policy == "default":
+        asyncio.set_event_loop_policy(None)
+    elif event_loop_policy == "uvloop":
+        uvloop.install()
+    else:
+        raise ValueError(f"invalid event loop policy: \"{event_loop_policy}\"")
+    
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -43,11 +74,15 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    """Register custom markers for use in the suite."""
     config.addinivalue_line(
         "markers", "integration: marks integration tests with outside dependencies"
     )
     config.addinivalue_line(
         "markers", "system: marks system tests with end to end dependencies"
+    )
+    config.addinivalue_line(
+        "markers", "event_loop_policy: marks async tests to run under a parametrized asyncio runloop policy (e.g., default or uvloop)"
     )
 
 
@@ -58,8 +93,10 @@ def pytest_collection_modifyitems(config, items):
     skip_system = pytest.mark.skip(reason="add --system to run system tests")
 
     for item in items:
-        # Set asyncio as a default marker across the suite
-        item.add_marker("asyncio")
+        # Set asyncio + uvloop default markers as defaults
+        item.add_marker(pytest.mark.asyncio)
+        if not item.get_closest_marker("event_loop_policy"):
+            item.add_marker(pytest.mark.event_loop_policy("uvloop"))
 
         # Skip slow/sensitive integration & system tests by default
         if "integration" in item.keywords and not config.getoption("--integration"):
@@ -69,13 +106,13 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture()
-def cli_runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+def cli_runner() -> typer.testing.CliRunner:
+    return typer.testing.CliRunner(mix_stderr=False)
 
 
 @pytest.fixture()
-def servo_cli() -> ServoCLI:
-    return ServoCLI()
+def servo_cli() -> servo.cli.ServoCLI:
+    return servo.cli.ServoCLI()
 
 
 @pytest.fixture()
@@ -89,21 +126,21 @@ def optimizer_env() -> Iterator[None]:
 
 
 @pytest.fixture()
-def optimizer() -> Optimizer:
-    return Optimizer(id="dev.opsani.com/servox", token="123456789")
+def optimizer() -> servo.Optimizer:
+    return servo.Optimizer(id="dev.opsani.com/servox", token="123456789")
 
 
 @pytest.fixture()
-def servo_yaml(tmp_path: Path) -> Path:
-    config_path: Path = tmp_path / "servo.yaml"
+def servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    config_path: pathlib.Path = tmp_path / "servo.yaml"
     config_path.touch()
     return config_path
 
 
 @pytest.fixture()
-def stub_servo_yaml(tmp_path: Path) -> Path:
-    config_path: Path = tmp_path / "servo.yaml"
-    settings = StubBaseConfiguration(name="stub")
+def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    config_path: pathlib.Path = tmp_path / "servo.yaml"
+    settings = tests.helpers.StubBaseConfiguration(name="stub")
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(
@@ -117,9 +154,9 @@ def stub_servo_yaml(tmp_path: Path) -> Path:
     return config_path
 
 @pytest.fixture()
-def stub_multiservo_yaml(tmp_path: Path) -> Path:
-    config_path: Path = tmp_path / "servo.yaml"
-    settings = StubBaseConfiguration(name="stub")
+def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    config_path: pathlib.Path = tmp_path / "servo.yaml"
+    settings = tests.helpers.StubBaseConfiguration(name="stub")
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(
@@ -127,7 +164,7 @@ def stub_multiservo_yaml(tmp_path: Path) -> Path:
             )
         )
     )
-    optimizer1 = Optimizer(id="dev.opsani.com/multi-servox-1", token="123456789")
+    optimizer1 = servo.Optimizer(id="dev.opsani.com/multi-servox-1", token="123456789")
     optimizer1_config_json = json.loads(
         json.dumps(
             optimizer1.dict(
@@ -141,7 +178,7 @@ def stub_multiservo_yaml(tmp_path: Path) -> Path:
         "measure": measure_config_json,
         "adjust": {}
     }
-    optimizer2 = Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
+    optimizer2 = servo.Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
     optimizer2_config_json = json.loads(
         json.dumps(
             optimizer2.dict(
@@ -162,7 +199,7 @@ def stub_multiservo_yaml(tmp_path: Path) -> Path:
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
-def run_from_tmp_path(tmp_path: Path) -> None:
+def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
     os.chdir(tmp_path)
 
 
@@ -183,7 +220,7 @@ def random_string() -> str:
 @pytest.fixture
 async def kubeconfig() -> str:
     """Return the path to a kubeconfig file to use when running integraion tests."""
-    config_path = Path(__file__).parents[0] / "kubeconfig"
+    config_path = pathlib.Path(__file__).parents[0] / "kubeconfig"
     if not config_path.exists():
         raise FileNotFoundError(
             f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
@@ -223,40 +260,18 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
             )
 
 @pytest.fixture()
-async def subprocess() -> SubprocessTestHelper:
-    return SubprocessTestHelper()
-
-
-async def build_docker_image(
-    tag: str = "servox:edge",
-    *,
-    preamble: Optional[str] = None,
-    print_output: bool = True,
-    **kwargs,
-) -> str:
-    root_path = Path(__file__).parents[1]
-    subprocess = SubprocessTestHelper()
-    exit_code, stdout, stderr = await subprocess(
-        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
-        print_output=print_output,
-        **kwargs,
-    )
-    if exit_code != 0:
-        error = "\n".join(stderr)
-        raise RuntimeError(
-            f"Docker build failed with exit code {exit_code}: error: {error}"
-        )
-
-    return tag
+async def subprocess() -> tests.helpers.Subprocess:
+    return tests.helpers.Subprocess()
 
 
 @pytest.fixture()
 async def servo_image() -> str:
-    return await build_docker_image()
+    return await tests.helpers.build_docker_image()
 
 
 @pytest.fixture()
 async def minikube_servo_image(servo_image: str) -> str:
+    """Asynchronously build a Docker image from the current working copy and prepare minikube to run it."""
     return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
 
 @pytest.fixture
@@ -277,7 +292,7 @@ def fastapi_app() -> fastapi.FastAPI:
 @pytest.fixture        
 async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncGenerator[str, None]:
     """Run a FakeAPI server as a pytest fixture and yield the base URL for accessing it."""
-    server = FakeAPI(app=fastapi_app, port=unused_tcp_port)
+    server = tests.helpers.FakeAPI(app=fastapi_app, port=unused_tcp_port)
     await server.start()
     yield server.base_url
     await server.stop()

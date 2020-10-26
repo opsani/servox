@@ -31,7 +31,7 @@ from servo.connectors.kubernetes import (
     ResourceRequirements,
 )
 from servo.types import Adjustment
-from tests.test_helpers import *
+from tests.helpers import *
 
 
 class TestDNSSubdomainName:
@@ -932,6 +932,7 @@ async def test_apply_restart_strategy():
 # Handle: CreateContainerError
 
 
+@pytest.mark.integration
 async def test_checks(config: KubernetesConfiguration):
     await KubernetesChecks.run(config)
 
