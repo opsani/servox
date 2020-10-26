@@ -54,6 +54,12 @@ lint-docs:
 lint: typecheck
 	poetry run flakehell lint --count
 
+.PHONY: kubeconfig
+kubeconfig:
+	kubectl config view \
+    	--minify --flatten \
+		--context=servox-integration-tests > $(CURDIR)/tests/kubeconfig
+
 .PHONY: test
 test:
 	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg tests

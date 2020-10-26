@@ -1,6 +1,4 @@
-import os
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -10,9 +8,8 @@ from servo.connectors.kubernetes import KubernetesConfiguration
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
-def test_nginx(kube):
+def test_nginx(kube) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
     # to be ready on the cluster
     kube.wait_for_registered(timeout=30)
@@ -299,27 +296,6 @@ class TestChecks:
     async def check_deployments_are_ready(self, config) -> None:
         ...
         # TODO: How do I force a deployment to be non-ready?
-
-
-@pytest.fixture()
-async def kubeconfig() -> None:
-    """
-    Asynchronously load the Kubernetes configuration
-    """
-    from kubernetes_asyncio import config as kubernetes_asyncio_config
-    from kubernetes_asyncio.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
-
-    config_file = Path(KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
-    if config_file.exists():
-        await kubernetes_asyncio_config.load_kube_config(
-            config_file=str(config_file),
-        )
-    elif os.getenv("KUBERNETES_SERVICE_HOST"):
-        kubernetes_asyncio_config.load_incluster_config()
-    else:
-        raise RuntimeError(
-            f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found"
-        )
 
 
 async def test_read_service(kubeconfig) -> None:

@@ -722,10 +722,32 @@ fast customized builds:
 
 ## Testing
 
-Tests are implemented using [Pytest](https://docs.pytest.org/en/stable/) and
-live in the `tests` subdirectory. Tests can be executed directly via the `pyenv`
-CLI interface (e.g. `pytest tests`) or via the developer module of the CLI via
-`servo dev test`.
+Tests are implemented using [pytest](https://docs.pytest.org/en/stable/) and
+live in the `tests` subdirectory. Tests can be executed directly via the
+`pytest` CLI interface (e.g., `pytest tests`) or via `make test`, which
+will also compute coverage details.
+
+### Integration Testing
+
+The test suite includes support for integration tests for running tests against
+remote system components such as a Kubernetes cluster or Prometheus deployment.
+Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file at `tests/kubeconfig`.
+
+By convention, the integration testing cluster is named
+`servox-integration-tests` and the `make kubeconfig` task is provided to export
+the cluster details from your primary kubeconfig, ensuring isolation.
+
+Interaction with the Kubernetes cluster is supported by the most excellent
+[kubetest](https://kubetest.readthedocs.io/en/latest/) library that provides
+fixtures, markers, and various testing utilities on top of pytest.
+
+To run the integration tests, execute `pytest --integration tests` to enable the
+marker. Integration tests are much, much slower than the primary unit test suite
+and should be designed to balance coverage and execution time.
+
+Tests can also be run in cluster by packaging a development container and
+deploying it. The testing harness will detect the in-cluster state and utilize
+the active service account.
 
 ## License
 

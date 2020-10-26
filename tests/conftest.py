@@ -182,19 +182,45 @@ def random_string() -> str:
 
 @pytest.fixture
 async def kubeconfig() -> str:
+    """Return the path to a kubeconfig file to use when running integraion tests."""
     config_path = Path(__file__).parents[0] / "kubeconfig"
     if not config_path.exists():
         raise FileNotFoundError(
-            f"no kubeconfig file found at '{config_path}': configure a test cluster and add the kubeconfig file"
+            f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
         )
-
-    # Load the test config into async kubernetes
-    await kubernetes_asyncio_config.load_kube_config(
-        config_file=str(config_path),
-    )
 
     return str(config_path)
 
+@pytest.fixture
+def kube_context(request) -> Optional[str]:
+    """Return the context to be used within the kubeconfig file or None to use the default."""
+    return request.session.config.getoption('kube_context')
+
+@pytest.fixture(autouse=True)
+async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Optional[str]) -> None:
+    """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
+    import kubernetes_asyncio.config
+    import logging
+    
+    if request.session.config.getoption('in_cluster') or os.getenv("KUBERNETES_SERVICE_HOST"):
+        kubernetes_asyncio.config.load_incluster_config()
+    else:
+        kubeconfig = kubeconfig or os.getenv("KUBECONFIG")
+        if kubeconfig:
+            await kubernetes_asyncio.config.load_kube_config(
+                config_file=os.path.expandvars(os.path.expanduser(kubeconfig)),
+                context=kube_context,
+            )
+        else:            
+            log = logging.getLogger('kubetest')
+            log.error(
+                'unable to interact with cluster: kube fixture used without kube config '
+                'set. the config may be set with the flags --kube-config or --in-cluster or by'
+                'an env var KUBECONFIG or custom kubeconfig fixture definition.'
+            )
+            raise FileNotFoundError(
+                f"kubeconfig file not found: configure a test cluster and add kubeconfig: {kubeconfig}"
+            )
 
 @pytest.fixture()
 async def subprocess() -> SubprocessTestHelper:
@@ -202,7 +228,7 @@ async def subprocess() -> SubprocessTestHelper:
 
 
 async def build_docker_image(
-    tag: str = "servox:latest",
+    tag: str = "servox:edge",
     *,
     preamble: Optional[str] = None,
     print_output: bool = True,
