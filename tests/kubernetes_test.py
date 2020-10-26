@@ -8,7 +8,7 @@ import servo
 import servo.connectors.kubernetes
 import tests.helpers
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("kubernetes_asyncio_config")]
 
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube) -> None:

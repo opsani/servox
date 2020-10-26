@@ -233,7 +233,7 @@ def kube_context(request) -> Optional[str]:
     """Return the context to be used within the kubeconfig file or None to use the default."""
     return request.session.config.getoption('kube_context')
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Optional[str]) -> None:
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import kubernetes_asyncio.config
