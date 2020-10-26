@@ -61,7 +61,8 @@ def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
     yield loop
     loop.close()
 
-def pytest_addoption(parser):
+def pytest_addoption(parser) -> None:
+    """Add pytest options for enabling execution of integration and system tests."""
     parser.addoption(
         "--integration",
         action="store_true",
@@ -73,8 +74,8 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
-    """Register custom markers for use in the suite."""
+def pytest_configure(config) -> None:
+    """Register custom markers for use in the test suite."""
     config.addinivalue_line(
         "markers", "integration: marks integration tests with outside dependencies"
     )
@@ -86,7 +87,12 @@ def pytest_configure(config):
     )
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config, items) -> None:
+    """Modify the discovered pytest nodes to configure default markers.
+    
+    This methods sets asyncio as the async backend, configures a default event loop
+    policy of uvloop, and configures integration tests to not be run by default.
+    """
     skip_itegration = pytest.mark.skip(
         reason="add --integration option to run integration tests"
     )
@@ -107,31 +113,38 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture()
 def cli_runner() -> typer.testing.CliRunner:
+    """Return a runner for testing Typer CLI applications."""
     return typer.testing.CliRunner(mix_stderr=False)
 
 
 @pytest.fixture()
 def servo_cli() -> servo.cli.ServoCLI:
+    """Return an instance of the servo CLI Typer application."""
     return servo.cli.ServoCLI()
 
 
 @pytest.fixture()
 def optimizer_env() -> Iterator[None]:
+    """Add values for the OPSANI_OPTIMIZER and OPSANI_TOKEN variables to the environment."""
     os.environ.update(
         {"OPSANI_OPTIMIZER": "dev.opsani.com/servox", "OPSANI_TOKEN": "123456789"}
     )
-    yield
-    os.environ.pop("OPSANI_OPTIMIZER", None)
-    os.environ.pop("OPSANI_TOKEN", None)
+    try:
+        yield
+    finally:
+        os.environ.pop("OPSANI_OPTIMIZER", None)
+        os.environ.pop("OPSANI_TOKEN", None)
 
 
 @pytest.fixture()
 def optimizer() -> servo.Optimizer:
+    """Return a generated optimizer instance."""
     return servo.Optimizer(id="dev.opsani.com/servox", token="123456789")
 
 
 @pytest.fixture()
 def servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Return the path to an empty servo config file."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
     config_path.touch()
     return config_path
@@ -139,6 +152,7 @@ def servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture()
 def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Return the path to a servo config file set up for running stub connectors from the test helpers."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
     settings = tests.helpers.StubBaseConfiguration(name="stub")
     measure_config_json = json.loads(
@@ -155,6 +169,7 @@ def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture()
 def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Return the path to a servo config file set up for multi-servo execution."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
     settings = tests.helpers.StubBaseConfiguration(name="stub")
     measure_config_json = json.loads(
@@ -200,19 +215,24 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
 def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
+    """Change the working directory to a temporary path to help isolate the test suite."""
     os.chdir(tmp_path)
 
 
-# Ensure that we don't have configuration bleeding into tests
 @pytest.fixture(autouse=True)
 def run_in_clean_environment() -> None:
+    """Discard environment variables prefixed with `SERVO_` or `OPSANI`.
+    
+    This fixture helps ensure test suite isolation from local development configuration.
+    """
     for key, value in os.environ.copy().items():
         if key.startswith("SERVO_") or key.startswith("OPSANI_"):
             os.environ.pop(key)
 
 
-@pytest.fixture(scope='function')
+@pytest.fixture
 def random_string() -> str:
+    """Return a random string of characters."""
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
 
@@ -261,11 +281,13 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
 
 @pytest.fixture()
 async def subprocess() -> tests.helpers.Subprocess:
+    """Return an asynchronous executor for testing subprocesses."""
     return tests.helpers.Subprocess()
 
 
 @pytest.fixture()
 async def servo_image() -> str:
+    """Asynchronously build a Docker image from the current working copy and return its tag."""
     return await tests.helpers.build_docker_image()
 
 
