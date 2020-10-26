@@ -1,6 +1,9 @@
+import asyncio
 import datetime
 import hashlib
 
+import kubernetes_asyncio
+import kubernetes_asyncio.client
 import kubetest.client
 import pytest
 
@@ -157,7 +160,7 @@ class TestChecks:
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             deployments=[
                 servo.connectors.kubernetes.DeploymentConfiguration(
-                    name="app",
+                    name="fiber-http",
                     replicas=servo.Replicas(
                         min=1,
                         max=2,
@@ -276,21 +279,53 @@ class TestChecks:
         assert result.exception
         assert "Not Found" in str(result.exception)
 
-    async def test_check_resource_requirements(self, config) -> None:
-        await config.load_kubeconfig()
+    async def test_check_resource_requirements(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
             config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
         assert result.id, "check_resource_requirements_item_0"
-        assert result.success
+        assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+    
+    async def test_check_resource_requirements_fail(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+        # Zero out the CPU settings
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert deployment
+        container = deployment.containers[0]
+        container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": None})
+        await deployment.patch()
+        await deployment.wait_until_ready()
+        
+        # Fail the check because the CPU isn't limited
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        )
+        assert results
+        result = results[-1]
+        assert result.id, "check_resource_requirements_item_0"
+        assert not result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
-    # TODO: Create deployment without CPU, check it
-
-    async def check_deployments_are_ready(self, config) -> None:
-        ...
-        # TODO: How do I force a deployment to be non-ready?
+    async def test_deployments_are_ready(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+        # Set the CPU request implausibly high to force it into pending
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert deployment
+        container = deployment.containers[0]
+        container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": "500"})
+        await deployment.patch()
+        try:
+            await deployment.wait_until_ready(5)
+        except TimeoutError:
+            pass
+        
+        # Fail because the Pod is stuck in pending
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        )
+        assert results
+        result = results[-1]
+        assert result.id, "check_resource_requirements_item_0"
+        assert not result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestService:

@@ -272,7 +272,7 @@ async def servo_image() -> str:
 @pytest.fixture()
 async def minikube_servo_image(servo_image: str) -> str:
     """Asynchronously build a Docker image from the current working copy and prepare minikube to run it."""
-    return await build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
+    return await tests.helpers.build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
 
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
