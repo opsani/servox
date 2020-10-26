@@ -84,7 +84,7 @@ def test_prometheus(kube) -> None:
 
 async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     exit_code, stdout, stderr = await subprocess(
-        f"docker run --rm -i {servo_image} servo --help", print_output=True
+        f"docker run --rm -i {servo_image} --help", print_output=True
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "Operational Commands" in str(stdout)
