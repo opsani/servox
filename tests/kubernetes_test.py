@@ -1,10 +1,12 @@
-from datetime import datetime
+import datetime
+import hashlib
 
+import kubetest.client
 import pytest
 
 import servo
-import servo.connectors.kubernetes as kubernetes_connector
-from servo.connectors.kubernetes import KubernetesConfiguration
+import servo.connectors.kubernetes
+import tests.helpers
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -146,26 +148,27 @@ def test_supports_nil_container_name() -> None:
     ...
 
 
+@pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestChecks:
     @pytest.fixture
-    async def config(self) -> kubernetes_connector.KubernetesConfiguration:
-        config = kubernetes_connector.KubernetesConfiguration(
-            namespace="default",
+    async def config(self, kube) -> servo.connectors.kubernetes.KubernetesConfiguration:
+        config = servo.connectors.kubernetes.KubernetesConfiguration(
+            namespace=kube.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             deployments=[
-                kubernetes_connector.DeploymentConfiguration(
+                servo.connectors.kubernetes.DeploymentConfiguration(
                     name="app",
                     replicas=servo.Replicas(
                         min=1,
                         max=2,
                     ),
                     containers=[
-                        kubernetes_connector.ContainerConfiguration(
+                        servo.connectors.kubernetes.ContainerConfiguration(
                             name="opsani/fiber-http:latest",
-                            cpu=kubernetes_connector.CPU(
+                            cpu=servo.connectors.kubernetes.CPU(
                                 min="250m", max="4000m", step="125m"
                             ),
-                            memory=kubernetes_connector.Memory(
+                            memory=servo.connectors.kubernetes.Memory(
                                 min="256MiB", max="4.0GiB", step="128MiB"
                             ),
                         )
@@ -174,10 +177,13 @@ class TestChecks:
             ],
         )
         return config
+    
+    @pytest.fixture(autouse=True)
+    def wait_for_manifests(self, kube: kubetest.client.TestClient) -> None:
+        kube.wait_for_registered(timeout=30)
 
-    async def test_check_version(self, config) -> None:
-        await config.load_kubeconfig()
-        checks = kubernetes_connector.KubernetesChecks(config)
+    async def test_check_version(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id="check_version")
         )
@@ -185,8 +191,7 @@ class TestChecks:
         assert results[-1].success
 
     async def test_check_connectivity_success(self, config) -> None:
-        await config.load_kubeconfig()
-        checks = kubernetes_connector.KubernetesChecks(config)
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id="check_connectivity")
         )
@@ -194,29 +199,20 @@ class TestChecks:
         assert results[0].success
 
     async def test_check_connectivity_bad_hostname(self, config) -> None:
-        # TODO: Generalize this into a helper
-        from kubernetes_asyncio.client import Configuration as KubernetesAsyncioConfiguration
-
-        await config.load_kubeconfig()
-
-        loaded_config = KubernetesAsyncioConfiguration.get_default_copy()
-        loaded_config.host = "https://localhost:4321"
-        KubernetesAsyncioConfiguration.set_default(loaded_config)
-
-        checks = kubernetes_connector.KubernetesChecks(config)
-        results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id="check_connectivity")
-        )
-        assert len(results) == 1
-        result = results[0]
-        assert not result.success
-        assert "Cannot connect to host localhost:4321" in str(result.exception)
+        async with tests.helpers.kubernetes_asyncio_client_overrides(host="https://localhost:4321"):
+            checks = servo.connectors.kubernetes.KubernetesChecks(config)
+            results = await checks.run_all(
+                matching=servo.checks.CheckFilter(id="check_connectivity")
+            )
+            assert len(results) == 1
+            result = results[0]
+            assert not result.success
+            assert "Cannot connect to host localhost:4321" in str(result.exception)
 
     async def test_check_permissions_success(
-        self, config: KubernetesConfiguration
+        self, config: servo.connectors.kubernetes.KubernetesConfiguration
     ) -> None:
-        await config.load_kubeconfig()
-        checks = kubernetes_connector.KubernetesChecks(config)
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id=["check_permissions"])
         )
@@ -226,13 +222,13 @@ class TestChecks:
         assert result.success
 
     async def test_check_permissions_fails(
-        self, config: KubernetesConfiguration
+        self, config: servo.connectors.kubernetes.KubernetesConfiguration
     ) -> None:
+        # TODO: Delete the Role? Remove a permission?
         ...
 
     async def test_check_namespace_success(self, config) -> None:
-        await config.load_kubeconfig()
-        checks = kubernetes_connector.KubernetesChecks(config)
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id=["check_namespace"])
         )
@@ -242,9 +238,8 @@ class TestChecks:
         assert result.success
 
     async def test_check_namespace_doesnt_exist(self, config) -> None:
-        await config.load_kubeconfig()
         config.namespace = "INVALID"
-        checks = kubernetes_connector.KubernetesChecks(config)
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id=["check_namespace"])
         )
@@ -257,7 +252,7 @@ class TestChecks:
 
     async def test_check_deployment(self, config) -> None:
         await config.load_kubeconfig()
-        results = await kubernetes_connector.KubernetesChecks.run(
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
             config, matching=servo.checks.CheckFilter(id="check_deployments_item_0")
         )
         assert results
@@ -266,11 +261,11 @@ class TestChecks:
         assert result.success
 
     async def test_check_deployment_doesnt_exist(
-        self, config: KubernetesConfiguration
+        self, config: servo.connectors.kubernetes.KubernetesConfiguration
     ) -> None:
         await config.load_kubeconfig()
         config.deployments[0].name = "INVALID"
-        checks = kubernetes_connector.KubernetesChecks(config)
+        checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id=["check_deployments_item_0"])
         )
@@ -283,12 +278,12 @@ class TestChecks:
 
     async def test_check_resource_requirements(self, config) -> None:
         await config.load_kubeconfig()
-        results = await kubernetes_connector.KubernetesChecks.run(
-            config, servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.matching, "check_resource_requirements_item_0"
+        assert result.id, "check_resource_requirements_item_0"
         assert result.success
 
     # TODO: Create deployment without CPU, check it
@@ -297,21 +292,27 @@ class TestChecks:
         ...
         # TODO: How do I force a deployment to be non-ready?
 
+@pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
+class TestService:
+    @pytest.fixture(autouse=True)
+    def wait(self, kube) -> None:
+        kube.wait_for_registered(timeout=30)
+        
+        
+    async def test_read_service(self, kube: kubetest.client.TestClient) -> None:
+        svc = await servo.connectors.kubernetes.Service.read("fiber-http", kube.namespace)
+        assert svc
+        assert svc.obj.metadata.name == "fiber-http"
+        assert svc.obj.metadata.namespace == kube.namespace
 
-async def test_read_service(kubeconfig) -> None:
-    svc = await kubernetes_connector.Service.read("fiber-http", "default")
-    assert svc.obj.metadata.name == "fiber-http"
-    assert svc.obj.metadata.namespace == "default"
 
-
-async def test_patch_service(kubeconfig) -> None:
-    from hashlib import blake2b
-
-    svc = await kubernetes_connector.Service.read("fiber-http", "default")
-    sentinel_value = blake2b(
-        str(datetime.now()).encode("utf-8"), digest_size=4
-    ).hexdigest()
-    svc.obj.metadata.labels["testing.opsani.com"] = sentinel_value
-    await svc.patch()
-    await svc.refresh()
-    assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
+    async def test_patch_service(self, kube: kubetest.client.TestClient) -> None:
+        svc = await servo.connectors.kubernetes.Service.read("fiber-http", kube.namespace)
+        assert svc
+        sentinel_value = hashlib.blake2b(
+            str(datetime.datetime.now()).encode("utf-8"), digest_size=4
+        ).hexdigest()
+        svc.obj.metadata.labels["testing.opsani.com"] = sentinel_value
+        await svc.patch()
+        await svc.refresh()
+        assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
