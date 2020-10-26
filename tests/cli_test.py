@@ -17,7 +17,7 @@ from servo import BaseConfiguration, Optimizer
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
-from tests.test_helpers import MeasureConnector
+from tests.helpers import MeasureConnector
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:

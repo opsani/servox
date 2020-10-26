@@ -3,14 +3,16 @@ import asyncio
 import fastapi
 import json
 import os
-from contextlib import contextmanager
+import contextlib
+import pathlib
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Type, Union
 
 import yaml
 from pydantic.json import pydantic_encoder
-import pytest
 import uvicorn
+
+import kubernetes_asyncio.client
 
 import servo.events
 import servo.types
@@ -102,7 +104,7 @@ class AdjustConnector(BaseConnector):
         return await self.describe()
 
 
-@contextmanager
+@contextlib.contextmanager
 def environment_overrides(env: Dict[str, str]) -> None:
     original_env = os.environ.copy()
     os.environ.update(env)
@@ -166,7 +168,7 @@ def json_key_path(json_str: str, key_path: str) -> Any:
     return dict_key_path(obj, key_path)
 
 
-class SubprocessTestHelper:
+class Subprocess:
     async def shell(
         self,
         cmd: str,
@@ -272,3 +274,47 @@ class FakeAPI(uvicorn.Server):
     def base_url(self) -> str:
         """Return the base URL for accessing the FakeAPI server."""
         return f"http://{self.config.host}:{self.config.port}"
+
+
+@contextlib.asynccontextmanager
+async def kubernetes_asyncio_client_overrides(**kwargs) -> AsyncIterator[kubernetes_asyncio.client.Configuration]:
+    """Override fields on the default kubernetes_asyncio.client.Configuration within the context.
+    
+    Fields are set directly on a copy of the original configuration using `setattr`. Refer to documentation
+    of the kubernetes_asyncio.client.Configuration to see what is available.
+    
+    Yields the updated configuration instance.
+    """
+    original_config = kubernetes_asyncio.client.Configuration.get_default_copy()
+    new_config = kubernetes_asyncio.client.Configuration.get_default_copy()
+    for attr, value in kwargs.items():
+        setattr(new_config, attr, value)
+        
+    try:
+        kubernetes_asyncio.client.Configuration.set_default(new_config)
+        yield new_config
+    
+    finally:
+        kubernetes_asyncio.client.Configuration.set_default(original_config)
+
+async def build_docker_image(
+    tag: str = "servox:edge",
+    *,
+    preamble: Optional[str] = None,
+    print_output: bool = True,
+    **kwargs,
+) -> str:
+    root_path = pathlib.Path(__file__).parents[1]
+    subprocess = Subprocess()
+    exit_code, stdout, stderr = await subprocess(
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
+        print_output=print_output,
+        **kwargs,
+    )
+    if exit_code != 0:
+        error = "\n".join(stderr)
+        raise RuntimeError(
+            f"Docker build failed with exit code {exit_code}: error: {error}"
+        )
+
+    return tag

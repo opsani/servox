@@ -30,7 +30,7 @@ from servo.events import (
 )
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
-from tests.test_helpers import MeasureConnector, environment_overrides
+from tests.helpers import MeasureConnector, environment_overrides
 
 
 def test_version():
