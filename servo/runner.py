@@ -243,7 +243,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Event.HELLO, dict(agent=self.USER_AGENT))
+                await self._post_event(servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT))
                 self.connected = True
 
             self.logger.info("Dispatching startup event...")
@@ -252,6 +252,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
         except:
+            servo.logger.exception("exception encountered during connect")
             pass
 
         await asyncio.create_task(self.main_loop(), name="main loop")
