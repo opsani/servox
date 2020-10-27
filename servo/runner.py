@@ -303,7 +303,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: encapsulate all this shit
         async def report_progress(self, **kwargs) -> None:
             # Forward to the active servo...
-            servo.Servo.current().report_progress(**kwargs)
+            await servo.Servo.current().report_progress(**kwargs)
             
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
