@@ -290,11 +290,43 @@ async def servo_image() -> str:
     """Asynchronously build a Docker image from the current working copy and return its tag."""
     return await tests.helpers.build_docker_image()
 
+@pytest.fixture
+async def minikube(request, subprocess) -> str:
+    """Run tests within a local minikube profile.
+    
+    The profile name is determined using the parametrized `minikube_profile` marker
+    or else uses "default".
+    """
+    marker = request.node.get_closest_marker("minikube_profile")
+    if marker:
+        assert len(marker.args) == 1, f"minikube_profile marker accepts a single argument but received: {repr(marker.args)}"
+        profile = marker.args[0]
+    else:
+        profile = "servox"
+    
+    # Start minikube and configure environment
+    exit_code, _, _ = await subprocess(f"minikube start -p {profile} --interactive=false --keep-context=true --wait=true")
+    if exit_code != 0:
+        raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+    
+    # Yield the profile name
+    try:
+        yield profile
+    
+    finally:
+        exit_code, _, _ = await subprocess(f"minikube stop -p {profile}")
+        if exit_code != 0:
+            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
 @pytest.fixture()
-async def minikube_servo_image(servo_image: str) -> str:
-    """Asynchronously build a Docker image from the current working copy and prepare minikube to run it."""
-    return await tests.helpers.build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
+async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> str:
+    """Asynchronously build a Docker image from the current working copy and cache it into the minikube repository."""
+    exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}")
+    if exit_code != 0:
+        raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+    
+    yield servo_image
+    # return await tests.helpers.build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
 
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:

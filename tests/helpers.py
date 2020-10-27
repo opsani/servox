@@ -298,7 +298,7 @@ async def kubernetes_asyncio_client_overrides(**kwargs) -> AsyncIterator[kuberne
         kubernetes_asyncio.client.Configuration.set_default(original_config)
 
 async def build_docker_image(
-    tag: str = "servox:edge",
+    tag: str = "opsani/servox:edge",
     *,
     preamble: Optional[str] = None,
     print_output: bool = True,

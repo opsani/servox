@@ -4,6 +4,7 @@ from typing import Type
 
 import pydantic
 import pytest
+import kubetest.client
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -820,26 +821,33 @@ class TestMemory:
 
 
 @pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+@pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
-    async def test_describe(self, config):
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        kube.wait_for_registered(timeout=30)
+        return kube.namespace
+    
+    async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("fiber-http-deployment.cpu").value == 1.0
-        assert description.get_setting("fiber-http-deployment.memory").value == "3G"
-        assert description.get_setting("fiber-http-deployment.replicas").value == 1
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 1.0
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "1.0GiB"
+        assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust(self, config, adjustment):
         connector = KubernetesConnector(config=config)
-
         description = await connector.adjust(descriptor_to_adjustments(adjustment))
         debug(description)
+        # TODO: I need a quick helper for testing adjustments
 
-    async def test_adjust_memory_on_deployment(self, web_config, adjustment):
-        connector = KubernetesConnector(config=web_config)
+    async def test_adjust_memory_on_deployment(self, config, adjustment):
+        connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
-            component_name="web/main",
-            setting_name="memory",
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
             value="700Mi",
         )
         description = await connector.adjust([adjustment])
@@ -850,22 +858,19 @@ class TestKubernetesConnectorIntegration:
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
 
-    async def test_read_pod(self, config, adjustment):
+    async def test_read_pod(self, config, adjustment, kube) -> None:
         connector = KubernetesConnector(config=config)
-        await config.load_kubeconfig()
-        # dep = await Deployment.read("opsani-servo", "default")
-        # debug(dep)
-        await Pod.read("web-canary", "default")
-        # debug(pod)
-        # description = await connector.adjust(descriptor_to_adjustments(adjustment))
-        # debug(description)
+        pods = kube.get_pods()
+        pod_name = next(iter(pods.keys()))
+        assert pod_name.startswith("fiber-http")
+        pod = await Pod.read(pod_name, kube.namespace)
+        assert pod
 
     ##
     # Canary Tests
-    async def test_create_canary(self, canary_config, adjustment):
-        await canary_config.load_kubeconfig()
+    async def test_create_canary(self, canary_config, adjustment, namespace: str) -> None:
         connector = KubernetesConnector(config=canary_config)
-        dep = await Deployment.read("web", "default")
+        dep = await Deployment.read("fiber-http", namespace)
         debug(dep)
         # description = await connector.startup()
         # debug(description)
@@ -958,44 +963,24 @@ def canary_config(config) -> KubernetesConfiguration:
         dep.strategy = "canary"
     return canary_config
 
+@pytest.fixture
+def namespace() -> str:
+    return "default"
 
 @pytest.fixture
-def web_config() -> KubernetesConfiguration:
+def config(namespace: str) -> KubernetesConfiguration:
     return KubernetesConfiguration(
-        namespace="default",
+        namespace=namespace,
         deployments=[
             DeploymentConfiguration(
-                name="web",
+                name="fiber-http",
                 replicas=servo.Replicas(
                     min=1,
                     max=2,
                 ),
                 containers=[
                     ContainerConfiguration(
-                        name="main",
-                        cpu=CPU(min="100m", max="800m", step="125m"),
-                        memory=Memory(min="100 Mi", max="0.8 Gi", step="128 Mi"),
-                    )
-                ],
-            )
-        ],
-    )
-
-
-@pytest.fixture
-def config() -> KubernetesConfiguration:
-    return KubernetesConfiguration(
-        namespace="default",
-        deployments=[
-            DeploymentConfiguration(
-                name="fiber-http-deployment",
-                replicas=servo.Replicas(
-                    min=1,
-                    max=2,
-                ),
-                containers=[
-                    ContainerConfiguration(
-                        name="opsani/fiber-http:latest",
+                        name="fiber-http",
                         cpu=CPU(min="100m", max="800m", step="125m"),
                         memory=Memory(min="100 MiB", max="0.8 GiB", step="128 MiB"),
                     )
@@ -1004,19 +989,19 @@ def config() -> KubernetesConfiguration:
         ],
     )
 
-
+# TODO: Create adjustment factory -- usable in FakeAPI and direct tests
 @pytest.fixture
 def adjustment() -> dict:
     return {
         "application": {
             "components": {
-                "fiber-http-deployment": {
+                "fiber-http/fiber-http": {
                     "settings": {
                         "cpu": {
-                            "value": 1.80,  # 0.725,
+                            "value": 1.80,
                         },
                         "mem": {
-                            "value": "2.5G",  # 2.25,
+                            "value": 2.5,
                         },
                         "replicas": {
                             "value": 3.0,
@@ -1027,45 +1012,6 @@ def adjustment() -> dict:
         },
         "control": {},
     }
-
-    # servo/connectors/kubernetes.py:1394 adjust
-    # data:  (dict) len=2
-    # adjustments: [
-    #     Component(
-    #         name='fiber-http-deployment',
-    #         settings=[
-    #             Setting(
-    #                 name='cpu',
-    #                 type=<"range": 'range'>,
-    #                 min=1.0,
-    #                 max=4.0,
-    #                 step=1.0,
-    #                 value=0.725,
-    #                 pinned=False,
-    #             ),
-    #             Setting(
-    #                 name='memory',
-    #                 type=<"range": 'range'>,
-    #                 min=1.0,
-    #                 max=4.0,
-    #                 step=1.0,
-    #                 value=2.25,
-    #                 pinned=False,
-    #             ),
-    #             Setting(
-    #                 name='replicas',
-    #                 type=<"range": 'range'>,
-    #                 min=1.0,
-    #                 max=4.0,
-    #                 step=1.0,
-    #                 value=2.0,
-    #                 pinned=False,
-    #             ),
-    #         ],
-    #         env=None,
-    #         command=None,
-    #     ),
-    # ] (list) len=1
 
 
 # event: {

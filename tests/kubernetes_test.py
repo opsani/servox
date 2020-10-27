@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 import hashlib
 
@@ -14,7 +13,7 @@ import tests.helpers
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("kubernetes_asyncio_config")]
 
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
-def test_nginx(kube) -> None:
+def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
     # to be ready on the cluster
     kube.wait_for_registered(timeout=30)
@@ -34,12 +33,12 @@ def test_nginx(kube) -> None:
         assert "<h1>Welcome to nginx!</h1>" in resp.data
 
 
-@pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
-def test_fiber_http_and_envoy(kube):
+@pytest.mark.applymanifests("manifests", files=["fiber-http-opsani-dev.yaml"])
+def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
     kube.wait_for_registered(timeout=60)
 
     deployments = kube.get_deployments()
-    web_deploy = deployments.get("fiber-http-deployment")
+    web_deploy = deployments.get("fiber-http")
     assert web_deploy is not None
 
     pods = web_deploy.get_pods()
@@ -65,7 +64,8 @@ def test_fiber_http_and_envoy(kube):
 
 
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
-def test_prometheus(kube) -> None:
+@pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
+def test_prometheus(kube: kubetest.client.TestClient) -> None:
     kube.wait_for_registered(timeout=30)
 
     deployments = kube.get_deployments()
@@ -81,28 +81,36 @@ def test_prometheus(kube) -> None:
     response = pod.http_proxy_get("/")
     assert "Prometheus Time Series Collection and Processing Server" in response.data
 
-
+# TODO: Parametrize to run a bunch of commands
 async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     exit_code, stdout, stderr = await subprocess(
         f"docker run --rm -i {servo_image} --help", print_output=True
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "Operational Commands" in str(stdout)
-
+    
 
 async def test_run_servo_on_minikube(
-    kube, minikube_servo_image: str, kubeconfig, subprocess
+    minikube_servo_image: str, subprocess
 ) -> None:
     command = (
-        f'eval $(minikube -p minikube docker-env) && kubectl --kubeconfig={kubeconfig} --context=minikube run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
-        " servo --optimizer example.com/app --token 123456 version"
+        f'kubectl --context=servox run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
+        " --optimizer example.com/app --token 123456 version"
     )
-    exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=20)
+    exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
 
 async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> None:
+    # TODO: Break down into fixtures
+    await subprocess("aws ecr get-login-password \
+                    --region us-west-2 \
+                | docker login \
+                    --username AWS \
+                    --password-stdin 207598546954.dkr.ecr.us-west-2.amazonaws.com",
+                    print_output=True
+    )
     ecr_image = (
         "207598546954.dkr.ecr.us-west-2.amazonaws.com/servox-integration-tests:latest"
     )
@@ -111,8 +119,8 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
     assert exit_code == 0, f"image publishing failed: {stderr}"
 
     command = (
-        f'kubectl --kubeconfig={kubeconfig} --context=servox-integration-tests run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
-        " servo --optimizer example.com/app --token 123456 version"
+        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
+        " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(
         command,
@@ -154,7 +162,7 @@ def test_supports_nil_container_name() -> None:
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestChecks:
     @pytest.fixture
-    async def config(self, kube) -> servo.connectors.kubernetes.KubernetesConfiguration:
+    async def config(self, kube: kubetest.client.TestClient) -> servo.connectors.kubernetes.KubernetesConfiguration:
         config = servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=kube.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
@@ -230,7 +238,7 @@ class TestChecks:
         # TODO: Delete the Role? Remove a permission?
         ...
 
-    async def test_check_namespace_success(self, config) -> None:
+    async def test_check_namespace_success(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
             matching=servo.checks.CheckFilter(id=["check_namespace"])
@@ -240,7 +248,7 @@ class TestChecks:
         assert result.id == "check_namespace"
         assert result.success
 
-    async def test_check_namespace_doesnt_exist(self, config) -> None:
+    async def test_check_namespace_doesnt_exist(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         config.namespace = "INVALID"
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
@@ -253,8 +261,7 @@ class TestChecks:
         assert result.exception
         assert "Not Found" in str(result.exception)
 
-    async def test_check_deployment(self, config) -> None:
-        await config.load_kubeconfig()
+    async def test_check_deployment(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
             config, matching=servo.checks.CheckFilter(id="check_deployments_item_0")
         )
@@ -266,7 +273,6 @@ class TestChecks:
     async def test_check_deployment_doesnt_exist(
         self, config: servo.connectors.kubernetes.KubernetesConfiguration
     ) -> None:
-        await config.load_kubeconfig()
         config.deployments[0].name = "INVALID"
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
