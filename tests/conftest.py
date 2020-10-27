@@ -5,7 +5,7 @@ import os
 import random
 import string
 import pathlib
-from typing import AsyncGenerator, Iterator, Optional
+from typing import AsyncIterator, AsyncGenerator, Iterator, Optional
 
 import devtools
 import fastapi
@@ -352,7 +352,7 @@ async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> Asy
     await server.stop()
 
 @pytest.fixture
-async def fakeapi_client(fakeapi_url: str) -> AsyncGenerator[httpx.AsyncClient, None]:
+async def fakeapi_client(fakeapi_url: str) -> AsyncIterator[httpx.AsyncClient]:
     """Yield an httpx client configured to interact with a FakeAPI server."""
     async with httpx.AsyncClient(
         headers={

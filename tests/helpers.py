@@ -237,8 +237,8 @@ class FakeAPI(uvicorn.Server):
 
     Usage:
         @pytest.fixture        
-        async def fakeapi_url(unused_tcp_port: int) -> AsyncGenerator[str, None]:
-            server = FakeAPI(port=unused_tcp_port)
+        async def fakeapi_url(unused_tcp_port: int) -> AsyncIterator[str]:
+            server = FakeAPI(fastapi_app, port=unused_tcp_port)
             await server.start()
             yield server.base_url
             await server.stop()
@@ -273,7 +273,7 @@ class FakeAPI(uvicorn.Server):
     @property
     def base_url(self) -> str:
         """Return the base URL for accessing the FakeAPI server."""
-        return f"http://{self.config.host}:{self.config.port}"
+        return f"http://{self.config.host}:{self.config.port}/"
 
 
 @contextlib.asynccontextmanager
