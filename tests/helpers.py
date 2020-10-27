@@ -237,7 +237,7 @@ class FakeAPI(uvicorn.Server):
 
     Usage:
         @pytest.fixture        
-        async def fakeapi_url(unused_tcp_port: int) -> AsyncIterator[str]:
+        async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncIterator[str]:
             server = FakeAPI(fastapi_app, port=unused_tcp_port)
             await server.start()
             yield server.base_url
