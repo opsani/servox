@@ -5,7 +5,7 @@ import pytest
 
 import servo
 import servo.connectors.prometheus
-import tests
+import tests.helpers
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -16,7 +16,7 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "prometheus": servo.connectors.prometheus.PrometheusConnector,
-            "adjust": tests.test_helpers.AdjustConnector,
+            "adjust": tests.helpers.AdjustConnector,
         }
     )
     config = config_model.generate()
@@ -33,36 +33,62 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 
 
 @pytest.fixture
-def runner(assembly) -> servo.runner.AssemblyRunner:
+def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+    """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
 
+@pytest.fixture
+async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
+    """Return an unstarted servo runner."""
+    return servo.runner.ServoRunner(assembly.servos[0])
 
-async def test_test_out_of_order_operations(runner) -> None:
-    await runner.servo.startup()
-    response = await runner._post_event(
+@pytest.fixture
+async def running_servo(event_loop: asyncio.AbstractEventLoop, servo_runner: servo.runner.ServoRunner) -> servo.runner.ServoRunner:
+    """Start, run, and yield a servo runner.
+    
+    Lifecycle of the servo is managed on your behalf. When yielded, the servo will have its main
+    runloop scheduled and will begin interacting with the optimizer API.
+    """
+    try:
+        event_loop.create_task(servo_runner.run())
+        yield servo_runner
+        
+    finally:
+        await servo_runner.shutdown()
+        
+        # Cancel outstanding tasks
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        [task.cancel() for task in tasks]
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+    
+# TODO: Switch this over to using a FakeAPI
+async def test_test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
+    await servo_runner.servo.startup()
+    response = await servo_runner._post_event(
         servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
     )
     debug(response)
     assert response.status == "ok"
 
-    response = await runner._post_event(servo.api.Event.WHATS_NEXT, None)
+    response = await servo_runner._post_event(servo.api.Event.WHATS_NEXT, None)
     debug(response)
     assert response.command == servo.api.Command.DESCRIBE
 
-    description = await runner.describe()
+    description = await servo_runner.describe()
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     debug(param)
-    response = await runner._post_event(servo.api.Event.DESCRIPTION, param)
+    response = await servo_runner._post_event(servo.api.Event.DESCRIPTION, param)
     debug(response)
 
-    response = await runner._post_event(servo.api.Event.WHATS_NEXT, None)
+    response = await servo_runner._post_event(servo.api.Event.WHATS_NEXT, None)
     debug(response)
     assert response.command == servo.api.Command.MEASURE
 
     # Send out of order adjust
     reply = {"status": "ok"}
-    response = await runner._post_event(servo.api.Event.ADJUSTMENT, reply)
+    response = await servo_runner._post_event(servo.api.Event.ADJUSTMENT, reply)
     debug(response)
 
     assert response.status == "unexpected-event"
@@ -71,13 +97,13 @@ async def test_test_out_of_order_operations(runner) -> None:
         == 'Out of order event "ADJUSTMENT", expected "MEASUREMENT"; ignoring'
     )
 
-    runner.logger.info("test logging", operation="ADJUST", progress=55)
+    servo_runner.logger.info("test logging", operation="ADJUST", progress=55)
 
     await asyncio.sleep(5)
 
 
-async def test_hello(runner) -> None:
-    response = await runner._post_event(
+async def test_hello(servo_runner: servo.runner.ServoRunner) -> None:
+    response = await servo_runner._post_event(
         servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
     )
     assert response.status == "ok"
@@ -100,6 +126,7 @@ async def test_hello(runner) -> None:
 
 # async def test_goodbye() -> None:
 #     pass
+
 # @pytest.mark.integration
 # @pytest.mark.parametrize(
 #     ("proxies"),
