@@ -6,6 +6,7 @@ from inspect import Signature
 from pathlib import Path
 from typing import List
 
+import httpcore
 import httpx
 import pytest
 import yaml
@@ -1675,25 +1676,14 @@ def test_backoff_context() -> None:
         {"https://*.opsani.com": "http://localhost:1234"},
     ],
 )
-async def test_proxy_utilization(proxies) -> None:
-    # test raw httpx
-    async with httpx.AsyncClient(
-        base_url="https://api.opsani.com/1234", proxies=proxies
-    ) as c:
-        with pytest.raises(httpx.NetworkError) as e:
-            await c.get("/test")
-        assert e
-        assert "Connect call failed ('127.0.0.1', 1234)" in str(e.value)
-
-    # test servo machinery
+async def test_proxy_utilization(proxies) -> None:    
     config = ServoConfiguration(proxies=proxies)
     optimizer = Optimizer("test.com/foo", token="12345")
     servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
     async with servo.api_client() as client:
-        with pytest.raises(httpx.NetworkError) as e:
-            await client.get("/test")
-        assert e
-        assert "Connect call failed ('127.0.0.1', 1234)" in str(e.value)
+        transport = client._transport_for_url(httpx.URL(optimizer.base_url))
+        assert isinstance(transport, httpcore.AsyncHTTPProxy)
+        assert transport.proxy_origin == (b'http', b'localhost', 1234)
 
 
 def test_codename() -> None:
