@@ -92,6 +92,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Scalar data points can now be handled by the CLI.
 - Invalid keys in the `connectors` field of a config file will no longer
   trigger an unhandled exception.
+- Step values of range settings are now validated to ensure that a step of zero
+  is not configured.
+- Setting values are now validated appropriately upon being changed. This
+  prevents invalid values from being externally applied to a running
+  optimization (e.g., an external deployment or manual change is made).
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
