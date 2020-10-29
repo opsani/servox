@@ -5,7 +5,7 @@ import contextlib
 import pathlib
 import random
 import time
-from typing import AsyncGenerator, Callable, List, Optional, Union
+from typing import AsyncIterator, Callable, List, Optional, Union
 
 import httpx
 import pydantic
@@ -98,9 +98,12 @@ class EmulatorConnector(servo.BaseConnector):
         await progress.watch(notifier)
 
         components_ = await self.components()
-        for component_ in components_:
-            for setting in component_.settings:
-                setting.value = _random_value_for_setting(setting)
+        for adjustment in adjustments:    
+            for component_ in components_:
+                if component_.name == adjustment.component_name:                    
+                    for setting in component_.settings:
+                        if adjustment.setting_name == setting.name:
+                            setting.value = adjustment.value
 
         return servo.Description(components=components_)
 
@@ -198,7 +201,6 @@ def callback(
 
 @cli.command(help="List optimizers")
 def list_optimizers(ctx: typer.Context) -> None:
-    debug(ctx.obj)
     factory = OptimizerFactory(context=ctx.obj)
     optimizers = servo.cli.run_async(factory.list())
     debug(optimizers)
@@ -293,7 +295,7 @@ def show_template(
         help="Name of template to display.",
     ),
 ) -> None:
-    ...
+    # Handle 404...
     factory = OptimizerFactory(context=ctx.obj)
     template = servo.cli.run_async(factory.get_template(name=name))
     debug(template)
@@ -366,10 +368,11 @@ class OptimizerFactory(pydantic.BaseModel):
             response = await client.get(f'templates/{name}')
             response.raise_for_status()
             return response.json()['data'] # TODO: Load this into a model
+        
         latest_version: str = await httpx_req(client.get, f'templates/{template}', lambda j: j['data']['version'])
     
     @contextlib.asynccontextmanager
-    async def _client(self) -> AsyncGenerator[httpx.AsyncClient, None, None]:
+    async def _client(self) -> AsyncIterator[httpx.AsyncClient]:
         async with httpx.AsyncClient(
             headers={
                 'Authorization': f'Bearer {self.context.token}',
@@ -378,7 +381,9 @@ class OptimizerFactory(pydantic.BaseModel):
             base_url=f'{self.context.base_url}/accounts/{self.context.org_domain}/',
         ) as client:
             yield client
-        
+
+###### Porting
+
 async def app_factory(endpoint: str, account: str, token: str, cluster: str, template: str, target: Optional[int], interval: int, batch: int, list_: bool):
     typer.echo("Initializing...")
     async with httpx.AsyncClient(
