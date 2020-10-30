@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import pathlib
 import random
+from servo.types import Description
 import time
 from typing import AsyncIterator, Callable, List, Optional, Union
 
@@ -48,25 +49,19 @@ COMPONENTS = [
     maturity=servo.Maturity.EXPERIMENTAL,
 )
 class EmulatorConnector(servo.BaseConnector):
+    state: Optional[servo.Description] = pydantic.Field(default_factory=lambda: _random_description())
+    
     @servo.on_event()
     async def describe(self) -> servo.Description:
-        components = await self.components()
-        metrics = await self.metrics()
-
-        components_ = await self.components()
-        for component_ in components_:
-            for setting in component_.settings:
-                setting.value = _random_value_for_setting(setting)
-
-        return servo.Description(metrics=metrics, components=components)
+        return self.state
 
     @servo.on_event()
     async def metrics(self) -> List[servo.Metric]:
-        return METRICS.copy()
+        return self.state.metrics
 
     @servo.on_event()
     async def components(self) -> List[servo.Component]:
-        return COMPONENTS.copy()
+        return self.state.components
 
     @servo.on_event()
     async def measure(
@@ -100,7 +95,7 @@ class EmulatorConnector(servo.BaseConnector):
         components_ = await self.components()
         for adjustment in adjustments:    
             for component_ in components_:
-                if component_.name == adjustment.component_name:                    
+                if component_.name == adjustment.component_name:
                     for setting in component_.settings:
                         if adjustment.setting_name == setting.name:
                             # TODO: Mop this up with a type hint or something
@@ -127,6 +122,15 @@ def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeri
     else:
         raise ValueError(f"unexpected setting: {repr(setting)}")
 
+def _random_description() -> servo.Description:
+    components = COMPONENTS.copy()
+    metrics = METRICS.copy()
+    
+    for component in components:
+        for setting in component.settings:
+            setting.value = _random_value_for_setting(setting)
+
+    return servo.Description(metrics=metrics, components=components)
 ##
 # Optimizer management
 
