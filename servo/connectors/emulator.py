@@ -103,7 +103,13 @@ class EmulatorConnector(servo.BaseConnector):
                 if component_.name == adjustment.component_name:                    
                     for setting in component_.settings:
                         if adjustment.setting_name == setting.name:
-                            setting.value = float(adjustment.value)
+                            # TODO: Mop this up with a type hint or something
+                            if setting.name == "replicas":
+                                setting.value = int(adjustment.value)
+                            elif setting.name in ("cpu", "mem"):
+                                setting.value = float(adjustment.value)
+                            else:
+                                setting.value = adjustment.value
 
         return servo.Description(components=components_)
 
