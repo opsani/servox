@@ -100,7 +100,7 @@ class EmulatorConnector(servo.BaseConnector):
                         if adjustment.setting_name == setting.name:
                             # TODO: Mop this up with a type hint or something
                             if setting.name == "replicas":
-                                setting.value = int(adjustment.value)
+                                setting.value = int(float(adjustment.value))
                             elif setting.name in ("cpu", "mem"):
                                 setting.value = float(adjustment.value)
                             else:
