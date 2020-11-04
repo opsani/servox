@@ -29,8 +29,8 @@ class WavefrontMetric(servo.Metric):
 
     granularity: str = "m"
     """The resolution of the query. The granularity resolution determines the number of data points captured across a
-    query range. 
-
+    query range. A query's granularity is completely independent from any range durations specified in the WQL expression it evaluates.
+    
     Available values: s, m, h, d.
     """
 
@@ -93,8 +93,8 @@ class WavefrontConfiguration(servo.BaseConfiguration):
             metrics=[
                 WavefrontMetric(
                     "throughput",
-                    servo.Unit.REQUESTS_PER_SECOND,
-                    query="avg(ts(appdynamics.apm.overall.calls_per_min,  env=foo and app=my-app))",
+                    servo.Unit.REQUESTS_PER_MINUTE,
+                    query="avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))",
                     granularity="m",
                     summarization="LAST",
                 ),
@@ -147,8 +147,7 @@ class WavefrontRequest(pydantic.BaseModel):
             + f"&e={self.end.timestamp()}"
             + f"&g={self.metric.granularity}"
             + f"&summarization={self.metric.summarization}"
-            + f"&strict=True"
-            # Should probably be a non-configurable property, else query will return points outside the window
+            + f"&strict=True" # Should probably be a non-configurable property, else query will return points outside the window
         )
 
 
