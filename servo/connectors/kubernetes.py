@@ -7,10 +7,12 @@ import asyncio
 import contextlib
 import copy
 import enum
+from functools import singledispatch
 import itertools
 import os
 import pathlib
 import time
+from types import SimpleNamespace
 from typing import (
     Any,
     Callable,
@@ -475,7 +477,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             try:
                 await self.refresh()
             except kubernetes_asyncio.client.exceptions.ApiException as e:
-                # If we can no longer find the deployment, it is deleted.
+                # If we can no longer find the deployment/controller, it is deleted.
                 # If we get any other exception, raise it.
                 if e.status == 404 and e.reason == "Not Found":
                     return True
@@ -1069,137 +1071,17 @@ class Pod(KubernetesModel):
         return self.obj.metadata.uid
 
 
-class Deployment(KubernetesModel):
-    """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
-
-    The actual ``kubernetes.client.V1Deployment`` instance that this
-    wraps can be accessed via the ``obj`` instance member.
-
-    This wrapper provides some convenient functionality around the
-    API Object and provides some state management for the `Deployment`_.
-
-    .. _Deployment:
-        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#deployment-v1-apps
+class ControllerModel(KubernetesModel):
+    """Abstract base class for Controllers in Kubernetes
     """
 
-    obj:kubernetes_asyncio.client.V1Deployment
-    api_clients: ClassVar[Dict[str, Type]] = {
-        "preferred":kubernetes_asyncio.client.AppsV1Api,
-        "apps/v1":kubernetes_asyncio.client.AppsV1Api,
-        "apps/v1beta1":kubernetes_asyncio.client.AppsV1beta1Api,
-        "apps/v1beta2":kubernetes_asyncio.client.AppsV1beta2Api,
-    }
-
-    async def create(self, namespace: str = None) -> None:
-        """Create the Deployment under the given namespace.
-
-        Args:
-            namespace: The namespace to create the Deployment under.
-                If the Deployment was loaded via the kubetest client, the
-                namespace will already be set, so it is not needed here.
-                Otherwise, the namespace will need to be provided.
-        """
-        if namespace is None:
-            namespace = self.namespace
-
-        self.logger.info(
-            f'creating deployment "{self.name}" in namespace "{self.namespace}"'
-        )
-        self.logger.debug(f"deployment: {self.obj}")
-
-        async with self.api_client() as api_client:
-            self.obj = await api_client.create_namespaced_deployment(
-                namespace=namespace,
-                body=self.obj,
-            )
-
-    @classmethod
-    async def read(cls, name: str, namespace: str) -> "Deployment":
-        """Read a Deployment by name under the given namespace.
-
-        Args:
-            name: The name of the Deployment to read.
-            namespace: The namespace to read the Deployment from.
-        """
-
-        async with cls.preferred_client() as api_client:
-            obj = await api_client.read_namespaced_deployment(name, namespace)
-            return Deployment(obj)
-
-    async def patch(self) -> None:
-        """Update the changed attributes of the Deployment."""
-        async with self.api_client() as api_client:
-            self.obj = await api_client.patch_namespaced_deployment(
-                name=self.name,
-                namespace=self.namespace,
-                body=self.obj,
-            )
-
-    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
-        """Delete the Deployment.
-
-        This method expects the Deployment to have been loaded or otherwise
-        assigned a namespace already. If it has not, the namespace will need
-        to be set manually.
-
-        Args:
-            options: Options for Deployment deletion.
-
-        Returns:
-            The status of the delete operation.
-        """
-        if options is None:
-            options =kubernetes_asyncio.client.V1DeleteOptions()
-
-        self.logger.info(f'deleting deployment "{self.name}"')
-        self.logger.debug(f"delete options: {options}")
-        self.logger.trace(f"deployment: {self.obj}")
-
-        async with self.api_client() as api_client:
-            return await api_client.delete_namespaced_deployment(
-                name=self.name,
-                namespace=self.namespace,
-                body=options,
-            )
-
-    async def refresh(self) -> None:
-        """Refresh the underlying Kubernetes Deployment resource."""
-        async with self.api_client() as api_client:
-            self.obj = await api_client.read_namespaced_deployment_status(
-                name=self.name,
-                namespace=self.namespace,
-            )
-
-    async def rollback(self) -> None:
-        """Roll back an unstable Deployment revision to a previous version."""
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-            api_client =kubernetes_asyncio.client.ExtensionsV1beta1Api(api)
-            self.obj = await api_client.create_namespaced_deployment_rollback(
-                name=self.name,
-                namespace=self.namespace,
-                body=self.obj,
-            )
-
-    async def get_status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
-        """Get the status of the Deployment.
-
-        Returns:
-            The status of the Deployment.
-        """
-        self.logger.info(f'checking status of deployment "{self.name}"')
-        # first, refresh the deployment state to ensure the latest status
-        await self.refresh()
-
-        # return the status from the deployment
-        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
-
     async def get_pods(self) -> List[Pod]:
-        """Get the pods for the Deployment.
+        """Get the pods for the controller.
 
         Returns:
             A list of pods that belong to the deployment.
         """
-        self.logger.info(f'getting pods for deployment "{self.name}"')
+        self.logger.info(f'getting pods for {self.obj.kind} "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
@@ -1211,32 +1093,23 @@ class Deployment(KubernetesModel):
         return pods
 
     @property
-    def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
-        """Return the status of the Deployment.
-
-        Returns:
-            The status of the Deployment.
-        """
-        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
-
-    @property
     def resource_version(self) -> str:
         """
-        Returns the resource version of the Deployment.
+        Returns the resource version of the Controller.
         """
         return self.obj.metadata.resource_version
 
     @property
     def observed_generation(self) -> str:
         """
-        Returns the observed generation of the Deployment status.
+        Returns the observed generation of the Controller status.
 
-        The generation is observed by the deployment controller.
+        The generation is observed by the controller.
         """
         return self.obj.status.observed_generation
 
     async def is_ready(self) -> bool:
-        """Check if the Deployment is in the ready state.
+        """Check if the Controller is in the ready state.
 
         Returns:
             True if in the ready state; False otherwise.
@@ -1440,6 +1313,295 @@ class Deployment(KubernetesModel):
         await canary_pod.get_containers()
 
         return canary_pod
+
+
+
+class Deployment(ControllerModel):
+    """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
+
+    The actual ``kubernetes.client.V1Deployment`` instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Deployment`_.
+
+    .. _Deployment:
+        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#deployment-v1-apps
+    """
+
+    obj:kubernetes_asyncio.client.V1Deployment
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred":kubernetes_asyncio.client.AppsV1Api,
+        "apps/v1":kubernetes_asyncio.client.AppsV1Api,
+        "apps/v1beta1":kubernetes_asyncio.client.AppsV1beta1Api,
+        "apps/v1beta2":kubernetes_asyncio.client.AppsV1beta2Api,
+    }
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the Deployment under the given namespace.
+
+        Args:
+            namespace: The namespace to create the Deployment under.
+                If the Deployment was loaded via the kubetest client, the
+                namespace will already be set, so it is not needed here.
+                Otherwise, the namespace will need to be provided.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        self.logger.info(
+            f'creating deployment "{self.name}" in namespace "{self.namespace}"'
+        )
+        self.logger.debug(f"deployment: {self.obj}")
+
+        async with self.api_client() as api_client:
+            self.obj = await api_client.create_namespaced_deployment(
+                namespace=namespace,
+                body=self.obj,
+            )
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "Deployment":
+        """Read a Deployment by name under the given namespace.
+
+        Args:
+            name: The name of the Deployment to read.
+            namespace: The namespace to read the Deployment from.
+        """
+
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.read_namespaced_deployment(name, namespace)
+            return Deployment(obj)
+
+    async def patch(self) -> None:
+        """Update the changed attributes of the Deployment."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.patch_namespaced_deployment(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        """Delete the Deployment.
+
+        This method expects the Deployment to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+
+        Args:
+            options: Options for Deployment deletion.
+
+        Returns:
+            The status of the delete operation.
+        """
+        if options is None:
+            options =kubernetes_asyncio.client.V1DeleteOptions()
+
+        self.logger.info(f'deleting deployment "{self.name}"')
+        self.logger.debug(f"delete options: {options}")
+        self.logger.trace(f"deployment: {self.obj}")
+
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_deployment(
+                name=self.name,
+                namespace=self.namespace,
+                body=options,
+            )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Deployment resource."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.read_namespaced_deployment_status(
+                name=self.name,
+                namespace=self.namespace,
+            )
+
+    async def rollback(self) -> None:
+        """Roll back an unstable Deployment revision to a previous version."""
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            api_client =kubernetes_asyncio.client.ExtensionsV1beta1Api(api)
+            self.obj = await api_client.create_namespaced_deployment_rollback(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+
+    async def get_status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
+        """Get the status of the Deployment.
+
+        Returns:
+            The status of the Deployment.
+        """
+        self.logger.info(f'checking status of deployment "{self.name}"')
+        # first, refresh the deployment state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the deployment
+        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
+
+    @property
+    def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
+        """Return the status of the Deployment.
+
+        Returns:
+            The status of the Deployment.
+        """
+        return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
+
+# NOTE: SimpleNamespace is used to allow . (dot) access of dictionary data
+# https://stackoverflow.com/a/50491016
+@singledispatch
+def wrap_namespace(ob):
+    return ob
+
+@wrap_namespace.register(dict)
+def _wrap_dict(ob):
+    return SimpleNamespace(**{k: wrap_namespace(v) for k, v in ob.items()})
+
+@wrap_namespace.register(list)
+def _wrap_list(ob):
+    return [wrap_namespace(v) for v in ob]
+
+class Rollout(ControllerModel):
+    """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
+
+    The actual instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Rollout`.
+
+    .. Rollout:
+        https://argoproj.github.io/argo-rollouts/features/specification/
+    """
+
+    obj: SimpleNamespace # TODO better typing
+
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred":kubernetes_asyncio.client.CustomObjectsApi,
+        # "preferred":kubernetes_asyncio.client.CustomObjectsApi, # TODO what is the name for this?
+    }
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the Rollout under the given namespace.
+
+        Args:
+            namespace: The namespace to create the Rollout under.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        self.logger.info(
+            f'creating rollout "{self.name}" in namespace "{self.namespace}"'
+        )
+        self.logger.debug(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            self.obj = wrap_namespace(await api_client.create_namespaced_custom_object(
+                group="argoproj.io",
+                version="v1alpha1",
+                namespace=namespace,
+                plural="rollouts",
+                body=self.obj,
+            ))
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "Rollout":
+        """Read a Rollout by name under the given namespace.
+
+        Args:
+            name: The name of the Deployment to read.
+            namespace: The namespace to read the Deployment from.
+        """
+
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.get_namespaced_custom_object(
+                group="argoproj.io",
+                version="v1alpha1",
+                namespace=namespace,
+                plural="rollouts",
+                name=name
+            )
+            return Rollout(wrap_namespace(obj))
+
+    async def patch(self) -> None:
+        """Update the changed attributes of the Deployment."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.patch_namespaced_custom_object(
+                group="argoproj.io",
+                version="v1alpha1",
+                namespace=self.namespace,
+                plural="rollouts",
+                name=self.name,
+                body=self.obj,
+            )
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        """Delete the Deployment.
+
+        This method expects the Deployment to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+
+        Args:
+            options: Options for Deployment deletion.
+
+        Returns:
+            The status of the delete operation.
+        """
+        if options is not None:
+            raise RuntimeError("Rollout deletion does not support V1DeleteOptions")
+
+        self.logger.info(f'deleting rollout "{self.name}"')
+        self.logger.trace(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_custom_object(
+                group="argoproj.io",
+                version="v1alpha1",
+                namespace=self.namespace,
+                plural="rollouts",
+                name=self.name,
+            )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Rollout resource."""
+        async with self.api_client() as api_client:
+            self.obj = wrap_namespace(await api_client.get_namespaced_custom_object_status(
+                group="argoproj.io",
+                version="v1alpha1",
+                namespace=self.namespace,
+                plural="rollouts",
+                name=self.name,
+            ))
+
+    async def rollback(self) -> None:
+        # TODO rollbacks are automated in Argo Rollouts, not sure if making this No Op will cause issues
+        #   but I was unable to locate a means of triggering a rollout rollback manually
+        pass
+
+    async def get_status(self) ->SimpleNamespace:
+        """Get the status of the Rollout.
+
+        Returns:
+            The status of the Rollout.
+        """
+        self.logger.info(f'checking status of rollout "{self.name}"')
+        # first, refresh the rollout state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the rollout
+        return self.obj.status
+
+    @property
+    def status(self) ->SimpleNamespace:
+        """Return the status of the Rollout.
+
+        Returns:
+            The status of the Rollout.
+        """
+        return self.obj.status
 
 
 class Millicore(int):
@@ -1681,44 +1843,47 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-class DeploymentOptimization(BaseOptimization):
+class MainlineOptimization(BaseOptimization):
     """
-    The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
-    Deployment and its associated containers.
+    The MainlineOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
+    Controller and its associated containers.
     """
 
-    deployment_config: "DeploymentConfiguration"
-    deployment: Deployment
+    controller_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
+    controller: Union[Deployment, Rollout]
     container_config: "ContainerConfiguration"
     container: Container
 
     @classmethod
     async def create(
         cls, config: "DeploymentConfiguration", **kwargs
-    ) -> "DeploymentOptimization":
-        deployment = await Deployment.read(config.name, config.namespace)
+    ) -> "MainlineOptimization":
+        if isinstance(config, DeploymentConfiguration):
+            controller = await Deployment.read(config.name, config.namespace)
+        else:
+            controller = await Rollout.read(config.name, config.namespace)
 
         replicas = config.replicas.copy()
-        replicas.value = deployment.replicas
+        replicas.value = controller.replicas
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            container = deployment.find_container(container_config.name)
+            container = controller.find_container(container_config.name)
             if not container:
                 names = servo.utilities.strings.join_to_series(
-                    list(map(lambda c: c.name, deployment.containers))
+                    list(map(lambda c: c.name, controller.containers))
                 )
                 raise ValueError(
                     f'no container named "{container_config.name}" exists in the Pod (found {names})'
                 )
 
             name = container_config.alias or (
-                f"{deployment.name}/{container.name}" if container else deployment.name
+                f"{controller.name}/{container.name}" if container else controller.name
             )
             return cls(
                 name=name,
-                deployment_config=config,
-                deployment=deployment,
+                controller_config=config,
+                controller=controller,
                 container_config=container_config,
                 container=container,
                 **kwargs,
@@ -1747,8 +1912,8 @@ class DeploymentOptimization(BaseOptimization):
         """
         Return the current Replicas setting for the optimization.
         """
-        replicas = self.deployment_config.replicas.copy()
-        replicas.value = self.deployment.replicas
+        replicas = self.controller_config.replicas.copy()
+        replicas.value = self.controller.replicas
         return replicas
 
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -1758,9 +1923,9 @@ class DeploymentOptimization(BaseOptimization):
         Args:
             error: An optional error that triggered the rollback.
         """
-        self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
+        self.logger.info(f"adjustment failed: rolling back controller... ({error})")
         await asyncio.wait_for(
-            asyncio.gather(self.deployment.rollback()),
+            asyncio.gather(self.controller.rollback()),
             timeout=self.timeout.total_seconds(),
         )
 
@@ -1771,9 +1936,9 @@ class DeploymentOptimization(BaseOptimization):
         Args:
             error: An optional error that triggered the destruction.
         """
-        self.logger.info(f"adjustment failed: destroying deployment...")
+        self.logger.info(f"adjustment failed: destroying controller...")
         await asyncio.wait_for(
-            asyncio.gather(self.deployment.delete()),
+            asyncio.gather(self.controller.delete()),
             timeout=self.timeout.total_seconds(),
         )
 
@@ -1800,7 +1965,7 @@ class DeploymentOptimization(BaseOptimization):
             )
 
         elif name == "replicas":
-            self.deployment.replicas = int(value)
+            self.controller.replicas = int(value)
 
         else:
             raise RuntimeError(
@@ -1811,14 +1976,14 @@ class DeploymentOptimization(BaseOptimization):
         """
         Apply changes asynchronously and wait for them to roll out to the cluster.
 
-        Kubernetes deployments orchestrate a number of underlying resources. Awaiting the
-        outcome of a deployment change requires observation of the `resource_version` which
+        Kubernetes controllers orchestrate a number of underlying resources. Awaiting the
+        outcome of a controller change requires observation of the `resource_version` which
         indicates if a given patch actually changed the resource, the `observed_generation`
-        which is a value managed by the deployments controller and indicates the effective
-        version of the deployment exclusive of insignificant changes that do not affect runtime
-        (such as label updates), and the `conditions` of the deployment status which reflect
+        which is a value managed by the controller and indicates the effective
+        version of the controller exclusive of insignificant changes that do not affect runtime
+        (such as label updates), and the `conditions` of the controller status which reflect
         state at a particular point in time. How these elements change during a rollout is
-        dependent on the deployment strategy in effect and its requirementss (max unavailable,
+        dependent on the controller type and strategy in effect and its requirementss (max unavailable,
         surge, etc).
 
         The logic implemented by this method is as follows:
@@ -1846,27 +2011,28 @@ class DeploymentOptimization(BaseOptimization):
         """
 
         # Resource version lets us track any change. Observed generation only increments
-        # when the deployment controller sees a significant change that requires rollout
-        resource_version = self.deployment.resource_version
-        observed_generation = self.deployment.status.observed_generation
-        desired_replicas = self.deployment.replicas
+        # when the controller sees a significant change that requires rollout
+        resource_version = self.controller.resource_version
+        observed_generation = self.controller.status.observed_generation
+        desired_replicas = self.controller.replicas
 
-        # Patch the Deployment via the Kubernetes API
-        await self.deployment.patch()
+        # Patch the controller via the Kubernetes API
+        await self.controller.patch()
 
         # Return fast if nothing was changed
-        if self.deployment.resource_version == resource_version:
+        if self.controller.resource_version == resource_version:
             self.logger.info(
-                f"adjustments applied to Deployment '{self.deployment.name}' made no changes, continuing"
+                f"adjustments applied to Deployment '{self.controller.name}' made no changes, continuing"
             )
             return
 
-        # Create a Kubernetes watch against the deployment under optimization to track changes
+        # Create a Kubernetes watch against the controller under optimization to track changes
         self.logger.info(
-            f"Using label_selector={self.deployment.label_selector}, resource_version={resource_version}"
+            f"Using label_selector={self.controller.label_selector}, resource_version={resource_version}"
         )
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 =kubernetes_asyncio.client.AppsV1Api(api)
+            # BIG FAT TODO
             async with kubernetes_asyncio.watch.Watch().stream(
                 v1.list_namespaced_deployment,
                 self.deployment.namespace,
@@ -1917,6 +2083,7 @@ class DeploymentOptimization(BaseOptimization):
                         stream.stop()
                         return
 
+    # TODO move functionality to ControllerModel abc base and sub classes
     def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]):
         for condition in conditions:
             if condition.type == "Available":
@@ -1961,8 +2128,8 @@ class CanaryOptimization(BaseOptimization):
     of its siblings.
     """
 
-    target_deployment: Deployment
-    target_deployment_config: "DeploymentConfiguration"
+    target_controller: Union[Deployment, Rollout]
+    target_controller_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
 
     target_container: Container
     target_container_config: "ContainerConfiguration"
@@ -1975,31 +2142,35 @@ class CanaryOptimization(BaseOptimization):
     async def create(
         cls, config: "DeploymentConfiguration", **kwargs
     ) -> "CanaryOptimization":
-        deployment = await Deployment.read(config.name, cast(str, config.namespace))
-        if not deployment:
+        if isinstance(config, DeploymentConfiguration):
+            controller = await Deployment.read(config.name, cast(str, config.namespace))
+        else:
+            controller = await Rollout.read(config.name, cast(str, config.namespace))
+
+        if not controller:
             raise ValueError(
-                f'cannot create CanaryOptimization: target Deployment "{config.name}" does not exist in Namespace "{config.namespace}"'
+                f'cannot create CanaryOptimization: target controller "{config.name}" does not exist in Namespace "{config.namespace}"'
             )
 
         # Ensure that we have a canary Pod
-        canary_pod = await deployment.ensure_canary_pod()
+        canary_pod = await controller.ensure_canary_pod()
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
-            target_container = deployment.find_container(container_config.name)
+            target_container = controller.find_container(container_config.name)
             canary_container = canary_pod.get_container(container_config.name)
 
             name = (
                 config.strategy.alias
                 if isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
                 and config.strategy.alias
-                else f"{deployment.name}/{canary_container.name}-canary"
+                else f"{controller.name}/{canary_container.name}-canary"
             )
 
             return cls(
                 name=name,
-                target_deployment_config=config,
-                target_deployment=deployment,
+                target_controller_config=config,
+                target_controller=controller,
                 target_container_config=container_config,
                 target_container=target_container,
                 canary_pod=canary_pod,
@@ -2008,7 +2179,7 @@ class CanaryOptimization(BaseOptimization):
             )
 
         raise AssertionError(
-            "deployment configuration must have one or more containers"
+            "controller configuration must have one or more containers"
         )
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
@@ -2036,7 +2207,7 @@ class CanaryOptimization(BaseOptimization):
             )
 
     async def apply(self) -> None:
-        dep_copy = copy.copy(self.target_deployment)
+        dep_copy = copy.copy(self.target_controller)
         dep_copy.obj.spec.template.spec.containers[
             0
         ].resources = self.canary_container.resources
@@ -2085,7 +2256,7 @@ class CanaryOptimization(BaseOptimization):
 
         target_name = (
             self.target_container_config.alias
-            or f"{self.target_deployment_config.name}/{self.target_container_config.name}"
+            or f"{self.target_controller_config.name}/{self.target_container_config.name}"
         )
         # implicitly pin the target settings before we return them
         target_cpu = self.target_container_config.cpu.copy(update={"pinned": True})
@@ -2100,10 +2271,10 @@ class CanaryOptimization(BaseOptimization):
         ):
             target_memory.value = value
 
-        target_replicas = self.target_deployment_config.replicas.copy(
+        target_replicas = self.target_controller_config.replicas.copy(
             update={"pinned": True}
         )
-        target_replicas.value = self.target_deployment.replicas
+        target_replicas.value = self.target_controller.replicas
 
         return [
             Component(
@@ -2161,7 +2332,7 @@ class CanaryOptimization(BaseOptimization):
             self.logger.info(
                 "creating new canary against baseline following failed adjust"
             )
-            self.canary = await self.target_deployment.ensure_canary_pod()
+            self.canary = await self.target_controller.ensure_canary_pod()
             return True
 
         else:
@@ -2197,30 +2368,30 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for deployment_config in config.deployments:
-            if deployment_config.strategy == OptimizationStrategy.DEFAULT:
-                optimization = await DeploymentOptimization.create(
-                    deployment_config, timeout=config.timeout
+        for controller_config in config.deployments + config.rollouts:
+            if controller_config.strategy == OptimizationStrategy.DEFAULT:
+                optimization = await MainlineOptimization.create(
+                    controller_config, timeout=config.timeout
                 )
-                deployment = optimization.deployment
+                controller = optimization.controller
                 container = optimization.container
-            elif deployment_config.strategy == OptimizationStrategy.CANARY:
+            elif controller_config.strategy == OptimizationStrategy.CANARY:
                 optimization = await CanaryOptimization.create(
-                    deployment_config, timeout=config.timeout
+                    controller_config, timeout=config.timeout
                 )
-                deployment = optimization.target_deployment
+                controller = optimization.target_controller
                 container = optimization.target_container
             else:
                 raise ValueError(
-                    f"unknown optimization strategy: {deployment_config.strategy}"
+                    f"unknown optimization strategy: {controller_config.strategy}"
                 )
 
             optimizations.append(optimization)
 
             # compile artifacts for checksum calculation
-            pods = await deployment.get_pods()
+            pods = await controller.get_pods()
             runtime_ids[optimization.name] = [pod.uid for pod in pods]
-            pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
+            pod_tmpl_specs[controller.name] = controller.obj.spec.template.spec
             images[container.name] = container.image
 
         # Compute checksums for change detection
@@ -2507,10 +2678,10 @@ class BaseKubernetesConfiguration(BaseConfiguration):
     )
     context: Optional[str] = pydantic.Field(description="Name of the kubeconfig context to use.")
     namespace: Optional[DNSSubdomainName] = pydantic.Field(
-        description="Kubernetes namespace where the target deployments are running.",
+        description="Kubernetes namespace where the target deployment/controllers are running.",
     )
     settlement: Optional[Duration] = pydantic.Field(
-        description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
+        description="Duration to observe the application after an adjust to ensure the deployment or controller is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
         FailureMode.ROLLBACK,
@@ -2538,6 +2709,15 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     strategy: StrategyTypes = OptimizationStrategy.DEFAULT
     replicas: servo.Replicas
 
+class RolloutConfiguration(BaseKubernetesConfiguration): # TODO this may be able to just use KubernetesConfiguration instead
+    """
+    The RolloutConfiguration class models the configuration of an optimizable ArgoCD Rollout.
+    """
+
+    name: DNSSubdomainName
+    containers: List[ContainerConfiguration]
+    strategy: StrategyTypes = OptimizationStrategy.DEFAULT
+    replicas: servo.Replicas
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
@@ -2549,6 +2729,11 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
     deployments: List[DeploymentConfiguration] = pydantic.Field(
         description="Deployments to be optimized.",
+    )
+
+    rollouts: List[RolloutConfiguration] = pydantic.Field(
+        description="Argo rollouts to be optimized.",
+        default=[],
     )
 
     @classmethod
@@ -2643,7 +2828,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
 
 KubernetesOptimizations.update_forward_refs()
-DeploymentOptimization.update_forward_refs()
+MainlineOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 
 
@@ -3093,8 +3278,8 @@ class ConfigMap(KubernetesModel):
         """Read a ConfigMap by name under the given namespace.
 
         Args:
-            name: The name of the Deployment to read.
-            namespace: The namespace to read the Deployment from.
+            name: The name of the ConfigMap to read.
+            namespace: The namespace to read the ConfigMap from.
         """
 
         async with cls.preferred_client() as api_client:
