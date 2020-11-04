@@ -93,14 +93,14 @@ class WavefrontConfiguration(servo.BaseConfiguration):
             metrics=[
                 WavefrontMetric(
                     "throughput",
-                    servo.Unit.REQUESTS_PER_MINUTE,
+                    servo.Unit.REQUESTS_PER_MINUTE_WF,
                     query="avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))",
                     granularity="m",
                     summarization="LAST",
                 ),
                 WavefrontMetric(
                     "error_rate",
-                    servo.Unit.PERCENTAGE,
+                    servo.Unit.ERRORS_PER_MINUTE_WF,
                     query="avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))",
                     granularity="m",
                     summarization="LAST",
@@ -174,15 +174,15 @@ class WavefrontChecks(servo.BaseChecks):
                 datetime.datetime.now() - datetime.timedelta(minutes=10),
                 datetime.datetime.now(),
             )
-            Wavefront_request = WavefrontRequest(
+            wavefront_request = WavefrontRequest(
                 base_url=self.config.api_url, metric=metric, start=start, end=end
             )
 
             self.logger.trace(
-                f"Querying Wavefront (`{metric.query}`): {Wavefront_request.url}"
+                f"Querying Wavefront (`{metric.query}`): {wavefront_request.url}"
             )
             async with httpx.AsyncClient() as client:
-                response = await client.get(Wavefront_request.url)
+                response = await client.get(wavefront_request.url)
                 response.raise_for_status()
                 result = response.json()
                 return f"returned {len(result)} results"
@@ -324,16 +324,16 @@ class WavefrontConnector(servo.BaseConnector):
     async def _query_wf(
             self, metric: WavefrontMetric, start: datetime, end: datetime
     ) -> List[servo.TimeSeries]:
-        Wavefront_request = WavefrontRequest(
+        wavefront_request = WavefrontRequest(
             base_url=self.config.api_url, metric=metric, start=start, end=end
         )
 
         self.logger.trace(
-            f"Querying Wavefront (`{metric.query}`): {Wavefront_request.url}"
+            f"Querying Wavefront (`{metric.query}`): {wavefront_request.url}"
         )
         async with self.api_client() as client:
             try:
-                response = await client.get(Wavefront_request.url)
+                response = await client.get(wavefront_request.url)
                 response.raise_for_status()
             except (
                     httpx.HTTPError,
@@ -341,7 +341,7 @@ class WavefrontConnector(servo.BaseConnector):
                     httpcore._exceptions.ConnectError,
             ) as error:
                 self.logger.trace(
-                    f"HTTP error encountered during GET {Wavefront_request.url}: {error}"
+                    f"HTTP error encountered during GET {wavefront_request.url}: {error}"
                 )
                 raise
 
