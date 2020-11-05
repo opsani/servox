@@ -6,13 +6,14 @@ import abc
 import asyncio
 import contextlib
 import copy
+from datetime import datetime
 import enum
 from functools import singledispatch
 import itertools
 import os
 import pathlib
+from servo.connector import metadata
 import time
-from types import SimpleNamespace
 from typing import (
     Any,
     Callable,
@@ -1449,19 +1450,32 @@ class Deployment(ControllerModel):
         """
         return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
 
-# NOTE: SimpleNamespace is used to allow . (dot) access of dictionary data
-# https://stackoverflow.com/a/50491016
-@singledispatch
-def wrap_namespace(ob):
-    return ob
+# Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
+class RolloutSpec(pydantic.BaseModel):
+    replicas: int
+    selector: kubernetes_asyncio.client.V1LabelSelector
+    template: kubernetes_asyncio.client.V1PodTemplateSpec
+    minReadySeconds: int
+    revisionHistoryLimit: int
+    paused: bool
+    progressDeadlineSeconds: int
+    restartAt: datetime
+    strategy: Any # TODO type this out if connector needs to interact with it
 
-@wrap_namespace.register(dict)
-def _wrap_dict(ob):
-    return SimpleNamespace(**{k: wrap_namespace(v) for k, v in ob.items()})
+class RolloutPausedCondition(pydantic.BaseModel):
+    reason: str
+    startTime: datetime
 
-@wrap_namespace.register(list)
-def _wrap_list(ob):
-    return [wrap_namespace(v) for v in ob]
+class RolloutStatus(pydantic.BaseModel):
+    pauseConditions: List[RolloutPausedCondition]
+
+class RolloutObj(pydantic.BaseModel): # TODO is this the right base to inherit from?
+    apiVersion: str
+    kind: str
+    metadata: kubernetes_asyncio.client.V1ObjectMeta
+    spec: RolloutSpec
+    status: RolloutStatus
+
 
 class Rollout(ControllerModel):
     """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
@@ -1476,7 +1490,7 @@ class Rollout(ControllerModel):
         https://argoproj.github.io/argo-rollouts/features/specification/
     """
 
-    obj: SimpleNamespace # TODO better typing
+    obj: RolloutObj
 
     api_clients: ClassVar[Dict[str, Type]] = {
         "preferred":kubernetes_asyncio.client.CustomObjectsApi,
@@ -1498,7 +1512,7 @@ class Rollout(ControllerModel):
         self.logger.debug(f"rollout: {self.obj}")
 
         async with self.api_client() as api_client:
-            self.obj = wrap_namespace(await api_client.create_namespaced_custom_object(
+            self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
                 group="argoproj.io",
                 version="v1alpha1",
                 namespace=namespace,
@@ -1523,19 +1537,19 @@ class Rollout(ControllerModel):
                 plural="rollouts",
                 name=name
             )
-            return Rollout(wrap_namespace(obj))
+            return RolloutObj.parse_obj(obj)
 
     async def patch(self) -> None:
         """Update the changed attributes of the Deployment."""
         async with self.api_client() as api_client:
-            self.obj = await api_client.patch_namespaced_custom_object(
+            self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 group="argoproj.io",
                 version="v1alpha1",
                 namespace=self.namespace,
                 plural="rollouts",
                 name=self.name,
                 body=self.obj,
-            )
+            ))
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
         """Delete the Deployment.
@@ -1568,7 +1582,7 @@ class Rollout(ControllerModel):
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Rollout resource."""
         async with self.api_client() as api_client:
-            self.obj = wrap_namespace(await api_client.get_namespaced_custom_object_status(
+            self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
                 group="argoproj.io",
                 version="v1alpha1",
                 namespace=self.namespace,
@@ -1581,7 +1595,7 @@ class Rollout(ControllerModel):
         #   but I was unable to locate a means of triggering a rollout rollback manually
         pass
 
-    async def get_status(self) ->SimpleNamespace:
+    async def get_status(self) ->RolloutStatus:
         """Get the status of the Rollout.
 
         Returns:
@@ -1595,7 +1609,7 @@ class Rollout(ControllerModel):
         return self.obj.status
 
     @property
-    def status(self) ->SimpleNamespace:
+    def status(self) ->RolloutStatus:
         """Return the status of the Rollout.
 
         Returns:
