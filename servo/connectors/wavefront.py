@@ -348,25 +348,24 @@ class WavefrontConnector(servo.BaseConnector):
         data = response.json()
         self.logger.trace(f"Got response data for metric {metric}: {data}")
 
-        if "status" not in data or data["status"] != "success":
-            return []
-
+        # No status code returned from wavefront response?
+        # if "status" not in data or data["status"] != "success":
+        #     return []
+        
         readings = []
-        for result_dict in data["data"]["result"]:
-            m_ = result_dict["metric"].copy()
-            # NOTE: Unpack "metrics" subdict and pack into a string
-            if "__name__" in m_:
-                del m_["__name__"]
-            instance = m_.get("instance")
-            job = m_.get("job")
+
+        for result_dict in data["timeseries"]:
+            t_ = result_dict["tags"].copy() # Unpack "tags" subdict and pack into a string
+            instance = t_.get("nodename") # e.g. 'ip-10-131-115-160.us-west-2.compute.internal'
+            job = t_.get("type") # e.g. 'node'
             annotation = " ".join(
-                map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
+                map(lambda m: "=".join(m), sorted(t_.items(), key=lambda m: m[0]))
             )
             readings.append(
                 servo.TimeSeries(
                     metric=metric,
                     annotation=annotation,
-                    values=result_dict["values"],
+                    values=result_dict["data"],
                     id=f"{{instance={instance},job={job}}}",
                     metadata=dict(instance=instance, job=job),
                 )
