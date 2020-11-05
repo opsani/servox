@@ -1537,7 +1537,7 @@ class Rollout(ControllerModel):
                 plural="rollouts",
                 name=name
             )
-            return RolloutObj.parse_obj(obj)
+            return Rollout(RolloutObj.parse_obj(obj))
 
     async def patch(self) -> None:
         """Update the changed attributes of the Deployment."""
