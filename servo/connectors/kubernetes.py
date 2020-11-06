@@ -6,12 +6,13 @@ import abc
 import asyncio
 import contextlib
 import copy
-from datetime import datetime
+from datetime import date, datetime
 import enum
 from functools import singledispatch
 import itertools
 import os
 import pathlib
+from servo.utilities import strings
 from servo.connector import metadata
 import time
 from typing import (
@@ -1072,7 +1073,7 @@ class Pod(KubernetesModel):
         return self.obj.metadata.uid
 
 
-class ControllerModel(KubernetesModel):
+class ControllerModel(KubernetesModel, abc.ABC):
     """Abstract base class for Controllers in Kubernetes
     """
 
@@ -1168,6 +1169,11 @@ class ControllerModel(KubernetesModel):
         Return a string for matching the Deployment in Kubernetes API calls.
         """
         return selector_string(self.obj.spec.selector.match_labels)
+
+    @abc.abstractmethod
+    async def apply(self) -> None: # TODO should this be part of KubernetesModel?
+        """Adjust and wait for the underlying Kubernetes resource in the cluster to be finished adjusting."""
+        ...
 
     ##
     # Canary support
@@ -1383,6 +1389,154 @@ class Deployment(ControllerModel):
                 body=self.obj,
             )
 
+                
+    async def apply(self) -> None:
+        """
+        Apply changes asynchronously and wait for them to roll out to the cluster.
+
+        Kubernetes deployments orchestrate a number of underlying resources. Awaiting the
+        outcome of a deployment change requires observation of the `resource_version` which
+        indicates if a given patch actually changed the resource, the `observed_generation`
+        which is a value managed by the deployments controller and indicates the effective
+        version of the deployment exclusive of insignificant changes that do not affect runtime
+        (such as label updates), and the `conditions` of the deployment status which reflect
+        state at a particular point in time. How these elements change during a rollout is
+        dependent on the deployment strategy in effect and its requirementss (max unavailable,
+        surge, etc).
+
+        The logic implemented by this method is as follows:
+            - Capture the `resource_version` and `observed_generation`.
+            - Patch the underlying Deployment object via the Kubernetes API.
+            - Check that `resource_version` has been incremented or return early if nothing has changed.
+            - Create a Kubernetes Watch on the Deployment targeted by label selector and resource version.
+            - Observe events streamed via the watch.
+            - Look for the Deployment to report a Status Condition of `"Progressing"`.
+            - Wait for the `observed_generation` to increment indicating that the Deployment is applying our changes.
+            - Track the value of the `available_replicas`, `ready_replicas`, `unavailable_replicas`,
+                and `updated_replicas` attributes of the Deployment Status until `available_replicas`,
+                `ready_replicas`, and `updated_replicas` are all equal to the value of the `replicas` attribute of
+                the Deployment and `unavailable_replicas` is `None`. Return success.
+            - Raise an error upon expiration of an adjustment timeout or encountering a Deployment Status Condition
+                where `type=Progressing` and `status=False`.
+
+        This method abstracts the details of adjusting a Deployment and returns once the desired
+        changes have been fully rolled out to the cluster or an error has been encountered.
+
+        See https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
+
+        # The resource_version attribute lets us efficiently watch for changes
+        # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
+        """
+        # Resource version lets us track any change. Observed generation only increments
+        # when the controller sees a significant change that requires rollout
+        resource_version = self.resource_version
+        observed_generation = self.status.observed_generation
+        desired_replicas = self.replicas
+
+        # Patch the controller via the Kubernetes API
+        await self.patch()
+
+        # Return fast if nothing was changed
+        if self.resource_version == resource_version:
+            self.logger.info(
+                f"adjustments applied to Deployment '{self.name}' made no changes, continuing"
+            )
+            return
+
+        # Create a Kubernetes watch against the controller under optimization to track changes
+        self.logger.info(
+            f"Using label_selector={self.label_selector}, resource_version={resource_version}"
+        )
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            v1 =kubernetes_asyncio.client.AppsV1Api(api)
+            # BIG FAT TODO
+            async with kubernetes_asyncio.watch.Watch().stream(
+                v1.list_namespaced_deployment,
+                self.namespace,
+                label_selector=self.label_selector,
+                # resource_version=resource_version, # FIXME: The resource version might be expired and fail the watch. Decide if we care
+            ) as stream:
+                async for event in stream:
+                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                    event_type, deployment = event["type"], event["object"]
+                    status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
+
+                    self.logger.debug(
+                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                    )
+
+                    if event_type == "ERROR":
+                        stream.stop()
+                        raise RuntimeError(str(deployment))
+
+                    # Check that the conditions aren't reporting a failure
+                    self._check_conditions(status.conditions)
+
+                    # Early events in the watch may be against previous generation
+                    if status.observed_generation == observed_generation:
+                        self.logger.debug(
+                            "observed generation has not changed, continuing watch"
+                        )
+                        continue
+
+                    # Check the replica counts. Once available, updated, and ready match
+                    # our expected count and the unavailable count is zero we are rolled out
+                    if status.unavailable_replicas:
+                        self.logger.debug(
+                            "found unavailable replicas, continuing watch",
+                            status.unavailable_replicas,
+                        )
+                        continue
+
+                    replica_counts = [
+                        status.replicas,
+                        status.available_replicas,
+                        status.ready_replicas,
+                        status.updated_replicas,
+                    ]
+                    if replica_counts.count(desired_replicas) == len(replica_counts):
+                        # We are done: all the counts match. Stop the watch and return
+                        self.logger.info("adjustment applied successfully", status)
+                        stream.stop()
+                        return
+
+    def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]):
+        for condition in conditions:
+            if condition.type == "Available":
+                if condition.status == "True":
+                    # If we hit on this and have not raised yet we are good to go
+                    break
+                elif condition.status in ("False", "Unknown"):
+                    # Condition has not yet been met, log status and continue monitoring
+                    self.logger.debug(
+                        f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
+                    )
+                else:
+                    raise RuntimeError(
+                        f"encountered unexpected Condition status '{condition.status}'"
+                    )
+
+            elif condition.type == "ReplicaFailure":
+                # TODO: Create a specific error type
+                raise RuntimeError(
+                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'"
+                )
+
+            elif condition.type == "Progressing":
+                if condition.status in ("True", "Unknown"):
+                    # Still working
+                    self.logger.debug("Deployment update is progressing", condition)
+                    break
+                if condition.status == "False":
+                    # TODO: Create specific error type
+                    raise RuntimeError(
+                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'"
+                    )
+                else:
+                    raise AssertionError(
+                        f"unknown deployment status condition: {condition.status}"
+                    )
+
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
         """Delete the Deployment.
 
@@ -1450,27 +1604,72 @@ class Deployment(ControllerModel):
         """
         return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
 
+# Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
+def to_lower_camel(string: str) -> str:
+    split = string.split('_')
+    return split[0] + ''.join(word.capitalize() for word in split[1:])
+
+class RolloutBaseModel(pydantic.BaseModel):
+    class Config:
+        alias_generator = to_lower_camel
+
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
-class RolloutSpec(pydantic.BaseModel):
+# https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
+class RolloutSpec(RolloutBaseModel):
     replicas: int
     selector: kubernetes_asyncio.client.V1LabelSelector
     template: kubernetes_asyncio.client.V1PodTemplateSpec
-    minReadySeconds: int
-    revisionHistoryLimit: int
+    min_ready_seconds: int
+    revision_history_limit: int
     paused: bool
-    progressDeadlineSeconds: int
-    restartAt: datetime
+    progress_deadline_seconds: int
+    restart_at: datetime
     strategy: Any # TODO type this out if connector needs to interact with it
 
-class RolloutPausedCondition(pydantic.BaseModel):
+class RolloutBlueGreenStatus(RolloutBaseModel):
+    active_selector: str
+    post_promotion_analysis_run: str
+    post_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
+    pre_promotion_analysis_run: str
+    pre_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
+    preview_selector: str
+    previous_active_selector: str
+    scale_down_delay_start_time: datetime
+    scale_up_preview_check_point: bool
+
+class RolloutStatusCondition(RolloutBaseModel):
+    last_transition_time: datetime
+    last_update_time: datetime
+    message: str
     reason: str
-    startTime: datetime
+    status: str
+    type: str
 
-class RolloutStatus(pydantic.BaseModel):
-    pauseConditions: List[RolloutPausedCondition]
+class RolloutStatus(RolloutBaseModel):
+    HPA_replicas: int
+    abort: bool
+    aborted_at: datetime
+    available_replicas: int
+    blue_green: RolloutBlueGreenStatus
+    canary: Any #  TODO type this out if connector needs to interact with it
+    collision_count: int
+    conditions: List[RolloutStatusCondition]
+    controller_pause: bool
+    current_pod_hash: str
+    current_step_hash: str
+    current_step_index: int
+    observed_generation: str
+    pause_conditions: Any # TODO type this out if connector needs to interact with it
+    ready_replicas: int
+    replicas: int
+    restarted_at: datetime
+    selector: str
+    stable_RS: str
+    updated_replicas: int
 
-class RolloutObj(pydantic.BaseModel): # TODO is this the right base to inherit from?
-    apiVersion: str
+
+class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
+    api_version: str
     kind: str
     metadata: kubernetes_asyncio.client.V1ObjectMeta
     spec: RolloutSpec
@@ -1551,15 +1750,65 @@ class Rollout(ControllerModel):
                 body=self.obj,
             ))
 
-    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
-        """Delete the Deployment.
+    async def apply(self) -> None:
+        """
+        patch an object (patch_namespaced_custom_object)
+        returns: rollout-selector
+        raises: non ApiExceptions
+        """
+        # Patch the rollout via the Kubernetes API
+        await self.patch()
 
-        This method expects the Deployment to have been loaded or otherwise
+        start_time = time.time()
+        async with self.api_client() as api_client:
+            while True:
+                # Sleep first to give Argo a chance to sync
+                await asyncio.sleep(15) # TODO should this be added to config as 'watch_timeout' or can we conver this logic to a proper watch?
+                try:
+                    resource_list = await api_client.list_namespaced_custom_object(
+                        group="argoproj.io",
+                        version="v1alpha1",
+                        namespace=self.namespace,
+                        plural="rollouts",
+                        watch=False,
+                        label_selector=self.label_selector,
+                    )
+                    # pprint(resource_list, stream=sys.stderr)
+                    # if DEBUG:
+                    #     pprint(resource_list)
+                    #     print("Resource list status:")
+
+                    tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
+                    latest: RolloutStatusCondition = next(sorted(tgt_status.conditions, key= lambda x: x.last_update_time))
+                    if not latest.type in ['Available','Progressing']:
+                        reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
+                        raise RuntimeError(latest['message'], reason=reason)
+                        # changing = False # code unreachable, slated for removal
+                        # if DEBUG:
+                        #     print("resource_list for selector:")
+                        #     pprint(resource_list['items'][0]['status']['conditions'])
+                    else:
+                        if tgt_status.blue_green.active_selector == tgt_status.blue_green.preview_selector:
+                            # if DEBUG:
+                            #     print("Change completed")
+                            break
+
+                except kubernetes_asyncio.client.ApiException as e:
+                    raise RuntimeError("Exception when calling CustomObjectsApi->list_namespaced_custom_object") from e
+
+                if time.time() - start_time > 600: # TODO either make this configurable or convert to watch
+                    raise RuntimeError('Timed out waiting for activeSelector to match previewSelector', status='rejected', reason='unstable')
+
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        """Delete the Rollout.
+
+        This method expects the Rollout to have been loaded or otherwise
         assigned a namespace already. If it has not, the namespace will need
         to be set manually.
 
         Args:
-            options: Options for Deployment deletion.
+            options: Unsupported, options for Deployment deletion.
 
         Returns:
             The status of the delete operation.
@@ -1616,6 +1865,15 @@ class Rollout(ControllerModel):
             The status of the Rollout.
         """
         return self.obj.status
+
+    @property
+    def label_selector(self) -> str:
+        """Return the label selector of the Rollout for listing.
+
+        Returns:
+            The label selector of the Rollout.
+        """
+        return ','.join(f'{key}={val}' for key, val in self.obj.metadata.labels.items())
 
 
 class Millicore(int):
@@ -1987,154 +2245,7 @@ class MainlineOptimization(BaseOptimization):
             )
 
     async def apply(self) -> None:
-        """
-        Apply changes asynchronously and wait for them to roll out to the cluster.
-
-        Kubernetes controllers orchestrate a number of underlying resources. Awaiting the
-        outcome of a controller change requires observation of the `resource_version` which
-        indicates if a given patch actually changed the resource, the `observed_generation`
-        which is a value managed by the controller and indicates the effective
-        version of the controller exclusive of insignificant changes that do not affect runtime
-        (such as label updates), and the `conditions` of the controller status which reflect
-        state at a particular point in time. How these elements change during a rollout is
-        dependent on the controller type and strategy in effect and its requirementss (max unavailable,
-        surge, etc).
-
-        The logic implemented by this method is as follows:
-            - Capture the `resource_version` and `observed_generation`.
-            - Patch the underlying Deployment object via the Kubernetes API.
-            - Check that `resource_version` has been incremented or return early if nothing has changed.
-            - Create a Kubernetes Watch on the Deployment targeted by label selector and resource version.
-            - Observe events streamed via the watch.
-            - Look for the Deployment to report a Status Condition of `"Progressing"`.
-            - Wait for the `observed_generation` to increment indicating that the Deployment is applying our changes.
-            - Track the value of the `available_replicas`, `ready_replicas`, `unavailable_replicas`,
-                and `updated_replicas` attributes of the Deployment Status until `available_replicas`,
-                `ready_replicas`, and `updated_replicas` are all equal to the value of the `replicas` attribute of
-                the Deployment and `unavailable_replicas` is `None`. Return success.
-            - Raise an error upon expiration of an adjustment timeout or encountering a Deployment Status Condition
-                where `type=Progressing` and `status=False`.
-
-        This method abstracts the details of adjusting a Deployment and returns once the desired
-        changes have been fully rolled out to the cluster or an error has been encountered.
-
-        See https://kubernetes.io/docs/concepts/workloads/controllers/deployment/
-
-        # The resource_version attribute lets us efficiently watch for changes
-        # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
-        """
-
-        # Resource version lets us track any change. Observed generation only increments
-        # when the controller sees a significant change that requires rollout
-        resource_version = self.controller.resource_version
-        observed_generation = self.controller.status.observed_generation
-        desired_replicas = self.controller.replicas
-
-        # Patch the controller via the Kubernetes API
-        await self.controller.patch()
-
-        # Return fast if nothing was changed
-        if self.controller.resource_version == resource_version:
-            self.logger.info(
-                f"adjustments applied to Deployment '{self.controller.name}' made no changes, continuing"
-            )
-            return
-
-        # Create a Kubernetes watch against the controller under optimization to track changes
-        self.logger.info(
-            f"Using label_selector={self.controller.label_selector}, resource_version={resource_version}"
-        )
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-            v1 =kubernetes_asyncio.client.AppsV1Api(api)
-            # BIG FAT TODO
-            async with kubernetes_asyncio.watch.Watch().stream(
-                v1.list_namespaced_deployment,
-                self.deployment.namespace,
-                label_selector=self.deployment.label_selector,
-                # resource_version=resource_version, # FIXME: The resource version might be expired and fail the watch. Decide if we care
-            ) as stream:
-                async for event in stream:
-                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
-                    event_type, deployment = event["type"], event["object"]
-                    status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
-
-                    self.logger.debug(
-                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
-                    )
-
-                    if event_type == "ERROR":
-                        stream.stop()
-                        raise RuntimeError(str(deployment))
-
-                    # Check that the conditions aren't reporting a failure
-                    self._check_conditions(status.conditions)
-
-                    # Early events in the watch may be against previous generation
-                    if status.observed_generation == observed_generation:
-                        self.logger.debug(
-                            "observed generation has not changed, continuing watch"
-                        )
-                        continue
-
-                    # Check the replica counts. Once available, updated, and ready match
-                    # our expected count and the unavailable count is zero we are rolled out
-                    if status.unavailable_replicas:
-                        self.logger.debug(
-                            "found unavailable replicas, continuing watch",
-                            status.unavailable_replicas,
-                        )
-                        continue
-
-                    replica_counts = [
-                        status.replicas,
-                        status.available_replicas,
-                        status.ready_replicas,
-                        status.updated_replicas,
-                    ]
-                    if replica_counts.count(desired_replicas) == len(replica_counts):
-                        # We are done: all the counts match. Stop the watch and return
-                        self.logger.info("adjustment applied successfully", status)
-                        stream.stop()
-                        return
-
-    # TODO move functionality to ControllerModel abc base and sub classes
-    def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]):
-        for condition in conditions:
-            if condition.type == "Available":
-                if condition.status == "True":
-                    # If we hit on this and have not raised yet we are good to go
-                    break
-                elif condition.status in ("False", "Unknown"):
-                    # Condition has not yet been met, log status and continue monitoring
-                    self.logger.debug(
-                        f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
-                    )
-                else:
-                    raise RuntimeError(
-                        f"encountered unexpected Condition status '{condition.status}'"
-                    )
-
-            elif condition.type == "ReplicaFailure":
-                # TODO: Create a specific error type
-                raise RuntimeError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'"
-                )
-
-            elif condition.type == "Progressing":
-                if condition.status in ("True", "Unknown"):
-                    # Still working
-                    self.logger.debug("Deployment update is progressing", condition)
-                    break
-                if condition.status == "False":
-                    # TODO: Create specific error type
-                    raise RuntimeError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'"
-                    )
-                else:
-                    raise AssertionError(
-                        f"unknown deployment status condition: {condition.status}"
-                    )
-
+        await self.controller.apply()
 
 class CanaryOptimization(BaseOptimization):
     """CanaryOptimization objects manage the optimization of Containers within a Deployment using
