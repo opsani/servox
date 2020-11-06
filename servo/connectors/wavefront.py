@@ -10,7 +10,7 @@ import pydantic
 
 import servo
 
-DEFAULT_BASE_URL = "http://Wavefront:2878"
+DEFAULT_BASE_URL = "http://wavefront:2878"
 API_PATH = "/api/v2/"
 
 
@@ -158,12 +158,12 @@ class WavefrontChecks(servo.BaseChecks):
 
     config: WavefrontConfiguration
 
-    # @servo.require('Connect to "{self.config.base_url}"')
-    # async def check_base_url(self) -> None:
-    #     """Checks that the Wavefront base URL is valid and reachable."""
-    #     async with httpx.AsyncClient(base_url=self.config.api_url) as client:
-    #         response = await client.get("targets")
-    #         response.raise_for_status()
+    @servo.require('Connect to "{self.config.base_url}"')
+    async def check_base_url(self) -> None:
+        """Checks that the Wavefront base URL is valid and reachable."""
+        async with httpx.AsyncClient(base_url=self.config.api_url) as client:
+            response = await client.get("targets")
+            response.raise_for_status()
 
     @servo.multicheck('Run query "{item.query_escaped}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
@@ -206,7 +206,7 @@ class WavefrontChecks(servo.BaseChecks):
 
 @servo.metadata(
     description="Wavefront Connector for Opsani",
-    version="1.5.0",
+    version="0.0.1",
     homepage="https://github.com/opsani/servox",
     license=servo.License.APACHE2,
     maturity=servo.Maturity.STABLE,
@@ -218,30 +218,30 @@ class WavefrontConnector(servo.BaseConnector):
 
     config: WavefrontConfiguration
 
-    # @servo.on_event()
-    # async def check(
-    #     self,
-    #     matching: Optional[servo.CheckFilter] = None,
-    #     halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
-    # ) -> List[servo.Check]:
-    #     """Checks that the configuration is valid and the connector can capture
-    #     measurements from Wavefront.
-    #
-    #     Checks are implemented in the WavefrontChecks class.
-    #
-    #     Args:
-    #         matching (Optional[Filter], optional): A filter for limiting the
-    #             checks that are run. Defaults to None.
-    #         halt_on (Severity, optional): When to halt running checks.
-    #             Defaults to Severity.critical.
-    #
-    #     Returns:
-    #         List[Check]: A list of check objects that report the outcomes of the
-    #             checks that were run.
-    #     """
-    #     return await WavefrontChecks.run(
-    #         self.config, matching=matching, halt_on=halt_on
-    #     )
+    @servo.on_event()
+    async def check(
+        self,
+        matching: Optional[servo.CheckFilter] = None,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+    ) -> List[servo.Check]:
+        """Checks that the configuration is valid and the connector can capture
+        measurements from Wavefront.
+
+        Checks are implemented in the WavefrontChecks class.
+
+        Args:
+            matching (Optional[Filter], optional): A filter for limiting the
+                checks that are run. Defaults to None.
+            halt_on (Severity, optional): When to halt running checks.
+                Defaults to Severity.critical.
+
+        Returns:
+            List[Check]: A list of check objects that report the outcomes of the
+                checks that were run.
+        """
+        return await WavefrontChecks.run(
+            self.config, matching=matching, halt_on=halt_on
+        )
 
     @servo.on_event()
     def describe(self) -> servo.Description:
@@ -351,7 +351,7 @@ class WavefrontConnector(servo.BaseConnector):
         # No status code returned from wavefront response?
         # if "status" not in data or data["status"] != "success":
         #     return []
-        
+
         readings = []
 
         for result_dict in data["timeseries"]:
@@ -361,13 +361,15 @@ class WavefrontConnector(servo.BaseConnector):
             annotation = " ".join(
                 map(lambda m: "=".join(m), sorted(t_.items(), key=lambda m: m[0]))
             )
-            readings.append(
-                servo.TimeSeries(
-                    metric=metric,
-                    annotation=annotation,
-                    values=result_dict["data"],
-                    id=f"{{instance={instance},job={job}}}",
-                    metadata=dict(instance=instance, job=job),
+
+            if result_dict["data"]:
+                readings.append(
+                    servo.TimeSeries(
+                        metric=metric,
+                        annotation=annotation,
+                        values=result_dict["data"],
+                        id=f"{{instance={instance},job={job}}}",
+                        metadata=dict(instance=instance, job=job),
+                    )
                 )
-            )
         return readings
