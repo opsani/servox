@@ -11,18 +11,26 @@ from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, 
 from servo.types import *
 
 
-class TestWavefrontMetric:
-    def test_accepts_granularity_as_duration(self):
+class TestWavefrontMetric():
+    def test_accepts_granularity_as_alpha(self):
         metric = WavefrontMetric(
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE_WF,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
             granularity="m",
         )
-        assert metric.granularity == type(str)
+        assert metric.granularity.isalpha()
+
+    def test_accepts_summarization_as_alpha(self):
+        metric = WavefrontMetric(
+            name="test",
+            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
+            summarization="LAST",
+        )
+        assert metric.summarization.isalpha()
 
     # Query
-
     def test_query_required(self):
         try:
             WavefrontMetric(
