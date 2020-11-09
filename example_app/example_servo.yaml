@@ -1,0 +1,30 @@
+kubernetes:
+  deployments:
+  - name: web-main
+    namespace: default
+    containers: 
+    - name: main
+      cpu:
+        max: '1'
+        min: 125m
+        step: 125m
+      memory:
+        max: 1.0GiB
+        min: 128.0MiB
+        step: 128.0MiB
+    replicas:
+      max: 1
+      min: 1
+    timeout: 5m
+  description: co-http web deployment
+prometheus:
+  base_url: http://prometheus.opsani-monitoring.svc:9090
+  metrics:
+  - name: throughput
+    query: rate(api_requests_total[5m])
+    unit: rps
+vegeta:
+  duration: 5m
+  rate: 50/1s
+  target: GET http://web.default.svc:8080
+
