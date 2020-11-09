@@ -6,10 +6,12 @@ import pytest
 import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
+import asynctest
 
 from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest
 from servo.types import *
 
+import unittest
 
 class TestWavefrontMetric():
     def test_accepts_granularity_as_alpha(self):
@@ -44,7 +46,7 @@ class TestWavefrontMetric():
             } in error.errors()
 
 
-class TestWavefrontConfiguration:
+class TestWavefrontConfiguration():
     def test_url_required(self):
         try:
             WavefrontConfiguration(base_url=None)
@@ -91,8 +93,9 @@ class TestWavefrontConfiguration:
         config = WavefrontConfiguration(
             base_url="http://wavefront.com:2878", metrics=[]
         )
+        print(config.api_url)
         assert (
-            config.api_url == "http://wavefront.com:2878/api/v2"
+            config.api_url == "http://wavefront.com:2878/api/v2/"
         )
 
     # Metrics
@@ -110,20 +113,12 @@ class TestWavefrontConfiguration:
     def test_generate_default_config(self):
         config = WavefrontConfiguration.generate()
         assert config.yaml() == (
-            "base_url: http://wavefront:2878\n"
-            "description: Update the base_url and metrics to match your Wavefront configuration\n"
-            "metrics:\n"
-            "- name: throughput\n"
-            "  query: avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))\n"
-            "  granularity: m\n"
-            "  summarization: LAST\n"
-            "  unit: request/m\n"
-            "- name: error_rate\n"
-            "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
-            "  granularity: m\n"
-            "  summarization: LAST\n"
-            "  unit: errors/m\n"
-            # "targets: null\n" (?)
+            "http://wavefront.com:2878/api/v2/"
+            "description: Update the base_url and metrics to match your Wavefront configuration'"
+            "base_url='http://wavefront.com:2878' "
+            "metrics=[WavefrontMetric(name='throughput', unit=<Unit.REQUESTS_PER_MINUTE_WF: 'requests/m'>, query='avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))', granularity='m', summarization='LAST'), "
+            "WavefrontMetric(name='error_rate', unit=<Unit.ERRORS_PER_MINUTE_WF: 'errors/m'>, query='avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))', granularity='m', summarization='LAST')]"
+
         )
 
 
@@ -142,9 +137,10 @@ class TestWavefrontRequest:
                 summarization="LAST"
             ),
         )
+        print(request.url)
         assert (
             request.url
-            == 'http://wavefront.com:2878/api/v2/chart/api?q=rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))&s=1577836800&e=1577966400&g=m&summarization=LAST'
+            == 'http://wavefront.com:2878/api/v2/chart/api?q=rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))&s=1577836800.0&e=1577966400.0&g=m&summarization=LAST&strict=True'
         )
 
 # @pytest.mark.integration
@@ -158,7 +154,7 @@ class TestWavefrontRequest:
 #         debug(checks)
 
 
-class TestWavefrontChecks:
+class TestWavefrontChecks():
     @pytest.fixture
     def metric(self) -> WavefrontMetric:
         return WavefrontMetric(

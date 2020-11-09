@@ -10,7 +10,7 @@ import pydantic
 
 import servo
 
-DEFAULT_BASE_URL = "http://wavefront:2878"
+DEFAULT_BASE_URL = "http://wavefront.com:2878"
 API_PATH = "/api/v2/"
 
 
