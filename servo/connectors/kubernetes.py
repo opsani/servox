@@ -15,6 +15,7 @@ import pathlib
 from servo.utilities import strings
 from servo.connector import metadata
 import time
+from traceback import print_exc
 from typing import (
     Any,
     Callable,
@@ -2048,28 +2049,33 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-        if mode == FailureMode.CRASH:
-            raise RuntimeError(
-                "an unrecoverable failure occurred while interacting with Kubernetes"
-            )
+        try:
+            if mode == FailureMode.CRASH:
+                raise RuntimeError(
+                    "an unrecoverable failure occurred while interacting with Kubernetes"
+                )
 
-        elif mode == FailureMode.IGNORE:
-            self.logger.warning(f"ignoring runtime error and continuing: {error}")
-            self.logger.opt(exception=error).exception("ignoring Kubernetes error")
-            return True
+            elif mode == FailureMode.IGNORE:
+                self.logger.warning(f"ignoring runtime error and continuing: {error}")
+                self.logger.opt(exception=error).exception("ignoring Kubernetes error")
+                return True
 
-        elif mode == FailureMode.ROLLBACK:
-            await self.rollback(error)
-            return True
+            elif mode == FailureMode.ROLLBACK:
+                await self.rollback(error)
+                return True
 
-        elif mode == FailureMode.DESTROY:
-            await self.destroy(error)
-            return True
+            elif mode == FailureMode.DESTROY:
+                await self.destroy(error)
+                return True
 
-        else:
-            raise NotImplementedError(
-                f"missing error handler for failure mode '{mode}'"
-            )
+            else:
+                raise NotImplementedError(
+                    f"missing error handler for failure mode '{mode}'"
+                )
+        except Exception as new_error:
+            self.logger.exception(f"handle_error failed with unrecoverable error: {new_error}")
+            print_exc()  # TODO organize this more gracefully in logging
+            raise error
 
     @abc.abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -2231,7 +2237,7 @@ class MainlineOptimization(BaseOptimization):
             resource_name = "memory" if name == "mem" else name
             requirements = getattr(self.container_config, resource_name).requirements
             self.container.set_resource_requirements(
-                name, value, requirements, clear_others=True
+                resource_name, value, requirements, clear_others=True
             )
 
         elif name == "replicas":
@@ -2442,24 +2448,29 @@ class CanaryOptimization(BaseOptimization):
         self.logger.info(f'destroyed canary Pod "{self.name}"')
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
-        if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
-            if mode == FailureMode.ROLLBACK:
-                self.logger.warning(
-                    f"cannot rollback a canary Pod: falling back to destroy: {error}"
+        try:
+            if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
+                if mode == FailureMode.ROLLBACK:
+                    self.logger.warning(
+                        f"cannot rollback a canary Pod: falling back to destroy: {error}"
+                    )
+                    self.logger.opt(exception=error).exception("")
+
+                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+
+                # create a new canary against baseline
+                self.logger.info(
+                    "creating new canary against baseline following failed adjust"
                 )
-                self.logger.opt(exception=error).exception("")
+                self.canary = await self.target_controller.ensure_canary_pod()
+                return True
 
-            await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
-
-            # create a new canary against baseline
-            self.logger.info(
-                "creating new canary against baseline following failed adjust"
-            )
-            self.canary = await self.target_controller.ensure_canary_pod()
-            return True
-
-        else:
-            return await super().handle_error(error, mode)
+            else:
+                return await super().handle_error(error, mode)
+        except Exception as new_error:
+            self.logger.exception(f"handle_error failed with unrecoverable error: {new_error}")
+            print_exc() # TODO organize this more gracefully in logging
+            raise error
 
     class Config:
         arbitrary_types_allowed = True
