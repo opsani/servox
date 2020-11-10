@@ -27,14 +27,20 @@ class WavefrontMetric(servo.Metric):
     documentation.
     """
 
-    granularity: str = "m"
+    granularity: pydantic.constr(
+        regex=r"^[smhd]"
+    ) = "m"
+
     """The resolution of the query. The granularity resolution determines the number of data points captured across a
     query range. A query's granularity is completely independent from any range durations specified in the WQL expression it evaluates.
     
     Available values: s, m, h, d.
     """
 
-    summarization: str = "LAST"
+    summarization: pydantic.constr(
+        min_length=3,
+        max_length=6
+    ) = "LAST"
     """Summarization strategy to use when bucketing points together.
 
     Available values: MEAN, MEDIAN, MIN, MAX, SUM, COUNT, LAST, FIRST.
@@ -51,17 +57,11 @@ class WavefrontMetric(servo.Metric):
         )
 
 
-# class WavefrontTarget(pydantic.BaseModel):
-#     """WavefrontTarget objects describe targets that are scraped by Wavefront jobs."""
-#
-#     labels: Optional[Dict[str, str]]
-
-
 class WavefrontConfiguration(servo.BaseConfiguration):
     """WavefrontConfiguration objects describe how WavefrontConnector objects
     capture measurements from the Wavefront metrics server.
     """
-    api_key: pydantic.SecretStr
+    api_key: pydantic.SecretStr = '1234567'
     """The API key for accessing the Wavefront metrics API."""
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
@@ -76,11 +76,6 @@ class WavefrontConfiguration(servo.BaseConfiguration):
 
     Metrics must include a valid query.
     """
-
-    # targets: Optional[List[WavefrontTarget]]
-    # """An optional set of Wavefront target descriptors that are expected to be
-    # scraped by the Wavefront instance being queried.
-    # """
 
     @classmethod
     def generate(cls, **kwargs) -> "WavefrontConfiguration":
@@ -331,10 +326,6 @@ class WavefrontConnector(servo.BaseConnector):
 
         data = response.json()
         self.logger.trace(f"Got response data for metric {metric}: {data}")
-
-        # No status code returned from wavefront response?
-        # if "status" not in data or data["status"] != "success":
-        #     return []
 
         readings = []
 
