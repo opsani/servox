@@ -4,12 +4,13 @@ kind: Service
 metadata:
   name: web
 spec:
+  type: NodePort
   selector:
-    comp: web
+    app: web
   ports:
   - protocol: TCP
     port: 8080
-    targetPort: 8080
+    name: co-http
 
 ---
 apiVersion: apps/v1
@@ -23,7 +24,7 @@ metadata:
     prometheus.io/port: '8080'
     prometheus.io/scrape: 'true'
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:

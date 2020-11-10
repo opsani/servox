@@ -1357,7 +1357,7 @@ class Deployment(ControllerModel):
             namespace = self.namespace
 
         self.logger.info(
-            f'creating deployment "{self.name}" in namespace "{self.namespace}"'
+            f'creating deployment "{self.name}" in namespace "{namespace}"'
         )
         self.logger.debug(f"deployment: {self.obj}")
 
@@ -1611,6 +1611,7 @@ def to_lower_camel(string: str) -> str:
 
 class RolloutBaseModel(pydantic.BaseModel):
     class Config:
+        arbitrary_types_allowed = True
         alias_generator = to_lower_camel
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
@@ -1675,6 +1676,16 @@ class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit fro
     spec: RolloutSpec
     status: RolloutStatus
 
+# TODO expose to config if needed
+ROLLOUT_GROUP = "argoproj.io"
+ROLLOUT_VERSION = "v1alpha1"
+ROLLOUT_PURAL = "rollouts"
+
+ROLLOUT_CONST_ARGS = dict(
+    group=ROLLOUT_GROUP, 
+    version=ROLLOUT_VERSION,
+    plural=ROLLOUT_PURAL,
+)
 
 class Rollout(ControllerModel):
     """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
@@ -1706,17 +1717,15 @@ class Rollout(ControllerModel):
             namespace = self.namespace
 
         self.logger.info(
-            f'creating rollout "{self.name}" in namespace "{self.namespace}"'
+            f'creating rollout "{self.name}" in namespace "{namespace}"'
         )
         self.logger.debug(f"rollout: {self.obj}")
 
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
-                group="argoproj.io",
-                version="v1alpha1",
                 namespace=namespace,
-                plural="rollouts",
                 body=self.obj,
+                **ROLLOUT_CONST_ARGS,
             ))
 
     @classmethod
@@ -1730,11 +1739,9 @@ class Rollout(ControllerModel):
 
         async with cls.preferred_client() as api_client:
             obj = await api_client.get_namespaced_custom_object(
-                group="argoproj.io",
-                version="v1alpha1",
                 namespace=namespace,
-                plural="rollouts",
-                name=name
+                name=name,
+                **ROLLOUT_CONST_ARGS,
             )
             return Rollout(RolloutObj.parse_obj(obj))
 
@@ -1742,12 +1749,10 @@ class Rollout(ControllerModel):
         """Update the changed attributes of the Deployment."""
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
-                group="argoproj.io",
-                version="v1alpha1",
                 namespace=self.namespace,
-                plural="rollouts",
                 name=self.name,
                 body=self.obj,
+                **ROLLOUT_CONST_ARGS,
             ))
 
     async def apply(self) -> None:
@@ -1766,12 +1771,10 @@ class Rollout(ControllerModel):
                 await asyncio.sleep(15) # TODO should this be added to config as 'watch_timeout' or can we conver this logic to a proper watch?
                 try:
                     resource_list = await api_client.list_namespaced_custom_object(
-                        group="argoproj.io",
-                        version="v1alpha1",
                         namespace=self.namespace,
-                        plural="rollouts",
                         watch=False,
                         label_selector=self.label_selector,
+                        **ROLLOUT_CONST_ARGS,
                     )
                     # pprint(resource_list, stream=sys.stderr)
                     # if DEBUG:
@@ -1779,7 +1782,7 @@ class Rollout(ControllerModel):
                     #     print("Resource list status:")
 
                     tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
-                    latest: RolloutStatusCondition = next(sorted(tgt_status.conditions, key= lambda x: x.last_update_time))
+                    latest: RolloutStatusCondition = next(iter(sorted(tgt_status.conditions, key= lambda x: x.last_update_time)))
                     if not latest.type in ['Available','Progressing']:
                         reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
                         raise RuntimeError(latest['message'], reason=reason)
@@ -1821,21 +1824,16 @@ class Rollout(ControllerModel):
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_custom_object(
-                group="argoproj.io",
-                version="v1alpha1",
                 namespace=self.namespace,
-                plural="rollouts",
                 name=self.name,
+                **ROLLOUT_CONST_ARGS,
             )
 
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Rollout resource."""
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
-                group="argoproj.io",
-                version="v1alpha1",
                 namespace=self.namespace,
-                plural="rollouts",
                 name=self.name,
             ))
 

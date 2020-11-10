@@ -14,7 +14,8 @@ kubernetes:
         step: 128.0MiB
     replicas:
       max: 1
-      min: 1
+      min: 0
+      pinned: True
     timeout: 5m
   description: co-http web deployment
 prometheus:
