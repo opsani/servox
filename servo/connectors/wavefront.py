@@ -61,6 +61,8 @@ class WavefrontConfiguration(servo.BaseConfiguration):
     """WavefrontConfiguration objects describe how WavefrontConnector objects
     capture measurements from the Wavefront metrics server.
     """
+    api_key: pydantic.SecretStr
+    """The API key for accessing the Wavefront metrics API."""
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
     """The base URL for accessing the Wavefront metrics API.
@@ -147,7 +149,7 @@ class WavefrontRequest(pydantic.BaseModel):
             + f"&e={self.end.timestamp()}"
             + f"&g={self.metric.granularity}"
             + f"&summarization={self.metric.summarization}"
-            + f"&strict=True" # Should probably be a non-configurable property, else query will return points outside the window
+            + f"&strict=True"  # Should probably be a non-configurable property, else query will return points outside the window
         )
 
 
@@ -157,13 +159,6 @@ class WavefrontChecks(servo.BaseChecks):
     """
 
     config: WavefrontConfiguration
-
-    @servo.require('Connect to "{self.config.base_url}"')
-    async def check_base_url(self) -> None:
-        """Checks that the Wavefront base URL is valid and reachable."""
-        async with httpx.AsyncClient(base_url=self.config.api_url) as client:
-            response = await client.get("targets")
-            response.raise_for_status()
 
     @servo.multicheck('Run query "{item.query_escaped}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
@@ -181,27 +176,19 @@ class WavefrontChecks(servo.BaseChecks):
             self.logger.trace(
                 f"Querying Wavefront (`{metric.query}`): {wavefront_request.url}"
             )
-            async with httpx.AsyncClient() as client:
-                response = await client.get(wavefront_request.url)
-                response.raise_for_status()
-                result = response.json()
-                return f"returned {len(result)} results"
+
+            async with httpx.AsyncClient(
+                base_url=wavefront_request.url,
+                headers={'Authorization': f'Bearer {self.config.api_key}'},
+            ) as client:
+                try:
+                    response = await client.get()
+                    response.raise_for_status()
+                except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
+                    self.logger.trace(f"HTTP error encountered during GET {wavefront_request.url}: {error}")
+                    raise
 
         return self.config.metrics, query_for_metric
-
-    # @servo.check("Active targets")
-    # async def check_targets(self) -> str:
-    #     """Checks that all targets are being scraped by Wavefront and report as
-    #     healthy.
-    #     """
-    #     async with httpx.AsyncClient(base_url=self.config.base_url) as client:
-    #         response = await client.get("/api/v1/targets")
-    #         response.raise_for_status()
-    #         result = response.json()
-    #
-    #     target_count = len(result["data"]["activeTargets"])
-    #     assert target_count > 0, "no targets are being scraped by Wavefront"
-    #     return f"found {target_count} targets"
 
 
 @servo.metadata(
@@ -331,18 +318,15 @@ class WavefrontConnector(servo.BaseConnector):
         self.logger.trace(
             f"Querying Wavefront (`{metric.query}`): {wavefront_request.url}"
         )
-        async with self.api_client() as client:
+        async with httpx.AsyncClient(
+                base_url=wavefront_request.url,
+                headers={'Authorization': f'Bearer {self.config.api_key}'},
+        ) as client:
             try:
-                response = await client.get(wavefront_request.url)
+                response = await client.get()
                 response.raise_for_status()
-            except (
-                    httpx.HTTPError,
-                    httpcore._exceptions.ReadTimeout,
-                    httpcore._exceptions.ConnectError,
-            ) as error:
-                self.logger.trace(
-                    f"HTTP error encountered during GET {wavefront_request.url}: {error}"
-                )
+            except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
+                self.logger.trace(f"HTTP error encountered during GET {wavefront_request.url}: {error}")
                 raise
 
         data = response.json()
@@ -355,9 +339,9 @@ class WavefrontConnector(servo.BaseConnector):
         readings = []
 
         for result_dict in data["timeseries"]:
-            t_ = result_dict["tags"].copy() # Unpack "tags" subdict and pack into a string
-            instance = t_.get("nodename") # e.g. 'ip-10-131-115-160.us-west-2.compute.internal'
-            job = t_.get("type") # e.g. 'node'
+            t_ = result_dict["tags"].copy()  # Unpack "tags" subdict and pack into a string
+            instance = t_.get("nodename")  # e.g. 'ip-10-131-115-160.us-west-2.compute.internal'
+            job = t_.get("type")  # e.g. 'node'
             annotation = " ".join(
                 map(lambda m: "=".join(m), sorted(t_.items(), key=lambda m: m[0]))
             )
