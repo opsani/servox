@@ -176,10 +176,10 @@ class WavefrontChecks(servo.BaseChecks):
                 headers={'Authorization': f'Bearer {self.config.api_key}'},
             ) as client:
                 try:
-                    response = await client.get()
+                    response = await client.get(wavefront_request.url)
                     response.raise_for_status()
                     result = response.json()
-                    return f"returned {len(result)} results"
+                    return f"returned {len(result['timeseries'])} results"
                 except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
                     self.logger.trace(f"HTTP error encountered during GET {wavefront_request.url}: {error}")
                     raise
@@ -319,7 +319,7 @@ class WavefrontConnector(servo.BaseConnector):
                 headers={'Authorization': f'Bearer {self.config.api_key}'},
         ) as client:
             try:
-                response = await client.get()
+                response = await client.get(wavefront_request.url)
                 response.raise_for_status()
             except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
                 self.logger.trace(f"HTTP error encountered during GET {wavefront_request.url}: {error}")

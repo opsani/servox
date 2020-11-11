@@ -1,5 +1,6 @@
 import datetime
 import re
+import logging
 
 import httpx
 import pytest
@@ -7,8 +8,12 @@ import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
 
+
 from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, WavefrontConnector
 from servo.types import *
+
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger()
 
 class TestWavefrontMetric:
     def test_accepts_granularity_as_alpha(self):
@@ -257,9 +262,12 @@ class TestWavefrontChecks:
         request = mocked_api["query"]
         multichecks = await checks._expand_multichecks()
         check = await multichecks[0]()
+        logger.info(
+            f"Captured check of {check}"
+        )
         assert request.called
         assert check
-        assert check.name == 'Run query "throughput"'
+        assert check.name == r'Run query "rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))"'
         assert check.id == "check_queries_item_0"
         assert not check.critical
         assert check.success
@@ -376,12 +384,16 @@ class TestWavefrontConnector:
     async def test_describe(self, mocked_api, connector) -> None:
         request = mocked_api["query"]
         described = connector.describe()
-        #assert request.called
-        assert described=='foo' # spoiler: it doesn't equal foo
+        logger.info(
+            f"Captured servo description of {described}"
+        )
+        assert described
 
     @ respx.mock
     async def test_measure(self, mocked_api, connector) -> None:
         request = mocked_api["query"]
         measurements = await connector.measure()
-        #assert request.called
-        assert measurements=='foo' # spoiler: it doesn't equal foo
+        logger.info(
+            f"Captured servo measurements of {measurements}"
+        )
+        assert measurements
