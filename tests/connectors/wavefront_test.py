@@ -11,8 +11,6 @@ import asynctest
 from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest
 from servo.types import *
 
-import unittest
-
 class TestWavefrontMetric:
     def test_accepts_granularity_as_alpha(self):
         metric = WavefrontMetric(
@@ -93,7 +91,6 @@ class TestWavefrontConfiguration:
         config = WavefrontConfiguration(
             base_url="http://wavefront.com:2878", metrics=[]
         )
-        print(config.api_url)
         assert (
             config.api_url == "http://wavefront.com:2878/api/v2/"
         )
@@ -112,10 +109,9 @@ class TestWavefrontConfiguration:
     # Generation
     def test_generate_default_config(self):
         config = WavefrontConfiguration.generate()
-        print(config.yaml())
         assert config.yaml() == (
-            "http://wavefront.com:2878/api/v2/\n"
-            "..base_url: http://wavefront.com:2878\n"
+            "api_key: '**********'\n"
+            "base_url: http://wavefront.com:2878\n"
             "description: Update the base_url and metrics to match your Wavefront configuration\n"
             "metrics:\n"
             "- granularity: m\n"
@@ -145,25 +141,15 @@ class TestWavefrontRequest:
                 summarization="LAST"
             ),
         )
-        print(request.url)
         assert (
             request.url
             == 'http://wavefront.com:2878/api/v2/chart/api?q=rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))&s=1577836800.0&e=1577966400.0&g=m&summarization=LAST&strict=True'
         )
 
-# @pytest.mark.integration
-# class TestWavefrontIntegration:
-#     async def test_check_targets(self) -> None:
-#         config = WavefrontConfiguration.generate(base_url="http://localhost:2878")
-#         optimizer = servo.Optimizer("test.com/foo", token="12345")
-#         debug(config, optimizer)
-#         connector = WavefrontConnector(config=config, optimizer=optimizer)
-#         checks = await connector.check()
-#         debug(checks)
+# Can't get this test to work with WaveFrontChecks..
+class TestWavefrontChecks:
 
-
-class TestWavefrontChecks(asynctest.TestCase):
-
+    @pytest.fixture
     def metric(self) -> WavefrontMetric:
         return WavefrontMetric(
             name="test",
@@ -172,6 +158,7 @@ class TestWavefrontChecks(asynctest.TestCase):
             granularity="m",
         )
 
+    @pytest.fixture
     def heapster_node_network_tx(self) -> dict:
         return {
             'granularity': 60,
@@ -246,60 +233,35 @@ class TestWavefrontChecks(asynctest.TestCase):
             'traceDimensions': []
         }
 
+    @pytest.fixture
     def mocked_api(self, heapster_node_network_tx):
         with respx.mock(
             base_url="http://localhost:2878", assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
-                re.compile(r"/api/v2/chart/api.+"),
+                re.compile(r"/api/v2/.+"),
                 alias="query",
                 content=heapster_node_network_tx,
             )
             yield respx_mock
 
+
+    @pytest.fixture
     def checks(self, metric) -> WavefrontChecks:
         config = WavefrontConfiguration(
             base_url="http://localhost:2878", metrics=[metric]
         )
-        print(config)
         return WavefrontChecks(config=config)
 
-    # async def test_check_base_url(self, mocked_api, checks) -> None:
-    #     request = mocked_api["targets"]
-    #     check = await checks.check_base_url()
-    #     assert request.called
-    #     assert check
-    #     assert check.name == 'Connect to "http://localhost:2878"'
-    #     assert check.id == "check_base_url"
-    #     assert check.critical
-    #     assert check.success
-    #     assert check.message is None
-    #
-    # async def test_check_base_url_failing(self, checks) -> None:
-    #     with respx.mock(base_url="http://localhost:2878") as respx_mock:
-    #         request = respx_mock.get("/api/v2/foobar", status_code=503)
-    #         check = await checks.check_base_url()
-    #         assert request.called
-    #         assert check
-    #         assert check.name == 'Connect to "http://localhost:2878"'
-    #         assert check.id == "check_base_url"
-    #         assert check.critical
-    #         assert not check.success
-    #         assert check.message is not None
-    #         assert isinstance(check.exception, httpx.HTTPStatusError)
-    #
-    # @ respx.mock
-    # async def test_check_queries(self, mocked_api, checks) -> None:
-    #     request = mocked_api["query"]
-    #     multichecks = await checks._expand_multichecks()
-    #     check = await multichecks[0]()
-    #     assert request.called
-    #     assert check
-    #     assert check.name == 'Run query "throughput"'
-    #     assert check.id == "check_queries_item_0"
-    #     assert not check.critical
-    #     assert check.success
-    #     assert check.message == "returned 2 results"
-
-if __name__ == '__main__':
-    unittest.main()
+    @ respx.mock
+    async def test_check_queries(self, mocked_api, checks) -> None:
+        request = mocked_api["query"]
+        multichecks = await checks._expand_multichecks()
+        check = await multichecks[0]()
+        assert request.called
+        assert check
+        assert check.name == 'Run query "throughput"'
+        assert check.id == "check_queries_item_0"
+        assert not check.critical
+        assert check.success
+        assert check.message == "returned 2 results"

@@ -171,7 +171,6 @@ class WavefrontChecks(servo.BaseChecks):
             self.logger.trace(
                 f"Querying Wavefront (`{metric.query}`): {wavefront_request.url}"
             )
-
             async with httpx.AsyncClient(
                 base_url=wavefront_request.url,
                 headers={'Authorization': f'Bearer {self.config.api_key}'},
@@ -179,6 +178,8 @@ class WavefrontChecks(servo.BaseChecks):
                 try:
                     response = await client.get()
                     response.raise_for_status()
+                    result = response.json()
+                    return f"returned {len(result)} results"
                 except (httpx.HTTPError, httpcore._exceptions.ReadTimeout, httpcore._exceptions.ConnectError) as error:
                     self.logger.trace(f"HTTP error encountered during GET {wavefront_request.url}: {error}")
                     raise
