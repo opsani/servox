@@ -6,9 +6,8 @@ import pytest
 import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
-import asynctest
 
-from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest
+from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, WavefrontConnector
 from servo.types import *
 
 class TestWavefrontMetric:
@@ -265,3 +264,124 @@ class TestWavefrontChecks:
         assert not check.critical
         assert check.success
         assert check.message == "returned 2 results"
+
+class TestWavefrontConnector:
+
+    @pytest.fixture
+    def metric(self) -> WavefrontMetric:
+        return WavefrontMetric(
+            name="test",
+            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
+            granularity="m",
+        )
+
+    @pytest.fixture
+    def heapster_node_network_tx(self) -> dict:
+        return {
+            'granularity': 60,
+            'name': 'rate(ts("heapster.node.network.tx", '
+            'cluster="idps-preprod-west2.cluster.k8s.local"))',
+            'query': 'rate(ts("heapster.node.network.tx", '
+            'cluster="idps-preprod-west2.cluster.k8s.local"))',
+            'stats': {'buffer_keys': 154,
+                      'cached_compacted_keys': 0,
+                      'compacted_keys': 24,
+                      'compacted_points': 12440,
+                      'cpu_ns': 36609718,
+                      'distributions': 0,
+                      'dropped_distributions': 0,
+                      'dropped_edges': 0,
+                      'dropped_metrics': 0,
+                      'dropped_spans': 0,
+                      'edges': 0,
+                      'keys': 168,
+                      'latency': 11,
+                      'metrics': 12584,
+                      'points': 12584,
+                      'queries': 108,
+                      'query_tasks': 0,
+                      's3_keys': 0,
+                      'skipped_compacted_keys': 22,
+                      'spans': 0,
+                      'summaries': 12584},
+            'timeseries': [
+                {'data': [[1604626020, 68441.23333333334],
+                          [1604626080, 75125.6],
+                          [1604626140, 59805.666666666664]],
+                 'host': 'ip-10-131-115-108.us-west-2.compute.internal',
+                 'label': 'heapster.node.network.tx',
+                 'tags': {'cluster': 'idps-preprod-west2.cluster.k8s.local',
+                          'label.beta.kubernetes.io/arch': 'amd64',
+                          'label.beta.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.beta.kubernetes.io/os': 'linux',
+                          'label.failure-domain.beta.kubernetes.io/region': 'us-west-2',
+                          'label.failure-domain.beta.kubernetes.io/zone': 'us-west-2b',
+                          'label.kops.k8s.io/instancegroup': 'iks-system',
+                          'label.kubernetes.io/arch': 'amd64',
+                          'label.kubernetes.io/hostname': 'ip-10-131-115-108.us-west-2.compute.internal',
+                          'label.kubernetes.io/os': 'linux',
+                          'label.kubernetes.io/role': 'node',
+                          'label.node.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.topology.kubernetes.io/region': 'us-west-2',
+                          'label.topology.kubernetes.io/zone': 'us-west-2b',
+                          'nodename': 'ip-10-131-115-108.us-west-2.compute.internal',
+                                      'type': 'node'}},
+                {'data': [[1604626020, 33849.583333333336],
+                          [1604626080, 48680.51666666667],
+                          [1604626140, 34244.1]],
+                 'host': 'ip-10-131-115-88.us-west-2.compute.internal',
+                 'label': 'heapster.node.network.tx',
+                 'tags': {'cluster': 'idps-preprod-west2.cluster.k8s.local',
+                          'label.beta.kubernetes.io/arch': 'amd64',
+                          'label.beta.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.beta.kubernetes.io/os': 'linux',
+                          'label.failure-domain.beta.kubernetes.io/region': 'us-west-2',
+                          'label.failure-domain.beta.kubernetes.io/zone': 'us-west-2b',
+                          'label.kops.k8s.io/instancegroup': 'iks-system',
+                          'label.kubernetes.io/arch': 'amd64',
+                          'label.kubernetes.io/hostname': 'ip-10-131-115-88.us-west-2.compute.internal',
+                          'label.kubernetes.io/os': 'linux',
+                          'label.kubernetes.io/role': 'node',
+                          'label.node.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.topology.kubernetes.io/region': 'us-west-2',
+                          'label.topology.kubernetes.io/zone': 'us-west-2b',
+                          'nodename': 'ip-10-131-115-88.us-west-2.compute.internal',
+                                      'type': 'node'}}],
+            'traceDimensions': []
+        }
+
+    @pytest.fixture
+    def mocked_api(self, heapster_node_network_tx):
+        with respx.mock(
+            base_url="http://localhost:2878", assert_all_called=False
+        ) as respx_mock:
+            respx_mock.get(
+                re.compile(r"/api/v2/.+"),
+                alias="query",
+                content=heapster_node_network_tx,
+                headers={'Authorization': 'Bearer 1234567'},
+            )
+            yield respx_mock
+
+
+    @pytest.fixture
+    def connector(self, metric) -> WavefrontConnector:
+        config = WavefrontConfiguration(
+            base_url="http://localhost:2878", metrics=[metric]
+        )
+        return WavefrontConnector(config=config)
+
+    @ respx.mock
+    async def test_describe(self, mocked_api, connector) -> None:
+        request = mocked_api["query"]
+        described = connector.describe()
+        #assert request.called
+        assert described=='foo' # spoiler: it doesn't equal foo
+
+    @ respx.mock
+    async def test_measure(self, mocked_api, connector) -> None:
+        request = mocked_api["query"]
+        measurements = await connector.measure()
+        #assert request.called
+        assert measurements=='foo' # spoiler: it doesn't equal foo
