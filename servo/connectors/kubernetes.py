@@ -1612,32 +1612,122 @@ def to_lower_camel(string: str) -> str:
 
 class RolloutBaseModel(pydantic.BaseModel):
     class Config:
-        arbitrary_types_allowed = True
+        # arbitrary_types_allowed = True
         alias_generator = to_lower_camel
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
 # https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
+class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
+    match_expressions: Any # TODO type this out if connector needs to interact with it
+    match_labels: Dict[str, str]
+
+class RolloutV1ObjectMeta(RolloutBaseModel):
+    annotations: Dict[str, str]
+    cluster_name: Optional[str]
+    creation_timestamp: Optional[datetime]
+    deletion_grace_period_seconds: Optional[int]
+    deletion_timestamp: Optional[datetime]
+    finalizers: Optional[List[str]]
+    generate_name: Optional[str]
+    generation: Optional[int]
+    labels: Dict[str, str]
+    managed_fields: Any
+    name: Optional[str]
+    namespace: Optional[str]
+    owner_references: Any
+    resource_version: Optional[str]
+    self_link: Optional[str]
+    uid: Optional[str]
+
+class RolloutV1ResourceRequirements(RolloutBaseModel):
+    limits: Dict[str, str]
+    requests: Dict[str, str]
+
+class RolloutV1Container(RolloutBaseModel):
+    args: List[str]
+    command: Optional[List[str]]
+    env: Any
+    env_from: Any
+    image: str
+    image_pull_policy: str
+    lifecycle: Any
+    liveness_probe: Any
+    name: str
+    port: Any
+    readiness_probe: Any
+    resources: RolloutV1ResourceRequirements
+    security_context: Any
+    startup_probe: Any
+    stdin: Optional[bool]
+    stdin_once: Optional[bool]
+    termination_message_path: Optional[str]
+    termination_message_policy: Optional[str]
+    tty: Optional[bool]
+    volume_devices: Any
+    volume_mounts: Any
+    working_dir: Optional[str]
+
+class RolloutV1PodSpec(RolloutBaseModel):
+    active_deadline_seconds: Optional[int]
+    affinity: Any
+    automount_service_account_token: Optional[bool]
+    containers: List[RolloutV1Container]
+    dns_config: Any
+    dns_policy: Optional[str]
+    enable_service_links: Optional[bool]
+    ephemeral_containers: Any
+    host_aliases: Any
+    host_ipc: Optional[bool]
+    host_network: Optional[bool]
+    host_pid: Optional[bool]
+    hostname: Optional[str]
+    image_pull_secrets: Any
+    init_containers: Any
+    node_name: Optional[str]
+    node_selector: Optional[Dict[str, str]]
+    overhead: Optional[Dict[str, str]]
+    preemption_policy: Optional[str]
+    priority: Optional[int]
+    priority_class_name: Optional[str]
+    readiness_gates: Any
+    restart_policy: Optional[str]
+    runtime_class_name: Optional[str]
+    scheduler_name: Optional[str]
+    security_context: Any
+    service_account: Optional[str]
+    service_account_name: Optional[str]
+    share_process_namespace: Optional[bool]
+    subdomain: Optional[str]
+    termination_grace_period_seconds: Optional[int]
+    tolerations: Any
+    topology_spread_constraints: Any
+    volumes: Any
+
+class RolloutV1PodTemplateSpec(RolloutBaseModel):
+    metadata: RolloutV1ObjectMeta
+    spec: RolloutV1PodSpec
+
 class RolloutSpec(RolloutBaseModel):
     replicas: int
-    selector: kubernetes_asyncio.client.V1LabelSelector
-    template: kubernetes_asyncio.client.V1PodTemplateSpec
-    min_ready_seconds: int
+    selector: RolloutV1LabelSelector
+    template: RolloutV1PodTemplateSpec
+    min_ready_seconds: Optional[int]
     revision_history_limit: int
-    paused: bool
-    progress_deadline_seconds: int
-    restart_at: datetime
+    paused: Optional[bool]
+    progress_deadline_seconds: Optional[int]
+    restart_at: Optional[datetime]
     strategy: Any # TODO type this out if connector needs to interact with it
 
 class RolloutBlueGreenStatus(RolloutBaseModel):
     active_selector: str
-    post_promotion_analysis_run: str
+    post_promotion_analysis_run: Optional[str]
     post_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
-    pre_promotion_analysis_run: str
+    pre_promotion_analysis_run: Optional[str]
     pre_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
     preview_selector: str
-    previous_active_selector: str
-    scale_down_delay_start_time: datetime
-    scale_up_preview_check_point: bool
+    previous_active_selector: Optional[str]
+    scale_down_delay_start_time: Optional[datetime]
+    scale_up_preview_check_point: Optional[bool]
 
 class RolloutStatusCondition(RolloutBaseModel):
     last_transition_time: datetime
@@ -1649,31 +1739,30 @@ class RolloutStatusCondition(RolloutBaseModel):
 
 class RolloutStatus(RolloutBaseModel):
     HPA_replicas: int
-    abort: bool
-    aborted_at: datetime
+    abort: Optional[bool]
+    aborted_at: Optional[datetime]
     available_replicas: int
     blue_green: RolloutBlueGreenStatus
     canary: Any #  TODO type this out if connector needs to interact with it
-    collision_count: int
+    collision_count: Optional[int]
     conditions: List[RolloutStatusCondition]
-    controller_pause: bool
+    controller_pause: Optional[bool]
     current_pod_hash: str
-    current_step_hash: str
-    current_step_index: int
+    current_step_hash: Optional[str]
+    current_step_index: Optional[int]
     observed_generation: str
     pause_conditions: Any # TODO type this out if connector needs to interact with it
     ready_replicas: int
     replicas: int
-    restarted_at: datetime
+    restarted_at: Optional[datetime]
     selector: str
-    stable_RS: str
+    stable_RS: Optional[str]
     updated_replicas: int
-
 
 class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
     api_version: str
     kind: str
-    metadata: kubernetes_asyncio.client.V1ObjectMeta
+    metadata: RolloutV1ObjectMeta
     spec: RolloutSpec
     status: RolloutStatus
 
@@ -1725,7 +1814,7 @@ class Rollout(ControllerModel):
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
                 namespace=namespace,
-                body=self.obj,
+                body=self.obj.dict(by_alias=True),
                 **ROLLOUT_CONST_ARGS,
             ))
 
@@ -1752,7 +1841,7 @@ class Rollout(ControllerModel):
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
-                body=self.obj,
+                body=self.obj.dict(by_alias=True),
                 **ROLLOUT_CONST_ARGS,
             ))
 
@@ -1841,7 +1930,12 @@ class Rollout(ControllerModel):
     async def rollback(self) -> None:
         # TODO rollbacks are automated in Argo Rollouts, not sure if making this No Op will cause issues
         #   but I was unable to locate a means of triggering a rollout rollback manually
-        pass
+        raise TypeError(
+            (
+                "rollback is not supported under the optimization of rollouts because rollbacks are applied to "
+                "Kubernetes Deployment objects whereas this is automated by argocd"
+            )
+        )
 
     async def get_status(self) ->RolloutStatus:
         """Get the status of the Rollout.
