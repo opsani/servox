@@ -15,6 +15,7 @@ from servo.types import *
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger()
 
+
 class TestWavefrontMetric:
     def test_accepts_granularity_as_alpha(self):
         metric = WavefrontMetric(
@@ -125,10 +126,11 @@ class TestWavefrontConfiguration:
             "  unit: requests/m\n"
             "- granularity: m\n"
             "  name: error_rate\n"
-            "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"            
+            "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
             "  summarization: LAST\n"
             "  unit: errors/m\n"
         )
+
 
 class TestWavefrontRequest:
     @freeze_time("2020-01-01")
@@ -151,6 +153,8 @@ class TestWavefrontRequest:
         )
 
 # Can't get this test to work with WaveFrontChecks..
+
+
 class TestWavefrontChecks:
 
     @pytest.fixture
@@ -249,7 +253,6 @@ class TestWavefrontChecks:
             )
             yield respx_mock
 
-
     @pytest.fixture
     def checks(self, metric) -> WavefrontChecks:
         config = WavefrontConfiguration(
@@ -272,6 +275,7 @@ class TestWavefrontChecks:
         assert not check.critical
         assert check.success
         assert check.message == "returned 2 results"
+
 
 class TestWavefrontConnector:
 
@@ -371,7 +375,6 @@ class TestWavefrontConnector:
                 headers={'Authorization': 'Bearer 1234567'},
             )
             yield respx_mock
-
 
     @pytest.fixture
     def connector(self, metric) -> WavefrontConnector:
