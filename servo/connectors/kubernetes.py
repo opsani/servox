@@ -1619,7 +1619,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         if mode == FailureMode.CRASH:
             raise RuntimeError(
                 "an unrecoverable failure occurred while interacting with Kubernetes"
-            )
+            ) from error
 
         elif mode == FailureMode.IGNORE:
             self.logger.warning(f"ignoring runtime error and continuing: {error}")
@@ -1637,7 +1637,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         else:
             raise NotImplementedError(
                 f"missing error handler for failure mode '{mode}'"
-            )
+            ) from error
 
     @abc.abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
