@@ -1841,7 +1841,7 @@ class Rollout(ControllerModel):
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
-                body=self.obj.dict(by_alias=True),
+                body=self.obj.dict(by_alias=True, skip_defaults=True),
                 **ROLLOUT_CONST_ARGS,
             ))
 
