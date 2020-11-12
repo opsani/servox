@@ -1796,7 +1796,7 @@ class DeploymentOptimization(BaseOptimization):
             resource_name = "memory" if name == "mem" else name
             requirements = getattr(self.container_config, resource_name).requirements
             self.container.set_resource_requirements(
-                name, value, requirements, clear_others=True
+                resource_name, value, requirements, clear_others=True
             )
 
         elif name == "replicas":
