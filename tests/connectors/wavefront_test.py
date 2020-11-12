@@ -1,6 +1,5 @@
 import datetime
 import re
-import logging
 
 import httpx
 import pytest
@@ -8,13 +7,8 @@ import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
 
-
 from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, WavefrontConnector
 from servo.types import *
-
-logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger()
-
 
 class TestWavefrontMetric:
     def test_accepts_granularity_as_alpha(self):
@@ -114,6 +108,7 @@ class TestWavefrontConfiguration:
     # Generation
     def test_generate_default_config(self):
         config = WavefrontConfiguration.generate()
+        # Ugly patch for assertion until I understand why generate().yaml() metric order is being sorted alphabetically
         assert config.yaml() == (
             "api_key: '**********'\n"
             "base_url: http://wavefront.com:2878\n"
@@ -152,7 +147,79 @@ class TestWavefrontRequest:
             == 'http://wavefront.com:2878/api/v2/chart/api?q=rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))&s=1577836800.0&e=1577966400.0&g=m&summarization=LAST&strict=True'
         )
 
-# Can't get this test to work with WaveFrontChecks..
+
+heapster_node_network_tx = {
+    'granularity': 60,
+    'name': 'rate(ts("heapster.node.network.tx", '
+            'cluster="idps-preprod-west2.cluster.k8s.local"))',
+            'query': 'rate(ts("heapster.node.network.tx", '
+            'cluster="idps-preprod-west2.cluster.k8s.local"))',
+            'stats': {'buffer_keys': 154,
+                      'cached_compacted_keys': 0,
+                      'compacted_keys': 24,
+                      'compacted_points': 12440,
+                      'cpu_ns': 36609718,
+                      'distributions': 0,
+                      'dropped_distributions': 0,
+                      'dropped_edges': 0,
+                      'dropped_metrics': 0,
+                      'dropped_spans': 0,
+                      'edges': 0,
+                      'keys': 168,
+                      'latency': 11,
+                      'metrics': 12584,
+                      'points': 12584,
+                      'queries': 108,
+                      'query_tasks': 0,
+                      's3_keys': 0,
+                      'skipped_compacted_keys': 22,
+                      'spans': 0,
+                      'summaries': 12584},
+            'timeseries': [
+                {'data': [[1604626020, 68441.23333333334],
+                          [1604626080, 75125.6],
+                          [1604626140, 59805.666666666664]],
+                 'host': 'ip-10-131-115-108.us-west-2.compute.internal',
+                 'label': 'heapster.node.network.tx',
+                 'tags': {'cluster': 'idps-preprod-west2.cluster.k8s.local',
+                          'label.beta.kubernetes.io/arch': 'amd64',
+                          'label.beta.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.beta.kubernetes.io/os': 'linux',
+                          'label.failure-domain.beta.kubernetes.io/region': 'us-west-2',
+                          'label.failure-domain.beta.kubernetes.io/zone': 'us-west-2b',
+                          'label.kops.k8s.io/instancegroup': 'iks-system',
+                          'label.kubernetes.io/arch': 'amd64',
+                          'label.kubernetes.io/hostname': 'ip-10-131-115-108.us-west-2.compute.internal',
+                          'label.kubernetes.io/os': 'linux',
+                          'label.kubernetes.io/role': 'node',
+                          'label.node.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.topology.kubernetes.io/region': 'us-west-2',
+                          'label.topology.kubernetes.io/zone': 'us-west-2b',
+                          'nodename': 'ip-10-131-115-108.us-west-2.compute.internal',
+                                      'type': 'node'}},
+                {'data': [[1604626020, 33849.583333333336],
+                          [1604626080, 48680.51666666667],
+                          [1604626140, 34244.1]],
+                 'host': 'ip-10-131-115-88.us-west-2.compute.internal',
+                 'label': 'heapster.node.network.tx',
+                 'tags': {'cluster': 'idps-preprod-west2.cluster.k8s.local',
+                          'label.beta.kubernetes.io/arch': 'amd64',
+                          'label.beta.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.beta.kubernetes.io/os': 'linux',
+                          'label.failure-domain.beta.kubernetes.io/region': 'us-west-2',
+                          'label.failure-domain.beta.kubernetes.io/zone': 'us-west-2b',
+                          'label.kops.k8s.io/instancegroup': 'iks-system',
+                          'label.kubernetes.io/arch': 'amd64',
+                          'label.kubernetes.io/hostname': 'ip-10-131-115-88.us-west-2.compute.internal',
+                          'label.kubernetes.io/os': 'linux',
+                          'label.kubernetes.io/role': 'node',
+                          'label.node.kubernetes.io/instance-type': 'm5.2xlarge',
+                          'label.topology.kubernetes.io/region': 'us-west-2',
+                          'label.topology.kubernetes.io/zone': 'us-west-2b',
+                          'nodename': 'ip-10-131-115-88.us-west-2.compute.internal',
+                                      'type': 'node'}}],
+            'traceDimensions': []
+}
 
 
 class TestWavefrontChecks:
@@ -265,9 +332,6 @@ class TestWavefrontChecks:
         request = mocked_api["query"]
         multichecks = await checks._expand_multichecks()
         check = await multichecks[0]()
-        logger.info(
-            f"Captured check of {check}"
-        )
         assert request.called
         assert check
         assert check.name == r'Run query "rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))"'
@@ -372,7 +436,6 @@ class TestWavefrontConnector:
                 re.compile(r"/api/v2/.+"),
                 alias="query",
                 content=heapster_node_network_tx,
-                headers={'Authorization': 'Bearer 1234567'},
             )
             yield respx_mock
 
@@ -383,20 +446,14 @@ class TestWavefrontConnector:
         )
         return WavefrontConnector(config=config)
 
-    @ respx.mock
-    async def test_describe(self, mocked_api, connector) -> None:
-        request = mocked_api["query"]
+    async def test_describe(self, connector) -> None:
         described = connector.describe()
-        logger.info(
-            f"Captured servo description of {described}"
-        )
-        assert described
+        assert described.metrics == connector.metrics()
 
     @ respx.mock
     async def test_measure(self, mocked_api, connector) -> None:
         request = mocked_api["query"]
         measurements = await connector.measure()
-        logger.info(
-            f"Captured servo measurements of {measurements}"
-        )
-        assert measurements
+        assert request.called
+        # Assert float values are the same (for first entry from first reading)
+        assert measurements.readings[0].values[0][1] == heapster_node_network_tx["timeseries"][0]["data"][0][1]

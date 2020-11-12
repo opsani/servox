@@ -48,6 +48,7 @@ class WavefrontMetric(servo.Metric):
 
     @property
     def query_escaped(self) -> str:
+        # Not used as such, leaving for now in prom style
         return re.sub(r"\{(.*?)\}", r"{{\1}}", self.query)
 
     def __check__(self) -> servo.Check:
