@@ -48,7 +48,6 @@ spec:
     blueGreen: 
       activeService: web
       previewService: web-preview
-      autoPromotionEnabled: false
   template:
     metadata:
       labels:
