@@ -1242,9 +1242,17 @@ class ControllerModel(KubernetesModel, abc.ABC):
 
         # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new canary")
-        pod_obj =kubernetes_asyncio.client.V1Pod(
-            metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec
-        )
+        if isinstance(self.obj, pydantic.BaseModel): # If obj is a custom model, dumpt to dict and cast into k8s client model via __deserialize_model
+            pod_dict = {
+                'metadata': self.obj.spec.template.metadata.dict(exclude_none=True),
+                'spec': self.obj.spec.template.spec.dict(exclude_none=True)
+            }
+            async with kubernetes_asyncio.client.api_client.ApiClient() as api_client:
+                pod_obj = api_client._ApiClient__deserialize_model(pod_dict, kubernetes_asyncio.client.V1Pod)
+        else:
+            pod_obj =kubernetes_asyncio.client.V1Pod(
+                metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec
+            )
         pod_obj.metadata.name = canary_pod_name
         if pod_obj.metadata.annotations is None:
             pod_obj.metadata.annotations = {}
