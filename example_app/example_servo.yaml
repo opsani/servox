@@ -1,3 +1,4 @@
+--- # Mainline deployment optmization
 kubernetes:
   deployments:
   - name: web-main
@@ -22,10 +23,79 @@ prometheus:
   base_url: http://prometheus.opsani-monitoring.svc:9090
   metrics:
   - name: throughput
-    query: rate(api_requests_total[5m])
+    query: rate(api_requests_total[3m])
     unit: rps
 vegeta:
-  duration: 5m
+  duration: 3m
   rate: 50/1s
   target: GET http://web.default.svc:8080
 
+--- # Mainline rollout optmization
+kubernetes:
+  deployments: []
+  rollouts:
+  - name: web-main
+    namespace: default
+    containers: 
+    - name: main
+      cpu:
+        max: '1'
+        min: 125m
+        step: 125m
+      memory:
+        max: 1.0GiB
+        min: 128.0MiB
+        step: 128.0MiB
+    replicas:
+      max: 1
+      min: 0
+      pinned: True
+    timeout: 5m
+  description: co-http web rollout
+prometheus:
+  base_url: http://prometheus.opsani-monitoring.svc:9090
+  metrics:
+  - name: throughput
+    query: rate(api_requests_total[3m])
+    unit: rps
+vegeta:
+  duration: 3m
+  rate: 50/1s
+  target: GET http://web.default.svc:8080
+
+--- # Canary rollout optmization
+kubernetes:
+  deployments: []
+  rollouts:
+  - name: web-main
+    namespace: default
+    containers: 
+    - name: main
+      cpu:
+        max: '1'
+        min: 125m
+        step: 125m
+      memory:
+        max: 1.0GiB
+        min: 128.0MiB
+        step: 128.0MiB
+    replicas:
+      max: 1
+      min: 0
+      pinned: True
+    timeout: 5m
+    strategy: canary
+  description: co-http web rollout
+prometheus:
+  base_url: http://prometheus.opsani-monitoring.svc:9090
+  metrics:
+  - name: mainline_throughput
+    query: rate(api_requests_total{app="web",opsani_role!="tuning"}[3m])
+    unit: rps
+  - name: canary_throughput
+    query: rate(api_requests_total{app="web",opsani_role="tuning"}[3m])
+    unit: rps
+vegeta:
+  duration: 3m
+  rate: 50/1s
+  target: GET http://web.default.svc:8080
