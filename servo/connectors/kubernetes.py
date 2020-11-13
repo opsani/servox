@@ -1794,7 +1794,7 @@ class Rollout(ControllerModel):
 
     api_clients: ClassVar[Dict[str, Type]] = {
         "preferred":kubernetes_asyncio.client.CustomObjectsApi,
-        # "preferred":kubernetes_asyncio.client.CustomObjectsApi, # TODO what is the name for this?
+        "argoproj.io/v1alpha1":kubernetes_asyncio.client.CustomObjectsApi,
     }
 
     async def create(self, namespace: str = None) -> None:
@@ -1814,7 +1814,7 @@ class Rollout(ControllerModel):
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
                 namespace=namespace,
-                body=self.obj.dict(by_alias=True),
+                body=self.obj.dict(by_alias=True, exclude_none=True),
                 **ROLLOUT_CONST_ARGS,
             ))
 

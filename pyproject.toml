@@ -26,9 +26,9 @@ typer = "^0.3.0"
 bullet = "^2.1.0"
 jsonschema = "^3.2.0"
 timeago = "^1.0.14"
-kubernetes_asyncio = ">=11.3,<13.0"
 orjson = "^3.3.1"
 uvloop = "^0.14.0"
+kubernetes-asyncio = {git = "https://github.com/linkous8/kubernetes_asyncio/"}
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.1.1"
