@@ -371,7 +371,7 @@ class Unit(str, enum.Enum):
     """Application throughput in terms of requests processed per minute.
     """
 
-    REQUESTS_PER_MINUTE_WF = "requests/m"
+    REQUESTS_PER_MINUTE_WF = "request/m"
     """Application throughput in terms of requests processed per minute in Wavefront format.
     """
 

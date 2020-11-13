@@ -110,20 +110,20 @@ class TestWavefrontConfiguration:
         config = WavefrontConfiguration.generate()
         # Ugly patch for assertion until I understand why generate().yaml() metric order is being sorted alphabetically
         assert config.yaml() == (
+            "description: Update the base_url and metrics to match your Wavefront configuration\n"
             "api_key: '**********'\n"
             "base_url: http://wavefront.com:2878\n"
-            "description: Update the base_url and metrics to match your Wavefront configuration\n"
             "metrics:\n"
-            "- granularity: m\n"
-            "  name: throughput\n"
+            "- name: throughput\n"            
+            "  unit: request/m\n"
             "  query: avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))\n"
+            "  granularity: m\n"
             "  summarization: LAST\n"
-            "  unit: requests/m\n"
-            "- granularity: m\n"
-            "  name: error_rate\n"
-            "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
-            "  summarization: LAST\n"
+            "- name: error_rate\n"            
             "  unit: errors/m\n"
+            "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
+            "  granularity: m\n"
+            "  summarization: LAST\n"
         )
 
 
@@ -327,7 +327,7 @@ class TestWavefrontChecks:
         )
         return WavefrontChecks(config=config)
 
-    @ respx.mock
+    @respx.mock
     async def test_check_queries(self, mocked_api, checks) -> None:
         request = mocked_api["query"]
         multichecks = await checks._expand_multichecks()
@@ -450,7 +450,7 @@ class TestWavefrontConnector:
         described = connector.describe()
         assert described.metrics == connector.metrics()
 
-    @ respx.mock
+    @respx.mock
     async def test_measure(self, mocked_api, connector) -> None:
         request = mocked_api["query"]
         measurements = await connector.measure()

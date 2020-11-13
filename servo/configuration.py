@@ -199,6 +199,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
             encoder=encoder,
             **dumps_kwargs,
         )
+        yaml.add_representer(dict, lambda self, data: yaml.representer.SafeRepresenter.represent_dict(self, data.items()))
         return yaml.dump(json.loads(config_json))
 
     @staticmethod
