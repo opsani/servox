@@ -62,7 +62,7 @@ class WavefrontConfiguration(servo.BaseConfiguration):
     """WavefrontConfiguration objects describe how WavefrontConnector objects
     capture measurements from the Wavefront metrics server.
     """
-    api_key: pydantic.SecretStr
+    api_key: pydantic.SecretStr = '1234567'
     """The API key for accessing the Wavefront metrics API."""
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
@@ -91,14 +91,14 @@ class WavefrontConfiguration(servo.BaseConfiguration):
             metrics=[
                 WavefrontMetric(
                     "throughput",
-                    servo.Unit.REQUESTS_PER_MINUTE_WF,
+                    servo.Unit.REQUESTS_PER_MINUTE,
                     query="avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))",
                     granularity="m",
                     summarization="LAST",
                 ),
                 WavefrontMetric(
                     "error_rate",
-                    servo.Unit.ERRORS_PER_MINUTE_WF,
+                    servo.Unit.COUNT,
                     query="avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))",
                     granularity="m",
                     summarization="LAST",

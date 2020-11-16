@@ -14,7 +14,7 @@ class TestWavefrontMetric:
     def test_accepts_granularity_as_alpha(self):
         metric = WavefrontMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
             granularity="m",
         )
@@ -23,7 +23,7 @@ class TestWavefrontMetric:
     def test_accepts_summarization_as_alpha(self):
         metric = WavefrontMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
             summarization="LAST",
         )
@@ -115,12 +115,12 @@ class TestWavefrontConfiguration:
             "base_url: http://wavefront.com:2878\n"
             "metrics:\n"
             "- name: throughput\n"            
-            "  unit: request/m\n"
+            "  unit: rpm\n"
             "  query: avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))\n"
             "  granularity: m\n"
             "  summarization: LAST\n"
             "- name: error_rate\n"            
-            "  unit: errors/m\n"
+            "  unit: count\n"
             "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
             "  granularity: m\n"
             "  summarization: LAST\n"
@@ -136,7 +136,7 @@ class TestWavefrontRequest:
             end=datetime.datetime.now() + Duration("36h"),
             metric=WavefrontMetric(
                 "throughput",
-                servo.Unit.REQUESTS_PER_MINUTE_WF,
+                servo.Unit.REQUESTS_PER_MINUTE,
                 query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
                 granularity="m",
                 summarization="LAST"
@@ -228,7 +228,7 @@ class TestWavefrontChecks:
     def metric(self) -> WavefrontMetric:
         return WavefrontMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
             granularity="m",
         )
@@ -347,7 +347,7 @@ class TestWavefrontConnector:
     def metric(self) -> WavefrontMetric:
         return WavefrontMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE_WF,
+            unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
             granularity="m",
         )
