@@ -55,9 +55,9 @@ one that will not be assigned to your wifi users)
 1. Run `kubectl apply -f prometheus.yaml`
 1. Run `kubectl apply -f web-svc-lb.yaml`
 1. Run `kubectl apply -f web-dep.yaml` (skip if deploying ArgoCD rollout)
-1.1. **For Argo CD Rollouts ONLY**: Run `kubectl create namespace argo-rollouts`
-1.1. Run `kubectl apply -n argo-rollouts -f https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml`
-1.1. Run `kubectl apply -f web-rol.yaml`
+    1. **For Argo CD Rollouts ONLY**: Run `kubectl create namespace argo-rollouts`
+    1. Run `kubectl apply -n argo-rollouts -f https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml`
+    1. Run `kubectl apply -f web-rol.yaml`
 1. Copy the `--- # Canary deployment optmization` or `--- # Canary rollout optmization` section of the `example_app/example_servo.yaml` to the `servo.yaml` in the root or your project folder
 1. Run `minikube service -n opsani-monitoring prometheus`; copy the URL column to replace the `base_url` of the config section for `prometheus` in `servo.yaml`
 1. Run `minikube service web`; copy the URL column to replace the `target` of the config section for `vegeta` in `servo.yaml`
