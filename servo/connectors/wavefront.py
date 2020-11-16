@@ -62,7 +62,7 @@ class WavefrontConfiguration(servo.BaseConfiguration):
     """WavefrontConfiguration objects describe how WavefrontConnector objects
     capture measurements from the Wavefront metrics server.
     """
-    api_key: pydantic.SecretStr = '1234567'
+    api_key: pydantic.SecretStr
     """The API key for accessing the Wavefront metrics API."""
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
