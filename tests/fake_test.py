@@ -175,8 +175,8 @@ async def test_states() -> None:
 @pytest.mark.parametrize(
     ("state", "expected_command"),
     [
-        (tests.fake.StateMachine.States.ready, None),
-        (tests.fake.StateMachine.States.analyzing, None),
+        (tests.fake.StateMachine.States.ready, tests.fake.Commands.sleep),
+        (tests.fake.StateMachine.States.analyzing, tests.fake.Commands.sleep),
         (tests.fake.StateMachine.States.awaiting_description, tests.fake.Commands.describe),
         (tests.fake.StateMachine.States.awaiting_measurement, tests.fake.Commands.measure),
         (tests.fake.StateMachine.States.awaiting_adjustment, tests.fake.Commands.adjust),

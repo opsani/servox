@@ -110,13 +110,8 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.progress = None
         self.command_params = None
     
-    # TODO: Collapse these two together with statesman update
-    @statesman.exit_state(States.awaiting_measurement)
-    async def _exiting_measurement(self) -> None:
-        self.command_params = None
-    
-    @statesman.exit_state(States.awaiting_adjustment)
-    async def _exiting_adjustment(self) -> None:
+    @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
+    async def _exiting_operation(self) -> None:
         self.command_params = None
         
     @statesman.event("Reset Optimizer", States.__any__, States.ready)
