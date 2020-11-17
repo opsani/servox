@@ -326,7 +326,11 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
     
     yield servo_image
-    # return await tests.helpers.build_docker_image(preamble="eval $(minikube -p minikube docker-env)")
+
+@pytest.fixture()
+def random_duration() -> servo.Duration:
+    seconds = random.randrange(30, 600)
+    return servo.Duration(seconds=seconds)
 
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
