@@ -1,7 +1,9 @@
 import importlib.metadata
 import pathlib
-import toml
 from typing import Optional
+
+import toml
+
 
 def __get_version() -> Optional[str]:
     path = pathlib.Path(__file__).resolve().parents[1] / 'pyproject.toml'
