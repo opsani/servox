@@ -400,12 +400,12 @@ class TestDeploymentConfiguration:
             strategy=OptimizationStrategy.DEFAULT,
         )
         assert config.yaml(exclude_unset=True) == (
-            "containers: []\n"
             "name: testing\n"
+            "containers: []\n"
+            "strategy: default\n"          
             "replicas:\n"
-            "  max: 4\n"
             "  min: 1\n"
-            "strategy: default\n"
+            "  max: 4\n"
         )
 
     def test_strategy_object_default(self) -> None:
@@ -418,13 +418,13 @@ class TestDeploymentConfiguration:
             ),
         )
         assert config.yaml(exclude_unset=True) == (
-            "containers: []\n"
             "name: testing\n"
-            "replicas:\n"
-            "  max: 4\n"
-            "  min: 1\n"
+            "containers: []\n"
             "strategy:\n"
-            "  type: default\n"
+            "  type: default\n"          
+            "replicas:\n"
+            "  min: 1\n"
+            "  max: 4\n"
         )
 
     def test_strategy_object_canary(self) -> None:
@@ -437,14 +437,14 @@ class TestDeploymentConfiguration:
             ),
         )
         assert config.yaml(exclude_unset=True) == (
-            "containers: []\n"
             "name: testing\n"
-            "replicas:\n"
-            "  max: 4\n"
-            "  min: 1\n"
+            "containers: []\n"
             "strategy:\n"
-            "  alias: tuning\n"
             "  type: canary\n"
+            "  alias: tuning\n"            
+            "replicas:\n"
+            "  min: 1\n"
+            "  max: 4\n"
         )
 
     def test_strategy_object_default_parsing(self) -> None:
