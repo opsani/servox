@@ -199,7 +199,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
             encoder=encoder,
             **dumps_kwargs,
         )
-        return yaml.dump(json.loads(config_json))
+        return yaml.dump(json.loads(config_json), sort_keys=False)
 
     @staticmethod
     def json_encoders(

@@ -99,7 +99,7 @@ def generate_config_yaml(
         else:
             config_dict[k] = v
     config_json = cls.__config__.json_dumps(config, default=pydantic_encoder)
-    return yaml.dump(json.loads(config_json))
+    return yaml.dump(json.loads(config_json), sort_keys=False)
 
 
 def write_config_yaml(
