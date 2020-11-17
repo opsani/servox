@@ -24,11 +24,8 @@ class ServoCommandResponse(pydantic.BaseModel):
     cmd: str
     param: Dict
 
-
-class SeqError(Exception):
-    pass
-
 # TODO: Replace this with model...
+# TODO: Need an adjustments_to_response function
 ADJUST_PAYLOAD = yaml.safe_load(    # payload to send for all adjust commands - must match emulator
     """
     state:
@@ -81,8 +78,11 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     progress: Optional[int] = None
     error: Optional[Exception] = None
     
+    # TODO: Figure out how to tighten this up...
+    command_params: Optional[Dict[str, Any]] = None
+    
     @property
-    def command(self) -> Optional[Commands]:
+    def command(self) -> Commands:
         """Return the command for the current state."""
         if self.state == StateMachine.States.awaiting_description:
             return Commands.describe
@@ -93,7 +93,8 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         elif self.state in (StateMachine.States.done, StateMachine.States.failed):
             return Commands.sleep
         else:
-            return None
+            servo.logging.logger.error(f"in non-operational state ({self.state}): cannot command servo meaningfully")
+            return Commands.sleep
     
     @statesman.enter_state(States.ready)
     async def _enter_ready(self) -> None:
@@ -102,10 +103,21 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = False
         self.progress = None
         self.error = None
+        self.command_params = None
     
     @statesman.enter_state(States.analyzing)
     async def _enter_analyzing(self) -> None:
         self.progress = None
+        self.command_params = None
+    
+    # TODO: Collapse these two together with statesman update
+    @statesman.exit_state(States.awaiting_measurement)
+    async def _exiting_measurement(self) -> None:
+        self.command_params = None
+    
+    @statesman.exit_state(States.awaiting_adjustment)
+    async def _exiting_adjustment(self) -> None:
+        self.command_params = None
         
     @statesman.event("Reset Optimizer", States.__any__, States.ready)
     async def reset(self) -> None:
@@ -122,10 +134,11 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = True
     
     @statesman.event("Ask What's Next?", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def ask_whats_next(self) -> Optional[Commands]:
+    async def ask_whats_next(self) -> ServoCommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
         servo.logging.logger.info(f"Asking What's Next? => {self.command}")
-        return self.command
+        params = self.command_params or {}
+        return ServoCommandResponse(cmd=self.command, param=params)
     
     @statesman.event("Say Goodbye", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def say_goodbye(self) -> None:
@@ -166,8 +179,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     # Measure
     
     @statesman.event("Request Measurement", [States.ready, States.analyzing], States.awaiting_measurement)
-    async def request_measurement(self) -> None:
+    async def request_measurement(self, params: Dict[str, Any] = { "metrics": [], "control": {}}) -> None:
         servo.logging.logger.info("Requesting Measurement")
+        self.command_params = params
     
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
@@ -182,10 +196,11 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     ##
     # Adjust
     
+    # TODO: Replace this whole thing with models (adjustments[])
     @statesman.event("Recommend Adjustment", [States.ready, States.analyzing], States.awaiting_adjustment)
-    async def recommend_adjustment(self) -> None:
+    async def recommend_adjustment(self, params: Dict[str, Any]) -> None:
         servo.logging.logger.info("Recommending Adjustment")
-        ...
+        self.command_params = params
     
     async def _validate_adjustment(self, adjustment: servo.Adjustment) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {adjustment}")
@@ -280,7 +295,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
 # )
 
 class AbstractOptimizer:
-    # state machine...
+    # state machine... token, optimizer id
     ...
 
 # class StaticOptimizer(AbstractOptimizer):
@@ -316,89 +331,7 @@ class AbstractOptimizer:
 # TODO: Try to make app apply out of range, put it into weird situations
 # For Kubernetes, READY -> INQUIRING/WAITING -> ADJUSTING
 
-# class App:
-#     name: str
-#     state: str = "initial"
-#     next_cmd: Optional[str] = None  # if None, WHATS_NEXT is invalid
-#     curr_cmd: Optional[str] = None
-#     curr_cmd_progress: Optional[int] = None
-#     n_cycles: int = 0
-
-#     fsmtab = {
-#         # state             event           progress  new state          next command  cycle++
-#         ("initial"        , "HELLO"       , False  ): ("hello-received", "DESCRIBE" , False ),
-#         ("hello-received" , "DESCRIPTION" , False  ): ("start-measure" , "MEASURE"  , False ),
-#         ("start-measure"  , "MEASUREMENT" , True   ): ("in-measure"    , None       , False ),
-#         ("in-measure"     , "MEASUREMENT" , True   ): ("in-measure"    , None       , False ),
-#         ("in-measure"     , "MEASUREMENT" , False  ): ("start-adjust"  , "ADJUST"   , True  ),
-#         ("start-adjust"   , "ADJUSTMENT"  , True   ): ("in-adjust"     , None       , False ),
-#         ("in-adjust"      , "ADJUSTMENT"  , True   ): ("in-adjust"     , None       , False ),
-#         ("in-adjust"      , "ADJUSTMENT"  , False  ): ("start-measure" , "MEASURE"  , False ),
-
-#         ("hello-received" , "GOODBYE"     , False  ): ("terminated"    , None       , False ),
-#         ("start-measure"  , "GOODBYE"     , False  ): ("terminated"    , None       , False ),
-#         ("in-measure"     , "GOODBYE"     , False  ): ("terminated"    , None       , False ),
-#         ("start-adjust"   , "GOODBYE"     , False  ): ("terminated"    , None       , False ),
-#         ("in-adjust"      , "GOODBYE"     , False  ): ("terminated"    , None       , False ),
-
-#         ("terminated"     , "HELLO"       , False  ): ("hello-received", "DESCRIBE" , False )
-#     }
-
-#     def __init__(self, name: str):
-#         self.name = name
-
-#     def _exc(self, msg: str):
-#         return SeqError(f"Sequence error for {self.name}: {msg}")
-
-#     def feed(self, ev: ServoEvent) -> Union[ServoNotifyResponse, ServoCommandResponse]:
-#         servo.logging.logger.info(f"Processing {ev}")
-#         # handle next command query
-#         if ev.event == "WHATS_NEXT":
-#             if self.next_cmd == None:
-#                 raise self._exc(f"Unexpected WHATS_NEXT in {self.state}")
-#             (cmd, self.next_cmd) = (self.next_cmd, None) # clear next_cmd
-#             self.curr_cmd = None
-#             self.curr_cmd_progress = None
-#             if cmd == "ADJUST":
-#                 params = ADJUST_PAYLOAD
-#             elif cmd == "MEASURE":
-#                 params = { "metrics": [], "control": {}}
-#             else:
-#                 params = {}
-#             return ServoCommandResponse(cmd = cmd, param = params)
-
-#         # lookup event and extract sequencer instruction
-#         try:
-#             progress = int(ev.param["progress"])
-#         except Exception:
-#             progress = None
-#         key = (self.state, ev.event, progress is not None)
-#         try:
-#             instr = self.fsmtab[key]
-#         except KeyError:
-#             pmsg = "" if progress is None else f"({progress}%)"
-#             raise self._exc(f"Unexpected event {ev}{pmsg} in state {self.state}")
-
-#         # check progress
-#         if progress is not None:
-#             if self.curr_cmd_progress is not None and progress < self.curr_cmd_progress:
-#                 raise self._exc(f"Progress going backwards: old={self.curr_cmd_progress}, new={progress}")
-#             else:
-#                 self.curr_cmd_progress = progress
-#         else:
-#             curr_cmd_progress = None # zero out progress on completed commands
-
-#         # "execute" instruction
-#         (self.state, self.next_cmd, bump_cycle) = instr 
-#         if bump_cycle:
-#             self.n_cycles += 1
-
-#         servo.logging.logger.info(f"#seq# {self.name} processed {key} -> {instr}, {self.n_cycles} cycles {' [TERMINATED]' if self.state == 'terminated' else ''}")
-
-#         return ServoNotifyResponse(status = "ok")
-
 # app = fastapi.FastAPI()
-# state = {}
 
 # # TODO: Create FakeOptimizer class... maintain a list of them
 # # Need a good API for describing the steps...

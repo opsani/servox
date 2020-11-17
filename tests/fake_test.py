@@ -194,10 +194,11 @@ async def test_submit_description_stores_description() -> None:
     await state_machine.submit_description(description)
     assert state_machine.description == description
     
-async def test_whats_next_returns_command() -> None:
+async def test_whats_next_returns_command_response() -> None:
     state_machine = await tests.fake.StateMachine.create(state=tests.fake.StateMachine.States.awaiting_description)
-    command = await state_machine.ask_whats_next()
-    assert command == tests.fake.Commands.describe
+    response = await state_machine.ask_whats_next()
+    assert response.cmd == tests.fake.Commands.describe
+    assert response.param == {}
     assert state_machine.command == tests.fake.Commands.describe    
 
 @pytest.fixture()
