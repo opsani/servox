@@ -554,6 +554,16 @@ It is expected that most Open Source contributions will come in the form of new
 connectors. Should you wish to develop a connector, reach out to us at Opsani as
 we have connector developer guides that are in pre-release while ServoX matures.
 
+### Pre-commit Hook
+
+The project is configured with a [pre-commit](https://pre-commit.com/) hook to
+enforce as much of the coding standards and style guide as possible. To install
+it into your working copy, run:
+
+```console
+poetry run pre-commit install
+```
+
 ### Linting and Formatting
 
 The project is structured to support and enforce consistent, idiomatic code. A
