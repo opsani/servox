@@ -42,7 +42,7 @@ COMPONENTS = [
 ]
 
 @servo.metadata(
-    description="An emulator that pretends take measurements and make adjustments.",
+    description="An emulator that pretends to take measurements and make adjustments.",
     version="0.5.0",
     homepage="https://github.com/opsani/servox",
     license=servo.License.APACHE2,

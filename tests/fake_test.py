@@ -2,7 +2,12 @@ import pytest
 import tests.fake
 import servo
 import random
+import pathlib
+import fastapi
 from typing import Optional, Union
+
+import servo.runner
+import servo.connectors.emulator
 
 METRICS = [
     servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
@@ -29,105 +34,6 @@ COMPONENTS = [
         ]
     )
 ]
-
-# @pytest.fixture
-# def static_optimizer(**kwargs) -> tests.fake.StaticOptimizer:
-#     return tests.fake.StaticOptimizer(**kwargs)
-
-# def test_default_initial_state() -> None:
-#     optimizer = tests.fake.StaticOptimizer()
-#     assert optimizer.is_idle()
-    
-# def test_set_initial_state() -> None:
-#     optimizer = tests.fake.StaticOptimizer(initial=tests.fake.States.done)
-#     assert optimizer.is_done()
-
-# @pytest.mark.parametrize(
-#     ("state", "event"),
-#     [
-#         (tests.fake.States.idle, tests.fake.Events.hello),
-#         (tests.fake.States.done, tests.fake.Events.goodbye),
-#         (tests.fake.States.awaiting_description, tests.fake.Events.whats_next),
-#     ]
-# )
-# async def test_reflexive_events(state, event) -> None:
-#     static_optimizer = tests.fake.StaticOptimizer(initial=state)
-#     assert static_optimizer.in_state(state)
-#     await static_optimizer.dispatch(event)
-#     assert static_optimizer.in_state(state)
-
-# import transitions
-
-# @pytest.mark.parametrize(
-#     ("initial", "event", "dest", "error_message"),
-#     [
-#         (tests.fake.States.idle, tests.fake.Events.description, tests.fake.States.idle, '"Can\'t trigger event description from state idle!"'),
-#         (tests.fake.States.awaiting_description, tests.fake.Events.description, tests.fake.States.thinking, None),
-        
-#         (tests.fake.States.idle, tests.fake.Events.measurement, tests.fake.States.idle, '"Can\'t trigger event measurement from state idle!"'),
-#         (tests.fake.States.awaiting_measurement, tests.fake.Events.measurement, tests.fake.States.thinking, None),
-        
-#         (tests.fake.States.idle, tests.fake.Events.adjustment, tests.fake.States.idle, '"Can\'t trigger event adjustment from state idle!"'),
-#         (tests.fake.States.awaiting_adjustment, tests.fake.Events.adjustment, tests.fake.States.thinking, None),
-#     ]
-# )
-# async def test_command_events(initial, event, dest, error_message) -> None:    
-#     static_optimizer = tests.fake.StaticOptimizer(initial=initial)
-#     if error_message is not None:
-#         with pytest.raises(transitions.core.MachineError) as e:
-#             await static_optimizer.dispatch(event)
-#         assert str(e.value) == error_message
-#         assert static_optimizer.in_state(dest)
-#     else:
-#         await static_optimizer.dispatch(event)
-#         assert static_optimizer.in_state(dest)
-
-# @pytest.mark.parametrize(
-#     ("initial", "event", "progress", "dest", "error_message"),
-#     [
-#         # progress is ignored for describe ops
-#         (tests.fake.States.awaiting_description, tests.fake.Events.describe, None, tests.fake.States.thinking, None),
-#         (tests.fake.States.awaiting_description, tests.fake.Events.describe, 10, tests.fake.States.thinking, None),
-#         (tests.fake.States.awaiting_description, tests.fake.Events.describe, 100, tests.fake.States.thinking, None),
-        
-#         (tests.fake.States.awaiting_measurement, tests.fake.Events.measure, None, tests.fake.States.thinking, None),
-#         (tests.fake.States.awaiting_measurement, tests.fake.Events.measure, 10, tests.fake.States.awaiting_measurement, None),
-#         (tests.fake.States.awaiting_measurement, tests.fake.Events.measure, 100, tests.fake.States.thinking, None),
-        
-#         (tests.fake.States.awaiting_adjustment, tests.fake.Events.adjust, None, tests.fake.States.thinking, None),
-#         (tests.fake.States.awaiting_adjustment, tests.fake.Events.adjust, 10, tests.fake.States.awaiting_adjustment, None),
-#         (tests.fake.States.awaiting_adjustment, tests.fake.Events.adjust, 100, tests.fake.States.thinking, None),
-#     ]
-# )
-# async def test_command_events_progress(initial, event, progress, dest, error_message) -> None:    
-#     static_optimizer = tests.fake.StaticOptimizer(initial=initial)
-#     await static_optimizer.dispatch(event, progress)
-#     assert static_optimizer.in_state(dest)
-    
-
-# async def test_hello_and_describe() -> None:
-#     static_optimizer = tests.fake.StaticOptimizer()
-#     assert static_optimizer.in_state(tests.fake.States.idle)
-#     await static_optimizer.hello(dict(agent=servo.api.USER_AGENT))
-#     assert static_optimizer.in_state(tests.fake.States.idle)
-    
-#     # manually advance to describe
-#     await static_optimizer.to_awaiting_description()
-#     assert static_optimizer.in_state(tests.fake.States.awaiting_description)
-#     await static_optimizer.describe(dict(agent=servo.api.USER_AGENT))
-    
-#     # servo_runner.servo.optimizer.base_url = fakeapi_url
-#     # response = await servo_runner._post_event(
-#     #     servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
-#     # )
-#     # assert response.status == "ok"
-    
-#     # description = await servo_runner.describe()
-    
-#     # param = dict(descriptor=description.__opsani_repr__(), status="ok")
-#     # response = await servo_runner._post_event(servo.api.Event.DESCRIPTION, param)
-#     # debug(response)
-#     # await asyncio.sleep(10)
     
 async def test_state_machine() -> None:
     state_machine = await tests.fake.StateMachine.create()
@@ -267,3 +173,124 @@ def _random_description() -> servo.Description:
             setting.value = _random_value_for_setting(setting)
 
     return servo.Description(metrics=metrics, components=components)
+
+# @pytest.fixture
+# def static_optimizer(**kwargs) -> tests.fake.StaticOptimizer:
+#     return tests.fake.StaticOptimizer(**kwargs)
+
+async def test_static_optimizer() -> None:
+    static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    assert len(static_optimizer.events), "should not be empty"
+
+async def test_hello_and_describe(
+    servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str
+) -> None:
+    static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    assert static_optimizer.state == tests.fake.StateMachine.States.ready
+    await static_optimizer.say_hello(dict(agent=servo.api.USER_AGENT))
+    assert static_optimizer.state == tests.fake.StateMachine.States.ready
+    
+    # manually advance to describe
+    await static_optimizer.request_description()
+    assert static_optimizer.state == tests.fake.StateMachine.States.awaiting_description
+    await static_optimizer.submit_description(dict(agent=servo.api.USER_AGENT))
+    
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+    response = await servo_runner._post_event(
+        servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
+    )
+    assert response.status == "ok"
+    
+    description = await servo_runner.describe()
+    
+    param = dict(descriptor=description.__opsani_repr__(), status="ok")
+    response = await servo_runner._post_event(servo.api.Event.DESCRIPTION, param)
+    debug(response)
+    await asyncio.sleep(10)
+
+# TODO: Mop up all of this shit
+
+
+@pytest.fixture()
+def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
+    config_model = servo.assembly._create_config_model_from_routes(
+        {
+            # "prometheus": servo.connectors.prometheus.PrometheusConnector,
+            # "adjust": tests.helpers.AdjustConnector,
+            "emulator": servo.connectors.emulator.EmulatorConnector
+        }
+    )
+    config = config_model.generate()
+    servo_yaml.write_text(config.yaml())
+
+    optimizer = servo.Optimizer(
+        id="dev.opsani.com/blake-ignite111",
+        token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+        
+    )
+    assembly_ = servo.assembly.Assembly.assemble(
+        config_file=servo_yaml, optimizer=optimizer
+    )
+    return assembly_
+
+
+@pytest.fixture
+def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+    """Return an unstarted assembly runner."""
+    return servo.runner.AssemblyRunner(assembly)
+
+@pytest.fixture
+async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
+    """Return an unstarted servo runner."""
+    return servo.runner.ServoRunner(assembly.servos[0])
+
+
+
+
+#####
+
+
+api = fastapi.FastAPI()
+optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+
+@api.post("/accounts/{account}/applications/{app}/servo")
+async def servo_get(account: str, app: str, ev: tests.fake.ServoEvent) -> Union[tests.fake.ServoNotifyResponse, tests.fake.ServoCommandResponse]:
+    debug("INVOKED! account, app, ev", account, app, ev)
+    if ev.event == "HELLO":
+        return await optimizer.say_hello()
+    elif ev.event == "GOODBYE":
+        return await optimizer.say_goodbye()
+    elif ev.event == "WHATS_NEXT":
+        return await optimizer.ask_whats_next()
+    elif ev.event == "DESCRIPTION":
+        ...
+    elif ev.event == "MEASUREMENT":
+        ...
+    elif ev.event == "ADJUSTMENT":
+        ...
+    else:
+        raise ValueError(f"unknown event: {ev.event}")
+    
+    # if app not in state:
+    #     if ev.event == "HELLO":
+    #         state[app] = App(name = app)
+    #         servo.logging.logger.info(f"Registered new application: {app}")
+    #         # fall through to process event
+    #     else:
+    #         msg = f"Received event {ev.event} for unknown app {app}"
+    #         servo.logging.logger.info(msg)
+    #         raise fastapi.HTTPException(status_code=400, detail=msg)
+
+    # try:
+    #     r = state[app].feed(ev) 
+    # except Exception as e:
+    #     servo.logging.logger.exception(f"failed with exception: {e}")
+    #     raise fastapi.HTTPException(status_code=400, detail=str(e))
+
+    # return r
+    return "Move along, nothing to see here"
+
+@pytest.fixture
+def fastapi_app() -> fastapi.FastAPI:
+    return api

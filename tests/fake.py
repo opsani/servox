@@ -1,17 +1,15 @@
-import abc
-import asyncio
-import datetime
 import enum
-import random
 import yaml
 from typing import Any, Dict, List, Optional, Union
 
 import pydantic
+import fastapi
+import pytest
 import statesman
 
 import servo
 
-# TODO: Replace these with native models?
+# TODO: Replace these with models from servo.types
 class ServoEvent(pydantic.BaseModel):
     event: str
     param: Union[None, Dict]
@@ -24,7 +22,7 @@ class ServoCommandResponse(pydantic.BaseModel):
     cmd: str
     param: Dict
 
-# TODO: Replace this with model...
+# TODO: Replace this with a model...
 # TODO: Need an adjustments_to_response function
 ADJUST_PAYLOAD = yaml.safe_load(    # payload to send for all adjust commands - must match emulator
     """
@@ -120,13 +118,15 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         servo.logging.logger.info("Resetting Optimizer")
     
     @statesman.event("Say Hello", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def say_hello(self) -> None:
+    async def say_hello(self) -> ServoNotifyResponse:
         """Say hello to a servo that has connected and greeted us.
         
         A servo saying hello toggles the connected state to True.
         """
         servo.logging.logger.info("Saying Hello")
         self.connected = True
+        
+        return ServoNotifyResponse(status="ok")
     
     @statesman.event("Ask What's Next?", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def ask_whats_next(self) -> ServoCommandResponse:
@@ -136,13 +136,15 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         return ServoCommandResponse(cmd=self.command, param=params)
     
     @statesman.event("Say Goodbye", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def say_goodbye(self) -> None:
+    async def say_goodbye(self) -> ServoNotifyResponse:
         """Say goodbye to a servo that is disconnecting and has bid us farewell.
         
         A servo saying goodbye toggles the connected state to False.
         """
         servo.logging.logger.info("Saying Goodbye")
         self.connected = False
+        
+        return ServoNotifyResponse(status="ok")
     
     async def _guard_progress_tracking(self, *, progress: Optional[int] = None) -> bool:
         if isinstance(progress, int) and progress < 100:
@@ -166,13 +168,16 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
 
     @statesman.event("Submit Description", States.awaiting_description, States.analyzing, guard=_validate_description)
-    async def submit_description(self, description: servo.Description) -> None:
+    async def submit_description(self, description: servo.Description) -> ServoNotifyResponse:
         servo.logging.logger.info(f"Description submitted: {description}")
         self.description = description
+        
+        return ServoNotifyResponse(status="ok")
     
     ##
     # Measure
     
+    # TODO: Replace the metrics and control arg...
     @statesman.event("Request Measurement", [States.ready, States.analyzing], States.awaiting_measurement)
     async def request_measurement(self, params: Dict[str, Any] = { "metrics": [], "control": {}}) -> None:
         servo.logging.logger.info("Requesting Measurement")
@@ -184,9 +189,10 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
     
     @statesman.event("Submit Measurement", States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
-    async def submit_measurement(self, measurement: servo.Measurement) -> None:
+    async def submit_measurement(self, measurement: servo.Measurement) -> ServoNotifyResponse:
         servo.logging.logger.info("Submitting Measurement")
-        ...
+        
+        return ServoNotifyResponse(status="ok")
     
     ##
     # Adjust
@@ -203,9 +209,10 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
     
     @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustment])
-    async def complete_adjustment(self, adjustment: servo.Adjustment) -> None:
+    async def complete_adjustment(self, adjustment: servo.Adjustment) -> ServoNotifyResponse:
         servo.logging.logger.info("Completing Adjustment")
-        ...
+        
+        return ServoNotifyResponse(status="ok")
     
     ##
     # Terminal transitions
@@ -289,68 +296,38 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
 #     Analyzing, reset
 # )
 
-class AbstractOptimizer:
-    # state machine... token, optimizer id
-    ...
-
-# class StaticOptimizer(AbstractOptimizer):
-#     """A fake optimizer that requires manual state changes."""
+class AbstractOptimizer(StateMachine):
+    id: str
+    token: str
     
-#     async def to_next_state(self, *args, **kwargs) -> None:
-#         debug(*args, kwargs)
-#         pass
+    # TODO: define an abstract method for next_state() ?
 
-# class SequencedOptimizer(AbstractOptimizer):
-#     """A fake optimizer that executes state transitions in a specific order."""
-#     repeating: bool = False
+class StaticOptimizer(AbstractOptimizer):
+    """A fake optimizer that requires manual state changes."""
     
-#     async def to_next_state(self) -> None:
-#         pass
+    async def to_next_state(self, *args, **kwargs) -> None:
+        debug(*args, kwargs)
+        pass
 
-# class RandomOptimizer(AbstractOptimizer):
-#     """A fake optimizer that executes state transitions in random order."""
+class SequencedOptimizer(AbstractOptimizer):
+    """A fake optimizer that executes state transitions in a specific order."""
+    repeating: bool = False
     
-#     async def to_next_state(self) -> None:
-#         pass
+    async def to_next_state(self) -> None:
+        pass
 
-# class ChaosOptimizer(AbstractOptimizer):
-#     """A fake optimizer that generates chaos.
+class RandomOptimizer(AbstractOptimizer):
+    """A fake optimizer that executes state transitions in random order."""
     
-#     Provides resilience testing through chaos such as non-sensical metrics,
-#     invalid adjustment values, etc.
-#     """
+    async def to_next_state(self) -> None:
+        pass
+
+class ChaosOptimizer(AbstractOptimizer):
+    """A fake optimizer that generates chaos.
     
-#     async def to_next_state(self) -> None:
-#         pass
-
-# TODO: Try to make app apply out of range, put it into weird situations
-# For Kubernetes, READY -> INQUIRING/WAITING -> ADJUSTING
-
-# app = fastapi.FastAPI()
-
-# # TODO: Create FakeOptimizer class... maintain a list of them
-# # Need a good API for describing the steps...
-
-# @app.post("/accounts/{account}/applications/{app}/servo")
-# async def servo_get(account: str, app: str, ev: ServoEvent) -> Union[ServoNotifyResponse, ServoCommandResponse]:
-#     if app not in state:
-#         if ev.event == "HELLO":
-#             state[app] = App(name = app)
-#             servo.logging.logger.info(f"Registered new application: {app}")
-#             # fall through to process event
-#         else:
-#             msg = f"Received event {ev.event} for unknown app {app}"
-#             servo.logging.logger.info(msg)
-#             raise fastapi.HTTPException(status_code=400, detail=msg)
-
-#     try:
-#         r = state[app].feed(ev) 
-#     except Exception as e:
-#         servo.logging.logger.exception(f"failed with exception: {e}")
-#         raise fastapi.HTTPException(status_code=400, detail=str(e))
-
-#     return r
-
-# @pytest.fixture
-# def fastapi_app() -> fastapi.FastAPI:
-#     return app
+    Provides resilience testing through chaos such as non-sensical metrics,
+    invalid adjustment values, etc.
+    """
+    
+    async def to_next_state(self) -> None:
+        pass
