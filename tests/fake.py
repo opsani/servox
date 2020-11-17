@@ -164,7 +164,6 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     
     async def _validate_description(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Description: {description}")
-        # TODO: Check that the description makes sense
         ...
 
     @statesman.event("Submit a Description to the optimizer for analysis", States.awaiting_description, States.analyzing, guard=_validate_description)
@@ -185,7 +184,6 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
-        # TODO: Check that the measurement makes sense
         ...
     
     @statesman.event("Submit a Measurement to the optimizer for analysis", States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
@@ -204,7 +202,6 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     
     async def _validate_adjustment(self, adjustment: servo.Adjustment) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {adjustment}")
-        # TODO: Check that the adjustment makes sense
         ...
     
     @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustment])
