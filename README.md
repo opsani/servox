@@ -564,6 +564,30 @@ it into your working copy, run:
 poetry run pre-commit install
 ```
 
+### Developing with Local Packages
+
+When developing against dependencies or building out new connectors, it can be
+useful to utilize a local package so that development can be done in the
+dependency and within the servox package at the same time.
+
+To do so, utilize Poetry Path based dependencies with the `develop = true` flag
+by adding a path reference to the package into the to `tool.poetry.dev-dependencies`
+stanza of the `pyproject.toml` file, and then run `poetry update [dependency name]`.
+
+For example, if developing on servox and the statesman state machine library in
+a working copy in the parent directory, you would add:
+
+```toml
+[tool.poetry.dev-dependencies]
+# ...
+statesman = {path = "../statesman", develop = true}
+```
+
+And then run `poetry update statesman`.
+
+Changes made to the dependency are immediately visible to servox, making it
+easy to develop across package boundaries efficiently.
+
 ### Linting and Formatting
 
 The project is structured to support and enforce consistent, idiomatic code. A
