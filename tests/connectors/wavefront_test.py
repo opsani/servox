@@ -108,7 +108,7 @@ class TestWavefrontConfiguration:
     # Generation
     def test_generate_default_config(self):
         config = WavefrontConfiguration.generate()
-        # Ugly patch for assertion until I understand why generate().yaml() metric order is being sorted alphabetically
+        # API_KEY should be updated as env var to prevent this test failing
         assert config.yaml() == (
             "description: Update the base_url and metrics to match your Wavefront configuration\n"
             "api_key: '**********'\n"
