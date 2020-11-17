@@ -120,16 +120,16 @@ class TestPrometheusConfiguration:
         config = PrometheusConfiguration.generate()
         assert config.yaml() == (
             "description: Update the base_url and metrics to match your Prometheus configuration\n"
-            "base_url: http://prometheus:9090\n"            
+            "base_url: http://prometheus:9090\n"
             "metrics:\n"
             "- name: throughput\n"
             "  unit: rps\n"
             "  query: rate(http_requests_total[5m])\n"
-            "  step: 1m\n"            
+            "  step: 1m\n"
             "- name: error_rate\n"
             "  unit: '%'\n"
             "  query: rate(errors[5m])\n"
-            "  step: 1m\n"            
+            "  step: 1m\n"
             "targets: null\n"
         )
 
