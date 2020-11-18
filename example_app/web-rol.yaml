@@ -16,6 +16,7 @@ spec:
     matchLabels:
       app: web
       role: main
+      opsani_role: mainline
   strategy:
     blueGreen: 
       activeService: web
@@ -25,6 +26,7 @@ spec:
       labels:
         app: web
         role: main
+        opsani_role: mainline
       annotations:
         prometheus.io/path: /metrics
         prometheus.io/port: '8080'
