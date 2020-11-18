@@ -66,10 +66,10 @@ def measurement() -> servo.Measurement:
         (tests.fake.StateMachine.States.awaiting_measurement, "submit_measurement", 35, tests.fake.StateMachine.States.awaiting_measurement),
         (tests.fake.StateMachine.States.awaiting_measurement, "submit_measurement", 100, tests.fake.StateMachine.States.analyzing),
         
-        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustment", 0, tests.fake.StateMachine.States.awaiting_adjustment),
-        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustment", None, tests.fake.StateMachine.States.analyzing),
-        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustment", 35, tests.fake.StateMachine.States.awaiting_adjustment),
-        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustment", 100, tests.fake.StateMachine.States.analyzing),
+        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", 0, tests.fake.StateMachine.States.awaiting_adjustment),
+        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", None, tests.fake.StateMachine.States.analyzing),
+        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", 35, tests.fake.StateMachine.States.awaiting_adjustment),
+        (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", 100, tests.fake.StateMachine.States.analyzing),
     ]
 )
 async def test_progress_tracking(state_machine: tests.fake.StateMachine, measurement: servo.Measurement, initial_state, event, progress, ending_state) -> None:
@@ -172,7 +172,7 @@ async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[serv
     elif ev.event == "MEASUREMENT":
         return await api.optimizer.submit_measurement(ev.param)
     elif ev.event == "ADJUSTMENT":
-        return await api.optimizer.complete_adjustment(ev.param)
+        return await api.optimizer.complete_adjustments(ev.param)
     else:
         raise ValueError(f"unknown event: {ev.event}")
 

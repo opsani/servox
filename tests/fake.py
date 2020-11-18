@@ -24,10 +24,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     connected: bool = False
     progress: Optional[int] = None
     error: Optional[Exception] = None
-    
-    # TODO: Figure out how to tighten this up...
-    # TODO: Replace with a normal object that can take an opsani_repr or to_json?
-    command_params: Optional[Dict[str, Any]] = None
+    command_response: Optional[servo.api.CommandResponse] = None
     
     @property
     def command(self) -> servo.api.Commands:
@@ -51,16 +48,16 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = False
         self.progress = None
         self.error = None
-        self.command_params = None
+        self.command_response = None
     
     @statesman.enter_state(States.analyzing)
     async def _enter_analyzing(self) -> None:
         self.progress = None
-        self.command_params = None
+        self.command_response = None
     
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
     async def _exiting_operation(self) -> None:
-        self.command_params = None
+        self.command_response = None
         
     @statesman.event("Reset the Optimizer to an initial ready state", States.__any__, States.ready)
     async def reset(self) -> None:
@@ -75,15 +72,13 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         """
         servo.logging.logger.info("Saying Hello")
         self.connected = True
-        
-        return servo.api.Status(status="ok")
+        return servo.api.Status.ok()
     
     @statesman.event("Ask What's Next?", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
-        servo.logging.logger.info(f"Asking What's Next? => {self.command}")
-        params = self.command_params or {}
-        return servo.api.CommandResponse(cmd=self.command, param=params)
+        servo.logging.logger.info(f"Asking What's Next? => {self.command}: {self.command_response}")
+        return self.command_response or servo.api.CommandResponse(command=self.command, param={})
     
     @statesman.event("Say Goodbye to the servo", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def say_goodbye(self) -> servo.api.Status:
@@ -93,8 +88,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         """
         servo.logging.logger.info("Saying Goodbye")
         self.connected = False
-        
-        return servo.api.Status(status="ok")
+        return servo.api.Status.ok()
     
     async def _guard_progress_tracking(self, *, progress: Optional[int] = None) -> bool:
         if isinstance(progress, int) and progress < 100:
@@ -114,50 +108,51 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     
     async def _validate_description(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Description: {description}")
-        ...
 
     @statesman.event("Submit a Description to the optimizer for analysis", States.awaiting_description, States.analyzing, guard=_validate_description)
     async def submit_description(self, description: servo.Description) -> servo.api.Status:
         servo.logging.logger.info(f"Received Description: {description}")
-        self.description = description
-        
-        return servo.api.Status(status="ok")
+        self.description = description        
+        return servo.api.Status.ok()
     
     ##
     # Measure
     
-    # TODO: Replace the metrics and control arg...
     @statesman.event("Request a Measurement from the servo", [States.ready, States.analyzing], States.awaiting_measurement)
-    async def request_measurement(self, params: Dict[str, Any] = { "metrics": [], "control": {}}) -> None:
+    async def request_measurement(self, metrics: List[servo.Metric], control: servo.Control) -> None:
         servo.logging.logger.info("Requesting Measurement")
-        self.command_params = params
+        self.command_response = servo.CommandResponse(
+            command=servo.api.Commands.measure,
+            param=servo.api.MeasureParams(metrics=metrics, control=control)
+        )
     
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
-        ...
     
     @statesman.event("Submit a Measurement to the optimizer for analysis", States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
     async def submit_measurement(self, measurement: servo.Measurement) -> servo.api.Status:
         servo.logging.logger.info(f"Received Measurement: {measurement}")
-        return servo.api.Status(status="ok")
+        return servo.api.Status.ok()
     
     ##
     # Adjust
     
-    # TODO: Replace this whole thing with models (adjustments[])
     @statesman.event("Recommend Adjustment", [States.ready, States.analyzing], States.awaiting_adjustment)
-    async def recommend_adjustment(self, params: Dict[str, Any]) -> None:
+    async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment]) -> None:
         servo.logging.logger.info("Recommending Adjustment")
-        self.command_params = params
+        # TODO: this needs to be serialized correctly
+        self.command_response = servo.CommandResponse(
+            command=servo.api.Commands.adjust,
+            param=adjustments
+        )
     
-    async def _validate_adjustment(self, adjustment: servo.Adjustment) -> None:
-        servo.logging.logger.info(f"Validating Adjustment: {adjustment}")
-        ...
+    async def _validate_adjustments(self, description: servo.Description) -> None:
+        servo.logging.logger.info(f"Validating Adjustment: {description}")
     
-    @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustment])
-    async def complete_adjustment(self, adjustment: servo.Adjustment) -> servo.api.Status:
-        servo.logging.logger.info(f"Adjustment Completed: {adjustment}")
-        return servo.api.Status(status="ok")
+    @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustments])
+    async def complete_adjustments(self, description: servo.Description) -> servo.api.Status:
+        servo.logging.logger.info(f"Adjustment Completed: {description}")
+        return servo.api.Status.ok()
     
     ##
     # Terminal transitions
