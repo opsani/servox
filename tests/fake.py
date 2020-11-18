@@ -55,6 +55,25 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.progress = None
         self.command_response = None
     
+    @statesman.enter_state(States.awaiting_description)
+    async def _enter_awaiting_description(self) -> None:
+        self.command_response = servo.api.CommandResponse(cmd=servo.api.Commands.describe, param={})
+    
+    @statesman.enter_state(States.awaiting_measurement)
+    async def _enter_awaiting_measurement(self, metrics: List[servo.Metric] = [], control: servo.Control = servo.Control()) -> None:
+        self.command_response = servo.api.CommandResponse(
+            cmd=servo.api.Commands.measure,
+            param=servo.api.MeasureParams(metrics=metrics, control=control)
+        )
+    
+    @statesman.enter_state(States.awaiting_adjustment)
+    async def _enter_awaiting_adjustment(self, adjustments: List[servo.types.Adjustment] = []) -> None:
+        # TODO: this needs to be serialized correctly
+        self.command_response = servo.api.CommandResponse(
+            cmd=servo.api.Commands.adjust,
+            param=adjustments
+        )
+    
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
     async def _exiting_operation(self) -> None:
         self.command_response = None
@@ -78,7 +97,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
         servo.logging.logger.info(f"Asking What's Next? => {self.command}: {self.command_response}")
-        return self.command_response or servo.api.CommandResponse(command=self.command, param={})
+        return self.command_response or servo.api.CommandResponse(cmd=self.command, param={})
     
     @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def say_goodbye(self) -> servo.api.Status:
@@ -123,11 +142,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     @statesman.event([States.ready, States.analyzing], States.awaiting_measurement)
     async def request_measurement(self, metrics: List[servo.Metric], control: servo.Control) -> None:
         """Request a Measurement from the servo."""
-        servo.logging.logger.info("Requesting Measurement")
-        self.command_response = servo.CommandResponse(
-            command=servo.api.Commands.measure,
-            param=servo.api.MeasureParams(metrics=metrics, control=control)
-        )
+        servo.logging.logger.info(f"Requesting Measurement ({metrics}, {control})")
     
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
@@ -144,12 +159,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     @statesman.event([States.ready, States.analyzing], States.awaiting_adjustment)
     async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment]) -> None:
         """Recommend Adjustments to the Servo."""
-        servo.logging.logger.info("Recommending Adjustment")
-        # TODO: this needs to be serialized correctly
-        self.command_response = servo.CommandResponse(
-            command=servo.api.Commands.adjust,
-            param=adjustments
-        )
+        servo.logging.logger.info(f"Recommending Adjustments ({adjustments}")
     
     async def _validate_adjustments(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {description}")
