@@ -4,45 +4,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import pydantic
 import fastapi
-import pytest
 import statesman
 
 import servo
-
-# TODO: Replace these with models from servo.types
-class ServoEvent(pydantic.BaseModel):
-    event: str
-    param: Union[None, Dict]
-
-class ServoNotifyResponse(pydantic.BaseModel):
-    status: str
-    message: Optional[str]
-
-class ServoCommandResponse(pydantic.BaseModel):
-    cmd: str
-    param: Dict
-
-# TODO: Replace this with a model...
-# TODO: Need an adjustments_to_response function
-ADJUST_PAYLOAD = yaml.safe_load(    # payload to send for all adjust commands - must match emulator
-    """
-    state:
-        application:
-            components:
-                web:
-                    settings:
-                        cpu: { value: 1 }
-                        replicas: { value: 3 }
-                java:
-                    settings:
-                        mem: { value: 2 }
-                        GCTimeRatio: { value: 99 }
-                db:
-                    settings:
-                        cpu: { value: 1 }
-                        commit_delay: { value: 0 }
-    """
-)
 
 class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     class States(statesman.StateEnum):
@@ -104,7 +68,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         servo.logging.logger.info("Resetting Optimizer")
     
     @statesman.event("Say Hello to the servo", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def say_hello(self) -> ServoNotifyResponse:
+    async def say_hello(self) -> servo.api.Status:
         """Say hello to a servo that has connected and greeted us.
         
         A servo saying hello toggles the connected state to True.
@@ -112,17 +76,17 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         servo.logging.logger.info("Saying Hello")
         self.connected = True
         
-        return ServoNotifyResponse(status="ok")
+        return servo.api.Status(status="ok")
     
     @statesman.event("Ask What's Next?", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def ask_whats_next(self) -> ServoCommandResponse:
+    async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
         servo.logging.logger.info(f"Asking What's Next? => {self.command}")
         params = self.command_params or {}
-        return ServoCommandResponse(cmd=self.command, param=params)
+        return servo.api.CommandResponse(cmd=self.command, param=params)
     
     @statesman.event("Say Goodbye to the servo", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
-    async def say_goodbye(self) -> ServoNotifyResponse:
+    async def say_goodbye(self) -> servo.api.Status:
         """Say goodbye to a servo that is disconnecting and has bid us farewell.
         
         A servo saying goodbye toggles the connected state to False.
@@ -130,7 +94,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         servo.logging.logger.info("Saying Goodbye")
         self.connected = False
         
-        return ServoNotifyResponse(status="ok")
+        return servo.api.Status(status="ok")
     
     async def _guard_progress_tracking(self, *, progress: Optional[int] = None) -> bool:
         if isinstance(progress, int) and progress < 100:
@@ -153,11 +117,11 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
 
     @statesman.event("Submit a Description to the optimizer for analysis", States.awaiting_description, States.analyzing, guard=_validate_description)
-    async def submit_description(self, description: servo.Description) -> ServoNotifyResponse:
+    async def submit_description(self, description: servo.Description) -> servo.api.Status:
         servo.logging.logger.info(f"Received Description: {description}")
         self.description = description
         
-        return ServoNotifyResponse(status="ok")
+        return servo.api.Status(status="ok")
     
     ##
     # Measure
@@ -173,9 +137,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
     
     @statesman.event("Submit a Measurement to the optimizer for analysis", States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
-    async def submit_measurement(self, measurement: servo.Measurement) -> ServoNotifyResponse:
+    async def submit_measurement(self, measurement: servo.Measurement) -> servo.api.Status:
         servo.logging.logger.info(f"Received Measurement: {measurement}")
-        return ServoNotifyResponse(status="ok")
+        return servo.api.Status(status="ok")
     
     ##
     # Adjust
@@ -191,9 +155,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ...
     
     @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustment])
-    async def complete_adjustment(self, adjustment: servo.Adjustment) -> ServoNotifyResponse:
+    async def complete_adjustment(self, adjustment: servo.Adjustment) -> servo.api.Status:
         servo.logging.logger.info(f"Adjustment Completed: {adjustment}")
-        return ServoNotifyResponse(status="ok")
+        return servo.api.Status(status="ok")
     
     ##
     # Terminal transitions

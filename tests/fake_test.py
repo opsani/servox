@@ -36,7 +36,7 @@ async def test_submit_description_stores_description() -> None:
 async def test_whats_next_returns_command_response() -> None:
     state_machine = await tests.fake.StateMachine.create(state=tests.fake.StateMachine.States.awaiting_description)
     response = await state_machine.ask_whats_next()
-    assert response.cmd == servo.api.Commands.describe
+    assert response.command == servo.api.Commands.describe
     assert response.param == {}
     assert state_machine.command == servo.api.Commands.describe    
 
@@ -159,7 +159,7 @@ class OpsaniAPI(fastapi.FastAPI):
 api = OpsaniAPI()
 
 @api.post("/accounts/{account}/applications/{app}/servo")
-async def servo_get(account: str, app: str, ev: tests.fake.ServoEvent) -> Union[tests.fake.ServoNotifyResponse, tests.fake.ServoCommandResponse]:
+async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[servo.api.Status, servo.api.CommandResponse]:
     assert api.optimizer, "an optimizer must be assigned to the OpsaniAPI instance"
     if ev.event == "HELLO":
         return await api.optimizer.say_hello()
