@@ -118,6 +118,58 @@ async def test_hello_and_describe(
     # description has been accepted and state machine has transitioned into analyzing
     assert static_optimizer.state == tests.fake.StateMachine.States.analyzing
 
+def test_adjustments_to_descriptor() -> None:
+    adjustment1 = servo.Adjustment(component_name="web", setting_name="cpu", value=1.25)
+    adjustment2 = servo.Adjustment(component_name="web", setting_name="mem", value=5.0)
+    adjustment3 = servo.Adjustment(component_name="db", setting_name="mem", value=4.0)
+    descriptor = servo.api.adjustments_to_descriptor([adjustment1, adjustment2, adjustment3])
+    assert descriptor == {
+        'state': {
+            'application': {
+                'components': {
+                    'web': {
+                        'settings': {
+                            'cpu': {
+                                'value': '1.25',
+                            },
+                            'mem': {
+                                'value': '5.0',
+                            },
+                        },
+                    },
+                    'db': {
+                        'settings': {
+                            'mem': {
+                                'value': '4.0',
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    }
+
+# TODO: Need state sequencer class
+async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
+    static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    await static_optimizer.say_hello()
+    
+    await static_optimizer.request_description()
+    await static_optimizer.submit_description(_random_description())
+    
+    metric = servo.Metric(
+        name="Some Metric",
+        unit=servo.Unit.REQUESTS_PER_MINUTE,                        
+    )
+    await static_optimizer.request_measurement(metrics=[metric], control=servo.Control())
+    await static_optimizer.submit_measurement(measurement)
+    
+    adjustment = servo.Adjustment(component_name="web", setting_name="cpu", value=1.25)
+    await static_optimizer.recommend_adjustments([adjustment])
+    await static_optimizer.complete_adjustments(_random_description())
+    
+    await static_optimizer.say_goodbye()
+
 @pytest.fixture()
 def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(

@@ -68,10 +68,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     
     @statesman.enter_state(States.awaiting_adjustment)
     async def _enter_awaiting_adjustment(self, adjustments: List[servo.types.Adjustment] = []) -> None:
-        # TODO: this needs to be serialized correctly
         self.command_response = servo.api.CommandResponse(
             cmd=servo.api.Commands.adjust,
-            param=adjustments
+            param=servo.api.adjustments_to_descriptor(adjustments)
         )
     
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])

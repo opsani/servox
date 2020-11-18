@@ -119,6 +119,13 @@ class MeasureParams(pydantic.BaseModel):
             return list(value.keys())
 
         return value
+    
+    @pydantic.validator('metrics', each_item=True, pre=True)
+    def _map_metrics(cls, v) -> str:
+        if isinstance(v, servo.Metric):
+            return v.name
+        
+        return v
 
 
 class CommandResponse(pydantic.BaseModel):
@@ -309,3 +316,15 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
             )
             adjustments.append(adjustment)
     return adjustments
+
+def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
+    components = {}
+    descriptor = { "state": { "application": { "components": components }}}
+    
+    for adjustment in adjustments:
+        if not adjustment.component_name in components:
+            components[adjustment.component_name] = { "settings": {} }
+        
+        components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
+    
+    return descriptor
