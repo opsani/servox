@@ -44,21 +44,6 @@ ADJUST_PAYLOAD = yaml.safe_load(    # payload to send for all adjust commands - 
     """
 )
 
-class Events(str, enum.Enum):
-    hello = "HELLO"
-    whats_next = "WHATS_NEXT"
-    describe = "DESCRIPTION"
-    measure = "MEASUREMENT"
-    adjust = "ADJUSTMENT"
-    goodbye = "GOODBYE"
-
-
-class Commands(str, enum.Enum):
-    describe = "DESCRIBE"
-    measure = "MEASURE"
-    adjust = "ADJUST"
-    sleep = "SLEEP"
-
 class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     class States(statesman.StateEnum):
         ready = statesman.InitialState("Ready")
@@ -77,22 +62,23 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     error: Optional[Exception] = None
     
     # TODO: Figure out how to tighten this up...
+    # TODO: Replace with a normal object that can take an opsani_repr or to_json?
     command_params: Optional[Dict[str, Any]] = None
     
     @property
-    def command(self) -> Commands:
+    def command(self) -> servo.api.Commands:
         """Return the command for the current state."""
         if self.state == StateMachine.States.awaiting_description:
-            return Commands.describe
+            return servo.api.Commands.describe
         elif self.state == StateMachine.States.awaiting_measurement:
-            return Commands.measure
+            return servo.api.Commands.measure
         elif self.state == StateMachine.States.awaiting_adjustment:
-            return Commands.adjust
+            return servo.api.Commands.adjust
         elif self.state in (StateMachine.States.done, StateMachine.States.failed):
-            return Commands.sleep
+            return servo.api.Commands.sleep
         else:
             servo.logging.logger.error(f"in non-operational state ({self.state}): cannot command servo meaningfully")
-            return Commands.sleep
+            return servo.api.Commands.sleep
     
     @statesman.enter_state(States.ready)
     async def _enter_ready(self) -> None:

@@ -14,16 +14,16 @@ from tests.fake import AbstractOptimizer
 @pytest.mark.parametrize(
     ("state", "expected_command"),
     [
-        (tests.fake.StateMachine.States.ready, tests.fake.Commands.sleep),
-        (tests.fake.StateMachine.States.analyzing, tests.fake.Commands.sleep),
-        (tests.fake.StateMachine.States.awaiting_description, tests.fake.Commands.describe),
-        (tests.fake.StateMachine.States.awaiting_measurement, tests.fake.Commands.measure),
-        (tests.fake.StateMachine.States.awaiting_adjustment, tests.fake.Commands.adjust),
-        (tests.fake.StateMachine.States.done, tests.fake.Commands.sleep),
-        (tests.fake.StateMachine.States.failed, tests.fake.Commands.sleep),        
+        (tests.fake.StateMachine.States.ready, servo.api.Commands.sleep),
+        (tests.fake.StateMachine.States.analyzing, servo.api.Commands.sleep),
+        (tests.fake.StateMachine.States.awaiting_description, servo.api.Commands.describe),
+        (tests.fake.StateMachine.States.awaiting_measurement, servo.api.Commands.measure),
+        (tests.fake.StateMachine.States.awaiting_adjustment, servo.api.Commands.adjust),
+        (tests.fake.StateMachine.States.done, servo.api.Commands.sleep),
+        (tests.fake.StateMachine.States.failed, servo.api.Commands.sleep),        
     ]
 )
-async def test_command(state: tests.fake.StateMachine.States, expected_command: Optional[tests.fake.Commands]) -> None:
+async def test_command(state: tests.fake.StateMachine.States, expected_command: Optional[servo.api.Commands]) -> None:
     state_machine = await tests.fake.StateMachine.create(state=state)
     assert state_machine.command == expected_command, f"Expected command of {expected_command} but found {state_machine.command}"
 
@@ -36,9 +36,9 @@ async def test_submit_description_stores_description() -> None:
 async def test_whats_next_returns_command_response() -> None:
     state_machine = await tests.fake.StateMachine.create(state=tests.fake.StateMachine.States.awaiting_description)
     response = await state_machine.ask_whats_next()
-    assert response.cmd == tests.fake.Commands.describe
+    assert response.cmd == servo.api.Commands.describe
     assert response.param == {}
-    assert state_machine.command == tests.fake.Commands.describe    
+    assert state_machine.command == servo.api.Commands.describe    
 
 @pytest.fixture()
 def state_machine() -> tests.fake.StateMachine:
@@ -101,7 +101,7 @@ async def test_hello_and_describe(
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
     
     response = await servo_runner._post_event(
-        servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT)
+        servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
     )
     assert response.status == "ok"
     
@@ -112,7 +112,7 @@ async def test_hello_and_describe(
     # get a description from the servo
     description = await servo_runner.describe()
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
-    response = await servo_runner._post_event(servo.api.Event.DESCRIPTION, param)
+    response = await servo_runner._post_event(servo.api.Events.describe, param)
     assert response.status == "ok"
     
     # description has been accepted and state machine has transitioned into analyzing

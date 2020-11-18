@@ -122,7 +122,7 @@ class ServoChecks(servo.checks.BaseChecks):
             available and an advisory string describing the status encountered.
         """
         async with self.api_client() as client:
-            event_request = servo.api.Request(event=servo.api.Event.HELLO)
+            event_request = servo.api.Request(event=servo.api.Events.hello)
             response = await client.post("servo", data=event_request.json())
             success = response.status_code == httpx.codes.OK
             return (success, f"Response status code: {response.status_code}")
@@ -355,7 +355,7 @@ class Servo(servo.connector.BaseConnector):
         """
         try:
             async with self.api_client() as client:
-                event_request = servo.api.Request(event=servo.api.Event.HELLO)
+                event_request = servo.api.Request(event=servo.api.Events.hello)
                 response = await client.post("servo", data=event_request.json())
                 success = response.status_code == httpx.codes.OK
                 return [

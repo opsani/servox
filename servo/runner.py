@@ -95,11 +95,11 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
-        cmd_response = await self._post_event(servo.api.Event.WHATS_NEXT, None)
+        cmd_response = await self._post_event(servo.api.Events.whats_next, None)
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(devtools.pformat(cmd_response))
 
-        if cmd_response.command == servo.api.Command.DESCRIBE:
+        if cmd_response.command == servo.api.Commands.describe:
             description = await self.describe()
             self.logger.info(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
@@ -107,18 +107,18 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             self.logger.trace(devtools.pformat(description))
 
             status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
-            return await self._post_event(servo.api.Event.DESCRIPTION, status.dict())
+            return await self._post_event(servo.api.Events.describe, status.dict())
 
-        elif cmd_response.command == servo.api.Command.MEASURE:
+        elif cmd_response.command == servo.api.Commands.measure:
             measurement = await self.measure(cmd_response.param)
             self.logger.info(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
             self.logger.trace(devtools.pformat(measurement))
             param = measurement.__opsani_repr__()
-            return await self._post_event(servo.api.Event.MEASUREMENT, param)
+            return await self._post_event(servo.api.Events.measure, param)
 
-        elif cmd_response.command == servo.api.Command.ADJUST:
+        elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
 
@@ -139,9 +139,9 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                     f"Adjustment failed: {error}"
                 )
 
-            return await self._post_event(servo.api.Event.ADJUSTMENT, status.dict())
+            return await self._post_event(servo.api.Events.adjust, status.dict())
 
-        elif cmd_response.command == servo.api.Command.SLEEP:
+        elif cmd_response.command == servo.api.Commands.sleep:
             # TODO: Model this
             duration = Duration(cmd_response.param.get("duration", 120))
             status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
@@ -243,7 +243,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Event.HELLO, dict(agent=servo.api.USER_AGENT))
+                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
                 self.connected = True
 
             self.logger.info("Dispatching startup event...")
@@ -261,7 +261,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         """Shutdown the running servo."""
         try:
             if self.connected:
-                await self._post_event(servo.api.Event.GOODBYE, dict(reason=reason))
+                await self._post_event(servo.api.Events.goodbye, dict(reason=reason))
         except Exception:
             self.logger.exception(f"Exception occurred during GOODBYE request")        
 

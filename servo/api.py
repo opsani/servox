@@ -37,41 +37,39 @@ class Reasons(str, enum.Enum):
     unknown = "unknown"
     unstable = "unstable"
 
+class Events(str, enum.Enum):
+    hello = "HELLO"    
+    whats_next = "WHATS_NEXT"
+    describe = "DESCRIPTION"
+    measure = "MEASUREMENT"
+    adjust = "ADJUSTMENT"    
+    goodbye = "GOODBYE"
 
-class Command(str, enum.Enum):
-    DESCRIBE = "DESCRIBE"
-    MEASURE = "MEASURE"
-    ADJUST = "ADJUST"
-    SLEEP = "SLEEP"
+class Commands(str, enum.Enum):
+    describe = "DESCRIBE"
+    measure = "MEASURE"
+    adjust = "ADJUST"
+    sleep = "SLEEP"
 
     @property
-    def response_event(self) -> str:
-        if self == Command.DESCRIBE:
-            return Event.DESCRIPTION
-        elif self == Command.MEASURE:
-            return Event.MEASUREMENT
-        elif self == Command.ADJUST:
-            return Event.ADJUSTMENT
+    def response_event(self) -> Events:
+        if self == Commands.describe:
+            return Events.describe
+        elif self == Commands.measure:
+            return Events.measure
+        elif self == Commands.adjust:
+            return Events.adjust
         else:
-            return None
-
-
-class Event(str, enum.Enum):
-    HELLO = "HELLO"
-    GOODBYE = "GOODBYE"
-    DESCRIPTION = "DESCRIPTION"
-    WHATS_NEXT = "WHATS_NEXT"
-    ADJUSTMENT = "ADJUSTMENT"
-    MEASUREMENT = "MEASUREMENT"
+            raise ValueError(f"unknoen command: {self}")
 
 
 class Request(pydantic.BaseModel):
-    event: Union[Event, str]  # TODO: Needs to be rethought -- used adhoc in some cases
+    event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
-            Event: lambda v: str(v),
+            Events: lambda v: str(v),
         }
 
 
@@ -124,14 +122,14 @@ class MeasureParams(pydantic.BaseModel):
 
 
 class CommandResponse(pydantic.BaseModel):
-    command: Command = pydantic.Field(alias="cmd")
+    command: Commands = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
     ]  # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
-            Command: lambda v: str(v),
+            Commands: lambda v: str(v),
         }
 
 
@@ -256,7 +254,7 @@ class Mixin(abc.ABC):
         max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
         max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
     )
-    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
+    async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
             self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
@@ -283,7 +281,7 @@ class Mixin(abc.ABC):
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
-    def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
+    def _post_event_sync(self, event: Events, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
         with self.servo.api_client_sync() as client:
             try:
