@@ -1261,6 +1261,9 @@ class ControllerModel(KubernetesModel, abc.ABC):
             pod_obj.metadata.labels = {}
         pod_obj.metadata.labels["opsani_role"] = "tuning"
 
+        if isinstance(self, Rollout): # Add argo specific label to allow active service to adopt the canary pod
+            pod_obj.metadata.labels["rollouts-pod-template-hash"] = self.obj.status.current_pod_hash
+
         canary_pod = Pod(obj=pod_obj)
         canary_pod.namespace = namespace
         self.logger.trace(f"initialized new canary: {canary_pod}")
