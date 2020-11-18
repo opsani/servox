@@ -59,12 +59,12 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _exiting_operation(self) -> None:
         self.command_response = None
         
-    @statesman.event("Reset the Optimizer to an initial ready state", States.__any__, States.ready)
+    @statesman.event(States.__any__, States.ready)
     async def reset(self) -> None:
-        """Reset the state machine to an initial ready state."""
+        """Reset the Optimizer to an initial ready state."""
         servo.logging.logger.info("Resetting Optimizer")
     
-    @statesman.event("Say Hello to the servo", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def say_hello(self) -> servo.api.Status:
         """Say hello to a servo that has connected and greeted us.
         
@@ -74,13 +74,13 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = True
         return servo.api.Status.ok()
     
-    @statesman.event("Ask What's Next?", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
         servo.logging.logger.info(f"Asking What's Next? => {self.command}: {self.command_response}")
         return self.command_response or servo.api.CommandResponse(command=self.command, param={})
     
-    @statesman.event("Say Goodbye to the servo", States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
     async def say_goodbye(self) -> servo.api.Status:
         """Say goodbye to a servo that is disconnecting and has bid us farewell.
         
@@ -102,15 +102,17 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     ##
     # Describe
     
-    @statesman.event("Request a Description of application state from the servo", [States.ready, States.analyzing], States.awaiting_description)
+    @statesman.event([States.ready, States.analyzing], States.awaiting_description)
     async def request_description(self) -> None:
+        """Request a Description of application state from the servo."""
         servo.logging.logger.info("Requesting Description")
     
     async def _validate_description(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Description: {description}")
 
-    @statesman.event("Submit a Description to the optimizer for analysis", States.awaiting_description, States.analyzing, guard=_validate_description)
+    @statesman.event(States.awaiting_description, States.analyzing, guard=_validate_description)
     async def submit_description(self, description: servo.Description) -> servo.api.Status:
+        """Submit a Description to the optimizer for analysis."""
         servo.logging.logger.info(f"Received Description: {description}")
         self.description = description        
         return servo.api.Status.ok()
@@ -118,8 +120,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     ##
     # Measure
     
-    @statesman.event("Request a Measurement from the servo", [States.ready, States.analyzing], States.awaiting_measurement)
+    @statesman.event([States.ready, States.analyzing], States.awaiting_measurement)
     async def request_measurement(self, metrics: List[servo.Metric], control: servo.Control) -> None:
+        """Request a Measurement from the servo."""
         servo.logging.logger.info("Requesting Measurement")
         self.command_response = servo.CommandResponse(
             command=servo.api.Commands.measure,
@@ -129,16 +132,18 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
     
-    @statesman.event("Submit a Measurement to the optimizer for analysis", States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
+    @statesman.event(States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
     async def submit_measurement(self, measurement: servo.Measurement) -> servo.api.Status:
+        """Submit a Measurement to the optimizer for analysis."""
         servo.logging.logger.info(f"Received Measurement: {measurement}")
         return servo.api.Status.ok()
     
     ##
     # Adjust
     
-    @statesman.event("Recommend Adjustment", [States.ready, States.analyzing], States.awaiting_adjustment)
+    @statesman.event([States.ready, States.analyzing], States.awaiting_adjustment)
     async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment]) -> None:
+        """Recommend Adjustments to the Servo."""
         servo.logging.logger.info("Recommending Adjustment")
         # TODO: this needs to be serialized correctly
         self.command_response = servo.CommandResponse(
@@ -149,21 +154,24 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _validate_adjustments(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {description}")
     
-    @statesman.event("Complete Adjustment", States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustments])
+    @statesman.event(States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustments])
     async def complete_adjustments(self, description: servo.Description) -> servo.api.Status:
+        """Complete Adjustment."""
         servo.logging.logger.info(f"Adjustment Completed: {description}")
         return servo.api.Status.ok()
     
     ##
     # Terminal transitions
     
-    @statesman.event("Fail Optimization", States.__any__, States.failed)
+    @statesman.event(States.__any__, States.failed)
     async def fail(self, error: Exception) -> None:
+        """Fail the Optimization."""
         servo.logging.logger.info(f"Optimization failed: {error}")
         self.error = error
     
-    @statesman.event("Complete Optimization", States.__any__, States.done)
+    @statesman.event(States.__any__, States.done)
     async def done(self) -> None:
+        """Complete the Optimization."""
         servo.logging.logger.info("Optimization completed")
     
     class Config:
