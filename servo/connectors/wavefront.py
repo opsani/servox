@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import functools
 import re
+import enum
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import httpcore._exceptions
@@ -12,6 +13,33 @@ import servo
 
 DEFAULT_BASE_URL = "http://wavefront.com:2878"
 API_PATH = "/api/v2/"
+
+
+class Granularity(str, enum.Enum):
+    """Granularity determines the resolution of the query, via the number of
+    data points captured across a query range. A query's granularity is completely
+    independent from any range durations specified in the WQL expression it evaluates.
+    """
+
+    second = "s"
+    minute = "m"
+    hour = "h"
+    day = "d"
+
+
+class Summarization(str, enum.Enum):
+    """The summarization strategy to use when bucketing points together.
+    Available values: MEAN, MEDIAN, MIN, MAX, SUM, COUNT, LAST, FIRST.
+    """
+
+    mean = "MEAN"
+    median = "MEDIAN"
+    min = "MIN"
+    max = "MAX"
+    sum = "SUM"
+    count = "COUNT"
+    last = "LAST"
+    first = "FIRST"
 
 
 class WavefrontMetric(servo.Metric):
@@ -27,22 +55,16 @@ class WavefrontMetric(servo.Metric):
     documentation.
     """
 
-    granularity: pydantic.constr(
-        regex=r"^[smhd]"
-    ) = "m"
-
-    """The resolution of the query. The granularity resolution determines the number of data points captured across a
-    query range. A query's granularity is completely independent from any range durations specified in the WQL expression it evaluates.
+    granularity: Granularity = "m"
+    """The granular resolution of the query, independent from any range durations specified 
+    in the WQL expression it evaluates.
     
     Available values: s, m, h, d.
     """
 
-    summarization: pydantic.constr(
-        min_length=3,
-        max_length=6
-    ) = "LAST"
+    summarized_by: Summarization = "LAST"
     """Summarization strategy to use when bucketing points together.
-
+    
     Available values: MEAN, MEDIAN, MIN, MAX, SUM, COUNT, LAST, FIRST.
     """
 
@@ -62,6 +84,7 @@ class WavefrontConfiguration(servo.BaseConfiguration):
     """WavefrontConfiguration objects describe how WavefrontConnector objects
     capture measurements from the Wavefront metrics server.
     """
+
     api_key: pydantic.SecretStr
     """The API key for accessing the Wavefront metrics API."""
 
@@ -87,22 +110,22 @@ class WavefrontConfiguration(servo.BaseConfiguration):
             A default configuration for WavefrontConnector objects.
         """
         return cls(
-            description="Update the base_url and metrics to match your Wavefront configuration",
+            description="Update the api_key, base_url and metrics to match your Wavefront configuration",
             api_key='replace-me',
             metrics=[
                 WavefrontMetric(
                     "throughput",
                     servo.Unit.REQUESTS_PER_MINUTE,
                     query="avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))",
-                    granularity="m",
-                    summarization="LAST",
+                    granularity=Granularity.minute,
+                    summarized_by=Summarization.last,
                 ),
                 WavefrontMetric(
                     "error_rate",
                     servo.Unit.COUNT,
                     query="avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))",
-                    granularity="m",
-                    summarization="LAST",
+                    granularity=Granularity.minute,
+                    summarized_by=Summarization.last,
                 ),
             ],
             **kwargs,
@@ -134,7 +157,7 @@ class WavefrontRequest(pydantic.BaseModel):
 
     @property
     def summarization(self) -> str:
-        return self.metric.summarization
+        return self.metric.summarized_by
 
     @property
     def url(self) -> str:
@@ -145,8 +168,8 @@ class WavefrontRequest(pydantic.BaseModel):
             + f"&s={self.start.timestamp()}"
             + f"&e={self.end.timestamp()}"
             + f"&g={self.metric.granularity}"
-            + f"&summarization={self.metric.summarization}"
-            + f"&strict=True"  # Should probably be a non-configurable property, else query will return points outside the window
+            + f"&summarization={self.metric.summarized_by}"
+            + f"&strict=True"  # Should remain as non-configurable, else query will return points outside window
         )
 
 
@@ -191,7 +214,7 @@ class WavefrontChecks(servo.BaseChecks):
 
 @servo.metadata(
     description="Wavefront Connector for Opsani",
-    version="0.0.1",
+    version="1.0.0",
     homepage="https://github.com/opsani/servox",
     license=servo.License.APACHE2,
     maturity=servo.Maturity.STABLE,

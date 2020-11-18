@@ -7,7 +7,7 @@ import respx
 from freezegun import freeze_time
 from pydantic import ValidationError
 
-from servo.connectors.wavefront import WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, \
+from servo.connectors.wavefront import Granularity, Summarization, WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, \
     WavefrontConnector
 from servo.types import *
 
@@ -18,7 +18,7 @@ class TestWavefrontMetric:
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
-            granularity="m",
+            granularity=Granularity.minute,
         )
         assert metric.granularity.isalpha()
 
@@ -27,9 +27,9 @@ class TestWavefrontMetric:
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
-            summarization="LAST",
+            summarized_by=Summarization.last,
         )
-        assert metric.summarization.isalpha()
+        assert metric.summarized_by.isalpha()
 
     # Query
     def test_query_required(self):
@@ -116,7 +116,7 @@ class TestWavefrontConfiguration:
     def test_generate_default_config(self):
         config = WavefrontConfiguration.generate()
         assert config.yaml() == (
-            "description: Update the base_url and metrics to match your Wavefront configuration\n"
+            "description: Update the api_key, base_url and metrics to match your Wavefront configuration\n"
             "api_key: '**********'\n"
             "base_url: http://wavefront.com:2878\n"
             "metrics:\n"
@@ -124,12 +124,12 @@ class TestWavefrontConfiguration:
             "  unit: rpm\n"
             "  query: avg(ts(appdynamics.apm.overall.calls_per_min, env=foo and app=my-app))\n"
             "  granularity: m\n"
-            "  summarization: LAST\n"
+            "  summarized_by: LAST\n"
             "- name: error_rate\n"
             "  unit: count\n"
             "  query: avg(ts(appdynamics.apm.transactions.errors_per_min, env=foo and app=my-app))\n"
             "  granularity: m\n"
-            "  summarization: LAST\n"
+            "  summarized_by: LAST\n"
         )
 
 
@@ -144,8 +144,8 @@ class TestWavefrontRequest:
                 "throughput",
                 servo.Unit.REQUESTS_PER_MINUTE,
                 query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
-                granularity="m",
-                summarization="LAST"
+                granularity=Granularity.minute,
+                summarized_by=Summarization.last
             ),
         )
         assert (
@@ -236,7 +236,8 @@ class TestWavefrontChecks:
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
-            granularity="m",
+            granularity=Granularity.minute,
+            summarized_by=Summarization.last,
         )
 
     @pytest.fixture
@@ -355,7 +356,8 @@ class TestWavefrontConnector:
             name="test",
             unit=Unit.REQUESTS_PER_MINUTE,
             query='rate(ts("heapster.node.network.tx", cluster="idps-preprod-west2.cluster.k8s.local"))',
-            granularity="m",
+            granularity=Granularity.minute,
+            summarized_by=Summarization.last,
         )
 
     @pytest.fixture
