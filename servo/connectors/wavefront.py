@@ -88,6 +88,7 @@ class WavefrontConfiguration(servo.BaseConfiguration):
         """
         return cls(
             description="Update the base_url and metrics to match your Wavefront configuration",
+            api_key='replace-me',
             metrics=[
                 WavefrontMetric(
                     "throughput",
