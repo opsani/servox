@@ -55,16 +55,16 @@ class WavefrontMetric(servo.Metric):
     documentation.
     """
 
-    granularity: Granularity = "m"
-    """The granular resolution of the query, independent from any range durations specified 
+    granularity: Granularity = Granularity.minute
+    """The granular resolution of the query, independent from any range durations specified
     in the WQL expression it evaluates.
-    
+
     Available values: s, m, h, d.
     """
 
-    summarized_by: Summarization = "LAST"
+    summarized_by: Summarization = Summarization.last
     """Summarization strategy to use when bucketing points together.
-    
+
     Available values: MEAN, MEDIAN, MIN, MAX, SUM, COUNT, LAST, FIRST.
     """
 
