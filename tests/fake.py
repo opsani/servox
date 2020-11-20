@@ -1,4 +1,5 @@
 import abc
+import collections
 import random
 from typing import Any, Dict, List, Optional, Union
 
@@ -192,104 +193,51 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     class Config:
         arbitrary_types_allowed = True
 
-# class TransitionTable:
-#     ...
-#     # Input, Current State, Next State, Output
-#     # State, Event, Input Params, Expected Next State, Output???
-
-# state_machine = StateMachine()
-# @state_machine.expect(
-#     # Entry State, Expected Event, Expected Exit State, Expected Output
-#     (None, state_machine.reset(), StateMachine.States.ready, None),
-#     (StateMachine.States.ready, state_machine.whats_next(), StateMachine.States.awaiting_description, ...),
-    
-#     (StateMachine.States.awaiting_description, state_machine.submit_description(ExpectedDescription()), StateMachine.States.ready, ...),
-    
-#     (StateMachine.States.ready, state_machine.whats_next(), StateMachine.States.awaiting_measurement, _verify_measure_command),
-#     (StateMachine.States.awaiting_measurement, state_machine.submit_measurement(ExpectedMeasurement()), StateMachine.States.analyzing, _verify_measurement_response),
-# )
-# async def verify(transition: statesman.Transition, expected: Any) -> None:
-#     ...
-
-# sequence = statesman.Sequence(
-#      state_machine.whats_next(),
-#      state_machine.request_description(),
-#      state_machine.submit_description(),
-     
-#      state_machine.whats_next(),
-#      state_machine.request_measurement(),
-#      state_machine.submit_measurement(),
-     
-#      state_machine.whats_next(),
-#      state_machine.recommend_adjustment(),
-#      state_machine.complete_adjustment(),
-     
-#      entry=state_machine.States.ready,
-#      iterations=10
-# )
-
-# await sequence.enter()
-# await sequence.next()
-# await sequence.run()
-
-# state_machine = StateMachine()
-# table = statesman.TransitionTable(
-#     # State, Event, Expected Input, Expected State, Output
-#     # Event, Expected State, Output???
-#     # Entry State, Event, Exit State, Verifier
-#     [state_machine.reset(), StateMachine.States.__any__, StateMachine.States.ready, state_machine.empty()],
-#     [state_machine.say_hello(), StateMachine.states.ready, state_machine.empty()],
-    
-#     [None, State.ready, ]
-    
-#     (None, StateMachine.activate, StateMachine.States.ready, Commands.Adjust("whatever"))
-    
-#     (StateMachine.say_hello(None)
-#     request_description
-#     submit_description
-    
-#     request_measurement
-#     submit_measurement
-    
-#     recommend_adjustment
-#     complete_adjustment
-    
-#     say_goodbye,
-#     Analyzing, reset
-# )
 
 class AbstractOptimizer(StateMachine, abc.ABC):
     id: str
     token: str
+    _queue: collections.deque = collections.deque()
+    
+    def append(self, item) -> None:
+        self._queue.append(item)
+    
+    def extend(self, items) -> None:
+        self._queue.extend(items)
     
     @abc.abstractmethod
-    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
         """Advance the optimizer to the next state."""
         ...
 
 class StaticOptimizer(AbstractOptimizer):
     """A fake optimizer that requires manual state changes."""
     
-    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
         return None
 
 class SequencedOptimizer(statesman.SequencingMixin, AbstractOptimizer):
     """A fake optimizer that executes state transitions in a specific order."""
     
-    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
-        return await super().next_state(*args, **kwargs)
+    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
+        return await super().next_transition(*args, **kwargs)
     
     async def after_transition(self, transition: statesman.Transition) -> None:
         if self.state == StateMachine.States.analyzing:
-            if not await self.next_state():
+            if not await self.next_transition():
                 # No more states -- finish optimization
                 await self.done()
 
 class RandomOptimizer(AbstractOptimizer):
     """A fake optimizer that executes state transitions in random order."""
     
-    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
-        pass
+    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
+        if not self._queue:
+            return None
+
+        transitionable = random.choice(self._queue)
+        self._queue.remove(transitionable)
+        return await transitionable
 
 class ChaosOptimizer(AbstractOptimizer):
     """A fake optimizer that generates chaos.
@@ -298,7 +246,7 @@ class ChaosOptimizer(AbstractOptimizer):
     invalid adjustment values, etc.
     """
     
-    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+    async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
         pass
 
 
