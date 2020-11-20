@@ -1,8 +1,7 @@
-import enum
-import yaml
+import abc
+import random
 from typing import Any, Dict, List, Optional, Union
 
-import pydantic
 import fastapi
 import statesman
 
@@ -76,13 +75,20 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
     async def _exiting_operation(self) -> None:
         self.command_response = None
+    
+    @statesman.enter_state([States.done, States.failed])
+    async def _sleep(self) -> None:
+        self.command_response = servo.api.CommandResponse(
+            cmd=servo.api.Commands.sleep,
+            param={"duration": 60, "data": {"reason": "no active optimization pipeline"}}
+        )
         
     @statesman.event(States.__any__, States.ready)
     async def reset(self) -> None:
         """Reset the Optimizer to an initial ready state."""
         servo.logging.logger.info("Resetting Optimizer")
     
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
     async def say_hello(self) -> servo.api.Status:
         """Say hello to a servo that has connected and greeted us.
         
@@ -92,13 +98,13 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = True
         return servo.api.Status.ok()
     
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
     async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
         servo.logging.logger.info(f"Asking What's Next? => {self.command}: {self.command_response}")
         return self.command_response or servo.api.CommandResponse(cmd=self.command, param={})
     
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.self)
+    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
     async def say_goodbye(self) -> servo.api.Status:
         """Say goodbye to a servo that is disconnecting and has bid us farewell.
         
@@ -132,7 +138,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def submit_description(self, description: servo.Description) -> servo.api.Status:
         """Submit a Description to the optimizer for analysis."""
         servo.logging.logger.info(f"Received Description: {description}")
-        self.description = description        
+        self.description = description
         return servo.api.Status.ok()
     
     ##
@@ -228,7 +234,7 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
 
 # state_machine = StateMachine()
 # table = statesman.TransitionTable(
-#     # State, Event, Expected State, Output
+#     # State, Event, Expected Input, Expected State, Output
 #     # Event, Expected State, Output???
 #     # Entry State, Event, Exit State, Verifier
 #     [state_machine.reset(), StateMachine.States.__any__, StateMachine.States.ready, state_machine.empty()],
@@ -252,30 +258,37 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
 #     Analyzing, reset
 # )
 
-class AbstractOptimizer(StateMachine):
+class AbstractOptimizer(StateMachine, abc.ABC):
     id: str
     token: str
     
-    # TODO: define an abstract method for next_state() ?
+    @abc.abstractmethod
+    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+        """Advance the optimizer to the next state."""
+        ...
 
 class StaticOptimizer(AbstractOptimizer):
     """A fake optimizer that requires manual state changes."""
     
-    async def to_next_state(self, *args, **kwargs) -> None:
-        debug(*args, kwargs)
-        pass
+    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+        return None
 
-class SequencedOptimizer(AbstractOptimizer):
+class SequencedOptimizer(statesman.SequencingMixin, AbstractOptimizer):
     """A fake optimizer that executes state transitions in a specific order."""
-    repeating: bool = False
     
-    async def to_next_state(self) -> None:
-        pass
+    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
+        return await super().next_state(*args, **kwargs)
+    
+    async def after_transition(self, transition: statesman.Transition) -> None:
+        if self.state == StateMachine.States.analyzing:
+            if not await self.next_state():
+                # No more states -- finish optimization
+                await self.done()
 
 class RandomOptimizer(AbstractOptimizer):
     """A fake optimizer that executes state transitions in random order."""
     
-    async def to_next_state(self) -> None:
+    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
         pass
 
 class ChaosOptimizer(AbstractOptimizer):
@@ -285,5 +298,84 @@ class ChaosOptimizer(AbstractOptimizer):
     invalid adjustment values, etc.
     """
     
-    async def to_next_state(self) -> None:
+    async def next_state(self, *args, **kwargs) -> Optional[statesman.Transition]:
         pass
+
+
+
+
+
+#########
+
+class OpsaniAPI(fastapi.FastAPI):
+    optimizer: Optional[AbstractOptimizer] = None
+    
+    # TODO: Update for multi-servo?
+
+api = OpsaniAPI()
+
+@api.post("/accounts/{account}/applications/{app}/servo")
+async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[servo.api.Status, servo.api.CommandResponse]:
+    assert api.optimizer, "an optimizer must be assigned to the OpsaniAPI instance"
+    if ev.event == servo.api.Events.hello:
+        return await api.optimizer.say_hello()
+    elif ev.event == servo.api.Events.goodbye:
+        return await api.optimizer.say_goodbye()
+    elif ev.event == servo.api.Events.whats_next:
+        return await api.optimizer.ask_whats_next()
+    elif ev.event == servo.api.Events.describe:
+        return await api.optimizer.submit_description(ev.param)
+    elif ev.event == servo.api.Events.measure:
+        return await api.optimizer.submit_measurement(ev.param)
+    elif ev.event == servo.api.Events.adjust:
+        return await api.optimizer.complete_adjustments(ev.param)
+    else:
+        raise ValueError(f"unknown event: {ev.event}")
+
+##
+# Utilities
+
+METRICS = [
+    servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
+    servo.Metric("error_rate", servo.Unit.PERCENTAGE),
+]
+
+COMPONENTS = [
+    servo.Component(
+        "fake-app",
+        settings=[
+            servo.CPU(
+                min=1,
+                max=5
+            ),
+            servo.Memory(
+                min=0.25,
+                max=8.0,
+                step=0.125
+            ),
+            servo.Replicas(
+                min=1,
+                max=10
+            )
+        ]
+    )
+]
+
+def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeric]:
+    if isinstance(setting, servo.RangeSetting):
+        max = int((setting.max - setting.min) / setting.step)
+        return random.randint(0, max) * setting.step + setting.min
+    elif isinstance(setting, servo.EnumSetting):
+        return random.choice(setting.values)
+    else:
+        raise ValueError(f"unexpected setting: {repr(setting)}")
+
+def _random_description() -> servo.Description:
+    components = COMPONENTS.copy()
+    metrics = METRICS.copy()
+    
+    for component in components:
+        for setting in component.settings:
+            setting.value = _random_value_for_setting(setting)
+
+    return servo.Description(metrics=metrics, components=components)

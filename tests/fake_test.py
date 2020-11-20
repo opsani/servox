@@ -74,7 +74,7 @@ def measurement() -> servo.Measurement:
 )
 async def test_progress_tracking(state_machine: tests.fake.StateMachine, measurement: servo.Measurement, initial_state, event, progress, ending_state) -> None:
     await state_machine.enter_state(initial_state)
-    await state_machine.trigger(event, measurement, progress=progress)
+    await state_machine.trigger_event(event, measurement, progress=progress)
     assert state_machine.state == ending_state
 
 async def test_progress_cant_go_backwards(state_machine: tests.fake.StateMachine, measurement: servo.Measurement) -> None:
@@ -149,7 +149,6 @@ def test_adjustments_to_descriptor() -> None:
         },
     }
 
-# TODO: Need state sequencer class
 async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
     static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
     await static_optimizer.say_hello()
@@ -213,17 +212,17 @@ api = OpsaniAPI()
 @api.post("/accounts/{account}/applications/{app}/servo")
 async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[servo.api.Status, servo.api.CommandResponse]:
     assert api.optimizer, "an optimizer must be assigned to the OpsaniAPI instance"
-    if ev.event == "HELLO":
+    if ev.event == servo.api.Events.hello:
         return await api.optimizer.say_hello()
-    elif ev.event == "GOODBYE":
+    elif ev.event == servo.api.Events.goodbye:
         return await api.optimizer.say_goodbye()
-    elif ev.event == "WHATS_NEXT":
+    elif ev.event == servo.api.Events.whats_next:
         return await api.optimizer.ask_whats_next()
-    elif ev.event == "DESCRIPTION":
+    elif ev.event == servo.api.Events.describe:
         return await api.optimizer.submit_description(ev.param)
-    elif ev.event == "MEASUREMENT":
+    elif ev.event == servo.api.Events.measure:
         return await api.optimizer.submit_measurement(ev.param)
-    elif ev.event == "ADJUSTMENT":
+    elif ev.event == servo.api.Events.adjust:
         return await api.optimizer.complete_adjustments(ev.param)
     else:
         raise ValueError(f"unknown event: {ev.event}")

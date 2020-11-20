@@ -365,3 +365,42 @@ async def fakeapi_client(fakeapi_url: str) -> AsyncIterator[httpx.AsyncClient]:
         base_url=fakeapi_url,
     ) as client:
         yield client
+
+
+
+######
+
+@pytest.fixture()
+def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
+    config_model = servo.assembly._create_config_model_from_routes(
+        {
+            "adjust": tests.helpers.AdjustConnector,
+        }
+    )
+    config = config_model.generate()
+    servo_yaml.write_text(config.yaml())
+
+    optimizer = servo.Optimizer(
+        id="dev.opsani.com/blake-ignite",
+        token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+        
+    )
+    assembly_ = servo.assembly.Assembly.assemble(
+        config_file=servo_yaml, optimizer=optimizer
+    )
+    return assembly_
+
+
+@pytest.fixture
+def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
+    """Return an unstarted assembly runner."""
+    return servo.runner.AssemblyRunner(assembly)
+
+@pytest.fixture
+async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
+    """Return an unstarted servo runner."""
+    return servo.runner.ServoRunner(assembly.servos[0])
+
+@pytest.fixture
+def fastapi_app() -> fastapi.FastAPI:
+    return tests.fake.api
