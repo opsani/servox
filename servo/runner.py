@@ -21,6 +21,7 @@ from servo.types import Adjustment, Control, Description, Duration, Measurement
 class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     servo: servo.Servo
     connected: bool = False
+    _running: bool = False
     
     def __init__(self, servo_: servo) -> None: # noqa: D107
         self.servo = servo_
@@ -204,7 +205,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
-        while True:
+        while self._running:
             try:
                 servo.servo.Servo.set_current(self.servo)
                 status = await self.exec_command()
@@ -223,6 +224,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                 raise error
             
     async def run(self) -> None:
+        self._running = True
         servo.servo.Servo.set_current(self.servo)
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
@@ -260,6 +262,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
         try:
+            self._running = False
             if self.connected:
                 await self._post_event(servo.api.Events.goodbye, dict(reason=reason))
         except Exception:

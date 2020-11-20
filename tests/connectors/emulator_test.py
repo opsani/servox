@@ -2,22 +2,19 @@ import asyncio
 import pathlib
 from typing import List, Optional
 
-import fastapi
 import httpx
 import pytest
-import pydantic
+import statesman
 import typer
 import typer.testing
 
 
 import servo
 import servo.connectors.emulator
-import voracious.voracious
 import tests.fake
     
 @pytest.fixture
 def fastapi_app() -> tests.fake.OpsaniAPI:
-    # return voracious.voracious.app
     return tests.fake.api
 
 async def test_list(fakeapi_client: httpx.AsyncClient) -> None:
@@ -73,39 +70,18 @@ async def test_optimization(
         optimizer.recommend_adjustments([adjustment]),
     )
     
+    # TODO: Generalize (what about optimizer.terminal?)    
+    for state in optimizer.get_states(tests.fake.StateMachine.States.done, tests.fake.StateMachine.States.failed):
+        state.add_action(servo_runner.shutdown, statesman.Action.Types.entry)
+    
     task = event_loop.create_task(servo_runner.run())
     servo.Servo.set_current(servo_runner.servo)
     
     await task
-    
-    # TODO: Get it to shutdown after it runs out of work
-    # TODO: What I want to do now is run the full loop until the 
-    
-    # assert optimizer.state == tests.fake.StateMachine.States.ready
-    # await optimizer.say_hello(dict(agent=servo.api.USER_AGENT))
-    # assert optimizer.state == tests.fake.StateMachine.States.ready
-    
-    # response = await servo_runner._post_event(
-    #     servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
-    # )
-    # assert response.status == "ok"
-    
-    # # manually advance to describe
-    # await optimizer.request_description()
-    # assert optimizer.state == tests.fake.StateMachine.States.awaiting_description
-    
-    # # get a description from the servo
-    # description = await servo_runner.describe()
-    # param = dict(descriptor=description.__opsani_repr__(), status="ok")
-    # response = await servo_runner._post_event(servo.api.Events.describe, param)
-    # assert response.status == "ok"
-    
-    # # description has been accepted and state machine has transitioned into analyzing
-    # assert optimizer.state == tests.fake.StateMachine.States.analyzing
+
 
 #################################################################
 
-# cli = servo.cli.ConnectorCLI(servo.Servo.EmulatorConnector, help="Emulate servos for testing optimizers")
 
 @pytest.fixture
 def cli() -> typer.Typer:
