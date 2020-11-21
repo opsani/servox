@@ -94,7 +94,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
 
     rate: str = pydantic.Field(
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
-    )    
+    )
     format: TargetFormat = pydantic.Field(
         TargetFormat.HTTP,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
@@ -145,7 +145,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
             return servo.Duration.validate(self._duration)
         else:
             return None
-    
+
     @pydantic.root_validator(pre=True)
     @classmethod
     def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -408,7 +408,7 @@ async def _run_vegeta(
 def _build_vegeta_command(config: VegetaConfiguration) -> str:
     if not config.duration:
         raise ValueError(f"invalid vegeta configuration: duration must be set (duration='{config.duration}')")
-    
+
     vegeta_attack_args = list(
         map(
             str,
