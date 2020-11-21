@@ -484,7 +484,7 @@ connectors:
   bar: kubernetes
   foo: vegeta
 foo:
-  description: Update the rate, duration, and target/targets to match your load profile
+  description: Update the rate and target/targets to match your load profile
   duration: 5m
   rate: 50/1s
   target: https://example.com/

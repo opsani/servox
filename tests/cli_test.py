@@ -44,7 +44,7 @@ def servo_yaml(tmp_path: Path) -> Path:
 def vegeta_config_file(servo_yaml: Path) -> Path:
     config = {
         "connectors": ["vegeta"],
-        "vegeta": {"duration": "25m", "rate": 0, "target": "https://opsani.com/"},
+        "vegeta": {"rate": 0, "target": "https://opsani.com/"},
     }
     servo_yaml.write_text(yaml.dump(config))
     return servo_yaml
@@ -382,7 +382,6 @@ def test_config_configmap_file(
         "    connectors:\n"
         "    - vegeta\n"
         "    vegeta:\n"
-        "      duration: 25m\n"
         "      rate: '0'\n"
         "      target: https://opsani.com/\n"
     )
@@ -471,7 +470,7 @@ def test_config_dict_file(
 ) -> None:
     path = tmp_path / "settings.py"
     result = cli_runner.invoke(servo_cli, f"config -f dict -o {path}")
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"failed with output {(result.stdout, result.stderr)}"
     settings = eval(path.read_text())
     assert settings["connectors"] is not None
 

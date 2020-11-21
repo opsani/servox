@@ -94,10 +94,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
 
     rate: str = pydantic.Field(
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
-    )
-    duration: servo.Duration = pydantic.Field(
-        description="Specifies the amount of time to issue requests to the targets. This value can be overridden by the server.",
-    )
+    )    
     format: TargetFormat = pydantic.Field(
         TargetFormat.HTTP,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
@@ -140,7 +137,15 @@ class VegetaConfiguration(servo.BaseConfiguration):
         "15s",
         description="How often to report metrics during a measurement cycle.",
     )
+    _duration: servo.Duration = pydantic.PrivateAttr(None)
 
+    @property
+    def duration(self) -> Optional[servo.Duration]:
+        if self._duration is not None:
+            return servo.Duration.validate(self._duration)
+        else:
+            return None
+    
     @pydantic.root_validator(pre=True)
     @classmethod
     def validate_target(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -254,9 +259,8 @@ class VegetaConfiguration(servo.BaseConfiguration):
     def generate(cls, **kwargs) -> "VegetaConfiguration":
         return cls(
             rate="50/1s",
-            duration="5m",
             target="GET https://example.com/",
-            description="Update the rate, duration, and target/targets to match your load profile",
+            description="Update the rate and target/targets to match your load profile",
             **kwargs,
         )
 
@@ -264,7 +268,6 @@ class VegetaConfiguration(servo.BaseConfiguration):
         json_encoders = servo.BaseConfiguration.json_encoders(
             {TargetFormat: lambda t: t.value()}
         )
-
 
 class VegetaChecks(servo.BaseChecks):
     config: VegetaConfiguration
@@ -318,7 +321,7 @@ class VegetaConnector(servo.BaseConnector):
     ) -> List[servo.Check]:
         # Take the current config and run a 5 second check against it
         check_config = self.config.copy()
-        check_config.duration = "5s"
+        check_config._duration = "5s"
         check_config.reporting_interval = "1s"
 
         return await VegetaChecks.run(check_config, matching=matching, halt_on=halt_on)
@@ -328,11 +331,12 @@ class VegetaConnector(servo.BaseConnector):
         self, *, metrics: List[str] = None, control: servo.Control = servo.Control()
     ) -> servo.Measurement:
         warmup_until = datetime.datetime.now() + control.warmup
+        self.config._duration = control.duration
 
         number_of_urls = (
             1 if self.config.target else _number_of_lines_in_file(self.config.targets)
         )
-        summary = f"Loading {number_of_urls} URL(s) for {self.config.duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate} (reporting every {self.config.reporting_interval})"
+        summary = f"Loading {number_of_urls} URL(s) for {self.config._duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate} (reporting every {self.config.reporting_interval})"
         self.logger.info(summary)
 
         # Run the load generation
@@ -402,6 +406,9 @@ async def _run_vegeta(
 
 
 def _build_vegeta_command(config: VegetaConfiguration) -> str:
+    if not config.duration:
+        raise ValueError(f"invalid vegeta configuration: duration must be set (duration='{config.duration}')")
+    
     vegeta_attack_args = list(
         map(
             str,
