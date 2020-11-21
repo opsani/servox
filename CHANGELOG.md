@@ -23,17 +23,30 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
+- Initial release of Wavefront Connector.
 
 ### Changed
 
 - The `__codename__` support has been generalized as `cryptonym` attribute for
   all connectors.
 - Version output now includes the cryptonym.
+- Updated Pydantic to v1.7.2
+- Updated httpx to v0.16.1
+- Updated orjson to v3.4.3
+
+### Removed
+
+- The `duration` attribute of the Vegeta Connector configuration is now private
+  as the optimizer or operator always provide the value.
 
 ### Fixed
 
 - Local versions are now resolved via the `pyproject.toml` file to accurately
   reflect pre-release versioning and local work in progress.
+- Exceptions are now chained within the Kubernetes Connector, ensuring that
+  traceback context is not lost.
+- An invalid key was referenced during adjustment of Kubernetes container memory
+  request/limits.
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
