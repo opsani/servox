@@ -4,8 +4,8 @@ import re
 import httpx
 import pytest
 import respx
-from freezegun import freeze_time
-from pydantic import ValidationError
+import freezegun
+import pydantic
 
 from servo.connectors.wavefront import Granularity, Summarization, WavefrontChecks, WavefrontConfiguration, WavefrontMetric, WavefrontRequest, \
     WavefrontConnector
@@ -37,7 +37,7 @@ class TestWavefrontMetric:
             WavefrontMetric(
                 name="throughput", unit=Unit.REQUESTS_PER_MINUTE, query=None
             )
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("query",),
                 "msg": "none is not an allowed value",
@@ -54,7 +54,7 @@ class TestWavefrontConfiguration:
     def test_url_required(self, wavefront_config):
         try:
             wavefront_config
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("base_url",),
                 "msg": "none is not an allowed value",
@@ -80,7 +80,7 @@ class TestWavefrontConfiguration:
     def test_rejects_invalid_url(self):
         try:
             WavefrontConfiguration(base_url="gopher://this-is-invalid", api_key="abcd12345")
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("base_url",),
                 "msg": "URL scheme not permitted",
@@ -105,7 +105,7 @@ class TestWavefrontConfiguration:
     def test_metrics_required(self):
         try:
             WavefrontConfiguration(metrics=None, api_key='abc12345')
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("metrics",),
                 "msg": "none is not an allowed value",
@@ -134,7 +134,7 @@ class TestWavefrontConfiguration:
 
 
 class TestWavefrontRequest:
-    @freeze_time("2020-01-01")
+    @freezegun.freeze_time("2020-01-01")
     def test_url(self):
         request = WavefrontRequest(
             base_url="http://wavefront.com:2878/api/v2/",
@@ -322,9 +322,8 @@ class TestWavefrontChecks:
         ) as respx_mock:
             respx_mock.get(
                 re.compile(r"/api/v2/.+"),
-                alias="query",
-                content=heapster_node_network_tx,
-            )
+                name="query"
+            ).mock(httpx.Response(200, json=heapster_node_network_tx))
             yield respx_mock
 
     @pytest.fixture
@@ -438,13 +437,12 @@ class TestWavefrontConnector:
     @pytest.fixture
     def mocked_api(self, heapster_node_network_tx):
         with respx.mock(
-                base_url="http://localhost:2878", assert_all_called=False
+            base_url="http://localhost:2878", assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
                 re.compile(r"/api/v2/.+"),
-                alias="query",
-                content=heapster_node_network_tx,
-            )
+                name="query",
+            ).mock(httpx.Response(200, json=heapster_node_network_tx))
             yield respx_mock
 
     @pytest.fixture

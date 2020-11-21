@@ -504,22 +504,22 @@ python-versions = "*"
 
 [[package]]
 name = "httpcore"
-version = "0.10.2"
+version = "0.12.2"
 description = "A minimal low-level HTTP client."
 category = "main"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-h11 = ">=0.8,<0.10"
+h11 = "<1.0.0"
 sniffio = ">=1.0.0,<2.0.0"
 
 [package.extras]
-http2 = ["h2 (>=3.0.0,<4.0.0)"]
+http2 = ["h2 (>=3,<5)"]
 
 [[package]]
 name = "httpx"
-version = "0.14.3"
+version = "0.16.1"
 description = "The next generation HTTP client."
 category = "main"
 optional = false
@@ -527,8 +527,7 @@ python-versions = ">=3.6"
 
 [package.dependencies]
 certifi = "*"
-chardet = ">=3.0.0,<4.0.0"
-httpcore = ">=0.10.0,<0.11.0"
+httpcore = ">=0.12.0,<0.13.0"
 rfc3986 = {version = ">=1.3,<2", extras = ["idna2008"]}
 sniffio = "*"
 
@@ -1115,14 +1114,14 @@ rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
 [[package]]
 name = "respx"
-version = "0.12.1"
+version = "0.16.1"
 description = "A utility for mocking out the Python HTTPX and HTTP Core libraries."
 category = "dev"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-httpx = ">=0.14,<0.15"
+httpx = ">=0.15"
 
 [[package]]
 name = "rfc3986"
@@ -1399,7 +1398,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "5001eba5507f4578c84c8689ab49804a0b23639d8ee896b57ad0e2f628008a96"
+content-hash = "6ab3aa51221b0f52b4426511e6a18a59bcb62ee0bea870c4f2e906cb9b1ea74a"
 
 [metadata.files]
 aiohttp = [
@@ -1619,12 +1618,12 @@ h11 = [
     {file = "h11-0.9.0.tar.gz", hash = "sha256:33d4bca7be0fa039f4e84d50ab00531047e53d6ee8ffbc83501ea602c169cae1"},
 ]
 httpcore = [
-    {file = "httpcore-0.10.2-py3-none-any.whl", hash = "sha256:afc1402fcaa6fca057bb3a9c6ccf6989a17bd0393b0cffbd778bac5fdd27446b"},
-    {file = "httpcore-0.10.2.tar.gz", hash = "sha256:93a4caf743e7ed29dbf7900515f0917babaa26bfaae6fb6c922ca1228519d400"},
+    {file = "httpcore-0.12.2-py3-none-any.whl", hash = "sha256:420700af11db658c782f7e8fda34f9dcd95e3ee93944dd97d78cb70247e0cd06"},
+    {file = "httpcore-0.12.2.tar.gz", hash = "sha256:dd1d762d4f7c2702149d06be2597c35fb154c5eff9789a8c5823fbcf4d2978d6"},
 ]
 httpx = [
-    {file = "httpx-0.14.3-py3-none-any.whl", hash = "sha256:3f2aa21d927ac56bfabdb82d079cf5ddd5b3147130dedc5fe8fed3a24e7a8d34"},
-    {file = "httpx-0.14.3.tar.gz", hash = "sha256:96bd4de4e6b742d672e2338720baf98518efaf85c86e0b48218e1bef9f272333"},
+    {file = "httpx-0.16.1-py3-none-any.whl", hash = "sha256:9cffb8ba31fac6536f2c8cde30df859013f59e4bcc5b8d43901cb3654a8e0a5b"},
+    {file = "httpx-0.16.1.tar.gz", hash = "sha256:126424c279c842738805974687e0518a94c7ae8d140cd65b9c4f77ac46ffa537"},
 ]
 identify = [
     {file = "identify-1.5.5-py2.py3-none-any.whl", hash = "sha256:da683bfb7669fa749fc7731f378229e2dbf29a1d1337cbde04106f02236eb29d"},
@@ -1904,8 +1903,8 @@ requests-oauthlib = [
     {file = "requests_oauthlib-1.3.0-py3.7.egg", hash = "sha256:fa6c47b933f01060936d87ae9327fead68768b69c6c9ea2109c48be30f2d4dbc"},
 ]
 respx = [
-    {file = "respx-0.12.1-py2.py3-none-any.whl", hash = "sha256:2601acbb7b3bd26165f45714db1ec63a56670005fff774fe06b564dd7960464f"},
-    {file = "respx-0.12.1.tar.gz", hash = "sha256:7883b2c12ec803a6353ea4556f08b8d0a99ea864f4462a017029a68583892d1b"},
+    {file = "respx-0.16.1-py2.py3-none-any.whl", hash = "sha256:bd75f4bb7cbf734c67e6e35c1ac1331280067bc3c76eac9b4b904c49195167d8"},
+    {file = "respx-0.16.1.tar.gz", hash = "sha256:adc7ffcdd1e541946a37050b4b6b17617e168bf25c5689a3fd866db9fb48f0d1"},
 ]
 rfc3986 = [
     {file = "rfc3986-1.4.0-py2.py3-none-any.whl", hash = "sha256:af9147e9aceda37c91a05f4deb128d4b4b49d6b199775fd2d2927768abdc8f50"},

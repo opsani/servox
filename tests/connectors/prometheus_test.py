@@ -4,8 +4,8 @@ import re
 import httpx
 import pytest
 import respx
-from freezegun import freeze_time
-from pydantic import ValidationError
+import pydantic
+import freezegun
 
 from servo.connectors.prometheus import PrometheusChecks, PrometheusConfiguration, PrometheusMetric, PrometheusRequest
 from servo.types import *
@@ -37,7 +37,7 @@ class TestPrometheusMetric:
             PrometheusMetric(
                 name="throughput", unit=Unit.REQUESTS_PER_MINUTE, query=None
             )
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("query",),
                 "msg": "none is not an allowed value",
@@ -57,7 +57,7 @@ class TestPrometheusConfiguration:
     def test_url_required(self):
         try:
             PrometheusConfiguration(base_url=None)
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("base_url",),
                 "msg": "none is not an allowed value",
@@ -83,7 +83,7 @@ class TestPrometheusConfiguration:
     def test_rejects_invalid_url(self):
         try:
             PrometheusConfiguration(base_url="gopher://this-is-invalid")
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("base_url",),
                 "msg": "URL scheme not permitted",
@@ -108,7 +108,7 @@ class TestPrometheusConfiguration:
     def test_metrics_required(self):
         try:
             PrometheusConfiguration(metrics=None)
-        except ValidationError as error:
+        except pydantic.ValidationError as error:
             assert {
                 "loc": ("metrics",),
                 "msg": "none is not an allowed value",
@@ -135,7 +135,7 @@ class TestPrometheusConfiguration:
 
 
 class TestPrometheusRequest:
-    @freeze_time("2020-01-01")
+    @freezegun.freeze_time("2020-01-01")
     def test_url(self):
         request = PrometheusRequest(
             base_url="http://prometheus.default.svc.cluster.local:9090/api/v1/",
@@ -152,7 +152,7 @@ class TestPrometheusRequest:
             == "http://prometheus.default.svc.cluster.local:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
 
-    @freeze_time("2020-01-01")
+    @freezegun.freeze_time("2020-01-01")
     def test_other_url(self):
         request = PrometheusRequest(
             base_url="http://localhost:9090/api/v1/",
@@ -295,15 +295,15 @@ class TestPrometheusChecks:
         with respx.mock(
             base_url="http://localhost:9090", assert_all_called=False
         ) as respx_mock:
-            respx_mock.get("/api/v1/targets", alias="targets", content=[])
+            respx_mock.get(
+                "/api/v1/targets", 
+                name="targets"
+            ).mock(return_value=httpx.Response(200, json=[]))
 
-            # re.compile(r"/api/v1/query_range/\w+")
             respx_mock.get(
                 re.compile(r"/api/v1/query_range.+"),
-                alias="query",
-                content=go_memstats_gc_sys_bytes,
-            )
-            # respx_mock.get("/api/v1/query_range", alias="query", content=go_memstats_gc_sys_bytes)
+                name="query",
+            ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
             yield respx_mock
 
     @pytest.fixture
@@ -326,7 +326,7 @@ class TestPrometheusChecks:
 
     async def test_check_base_url_failing(self, checks) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            request = respx_mock.get("/api/v1/targets", status_code=503)
+            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(status_code=503))
             check = await checks.check_base_url()
             assert request.called
             assert check
@@ -364,7 +364,7 @@ class TestPrometheusChecks:
     @respx.mock
     async def test_check_targets(self, checks, targets, success, message) -> str:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            request = respx_mock.get("/api/v1/targets", content=targets)
+            request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
             check = await checks.check_targets()
             assert request.called
             assert check

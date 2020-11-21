@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+import httpx
 import respx
 import yaml
 from freezegun import freeze_time
@@ -118,10 +119,7 @@ def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
 def test_check(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo",
-        status_code=200,
-    )
+    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo")
     result = cli_runner.invoke(servo_cli, "check")
     assert request.called
     assert result.exit_code == 0
@@ -132,10 +130,7 @@ def test_check(
 def test_check_verbose(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
-    request = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo",
-        status_code=200,
-    )
+    request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo")
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
     assert result.exit_code == 0
@@ -786,7 +781,6 @@ def test_init_from_scratch(servo_cli: CLI, cli_runner: CliRunner) -> None:
         catch_exceptions=False,
         input="dev.opsani.com/servox\n123456789\nn\ny\n",
     )
-    debug(result.stdout, result.stderr)
     assert result.exit_code == 0
     dotenv = Path(".env")
     assert (

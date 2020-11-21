@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+import httpx
 import respx
 import yaml
 from pydantic import Extra, ValidationError
@@ -1467,8 +1468,7 @@ class TestConnectorEvents:
 async def test_logging() -> None:
     request = respx.post(
         "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
-        content={"status": "ok"},
-    )
+    ).mock(httpx.Response(200, json={"status": "ok"}))
     connector = MeasureConnector(
         optimizer=Optimizer(id="example.com/my-app", token="123456"),
         config=BaseConfiguration(),
@@ -1490,9 +1490,11 @@ async def test_logging() -> None:
     await handler.shutdown()
     reset_to_defaults()
     assert request.called
-    assert request.stats.call_count == 3
-    request.stats.call_args.args[0].read()
-    last_progress_report = json.loads(request.stats.call_args.args[0].content)
+    assert request.calls.call_count == 3
+    
+    # Parse the JSON sent in the request body and verify we hit 100%
+    last_progress_report = json.loads(respx.calls.last.request.content)
+    assert last_progress_report["event"] == "ADJUST"
     assert last_progress_report["param"]["progress"] == 100.0
 
 
