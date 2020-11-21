@@ -1491,7 +1491,7 @@ async def test_logging() -> None:
     reset_to_defaults()
     assert request.called
     assert request.calls.call_count == 3
-    
+
     # Parse the JSON sent in the request body and verify we hit 100%
     last_progress_report = json.loads(respx.calls.last.request.content)
     assert last_progress_report["event"] == "ADJUST"

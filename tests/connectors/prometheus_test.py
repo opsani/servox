@@ -296,7 +296,7 @@ class TestPrometheusChecks:
             base_url="http://localhost:9090", assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
-                "/api/v1/targets", 
+                "/api/v1/targets",
                 name="targets"
             ).mock(return_value=httpx.Response(200, json=[]))
 
