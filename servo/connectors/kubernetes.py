@@ -1621,23 +1621,28 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
                 "an unrecoverable failure occurred while interacting with Kubernetes"
             ) from error
 
-        elif mode == FailureMode.IGNORE:
-            self.logger.warning(f"ignoring runtime error and continuing: {error}")
-            self.logger.opt(exception=error).exception("ignoring Kubernetes error")
-            return True
+        # Ensure that we chain any underlying exceptions that may occur
+        try:
+            if mode == FailureMode.IGNORE:
+                self.logger.warning(f"ignoring runtime error and continuing: {error}")
+                self.logger.opt(exception=error).exception("ignoring Kubernetes error")
+                return True
 
-        elif mode == FailureMode.ROLLBACK:
-            await self.rollback(error)
-            return True
+            elif mode == FailureMode.ROLLBACK:
+                await self.rollback(error)
+                return True
 
-        elif mode == FailureMode.DESTROY:
-            await self.destroy(error)
-            return True
+            elif mode == FailureMode.DESTROY:
+                await self.destroy(error)
+                return True
 
-        else:
-            raise NotImplementedError(
-                f"missing error handler for failure mode '{mode}'"
-            ) from error
+        except Exception as handler_error:
+            raise handler_error from error
+
+        # Trap any new modes that need to be handled
+        raise NotImplementedError(
+            f"missing error handler for failure mode '{mode}'"
+        ) from error
 
     @abc.abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -2149,20 +2154,25 @@ class CanaryOptimization(BaseOptimization):
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
         if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
-            if mode == FailureMode.ROLLBACK:
-                self.logger.warning(
-                    f"cannot rollback a canary Pod: falling back to destroy: {error}"
+            # Ensure that we chain any underlying exceptions that may occur
+            try:
+                if mode == FailureMode.ROLLBACK:
+                    self.logger.warning(
+                        f"cannot rollback a canary Pod: falling back to destroy: {error}"
+                    )
+                    self.logger.opt(exception=error).exception("")
+
+                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+
+                # create a new canary against baseline
+                self.logger.info(
+                    "creating new canary against baseline following failed adjust"
                 )
-                self.logger.opt(exception=error).exception("")
+                self.canary = await self.target_deployment.ensure_canary_pod()
+                return True
 
-            await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
-
-            # create a new canary against baseline
-            self.logger.info(
-                "creating new canary against baseline following failed adjust"
-            )
-            self.canary = await self.target_deployment.ensure_canary_pod()
-            return True
+            except Exception as handler_error:
+                raise handler_error from error
 
         else:
             return await super().handle_error(error, mode)
