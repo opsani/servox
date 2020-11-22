@@ -10,8 +10,19 @@ import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
 
+class EventError(RuntimeError):
+    def __init__(self, message: str, reason: Optional[str] = None) -> None:
+        super().__init__(message)
+        self._reason = reason
 
-class UnexpectedEventError(RuntimeError):
+    @property
+    def reason(self) -> Optional[str]:
+        return self._reason
+
+class UnexpectedEventError(EventError):
+    pass
+
+class CancelEventError(EventError):
     pass
 
 
@@ -57,9 +68,9 @@ class Status(pydantic.BaseModel):
     message: Optional[str]
     reason: Optional[str]
 
-
+# TODO: Wrap into an enum
 UNEXPECTED_EVENT = "unexpected-event"
-
+CANCELLED = "cancel"
 
 class SleepResponse(pydantic.BaseModel):
     pass
@@ -135,9 +146,13 @@ class Mixin:
         request = self.progress_request(**kwargs)
         status = await self._post_event(*request)
 
+        # TODO: exhaustively handle enum cases
         if status.status == UNEXPECTED_EVENT:
             # We have lost sync with the backend, raise an exception to halt broken execution
             raise UnexpectedEventError(status.reason)
+        elif status.status == CANCELLED:
+            # Optimizer wants to cancel the operation
+            raise CancelEventError(status.reason)
 
     def progress_request(
         self,

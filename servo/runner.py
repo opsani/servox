@@ -202,17 +202,20 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == servo.api.Command.ADJUST:
             adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
-            description = await self.adjust(adjustments, control)
 
-            reply = {"status": "ok", "state": description.__opsani_repr__()}
+            try:
+                description = await self.adjust(adjustments, control)
+                reply = {"status": "ok", "state": description.__opsani_repr__()}
 
-            components_count = len(description.components)
-            settings_count = sum(
-                len(component.settings) for component in description.components
-            )
-            self.logger.info(
-                f"Adjusted: {components_count} components, {settings_count} settings"
-            )
+                components_count = len(description.components)
+                settings_count = sum(
+                    len(component.settings) for component in description.components
+                )
+                self.logger.info(
+                    f"Adjusted: {components_count} components, {settings_count} settings"
+                )
+            except servo.AdjustmentError as error:
+                ...
 
             return await self._post_event(servo.api.Event.ADJUSTMENT, reply)
 
@@ -248,10 +251,15 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, servo.api.UnexpectedEventError):
-                self.logger.error(
-                    "servo has lost synchronization with the optimizer: restarting operations"
-                )
+            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.CancelEventError)):
+                if isinstance(error, servo.api.UnexpectedEventError):
+                    self.logger.error(
+                        "servo has lost synchronization with the optimizer: restarting"
+                    )
+                elif isinstance(error, servo.api.CancelEventError):
+                    self.logger.error(
+                        "optimizer has canceled operation in progress: restarting"
+                    )
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
