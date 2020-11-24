@@ -182,7 +182,7 @@ class Servo(servo.connector.BaseConnector):
         self.connectors.extend(connectors)
 
         # associate shared config with our children
-        for connector in list(*connectors, self):
+        for connector in (connectors + [self]):
             connector._servo_config = self.config.servo
 
     @property

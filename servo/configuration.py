@@ -394,7 +394,8 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
     """
 
     servo: Optional[ServoConfiguration] = pydantic.Field(
-        None, description="Configuration of the Servo connector"
+        default_factory=lambda: ServoConfiguration(),
+        description="Configuration of the Servo connector"
     )
     """Configuration of the Servo itself.
 

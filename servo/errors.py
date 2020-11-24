@@ -19,10 +19,10 @@ class BaseError(RuntimeError):
 
     def __init__(
         self,
-        message: str,
+        message: str = '',
         reason: Optional[str] = None,
         *args,
-        assembly: servo.Assembly,
+        assembly: Optional[servo.Assembly] = None,
         servo_: Optional[servo.Servo] = None,
         connector: Optional[servo.Connector] = None,
         event: Optional[servo.Event] = None,

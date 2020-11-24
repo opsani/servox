@@ -11,14 +11,14 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
+import servo
+from servo.errors import *
 from servo import BaseAssemblyConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
 from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (
-    EventCancelledError,
-    EventError,
     EventResult,
     Preposition,
     _events,

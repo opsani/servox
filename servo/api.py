@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import abc
 import datetime
 import enum
@@ -11,14 +13,21 @@ import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
 
-class Statuses(str, enum.Enum):
-    """An enumeration of status types exchanged between the servo and optimizer."""
+class OptimizerStatuses(str, enum.Enum):
+    """An enumeration of status types sent by the optimizer."""
+    ok = "ok"
+    unexpected_event = "unexpected-event"
+    cancelled = "cancel"
+
+class ServoStatuses(str, enum.Enum):
+    """An enumeration of status types sent from the servo."""
     ok = "ok"
     failed = "failed"
     rejected = "rejected"
     aborted = "aborted"
-    unexpected_event = "unexpected-event"
-    cancelled = "cancel"
+
+
+Statuses = Union[OptimizerStatuses, ServoStatuses]
 
 
 class Reasons(str, enum.Enum):

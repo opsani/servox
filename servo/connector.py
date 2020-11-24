@@ -95,7 +95,7 @@ class BaseConnector(
     """Configuration for the connector set explicitly or loaded from a config file."""
 
     _servo_config: servo.configuration.ServoConfiguration = pydantic.PrivateAttr(
-        servo.configuration.ServoConfiguration()
+        default_factory=lambda: servo.configuration.ServoConfiguration()
     )
     """Shared configuration from our parent Servo instance."""
 
@@ -189,6 +189,7 @@ class BaseConnector(
             )
         )
 
+    @property
     def api_client_options(self) -> Dict[str, Any]: # noqa: D105
         if not self.optimizer:
             raise RuntimeError(
