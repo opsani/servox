@@ -9,44 +9,12 @@ import devtools
 import httpx
 import typer
 
-import servo
+import servo as servox
+import servo.configuration
 import servo.api
 import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
-
-DEFAULT_CONTEXT = "__default__"
-
-
-class BackoffConfig:
-    """BackoffConfig provides callables for runtime configuration of backoff decorators.
-
-    This implementation relies upon the framework managed context variables to determine
-    which servo is running and retrieve the configuration.
-    """
-
-    @staticmethod
-    def max_time(context: str = DEFAULT_CONTEXT) -> Optional[int]:
-        if servo_config := servo.Servo.current().config.servo:
-            if backoff_config := servo_config.backoff.get(context, None):
-                if max_time := backoff_config.max_time:
-                    return max_time.total_seconds()
-
-        # fallback to default
-        if max_time := BackoffConfig.max_time():
-            return max_time
-
-        raise AssertionError("max_time default should never be None")
-
-    @staticmethod
-    def max_tries(context: str = DEFAULT_CONTEXT) -> Optional[int]:
-        if servo_config := servo.Servo.current().config.servo:
-            if backoff_config := servo_config.backoff.get(context, None):
-                return backoff_config.max_tries
-
-        # fallback to default
-        return BackoffConfig.max_tries()
-
 
 class Runner(servo.logging.Mixin, servo.api.Mixin):
     assembly: servo.Assembly
@@ -170,9 +138,11 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"Adjustment completed {summary}")
         return aggregate_description
 
-    # backoff and retry for an hour on transient request failures
     @backoff.on_exception(
-        backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time
+        backoff.expo,
+        httpx.HTTPError,
+        max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Event.WHATS_NEXT, None)
@@ -292,7 +262,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
-                max_time=lambda: BackoffConfig.max_time("connect"),
+                max_time=lambda: servox.Servo.current().config.backoff.max_time(),
+                max_tries=lambda: servox.Servo.current().config.backoff.max_tries(),
                 on_giveup=giveup,
             )
             async def connect() -> None:

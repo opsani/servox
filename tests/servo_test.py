@@ -11,7 +11,7 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
-import servo
+import servo as servox
 from servo.errors import *
 from servo import BaseAssemblyConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
@@ -735,6 +735,14 @@ class TestAssembly:
                 },
                 'additionalProperties': False,
             },
+            'BackoffConfigurations': {
+                'title': 'BackoffConfigurations',
+                'description': 'A mapping of named backoff configurations.',
+                'type': 'object',
+                'additionalProperties': {
+                    '$ref': '#/definitions/BackoffSettings',
+                },
+            },
             'Timeouts': {
                 'title': 'Timeouts Connector Configuration Schema',
                 'description': (
@@ -847,23 +855,14 @@ class TestAssembly:
                     },
                     'backoff': {
                         'title': 'Backoff',
-                        'default': {
-                            '__default__': {
-                                'max_time': '10m',
-                                'max_tries': None,
-                            },
-                            'connect': {
-                                'max_time': '1h',
-                                'max_tries': None,
-                            },
-                        },
                         'env_names': [
                             'SERVO_BACKOFF',
                         ],
-                        'type': 'object',
-                        'additionalProperties': {
-                            '$ref': '#/definitions/BackoffSettings',
-                        },
+                        'allOf': [
+                            {
+                                '$ref': '#/definitions/BackoffConfigurations',
+                            },
+                        ],
                     },
                     'proxies': {
                         'title': 'Proxies',
@@ -1619,6 +1618,29 @@ def test_backoff_defaults() -> None:
     assert config.backoff["__default__"].max_tries is None
 
 
+def test_backoff_contexts() -> None:
+    contexts = servox.configuration.BackoffConfigurations(__root__={
+            "__default__": {"max_time": "10m", "max_tries": None},
+            "connect": {"max_time": "1h", "max_tries": None},
+        })
+    debug(contexts)
+
+    config = servox.configuration.ServoConfiguration(backoff=contexts)
+    debug(config)
+
+def test_backoff_context() -> None:
+    config = ServoConfiguration()
+    assert config.backoff
+    debug(config)
+    # assert config.backoff.max_time()
+    # assert config.backoff.max_time("whatever")
+
+
+    assert config.backoff["__default__"].max_time is not None
+    assert config.backoff["__default__"].max_time == Duration("10m")
+    assert config.backoff["__default__"].max_tries is None
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     ("proxies"),
@@ -1745,3 +1767,10 @@ async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> N
         str(error.value)
         == "invalid connector: a connector named 'first_test_servo' does not exist in the servo"
     )
+
+async def test_backoff() -> None:
+    config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    debug(config)
+    assert config.backoff
+    assert config.backoff.max_time()
+    # servo.Servo.current().config.backoff.max_time(),

@@ -5,10 +5,12 @@ import datetime
 import enum
 from typing import Any, Dict, List, Optional, Union
 
+import backoff
 import devtools
 import httpx
 import pydantic
 
+import servo.utilities
 import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
@@ -244,8 +246,12 @@ class Mixin(abc.ABC):
 
         return (operation, params)
 
-    # NOTE: Opsani API primitive
-    # @backoff.on_exception(backoff.expo, (httpx.HTTPError), max_time=180, max_tries=12)
+    @backoff.on_exception(
+        backoff.expo,
+        httpx.HTTPError,
+        max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
+    )
     async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)

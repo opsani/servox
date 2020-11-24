@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import enum
 import inspect
 import json
 import pathlib
@@ -249,7 +250,6 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
 
-
 class BackoffSettings(BaseConfiguration):
     """
     BackoffSettings objects model configuration of backoff and retry policies.
@@ -266,7 +266,6 @@ class BackoffSettings(BaseConfiguration):
     """
     The maximum number of retry attempts to make before giving up.
     """
-
 
 class Timeouts(BaseConfiguration):
     """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
@@ -310,16 +309,50 @@ class Timeouts(BaseConfiguration):
 ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
 
 
+class BackoffContexts(str, enum.Enum):
+    """An enumeration that defines the default set of backoff contexts."""
+    default = "__default__"
+    connect = "connect"
+
+
+class BackoffConfigurations(pydantic.BaseModel):
+    """A mapping of named backoff configurations."""
+    __root__: Dict[str, BackoffSettings]
+
+    def __getitem__(self, context: str) -> BackoffSettings:
+        return self.__root__[context]
+
+    def get(self, context: str, default: Any = None) -> BackoffSettings:
+        return self.__root__.get(context, default)
+
+    def max_time(self, context: str = BackoffContexts.default) -> Optional[servo.types.Duration]:
+        """Return the maximum amount of time to wait before giving up."""
+        return (
+            self.get(context, None) or
+            self.get(BackoffContexts.default)
+        ).max_time
+
+    def max_tries(self, context: str = BackoffContexts.default) -> Optional[int]:
+        """Return the maximum number of calls to attempt to the target before
+        giving up."""
+        return (
+            self.get(context, None) or
+            self.get(BackoffContexts.default)
+        ).max_tries
+
+
 class ServoConfiguration(BaseConfiguration):
     """ServoConfiguration models configuration for the Servo connector and establishes default
     settings for shared services such as networking and logging.
     """
 
-    backoff: Dict[str, BackoffSettings] = pydantic.Field(
-        {
-            "__default__": {"max_time": "10m", "max_tries": None},
-            "connect": {"max_time": "1h", "max_tries": None},
-        }
+    backoff: BackoffConfigurations = pydantic.Field(
+        default_factory=lambda: BackoffConfigurations(
+            __root__={
+                BackoffContexts.default: {"max_time": "10m", "max_tries": None},
+                BackoffContexts.connect: {"max_time": "1h", "max_tries": None},
+            }
+        )
     )
     """A mapping of named operations to settings for the backoff library, which provides backoff
     and retry capabilities to the servo.
@@ -364,7 +397,6 @@ class ServoConfiguration(BaseConfiguration):
 
     class Config(servo.types.BaseModelConfig):
         validate_assignment = True
-
 
 class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
     """
