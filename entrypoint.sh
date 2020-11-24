@@ -8,6 +8,6 @@ exec servo \
     $(if [ ! -z ${OPSANI_TOKEN} ]; then \
         echo "--token ${OPSANI_TOKEN}"; \
       else \
-        echo "--token-file /servo/opsani.token"; \
+        echo "--token-file ${OPSANI_TOKEN_FILE:-/servo/opsani.token}"; \
       fi) \
     "$@"
