@@ -1,54 +1,114 @@
-from servo.events import CancelEventError, EventError
+from __future__ import annotations
+import datetime
+
+from typing import Optional
 
 __all__ = (
-    "AdjustmentError",
-    "AdjustmentFailure",
-    "AdjustmentRejection",
-    "DescriptionError",
-    "MeasurementError",
-    "CancelEventError",
+    "BaseError",
+    "ServoError",
     "ConnectorError",
     "EventError",
+    "EventCancelledError",
+    "AdjustmentFailedError",
+    "AdjustmentRejectedError",
+    "UnexpectedEventError",
 )
 
-# TODO: Create status and reason enums
+class BaseError(RuntimeError):
+    """The base class for all errors in the servo package."""
 
-class ConnectorError(Exception):
-    """Exception indicating that a connector failed"""
+    def __init__(
+        self,
+        message: str,
+        reason: Optional[str] = None,
+        *args,
+        assembly: servo.Assembly,
+        servo_: Optional[servo.Servo] = None,
+        connector: Optional[servo.Connector] = None,
+        event: Optional[servo.Event] = None,
+    ) -> None:
+        super().__init__(message, *args)
 
-    def __init__(self, *args, status="failed", reason="unknown") -> None: # noqa: D107
-        self.status = status
-        self.reason = reason
-        super().__init__(*args)
+        # Use the context vars to infer the assembly, servo, connector, and event
+        import servo
+        self._reason = reason
+        self._assembly = assembly or servo.Assembly.current()
+        self._servo = servo_ or servo.Servo.current()
+        self._connector = connector or self._servo.connector
+        self._event = event or self._servo.event
+        self._created_at = datetime.datetime.now()
 
-class CommandError(EventError): # TODO: Operation error?
-    def __init__(self, *args, status="failed", reason="unknown") -> None: # noqa: D107
-        self.status = status
-        self.reason = reason
-        super().__init__(*args)
+    @property
+    def reason(self) -> Optional[str]:
+        """A supplemental reason explaining why the error occurred."""
+        return self._reason
 
-    # TODO: add command enum link?
+    @property
+    def created_at(self) -> datetime.datetime:
+        """The date and time when the error occurred."""
+        return self._created_at
 
-class DescriptionError(CommandError):
-    ...
+    @property
+    def assembly(self) -> servo.Assembly:
+        """The assembly in which the error occurred."""
+        return self._assembly
 
-class MeasurementError(CommandError):
-    ...
+    @property
+    def servo(self) -> Optional[servo.Servo]:
+        """The servo that was active when the error occurred."""
+        return self._servo
 
-class AdjustmentError(CommandError):
-    def __init__(self, *args) -> None: # noqa: D107
-        super().__init__(*args)
-        self.status = "failed"
-        self.reason = "unknown"
+    @property
+    def connector(self) -> Optional[servo.Connector]:
+        """The connector that was active when the error occurred."""
+        return self._connector
 
-class AdjustmentFailure(AdjustmentError):
-    def __init__(self, *args) -> None: # noqa: D107
-        super().__init__(*args)
-        self.reason = "adjust-failed"
+    @property
+    def event(self) -> Optional[servo.Event]:
+        """The event that was executing when the error occurred."""
+        return self._event
 
-class AdjustmentRejection(AdjustmentError):
-    def __init__(self, *args) -> None: # noqa: D107
-        super().__init__(*args)
-        self.status = "rejected"
+class ServoError(BaseError):
+    """An error occurred within a servo."""
+    @property
+    def servo(self) -> servo.Servo:
+        return self._servo
 
-    # TODO: rejected class method?
+class ConnectorError(ServoError):
+    """An error occurred within a connector."""
+    @property
+    def connector(self) -> servo.Connector:
+        return self._connector
+
+class EventError(ConnectorError):
+    """An error occurred during the processing of an event by a connector."""
+    @property
+    def event(self) -> servo.Event:
+        return self._event
+
+class UnexpectedEventError(EventError):
+    """The optimizer reported that an unexpected error was submitted."""
+    pass
+
+class EventCancelledError(EventError):
+    """The event was cancelled and processing was halted."""
+    pass
+
+class AdjustmentFailedError(EventError):
+    """A failure occurred while attempting to perform an adjustment.
+
+    Adjustment failures are potentially recoverable errors in which the
+    adjustment was not fully applied due to a transient failure, lost
+    connection, interruption, etc. and be retried by the optimizer.
+    """
+    pass
+
+class AdjustmentRejectedError(AdjustmentFailedError):
+    """The adjustment was irrecoverably rejected when applied.
+
+    Rejections occur in circumstances where the target application fails
+    to start, becomes unstable, the orchestrator refuses to apply it, or
+    other such definitive error condition is encountered that excludes the
+    applied configuration from further consideration by the optimizer.
+    """
+    pass

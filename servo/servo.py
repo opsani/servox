@@ -181,24 +181,19 @@ class Servo(servo.connector.BaseConnector):
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)
 
-        # associate our config with our children
-        self._set_association("servo_config", self.config.servo)
-        for connector in connectors:
-            connector._set_association("servo_config", self.config.servo)
-
-            with servo.utilities.pydantic.extra(connector):
-                connector.api_client_options = self.api_client_options
+        # associate shared config with our children
+        for connector in list(*connectors, self):
+            connector._servo_config = self.config.servo
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
-        """Return a dictionary of options for configuring proxies, timeouts, and SSL verification of an HTTP client."""
-        options = super().api_client_options
-        if self.config.servo:
-            options["proxies"] = self.config.servo.proxies
-            options["timeout"] = self.config.servo.timeouts
-            options["verify"] = self.config.servo.ssl_verify
+    def connector(self) -> Optional[servo.connector.BaseConnector]:
+        """Return the active connector in the current execution context."""
+        return servo.events._connector_context_var.get()
 
-        return options
+    @property
+    def event(self) -> Optional[servo.events.Event]:
+        """Return the active event in the current execution context."""
+        return servo.events._event_context_var.get()
 
     async def startup(self):
         """Notify all active connectors that the servo is starting up."""
@@ -251,9 +246,11 @@ class Servo(servo.connector.BaseConnector):
             )
 
         connector.name = name
+        connector._servo_config = self.config.servo
         self.connectors.append(connector)
         self.__connectors__.append(connector)
 
+        # Register our name into the config class
         with servo.utilities.pydantic.extra(self.config):
             setattr(self.config, name, connector.config)
 

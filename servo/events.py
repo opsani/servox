@@ -14,6 +14,7 @@ from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Op
 import pydantic
 import pydantic.main
 
+import servo.errors
 import servo.utilities.inspect
 import servo.utilities.strings
 
@@ -29,6 +30,11 @@ __all__ = [
     "after_event",
     "event_handler",
 ]
+
+# Context vars for asyncio tasks managed by run_event_handlers
+_event_context_var = contextvars.ContextVar("servo.event", default=None)
+_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
+_connector_event_bus = weakref.WeakKeyDictionary()
 
 _signature_cache: Dict[str, inspect.Signature] = {}
 
@@ -256,14 +262,6 @@ class EventResult(pydantic.BaseModel):
         return v or datetime.datetime.now()
 
 
-class EventError(RuntimeError):
-    pass
-
-
-class CancelEventError(EventError):
-    result: EventResult
-
-
 ##
 # Event registry
 
@@ -418,8 +416,8 @@ def before_event(
 
     Before event handlers require no arguments positional or keyword arguments and return `None`. Any arguments
     provided via the `kwargs` parameter are passed through at invocation time. Before event handlers
-    can cancel event propagation by raising `CancelEventError`. Canceled events are reported to the
-    event originator by attaching the `CancelEventError` instance to the `EventResult`.
+    can cancel event propagation by raising `servo.errors.EventCancelledError`. Cancelled events are reported to the
+    event originator by attaching the `servo.errors.EventCancelledError` instance to the `EventResult`.
 
     :param event: The event or name of the event to run the handler before.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
@@ -563,12 +561,6 @@ def __before_handler(self) -> None:
 
 def __after_handler(self, results: List[EventResult]) -> None:
     pass
-
-
-# Context vars for asyncio tasks managed by run_event_handlers
-_event_context_var = contextvars.ContextVar("servo.event", default=None)
-_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
-_connector_event_bus = weakref.WeakKeyDictionary()
 
 
 # NOTE: Boolean flag to know if we can safely reference base class from the metaclass
@@ -751,7 +743,7 @@ class Mixin:
                     await connector.run_event_handlers(
                         event, Preposition.BEFORE
                     )
-            except CancelEventError as error:
+            except servo.errors.EventCancelledError as error:
                 # Cancelled by a before event handler. Unpack the result and return it
                 return [error.result]
 
@@ -840,7 +832,7 @@ class Mixin:
                         else:
                             value = event_handler.handler(self, *args, **kwargs)
 
-                except CancelEventError as error:
+                except servo.errors.EventCancelledError as error:
                     if preposition != Preposition.BEFORE:
                         raise TypeError(
                             f"Cannot cancel an event from an {preposition} handler"
@@ -856,7 +848,7 @@ class Mixin:
                     )
                     raise error
 
-                except EventError as error:
+                except servo.errors.EventError as error:
                     value = error
 
                 except Exception as error:

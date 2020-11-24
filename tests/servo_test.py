@@ -17,7 +17,7 @@ from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (
-    CancelEventError,
+    EventCancelledError,
     EventError,
     EventResult,
     Preposition,
@@ -232,7 +232,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
 
     # Mock the before handler to throw a cancel exception
     mock = mocker.patch.object(before_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError()
     results = await servo.dispatch_event("promote")
 
     # Check that on and after callbacks were never called
@@ -242,7 +242,7 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     # Check the results
     assert len(results) == 1
     result = results[0]
-    assert isinstance(result.value, CancelEventError)
+    assert isinstance(result.value, EventCancelledError)
     assert result.created_at is not None
     assert result.handler.handler == mock
     assert result.connector == connector
@@ -255,7 +255,7 @@ async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError()
     with pytest.raises(TypeError) as error:
         await servo.dispatch_event("promote")
     assert str(error.value) == "Cannot cancel an event from an on handler"
@@ -266,7 +266,7 @@ async def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError()
     with pytest.raises(TypeError) as error:
         await servo.dispatch_event("promote")
         await asyncio.sleep(0.1)

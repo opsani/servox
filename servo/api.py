@@ -1,3 +1,4 @@
+import abc
 import datetime
 import enum
 from typing import Any, Dict, List, Optional, Union
@@ -10,20 +11,20 @@ import servo.types
 
 USER_AGENT = "github.com/opsani/servox"
 
-class EventError(RuntimeError):
-    def __init__(self, message: str, reason: Optional[str] = None) -> None:
-        super().__init__(message)
-        self._reason = reason
+class Statuses(str, enum.Enum):
+    """An enumeration of status types exchanged between the servo and optimizer."""
+    ok = "ok"
+    failed = "failed"
+    rejected = "rejected"
+    aborted = "aborted"
+    unexpected_event = "unexpected-event"
+    cancelled = "cancel"
 
-    @property
-    def reason(self) -> Optional[str]:
-        return self._reason
 
-class UnexpectedEventError(EventError):
-    pass
-
-class CancelEventError(EventError):
-    pass
+class Reasons(str, enum.Enum):
+    success = "success"
+    unknown = "unknown"
+    unstable = "unstable"
 
 
 class Command(str, enum.Enum):
@@ -64,18 +65,37 @@ class Request(pydantic.BaseModel):
 
 
 class Status(pydantic.BaseModel):
-    status: str
-    message: Optional[str]
-    reason: Optional[str]
+    status: Statuses
+    message: Optional[str] = None
+    reason: Optional[str] = None
+    state: Optional[Dict[str, Any]] = None
+    descriptor: Optional[Dict[str, Any]] = None
 
-# TODO: Wrap into an enum
-UNEXPECTED_EVENT = "unexpected-event"
-CANCELLED = "cancel"
+    @classmethod
+    def ok(cls, message: Optional[str] = None, reason: str = Reasons.success, **kwargs) -> "Status":
+        """Return a success (status="ok") status object."""
+        return cls(status=Statuses.ok, message=message, reason=reason, **kwargs)
+
+    @classmethod
+    def from_error(cls, error: servo.errors.BaseError) -> "Status":
+        """Return a status object representation from the given error."""
+        if isinstance(error, servo.errors.AdjustmentRejectedError):
+            status = Statuses.rejected
+        else:
+            status = Statuses.failed
+
+        return cls(status=status, message=str(error), reason=error.reason)
+
+    def dict(
+        self,
+        *,
+        exclude_unset: bool = True,
+        **kwargs,
+    ) -> pydantic.DictStrAny:
+        return super().dict(exclude_unset=exclude_unset, **kwargs)
 
 class SleepResponse(pydantic.BaseModel):
     pass
-
-
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
 # Instructions from servo on what to measure
@@ -104,55 +124,53 @@ class CommandResponse(pydantic.BaseModel):
         }
 
 
-class StatusMessage(pydantic.BaseModel):
-    status: str
-    message: Optional[str]
+class Mixin(abc.ABC):
+    """Provides functionality for interacting with the Opsani API via httpx.
 
-
-class Mixin:
-    @property
-    def api_headers(self) -> Dict[str, str]:
-        if not self.optimizer:
-            raise RuntimeError(
-                f"cannot construct API headers: optimizer is not configured"
-            )
-        return {
-            "Authorization": f"Bearer {self.optimizer.token}",
-            "User-Agent": USER_AGENT,
-            "Content-Type": "application/json",
-        }
+    The mixin requires the implementation of the `api_client_options` method
+    which is responsible for providing details around base URL, HTTP headers,
+    timeouts, proxies, SSL configuration, etc. for initializing
+    `httpx.AsyncClient` and `httpx.Client` instances.
+    """
 
     @property
+    @abc.abstractmethod
     def api_client_options(self) -> Dict[str, Any]:
-        return dict(base_url=self.optimizer.api_url, headers=self.api_headers)
+        """Return a dict of options for initializing httpx API client objects.
+
+        An implementation must be provided in subclasses derived from the mixin
+        and is responsible for appropriately configuring the base URL, HTTP
+        headers, timeouts, proxies, SSL configuration, transport flags, etc.
+
+        The dict returned is passed directly to the initializer of
+        `httpx.AsyncClient` and `httpx.Client` objects constructed by the
+        `api_client` and `api_client_sync` methods.
+        """
+        ...
 
     def api_client(self, **kwargs) -> httpx.AsyncClient:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""
-        if not self.optimizer:
-            raise RuntimeError(
-                f"cannot construct API client: optimizer is not configured"
-            )
+        """Return an asynchronous client for interacting with the Opsani API."""
         return httpx.AsyncClient(**{**self.api_client_options, **kwargs})
 
     def api_client_sync(self, **kwargs) -> httpx.Client:
-        """Yields an httpx.Client instance configured to talk to Opsani API"""
-        if not self.optimizer:
-            raise RuntimeError(
-                f"cannot construct API client: optimizer is not configured"
-            )
+        """Return a synchronous client for interacting with the Opsani API."""
         return httpx.Client(**{**self.api_client_options, **kwargs})
 
-    async def report_progress(self, **kwargs):
+    async def report_progress(self, **kwargs) -> None:
+        """Post a progress report to the Opsani API."""
         request = self.progress_request(**kwargs)
         status = await self._post_event(*request)
 
-        # TODO: exhaustively handle enum cases
-        if status.status == UNEXPECTED_EVENT:
+        if status.status == Statuses.ok:
+            pass
+        elif status.status == Statuses.unexpected_event:
             # We have lost sync with the backend, raise an exception to halt broken execution
-            raise UnexpectedEventError(status.reason)
-        elif status.status == CANCELLED:
+            raise servo.errors.UnexpectedEventError(status.reason)
+        elif status.status == Statuses.cancelled:
             # Optimizer wants to cancel the operation
-            raise CancelEventError(status.reason)
+            raise servo.errors.EventCancelledError(status.reason)
+        else:
+            raise ValueError(f"unknown error status: \"{status.status}\"")
 
     def progress_request(
         self,
@@ -257,6 +275,7 @@ class Mixin:
 
 
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
+    """Return a list of adjustment objects from an Opsani API app descriptor."""
     adjustments = []
     for component_name, component in descriptor["application"]["components"].items():
         for setting_name, attrs in component["settings"].items():

@@ -24,6 +24,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
 - Initial release of Wavefront Connector.
+- Support for marking adjustments as failed or rejected via exceptions.
 
 ### Changed
 
@@ -33,6 +34,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated Pydantic to v1.7.2
 - Updated httpx to v0.16.1
 - Updated orjson to v3.4.3
+- Updated the `servo.events` module with numerous new error types.
 
 ### Removed
 

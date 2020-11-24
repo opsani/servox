@@ -1893,7 +1893,7 @@ class DeploymentOptimization(BaseOptimization):
                         if event_type == "ERROR":
                             stream.stop()
                             # FIXME: Not sure what types we expect here
-                            raise servo.AdjustmentRejection(reason=str(deployment))
+                            raise servo.AdjustmentRejectedError(reason=str(deployment))
 
                         # Check that the conditions aren't reporting a failure
                         self._check_conditions(status.conditions)
@@ -1925,13 +1925,13 @@ class DeploymentOptimization(BaseOptimization):
                             self.logger.info("adjustment applied successfully", status)
                             stream.stop()
         except asyncio.TimeoutError as error:
-            raise servo.AdjustmentRejection(
+            raise servo.AdjustmentRejectedError(
                 reason="timed out waiting for Deployment to apply adjustment"
             ) from error
 
         if self.deployment.get_restart_count():
             # TODO: Return a string summary about the restarts (which pods bounced)
-            raise servo.AdjustmentRejection(reason="unstable")
+            raise servo.AdjustmentRejectedError(reason="unstable")
 
     def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
         for condition in conditions:
@@ -1951,7 +1951,7 @@ class DeploymentOptimization(BaseOptimization):
 
             elif condition.type == "ReplicaFailure":
                 # TODO: Check what this error looks like
-                raise servo.AdjustmentRejection(
+                raise servo.AdjustmentRejectedError(
                     "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                     condition.status.message,
                     reason=condition.status.reason
@@ -1963,7 +1963,7 @@ class DeploymentOptimization(BaseOptimization):
                     self.logger.debug("Deployment update is progressing", condition)
                     break
                 elif condition.status == "False":
-                    raise servo.AdjustmentRejection(
+                    raise servo.AdjustmentRejectedError(
                         "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                         condition.status.message,
                         reason=condition.status.reason
@@ -2814,7 +2814,7 @@ class KubernetesConnector(BaseConnector):
             )
 
             if not await state.is_ready():
-                raise servo.AdjustmentRejection(
+                raise servo.AdjustmentRejectedError(
                     reason="timed out waiting for Deployment to apply adjustment"
                 )
 

@@ -75,8 +75,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     @property
     def api_client_options(self) -> Dict[str, Any]:
-        # FIXME: Support for proxies. This is messy. Needs to be cleaned up.
-        # We have unnatural layering because proxies is on config but api is standalone.
+        # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
     def display_banner(self) -> None:
@@ -187,8 +186,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             )
             self.logger.trace(devtools.pformat(description))
 
-            param = dict(descriptor=description.__opsani_repr__(), status="ok")
-            return await self._post_event(servo.api.Event.DESCRIPTION, param)
+            status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
+            return await self._post_event(servo.api.Event.DESCRIPTION, status.dict())
 
         elif cmd_response.command == servo.api.Command.MEASURE:
             measurement = await self.measure(cmd_response.param)
@@ -205,7 +204,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
             try:
                 description = await self.adjust(adjustments, control)
-                reply = {"status": "ok", "state": description.__opsani_repr__()}
+                status = servo.api.Status.ok(state=description.__opsani_repr__())
 
                 components_count = len(description.components)
                 settings_count = sum(
@@ -214,10 +213,13 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 self.logger.info(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
-            except servo.AdjustmentError as error:
-                ...
+            except servo.AdjustmentFailedError as error:
+                status = servo.api.Status.from_error(error)
+                self.logger.error(
+                    f"Adjustment failed: {error}"
+                )
 
-            return await self._post_event(servo.api.Event.ADJUSTMENT, reply)
+            return await self._post_event(servo.api.Event.ADJUSTMENT, status.dict())
 
         elif cmd_response.command == servo.api.Command.SLEEP:
             # TODO: Model this
@@ -251,14 +253,14 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.CancelEventError)):
+            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
                 if isinstance(error, servo.api.UnexpectedEventError):
                     self.logger.error(
                         "servo has lost synchronization with the optimizer: restarting"
                     )
-                elif isinstance(error, servo.api.CancelEventError):
+                elif isinstance(error, servo.api.EventCancelledError):
                     self.logger.error(
-                        "optimizer has canceled operation in progress: restarting"
+                        "optimizer has cancelled operation in progress: restarting"
                     )
 
                 tasks = [

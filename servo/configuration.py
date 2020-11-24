@@ -327,19 +327,19 @@ class ServoConfiguration(BaseConfiguration):
     See https://github.com/litl/backoff
     """
 
-    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[pydantic.AnyHttpUrl]]]
+    proxies: Union[None, ProxyKey, Dict[ProxyKey, Optional[pydantic.AnyHttpUrl]]] = None
     """Proxy configuration for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
     See https://www.python-httpx.org/advanced/#http-proxying
     """
 
-    timeouts: Optional[Timeouts]
+    timeouts: Optional[Timeouts] = None
     """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
     """
 
-    ssl_verify: Union[None, bool, pydantic.FilePath]
+    ssl_verify: Union[None, bool, pydantic.FilePath] = None
     """SSL verification settings for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
