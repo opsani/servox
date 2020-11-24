@@ -31,7 +31,7 @@ vegeta:
   target: GET http://web.default.svc:8080
 
 
---- # Mainline deployment optimization
+--- # Canary deployment optimization
 kubernetes:
   deployments:
   - name: web-main

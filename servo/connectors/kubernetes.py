@@ -2609,6 +2609,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
         for controller_config in config.deployments + config.rollouts:
             if controller_config.strategy == OptimizationStrategy.DEFAULT:
+                if controller_config.replicas is None:
+                    raise ValueError("replicas must be set on default optimization")
                 optimization = await MainlineOptimization.create(
                     controller_config, timeout=config.timeout
                 )
@@ -2946,7 +2948,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     name: DNSSubdomainName
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.DEFAULT
-    replicas: servo.Replicas
+    replicas: Optional[servo.Replicas]
 
 class RolloutConfiguration(BaseKubernetesConfiguration): # TODO this may be able to just use KubernetesConfiguration instead
     """
@@ -2956,7 +2958,7 @@ class RolloutConfiguration(BaseKubernetesConfiguration): # TODO this may be able
     name: DNSSubdomainName
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.DEFAULT
-    replicas: servo.Replicas
+    replicas: Optional[servo.Replicas]
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
