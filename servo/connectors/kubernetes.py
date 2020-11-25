@@ -1628,8 +1628,10 @@ class RolloutBaseModel(pydantic.BaseModel):
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
 # https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
+# NOTE/TODO: fields typed with Any should maintain the same form when dumped as when they are parsed. Should the need 
+#   arise to interact with such fields, they will need to have an explicit type defined so the alias_generator is applied
 class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
-    match_expressions: Any # TODO type this out if connector needs to interact with it
+    match_expressions: Any
     match_labels: Dict[str, str]
 
 class RolloutV1ObjectMeta(RolloutBaseModel):
@@ -1727,15 +1729,15 @@ class RolloutSpec(RolloutBaseModel):
     paused: Optional[bool]
     progress_deadline_seconds: Optional[int]
     restart_at: Optional[datetime]
-    strategy: Any # TODO type this out if connector needs to interact with it
+    strategy: Any
 
 class RolloutBlueGreenStatus(RolloutBaseModel):
-    active_selector: str
+    active_selector: Optional[str]
     post_promotion_analysis_run: Optional[str]
-    post_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
+    post_promotion_analysis_run_status: Any
     pre_promotion_analysis_run: Optional[str]
-    pre_promotion_analysis_run_status: Any # TODO type this out if connector needs to interact with it
-    preview_selector: str
+    pre_promotion_analysis_run_status: Any
+    preview_selector: Optional[str]
     previous_active_selector: Optional[str]
     scale_down_delay_start_time: Optional[datetime]
     scale_up_preview_check_point: Optional[bool]
@@ -1762,7 +1764,7 @@ class RolloutStatus(RolloutBaseModel):
     current_step_hash: Optional[str]
     current_step_index: Optional[int]
     observed_generation: str
-    pause_conditions: Any # TODO type this out if connector needs to interact with it
+    pause_conditions: Any
     ready_replicas: int
     replicas: int
     restarted_at: Optional[datetime]
