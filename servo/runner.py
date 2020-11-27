@@ -158,58 +158,13 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
-    # async def main(self, servo_: servo.servo.Servo) -> None:
-    #     # Main run loop for processing commands from the optimizer
-    #     async def main_loop() -> None:
-    #         while True:
-    #             try:
-    #                 servo.servo.Servo.set_current(servo_)
-    #                 status = await self.exec_command()
-    #                 if status.status == servo.api.UNEXPECTED_EVENT:
-    #                     self.logger.warning(
-    #                         f"server reported unexpected event: {status.reason}"
-    #                     )
-    #             except Exception as error:
-    #                 self.logger.exception(f"failed with unrecoverable error: {error}")
-    #                 raise error
-
-    #     def handle_progress_exception(error: Exception) -> None:
-    #         # Restart the main event loop if we get out of sync with the server
-    #         if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
-    #             if isinstance(error, servo.api.UnexpectedEventError):
-    #                 self.logger.error(
-    #                     "servo has lost synchronization with the optimizer: restarting"
-    #                 )
-    #             elif isinstance(error, servo.api.EventCancelledError):
-    #                 self.logger.error(
-    #                     "optimizer has cancelled operation in progress: restarting"
-    #                 )
-
-    #             tasks = [
-    #                 t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-    #             ]
-    #             self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
-    #             [task.cancel() for task in tasks]
-
-    #             # Restart a fresh main loop
-    #             asyncio.create_task(main_loop(), name="main loop")
-
-    #     # Setup logging
-    #     servo.servo.Servo.set_current(servo_)
-    #     self.progress_handler = servo.logging.ProgressHandler(
-    #         self.servo.report_progress, self.logger.warning, handle_progress_exception
-    #     )
-    #     self.logger.add(self.progress_handler.sink, catch=True)
-
-    #     self.display_banner()
-
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         while self._running:
             try:
                 servo.servo.Servo.set_current(self.servo)
                 status = await self.exec_command()
-                if status.status == servo.api.UNEXPECTED_EVENT:
+                if status.status == servo.api.OptimizerStatuses.unexpected_event:
                     self.logger.warning(
                         f"server reported unexpected event: {status.reason}"
                     )
@@ -311,15 +266,20 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, servo.api.UnexpectedEventError):
-                self.logger.error(
-                    "servo has lost synchronization with the optimizer: restarting operations"
-                )
+            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
+                if isinstance(error, servo.api.UnexpectedEventError):
+                    self.logger.error(
+                        "servo has lost synchronization with the optimizer: restarting"
+                    )
+                elif isinstance(error, servo.api.EventCancelledError):
+                    self.logger.error(
+                        "optimizer has cancelled operation in progress: restarting"
+                    )
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
-                self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+                self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
 
                 # Restart a fresh main loop

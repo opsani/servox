@@ -140,12 +140,10 @@ def test_check_multiservo(
     cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path,
 ) -> None:
     request1 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo",
-        status_code=200,
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
     )
     request2 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo",
-        status_code=200,
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
     )
     result = cli_runner.invoke(servo_cli, "check")
     assert result.exit_code == 0, f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"
@@ -160,12 +158,10 @@ def test_check_multiservo_by_name(
     cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path,
 ) -> None:
     request1 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo",
-        status_code=200,
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-1/servo"
     )
     request2 = respx.post(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo",
-        status_code=200,
+        "https://api.opsani.com/accounts/dev.opsani.com/applications/multi-servox-2/servo"
     )
     result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 check")
     assert result.exit_code == 0, f"exited with non-zero status code (stdout={result.stdout}, stderr={result.stderr})"

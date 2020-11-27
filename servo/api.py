@@ -83,7 +83,7 @@ class Status(pydantic.BaseModel):
     @classmethod
     def ok(cls, message: Optional[str] = None, reason: str = Reasons.success, **kwargs) -> "Status":
         """Return a success (status="ok") status object."""
-        return cls(status=Statuses.ok, message=message, reason=reason, **kwargs)
+        return cls(status=ServoStatuses.ok, message=message, reason=reason, **kwargs)
 
     @classmethod
     def from_error(cls, error: servo.errors.BaseError) -> "Status":
@@ -181,12 +181,12 @@ class Mixin(abc.ABC):
         request = self.progress_request(**kwargs)
         status = await self._post_event(*request)
 
-        if status.status == Statuses.ok:
+        if status.status == OptimizerStatuses.ok:
             pass
-        elif status.status == Statuses.unexpected_event:
+        elif status.status == OptimizerStatuses.unexpected_event:
             # We have lost sync with the backend, raise an exception to halt broken execution
             raise servo.errors.UnexpectedEventError(status.reason)
-        elif status.status == Statuses.cancelled:
+        elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
             raise servo.errors.EventCancelledError(status.reason)
         else:

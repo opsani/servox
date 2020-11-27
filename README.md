@@ -555,7 +555,7 @@ vegeta:
 
 #### Adding & Removing Servos at Runtime
 
-Servos can be added and removed from the assembly at runtime via methods on the 
+Servos can be added and removed from the assembly at runtime via methods on the
 `servo.Assembly` class:
 
 ```python

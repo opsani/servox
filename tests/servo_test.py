@@ -627,11 +627,29 @@ class TestAssembly:
         'properties': {
             'description': {
                 'title': 'Description',
-                'description': 'An optional annotation describing the configuration.',
                 'env_names': [
                     'SERVO_DESCRIPTION',
                 ],
                 'type': 'string',
+            },
+            'name': {
+                'title': 'Name',
+                'env_names': [
+                    'SERVO_NAME',
+                ],
+                'type': 'string',
+            },
+            'optimizer': {
+                'title': 'Optimizer',
+                'description': 'Configuration of the Servo connector',
+                'env_names': [
+                    'SERVO_OPTIMIZER',
+                ],
+                'allOf': [
+                    {
+                        '$ref': '#/definitions/Optimizer',
+                    },
+                ],
             },
             'connectors': {
                 'title': 'Connectors',
@@ -711,6 +729,70 @@ class TestAssembly:
         ],
         'additionalProperties': False,
         'definitions': {
+            'Optimizer': {
+                'title': 'Optimizer',
+                'description': (
+                    'An Optimizer models an Opsani optimization engines that the Servo can connect to\n'
+                    'in order to access the Opsani machine learning technology for optimizing system infrastructure\n'
+                    'and application workloads.'
+                ),
+                'type': 'object',
+                'properties': {
+                    'org_domain': {
+                        'title': 'Org Domain',
+                        'env_names': [
+                            'org_domain',
+                        ],
+                        'pattern': (
+                            '(([\\da-zA-Z])([_\\w-]{,62})\\.){,127}(([\\da-zA-Z])[_\\w-]{,61})?([\\da-zA-Z]\\.((xn\\-\\-[a-zA-Z'
+                            '\\d]+)|([a-zA-Z\\d]{2,})))'
+                        ),
+                        'type': 'string',
+                    },
+                    'app_name': {
+                        'title': 'App Name',
+                        'env_names': [
+                            'app_name',
+                        ],
+                        'pattern': '^[a-z\\-\\.0-9]{3,64}$',
+                        'type': 'string',
+                    },
+                    'token': {
+                        'title': 'Token',
+                        'env': 'OPSANI_TOKEN',
+                        'env_names': [
+                            'OPSANI_TOKEN',
+                        ],
+                        'type': 'string',
+                    },
+                    'base_url': {
+                        'title': 'Base Url',
+                        'default': 'https://api.opsani.com/',
+                        'env': 'OPSANI_BASE_URL',
+                        'env_names': [
+                            'OPSANI_BASE_URL',
+                        ],
+                        'minLength': 1,
+                        'maxLength': 65536,
+                        'format': 'uri',
+                        'type': 'string',
+                    },
+                    'url': {
+                        'title': 'Url',
+                        'env_names': ['url'],
+                        'minLength': 1,
+                        'maxLength': 65536,
+                        'format': 'uri',
+                        'type': 'string',
+                    },
+                },
+                'required': [
+                    'org_domain',
+                    'app_name',
+                    'token',
+                ],
+                'additionalProperties': False,
+            },
             'BackoffSettings': {
                 'title': 'BackoffSettings Connector Configuration Schema',
                 'description': (
