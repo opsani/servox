@@ -197,11 +197,11 @@ class Servo(servo.connector.BaseConnector):
 
     async def startup(self):
         """Notify all active connectors that the servo is starting up."""
-        await self.dispatch_event(Events.STARTUP, prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.STARTUP, _prepositions=servo.events.Preposition.ON)
 
     async def shutdown(self):
         """Notify all active connectors that the servo is shutting down."""
-        await self.dispatch_event(Events.SHUTDOWN, prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.SHUTDOWN, _prepositions=servo.events.Preposition.ON)
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
@@ -255,7 +255,7 @@ class Servo(servo.connector.BaseConnector):
             setattr(self.config, name, connector.config)
 
         await self.dispatch_event(
-            Events.STARTUP, prepositions=servo.events.Preposition.ON, include=[connector]
+            Events.STARTUP, include=[connector], _prepositions=servo.events.Preposition.ON
         )
 
     async def remove_connector(
@@ -284,7 +284,7 @@ class Servo(servo.connector.BaseConnector):
             )
 
         await self.dispatch_event(
-            Events.SHUTDOWN, prepositions=servo.events.Preposition.ON, include=[connector_]
+            Events.SHUTDOWN, include=[connector_], _prepositions=servo.events.Preposition.ON
         )
 
         self.connectors.remove(connector_)

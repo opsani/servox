@@ -34,12 +34,21 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated Pydantic to v1.7.2
 - Updated httpx to v0.16.1
 - Updated orjson to v3.4.3
-- Updated the `servo.events` module with numerous new error types.
+- Updated the `servo.errors` module with numerous new error types.
+- The `servo.events.run_event_handlers` method now always returns a list of
+  `EventResult` objects when `return_exceptions` is True. Exceptions are caught
+  and embedded in the `value` attribute.
+- Exceptions raised by an event handler are decorated with a
+  `servo.events.EventResult` object on the `__event_result__` attribute.
+- When an event is cancelled by a before event handler by raising a
+  `servo.errors.EventCancelledError`, an empty result list is now returned.
 
 ### Removed
 
 - The `duration` attribute of the Vegeta Connector configuration is now private
   as the optimizer or operator always provide the value.
+- The `servo.events.broadcast_event` method was removed as it was seldom used
+  and the functionality is easily replicated in downstream code.
 
 ### Fixed
 

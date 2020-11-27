@@ -236,7 +236,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
-                self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+                self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
 
                 # Restart a fresh main loop
@@ -300,7 +300,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         [task.cancel() for task in tasks]
 
-        self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+        self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
 
         self.logger.info("Servo shutdown complete.")
