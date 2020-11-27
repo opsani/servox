@@ -92,8 +92,12 @@ class BaseConnector(
     """
 
     config: servo.configuration.BaseConfiguration
-    """Configuration for the connector set explicitly or loaded from a config file.
-    """
+    """Configuration for the connector set explicitly or loaded from a config file."""
+
+    _servo_config: servo.configuration.ServoConfiguration = pydantic.PrivateAttr(
+        default_factory=lambda: servo.configuration.ServoConfiguration()
+    )
+    """Shared configuration from our parent Servo instance."""
 
     ##
     # Validators
@@ -186,8 +190,22 @@ class BaseConnector(
         )
 
     @property
-    def api_client_options(self) -> Dict[str, Any]: # noqa: D102
-        return self.__dict__.get("api_client_options", super().api_client_options)
+    def api_client_options(self) -> Dict[str, Any]: # noqa: D105
+        if not self.optimizer:
+            raise RuntimeError(
+                f"cannot construct API client: optimizer is not configured"
+            )
+        return {
+            "base_url": self.optimizer.api_url,
+            "headers": {
+                "Authorization": f"Bearer {self.optimizer.token}",
+                "User-Agent": servo.api.USER_AGENT,
+                "Content-Type": "application/json",
+            },
+            "proxies": self._servo_config.proxies,
+            "timeout": self._servo_config.timeouts,
+            "verify": self._servo_config.ssl_verify,
+        }
 
     @property
     def logger(self) -> "loguru.Logger":

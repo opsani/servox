@@ -9,44 +9,12 @@ import devtools
 import httpx
 import typer
 
-import servo
+import servo as servox
+import servo.configuration
 import servo.api
 import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
-
-DEFAULT_CONTEXT = "__default__"
-
-
-class BackoffConfig:
-    """BackoffConfig provides callables for runtime configuration of backoff decorators.
-
-    This implementation relies upon the framework managed context variables to determine
-    which servo is running and retrieve the configuration.
-    """
-
-    @staticmethod
-    def max_time(context: str = DEFAULT_CONTEXT) -> Optional[int]:
-        if servo_config := servo.Servo.current().config.servo:
-            if backoff_config := servo_config.backoff.get(context, None):
-                if max_time := backoff_config.max_time:
-                    return max_time.total_seconds()
-
-        # fallback to default
-        if max_time := BackoffConfig.max_time():
-            return max_time
-
-        raise AssertionError("max_time default should never be None")
-
-    @staticmethod
-    def max_tries(context: str = DEFAULT_CONTEXT) -> Optional[int]:
-        if servo_config := servo.Servo.current().config.servo:
-            if backoff_config := servo_config.backoff.get(context, None):
-                return backoff_config.max_tries
-
-        # fallback to default
-        return BackoffConfig.max_tries()
-
 
 class Runner(servo.logging.Mixin, servo.api.Mixin):
     assembly: servo.Assembly
@@ -75,8 +43,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
     @property
     def api_client_options(self) -> Dict[str, Any]:
-        # FIXME: Support for proxies. This is messy. Needs to be cleaned up.
-        # We have unnatural layering because proxies is on config but api is standalone.
+        # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
     def display_banner(self) -> None:
@@ -171,9 +138,11 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"Adjustment completed {summary}")
         return aggregate_description
 
-    # backoff and retry for an hour on transient request failures
     @backoff.on_exception(
-        backoff.expo, httpx.HTTPError, max_time=BackoffConfig.max_time
+        backoff.expo,
+        httpx.HTTPError,
+        max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Event.WHATS_NEXT, None)
@@ -187,8 +156,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             )
             self.logger.trace(devtools.pformat(description))
 
-            param = dict(descriptor=description.__opsani_repr__(), status="ok")
-            return await self._post_event(servo.api.Event.DESCRIPTION, param)
+            status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
+            return await self._post_event(servo.api.Event.DESCRIPTION, status.dict())
 
         elif cmd_response.command == servo.api.Command.MEASURE:
             measurement = await self.measure(cmd_response.param)
@@ -202,19 +171,25 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == servo.api.Command.ADJUST:
             adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
-            description = await self.adjust(adjustments, control)
 
-            reply = {"status": "ok", "state": description.__opsani_repr__()}
+            try:
+                description = await self.adjust(adjustments, control)
+                status = servo.api.Status.ok(state=description.__opsani_repr__())
 
-            components_count = len(description.components)
-            settings_count = sum(
-                len(component.settings) for component in description.components
-            )
-            self.logger.info(
-                f"Adjusted: {components_count} components, {settings_count} settings"
-            )
+                components_count = len(description.components)
+                settings_count = sum(
+                    len(component.settings) for component in description.components
+                )
+                self.logger.info(
+                    f"Adjusted: {components_count} components, {settings_count} settings"
+                )
+            except servo.AdjustmentFailedError as error:
+                status = servo.api.Status.from_error(error)
+                self.logger.error(
+                    f"Adjustment failed: {error}"
+                )
 
-            return await self._post_event(servo.api.Event.ADJUSTMENT, reply)
+            return await self._post_event(servo.api.Event.ADJUSTMENT, status.dict())
 
         elif cmd_response.command == servo.api.Command.SLEEP:
             # TODO: Model this
@@ -248,15 +223,20 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         def handle_progress_exception(error: Exception) -> None:
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, servo.api.UnexpectedEventError):
-                self.logger.error(
-                    "servo has lost synchronization with the optimizer: restarting operations"
-                )
+            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
+                if isinstance(error, servo.api.UnexpectedEventError):
+                    self.logger.error(
+                        "servo has lost synchronization with the optimizer: restarting"
+                    )
+                elif isinstance(error, servo.api.EventCancelledError):
+                    self.logger.error(
+                        "optimizer has cancelled operation in progress: restarting"
+                    )
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
-                self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+                self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
 
                 # Restart a fresh main loop
@@ -282,7 +262,8 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
-                max_time=lambda: BackoffConfig.max_time("connect"),
+                max_time=lambda: servox.Servo.current().config.backoff.max_time(),
+                max_tries=lambda: servox.Servo.current().config.backoff.max_tries(),
                 on_giveup=giveup,
             )
             async def connect() -> None:
@@ -319,7 +300,7 @@ class Runner(servo.logging.Mixin, servo.api.Mixin):
 
         [task.cancel() for task in tasks]
 
-        self.logger.info(f"Canceling {len(tasks)} outstanding tasks")
+        self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)
 
         self.logger.info("Servo shutdown complete.")

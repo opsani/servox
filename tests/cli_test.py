@@ -121,7 +121,7 @@ def test_check(
 ) -> None:
     request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo")
     result = cli_runner.invoke(servo_cli, "check")
-    assert request.called
+    assert request.called, f"stdout={result.stdout}, stderr={result.stderr}"
     assert result.exit_code == 0
     assert re.search("CONNECTOR\\s+STATUS", result.stdout)
 
@@ -133,7 +133,7 @@ def test_check_verbose(
     request = respx.post("https://api.opsani.com/accounts/dev.opsani.com/applications/servox/servo")
     result = cli_runner.invoke(servo_cli, "check -v", catch_exceptions=False)
     assert request.called
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"result is: {result.stdout}, {result.stderr}"
     assert re.search(
         "CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout
     )

@@ -14,6 +14,7 @@ from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Op
 import pydantic
 import pydantic.main
 
+import servo.errors
 import servo.utilities.inspect
 import servo.utilities.strings
 
@@ -29,6 +30,11 @@ __all__ = [
     "after_event",
     "event_handler",
 ]
+
+# Context vars for asyncio tasks managed by run_event_handlers
+_event_context_var = contextvars.ContextVar("servo.event", default=None)
+_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
+_connector_event_bus = weakref.WeakKeyDictionary()
 
 _signature_cache: Dict[str, inspect.Signature] = {}
 
@@ -256,14 +262,6 @@ class EventResult(pydantic.BaseModel):
         return v or datetime.datetime.now()
 
 
-class EventError(RuntimeError):
-    pass
-
-
-class CancelEventError(EventError):
-    result: EventResult
-
-
 ##
 # Event registry
 
@@ -418,8 +416,8 @@ def before_event(
 
     Before event handlers require no arguments positional or keyword arguments and return `None`. Any arguments
     provided via the `kwargs` parameter are passed through at invocation time. Before event handlers
-    can cancel event propagation by raising `CancelEventError`. Canceled events are reported to the
-    event originator by attaching the `CancelEventError` instance to the `EventResult`.
+    can cancel event propagation by raising `servo.errors.EventCancelledError`. Cancelled events are reported to the
+    event originator by attaching the `servo.errors.EventCancelledError` instance to the `EventResult`.
 
     :param event: The event or name of the event to run the handler before.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
@@ -565,12 +563,6 @@ def __after_handler(self, results: List[EventResult]) -> None:
     pass
 
 
-# Context vars for asyncio tasks managed by run_event_handlers
-_event_context_var = contextvars.ContextVar("servo.event", default=None)
-_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
-_connector_event_bus = weakref.WeakKeyDictionary()
-
-
 # NOTE: Boolean flag to know if we can safely reference base class from the metaclass
 _is_base_class_defined = False
 
@@ -676,38 +668,6 @@ class Mixin:
     def __connectors__(self) -> List["servo.connector.BaseConnector"]:
         return _connector_event_bus[self]
 
-    def broadcast_event(
-        self,
-        event: Union[Event, str],
-        *args,
-        first: bool = False,
-        include: Optional[List["servo.connector.BaseConnector"]] = None,
-        exclude: Optional[List["servo.connector.BaseConnector"]] = None,
-        prepositions: Preposition = (
-            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
-        ),
-        return_exceptions: bool = False,
-        **kwargs,
-    ) -> asyncio.Task:
-        """
-        Broadcast an event asynchronously in a fire and forget manner.
-
-        Useful for dispatching notification events where you do not need
-        or care about the result.
-        """
-        return asyncio.create_task(
-            self.dispatch_event(
-                event,
-                *args,
-                first=first,
-                include=include,
-                exclude=exclude,
-                prepositions=prepositions,
-                return_exceptions=return_exceptions,
-                **kwargs,
-            )
-        )
-
     async def dispatch_event(
         self,
         event: Union[Event, str],
@@ -715,23 +675,50 @@ class Mixin:
         first: bool = False,
         include: Optional[List["servo.connector.BaseConnector"]] = None,
         exclude: Optional[List["servo.connector.BaseConnector"]] = None,
-        prepositions: Preposition = (
+        return_exceptions: bool = False,
+        _prepositions: Preposition = (
             Preposition.BEFORE | Preposition.ON | Preposition.AFTER
         ),
-        return_exceptions: bool = False,
         **kwargs,
     ) -> Union[Optional[EventResult], List[EventResult]]:
         """
-        Dispatches an event to active connectors for processing and returns the results.
+        Dispatch an event to active connectors for processing and returns the results.
 
-        Eventing can be used to notify other connectors of activities and state changes
+        Eventing is used to notify other connectors of activities and state changes
         driven by one connector or to facilitate loosely coupled cross-connector RPC
         communication.
 
-        :param first: When True, halt dispatch and return the result from the first connector that responds.
-        :param include: A list of specific connectors to dispatch the event to.
-        :param exclude: A list of specific connectors to exclude from event dispatch.
-        :param return_exceptions: When True, exceptions returned by on event handlers are returned as results.
+        Events are dispatched by invoking the before, on, and after event
+        handlers of the active connectors for the given event. Before handlers
+        may cancel the event by raising an `EventCancelledError`. When an event
+        is cancelled by a before handler, an empty result list is returned and a
+        warning is logged. Other exceptions are raised and interrupt the
+        event dispatch operation exceptionally.
+
+        When the `return_exceptions` argument is True, exceptions raised by on
+        event handlers are returned as the `value` attribute of `EventResult`
+        objects in the list returned. After event handlers are invoked with the
+        complete list of results before the method returns.
+
+        When the `return_exceptions` argument is False, the first exception
+        encountered will interrupt the event dispatch operation exceptionally.
+
+        Whenever possible, event handlers should raise an exception derived from
+        `servo.events.EventError` when a runtime error is encountered and
+        utilize exception chaining as described in [PEP 3134](https://www.python.org/dev/peps/pep-3134/).
+
+        Args:
+            event: The name or event to dispatch.
+            first: When True, halt dispatch and return the result from the first
+                connector that responds.
+            include: A list of specific connectors to dispatch the event to.
+            exclude: A list of specific connectors to exclude from event
+                dispatch.
+            return_exceptions: When True, exceptions raised by on event handlers
+                are returned as event results.
+
+        Returns:
+            A list of event result objects detailing the results returned.
         """
         results: List[EventResult] = []
         connectors = include if include is not None else self.__connectors__
@@ -745,23 +732,25 @@ class Mixin:
             )
 
         # Invoke the before event handlers
-        if prepositions & Preposition.BEFORE:
-            try:
-                for connector in connectors:
-                    await connector.run_event_handlers(
+        if _prepositions & Preposition.BEFORE:
+            for connector in connectors:
+                try:
+                    results = await connector.run_event_handlers(
                         event, Preposition.BEFORE
                     )
-            except CancelEventError as error:
-                # Cancelled by a before event handler. Unpack the result and return it
-                return [error.result]
+
+                except servo.errors.EventCancelledError as error:
+                    # Return an empty result set
+                    self.logger.warning(f"event cancelled by before event handler on connector \"{connector.name}\": {error}")
+                    return []
 
         # Invoke the on event handlers and gather results
-        if prepositions & Preposition.ON:
+        if _prepositions & Preposition.ON:
             if first:
                 # A single responder has been requested
                 for connector in connectors:
                     results = await connector.run_event_handlers(
-                        event, Preposition.ON, *args, **kwargs
+                        event, Preposition.ON, *args, return_exceptions=return_exceptions, **kwargs
                     )
                     if results:
                         break
@@ -770,20 +759,18 @@ class Mixin:
                     *list(
                         map(
                             lambda c: c.run_event_handlers(
-                                event, Preposition.ON, *args, **kwargs
+                                event, Preposition.ON, return_exceptions=return_exceptions, *args, **kwargs
                             ),
                             connectors,
                         )
                     ),
-                    return_exceptions=return_exceptions,
                 )
                 results = await group
                 results = list(filter(lambda r: r is not None, results))
-                if results:
-                    results = functools.reduce(lambda x, y: x + y, results)
+                results = functools.reduce(lambda x, y: x + y, results, [])
 
         # Invoke the after event handlers
-        if prepositions & Preposition.AFTER:
+        if _prepositions & Preposition.AFTER:
             await asyncio.gather(
                 *list(
                     map(
@@ -809,7 +796,11 @@ class Mixin:
         **kwargs,
     ) -> Optional[List[EventResult]]:
         """
-        Run handlers for the given event and preposition and return the results or None if there are no handlers.
+        Run handlers for the given event and preposition and return the results
+        or None if there are no handlers.
+
+        Exceptions are rescued and returned as event result objects in which the
+        `value` attribute is the exception.
         """
         if not isinstance(event, Event):
             raise ValueError(
@@ -840,41 +831,42 @@ class Mixin:
                         else:
                             value = event_handler.handler(self, *args, **kwargs)
 
-                except CancelEventError as error:
-                    if preposition != Preposition.BEFORE:
-                        raise TypeError(
-                            f"Cannot cancel an event from an {preposition} handler"
-                        ) from error
+                    result = EventResult(
+                        connector=self,
+                        event=event,
+                        preposition=preposition,
+                        handler=event_handler,
+                        value=value,
+                    )
+                    results.append(result)
+
+                except Exception as error:
+                    if (isinstance(error, servo.errors.EventCancelledError) and
+                        preposition != Preposition.BEFORE):
+                        if return_exceptions:
+                            self.logger.warning(f"Cannot cancel an event from an {preposition} handler: event dispatched")
+                        else:
+                            cause = error
+                            error = TypeError(
+                                f"Cannot cancel an event from an {preposition} handler"
+                            )
+                            error.__cause__ = cause
+
 
                     # Annotate the exception and reraise to halt execution
-                    error.result = EventResult(
+                    error.__event_result__ = EventResult(
                         connector=self,
                         event=event,
                         preposition=preposition,
                         handler=event_handler,
                         value=error,
                     )
-                    raise error
 
-                except EventError as error:
-                    value = error
-
-                except Exception as error:
                     if return_exceptions:
-                        value = error
+                        results.append(error.__event_result__)
                     else:
                         raise error
 
-                # TODO: Annotate the responses to verify that they are of the correct types
-                # TODO: Should have warning logs and options/way to retrieve bad results for debugging
-                result = EventResult(
-                    connector=self,
-                    event=event,
-                    preposition=preposition,
-                    handler=event_handler,
-                    value=value,
-                )
-                results.append(result)
         finally:
             _connector_context_var.reset(prev_connector_token)
             _event_context_var.reset(prev_event_token)

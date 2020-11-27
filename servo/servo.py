@@ -181,32 +181,27 @@ class Servo(servo.connector.BaseConnector):
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)
 
-        # associate our config with our children
-        self._set_association("servo_config", self.config.servo)
-        for connector in connectors:
-            connector._set_association("servo_config", self.config.servo)
-
-            with servo.utilities.pydantic.extra(connector):
-                connector.api_client_options = self.api_client_options
+        # associate shared config with our children
+        for connector in (connectors + [self]):
+            connector._servo_config = self.config.servo
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
-        """Return a dictionary of options for configuring proxies, timeouts, and SSL verification of an HTTP client."""
-        options = super().api_client_options
-        if self.config.servo:
-            options["proxies"] = self.config.servo.proxies
-            options["timeout"] = self.config.servo.timeouts
-            options["verify"] = self.config.servo.ssl_verify
+    def connector(self) -> Optional[servo.connector.BaseConnector]:
+        """Return the active connector in the current execution context."""
+        return servo.events._connector_context_var.get()
 
-        return options
+    @property
+    def event(self) -> Optional[servo.events.Event]:
+        """Return the active event in the current execution context."""
+        return servo.events._event_context_var.get()
 
     async def startup(self):
         """Notify all active connectors that the servo is starting up."""
-        await self.dispatch_event(Events.STARTUP, prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.STARTUP, _prepositions=servo.events.Preposition.ON)
 
     async def shutdown(self):
         """Notify all active connectors that the servo is shutting down."""
-        await self.dispatch_event(Events.SHUTDOWN, prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.SHUTDOWN, _prepositions=servo.events.Preposition.ON)
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
@@ -251,14 +246,16 @@ class Servo(servo.connector.BaseConnector):
             )
 
         connector.name = name
+        connector._servo_config = self.config.servo
         self.connectors.append(connector)
         self.__connectors__.append(connector)
 
+        # Register our name into the config class
         with servo.utilities.pydantic.extra(self.config):
             setattr(self.config, name, connector.config)
 
         await self.dispatch_event(
-            Events.STARTUP, prepositions=servo.events.Preposition.ON, include=[connector]
+            Events.STARTUP, include=[connector], _prepositions=servo.events.Preposition.ON
         )
 
     async def remove_connector(
@@ -287,7 +284,7 @@ class Servo(servo.connector.BaseConnector):
             )
 
         await self.dispatch_event(
-            Events.SHUTDOWN, prepositions=servo.events.Preposition.ON, include=[connector_]
+            Events.SHUTDOWN, include=[connector_], _prepositions=servo.events.Preposition.ON
         )
 
         self.connectors.remove(connector_)

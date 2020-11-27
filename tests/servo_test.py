@@ -11,14 +11,14 @@ import pytest
 import yaml
 from pydantic import Extra, ValidationError
 
+import servo as servox
+from servo.errors import *
 from servo import BaseAssemblyConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
 from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.events import (
-    CancelEventError,
-    EventError,
     EventResult,
     Preposition,
     _events,
@@ -230,9 +230,13 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     after_spy = mocker.spy(after_handler, "handler")
 
+    # Catch logs
+    messages = []
+    connector.logger.add(lambda m: messages.append(m), level=0)
+
     # Mock the before handler to throw a cancel exception
     mock = mocker.patch.object(before_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError("it burns when I pee")
     results = await servo.dispatch_event("promote")
 
     # Check that on and after callbacks were never called
@@ -240,38 +244,59 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     after_spy.assert_not_called()
 
     # Check the results
-    assert len(results) == 1
-    result = results[0]
-    assert isinstance(result.value, CancelEventError)
-    assert result.created_at is not None
-    assert result.handler.handler == mock
-    assert result.connector == connector
-    assert result.event.name == "promote"
-    assert result.preposition == Preposition.BEFORE
+    assert len(results) == 0
+    assert messages[0].record["level"].name == "WARNING"
+    assert messages[0].record["message"] == 'event cancelled by before event handler on connector "first_test_servo": it burns when I pee'
 
+async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
+    event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
 
+    mock = mocker.patch.object(event_handler, "handler")
+    mock.side_effect = EventCancelledError()
+
+    messages = []
+    connector.logger.add(lambda m: messages.append(m), level=0)
+    await servo.dispatch_event("promote", return_exceptions=True)
+    assert messages[0].record["level"].name == "WARNING"
+    assert messages[0].record["message"] == "Cannot cancel an event from an on handler: event dispatched"
+
+from servo.errors import EventCancelledError
 async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError()
     with pytest.raises(TypeError) as error:
         await servo.dispatch_event("promote")
     assert str(error.value) == "Cannot cancel an event from an on handler"
 
 
-async def test_cannot_cancel_from_after_handlers(mocker, servo: servo):
+async def test_cannot_cancel_from_after_handlers_warning(mocker, servo: servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
 
     mock = mocker.patch.object(event_handler, "handler")
-    mock.side_effect = CancelEventError()
+    mock.side_effect = EventCancelledError()
+
     with pytest.raises(TypeError) as error:
         await servo.dispatch_event("promote")
-        await asyncio.sleep(0.1)
     assert str(error.value) == "Cannot cancel an event from an after handler"
 
+async def test_after_handlers_are_not_called_on_failure_raises(mocker, servo: servo):
+    connector = servo.get_connector("first_test_servo")
+    after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
+    spy = mocker.spy(after_handler, "handler")
+
+    # Mock the before handler to raise an EventError
+    on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
+    mock = mocker.patch.object(on_handler, "handler")
+    mock.side_effect = EventError()
+    with pytest.raises(EventError):
+        await servo.dispatch_event("promote", return_exceptions=False)
+
+    spy.assert_not_called()
 
 async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     connector = servo.get_connector("first_test_servo")
@@ -282,7 +307,7 @@ async def test_after_handlers_are_called_on_failure(mocker, servo: servo):
     on_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
     mock = mocker.patch.object(on_handler, "handler")
     mock.side_effect = EventError()
-    results = await servo.dispatch_event("promote")
+    results = await servo.dispatch_event("promote", return_exceptions=True)
     await asyncio.sleep(0.1)
 
     spy.assert_called_once()
@@ -306,7 +331,7 @@ async def test_dispatching_specific_prepositions(mocker, servo: servo) -> None:
     on_spy = mocker.spy(on_handler, "handler")
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     after_spy = mocker.spy(after_handler, "handler")
-    await servo.dispatch_event("promote", prepositions=Preposition.ON)
+    await servo.dispatch_event("promote", _prepositions=Preposition.ON)
     before_spy.assert_not_called()
     on_spy.assert_called_once()
     after_spy.assert_not_called()
@@ -321,7 +346,7 @@ async def test_dispatching_multiple_specific_prepositions(mocker, servo: servo) 
     after_handler = connector.get_event_handlers("promote", Preposition.AFTER)[0]
     after_spy = mocker.spy(after_handler, "handler")
     await servo.dispatch_event(
-        "promote", prepositions=Preposition.ON | Preposition.BEFORE
+        "promote", _prepositions=Preposition.ON | Preposition.BEFORE
     )
     before_spy.assert_called_once()
     on_spy.assert_called_once()
@@ -344,7 +369,7 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
 
 async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:
     with pytest.raises(KeyError) as error:
-        await servo.dispatch_event("this_is_not_an_event", prepositions=Preposition.ON)
+        await servo.dispatch_event("this_is_not_an_event", _prepositions=Preposition.ON)
     assert str(error.value) == "'this_is_not_an_event'"
 
 
@@ -735,6 +760,14 @@ class TestAssembly:
                 },
                 'additionalProperties': False,
             },
+            'BackoffConfigurations': {
+                'title': 'BackoffConfigurations',
+                'description': 'A mapping of named backoff configurations.',
+                'type': 'object',
+                'additionalProperties': {
+                    '$ref': '#/definitions/BackoffSettings',
+                },
+            },
             'Timeouts': {
                 'title': 'Timeouts Connector Configuration Schema',
                 'description': (
@@ -847,23 +880,14 @@ class TestAssembly:
                     },
                     'backoff': {
                         'title': 'Backoff',
-                        'default': {
-                            '__default__': {
-                                'max_time': '10m',
-                                'max_tries': None,
-                            },
-                            'connect': {
-                                'max_time': '1h',
-                                'max_tries': None,
-                            },
-                        },
                         'env_names': [
                             'SERVO_BACKOFF',
                         ],
-                        'type': 'object',
-                        'additionalProperties': {
-                            '$ref': '#/definitions/BackoffSettings',
-                        },
+                        'allOf': [
+                            {
+                                '$ref': '#/definitions/BackoffConfigurations',
+                            },
+                        ],
                     },
                     'proxies': {
                         'title': 'Proxies',
@@ -1619,6 +1643,29 @@ def test_backoff_defaults() -> None:
     assert config.backoff["__default__"].max_tries is None
 
 
+def test_backoff_contexts() -> None:
+    contexts = servox.configuration.BackoffConfigurations(__root__={
+            "__default__": {"max_time": "10m", "max_tries": None},
+            "connect": {"max_time": "1h", "max_tries": None},
+        })
+    debug(contexts)
+
+    config = servox.configuration.ServoConfiguration(backoff=contexts)
+    debug(config)
+
+def test_backoff_context() -> None:
+    config = ServoConfiguration()
+    assert config.backoff
+    debug(config)
+    # assert config.backoff.max_time()
+    # assert config.backoff.max_time("whatever")
+
+
+    assert config.backoff["__default__"].max_time is not None
+    assert config.backoff["__default__"].max_time == Duration("10m")
+    assert config.backoff["__default__"].max_tries is None
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     ("proxies"),
@@ -1745,3 +1792,10 @@ async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> N
         str(error.value)
         == "invalid connector: a connector named 'first_test_servo' does not exist in the servo"
     )
+
+async def test_backoff() -> None:
+    config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    debug(config)
+    assert config.backoff
+    assert config.backoff.max_time()
+    # servo.Servo.current().config.backoff.max_time(),

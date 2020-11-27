@@ -11,6 +11,7 @@ import yaml
 from pydantic import Extra, ValidationError
 from typer.testing import CliRunner
 
+import servo as servox
 from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.cli import ServoCLI
 from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
@@ -1444,6 +1445,11 @@ async def test_logging() -> None:
         optimizer=Optimizer(id="example.com/my-app", token="123456"),
         config=BaseConfiguration(),
     )
+
+    config = servox.configuration.ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    optimizer = Optimizer("test.com/foo", token="12345")
+    servo = servox.Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    servox.Servo.set_current(servo)
     _connector_context_var.set(connector)
     handler = ProgressHandler(connector.report_progress, lambda m: print(m))
     connector.logger.add(handler.sink)

@@ -258,7 +258,7 @@ class SomeConnector(servo.BaseConnector):
 ```
 
 Each preposition has different capabilities available to it. Before event
-handlers can cancel the execution of the event by raising a `CancelEventError`.
+handlers can cancel the execution of the event by raising a `EventCancelledError`.
 On event handlers can return results that are aggregated and available for
 processing. After event handlers get access to all of the results returned by
 active connectors via the on event handlers.
