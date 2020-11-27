@@ -7,6 +7,36 @@ ifneq (,$(wildcard ./.env))
 endif
 OPSANI_TOKEN_FILE ?= "/dev/null"
 
+define vscode_settings
+{
+    "python.pythonPath": "$(shell poetry env info -p)/bin/python",
+    "terminal.integrated.shellArgs.linux": ["poetry shell"],
+    "terminal.integrated.shellArgs.osx": ["poetry shell"],
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/*.pyc": true,
+        "**/__pycache__": true,
+        "**/.mypy_cache": true
+    },
+    "python.linting.enabled": true
+}
+endef
+export vscode_settings
+
+.PHONY: init
+init:
+	mkdir -p .vscode
+	touch .vscode/settings.json
+	@echo "$$vscode_settings" > .vscode/settings.json
+	poetry install	
+	poetry run servo init
+
+.PHONY: vscode
+vscode:
+	source "$(shell poetry env info -p)/bin/activate" --prompt "poetry env"
+	code .
+
 .PHONY: build
 build:
 	DOCKER_BUILDKIT=1 docker build -t ${IMAGE_NAME} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
@@ -67,3 +97,9 @@ test:
 .PHONY: pre-commit
 pre-commit:
 	poetry run pre-commit run --hook-stage manual --all-files
+
+.PHONY: clean-env
+clean-env:
+	poetry env remove `poetry env info`/bin/python
+	poetry install
+	

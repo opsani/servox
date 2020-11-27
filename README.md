@@ -627,6 +627,18 @@ It is expected that most Open Source contributions will come in the form of new
 connectors. Should you wish to develop a connector, reach out to us at Opsani as
 we have connector developer guides that are in pre-release while ServoX matures.
 
+### Visual Studio Code
+
+The core development team typically works in VSCode. Poetry and VSCode have not
+quite yet become seamlessly integrated. For your convenience, there are a couple
+of Makefile tasks that can simplify configuration:
+
+* `make init` - Initialize a Poetry environment, configure `.vscode/settings.json`,
+  and then run the `servo initialize command.
+* `make vscode` - Export the Poetry environment variables and then open the
+  local working copy within VSCode. The built-in terminal and Python extension
+  should auto-detect the Poetry environment and behave.
+
 ### Pre-commit Hook
 
 The project is configured with a [pre-commit](https://pre-commit.com/) hook to
@@ -719,6 +731,16 @@ fast customized builds:
 ```console
 ❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
 ```
+
+### Upgrading Python
+
+Python interpreter updates can be a bit anoying. The Poetry virtual environment
+will against the prior Python interpreter and you may find that running tests
+and commands will remain stuck to your previous interpreter, regardless of the
+version configured in `.python-version`.
+
+To fix this, run `make clean-env` which will teardown and rebuild your Poetry
+virtual environment.
 
 ## Testing
 
