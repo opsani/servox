@@ -114,3 +114,16 @@ async def test_hello(runner) -> None:
 # async def test_proxies_support() -> None:
 #     ...
 #     # fire up runner.run and check .run, etc.
+
+
+# TODO: This doesn't need to be integration test
+#
+async def test_adjustment_rejected(mocker, runner) -> None:
+    connector = runner.servo.get_connector("adjust")
+    with servo.utilities.pydantic.extra(connector):
+        on_handler = connector.get_event_handlers("adjust", servo.events.Preposition.ON)[0]
+        mock = mocker.patch.object(on_handler, "handler")
+        mock.side_effect = servo.errors.AdjustmentRejectedError()
+        await runner.servo.startup()
+        with pytest.raises(servo.errors.AdjustmentRejectedError):
+            await runner.adjust([], servo.Control())
