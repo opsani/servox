@@ -319,6 +319,20 @@ class BackoffConfigurations(pydantic.BaseModel):
     """A mapping of named backoff configurations."""
     __root__: Dict[str, BackoffSettings]
 
+    @pydantic.root_validator(pre=True)
+    def _nest_unrooted_values(cls, values: Any) -> Any:
+        # NOTE: To parse via parse_obj, we need our values rooted under __root__
+        if isinstance(values, dict):
+            if len(values) != 1 or (
+                len(values) == 1 and values.get("__root__", None) is None
+            ):
+                return { "__root__": values }
+
+        return values
+
+    def __iter__(self):
+        return iter(self.__root__)
+
     def __getitem__(self, context: str) -> BackoffSettings:
         return self.__root__[context]
 

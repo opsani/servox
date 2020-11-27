@@ -1,14 +1,12 @@
+import asyncio
 import pathlib
 
 import pytest
 
 import servo
+import servo.connectors.prometheus
+import tests
 
-# from servo import Assembly, Optimizer
-from servo import assembly, configuration, runner
-from tests.test_helpers import AdjustConnector
-
-# import servo.runner
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -18,13 +16,13 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "prometheus": servo.connectors.prometheus.PrometheusConnector,
-            "adjust": AdjustConnector,
+            "adjust": tests.test_helpers.AdjustConnector,
         }
     )
     config = config_model.generate()
     servo_yaml.write_text(config.yaml())
 
-    optimizer = configuration.Optimizer(
+    optimizer = servo.configuration.Optimizer(
         id="dev.opsani.com/blake-ignite",
         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
     )
@@ -37,9 +35,6 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 @pytest.fixture
 def runner(assembly) -> servo.runner.Runner:
     return servo.runner.Runner(assembly)
-
-
-import asyncio
 
 
 async def test_test_out_of_order_operations(runner) -> None:
