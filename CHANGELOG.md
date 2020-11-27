@@ -42,6 +42,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   `servo.events.EventResult` object on the `__event_result__` attribute.
 - When an event is cancelled by a before event handler by raising a
   `servo.errors.EventCancelledError`, an empty result list is now returned.
+- The `servo.api.Mixin` class is now an abstract base class and requires the
+  implementation of the `api_client_options` method.
+- Configuration of backoff/retry behaviors has been reimplemented for clarity
+  and simplicity.
 
 ### Removed
 
@@ -49,6 +53,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   as the optimizer or operator always provide the value.
 - The `servo.events.broadcast_event` method was removed as it was seldom used
   and the functionality is easily replicated in downstream code.
+- API client options including base URL, proxies, and timeouts are no longer
+  duplicated across connectors as an extra attribute.
 
 ### Fixed
 
