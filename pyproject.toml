@@ -40,7 +40,7 @@ asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.16.1"
 kubetest = "^0.8.1"
 pytest-freezegun = "^0.4.2"
-yamlpath = "^3.2.0"
+yamlpath = "^3.4.0"
 isort = "^5.6.4"
 autoflake = "^1.4"
 flake8-fixme = "^1.1.1"
