@@ -1,6 +1,19 @@
-- name: wemake-python-styleguide
-  uses: wemake-services/wemake-python-styleguide
-  with:
-    reporter: 'github-pr-review'
-  env:
-    GITHUB_TOKEN: ${{ secrets.github_token }}
+name: wemake
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - uses: wemake-services/wemake-python-styleguide@master
+      with:
+        reporter: 'github-pr-review'
+      env:
+        GITHUB_TOKEN: ${{ secrets.github_token }}
