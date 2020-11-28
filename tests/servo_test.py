@@ -420,23 +420,8 @@ def test_registering_event_with_wrong_handler_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid return type annotation for 'adjust' event handler: expected servo.types.Description, but found <class 'dict'>"
+        == """invalid event handler "adjust": incompatible return type annotation "<class 'dict'>" in callable signature "(self, *args, **kwargs) -> dict", expected "servo.types.Description\""""
     )
-
-
-def test_registering_event_handler_fails_with_no_self() -> None:
-    with pytest.raises(TypeError) as error:
-
-        @on_event("adjust")
-        def invalid_adjust() -> None:
-            pass
-
-    assert error
-    assert (
-        str(error.value)
-        == "Invalid signature for 'adjust' event handler: () -> None, \"self\" must be the first argument"
-    )
-
 
 def test_event_decorator_disallows_var_positional_args() -> None:
     with pytest.raises(TypeError) as error:
@@ -463,7 +448,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'adjustments': expected signature: (self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'"
+        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'\""""
     )
 
 
@@ -477,7 +462,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Missing required parameter: 'metrics': expected signature: (self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'"
+        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'\""""
     )
 
 
@@ -497,7 +482,7 @@ def test_registering_event_handler_with_too_many_positional_params_fails() -> No
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'startup' event handler: encountered extra positional parameters (invalid and self)"
+        == "invalid event handler \"startup\": encountered unexpected parameter \"invalid\" in callable signature \"(self, invalid, /) -> None\", expected \"(self) -> 'None'\""
     )
 
 
@@ -511,7 +496,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'startup' event handler: encountered extra parameters (another and invalid)"
+        == """invalid event handler "startup": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
     )
 
 
@@ -534,7 +519,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'before:measure' event handler: encountered extra parameters (another and invalid)"
+        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
     )
 
 
@@ -568,7 +553,7 @@ def test_registering_after_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == "Invalid type annotation for 'after:measure' event handler: encountered extra parameters (another and invalid)"
+        == "invalid after event handler \"after:measure\": encountered unexpected parameters \"another and invalid\" in callable signature \"(self, results: List[servo.events.EventResult], invalid: str, another: int) -> None\", expected \"(self, results: 'List[EventResult]') -> 'None'\""
     )
 
 

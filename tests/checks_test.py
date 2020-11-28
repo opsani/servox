@@ -98,7 +98,22 @@ async def test_raises_on_invalid_signature() -> None:
     assert e
     assert (
         str(e.value)
-        == 'invalid signature for method "check_invalid" (did you forget to decorate with @check?): expected <Signature () -> servo.checks.Check>, but found <Signature () -> int>'
+        == """invalid check "check_invalid": incompatible return type annotation "<class 'int'>" in callable signature "() -> int", expected "<class 'servo.checks.Check'>\""""
+    )
+
+async def test_raises_on_invalid_return_type() -> None:
+    class MeasureChecks(BaseChecks):
+        def check_invalid(self) -> Check:
+            return 123
+
+    with pytest.raises(TypeError) as e:
+        config = BaseConfiguration()
+        await MeasureChecks.run(config)
+
+    assert e
+    assert (
+        str(e.value)
+        == """invalid check "check_invalid": expected return type "Check" but handler returned "int\""""
     )
 
 
@@ -795,7 +810,7 @@ def test_multicheck_invalid_args() -> None:
     assert e is not None
     assert (
         str(e.value)
-        == 'invalid multicheck handler "check_invalid": unexpected parameter "foo" in signature <Signature (self, foo: int) -> int>, expected <Signature () -> Tuple[Iterable, ~CheckHandler]>'
+        == """invalid multicheck handler "check_invalid": encountered unexpected parameter "foo" in callable signature "(self, foo: int) -> int", expected "() -> Tuple[Iterable, ~CheckHandler]\""""
     )
 
 
@@ -810,7 +825,7 @@ def test_multicheck_invalid_return_type() -> None:
     assert e is not None
     assert (
         str(e.value)
-        == 'invalid multicheck handler "check_invalid": incompatible return type annotation in signature <Signature (self) -> int>, expected to match <Signature () -> Tuple[Iterable, ~CheckHandler]>'
+        == """invalid multicheck handler "check_invalid": incompatible return type annotation "<class 'int'>" in callable signature "(self) -> int", expected "typing.Tuple[typing.Iterable, ~CheckHandler]\""""
     )
 
 
@@ -880,3 +895,5 @@ async def test_warnings() -> None:
             "Something may not be quite right",
         ],
     ]
+
+# TODO: add tests for default checks
