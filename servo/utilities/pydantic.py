@@ -42,5 +42,7 @@ def extra(
     """Temporarily override the value of the `extra` setting on a Pydantic model."""
     original = obj.__config__.extra
     obj.__config__.extra = extra
-    yield obj
-    obj.__config__.extra = original
+    try:
+        yield obj
+    finally:
+        obj.__config__.extra = original

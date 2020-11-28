@@ -7,6 +7,7 @@ import loguru
 import pytest
 from freezegun import freeze_time
 
+import servo
 from servo.events import EventContext, _connector_context_var, _event_context_var
 from servo.logging import (
     DEFAULT_FILTER,
@@ -24,6 +25,8 @@ from servo.logging import (
 def reset_logging() -> None:
     _connector_context_var.set(None)
     _event_context_var.set(None)
+    servo.Assembly.set_current(None)
+    servo.Servo.set_current(None)
     # Remove all handlers during logging tests
     logger.remove(None)
     yield

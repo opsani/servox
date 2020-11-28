@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import enum
+import json
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, Union
 
 import httpx
+import pydantic
 
 import servo.api
 import servo.checks
@@ -120,7 +122,7 @@ class ServoChecks(servo.checks.BaseChecks):
             available and an advisory string describing the status encountered.
         """
         async with self.api_client() as client:
-            event_request = servo.api.Request(event=servo.api.Event.HELLO)
+            event_request = servo.api.Request(event=servo.api.Events.hello)
             response = await client.post("servo", data=event_request.json())
             success = response.status_code == httpx.codes.OK
             return (success, f"Response status code: {response.status_code}")
@@ -148,7 +150,7 @@ class Servo(servo.connector.BaseConnector):
     and are instead built through the `Assembly.assemble` method.
     """
 
-    config: servo.configuration.BaseAssemblyConfiguration
+    config: servo.configuration.BaseServoConfiguration
     """Configuration of the Servo assembly.
 
     Note that the configuration is built dynamically at Servo assembly time.
@@ -161,17 +163,31 @@ class Servo(servo.connector.BaseConnector):
     """
 
     @staticmethod
-    def current() -> "Servo":
+    def current() -> Optional["Servo"]:
         """Return the active servo for the current execution context.
 
         The value is managed by a contextvar and is concurrency safe.
         """
-        return _servo_context_var.get()
+        return _servo_context_var.get(None)
 
     @staticmethod
-    def set_current(servo_: "Servo") -> None:
-        """Set the current servo execution context."""
-        _servo_context_var.set(servo_)
+    def set_current(servo_: "Servo") -> contextvars.Token:
+        """Set the current servo execution context.
+        
+        Returns:
+            A Token object object that can be used for restoring the previously active servo.
+        """
+        return _servo_context_var.set(servo_)
+
+    async def dispatch_event(self, *args, **kwargs) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+        prev_servo_token = _servo_context_var.set(self)
+        try:
+            results = await super().dispatch_event(*args, **kwargs)
+        finally:
+            _servo_context_var.reset(prev_servo_token)
+
+        return results
+
 
     def __init__(
         self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
@@ -185,6 +201,13 @@ class Servo(servo.connector.BaseConnector):
         for connector in (connectors + [self]):
             connector._servo_config = self.config.servo
 
+    @pydantic.root_validator()
+    def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if values["name"] == "servo":
+            values["name"] = values["config"].name or values["optimizer"].id
+        
+        return values
+    
     @property
     def connector(self) -> Optional[servo.connector.BaseConnector]:
         """Return the active connector in the current execution context."""
@@ -203,6 +226,11 @@ class Servo(servo.connector.BaseConnector):
         """Notify all active connectors that the servo is shutting down."""
         await self.dispatch_event(Events.SHUTDOWN, _prepositions=servo.events.Preposition.ON)
 
+    @property
+    def all_connectors(self) -> List[servo.connector.BaseConnector]:
+        """Return a list of all active connectors including the Servo."""
+        return [self, *self.connectors]
+    
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
@@ -292,6 +320,20 @@ class Servo(servo.connector.BaseConnector):
 
         with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)
+    
+    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
+        """Return a schema that only includes connector model definitions"""
+        connectors = servo.Assembly.all_connector_types() if all else self.connectors
+        config_models = list(map(lambda c: c.config_model(), connectors))
+        return pydantic.schema.schema(config_models, title="Servo Schema")
+
+    def top_level_schema_json(self, *, all: bool = False) -> str:
+        """Return a JSON string representation of the top level schema"""
+        return json.dumps(
+            self.top_level_schema(all=all),
+            indent=2,
+            default=pydantic.json.pydantic_encoder,
+        )
 
     ##
     # Event handlers
@@ -313,7 +355,7 @@ class Servo(servo.connector.BaseConnector):
         """
         try:
             async with self.api_client() as client:
-                event_request = servo.api.Request(event=servo.api.Event.HELLO)
+                event_request = servo.api.Request(event=servo.api.Events.hello)
                 response = await client.post("servo", data=event_request.json())
                 success = response.status_code == httpx.codes.OK
                 return [

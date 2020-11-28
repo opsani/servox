@@ -1,0 +1,146 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: fiber-http
+  labels:
+    app.kubernetes.io/name: fiber-http
+
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiber-http
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiber-http
+        # Attach a label for identifying Pods that have been augmented with
+        # an Opsani Envoy sidecar.
+        sidecar.opsani.com/type: "envoy"
+      annotations:
+        # These annotations are scraped by the Prometheus sidecar
+        # running alongside the servo Pod. The port must match the
+        # `METRICS_PORT` defined in the Envoy container definition
+        # below. The metrics are provided by the Envoy administration
+        # module. It should not be necessary to change the path or port
+        # unless the proxied service happens to have a namespace collision.
+        # Any divergence from the defaults will require corresponding
+        # changes to the container ports, service definition, and/or the
+        # Envoy proxy configuration file.
+        prometheus.opsani.com/path: /stats/prometheus
+        prometheus.opsani.com/port: "9901"
+        prometheus.opsani.com/scrape: "true"
+    spec:
+      # Prefer deployment onto a Node labeled node.opsani.com=app
+      # This ensures physical isolation and network transport if possible
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: node.opsani.com/role
+                operator: In
+                values:
+                - app
+      containers:
+      # Primary container providing the fiber-http web service
+      - name: fiber-http
+        image: opsani/fiber-http:latest
+        resources:
+          requests:
+            cpu: "1"
+            memory: 1Gi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        ports:
+          # The ingress port that Envoy will reverse proxy requests
+          # to for handling. Before Envoy sidecar injection this port
+          # would typically be the `targetPort` of the Service defined
+          # below.
+          - containerPort: 8480
+
+      # Opsani Envoy Sidecar
+      # Provides metrics for consumption by the Opsani Servo
+      - name: envoy
+        image: opsani/envoy-proxy:latest
+        resources:
+            requests:
+                cpu: 125m
+                memory: 128Mi
+            limits:
+                cpu: 250m
+                memory: 256Mi
+        env:
+        # The container port of Pods in the target Deployment responsible for
+        # handling requests. This port is equal to the original port value of
+        # the Kubernetes Service prior to injection of the Envoy sidecar. This
+        # port is the destination for inbound traffic that Envoy will proxy from
+        # the `OPSANI_ENVOY_PROXY_SERVICE_PORT` value configured above.
+        - name: OPSANI_ENVOY_PROXIED_CONTAINER_PORT
+          value: "8480"
+
+        # Uncomment if the upstream is serving TLS traffic
+        # - name: OPSANI_ENVOY_PROXIED_CONTAINER_TLS_ENABLED
+        #   value: "true"
+
+        # The ingress port accepting traffic from the Kubernetes Service destined
+        # for Pods that are part of the target Deployment (Default: 9980).
+        # The Envoy proxy listens on this port and reverse proxies traffic back
+        # to `OPSANI_ENVOY_PROXIED_CONTAINER_PORT` for handling. This port must
+        # be equal to the newly assigned port in the updated Kubernetes Service
+        # and must be configured in the `ports` section below.
+        - name: OPSANI_ENVOY_PROXY_SERVICE_PORT
+          value: "9980"
+
+        # The port that exposes the metrics produced by Envoy while it proxies
+        # traffic (Default: 9901). The corresponding entry in the `ports` stanza
+        # below must match the value configured here.
+        - name: OPSANI_ENVOY_PROXY_METRICS_PORT
+          value: "9901"
+
+        ports:
+        # Traffic ingress from the Service endpoint. Must match the
+        # `OPSANI_ENVOY_PROXY_SERVICE_PORT` env above and the `targetPort` of
+        # the Service routing traffic into the Pod.
+        - containerPort: 9980
+          name: service
+
+        # Metrics port exposed by the Envoy proxy that will be scraped by the
+        # Prometheus sidecar running alongside the Servo. Must match the
+        # `OPSANI_ENVOY_PROXY_METRICS_PORT` env and `prometheus.opsani.com/port`
+        # annotation entries above.
+        - containerPort: 9901
+          name: metrics
+
+---
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: fiber-http
+  labels:
+    app.kubernetes.io/name: fiber-http
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
+  sessionAffinity: None
+  selector:
+    app.kubernetes.io/name: fiber-http
+  ports:
+  # Send ingress traffic from the service to Envoy listening on port 9980.
+  # Envoy will reverse proxy back to localhost:8480 for the real service
+  # to handle the request. Must match `OPSANI_ENVOY_PROXY_SERVICE_PORT` above 
+  # and be exposed as a `containerPort`.
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 9980

@@ -1,12 +1,11 @@
 import pathlib
-import pytest
 import servo
 import tests
 
 def test_config(servo_yaml: pathlib.Path) -> None:
     config_model = servo.assembly._create_config_model_from_routes(
         {
-            "adjust": tests.test_helpers.AdjustConnector,
+            "adjust": tests.helpers.AdjustConnector,
         }
     )
     config = config_model.generate()
@@ -17,6 +16,6 @@ def test_config(servo_yaml: pathlib.Path) -> None:
         id="dev.opsani.com/blake-ignite",
         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
     )
-    assembly_, _, _ = servo.assembly.Assembly.assemble(
+    assembly_ = servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )

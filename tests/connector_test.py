@@ -14,12 +14,12 @@ from typer.testing import CliRunner
 import servo as servox
 from servo import BaseConnector, Duration, License, Maturity, Optimizer, Version
 from servo.cli import ServoCLI
-from servo.configuration import BaseAssemblyConfiguration, BaseConfiguration
+from servo.configuration import BaseConfiguration, BaseServoConfiguration
 from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
 from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
-from tests.test_helpers import *
+from tests.helpers import *
 
 
 class TestOptimizer:
@@ -670,7 +670,7 @@ def test_env_variable_prefixing() -> None:
     schemas = [
         BaseConfiguration.schema(),
         VegetaConfiguration.schema(),
-        BaseAssemblyConfiguration.schema(),
+        BaseServoConfiguration.schema(),
     ]
     # NOTE: popping the env_names without copying is a mistake you will only make once
     values = list(
@@ -689,7 +689,7 @@ def test_vegeta_cli_schema_json(
     servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     result = cli_runner.invoke(servo_cli, "schema vegeta")
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"failed with non-zero exit status (stdout={result.stdout}, stderr={result.stderr})"
     schema = json.loads(result.stdout)
     assert schema == {
         'title': 'Vegeta Connector Configuration Schema',

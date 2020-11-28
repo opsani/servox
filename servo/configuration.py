@@ -18,7 +18,7 @@ from servo import types
 __all__ = [
     "AbstractBaseConfiguration",
     "BaseConfiguration",
-    "BaseAssemblyConfiguration",
+    "BaseServoConfiguration",
     "Optimizer",
     "ServoConfiguration",
 ]
@@ -48,13 +48,10 @@ class Optimizer(pydantic.BaseSettings):
     """
 
     token: str
-    """
-    An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
-    """
+    """An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication."""
 
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com/"
-    """
-    The base URL for accessing the Opsani API. This option is typically only useful to Opsani developers or in the context
+    """The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
     of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
     """
 
@@ -62,14 +59,24 @@ class Optimizer(pydantic.BaseSettings):
     """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
     and automated testing to bind the servo to a fixed URL.
     """
-
-    def __init__(self, id: str = None, **kwargs) -> None: # noqa: D107
+    
+    def __init__(self, id: str = None, **kwargs):
         if isinstance(id, str):
             org_domain, app_name = id.split("/")
         else:
             org_domain = kwargs.pop("org_domain", None)
             app_name = kwargs.pop("app_name", None)
         super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
+    
+    @pydantic.root_validator(pre=True)
+    @classmethod
+    def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
+        if id := values.pop("id", None):
+            org_domain, app_name = id.split("/")
+            values["org_domain"] = org_domain
+            values["app_name"] = app_name
+        
+        return values
 
     @property
     def id(self) -> str:
@@ -128,19 +135,24 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
     @classmethod
     def parse_file(
         cls, file: pathlib.Path, *, key: Optional[str] = None
-    ) -> "AbstractBaseConfiguration":
+    ) -> List["AbstractBaseConfiguration"]:
         """
-        Parse a YAML configuration file and return a configuration object with the contents.
+        Parse a YAML configuration file and return a list of configuration objects with the contents.
 
         If the file does not contain a valid configuration, a `ValidationError` will be raised.
         """
-        config = yaml.load(file.read_text(), Loader=yaml.FullLoader)
-        if key:
-            try:
-                config = config[key]
-            except KeyError as error:
-                raise KeyError(f"invalid key '{key}'") from error
-        return cls.parse_obj(config)
+        configs = yaml.load_all(file.read_text(), Loader=yaml.FullLoader)
+        config_objs = []
+        
+        for config in configs:
+            if key:
+                try:
+                    config = config[key]
+                except KeyError as error:
+                    raise KeyError(f"invalid key '{key}'") from error
+            config_objs.append(cls.parse_obj(config))
+        
+        return config_objs
 
     @classmethod
     def generate(cls, **kwargs) -> "AbstractBaseConfiguration":
@@ -412,15 +424,24 @@ class ServoConfiguration(BaseConfiguration):
     class Config(servo.types.BaseModelConfig):
         validate_assignment = True
 
-class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
-    """
-    Abstract base class for Servo assembly settings.
 
-    Note that the concrete BaseAssemblyConfiguration class is built dynamically at runtime
+class BaseServoConfiguration(BaseConfiguration, abc.ABC):
+    """
+    Abstract base class for Servo instances.
+
+    Note that the concrete BaseServoConfiguration class is built dynamically at runtime
     based on the avilable connectors and configuration in effect.
 
     See `Assembly` for details on how the concrete model is built.
     """
+
+    name: Optional[str]
+    description: Optional[str]
+
+    optimizer: Optional[Optimizer] = pydantic.Field(
+        None, description="Configuration of the Servo connector"
+    )
+    """The Opsani optimizer backend to collaborate with."""
 
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
@@ -450,8 +471,8 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
 
     @classmethod
     def generate(
-        cls: Type["BaseAssemblyConfiguration"], **kwargs
-    ) -> Optional["BaseAssemblyConfiguration"]:
+        cls: Type["BaseServoConfiguration"], **kwargs
+    ) -> Optional["BaseServoConfiguration"]:
         """
         Generates configuration for the servo assembly.
         """
@@ -478,7 +499,7 @@ class BaseAssemblyConfiguration(BaseConfiguration, abc.ABC):
         if isinstance(connectors, str):
             # NOTE: Special case. When we are invoked with a string it is typically an env var
             try:
-                decoded_value = BaseAssemblyConfiguration.__config__.json_loads(connectors)  # type: ignore
+                decoded_value = BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
             except ValueError as e:
                 raise ValueError(f'error parsing JSON for "{connectors}"') from e
 

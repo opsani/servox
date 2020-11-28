@@ -334,7 +334,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
     elif isinstance(connectors, str):
         # NOTE: Special case. When we are invoked with a string it is typically an env var
         try:
-            decoded_value = BaseAssemblyConfiguration.__config__.json_loads(connectors)  # type: ignore
+            decoded_value = servo.configuration.BaseServoConfiguration.__config__.json_loads(connectors)  # type: ignore
         except ValueError as e:
             raise ValueError(f'error parsing JSON for "{connectors}"') from e
 
@@ -354,7 +354,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             elif connector_class := _connector_class_from_string(connector):
                 connector_routes[connector_class.__default_name__] = connector_class
             else:
-                raise ValueError(f"Missing validation for value {connector}")
+                raise ValueError(f"no connector found for the identifier \"{connector}\"")
 
         return connector_routes
 

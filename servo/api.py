@@ -37,41 +37,39 @@ class Reasons(str, enum.Enum):
     unknown = "unknown"
     unstable = "unstable"
 
+class Events(str, enum.Enum):
+    hello = "HELLO"    
+    whats_next = "WHATS_NEXT"
+    describe = "DESCRIPTION"
+    measure = "MEASUREMENT"
+    adjust = "ADJUSTMENT"    
+    goodbye = "GOODBYE"
 
-class Command(str, enum.Enum):
-    DESCRIBE = "DESCRIBE"
-    MEASURE = "MEASURE"
-    ADJUST = "ADJUST"
-    SLEEP = "SLEEP"
+class Commands(str, enum.Enum):
+    describe = "DESCRIBE"
+    measure = "MEASURE"
+    adjust = "ADJUST"
+    sleep = "SLEEP"
 
     @property
-    def response_event(self) -> str:
-        if self == Command.DESCRIBE:
-            return Event.DESCRIPTION
-        elif self == Command.MEASURE:
-            return Event.MEASUREMENT
-        elif self == Command.ADJUST:
-            return Event.ADJUSTMENT
+    def response_event(self) -> Events:
+        if self == Commands.describe:
+            return Events.describe
+        elif self == Commands.measure:
+            return Events.measure
+        elif self == Commands.adjust:
+            return Events.adjust
         else:
-            return None
-
-
-class Event(str, enum.Enum):
-    HELLO = "HELLO"
-    GOODBYE = "GOODBYE"
-    DESCRIPTION = "DESCRIPTION"
-    WHATS_NEXT = "WHATS_NEXT"
-    ADJUSTMENT = "ADJUSTMENT"
-    MEASUREMENT = "MEASUREMENT"
+            raise ValueError(f"unknoen command: {self}")
 
 
 class Request(pydantic.BaseModel):
-    event: Union[Event, str]  # TODO: Needs to be rethought -- used adhoc in some cases
+    event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
-            Event: lambda v: str(v),
+            Events: lambda v: str(v),
         }
 
 
@@ -85,7 +83,7 @@ class Status(pydantic.BaseModel):
     @classmethod
     def ok(cls, message: Optional[str] = None, reason: str = Reasons.success, **kwargs) -> "Status":
         """Return a success (status="ok") status object."""
-        return cls(status=Statuses.ok, message=message, reason=reason, **kwargs)
+        return cls(status=ServoStatuses.ok, message=message, reason=reason, **kwargs)
 
     @classmethod
     def from_error(cls, error: servo.errors.BaseError) -> "Status":
@@ -121,17 +119,24 @@ class MeasureParams(pydantic.BaseModel):
             return list(value.keys())
 
         return value
+    
+    @pydantic.validator('metrics', each_item=True, pre=True)
+    def _map_metrics(cls, v) -> str:
+        if isinstance(v, servo.Metric):
+            return v.name
+        
+        return v
 
 
 class CommandResponse(pydantic.BaseModel):
-    command: Command = pydantic.Field(alias="cmd")
+    command: Commands = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
     ]  # TODO: Switch to a union of supported types
 
     class Config:
         json_encoders = {
-            Command: lambda v: str(v),
+            Commands: lambda v: str(v),
         }
 
 
@@ -158,6 +163,10 @@ class Mixin(abc.ABC):
         `api_client` and `api_client_sync` methods.
         """
         ...
+        # TODO: Overloaded for performance...
+        # timeout = httpx.Timeout(60.0)
+        # limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
+        # return dict(base_url=self.optimizer.api_url, headers=self.api_headers, timeout=timeout, limits=limits)
 
     def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Return an asynchronous client for interacting with the Opsani API."""
@@ -172,12 +181,12 @@ class Mixin(abc.ABC):
         request = self.progress_request(**kwargs)
         status = await self._post_event(*request)
 
-        if status.status == Statuses.ok:
+        if status.status == OptimizerStatuses.ok:
             pass
-        elif status.status == Statuses.unexpected_event:
+        elif status.status == OptimizerStatuses.unexpected_event:
             # We have lost sync with the backend, raise an exception to halt broken execution
             raise servo.errors.UnexpectedEventError(status.reason)
-        elif status.status == Statuses.cancelled:
+        elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
             raise servo.errors.EventCancelledError(status.reason)
         else:
@@ -252,7 +261,7 @@ class Mixin(abc.ABC):
         max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
         max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
     )
-    async def _post_event(self, event: Event, param) -> Union[CommandResponse, Status]:
+    async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
             self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
@@ -268,20 +277,26 @@ class Mixin(abc.ABC):
                 return pydantic.parse_obj_as(
                     Union[CommandResponse, Status], response_json
                 )
-            except httpx.HTTPError:
-                self.logger.error(f"HTTP error encountered while posting {event} event")
+            
+            except httpx.RequestError as error:
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
+                self.logger.trace(devtools.pformat(event_request))
+                raise
+            
+            except httpx.HTTPError as error:
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
-    def _post_event_sync(self, event: Event, param) -> Union[CommandResponse, Status]:
+    def _post_event_sync(self, event: Events, param) -> Union[CommandResponse, Status]:
         event_request = Request(event=event, param=param)
         with self.servo.api_client_sync() as client:
             try:
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
-            except httpx.HTTPError:
+            except httpx.HTTPError as error:
                 self.logger.error(
-                    f"HTTP error encountered while posting {event.value} event"
+                    f"HTTP error \"{error.__class__.__name__}\" encountered while posting {event.value} event: {error}"
                 )
                 self.logger.trace(devtools.pformat(event_request))
                 raise
@@ -301,3 +316,15 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
             )
             adjustments.append(adjustment)
     return adjustments
+
+def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
+    components = {}
+    descriptor = { "state": { "application": { "components": components }}}
+    
+    for adjustment in adjustments:
+        if not adjustment.component_name in components:
+            components[adjustment.component_name] = { "settings": {} }
+        
+        components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
+    
+    return descriptor

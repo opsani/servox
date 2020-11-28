@@ -25,6 +25,18 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   event loops.
 - Initial release of Wavefront Connector.
 - Support for marking adjustments as failed or rejected via exceptions.
+- Multiple servos can now be run within a single assembly. If the config file is
+  a compound YAML document, multiple servos will be instantiated allowing the
+  concurrent optimization of multiple applications.
+- Introduced emulator connector, which pretends to take measurements and make
+  adjustments with randomly sampled data but does not do any real work.
+- New servo configurations can be generated and added to the assembly via
+  `servo generate --append`.
+- New command `servo list` for viewing the active servos in the assembly.
+- Introduced new top-level option `--name`/`-n` for targeting a specific servo
+  in the assembly when running in multi-servo mode.
+- In multi-servo configurations, concurrency can be constrained via the new
+  top-level `--limit` option.
 
 ### Changed
 
@@ -46,6 +58,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   implementation of the `api_client_options` method.
 - Configuration of backoff/retry behaviors has been reimplemented for clarity
   and simplicity.
+- The `servo.assembly.Assembly` class now maintains a collection of servos
+  rather than a singleton.
+- The optimizer settings are now part of the configuration.
+- All CLI commands are now multi-servo aware and enabled.
+- The `servo.Runner` class has been split into `servo.AssemblyRunner` and
+  `servo.ServoRunner` to support multi-servo configurations.
+- The Docker image entry point is now multi-servo aware.
+- Servos are now named. The default name is adopted from the Optimizer ID if
+  one is not directly configured.
 
 ### Removed
 
@@ -64,6 +85,18 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   traceback context is not lost.
 - An invalid key was referenced during adjustment of Kubernetes container memory
   request/limits.
+- Scalar `servo.types.DataPoint` objects are now serialized for processing by
+  the optimizer service rather than raising an exception.
+- The `ConnectorCLI` class now supports aliased connector instances.
+- Test coverage gaps have been plugged throughout the CLI module.
+- Scalar data points can now be handled by the CLI.
+- Invalid keys in the `connectors` field of a config file will no longer
+  trigger an unhandled exception.
+- Step values of range settings are now validated to ensure that a step of zero
+  is not configured.
+- Setting values are now validated appropriately upon being changed. This
+  prevents invalid values from being externally applied to a running
+  optimization (e.g., an external deployment or manual change is made).
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 

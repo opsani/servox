@@ -1554,16 +1554,22 @@ class Memory(servo.Memory):
         return o_dict
 
 
-# TODO: The Adjustment needs to marshal value appropriately on ingress
-def _qualify(value, unit):
-    if unit == "mem":
-        return f"{value}Gi"  # if value.isnumeric() else value
-    elif unit == "cpu":
-        return str(Millicore.parse(value))
-    elif unit == "replicas":
-        return int(float(value))
-    return value
+def _normalize_adjustment(adjustment: Adjustment) -> Tuple[str, Union[str, servo.Numeric]]:
+    """Normalize an adjustment object into a Kubernetes native setting key/value pair."""
+    setting = "memory" if adjustment.setting_name == "mem" else adjustment.setting_name
+    value = adjustment.value
+    
+    if setting == "memory":
+        # Add GiB suffix to Numerics and Numeric strings
+        if (isinstance(value, (int, float)) or 
+            (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
+            value = f"{value}Gi"
+    elif setting == "cpu":
+        value = str(Millicore.parse(value))
+    elif setting == "replicas":
+        value = int(float(value))
 
+    return setting, value
 
 class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     """
@@ -1786,7 +1792,8 @@ class DeploymentOptimization(BaseOptimization):
         return [
             Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
         ]
-
+        
+        
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
         Adjust the settings on the Deployment or a component Container.
@@ -1794,18 +1801,17 @@ class DeploymentOptimization(BaseOptimization):
         Adjustments do not take effect on the cluster until the `apply` method is invoked
         to enable aggregation of related adjustments and asynchronous application.
         """
-        name = adjustment.setting_name
-        value = _qualify(adjustment.value, name)
-        self.logger.trace(f"adjusting {name} to {value}")
-        if name in ("cpu", "mem"):
-            resource_name = "memory" if name == "mem" else name
+        setting, value = _normalize_adjustment(adjustment)
+        self.logger.info(f"adjusting {setting} to {value}")
+        if setting in ("cpu", "mem"):
+            resource_name = "memory" if setting == "mem" else setting
             requirements = getattr(self.container_config, resource_name).requirements
             self.container.set_resource_requirements(
                 resource_name, value, requirements, clear_others=True
             )
 
-        elif name == "replicas":
-            self.deployment.replicas = int(value)
+        elif setting == "replicas":
+            self.deployment.replicas = value
 
         else:
             raise RuntimeError(
@@ -2031,27 +2037,26 @@ class CanaryOptimization(BaseOptimization):
         )
 
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
-        name = adjustment.setting_name
-        value = _qualify(adjustment.value, name)
+        setting, value = _normalize_adjustment(adjustment)
+        self.logger.info(f"adjusting {setting} to {value}")
 
-        if name in ("cpu", "mem"):
-            resource_name = "memory" if name == "mem" else name
+        if setting in ("cpu", "memory"):
             requirements = getattr(
-                self.target_container_config, resource_name
+                self.target_container_config, setting
             ).requirements
             self.canary_container.set_resource_requirements(
-                resource_name, value, requirements, clear_others=True
+                setting, value, requirements, clear_others=True
             )
 
-        elif name == "replicas":
-            if int(value) != 1:
+        elif setting == "replicas":
+            if value != 1:
                 servo.logger.warning(
                     f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"'
                 )
 
         else:
             raise servo.AdjustmentFailure(
-                f"failed adjustment of unsupported Kubernetes setting '{name}'"
+                f"failed adjustment of unsupported Kubernetes setting '{setting}'"
             )
 
     async def apply(self) -> None:
@@ -3210,5 +3215,5 @@ class ConfigMap(KubernetesModel):
             await self.refresh()
         except:  # noqa
             return False
-        else:
-            return True
+        
+        return True

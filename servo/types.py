@@ -433,9 +433,17 @@ class DataPoint(BaseModel):
     value: float
     """The value that was read for the metric.
     """
+    
+    measured_at: datetime.datetime = None
+    """The time that the data point was measured.
+    """
 
     def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
         super().__init__(metric=metric, value=value, **kwargs)
+        
+    @pydantic.validator("measured_at", pre=True, always=True)
+    def _initialize_measured_at(cls, v) -> datetime.datetime:
+        return v or datetime.datetime.now()
 
     def __str__(self) -> str:
         return f"{self.value:.2f}{self.unit.value}"
@@ -533,6 +541,9 @@ class Setting(BaseModel, abc.ABC):
         None,
         description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment.",
     )
+    
+    def summary(self) -> str:
+        return repr(self)
 
     @abc.abstractmethod
     def __opsani_repr__(self) -> dict:
@@ -616,6 +627,9 @@ class EnumSetting(Setting):
 
         return values
 
+    def summary(self) -> str:
+        return f"{self.__class__.__name__}(values={repr(self.values)}, unit={self.unit})"
+
     def __opsani_repr__(self) -> dict:
         return {
             self.name: self.dict(
@@ -657,6 +671,9 @@ class RangeSetting(Setting):
     value: Optional[Numeric] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
+    
+    def summary(self) -> str:
+        return f"{self.__class__.__name__}(range=[{self.min}..{self.max}], step={self.step})"
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
@@ -695,6 +712,40 @@ class RangeSetting(Setting):
 
         return values
 
+    @pydantic.validator("step")
+    @classmethod
+    def _step_cannot_be_zero(cls, value: Numeric) -> Numeric:
+        if not value:
+            raise ValueError(f"step cannot be zero")
+        
+        return value
+
+    @pydantic.root_validator(skip_on_failure=True)
+    @classmethod
+    def _validate_step_and_value(cls, values) -> Numeric:
+        value, min, max, step = values["value"], values["min"], values["max"], values["step"]        
+            
+        if value is not None:
+            if value != max and value + step > max:
+                raise ValueError(
+                    f"invalid range: adding step to value is greater than max ({value} + {step} > {max})"
+                )
+            elif value != min and value - step < min:
+                raise ValueError(
+                    f"invalid range: subtracting step from value is less than min ({value} - {step} < {min})"
+                )
+        else:
+            if (min + step > max):
+                raise ValueError(
+                    f"invalid step: adding step to min is greater than max ({min} + {step} > {max})"
+                )
+            elif (max - step < min):
+                raise ValueError(
+                    f"invalid step: subtracting step from max is less than min ({max} + {step} < {min})"
+                )
+
+        return values
+        
     @pydantic.validator("max")
     @classmethod
     def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:
@@ -743,7 +794,6 @@ class RangeSetting(Setting):
                 include={"type", "min", "max", "step", "pinned", "value"}
             )
         }
-
 
 class CPU(RangeSetting):
     """CPU is a Setting that describes an adjustable range of values for CPU

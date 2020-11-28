@@ -404,7 +404,7 @@ The bundled connectors are registered and discovered using this mechanism via
 entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
-### Advanced Connector Configuration
+### Running Multiple Connector Instances
 
 ServoX is designed to support assemblies that contain an arbitrary number of
 connectors that may or may not be active and enable the use of multiple
@@ -492,6 +492,79 @@ foo:
 Generated servo.yaml
 ```
 
+### Running Multiple Servos
+
+ServoX is capable of running multiple servos within the same assembly and servos
+can be added and removed dynamically at runtime. This is useful for optimizing
+several applications at one time from a single servo deployment to simplify
+operations or more interestingly to support the integration and automation of
+optimization into CI and CD pipelines. For example, it is possible to configure
+the build system to trigger optimization for apps as they head into staging or
+upon emergence into production.
+
+Multi-servo execution mode is straightforward. When the `servo.yaml` config file
+is found to contain multiple documents (delimited by `---`), a servo instance is
+constructed for each entry in the file and added to the assembly. There are
+however a few differences in configuration options.
+
+When multi-servo mode is enabled, the `--optimizer`, `--token`, `--token-file`,
+`--base-url`, and `--url` options are unavailable. The optimizer and
+connectivity configuration must be provided via the `optimizer` stanza within
+each configuration *document* in the config file. The CLI will raise errors if
+these options are utilized with a multi-servo configuration because they are
+ambiguous. This does not preclude a single servo being promoted into a
+multi-servo configuration at runtime -- it is a configuration resolution
+concern.
+
+When running multi-servo, logging is changed to provide context about the servo
+that is active and generating the output. The `servo.Servo.current()` method
+returns the active servo at runtime.
+
+Because ServoX is based on `asyncio` and functions as an orchestrator, it is
+capable of managing a large number of optimizations in parallel (we have tested
+into the thousands). Most operations performed are I/O bound and asynchronous
+but the specifics of the connectors used in a multi-servo configuration will
+have a significant impact on the upper bounds of concurrency.
+
+#### Configuring Multi-servo Mode
+
+Basically all that you need to do is use the `---` delimiter to create multiple
+documents within the `servo.yaml` file and configure an `optimizer` within
+each one. For example:
+
+```yaml
+---
+optimizer:
+  id: newco.com/awesome-app1
+  token: 6686e4c3-2c6a-4c28-9c87-b304d7c1427b
+connectors: [vegeta]
+vegeta:
+  duration: 5m
+  rate: 50/1s
+  target: GET https://app1.example.com/
+---
+optimizer:
+  id: newco.com/awesome-app2
+  token: 5d6e004d-cf7b-4121-b66f-d72f0fd44953
+connectors: [vegeta]
+vegeta:
+  duration: 5m
+  rate: 50/1s
+  target: GET https://app2.example.com/
+```
+
+#### Adding & Removing Servos at Runtime
+
+Servos can be added and removed from the assembly at runtime via methods on the
+`servo.Assembly` class:
+
+```python
+import servo
+
+servo.Assembly.current().add_servo(new_servo)
+servo.Assembly.current().remove_servo(new_servo)
+```
+
 ### Extending the CLI
 
 Should your connector wish to expose additional commands to the CLI, it can do
@@ -553,6 +626,18 @@ involved, drop us a line via GitHub issues or email to coordinate efforts.
 It is expected that most Open Source contributions will come in the form of new
 connectors. Should you wish to develop a connector, reach out to us at Opsani as
 we have connector developer guides that are in pre-release while ServoX matures.
+
+### Visual Studio Code
+
+The core development team typically works in VSCode. Poetry and VSCode have not
+quite yet become seamlessly integrated. For your convenience, there are a couple
+of Makefile tasks that can simplify configuration:
+
+* `make init` - Initialize a Poetry environment, configure `.vscode/settings.json`,
+  and then run the `servo initialize command.
+* `make vscode` - Export the Poetry environment variables and then open the
+  local working copy within VSCode. The built-in terminal and Python extension
+  should auto-detect the Poetry environment and behave.
 
 ### Pre-commit Hook
 
@@ -647,12 +732,44 @@ fast customized builds:
 ❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
 ```
 
+### Upgrading Python
+
+Python interpreter updates can be a bit anoying. The Poetry virtual environment
+will against the prior Python interpreter and you may find that running tests
+and commands will remain stuck to your previous interpreter, regardless of the
+version configured in `.python-version`.
+
+To fix this, run `make clean-env` which will teardown and rebuild your Poetry
+virtual environment.
+
 ## Testing
 
-Tests are implemented using [Pytest](https://docs.pytest.org/en/stable/) and
-live in the `tests` subdirectory. Tests can be executed directly via the `pyenv`
-CLI interface (e.g. `pytest tests`) or via the developer module of the CLI via
-`servo dev test`.
+Tests are implemented using [pytest](https://docs.pytest.org/en/stable/) and
+live in the `tests` subdirectory. Tests can be executed directly via the
+`pytest` CLI interface (e.g., `pytest tests`) or via `make test`, which
+will also compute coverage details.
+
+### Integration Testing
+
+The test suite includes support for integration tests for running tests against
+remote system components such as a Kubernetes cluster or Prometheus deployment.
+Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file at `tests/kubeconfig`.
+
+By convention, the integration testing cluster is named
+`servox-integration-tests` and the `make kubeconfig` task is provided to export
+the cluster details from your primary kubeconfig, ensuring isolation.
+
+Interaction with the Kubernetes cluster is supported by the most excellent
+[kubetest](https://kubetest.readthedocs.io/en/latest/) library that provides
+fixtures, markers, and various testing utilities on top of pytest.
+
+To run the integration tests, execute `pytest --integration tests` to enable the
+marker. Integration tests are much, much slower than the primary unit test suite
+and should be designed to balance coverage and execution time.
+
+Tests can also be run in cluster by packaging a development container and
+deploying it. The testing harness will detect the in-cluster state and utilize
+the active service account.
 
 ## License
 

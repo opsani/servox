@@ -1,63 +1,48 @@
 ---
-
 apiVersion: apps/v1
 kind: Deployment
 
 metadata:
-  name: fiber-http-deployment
+  name: fiber-http
   labels:
-    app: fiber-http
+    app.kubernetes.io/name: fiber-http
 
 spec:
   replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: fiber-http
+      app.kubernetes.io/name: fiber-http
   template:
     metadata:
       labels:
-        app: fiber-http
-      annotations:
-        prometheus.opsani.com/path: /stats/prometheus
-        prometheus.opsani.com/port: "9901"
-        prometheus.opsani.com/scrape: "true"
+        app.kubernetes.io/name: fiber-http
     spec:
+      # Prefer deployment onto a Node labeled node.opsani.com=app
+      # This ensures physical isolation and network transport if possible
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: node.opsani.com/role
+                operator: In
+                values:
+                - app
       containers:
+      # Primary container providing the fiber-http web service
       - name: fiber-http
         image: opsani/fiber-http:latest
-        imagePullPolicy: Always
         resources:
           requests:
             cpu: "1"
-            memory: 3G
+            memory: 1Gi
           limits:
             cpu: "1"
-            memory: 3G
+            memory: 1Gi
         ports:
-          - containerPort: 8080
-      - name: envoy
-        image: opsani/envoy-proxy:v1.14-latest
-        imagePullPolicy: Always
-        resources:
-          requests:
-            cpu: 125m
-            memory: 128Mi
-          limits:
-            cpu: 250m
-            memory: 256Mi
-        env:
-        - name: SERVICE_PORT
-          value: "8080"
-        - name: LISTEN_PORT
-          value: "80"
-        - name: METRICS_PORT
-          value: "9901"
-        ports:
-          - containerPort: 80
-            name: service       # service listener provided by Envoy proxy
-          - containerPort: 9901
-            name: metrics       # metrics provided by Envoy
+          - containerPort: 8480
 
 ---
 
@@ -65,16 +50,20 @@ apiVersion: v1
 kind: Service
 
 metadata:
-  name: fiber-http-service
+  name: fiber-http
   labels:
-    app: fiber-http
+    app.kubernetes.io/name: fiber-http
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-internal: "true"
 
 spec:
-  type: ClusterIP
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
+  sessionAffinity: None
   selector:
-    app: fiber-http
+    app.kubernetes.io/name: fiber-http
   ports:
   - name: http
     protocol: TCP
     port: 80
-    targetPort: 80 # send to envoy proxy; change to 8080 to send to web directly
+    targetPort: 8480
