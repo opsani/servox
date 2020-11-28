@@ -14,17 +14,14 @@ import servo.connectors.prometheus
 import tests.helpers
 import tests.fake
 
-import servo.connectors.emulator
-
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 @pytest.fixture()
 def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
-            # "prometheus": servo.connectors.prometheus.PrometheusConnector,
-            # "adjust": tests.helpers.AdjustConnector,
-            "emulator": servo.connectors.emulator.EmulatorConnector
+            "prometheus": servo.connectors.prometheus.PrometheusConnector,
+            "adjust": tests.helpers.AdjustConnector,
         }
     )
     config = config_model.generate()

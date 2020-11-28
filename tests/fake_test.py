@@ -8,7 +8,6 @@ import fastapi
 from typing import Optional, Union
 
 import servo.runner
-import servo.connectors.emulator
 from tests.fake import AbstractOptimizer
 
 @pytest.mark.parametrize(
