@@ -102,4 +102,3 @@ pre-commit:
 clean-env:
 	poetry env remove `poetry env info`/bin/python
 	poetry install
-

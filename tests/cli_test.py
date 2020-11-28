@@ -1140,4 +1140,3 @@ def test_describe_multiservo_named(
     assert re.search("adjust\\s+main.cpu=3", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
     assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-

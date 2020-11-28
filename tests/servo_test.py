@@ -1880,4 +1880,3 @@ def test_servo_name_from_config() -> None:
 
 def test_servo_name_falls_back_to_optimizer_id(servo: Servo) -> None:
     assert servo.name == "dev.opsani.com/servox"
-

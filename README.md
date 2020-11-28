@@ -561,6 +561,7 @@ Servos can be added and removed from the assembly at runtime via methods on the
 ```python
 import servo
 
+new_servo = servo.Servo()
 servo.Assembly.current().add_servo(new_servo)
 servo.Assembly.current().remove_servo(new_servo)
 ```

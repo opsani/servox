@@ -239,4 +239,3 @@ class TestOptimizerStateMachine:
         debug(state_machine.state)
         await state_machine.measurement()
         debug(state_machine.state)
-
