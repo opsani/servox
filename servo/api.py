@@ -38,11 +38,11 @@ class Reasons(str, enum.Enum):
     unstable = "unstable"
 
 class Events(str, enum.Enum):
-    hello = "HELLO"    
+    hello = "HELLO"
     whats_next = "WHATS_NEXT"
     describe = "DESCRIPTION"
     measure = "MEASUREMENT"
-    adjust = "ADJUSTMENT"    
+    adjust = "ADJUSTMENT"
     goodbye = "GOODBYE"
 
 class Commands(str, enum.Enum):
@@ -119,12 +119,12 @@ class MeasureParams(pydantic.BaseModel):
             return list(value.keys())
 
         return value
-    
+
     @pydantic.validator('metrics', each_item=True, pre=True)
     def _map_metrics(cls, v) -> str:
         if isinstance(v, servo.Metric):
             return v.name
-        
+
         return v
 
 
@@ -277,12 +277,12 @@ class Mixin(abc.ABC):
                 return pydantic.parse_obj_as(
                     Union[CommandResponse, Status], response_json
                 )
-            
+
             except httpx.RequestError as error:
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
-            
+
             except httpx.HTTPError as error:
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
                 self.logger.trace(devtools.pformat(event_request))
@@ -320,11 +320,11 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
 def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
     components = {}
     descriptor = { "state": { "application": { "components": components }}}
-    
+
     for adjustment in adjustments:
         if not adjustment.component_name in components:
             components[adjustment.component_name] = { "settings": {} }
-        
+
         components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
-    
+
     return descriptor

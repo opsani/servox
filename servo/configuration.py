@@ -59,7 +59,7 @@ class Optimizer(pydantic.BaseSettings):
     """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
     and automated testing to bind the servo to a fixed URL.
     """
-    
+
     def __init__(self, id: str = None, **kwargs):
         if isinstance(id, str):
             org_domain, app_name = id.split("/")
@@ -67,7 +67,7 @@ class Optimizer(pydantic.BaseSettings):
             org_domain = kwargs.pop("org_domain", None)
             app_name = kwargs.pop("app_name", None)
         super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
-    
+
     @pydantic.root_validator(pre=True)
     @classmethod
     def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
@@ -75,7 +75,7 @@ class Optimizer(pydantic.BaseSettings):
             org_domain, app_name = id.split("/")
             values["org_domain"] = org_domain
             values["app_name"] = app_name
-        
+
         return values
 
     @property
@@ -143,7 +143,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
         """
         configs = yaml.load_all(file.read_text(), Loader=yaml.FullLoader)
         config_objs = []
-        
+
         for config in configs:
             if key:
                 try:
@@ -151,7 +151,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
                 except KeyError as error:
                     raise KeyError(f"invalid key '{key}'") from error
             config_objs.append(cls.parse_obj(config))
-        
+
         return config_objs
 
     @classmethod

@@ -433,14 +433,14 @@ class DataPoint(BaseModel):
     value: float
     """The value that was read for the metric.
     """
-    
+
     measured_at: datetime.datetime = None
     """The time that the data point was measured.
     """
 
     def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
         super().__init__(metric=metric, value=value, **kwargs)
-        
+
     @pydantic.validator("measured_at", pre=True, always=True)
     def _initialize_measured_at(cls, v) -> datetime.datetime:
         return v or datetime.datetime.now()
@@ -541,7 +541,7 @@ class Setting(BaseModel, abc.ABC):
         None,
         description="The value of the setting as set by the servo during a measurement or set by the optimizer during an adjustment.",
     )
-    
+
     def summary(self) -> str:
         return repr(self)
 
@@ -671,7 +671,7 @@ class RangeSetting(Setting):
     value: Optional[Numeric] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
-    
+
     def summary(self) -> str:
         return f"{self.__class__.__name__}(range=[{self.min}..{self.max}], step={self.step})"
 
@@ -717,14 +717,14 @@ class RangeSetting(Setting):
     def _step_cannot_be_zero(cls, value: Numeric) -> Numeric:
         if not value:
             raise ValueError(f"step cannot be zero")
-        
+
         return value
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
     def _validate_step_and_value(cls, values) -> Numeric:
-        value, min, max, step = values["value"], values["min"], values["max"], values["step"]        
-            
+        value, min, max, step = values["value"], values["min"], values["max"], values["step"]
+
         if value is not None:
             if value != max and value + step > max:
                 raise ValueError(
@@ -745,7 +745,7 @@ class RangeSetting(Setting):
                 )
 
         return values
-        
+
     @pydantic.validator("max")
     @classmethod
     def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:

@@ -444,7 +444,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         }:
             try:
                 CLI.assemble_from_context(ctx)
-            
+
             except (ValueError, pydantic.ValidationError) as error:
                 typer.echo(f"fatal: invalid configuration: {error}", err=True)
                 raise typer.Exit(2)
@@ -456,7 +456,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         if not ctx.config_file.exists():
             raise typer.BadParameter(f"Config file '{ctx.config_file}' does not exist")
-        
+
         # Conditionalize based on multi-servo options
         optimizer = None
         configs = list(yaml.full_load_all(open(ctx.config_file)))
@@ -464,18 +464,18 @@ class CLI(typer.Typer, servo.logging.Mixin):
             raise TypeError(
                 f'error: config file "{ctx.config_file}" parsed to an unexpected value of type "{configs.__class__}"'
             )
-        
+
         if len(configs) == 0:
             configs.append({})
 
         if len(configs) == 1:
             config = configs[0]
-            
+
             if not isinstance(config, dict):
                 raise TypeError(
                     f'error: config file "{ctx.config_file}" parsed to an unexpected value of type "{config.__class__}"'
                 )
-            
+
             if config.get("optimizer", None) == None:
                 if ctx.optimizer is None:
                     raise typer.BadParameter("An optimizer must be specified")
@@ -504,7 +504,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
             if ctx.token or ctx.token_file:
                 raise typer.BadParameter("A token cannot be specified in a multi-servo configuration")
-            
+
             if ctx.limit:
                 if len(configs) > ctx.limit:
                     servo.logger.warning(f"concurrent servo execution limited to {ctx.limit}: declining to run {len(configs) - ctx.limit} configured servos")
@@ -520,22 +520,22 @@ class CLI(typer.Typer, servo.logging.Mixin):
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
-        
+
         # Target a specific servo if possible
         ctx.assembly = assembly
         if assembly.servos:
             if len(assembly.servos) == 1:
                 ctx.servo_ = assembly.servos[0]
-                
+
                 if ctx.name and ctx.servo_.name != ctx.name:
                     raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
-                
+
             elif ctx.name:
                 for servo_ in assembly.servos:
                     if servo_.name == ctx.name:
                         ctx.servo_ = servo_
                         break
-                
+
                 if ctx.servo_ is None:
                     raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
 
@@ -550,10 +550,10 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 if connector.name == name:
                     connectors.append(connector)
                     break
-                
+
             if len(connectors) == size:
                 raise typer.BadParameter(f"no connector found named '{name}'")
-        
+
         return connectors
 
     @staticmethod
@@ -656,7 +656,7 @@ class ConnectorCLI(CLI):
         ConnectorCLI.__clis__.add(self)
 
         def connector_callback(
-            context: Context, 
+            context: Context,
             connector: Optional[str] = typer.Option(
                 None,
                 "--connector",
@@ -667,8 +667,8 @@ class ConnectorCLI(CLI):
         ) -> None:
             if context.servo is None:
                 raise typer.BadParameter(f"A servo must be selected")
-            
-            instances = list(filter(lambda c: isinstance(c, connector_type), context.servo.connectors))            
+
+            instances = list(filter(lambda c: isinstance(c, connector_type), context.servo.connectors))
             instance_count = len(instances)
             if instance_count == 0:
                 raise typer.BadParameter(f"no instances of \"{connector_type.__name__}\" are active the in servo \"{context.servo.name}\"")
@@ -681,7 +681,7 @@ class ConnectorCLI(CLI):
                         context.connector = instance
                         break
                     names.append(instance.name)
-                
+
                 if context.connector is None:
                     if connector is None:
                         raise typer.BadParameter(f"multiple instances of \"{connector_type.__name__}\" found in servo \"{context.servo.name}\": select one of {repr(names)}")
@@ -829,7 +829,7 @@ class ServoCLI(CLI):
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
-                
+
                 results = run_async(servo_.dispatch_event(servo.Events.COMPONENTS))
                 headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
                 table = []
@@ -888,14 +888,14 @@ class ServoCLI(CLI):
             for servo_ in context.assembly.servos:
                 if context.servo and context.servo != servo_:
                     continue
-                
+
                 event_handlers: List[servo.EventHandler] = []
                 connectors = (
                     context.assembly.all_connector_types()
                     if all
                     else servo_.all_connectors
                 )
-                
+
                 for connector in connectors:
                     event_handlers.extend(connector.__event_handlers__)
 
@@ -1012,7 +1012,7 @@ class ServoCLI(CLI):
             for servo_ in context.assembly.servos:
                 if context.servo and context.servo != servo_:
                     continue
-                
+
                 metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
                 results = run_async(servo_.dispatch_event("metrics"))
                 for result in results:
@@ -1037,7 +1037,7 @@ class ServoCLI(CLI):
                 typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         self.add_cli(show_cli, section=Section.ASSEMBLY)
-        
+
         @self.command("list", section=Section.ASSEMBLY)
         def list_(
             context: Context,
@@ -1051,7 +1051,7 @@ class ServoCLI(CLI):
                     servo_.name,
                     servo_.optimizer.id,
                     servo_.description or "-",
-                ]            
+                ]
                 table.append(row)
 
             typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
@@ -1070,24 +1070,24 @@ class ServoCLI(CLI):
             ),
         ) -> None:
             """Manage connectors"""
-                        
+
             headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
             if all:
-                headers[0] = "DEFAULT NAME"            
-            
+                headers[0] = "DEFAULT NAME"
+
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
-                
+
                 table = []
                 connectors = (
                     context.assembly.all_connector_types()
                     if all
                     else servo_.all_connectors
-                )                                
-                
+                )
+
                 connectors_by_type = {}
                 for c in connectors:
                     c_type = c.__class__ if isinstance(c, servo.BaseConnector) else c
@@ -1115,11 +1115,11 @@ class ServoCLI(CLI):
                             connector_type.license,
                         ]
                     table.append(row)
-                
+
                 if not all and len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
                 typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
-                  
+
                 # if we are printing all we only need one iteration
                 if all:
                     break
@@ -1241,11 +1241,11 @@ class ServoCLI(CLI):
                     return parse_csv(v)
 
                 return v
-            
+
             async def check_servo(servo_: servo.Servo) -> bool:
                 # Validate that explicit args support check events
                 connector_objs = (
-                    self.connectors_named(connectors, servo_) if connectors                    
+                    self.connectors_named(connectors, servo_) if connectors
                     else list(
                         filter(
                             lambda c: c.responds_to_event(servo.Events.CHECK),
@@ -1255,10 +1255,10 @@ class ServoCLI(CLI):
 
                 )
                 validate_connectors_respond_to_event(connector_objs, servo.Events.CHECK)
-                
+
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
                 progress.start()
-                
+
                 while True:
                     args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                     constraints = dict(filter(lambda i: bool(i[1]), args.items()))
@@ -1267,7 +1267,7 @@ class ServoCLI(CLI):
                         servo.CheckFilter(**constraints),
                         include=connector_objs,
                         halt_on=halt_on,
-                    )                        
+                    )
 
                     def check_status_to_str(check: servo.Check) -> str:
                         if check.success:
@@ -1365,7 +1365,7 @@ class ServoCLI(CLI):
                     )
                 )
                 ready = functools.reduce(lambda x, y: x and y, results)
-            
+
             # Return instead of exiting if we are being invoked
             if ready and not exit_on_success:
                 return
@@ -1388,7 +1388,7 @@ class ServoCLI(CLI):
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
-                
+
                 # Validate that explicit args support describe events
                 connectors_ = (
                     self.connectors_named(connectors, servo_=servo_) if connectors
@@ -1480,11 +1480,11 @@ class ServoCLI(CLI):
         ) -> None:
             """
             Capture measurements for one or more metrics
-            """            
+            """
             for servo_ in context.assembly.servos:
                 if context.servo_ and servo_ != context.servo_:
                     continue
-                
+
                 connectors_ = (
                     self.connectors_named(connectors, servo_) if connectors
                     else list(
@@ -1535,10 +1535,10 @@ class ServoCLI(CLI):
                     measurement = result.value
                     if not measurement:
                         continue
-                    
+
                     for reading in measurement.readings:
-                        metric = reading.metric                        
-                        
+                        metric = reading.metric
+
                         if isinstance(reading, servo.TimeSeries):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
                             for value_tuple in reading.values:
@@ -1550,7 +1550,7 @@ class ServoCLI(CLI):
                                 metric_to_timestamp[time_key] = timestamp_to_connector
 
                             aggregated_by_metric[metric] = metric_to_timestamp
-                        
+
                         elif isinstance(reading, servo.DataPoint):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
                             time_key = f"{reading.measured_at:%Y-%m-%d %H:%M:%S}"
@@ -1560,10 +1560,10 @@ class ServoCLI(CLI):
                             timestamp_to_connector[result.connector] = values
                             metric_to_timestamp[time_key] = timestamp_to_connector
                             aggregated_by_metric[metric] = metric_to_timestamp
-                            
+
                         else:
                             raise TypeError(f"unknown reading type: {reading.__class__.__name__}")
-                            
+
 
                 # Print the table
                 def attribute_connector(connector, reading) -> str:
@@ -1597,7 +1597,7 @@ class ServoCLI(CLI):
                         "\n".join(readings_column),
                     ]
                     table.append(row)
-                
+
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
                 typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
@@ -1613,11 +1613,11 @@ class ServoCLI(CLI):
             """
             Adjust settings for one or more components
             """
-            
+
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
-                
+
                 adjustments: List[servo.Adjustment] = []
                 for descriptor in settings:
                     try:
@@ -1627,7 +1627,7 @@ class ServoCLI(CLI):
                         raise typer.BadParameter(
                             f"unable to parse setting descriptor '{descriptor}': expected format is `component.setting=value`"
                         )
-                        
+
                     adjustment = servo.Adjustment(
                         component_name=component_name,
                         setting_name=setting_name,
@@ -1641,7 +1641,7 @@ class ServoCLI(CLI):
                 if not results:
                     typer.echo("adjustment failed: no connector handled the request", err=True)
                     raise typer.Exit(code=1)
-                
+
                 for result in results:
                     outcome = result.value
 
@@ -1650,7 +1650,7 @@ class ServoCLI(CLI):
                         raise servo.ConnectorError(
                             f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
                         )
-                
+
                 headers = ["CONNECTOR", "SETTINGS"]
                 table = []
                 for result in results:
@@ -1692,7 +1692,7 @@ class ServoCLI(CLI):
             """
             include = set(keys) if keys else None
             export_options = dict(exclude_unset=True, include=include, indent=2)
-            
+
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
@@ -1800,11 +1800,11 @@ class ServoCLI(CLI):
 
             if top_level:
                 CLI.assemble_from_context(context)
-                
+
                 if all is False and context.servo_ is None:
                     typer.echo("error: schema can only be outputted for all connectors or a single servo", err=True)
                     raise typer.Exit(1)
-            
+
                 if format == SchemaOutputFormat.json:
                     output_data += context.servo_.top_level_schema_json(all=all)
 
@@ -1825,11 +1825,11 @@ class ServoCLI(CLI):
                         )
                 else:
                     CLI.assemble_from_context(context)
-                    
+
                     if context.servo_ is None:
                         typer.echo("error: schema can only be outputted for a single servo", err=True)
                         raise typer.Exit(1)
-                    
+
                     config_model = context.servo_.config.__class__
 
                 if format == SchemaOutputFormat.json:
@@ -1886,16 +1886,16 @@ class ServoCLI(CLI):
                     raise ValueError(
                         f'error: config file "{file}" parsed to an unexpected value of type "{configs.__class__}"'
                     )
-                
+
                 # If we parsed an empty file, add an empty dict to work with
                 if not configs:
                     configs.append({})
-            
+
                 # NOTE: When connector descriptor is provided the validation is constrained
                 routes = self.connector_routes_callback(
                     context=context, value=connectors
-                )                
-                
+                )
+
                 for config in configs:
                     config_model, routes = servo.assembly._create_config_model(
                         config=config, routes=routes
@@ -2008,12 +2008,12 @@ class ServoCLI(CLI):
                     incoming_doc = yaml.full_load(config_yaml)
                     config_docs.append(incoming_doc)
                     config_yaml = yaml.dump_all(config_docs)
-                    
+
                 elif force == False:
                     delete = typer.confirm(f"File '{file}' already exists. Overwrite it?")
                     if not delete:
                         raise typer.Abort()
-                    
+
             file.write_text(config_yaml)
             if not quiet:
                 typer.echo(
@@ -2103,7 +2103,7 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
     """Run the asyncio event loop until Future is done.
 
     This function is a convenience alias for `asyncio.get_event_loop().run_until_complete(future)`.
-    
+
     Args:
         future: The future to run.
 

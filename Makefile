@@ -29,7 +29,7 @@ init:
 	mkdir -p .vscode
 	touch .vscode/settings.json
 	@echo "$$vscode_settings" > .vscode/settings.json
-	poetry install	
+	poetry install
 	poetry run servo init
 
 .PHONY: vscode
@@ -102,4 +102,4 @@ pre-commit:
 clean-env:
 	poetry env remove `poetry env info`/bin/python
 	poetry install
-	
+

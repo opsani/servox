@@ -73,10 +73,10 @@ class Assembly(pydantic.BaseModel):
         **kwargs,
     ) -> "Assembly":
         """Assemble a Servo by processing configuration and building a dynamic settings model"""
-        
+
         if config_file is None and configs is None:
-            raise ValueError(f"cannot assemble with a config file and config objects")        
-        
+            raise ValueError(f"cannot assemble with a config file and config objects")
+
         _discover_connectors()
 
         if config_file and not configs:
@@ -89,14 +89,14 @@ class Assembly(pydantic.BaseModel):
                 raise ValueError(
                     f'error: config file "{config_file}" parsed to an unexpected value of type "{configs.__class__}"'
                 )
-            
+
             # If we parsed an empty file, add an empty dict to work with
             if not configs:
                 configs.append({})
-        
+
         if len(configs) > 1 and optimizer is not None:
             raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
-                
+
         servos: List[servo.servo.Servo] = []
         for config in configs:
             # TODO: Needs to be public / have a better name
@@ -136,7 +136,7 @@ class Assembly(pydantic.BaseModel):
         )
 
         # Set the context vars
-        cls.set_current(assembly)        
+        cls.set_current(assembly)
 
         # Activate the servo if we are in the common case single player mode
         if len(servos) == 1:

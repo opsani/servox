@@ -47,12 +47,12 @@ class MeasureConnector(BaseConnector):
                 unit=Unit.REQUESTS_PER_MINUTE
             )
         ]
-        
+
     @on_event()
     async def describe(self) -> Description:
         metrics = await self.metrics()
         return Description(metrics=metrics)
-    
+
     @before_event(Events.MEASURE)
     def before_measure(self) -> None:
         pass
@@ -69,7 +69,7 @@ class MeasureConnector(BaseConnector):
                     value=31337,
                     metric=Metric(
                         name="Some Metric",
-                        unit=Unit.REQUESTS_PER_MINUTE,                        
+                        unit=Unit.REQUESTS_PER_MINUTE,
                     )
                 )
             ]
@@ -223,10 +223,10 @@ class Subprocess:
 
 class FakeAPI(uvicorn.Server):
     """Testing server for implementing API fakes on top of Uvicorn and FastAPI.
-    
+
     The test server is meant to be paired with pytest fixtures that enable a
     simple mechanism for utilizing API fakes in testing.
-    
+
     A fake is a protocol compliant stand-in for another system that aids in testing
     by providing stateless, deterministic, and isolated implementations of dependent
     services. Fakes tend to be easier to develop and less brittle than mocking, which
@@ -236,7 +236,7 @@ class FakeAPI(uvicorn.Server):
     stateful persistence, cross talk from other users/developers, and the drag of latency.
 
     Usage:
-        @pytest.fixture        
+        @pytest.fixture
         async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncIterator[str]:
             server = FakeAPI(fastapi_app, port=unused_tcp_port)
             await server.start()
@@ -269,7 +269,7 @@ class FakeAPI(uvicorn.Server):
         """Shut down server asynchronously."""
         self.should_exit = True
         await self._serve_task
-    
+
     @property
     def base_url(self) -> str:
         """Return the base URL for accessing the FakeAPI server."""
@@ -279,21 +279,21 @@ class FakeAPI(uvicorn.Server):
 @contextlib.asynccontextmanager
 async def kubernetes_asyncio_client_overrides(**kwargs) -> AsyncIterator[kubernetes_asyncio.client.Configuration]:
     """Override fields on the default kubernetes_asyncio.client.Configuration within the context.
-    
+
     Fields are set directly on a copy of the original configuration using `setattr`. Refer to documentation
     of the kubernetes_asyncio.client.Configuration to see what is available.
-    
+
     Yields the updated configuration instance.
     """
     original_config = kubernetes_asyncio.client.Configuration.get_default_copy()
     new_config = kubernetes_asyncio.client.Configuration.get_default_copy()
     for attr, value in kwargs.items():
         setattr(new_config, attr, value)
-        
+
     try:
         kubernetes_asyncio.client.Configuration.set_default(new_config)
         yield new_config
-    
+
     finally:
         kubernetes_asyncio.client.Configuration.set_default(original_config)
 

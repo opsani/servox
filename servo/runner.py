@@ -22,7 +22,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     servo: servo.Servo
     connected: bool = False
     _running: bool = False
-    
+
     def __init__(self, servo_: servo) -> None: # noqa: D107
         self.servo = servo_
 
@@ -31,15 +31,15 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             self.config.servo = servo.ServoConfiguration()
 
         super().__init__()
-    
+
     @property
     def optimizer(self) -> servo.Optimizer:
         return self.servo.optimizer
-    
+
     @property
     def config(self) -> servo.BaseServoConfiguration:
         return self.servo.config
-    
+
     @property
     def api_client_options(self) -> Dict[str, Any]:
         # Adopt the servo config for driving the API mixin
@@ -170,14 +170,14 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                     )
             except httpx.TimeoutException as error:
                 self.logger.warning(f"ignoring HTTP timeout error: {error}")
-            
+
             except httpx.HTTPStatusError as error:
                 self.logger.warning(f"ignoring HTTP response error: {error}")
-                
+
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error
-            
+
     async def run(self) -> None:
         self._running = True
         servo.servo.Servo.set_current(self.servo)
@@ -213,7 +213,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             pass
 
         await asyncio.create_task(self.main_loop(), name="main loop")
-    
+
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
         try:
@@ -221,29 +221,29 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             if self.connected:
                 await self._post_event(servo.api.Events.goodbye, dict(reason=reason))
         except Exception:
-            self.logger.exception(f"Exception occurred during GOODBYE request")        
+            self.logger.exception(f"Exception occurred during GOODBYE request")
 
 class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     assembly: servo.Assembly
     runners: List[ServoRunner] = []
     progress_handler: Optional[servo.logging.ProgressHandler] = None
-    
+
     class Config:
         arbitrary_types_allowed = True
-    
+
     def __init__(self, assembly: servo.Assembly, **kwargs) -> None:
         super().__init__(assembly=assembly, **kwargs)
-    
+
     def _runner_for_servo(self, servo: servo.Servo) -> ServoRunner:
         for runner in self.runners:
             if runner.servo == servo:
                 return runner
-        
+
         raise KeyError(f"no runner was found for the servo: \"{servo}\"")
-    
+
     def run(self) -> None:
         """Asynchronously run all servos active within the assembly.
-        
+
         Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.
         """
         loop = asyncio.get_event_loop()
@@ -256,13 +256,13 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             )
 
         loop.set_exception_handler(self._handle_exception)
-        
+
         # Setup logging
         # TODO: encapsulate all this shit
         async def report_progress(self, **kwargs) -> None:
             # Forward to the active servo...
             await servo.Servo.current().report_progress(**kwargs)
-            
+
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
@@ -285,7 +285,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 # Restart a fresh main loop
                 runner = self._runner_for_servo(servo.Servo.current())
                 asyncio.create_task(runner.main_loop(), name="main loop")
-        
+
         self.progress_handler = servo.logging.ProgressHandler(
             report_progress, self.logger.warning, handle_progress_exception
         )
@@ -298,12 +298,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 servo_runner = ServoRunner(servo_)
                 loop.create_task(servo_runner.run())
                 self.runners.append(servo_runner)
-            
+
             loop.run_forever()
-            
+
         finally:
             loop.close()
-    
+
     def _display_banner(self) -> None:
         banner = "\n".join([
             r"   _____                      _  __",
@@ -336,11 +336,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         typer.secho(
             f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
         )
-        
+
         if len(self.assembly.servos) == 1:
             servo_ = self.assembly.servos[0]
             optimizer = servo_.optimizer
-            
+
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
             typer.secho(f"optimizer:   {id}")
             if optimizer.base_url != "https://api.opsani.com/":
@@ -348,7 +348,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
                 typer.secho(f"base url: {base_url}")
-            
+
             if servo_.config.servo and servo_.config.servo.proxies:
                 proxies = typer.style(
                     f"{devtools.pformat(servo_.config.servo.proxies)}",
@@ -359,13 +359,13 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         else:
             servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
             typer.secho(f"servos:   {servo_count}")
-            
+
         typer.secho()
-    
+
     async def _shutdown(self, loop, signal=None):
         if signal:
             self.logger.info(f"Received exit signal {signal.name}...")
-        
+
         reason = signal.name if signal else "shutdown"
         self.logger.info(f"Shutting down {len(self.runners)} running servos...")
         for runner in self.runners:
@@ -377,7 +377,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
 
-        [task.cancel() for task in tasks]        
+        [task.cancel() for task in tasks]
 
         self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
         await asyncio.gather(*tasks, return_exceptions=True)

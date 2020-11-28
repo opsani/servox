@@ -1758,7 +1758,7 @@ def test_backoff_context() -> None:
         {"https://*.opsani.com": "http://localhost:1234"},
     ],
 )
-async def test_proxy_utilization(proxies) -> None:    
+async def test_proxy_utilization(proxies) -> None:
     config = ServoConfiguration(proxies=proxies)
     optimizer = Optimizer("test.com/foo", token="12345")
     servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
@@ -1872,7 +1872,7 @@ async def test_backoff() -> None:
 def test_servo_name_literal(servo: Servo) -> None:
     servo.name = "hrm"
     assert servo.name == "hrm"
-    
+
 def test_servo_name_from_config() -> None:
     config = BaseServoConfiguration(name="archibald")
     servo = Servo(config=config, connectors=[])
@@ -1880,4 +1880,4 @@ def test_servo_name_from_config() -> None:
 
 def test_servo_name_falls_back_to_optimizer_id(servo: Servo) -> None:
     assert servo.name == "dev.opsani.com/servox"
-    
+

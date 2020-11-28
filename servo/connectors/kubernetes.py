@@ -1558,10 +1558,10 @@ def _normalize_adjustment(adjustment: Adjustment) -> Tuple[str, Union[str, servo
     """Normalize an adjustment object into a Kubernetes native setting key/value pair."""
     setting = "memory" if adjustment.setting_name == "mem" else adjustment.setting_name
     value = adjustment.value
-    
+
     if setting == "memory":
         # Add GiB suffix to Numerics and Numeric strings
-        if (isinstance(value, (int, float)) or 
+        if (isinstance(value, (int, float)) or
             (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
             value = f"{value}Gi"
     elif setting == "cpu":
@@ -1792,8 +1792,8 @@ class DeploymentOptimization(BaseOptimization):
         return [
             Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
         ]
-        
-        
+
+
     def adjust(self, adjustment: Adjustment, control: Control = Control()) -> None:
         """
         Adjust the settings on the Deployment or a component Container.
@@ -3215,5 +3215,5 @@ class ConfigMap(KubernetesModel):
             await self.refresh()
         except:  # noqa
             return False
-        
+
         return True

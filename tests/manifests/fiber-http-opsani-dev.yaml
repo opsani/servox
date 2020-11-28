@@ -138,7 +138,7 @@ spec:
   ports:
   # Send ingress traffic from the service to Envoy listening on port 9980.
   # Envoy will reverse proxy back to localhost:8480 for the real service
-  # to handle the request. Must match `OPSANI_ENVOY_PROXY_SERVICE_PORT` above 
+  # to handle the request. Must match `OPSANI_ENVOY_PROXY_SERVICE_PORT` above
   # and be exposed as a `containerPort`.
   - name: http
     protocol: TCP

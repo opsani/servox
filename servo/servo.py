@@ -173,7 +173,7 @@ class Servo(servo.connector.BaseConnector):
     @staticmethod
     def set_current(servo_: "Servo") -> contextvars.Token:
         """Set the current servo execution context.
-        
+
         Returns:
             A Token object object that can be used for restoring the previously active servo.
         """
@@ -205,9 +205,9 @@ class Servo(servo.connector.BaseConnector):
     def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         if values["name"] == "servo":
             values["name"] = values["config"].name or values["optimizer"].id
-        
+
         return values
-    
+
     @property
     def connector(self) -> Optional[servo.connector.BaseConnector]:
         """Return the active connector in the current execution context."""
@@ -230,7 +230,7 @@ class Servo(servo.connector.BaseConnector):
     def all_connectors(self) -> List[servo.connector.BaseConnector]:
         """Return a list of all active connectors including the Servo."""
         return [self, *self.connectors]
-    
+
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
@@ -320,7 +320,7 @@ class Servo(servo.connector.BaseConnector):
 
         with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)
-    
+
     def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
         """Return a schema that only includes connector model definitions"""
         connectors = servo.Assembly.all_connector_types() if all else self.connectors

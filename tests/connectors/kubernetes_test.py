@@ -828,7 +828,7 @@ class TestKubernetesConnectorIntegration:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         kube.wait_for_registered(timeout=30)
         return kube.namespace
-    
+
     async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()

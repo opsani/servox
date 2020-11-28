@@ -19,7 +19,7 @@ from tests.fake import AbstractOptimizer
         (tests.fake.StateMachine.States.awaiting_measurement, servo.api.Commands.measure),
         (tests.fake.StateMachine.States.awaiting_adjustment, servo.api.Commands.adjust),
         (tests.fake.StateMachine.States.done, servo.api.Commands.sleep),
-        (tests.fake.StateMachine.States.failed, servo.api.Commands.sleep),        
+        (tests.fake.StateMachine.States.failed, servo.api.Commands.sleep),
     ]
 )
 async def test_command(state: tests.fake.StateMachine.States, expected_command: Optional[servo.api.Commands]) -> None:
@@ -31,13 +31,13 @@ async def test_submit_description_stores_description() -> None:
     state_machine = await tests.fake.StateMachine.create(state=tests.fake.StateMachine.States.awaiting_description)
     await state_machine.submit_description(description)
     assert state_machine.description == description
-    
+
 async def test_whats_next_returns_command_response() -> None:
     state_machine = await tests.fake.StateMachine.create(state=tests.fake.StateMachine.States.awaiting_description)
     response = await state_machine.ask_whats_next()
     assert response.command == servo.api.Commands.describe
     assert response.param == {}
-    assert state_machine.command == servo.api.Commands.describe    
+    assert state_machine.command == servo.api.Commands.describe
 
 @pytest.fixture()
 def state_machine() -> tests.fake.StateMachine:
@@ -51,7 +51,7 @@ def measurement() -> servo.Measurement:
                 value=31337,
                 metric=servo.Metric(
                     name="Some Metric",
-                    unit=servo.Unit.REQUESTS_PER_MINUTE,                        
+                    unit=servo.Unit.REQUESTS_PER_MINUTE,
                 )
             )
         ]
@@ -64,7 +64,7 @@ def measurement() -> servo.Measurement:
         (tests.fake.StateMachine.States.awaiting_measurement, "submit_measurement", None, tests.fake.StateMachine.States.analyzing),
         (tests.fake.StateMachine.States.awaiting_measurement, "submit_measurement", 35, tests.fake.StateMachine.States.awaiting_measurement),
         (tests.fake.StateMachine.States.awaiting_measurement, "submit_measurement", 100, tests.fake.StateMachine.States.analyzing),
-        
+
         (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", 0, tests.fake.StateMachine.States.awaiting_adjustment),
         (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", None, tests.fake.StateMachine.States.analyzing),
         (tests.fake.StateMachine.States.awaiting_adjustment, "complete_adjustments", 35, tests.fake.StateMachine.States.awaiting_adjustment),
@@ -94,26 +94,26 @@ async def test_hello_and_describe(
     static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
-    
+
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
     await static_optimizer.say_hello(dict(agent=servo.api.USER_AGENT))
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
-    
+
     response = await servo_runner._post_event(
         servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
     )
     assert response.status == "ok"
-    
+
     # manually advance to describe
     await static_optimizer.request_description()
     assert static_optimizer.state == tests.fake.StateMachine.States.awaiting_description
-    
+
     # get a description from the servo
     description = await servo_runner.describe()
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     response = await servo_runner._post_event(servo.api.Events.describe, param)
     assert response.status == "ok"
-    
+
     # description has been accepted and state machine has transitioned into analyzing
     assert static_optimizer.state == tests.fake.StateMachine.States.analyzing
 
@@ -151,21 +151,21 @@ def test_adjustments_to_descriptor() -> None:
 async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
     static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
     await static_optimizer.say_hello()
-    
+
     await static_optimizer.request_description()
     await static_optimizer.submit_description(_random_description())
-    
+
     metric = servo.Metric(
         name="Some Metric",
-        unit=servo.Unit.REQUESTS_PER_MINUTE,                        
+        unit=servo.Unit.REQUESTS_PER_MINUTE,
     )
     await static_optimizer.request_measurement(metrics=[metric], control=servo.Control())
     await static_optimizer.submit_measurement(measurement)
-    
+
     adjustment = servo.Adjustment(component_name="web", setting_name="cpu", value=1.25)
     await static_optimizer.recommend_adjustments([adjustment])
     await static_optimizer.complete_adjustments(_random_description())
-    
+
     await static_optimizer.say_goodbye()
 
 @pytest.fixture()
@@ -181,7 +181,7 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     optimizer = servo.Optimizer(
         id="dev.opsani.com/blake-ignite",
         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
-        
+
     )
     assembly_ = servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
@@ -271,7 +271,7 @@ def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeri
 def _random_description() -> servo.Description:
     components = COMPONENTS.copy()
     metrics = METRICS.copy()
-    
+
     for component in components:
         for setting in component.settings:
             setting.value = _random_value_for_setting(setting)

@@ -88,7 +88,7 @@ async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     )
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "Operational Commands" in str(stdout)
-    
+
 
 async def test_run_servo_on_minikube(
     minikube_servo_image: str, subprocess
@@ -188,7 +188,7 @@ class TestChecks:
             ],
         )
         return config
-    
+
     @pytest.fixture(autouse=True)
     def wait_for_manifests(self, kube: kubetest.client.TestClient) -> None:
         kube.wait_for_registered(timeout=30)
@@ -293,7 +293,7 @@ class TestChecks:
         result = results[-1]
         assert result.id, "check_resource_requirements_item_0"
         assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
-    
+
     async def test_check_resource_requirements_fail(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Zero out the CPU settings
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
@@ -302,7 +302,7 @@ class TestChecks:
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": None})
         await deployment.patch()
         await deployment.wait_until_ready()
-        
+
         # Fail the check because the CPU isn't limited
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
             config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
@@ -323,7 +323,7 @@ class TestChecks:
             await deployment.wait_until_ready(5)
         except TimeoutError:
             pass
-        
+
         # Fail because the Pod is stuck in pending
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
             config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
@@ -338,8 +338,8 @@ class TestService:
     @pytest.fixture(autouse=True)
     def wait(self, kube) -> None:
         kube.wait_for_registered(timeout=30)
-        
-        
+
+
     async def test_read_service(self, kube: kubetest.client.TestClient) -> None:
         svc = await servo.connectors.kubernetes.Service.read("fiber-http", kube.namespace)
         assert svc

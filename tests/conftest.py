@@ -25,9 +25,9 @@ builtins.debug = devtools.debug
 @pytest.fixture
 def event_loop_policy(request) -> str:
     """Return the active event loop policy for the test.
-    
+
     Valid values are "default" and "uvloop".
-    
+
     The default implementation uses the parametrized `event_loop_policy` marker
     to select the effective policy.
     """
@@ -37,17 +37,17 @@ def event_loop_policy(request) -> str:
         event_loop_policy = marker.args[0]
     else:
         event_loop_policy = "uvloop"
-    
+
     valid_policies = ("default", "uvloop")
     assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
-    
+
     return event_loop_policy
-    
+
 
 @pytest.fixture
 def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
     """Yield an instance of the event loop for each test case.
-    
+
     The effective event loop policy is determined by the `event_loop_policy` fixture.
     """
     if event_loop_policy == "default":
@@ -56,7 +56,7 @@ def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
         uvloop.install()
     else:
         raise ValueError(f"invalid event loop policy: \"{event_loop_policy}\"")
-    
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -89,7 +89,7 @@ def pytest_configure(config) -> None:
 
 def pytest_collection_modifyitems(config, items) -> None:
     """Modify the discovered pytest nodes to configure default markers.
-    
+
     This methods sets asyncio as the async backend, configures a default event loop
     policy of uvloop, and configures integration tests to not be run by default.
     """
@@ -189,7 +189,7 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     )
     config1 = {
         "optimizer": optimizer1_config_json,
-        "connectors": ["measure", "adjust"], 
+        "connectors": ["measure", "adjust"],
         "measure": measure_config_json,
         "adjust": {}
     }
@@ -203,7 +203,7 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     )
     config2 = {
         "optimizer": optimizer2_config_json,
-        "connectors": ["measure", "adjust"], 
+        "connectors": ["measure", "adjust"],
         "measure": measure_config_json,
         "adjust": {}
     }
@@ -222,7 +222,7 @@ def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
 @pytest.fixture(autouse=True)
 def run_in_clean_environment() -> None:
     """Discard environment variables prefixed with `SERVO_` or `OPSANI`.
-    
+
     This fixture helps ensure test suite isolation from local development configuration.
     """
     for key, value in os.environ.copy().items():
@@ -258,7 +258,7 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import kubernetes_asyncio.config
     import logging
-    
+
     if request.session.config.getoption('in_cluster') or os.getenv("KUBERNETES_SERVICE_HOST"):
         kubernetes_asyncio.config.load_incluster_config()
     else:
@@ -268,7 +268,7 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
                 config_file=os.path.expandvars(os.path.expanduser(kubeconfig)),
                 context=kube_context,
             )
-        else:            
+        else:
             log = logging.getLogger('kubetest')
             log.error(
                 'unable to interact with cluster: kube fixture used without kube config '
@@ -293,7 +293,7 @@ async def servo_image() -> str:
 @pytest.fixture
 async def minikube(request, subprocess) -> str:
     """Run tests within a local minikube profile.
-    
+
     The profile name is determined using the parametrized `minikube_profile` marker
     or else uses "default".
     """
@@ -303,16 +303,16 @@ async def minikube(request, subprocess) -> str:
         profile = marker.args[0]
     else:
         profile = "servox"
-    
+
     # Start minikube and configure environment
     exit_code, _, _ = await subprocess(f"minikube start -p {profile} --interactive=false --keep-context=true --wait=true")
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-    
+
     # Yield the profile name
     try:
         yield profile
-    
+
     finally:
         exit_code, _, _ = await subprocess(f"minikube stop -p {profile}")
         if exit_code != 0:
@@ -324,7 +324,7 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
     exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}")
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-    
+
     yield servo_image
 
 @pytest.fixture()
@@ -335,19 +335,19 @@ def random_duration() -> servo.Duration:
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
     """Return a FastAPI instance for testing in the current scope.
-    
+
     To utilize the FakeAPI fixtures, define a module local FastAPI object
     that implements the API interface that you want to work with and return it
     from an override implementation of the `fastapi_app` fixture.
-    
+
     The default implementation is abstract and raises a NotImplementedError.
-    
+
     To interact from the FastAPI app within your tests, invoke the `fakeapi_url`
     fixture to obtain the base URL for a running instance of your fastapi app.
     """
     raise NotImplementedError(f"incomplete fixture implementation: build a FastAPI fixture modeling the system you want to fake")
 
-@pytest.fixture        
+@pytest.fixture
 async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncGenerator[str, None]:
     """Run a FakeAPI server as a pytest fixture and yield the base URL for accessing it."""
     server = tests.helpers.FakeAPI(app=fastapi_app, port=unused_tcp_port)
@@ -383,7 +383,7 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     optimizer = servo.Optimizer(
         id="dev.opsani.com/blake-ignite",
         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
-        
+
     )
     assembly_ = servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer

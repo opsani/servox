@@ -574,7 +574,7 @@ class TestRangeSetting:
             assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
-    
+
     @pytest.mark.parametrize(
         ("min", "max", "step", "value", "error_message"),
         [
@@ -602,20 +602,20 @@ class TestRangeSetting:
             assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=value)
-    
+
     def test_validation_on_value_mutation(
         self
     ) -> None:
         setting = RangeSetting(name="range", min=0, max=10, step=1)
         with pytest.raises(pydantic.ValidationError) as error:
             setting.value = 25
-        
+
         assert error
         assert "1 validation error for RangeSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("__root__",)
         assert error.value.errors()[0]["type"] == "value_error"
         assert error.value.errors()[0]["msg"] == "invalid value: 25 is outside of the range 0-10"
-    
+
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
         [

@@ -211,7 +211,7 @@ def test_show_components_multiservo(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)    
+    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
     assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
@@ -221,7 +221,7 @@ def test_show_components_multiservo_by_name(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show components", catch_exceptions=False)
     assert result.exit_code == 0
-    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)    
+    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
     assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
     assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
@@ -548,17 +548,17 @@ def aliased_connector_cli(optimizer_env: None, servo_yaml: Path) -> ServoCLI:
         "second": {},
     }
     servo_yaml.write_text(yaml.dump(aliased_config))
-    
+
     cli = servo.cli.ConnectorCLI(MeasureConnector, name="cli-ext", help="A CLI extension")
-    
+
     @cli.command()
     def attack(
         context: servo.cli.Context,
     ):
         print(f"active connector is: {context.connector.name}")
-    
+
     return ServoCLI()
-    
+
 def test_aliased_connector_error(cli_runner: CliRunner, aliased_connector_cli: ServoCLI) -> None:
     result = cli_runner.invoke(aliased_connector_cli, f"cli-ext attack")
     assert (
@@ -667,7 +667,7 @@ def test_schema_multiservo_top_level(cli_runner: CliRunner, servo_cli: Typer, st
         result.exit_code == 1
     ), f"Expected status code of 1 but got {result.exit_code} -- stdout: {result.stdout}\nstderr: {result.stderr}"
     assert re.search("error: schema can only be outputted for all connectors or a single servo", result.stderr)
-    
+
 def test_schema_multiservo_top_level_by_name(cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
     result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 schema --top-level", catch_exceptions=False)
     assert (
@@ -756,7 +756,7 @@ class TestCommands:
         result = cli_runner.invoke(servo_cli, f"validate -f {stub_servo_yaml}", catch_exceptions=False)
         assert result.exit_code == 0, f"non-zero exit status (result.stdout={result.stdout}, result.stderr={result.stderr})"
         assert re.match(f"√ Valid configuration in {stub_servo_yaml}", result.stdout)
-    
+
     def test_validate_multiservo(self, cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path) -> None:
         result = cli_runner.invoke(servo_cli, f"validate -f {stub_multiservo_yaml}", catch_exceptions=False)
         assert result.exit_code == 0, f"non-zero exit status (result.stdout={result.stdout}, result.stderr={result.stderr})"
@@ -772,7 +772,7 @@ class TestCommands:
         assert "already exists. Overwrite it?" in result.stdout
         content = yaml.full_load(open("servo.yaml"))
         assert content == {"connectors": ["measure"], "measure": {}, "name": "foo"}
-    
+
     def test_generate_with_append(
         self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
     ) -> None:
@@ -801,7 +801,7 @@ class TestCommands:
                 'name': 'foo',
             },
         ]
-        
+
     def test_generate_prompts_to_overwrite(
         self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
     ) -> None:
@@ -1067,7 +1067,7 @@ def test_adjust_incomplete_identifier(
     result = cli_runner.invoke(servo_cli, "adjust setting=value", catch_exceptions=False)
     assert result.exit_code == 2
     assert re.search("Error: Invalid value: unable to parse setting descriptor 'setting=value'", result.stderr)
-    
+
 def test_adjust(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
 ) -> None:
@@ -1140,4 +1140,4 @@ def test_describe_multiservo_named(
     assert re.search("adjust\\s+main.cpu=3", result.stdout)
     assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
     assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-    
+
