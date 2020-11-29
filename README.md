@@ -1,7 +1,7 @@
 # Opsani ServoX
 
 ![Run Tests](https://github.com/opsani/servox/workflows/Run%20Tests/badge.svg)
-[![license](https://img.shields.io/github/license/opsani/servox.svg)](https://github.com/opsani/servox/blob/master/LICENSE)
+[![license](https://img.shields.io/github/license/opsani/servox.svg)](https://github.com/opsani/servox/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/servox.svg)](https://pypi.org/project/servox/)
 [![release](https://img.shields.io/github/release/opsani/servox.svg)](https://github.com/opsani/servox/releases/latest)
 [![GitHub release

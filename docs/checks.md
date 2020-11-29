@@ -1,6 +1,6 @@
 # Checks
 
-Merged into master with [Pull Request 29](https://github.com/opsani/servox/pull/29).
+Merged into main with [Pull Request 29](https://github.com/opsani/servox/pull/29).
 
 Features:
 
