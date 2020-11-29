@@ -2682,23 +2682,16 @@ class KubernetesChecks(servo.BaseChecks):
     @servo.require("Required permissions")
     async def check_permissions(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-            v1 =kubernetes_asyncio.client.AuthorizationV1Api(api)
+            v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
             for permission in self.config.permissions:
                 for resource in permission.resources:
                     for verb in permission.verbs:
-                        attributes =kubernetes_asyncio.client.models.V1ResourceAttributes(
+                        attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
                             namespace=self.config.namespace,
                             group=permission.group,
                             resource=resource,
                             verb=verb,
-                        )
-
-                        # TODO: The below checks an alternative serviceaccount
-                        # user = "system:serviceaccount:default:opsani-servo"
-                        # spec =kubernetes_asyncio.client.models.V1SubjectAccessReviewSpec(resource_attributes=attributes)
-                        # spec.user = user
-                        # review =kubernetes_asyncio.client.models.V1SubjectAccessReview(spec=spec)
-                        # access_review = await v1.create_subject_access_review(review)
+                        )                        
 
                         spec =kubernetes_asyncio.client.models.V1SelfSubjectAccessReviewSpec(
                             resource_attributes=attributes

@@ -620,7 +620,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 value = locals().get(attr, None)
                 if value is not None:
                     raise RuntimeError(
-                        f"failed running check: check {attr} {repr(value)} was not run due to a prerequisite failure"
+                        f"failed running check: check {attr} {repr(value)} was not run due to a prerequisite failure: check id '{result.id}' failed: \"{result.message}\""
                     )
 
         return result

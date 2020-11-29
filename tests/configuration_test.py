@@ -10,7 +10,6 @@ def test_config(servo_yaml: pathlib.Path) -> None:
     )
     config = config_model.generate()
     servo_yaml.write_text(config.yaml())
-    debug(config.yaml())
 
     optimizer = servo.configuration.Optimizer(
         id="dev.opsani.com/blake-ignite",

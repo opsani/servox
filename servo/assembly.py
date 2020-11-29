@@ -224,8 +224,7 @@ class Assembly(pydantic.BaseModel):
         self.servos.remove(servo_)
 
     async def startup(self):
-        """Notify all servos that the assembly is starting up.
-        """
+        """Notify all servos that the assembly is starting up."""
         await asyncio.gather(
                 *list(
                     map(
@@ -236,8 +235,7 @@ class Assembly(pydantic.BaseModel):
             )
 
     async def shutdown(self):
-        """Notify all servos that the assembly is shutting down.
-        """
+        """Notify all servos that the assembly is shutting down."""
         await asyncio.gather(
                 *list(
                     map(
@@ -246,14 +244,6 @@ class Assembly(pydantic.BaseModel):
                     )
                 )
             )
-
-
-def _module_path(cls: Type) -> str:
-    if cls.__module__:
-        return ".".join([cls.__module__, cls.__name__])
-    else:
-        return cls.__name__
-
 
 def _discover_connectors() -> Set[Type[servo.connector.BaseConnector]]:
     """

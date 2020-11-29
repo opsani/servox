@@ -1851,8 +1851,8 @@ async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> N
 async def test_backoff() -> None:
     config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
     assert config.backoff
-    assert config.backoff.max_time() == '10m'
-    assert config.backoff.max_time('connect') == '1h'
+    assert config.backoff.max_time() == Duration('10m').total_seconds()
+    assert config.backoff.max_time('connect') == Duration('1h').total_seconds()
     
 def test_servo_name_literal(servo: Servo) -> None:
     servo.name = "hrm"

@@ -356,7 +356,7 @@ class BackoffConfigurations(pydantic.BaseModel):
         return (
             self.get(context, None) or
             self.get(BackoffContexts.default)
-        ).max_time
+        ).max_time.total_seconds()
 
     def max_tries(self, context: str = BackoffContexts.default) -> Optional[int]:
         """Return the maximum number of calls to attempt to the target before
