@@ -52,10 +52,10 @@ spec:
         image: opsani/fiber-http:latest
         resources:
           requests:
-            cpu: "1"
-            memory: 1Gi
+            cpu: 500m
+            memory: 512Mi
           limits:
-            cpu: "1"
+            cpu: 1500m
             memory: 1Gi
         ports:
           # The ingress port that Envoy will reverse proxy requests
@@ -73,7 +73,7 @@ spec:
                 cpu: 125m
                 memory: 128Mi
             limits:
-                cpu: 250m
+                cpu: 1000m
                 memory: 256Mi
         env:
         # The container port of Pods in the target Deployment responsible for

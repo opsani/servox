@@ -2,7 +2,6 @@
 import asyncio
 import pathlib
 
-import httpx
 import pytest
 
 import servo
@@ -73,7 +72,7 @@ async def running_servo(
         # await asyncio.gather(*tasks, return_exceptions=True)
 
 # TODO: Switch this over to using a FakeAPI
-async def test_test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
+async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
     response = await servo_runner._post_event(
         servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
@@ -83,7 +82,7 @@ async def test_test_out_of_order_operations(servo_runner: servo.runner.ServoRunn
 
     response = await servo_runner._post_event(servo.api.Events.whats_next, None)
     debug(response)
-    assert response.command == servo.api.Command.DESCRIBE
+    assert response.command == servo.api.Commands.describe
 
     description = await servo_runner.describe()
 
@@ -94,7 +93,7 @@ async def test_test_out_of_order_operations(servo_runner: servo.runner.ServoRunn
 
     response = await servo_runner._post_event(servo.api.Events.whats_next, None)
     debug(response)
-    assert response.command == servo.api.Command.MEASURE
+    assert response.command == servo.api.Commands.measure
 
     # Send out of order adjust
     reply = {"status": "ok"}
@@ -109,10 +108,14 @@ async def test_test_out_of_order_operations(servo_runner: servo.runner.ServoRunn
 
     servo_runner.logger.info("test logging", operation="ADJUST", progress=55)
 
-    await asyncio.sleep(5)
-
-
-async def test_hello(servo_runner: servo.runner.ServoRunner, fakeapi_url: str) -> None:
+async def test_hello(
+    servo_runner: servo.runner.ServoRunner, 
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+) -> None:
+    static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    await static_optimizer.request_description()
+    fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
     response = await servo_runner._post_event(
         servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
@@ -123,9 +126,6 @@ async def test_hello(servo_runner: servo.runner.ServoRunner, fakeapi_url: str) -
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     response = await servo_runner._post_event(servo.api.Events.describe, param)
-    debug(response)
-    await asyncio.sleep(10)
-
 
 # async def test_describe() -> None:
 #     pass
@@ -162,76 +162,12 @@ async def test_hello(servo_runner: servo.runner.ServoRunner, fakeapi_url: str) -
 
 
 # TODO: This doesn't need to be integration test
-#
-async def test_adjustment_rejected(mocker, runner) -> None:
-    connector = runner.servo.get_connector("adjust")
+async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunner) -> None:
+    connector = servo_runner.servo.get_connector("adjust")
     with servo.utilities.pydantic.extra(connector):
         on_handler = connector.get_event_handlers("adjust", servo.events.Preposition.ON)[0]
         mock = mocker.patch.object(on_handler, "handler")
         mock.side_effect = servo.errors.AdjustmentRejectedError()
-        await runner.servo.startup()
+        await servo_runner.servo.startup()
         with pytest.raises(servo.errors.AdjustmentRejectedError):
-            await runner.adjust([], servo.Control())
-async def test_fakeapi(fakeapi_client: httpx.AsyncClient) -> None:
-    response = await fakeapi_client.get("/")
-    debug(response.json())
-
-
-@pytest.fixture
-async def progress_logging() -> None:
-
-    # Setup logging
-    # TODO: encapsulate all this shit
-    async def report_progress(**kwargs) -> None:
-        # Forward to the active servo...
-        await servo.Servo.current().report_progress(**kwargs)
-
-    def handle_progress_exception(error: Exception) -> None:
-        # FIXME: This needs to be made multi-servo aware
-        # Restart the main event loop if we get out of sync with the server
-        if isinstance(error, servo.api.UnexpectedEventError):
-            servo.logging.logger.error(
-                "servo has lost synchronization with the optimizer: restarting operations"
-            )
-
-            tasks = [
-                t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-            ]
-            servo.logging.logger.info(f"Canceling {len(tasks)} outstanding tasks")
-            [task.cancel() for task in tasks]
-
-            # Restart a fresh main loop
-            # runner = self._runner_for_servo(servo.Servo.current())
-            # asyncio.create_task(runner.main_loop(), name="main loop")
-
-    progress_handler = servo.logging.ProgressHandler(
-        report_progress, servo.logging.logger.warning, handle_progress_exception
-    )
-    servo.logging.logger.add(progress_handler.sink, catch=True)
-    yield progress_handler
-    await progress_handler.shutdown()
-
-async def test_run(progress_logging, running_servo: servo.runner.ServoRunner) -> None:
-    await asyncio.sleep(1200)
-
-# -----------------------------------------------
-
-# TODO: Replace these models...
-
-
-
-
-
-
-class TestOptimizerStateMachine:
-    async def test_idle_to_hello(self) -> None:
-        ...
-
-    async def test_setting_initial_state(self) -> None:
-        ...
-
-    async def test_progress_transitions(self) -> None:
-        state_machine = OptimizerStateMachine('self', initial=States.awaiting_measurement)
-        debug(state_machine.state)
-        await state_machine.measurement()
-        debug(state_machine.state)
+            await servo_runner.adjust([], servo.Control())

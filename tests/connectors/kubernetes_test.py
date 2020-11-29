@@ -832,14 +832,13 @@ class TestKubernetesConnectorIntegration:
     async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 1.0
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "1.0GiB"
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 500
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "512.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust(self, config, adjustment):
         connector = KubernetesConnector(config=config)
         description = await connector.adjust(descriptor_to_adjustments(adjustment))
-        debug(description)
         # TODO: I need a quick helper for testing adjustments
 
     async def test_adjust_memory_on_deployment(self, config, adjustment):
@@ -976,13 +975,13 @@ def config(namespace: str) -> KubernetesConfiguration:
                 name="fiber-http",
                 replicas=servo.Replicas(
                     min=1,
-                    max=2,
+                    max=4,
                 ),
                 containers=[
                     ContainerConfiguration(
                         name="fiber-http",
-                        cpu=CPU(min="100m", max="800m", step="125m"),
-                        memory=Memory(min="100 MiB", max="0.8 GiB", step="128 MiB"),
+                        cpu=CPU(min="125m", max="800m", step="125m"),
+                        memory=Memory(min="128MiB", max="0.8GiB", step="32MiB"),
                     )
                 ],
             )
@@ -998,13 +997,13 @@ def adjustment() -> dict:
                 "fiber-http/fiber-http": {
                     "settings": {
                         "cpu": {
-                            "value": 1.80,
+                            "value": 0.375,
                         },
                         "mem": {
-                            "value": 2.5,
+                            "value": 0.225,
                         },
                         "replicas": {
-                            "value": 3.0,
+                            "value": 3,
                         },
                     },
                 },

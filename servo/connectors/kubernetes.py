@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import copy
 import enum
+import functools
 import itertools
 import os
 import pathlib
@@ -1425,6 +1426,13 @@ class Deployment(KubernetesModel):
 
         return canary_pod
 
+    async def get_restart_count(self) -> int:
+        count = 0
+        for pod in await self.get_pods():
+            count += await pod.get_restart_count()
+        
+        return count
+
 
 class Millicore(int):
     """
@@ -1784,16 +1792,22 @@ class DeploymentOptimization(BaseOptimization):
         Adjustments do not take effect on the cluster until the `apply` method is invoked
         to enable aggregation of related adjustments and asynchronous application.
         """
-        setting, value = _normalize_adjustment(adjustment)
-        self.logger.info(f"adjusting {setting} to {value}")
-        if setting in ("cpu", "mem"):
-            resource_name = "memory" if setting == "mem" else setting
-            requirements = getattr(self.container_config, resource_name).requirements
+        setting_name, value = _normalize_adjustment(adjustment)                
+        self.logger.info(f"adjusting {setting_name} to {value}")
+        
+        if setting_name in ("cpu", "memory"):
+            # NOTE: Assign to the config to trigger validations
+            setting = getattr(self.container_config, setting_name)
+            setting.value = value
+            
+            requirements = setting.requirements
             self.container.set_resource_requirements(
-                resource_name, value, requirements, clear_others=True
+                setting_name, value, requirements, clear_others=True
             )
 
-        elif setting == "replicas":
+        elif setting_name == "replicas":
+            # NOTE: Assign to the config to trigger validations
+            self.deployment_config.replicas.value = value
             self.deployment.replicas = value
 
         else:
@@ -1862,12 +1876,13 @@ class DeploymentOptimization(BaseOptimization):
 
         try:
             async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-                v1 =kubernetes_asyncio.client.AppsV1Api(api)
+                # NOTE: The timeout_seconds argument must be an int or the request will fail
+                v1 = kubernetes_asyncio.client.AppsV1Api(api)
                 async with kubernetes_asyncio.watch.Watch().stream(
                     v1.list_namespaced_deployment,
                     self.deployment.namespace,
                     label_selector=self.deployment.label_selector,
-                    timeout_seconds=self.timeout.total_seconds(),
+                    timeout_seconds=int(self.timeout.total_seconds()),
                 ) as stream:
                     async for event in stream:
                         # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
@@ -1913,12 +1928,13 @@ class DeploymentOptimization(BaseOptimization):
                             # We are done: all the counts match. Stop the watch and return
                             self.logger.info("adjustment applied successfully", status)
                             stream.stop()
+                            
         except asyncio.TimeoutError as error:
             raise servo.AdjustmentRejectedError(
                 reason="timed out waiting for Deployment to apply adjustment"
             ) from error
 
-        if self.deployment.get_restart_count():
+        if await self.deployment.get_restart_count() > 0:
             # TODO: Return a string summary about the restarts (which pods bounced)
             raise servo.AdjustmentRejectedError(reason="unstable")
 
@@ -2525,7 +2541,7 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
-        FailureMode.ROLLBACK,
+        FailureMode.CRASH,
         description=f"How to handle a failed adjustment. Options are: {servo.utilities.strings.join_to_series(list(FailureMode.__members__.values()))}",
     )
     timeout: Optional[servo.Duration] = pydantic.Field(

@@ -580,6 +580,18 @@ class Setting(BaseModel, abc.ABC):
             )
             error_ = pydantic.error_wrappers.ErrorWrapper(error, loc="value")
             raise pydantic.ValidationError([error_], self.__class__)
+    
+    @classmethod
+    def human_readable(cls, value: Any) -> str:
+        try:
+            output_type = cls.__fields__["value"].type_
+            casted_value = output_type(value)
+            if isinstance(casted_value, HumanReadable):
+                return cast(HumanReadable, casted_value).human_readable()
+        except:
+            pass
+        
+        return str(value)
 
     class Config:
         validate_all = True
@@ -673,7 +685,7 @@ class RangeSetting(Setting):
     )
 
     def summary(self) -> str:
-        return f"{self.__class__.__name__}(range=[{self.min}..{self.max}], step={self.step})"
+        return f"{self.__class__.__name__}(range=[{self.human_readable(self.min)}..{self.human_readable(self.max)}], step={self.human_readable(self.step)})"
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
@@ -707,7 +719,7 @@ class RangeSetting(Setting):
         value, min, max = values["value"], values["min"], values["max"]
         if value is not None and (value < min or value > max):
             raise ValueError(
-                f"invalid value: {value} is outside of the range {min}-{max}"
+                f"invalid value: {cls.human_readable(value)} is outside of the range {cls.human_readable(min)}-{cls.human_readable(max)}"
             )
 
         return values
@@ -728,20 +740,20 @@ class RangeSetting(Setting):
         if value is not None:
             if value != max and value + step > max:
                 raise ValueError(
-                    f"invalid range: adding step to value is greater than max ({value} + {step} > {max})"
+                    f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
                 )
             elif value != min and value - step < min:
                 raise ValueError(
-                    f"invalid range: subtracting step from value is less than min ({value} - {step} < {min})"
+                    f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
                 )
         else:
             if (min + step > max):
                 raise ValueError(
-                    f"invalid step: adding step to min is greater than max ({min} + {step} > {max})"
+                    f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
                 )
             elif (max - step < min):
                 raise ValueError(
-                    f"invalid step: subtracting step from max is less than min ({max} + {step} < {min})"
+                    f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
                 )
 
         return values
@@ -757,10 +769,10 @@ class RangeSetting(Setting):
         min_ = values["min"]
 
         if min_ == max_:
-            raise ValueError(f"min and max cannot be equal ({min_} == {max_})")
+            raise ValueError(f"min and max cannot be equal ({cls.human_readable(min_)} == {cls.human_readable(max_)})")
 
         if min_ > max_:
-            raise ValueError(f"min cannot be greater than max ({min_} > {max_})")
+            raise ValueError(f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})")
 
         return value
 
@@ -780,13 +792,13 @@ class RangeSetting(Setting):
 
             desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
             logger.warning(
-                f"{desc} value is not step aligned: {value} is not divisible by {step}"
+                f"{desc} value is not step aligned: {cls.human_readable(value)} is not divisible by {cls.human_readable(step)}"
             )
 
         return values
 
     def __str__(self) -> str:
-        return f"{self.name} ({self.type} {self.min}-{self.max}, {self.step})"
+        return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"
 
     def __opsani_repr__(self) -> dict:
         return {

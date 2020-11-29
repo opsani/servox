@@ -62,15 +62,12 @@ def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
     loop.close()
 
 def pytest_addoption(parser) -> None:
-    """Add pytest options for enabling execution of integration and system tests."""
+    """Add pytest options for enabling execution of integration tests."""
     parser.addoption(
         "--integration",
         action="store_true",
         default=False,
         help="run integration tests",
-    )
-    parser.addoption(
-        "--system", action="store_true", default=False, help="run system tests"
     )
 
 
