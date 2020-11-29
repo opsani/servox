@@ -194,8 +194,8 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
-                max_time=lambda: servox.Servo.current().config.backoff.max_time(),
-                max_tries=lambda: servox.Servo.current().config.backoff.max_tries(),
+                max_time=lambda: servox.Servo.current().config.servo.backoff.max_time(),
+                max_tries=lambda: servox.Servo.current().config.servo.backoff.max_tries(),
                 on_giveup=giveup,
             )
             async def connect() -> None:

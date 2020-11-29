@@ -163,10 +163,6 @@ class Mixin(abc.ABC):
         `api_client` and `api_client_sync` methods.
         """
         ...
-        # TODO: Overloaded for performance...
-        # timeout = httpx.Timeout(60.0)
-        # limits = httpx.Limits(max_keepalive_connections=None, max_connections=None)
-        # return dict(base_url=self.optimizer.api_url, headers=self.api_headers, timeout=timeout, limits=limits)
 
     def api_client(self, **kwargs) -> httpx.AsyncClient:
         """Return an asynchronous client for interacting with the Opsani API."""
