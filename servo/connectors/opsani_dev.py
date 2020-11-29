@@ -374,7 +374,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     maturity=servo.Maturity.EXPERIMENTAL,
 )
 class OpsaniDevConnector(servo.BaseConnector):
-    """Opsani Dev is a tunkey solution for optimizing a single service."""
+    """Opsani Dev is a turnkey solution for optimizing a single service."""
 
     config: OpsaniDevConfiguration
 
