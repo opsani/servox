@@ -7,14 +7,13 @@
 [![GitHub release
 date](https://img.shields.io/github/release-date/opsani/servox.svg)](https://github.com/opsani/servox/releases)
 
-This repository contains the source code of the next generation Opsani Servo
-technology.
+This repository contains the source code of the Opsani Servo agent.
 
-A servo is a deployable unit of software that connects an application or service
+A servo is an agent that measures and orchestrates an application or service
 to the Opsani cloud optimization engine in order to identify cost savings and
 performance enhancements by applying machine learning technology. Servos are
-lightweight Python applications and are typically deployed as standalone
-containers or on a Kubernetes cluster.
+lightweight Python applications and are typically deployed as a container
+under an orchestration layer such as Kubernetes, ECS, or Docker Compose.
 
 Servos are composed of connectors, which provide the core functionality for
 integrating with metrics, orchestration, and load generation systems/utilities.
@@ -41,26 +40,13 @@ any Python package management system should work.
 
 ## Overview
 
-### Project Status
-
-ServoX is currently in beta. Not all Opsani connectors are currently supported.
-The current focus is on Kubernetes, Prometheus, and Vegeta. The connectors are
-bundled within the repository in the `connectors` directory. These packages will
-be migrated out to standalone modules as development progresses.
-
-Putting these caveats aside, ServoX is fairly mature and provides some
-significant advantages and new capabilities above the production Servo module.
-If your target system is supported by the available connectors you may want to
-explore a ServoX deployment.
-
-ServoX will be released as Servo 2.0.0 during the summer of 2020.
-
 ### Getting Started with Opsani
 
 Access to an Opsani optimizer is required to deploy the servo and run the end to
 end integration tests. If you do not currently have access to an Opsani
-environment but are otherwise interested in working with the CO engine and
-Servo, please reach out to us at info@opsani.com and we will get back with you.
+environment but are otherwise interested in working with the optimizer and
+Servo, please reach out to us at [info@opsani.com](mailto:info@opsani.com) and
+we will get back with you.
 
 ### Usage
 
@@ -754,7 +740,8 @@ will also compute coverage details.
 
 The test suite includes support for integration tests for running tests against
 remote system components such as a Kubernetes cluster or Prometheus deployment.
-Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/) file at `tests/kubeconfig`.
+Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
+file at `tests/kubeconfig`.
 
 By convention, the integration testing cluster is named
 `servox-integration-tests` and the `make kubeconfig` task is provided to export
