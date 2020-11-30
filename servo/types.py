@@ -580,7 +580,7 @@ class Setting(BaseModel, abc.ABC):
             )
             error_ = pydantic.error_wrappers.ErrorWrapper(error, loc="value")
             raise pydantic.ValidationError([error_], self.__class__)
-    
+
     @classmethod
     def human_readable(cls, value: Any) -> str:
         try:
@@ -590,7 +590,7 @@ class Setting(BaseModel, abc.ABC):
                 return cast(HumanReadable, casted_value).human_readable()
         except:
             pass
-        
+
         return str(value)
 
     class Config:

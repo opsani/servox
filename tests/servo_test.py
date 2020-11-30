@@ -1853,7 +1853,7 @@ async def test_backoff() -> None:
     assert config.backoff
     assert config.backoff.max_time() == Duration('10m').total_seconds()
     assert config.backoff.max_time('connect') == Duration('1h').total_seconds()
-    
+
 def test_servo_name_literal(servo: Servo) -> None:
     servo.name = "hrm"
     assert servo.name == "hrm"

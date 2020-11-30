@@ -11,7 +11,7 @@ data:
       settlement: 5m
       deployments:
         - name: fiber-http
-          strategy: 
+          strategy:
             type: canary
             alias: tuning
           replicas:
@@ -145,7 +145,7 @@ spec:
       - name: prometheus-config-volume
         configMap:
           name: prometheus-config
-      
+
       # Prefer deployment onto a Node labeled role=servo
       # This ensures physical isolation and network transport if possible
       affinity:

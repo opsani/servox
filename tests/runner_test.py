@@ -109,7 +109,7 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
     servo_runner.logger.info("test logging", operation="ADJUST", progress=55)
 
 async def test_hello(
-    servo_runner: servo.runner.ServoRunner, 
+    servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
     fastapi_app: 'tests.OpsaniAPI',
 ) -> None:

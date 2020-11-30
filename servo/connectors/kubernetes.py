@@ -1430,7 +1430,7 @@ class Deployment(KubernetesModel):
         count = 0
         for pod in await self.get_pods():
             count += await pod.get_restart_count()
-        
+
         return count
 
 
@@ -1792,14 +1792,14 @@ class DeploymentOptimization(BaseOptimization):
         Adjustments do not take effect on the cluster until the `apply` method is invoked
         to enable aggregation of related adjustments and asynchronous application.
         """
-        setting_name, value = _normalize_adjustment(adjustment)                
+        setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        
+
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config to trigger validations
             setting = getattr(self.container_config, setting_name)
             setting.value = value
-            
+
             requirements = setting.requirements
             self.container.set_resource_requirements(
                 setting_name, value, requirements, clear_others=True
@@ -1928,7 +1928,7 @@ class DeploymentOptimization(BaseOptimization):
                             # We are done: all the counts match. Stop the watch and return
                             self.logger.info("adjustment applied successfully", status)
                             stream.stop()
-                            
+
         except asyncio.TimeoutError as error:
             raise servo.AdjustmentRejectedError(
                 reason="timed out waiting for Deployment to apply adjustment"
@@ -2707,7 +2707,7 @@ class KubernetesChecks(servo.BaseChecks):
                             group=permission.group,
                             resource=resource,
                             verb=verb,
-                        )                        
+                        )
 
                         spec =kubernetes_asyncio.client.models.V1SelfSubjectAccessReviewSpec(
                             resource_attributes=attributes
