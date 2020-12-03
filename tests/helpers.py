@@ -307,7 +307,7 @@ async def build_docker_image(
     root_path = pathlib.Path(__file__).parents[1]
     subprocess = Subprocess()
     exit_code, stdout, stderr = await subprocess(
-        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest {root_path}",
+        f"{preamble or 'true'} && DOCKER_BUILDKIT=1 docker build -t {tag} --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:edge {root_path}",
         print_output=print_output,
         **kwargs,
     )
