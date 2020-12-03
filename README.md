@@ -716,7 +716,7 @@ Pre-built images are built using BuildKit and can be used as the basis for very
 fast customized builds:
 
 ```console
-❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:latest .
+❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:edge .
 ```
 
 ### Upgrading Python
