@@ -19,6 +19,13 @@ import servo
 import servo.cli
 import tests.helpers
 
+import contextlib
+import kubetest
+from typing import Union
+import tests.helpers
+from typing import AsyncIterator, Callable
+import servo.connectors.kubernetes
+
 # Add the devtools debug() function globally in tests
 builtins.debug = devtools.debug
 
@@ -484,3 +491,79 @@ async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
     return tests.fake.api
+
+## Kubernetes Port Forwarding
+
+@contextlib.asynccontextmanager
+async def kubectl_port_forwarded(
+    pod: Union[str, kubetest.objects.Pod, servo.connectors.kubernetes.Pod],
+    local_port: int,
+    remote_port: int,
+    *, 
+    kubeconfig: str,
+    namespace: str,         
+) -> AsyncIterator[str]:
+    """An async context manager that establishes a port-forward to a remote pod in a Kubernetes cluster and yields a URL for reaching it."""
+    task = None
+    try:
+        event = asyncio.Event()
+        name = pod if isinstance(pod, str) else pod.name
+        task = asyncio.create_task(
+            tests.helpers.Subprocess.shell(
+                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} pod/{name} {local_port}:{remote_port}", 
+                timeout=10,
+                event=event,
+                print_output=True
+        ))
+        
+        await event.wait()
+        url = f"http://localhost:{local_port}"
+        yield url
+    finally:
+        task.cancel()
+        
+        # Cancel outstanding tasks
+        tasks = [t for t in asyncio.all_tasks() if t not in [asyncio.current_task()]]
+        [task.cancel() for task in tasks]
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+@pytest.fixture()
+async def kube_port_forward(
+    kube,
+    unused_tcp_port: int,
+    kubeconfig,
+    pod_loader,
+) -> Callable[[str, int], AsyncIterator[str]]:
+    """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes pod."""
+    def _port_forwarder(pod: str, remote_port: int):
+        pod = pod_loader(pod) if isinstance(pod, str) else pod
+        return kubectl_port_forwarded(
+            pod, 
+            unused_tcp_port, 
+            remote_port, 
+            namespace=kube.namespace, 
+            kubeconfig=kubeconfig
+        )
+    
+    return _port_forwarder
+
+@pytest.fixture
+def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.objects.Pod]:
+    """A pytest fixture that returns a callable for loading a kubernetes pod reference."""
+    def _pod_loader(deployment: str) -> kubetest.objects.Pod:
+        kube.wait_for_registered(timeout=10)
+            
+        deployments = kube.get_deployments()
+        prometheus = deployments.get(deployment)
+        assert prometheus is not None
+
+        pods = prometheus.get_pods()
+        assert len(pods) == 1, "prometheus should deploy with one replica"
+
+        pod = pods[0]
+        pod.wait_until_ready(timeout=30)
+        
+        return pod
+
+    return _pod_loader
