@@ -2,10 +2,8 @@ import json
 import os
 import re
 from pathlib import Path
-from tests.conftest import stub_servo_yaml
 
 import pytest
-import httpx
 import respx
 import yaml
 from freezegun import freeze_time
@@ -13,11 +11,12 @@ from typer import Typer
 from typer.testing import CliRunner
 
 import servo
-from servo import BaseConfiguration, Optimizer
+from servo import Optimizer
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 from tests.helpers import MeasureConnector
+
 
 @pytest.fixture()
 def cli_runner() -> CliRunner:

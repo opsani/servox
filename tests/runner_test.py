@@ -6,8 +6,8 @@ import pytest
 
 import servo
 import servo.connectors.prometheus
-import tests.helpers
 import tests.fake
+import tests.helpers
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 

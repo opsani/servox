@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import functools
-import json
 import os
 import pathlib
 import re
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
 import pydantic
 import pydantic.json

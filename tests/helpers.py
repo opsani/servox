@@ -1,18 +1,18 @@
 from __future__ import annotations
+
 import asyncio
-import fastapi
+import contextlib
 import json
 import os
-import contextlib
 import pathlib
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Type, Union
 
+import fastapi
+import kubernetes_asyncio.client
+import uvicorn
 import yaml
 from pydantic.json import pydantic_encoder
-import uvicorn
-
-import kubernetes_asyncio.client
 
 import servo.events
 import servo.types
@@ -23,6 +23,7 @@ from servo.logging import logger
 from servo.servo import Events
 from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
+
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]

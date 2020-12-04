@@ -4,8 +4,8 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
 import httpx
+import pytest
 import respx
 import yaml
 from pydantic import Extra, ValidationError

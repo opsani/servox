@@ -7,7 +7,6 @@ import asyncio
 import contextlib
 import copy
 import enum
-import functools
 import itertools
 import os
 import pathlib

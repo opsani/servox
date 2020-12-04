@@ -11,8 +11,8 @@ import pydantic
 import typer
 
 import servo as servox
-import servo.configuration
 import servo.api
+import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
@@ -210,7 +210,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             await connect()
         except:
             servo.logger.exception("exception encountered during connect")
-            pass
 
         await asyncio.create_task(self.main_loop(), name="main loop")
 

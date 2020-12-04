@@ -1,14 +1,15 @@
-import asyncio
-import pytest
-import tests.fake
-import servo
-import random
 import pathlib
-import fastapi
+import random
 from typing import Optional, Union
 
+import fastapi
+import pytest
+
+import servo
 import servo.runner
+import tests.fake
 from tests.fake import AbstractOptimizer
+
 
 @pytest.mark.parametrize(
     ("state", "expected_command"),

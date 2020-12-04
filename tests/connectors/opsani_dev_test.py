@@ -7,9 +7,8 @@ import respx
 
 import servo
 import servo.connectors.kubernetes
-import servo.connectors.prometheus
 import servo.connectors.opsani_dev
-
+import servo.connectors.prometheus
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 

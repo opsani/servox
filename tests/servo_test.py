@@ -13,22 +13,13 @@ import yaml
 from pydantic import Extra, ValidationError
 
 import servo as servox
-from servo.errors import *
 from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
 from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
-from servo.events import (
-    EventResult,
-    Preposition,
-    _events,
-    after_event,
-    before_event,
-    create_event,
-    event,
-    on_event,
-)
+from servo.errors import *
+from servo.events import EventResult, Preposition, _events, after_event, before_event, create_event, event, on_event
 from servo.servo import Events, Servo
 from servo.types import Control, Description, Measurement
 from tests.helpers import MeasureConnector, environment_overrides
@@ -263,6 +254,8 @@ async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: servo):
     assert messages[0].record["message"] == "Cannot cancel an event from an on handler: event dispatched"
 
 from servo.errors import EventCancelledError
+
+
 async def test_cannot_cancel_from_on_handlers(mocker, servo: servo):
     connector = servo.get_connector("first_test_servo")
     event_handler = connector.get_event_handlers("promote", Preposition.ON)[0]
