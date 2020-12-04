@@ -50,7 +50,7 @@ spec:
       containers:
       # Primary container providing the fiber-http web service
       - name: fiber-http
-        image: opsani/fiber-http:edge
+        image: opsani/fiber-http:latest
         resources:
           requests:
             cpu: 500m
@@ -69,6 +69,8 @@ spec:
       # Provides metrics for consumption by the Opsani Servo
       - name: envoy
         image: opsani/envoy-proxy:latest
+        # imagePullSecrets:
+        #   - name: regcred
         resources:
             requests:
                 cpu: 125m
