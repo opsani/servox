@@ -388,15 +388,12 @@ import kubetest, kubernetes, kubernetes_asyncio
         "prometheus.yaml",
     ]
 )
-class TestPrometheusIntegration:       
-    # TODO: Test deployment, pod with init container, test nginx not match, 
-    # TODO: check namespace affinity only scrapes in current namespace
-
+class TestPrometheusIntegration:
     async def test_check_targets(
         self,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        async with kube_port_forward("prometheus", 9090) as url:
+        async with kube_port_forward("deploy/prometheus", 9090) as url:
             config = PrometheusConfiguration.generate(base_url=url)
             optimizer = servo.Optimizer(
                 id="dev.opsani.com/blake-ignite",
