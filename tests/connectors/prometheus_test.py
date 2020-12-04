@@ -8,7 +8,7 @@ import pydantic
 import freezegun
 from typing import AsyncIterator
 
-from servo.connectors.prometheus import PrometheusConnector, PrometheusChecks, PrometheusConfiguration, PrometheusMetric, PrometheusRequest
+from servo.connectors.prometheus import PrometheusConnector, PrometheusChecks, PrometheusConfiguration, PrometheusMetric, RangeQuery
 from servo.types import *
 
 import servo.utilities
@@ -139,7 +139,7 @@ class TestPrometheusConfiguration:
 class TestPrometheusRequest:
     @freezegun.freeze_time("2020-01-01")
     def test_url(self):
-        request = PrometheusRequest(
+        request = RangeQuery(
             base_url="http://prometheus.default.svc.cluster.local:9090/api/v1/",
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
@@ -156,7 +156,7 @@ class TestPrometheusRequest:
 
     @freezegun.freeze_time("2020-01-01")
     def test_other_url(self):
-        request = PrometheusRequest(
+        request = RangeQuery(
             base_url="http://localhost:9090/api/v1/",
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
@@ -368,7 +368,6 @@ class TestPrometheusChecks:
 
 ###
 # Integration tests...
-# TODO: Bring up on minikube, with init container
 # Look at targets
 # CLI on targets
 # Targets with init container
@@ -403,6 +402,29 @@ class TestPrometheusIntegration:
             metrics = await asyncio.wait_for(
                 asyncio.gather(connector.measure()),
                 timeout=10
+            )
+            debug(metrics)
+    
+    @pytest.mark.applymanifests(
+        "../manifests",
+        files=[
+            "fiber-http-opsani-dev.yaml",
+        ],
+    )
+    async def test_target_discovery(
+        self,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        async with kube_port_forward("deploy/prometheus", 9090) as url:
+            config = PrometheusConfiguration.generate(base_url=url)
+            optimizer = servo.Optimizer(
+                id="dev.opsani.com/blake-ignite",
+                token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+            )
+            connector = PrometheusConnector(config=config, optimizer=optimizer)
+            metrics = await asyncio.wait_for(
+                asyncio.gather(connector.measure(control=servo.Control(duration="5s"))),
+                timeout=30
             )
             debug(metrics)
 

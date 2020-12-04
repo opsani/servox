@@ -542,7 +542,6 @@ async def kubectl_port_forwarded(
         task = asyncio.create_task(
             tests.helpers.Subprocess.shell(
                 f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} {identifier} {local_port}:{remote_port}", 
-                timeout=10,
                 event=event,
                 print_output=True
         ))
