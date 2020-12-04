@@ -10,8 +10,8 @@ import devtools
 import httpx
 import pydantic
 
-import servo.utilities
 import servo.types
+import servo.utilities
 
 USER_AGENT = "github.com/opsani/servox"
 

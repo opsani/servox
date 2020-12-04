@@ -17,6 +17,7 @@ from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 from tests.helpers import MeasureConnector
 
+
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)

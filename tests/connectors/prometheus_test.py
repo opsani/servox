@@ -1,17 +1,23 @@
 import datetime
 import re
-
-import httpx
-import pytest
-import respx
-import pydantic
-import freezegun
 from typing import AsyncIterator
 
-from servo.connectors.prometheus import PrometheusConnector, PrometheusChecks, PrometheusConfiguration, PrometheusMetric, RangeQuery
-from servo.types import *
+import freezegun
+import httpx
+import pydantic
+import pytest
+import respx
 
 import servo.utilities
+from servo.connectors.prometheus import (
+    PrometheusChecks,
+    PrometheusConfiguration,
+    PrometheusConnector,
+    PrometheusMetric,
+    RangeQuery,
+)
+from servo.types import *
+
 
 class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):
@@ -374,7 +380,8 @@ class TestPrometheusChecks:
 # Querying for data that is null
 # Querying for data that is partially null
 
-import kubetest, kubernetes, kubernetes_asyncio
+
+
 # @pytest.mark.integration
 # class TestPrometheusIntegration:
 #     async def test_check_targets(self) -> None:
@@ -404,7 +411,7 @@ class TestPrometheusIntegration:
                 timeout=10
             )
             debug(metrics)
-    
+
     @pytest.mark.applymanifests(
         "../manifests",
         files=[
@@ -430,6 +437,8 @@ class TestPrometheusIntegration:
 
 # TODO: Need a better home...
 import json
+
+
 def empty_targets_response() -> Dict[str, Any]:
     return json.load("{'status': 'success', 'data': {'activeTargets': [], 'droppedTargets': []}}")
 
@@ -438,7 +447,7 @@ class TestCLI:
         async def test_no_active_connectors(self) -> None:
             # TODO: Put config into tmpdir without connector
             ...
-        
+
         @pytest.fixture
         def metric(self) -> PrometheusMetric:
             return PrometheusMetric(
@@ -447,31 +456,31 @@ class TestCLI:
                 query="throughput",
                 step="45m",
             )
-        
+
         @pytest.fixture
         def config(self, metric: PrometheusMetric) -> PrometheusConfiguration:
             return PrometheusConfiguration(
                 base_url="http://localhost:9090", metrics=[metric]
             )
-            
+
         @pytest.fixture
         def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
             return PrometheusConnector(config=config)
-        
+
         async def test_one_active_connector(self, connector: PrometheusConnector) -> None:
             with respx.mock(base_url="http://localhost:9090") as respx_mock:
                 targets = envoy_sidecars()
                 request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
                 output = await connector.targets()
                 debug(output)
-            
+
             # TODO: This needs to output a target
             ...
-        
+
         async def test_multiple_active_connector(self) -> None:
             # TODO: Put config into tmpdir with two connectors, invoke both, invoke each one
             ...
-    
+
     class TestQuery:
         ...
 # CLI TESTS:
@@ -480,4 +489,3 @@ class TestCLI:
 # Tests with specific target
 # TODO: Add targets CLI
 # TODO: Add query CLI
-

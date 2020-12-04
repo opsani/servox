@@ -1,12 +1,13 @@
 import abc
 import collections
 import random
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import fastapi
 import statesman
 
 import servo
+
 
 class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     class States(statesman.StateEnum):

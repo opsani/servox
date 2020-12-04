@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Type
 
+import kubetest.client
 import pydantic
 import pytest
-import kubetest.client
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -841,7 +841,7 @@ class TestKubernetesConnectorIntegration:
 
     async def test_adjust(self, config, adjustment, kube):
         connector = KubernetesConnector(config=config)
-        description = await connector.adjust(descriptor_to_adjustments(adjustment))
+        await connector.adjust(descriptor_to_adjustments(adjustment))
         # TODO: I need a quick helper for testing adjustments
 
     async def test_adjust_memory_on_deployment(self, config, adjustment):

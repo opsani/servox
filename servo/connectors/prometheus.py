@@ -15,13 +15,14 @@ API_PATH = "/api/v1"
 
 import enum
 
+
 class Absent(str, enum.Enum):
     """An enumeration of behaviors for handling absent metrics.
-    
+
     Absent metrics are metrics that do not exist in Prometheus at query time.
     This may indicate that the metric has never been reported or that the Prometheus
     instance has limited state (e.g., Opsani Dev utilizes a transient Prometheus sidecar).
-    
+
     The behaviors are:
         * ignore: Silently ignore the absent metric and continue processing.
         * zero: Return a vector of zero for the absent metric.
@@ -52,7 +53,7 @@ class PrometheusMetric(servo.Metric):
     The step resolution determines the number of data points captured across a
     query range.
     """
-    
+
     absent: Absent = Absent.ignore
     """How to behave when the metric is absent from Prometheus."""
 
@@ -75,7 +76,7 @@ class PrometheusTarget(pydantic.BaseModel):
     last_scraped_at: Optional[datetime.datetime]
     scrape_duration: Optional[servo.Duration]
     error: Optional[str]
-    
+
     @classmethod
     def from_json(cls, data: Dict[str, Any]) -> List['PrometheusTarget']:
         """Return a list of target objects from a Prometheus targets JSON representation."""
@@ -155,7 +156,7 @@ class InstantQuery(BaseQuery):
     @property
     def query(self) -> str:
         return self.metric.query
-    
+
     @property
     def url(self) -> str:
         return "".join(
@@ -193,19 +194,19 @@ class RangeQuery(BaseQuery):
 
 class ResultType(str, enum.Enum):
     """Types of results that can be returned for Prometheus Queries.
-    
+
     See https://prometheus.io/docs/prometheus/latest/querying/api/#expression-query-result-formats
     """
     matrix = "matrix"
     vector = "vector"
     scalar = "scalar"
     string = "string"
-    
+
 class QueryResult(pydantic.BaseModel):
     status: str
     type: ResultType
     result: Any # TODO: model this
-    
+
     @pydantic.root_validator(pre=True)
     def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -213,8 +214,8 @@ class QueryResult(pydantic.BaseModel):
             "type": values["data"]["resultType"],
             "result": values["data"]["result"],
         }
-        
-    
+
+
 class PrometheusChecks(servo.BaseChecks):
     """PrometheusChecks objects check the state of a PrometheusConfiguration to
     determine if it is ready for use in an optimization run.
@@ -414,7 +415,7 @@ class PrometheusConnector(servo.BaseConnector):
                         f"HTTP error encountered during GET {request.url}: {error}"
                     )
                     raise
-        
+
         request = RangeQuery(
             base_url=self.config.api_url, metric=metric, start=start, end=end
         )
@@ -439,10 +440,10 @@ class PrometheusConnector(servo.BaseConnector):
                 absent_metric.query = f"absent({metric.query})"
                 absent_query = InstantQuery(
                     base_url=self.config.api_url, metric=absent_metric
-                )                
+                )
                 absent_result = await _query(absent_query)
                 self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
-                
+
                 # TODO: this is brittle...
                 # [{'metric': {}, 'value': [1607078958.682, '1']}]
                 absent = int(absent_result.result[0]['value'][1]) == 1
@@ -455,7 +456,7 @@ class PrometheusConnector(servo.BaseConnector):
                         raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
                     else:
                         raise ValueError(f"unknown metric absent value: {metric.absent}")
-            
+
         else:
             for result_dict in result.result:
                 m_ = result_dict["metric"].copy()
@@ -476,7 +477,7 @@ class PrometheusConnector(servo.BaseConnector):
                         metadata=dict(instance=instance, job=job),
                     )
                 )
-        
+
         return readings
 
 
