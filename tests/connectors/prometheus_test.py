@@ -1,4 +1,3 @@
-import contextlib
 import datetime
 import re
 
@@ -7,14 +6,12 @@ import pytest
 import respx
 import pydantic
 import freezegun
-
-from typing import AsyncIterator, Literal
+from typing import AsyncIterator
 
 from servo.connectors.prometheus import PrometheusConnector, PrometheusChecks, PrometheusConfiguration, PrometheusMetric, PrometheusRequest
 from servo.types import *
 
 import servo.utilities
-import tests.helpers
 
 class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):
@@ -391,115 +388,15 @@ import kubetest, kubernetes, kubernetes_asyncio
         "prometheus.yaml",
     ]
 )
-class TestPrometheusIntegration:
-    @pytest.fixture
-    # TODO: TUrn this into a pod loader...
-    async def prometheus_pod(self, kube: kubetest.client.TestClient) -> kubetest.objects.Pod:
-        kube.wait_for_registered(timeout=10)
-        
-        deployments = kube.get_deployments()
-        prometheus = deployments.get("prometheus")
-        assert prometheus is not None
-
-        pods = prometheus.get_pods()
-        assert len(pods) == 1, "prometheus should deploy with one replica"
-
-        pod = pods[0]
-        pod.wait_until_ready(timeout=30)
-
-        # Check containers
-        # containers = pod.get_containers()
-        # assert len(containers) == 1, "should have prometheus container"
-        # assert containers[0].obj.name == "prometheus"
-
-        # # Check that Prometheus is alive
-        # response = pod.http_proxy_get("/")        
-        # assert response.status == 200
-        # assert "Prometheus Time Series Collection and Processing Server" in response.data
-
-        # # Grab the targets        
-        # response = pod.http_proxy_get("/api/v1/targets")
-        # debug(response, response.__dict__, response.data)
-        # debug(response.data)
-        
-        return pod
-    
-    # TODO: check namespace affinity only scrapes in current namespace
-    @contextlib.asynccontextmanager
-    async def proxy_to_pod(
-        self,
-        pod: Union[str, kubetest.objects.Pod, servo.connectors.kubernetes.Pod], # TODO: Allow passing a Pod object...
-        local_port: int,
-        remote_port: int,
-        *, 
-        kubeconfig: str,
-        namespace: str,         
-    ) -> AsyncIterator[str]:
-        task = None
-        try:
-            event = asyncio.Event()
-            name = pod if isinstance(pod, str) else pod.name
-            task = asyncio.create_task(
-                tests.helpers.Subprocess.shell(
-                    f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} pod/{name} {local_port}:{remote_port}", 
-                    timeout=10,
-                    event=event,
-                    print_output=True
-            ))
-            
-            await event.wait()
-            url = f"http://localhost:{local_port}"
-            yield url
-        finally:
-            task.cancel()
-            
-            # Cancel outstanding tasks
-            tasks = [t for t in asyncio.all_tasks() if t not in [asyncio.current_task()]]
-            [task.cancel() for task in tasks]
-
-            await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # @pytest.fixture()
-    # def pod_name()
-    # TODO: Add a pytest.fixture that is parametrized
-    @pytest.fixture()
-    async def pod_proxy(
-        self,
-        kube,
-        unused_tcp_port: int,
-        kubeconfig,
-    ) -> str:
-        def proxy_loader(pod: str, remote_port: int):
-            # async with self.proxy_to_pod(
-            #     pod, 
-            #     unused_tcp_port, 
-            #     remote_port, 
-            #     namespace=kube.namespace, 
-            #     kubeconfig=kubeconfig
-            # ) as url:
-            #     yield url
-            return self.proxy_to_pod(
-                pod, 
-                unused_tcp_port, 
-                remote_port, 
-                namespace=kube.namespace, 
-                kubeconfig=kubeconfig
-            )
-        
-        return proxy_loader
-        
+class TestPrometheusIntegration:       
     # TODO: Test deployment, pod with init container, test nginx not match, 
+    # TODO: check namespace affinity only scrapes in current namespace
 
     async def test_check_targets(
-        self, 
-        prometheus_pod: kubetest.objects.Pod, 
-        pod_proxy,
+        self,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        debug(pod_proxy)
-        debug(pod_proxy(prometheus_pod, 9090))
-        # debug(await pod_proxy(prometheus_pod, 9090))
-        # return
-        async with pod_proxy(prometheus_pod, 9090) as url:
+        async with kube_port_forward("prometheus", 9090) as url:
             config = PrometheusConfiguration.generate(base_url=url)
             optimizer = servo.Optimizer(
                 id="dev.opsani.com/blake-ignite",
@@ -511,46 +408,8 @@ class TestPrometheusIntegration:
                 timeout=10
             )
             debug(metrics)
-            
-        # async with self.proxy_to_pod(prometheus_pod, unused_tcp_port, 9090, namespace=kube.namespace, kubeconfig=kubeconfig) as url:
-        #     config = PrometheusConfiguration.generate(base_url=url)
-        #     optimizer = servo.Optimizer(
-        #         id="dev.opsani.com/blake-ignite",
-        #         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
-        #     )
-        #     connector = PrometheusConnector(config=config, optimizer=optimizer)
-        #     metrics = await asyncio.wait_for(
-        #         asyncio.gather(connector.measure()),
-        #         timeout=10
-        #     )
-        #     debug(metrics)
-        #     return
-            
-        # async with proxy_to_pod(pod) as base_url:
-        #     config = PrometheusConfiguration.generate(base_url=base_url)
-        #     connector = PrometheusConnector(config=config)
-        #     metrics = await connector.measure()
-        #     debug(metrics)
-# def test_nginx(kube: kubetest.client.TestClient) -> None:
-#     # wait for the manifests loaded by the 'applymanifests' marker
-#     # to be ready on the cluster
-#     kube.wait_for_registered(timeout=30)
 
-#     deployments = kube.get_deployments()
-#     nginx_deploy = deployments.get("nginx-deployment")
-#     assert nginx_deploy is not None
-
-#     pods = nginx_deploy.get_pods()
-#     assert len(pods) == 1, "nginx should deploy with one replica"
-
-#     for pod in pods:
-#         containers = pod.get_containers()
-#         assert len(containers) == 1, "nginx pod should have one container"
-
-#         resp = pod.http_proxy_get("/")
-#         assert "<h1>Welcome to nginx!</h1>" in resp.data
-
-# TODO: Better home...
+# TODO: Need a better home...
 import json
 def empty_targets_response() -> Dict[str, Any]:
     return json.load("{'status': 'success', 'data': {'activeTargets': [], 'droppedTargets': []}}")
