@@ -14,6 +14,7 @@ import pytest
 import yaml
 import uvloop
 import typer.testing
+import socket
 
 import servo
 import servo.cli
@@ -494,29 +495,65 @@ def fastapi_app() -> fastapi.FastAPI:
 
 ## Kubernetes Port Forwarding
 
+ForwardingTarget = Union[
+    str, 
+    kubetest.objects.Pod, 
+    servo.connectors.kubernetes.Pod,
+    kubetest.objects.Deployment, 
+    servo.connectors.kubernetes.Deployment,
+    kubetest.objects.Service, 
+    servo.connectors.kubernetes.Service,
+]
+
 @contextlib.asynccontextmanager
 async def kubectl_port_forwarded(
-    pod: Union[str, kubetest.objects.Pod, servo.connectors.kubernetes.Pod],
+    target: ForwardingTarget,
     local_port: int,
     remote_port: int,
     *, 
     kubeconfig: str,
     namespace: str,         
 ) -> AsyncIterator[str]:
-    """An async context manager that establishes a port-forward to a remote pod in a Kubernetes cluster and yields a URL for reaching it."""
-    task = None
-    try:
+    """An async context manager that establishes a port-forward to a remote pod in a Kubernetes cluster and yields a URL for reaching it.
+    
+    Valid syntaxes are:
+        - [POD NAME]
+        - pod/[NAME]
+        - deployment/[NAME]
+        - deploy/[NAME]
+        - service/[NAME]
+        - svc/[NAME]
+    """
+    try:        
+        def _identifier_for_target(target: ForwardingTarget) -> str:
+            if isinstance(target, str):
+                return target
+            elif isinstance(target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)):
+                return f"pod/{target.name}"
+            elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
+                return f"deployment/{target.name}"
+            elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
+                return f"service/{target.name}"
+            else:
+                raise TypeError(f"unknown target: {repr(target)}")
+        
+        identifier = _identifier_for_target(target)
         event = asyncio.Event()
-        name = pod if isinstance(pod, str) else pod.name
         task = asyncio.create_task(
             tests.helpers.Subprocess.shell(
-                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} pod/{name} {local_port}:{remote_port}", 
+                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} {identifier} {local_port}:{remote_port}", 
                 timeout=10,
                 event=event,
                 print_output=True
         ))
         
         await event.wait()
+        
+        # Check if the socket is open
+        a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if a_socket.connect_ex(("localhost", local_port)) != 0:
+            raise RuntimeError(f"port forwarding failed")
+
         url = f"http://localhost:{local_port}"
         yield url
     finally:
@@ -533,13 +570,12 @@ async def kube_port_forward(
     kube,
     unused_tcp_port: int,
     kubeconfig,
-    pod_loader,
-) -> Callable[[str, int], AsyncIterator[str]]:
-    """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes pod."""
-    def _port_forwarder(pod: str, remote_port: int):
-        pod = pod_loader(pod) if isinstance(pod, str) else pod
+) -> Callable[[ForwardingTarget, int], AsyncIterator[str]]:
+    """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
+    def _port_forwarder(target: ForwardingTarget, remote_port: int):
+        kube.wait_for_registered(timeout=10)
         return kubectl_port_forwarded(
-            pod, 
+            target, 
             unused_tcp_port, 
             remote_port, 
             namespace=kube.namespace, 
