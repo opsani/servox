@@ -35,4 +35,4 @@ jobs:
     - name: Test CLI entrypoints
       run: poetry run servo version
     - name: Run integration tests
-      run: poetry run pytest -m integration --integration
+      run: poetry run pytest -s -vv -m integration --integration
