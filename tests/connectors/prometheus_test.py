@@ -134,10 +134,12 @@ class TestPrometheusConfiguration:
             "  unit: rps\n"
             "  query: rate(http_requests_total[5m])\n"
             "  step: 1m\n"
+            "  absent: zero\n"
             "- name: error_rate\n"
             "  unit: '%'\n"
             "  query: rate(errors[5m])\n"
             "  step: 1m\n"
+            "  absent: zero\n"
             "targets: null\n"
         )
 
