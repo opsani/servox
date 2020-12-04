@@ -30,7 +30,9 @@ jobs:
         github token: ${{ secrets.GITHUB_TOKEN }}
     - name: Drop a Kubeconfig
       run: kubectl config view --minify --flatten > tests/kubeconfig
-    - name: Run pytest
-      run: poetry run pytest tests --integration
+    - name: Run unit tests
+      run: poetry run pytest tests
     - name: Test CLI entrypoints
       run: poetry run servo version
+    - name: Run integration tests
+      run: poetry run pytest -m integration --integration
