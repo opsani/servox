@@ -69,6 +69,8 @@ spec:
       # Provides metrics for consumption by the Opsani Servo
       - name: envoy
         image: opsani/envoy-proxy:latest
+        # imagePullSecrets:
+        #   - name: regcred
         resources:
             requests:
                 cpu: 125m

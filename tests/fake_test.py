@@ -181,7 +181,6 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     optimizer = servo.Optimizer(
         id="dev.opsani.com/blake-ignite",
         token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
-
     )
     assembly_ = servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer

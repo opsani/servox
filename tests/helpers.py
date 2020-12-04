@@ -169,11 +169,12 @@ def json_key_path(json_str: str, key_path: str) -> Any:
 
 
 class Subprocess:
+    @staticmethod
     async def shell(
-        self,
         cmd: str,
         *,
         timeout: Timeout = None,
+        event: Optional[asyncio.Event] = None,
         print_output: bool = False,
         log_output: bool = True,
         **kwargs,
@@ -191,6 +192,8 @@ class Subprocess:
                     print(m)
                 if log_output:
                     logger.debug(m)
+                if event:
+                    event.set()
 
             return output_callback
 
@@ -208,6 +211,7 @@ class Subprocess:
         cmd: str,
         *,
         timeout: Timeout = None,
+        event: Optional[asyncio.Event] = None,
         print_output: bool = False,
         log_output: bool = True,
         **kwargs,
@@ -215,6 +219,7 @@ class Subprocess:
         return await self.shell(
             cmd,
             timeout=timeout,
+            event=event,
             print_output=print_output,
             log_output=log_output,
             **kwargs,
