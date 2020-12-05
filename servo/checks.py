@@ -621,7 +621,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 if value is not None:
                     raise RuntimeError(
                         f"failed running check: check {attr} {repr(value)} was not run due to a prerequisite failure: check id '{result.id}' failed: \"{result.message}\""
-                    )
+                    ) from result.exception
 
         return result
 
@@ -827,7 +827,7 @@ def _set_check_result(
     elif isinstance(result, Exception):
         check.success = False
         check.exception = result
-        check.message = f"caught exception: {str(result) or repr(result)}"
+        check.message = f"caught exception ({result.__class__.__name__}): {str(result) or repr(result)}"
     else:
         raise ValueError(
             f'check method returned unexpected value of type "{result.__class__.__name__}"'
