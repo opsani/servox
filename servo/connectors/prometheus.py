@@ -203,16 +203,22 @@ class ResultType(str, enum.Enum):
     string = "string"
 
 class QueryResult(pydantic.BaseModel):
+    query: BaseQuery
     status: str
     type: ResultType
-    result: Any # TODO: model this
+    value: Any # TODO: model this
+    
+    @property
+    def metric(self) -> None:
+        return self.query.metric
 
     @pydantic.root_validator(pre=True)
     def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         return {
+            "query": values["query"],
             "status": values["status"],
             "type": values["data"]["resultType"],
-            "result": values["data"]["result"],
+            "value": values["data"]["result"],
         }
 
 
@@ -389,7 +395,6 @@ class PrometheusConnector(servo.BaseConnector):
             response = await client.get("/api/v1/targets")
             response.raise_for_status()
             result = response.json()
-            debug("LOADED JSON ", result)
             return result
             # TODO: Serialize into objects...
         ...
@@ -405,7 +410,7 @@ class PrometheusConnector(servo.BaseConnector):
                 try:
                     response = await client.get(request.url)
                     response.raise_for_status()
-                    return QueryResult(**response.json())
+                    return QueryResult(query=request, **response.json())
                 except (
                     httpx.HTTPError,
                     httpcore._exceptions.ReadTimeout,
@@ -428,7 +433,7 @@ class PrometheusConnector(servo.BaseConnector):
 
         readings = []
         # TODO: check and handle the resultType
-        if result.result == []:
+        if result.value == []:
             if metric.absent == Absent.ignore:
                 pass
             elif metric.absent == Absent.zero:
@@ -446,7 +451,7 @@ class PrometheusConnector(servo.BaseConnector):
 
                 # TODO: this is brittle...
                 # [{'metric': {}, 'value': [1607078958.682, '1']}]
-                absent = int(absent_result.result[0]['value'][1]) == 1
+                absent = int(absent_result.value[0]['value'][1]) == 1
                 if absent:
                     if metric.absent == Absent.warn:
                         self.logger.warning(
@@ -458,7 +463,7 @@ class PrometheusConnector(servo.BaseConnector):
                         raise ValueError(f"unknown metric absent value: {metric.absent}")
 
         else:
-            for result_dict in result.result:
+            for result_dict in result.value:
                 m_ = result_dict["metric"].copy()
                 # NOTE: Unpack "metrics" subdict and pack into a string
                 if "__name__" in m_:
