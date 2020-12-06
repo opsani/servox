@@ -8,6 +8,15 @@ import servo.connectors.kubernetes
 import servo.connectors.prometheus
 
 PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090"
+PROMETHEUS_ANNOTATION_NAMES = {
+    "prometheus.opsani.com/scrape",
+    "prometheus.opsani.com/scheme",
+    "prometheus.opsani.com/path",
+    "prometheus.opsani.com/port",
+}
+ENVOY_SIDECAR_LABELS = {
+    "sidecar.opsani.com/type": "envoy"
+}
 
 
 class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
@@ -317,22 +326,26 @@ class OpsaniDevChecks(servo.BaseChecks):
         
         annotations = deployment.pod_template_spec.metadata.annotations
         assert annotations, f"deployment '{deployment.name}' does not have any annotations"
-        
-        # TODO: Move to a constant...
-        required_annotations = {
-            "prometheus.opsani.com/scrape",
-            "prometheus.opsani.com/scheme",
-            "prometheus.opsani.com/path",
-            "prometheus.opsani.com/port",
-        }
+
+        # NOTE: Only check for annotation keys
         actual_annotations = set(annotations.keys())
-        delta = required_annotations.difference(actual_annotations)
+        delta = PROMETHEUS_ANNOTATION_NAMES.difference(actual_annotations)
         assert not delta, f"missing annotations: {sorted(delta)}"
-        
 
     @servo.checks.require("labels")
     async def check_deployment_labels(self) -> None:
-        ...
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment, 
+            self.config.namespace
+        )
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        
+        labels = deployment.pod_template_spec.metadata.labels
+        assert labels, f"deployment '{deployment.name}' does not have any labels"
+                
+        # NOTE: Check for exact labels as this isn't configurable
+        delta = dict(set(ENVOY_SIDECAR_LABELS.items()) - set(labels.items()))
+        assert not delta, f"missing labels: {delta}"
 
     # TODO: Maybe use the docstring??
     @servo.checks.require("envoy sidecars")

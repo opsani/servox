@@ -289,7 +289,6 @@ class TestEverything:
             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
             
             # TODO: Move these into library functions. Do we want replace/merge versions?
-            # TODO: This is really annotate_pod_spec_template?
             async def add_annotations_to_podspec_of_deployment(deployment, annotations: Dict[str, str]) -> None:
                 existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
                 existing_annotations.update(annotations)
@@ -299,23 +298,21 @@ class TestEverything:
                 
             
             async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
-                ...
+                await deployment.refresh()
+                existing_labels = deployment.pod_template_spec.metadata.labels or {}
+                existing_labels.update(labels)
+                deployment.pod_template_spec.metadata.labels = existing_labels
+                await deployment.patch()
+                await deployment.refresh()  # TODO: Figure out a better logic for this...
             
             # NOTE: Step 1 - No annotations and fail
-            # TODO: We are running these variations to test, reduce once we stabilize
-            # await assert_check_fails(checks.run_one(id=f"check_deployment_annotations"))            
-            # await assert_check_raised(
-            #     checks.run_one(id=f"check_deployment_annotations"),
-            #     AssertionError,
-            #     "deployment 'fiber-http' does not have any annotations"
-            # )
             async with assert_check_raises_in_context(
                 AssertionError,
                 match="deployment 'fiber-http' does not have any annotations"
             ) as assertion:
                 assertion.set(checks.run_one(id=f"check_deployment_annotations"))
             
-            # NOTE: Step 2 - Add annotation and pass
+            # NOTE: Step 2 - Add annotations and pass
             # Add a subset of the required annotations to catch partial setup cases
             await add_annotations_to_podspec_of_deployment(deployment,
                 {
@@ -339,9 +336,36 @@ class TestEverything:
             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
             
             # Step 3: Check the labels and pass
-        
-        # TODO: check annotations, labels, sidecars
-        # TODO: Check annotation isn't there, then check it is
+            await assert_check_raises(
+                checks.run_one(id=f"check_deployment_labels"),
+                AssertionError,
+                re.escape("missing labels: {'sidecar.opsani.com/type': 'envoy'}")
+            )
+            
+            await add_labels_to_podspec_of_deployment(deployment,
+                {
+                    "sidecar.opsani.com/type": "envoy"
+                }
+            )
+            await assert_check(checks.run_one(id=f"check_deployment_labels"))
+            
+            # Step 4: Look for sidecars running on our app and fail
+            await assert_check_raises(
+                checks.run_one(id=f"check_deployment_labels"),
+                AssertionError,
+                re.escape("missing labels: {'sidecar.opsani.com/type': 'envoy'}")
+            )
+            
+            # Add the sidecar and pass
+            
+            # Step 5: Check that Prometheus has a target for the sidecar
+            
+            # Step 6: Check that the traffic metrics are flatlined for Envoy
+            # Send traffic directly through to envoy and make sure it shows up            
+            
+            # Step 7: Check for our service
+            # Update the port to point to the sidecar
+            # Send traffic through the service and verify it shows up in Envoy
 
 async def assert_check_fails(
     check: servo.checks.Check, 
@@ -471,6 +495,9 @@ async def assert_check(
             ) from result.exception
     
     if result.success != _success:
-        raise AssertionError(
-            f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
-        ) from result.exception 
+        if result.success:
+            raise AssertionError(f"Check(id='{result.id}') '{result.name}' succeeded when you were expecting a failure")
+        else:    
+            raise AssertionError(
+                f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
+            ) from result.exception
