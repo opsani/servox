@@ -325,10 +325,9 @@ class OpsaniDevChecks(servo.BaseChecks):
             "prometheus.opsani.com/path",
             "prometheus.opsani.com/port",
         }
-        actual_annotations = set(annotations.key())
+        actual_annotations = set(annotations.keys())
         delta = required_annotations.difference(actual_annotations)
-        debug(delta)
-        assert not delta, f"missing annotations: {delta}"
+        assert not delta, f"missing annotations: {sorted(delta)}"
         
 
     @servo.checks.require("labels")
