@@ -12,7 +12,7 @@ This repository contains the source code of the Opsani Servo agent.
 The servo connects applications to the Opsani cloud optimization engine
 to identify cost savings and performance enhancements by applying machine
 learning technology. Servos are lightweight Python applications and are
-typically deployed as a container under an orchestration layer such as 
+typically deployed as a container under an orchestration layer such as
 Kubernetes, ECS, or Docker Compose.
 
 Servos are composed of connectors, which provide the core functionality for
