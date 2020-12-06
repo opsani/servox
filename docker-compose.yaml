@@ -9,7 +9,7 @@ services:
     environment:
       - SERVO_ENV=${SERVO_ENV:-development}
       - OPSANI_OPTIMIZER=${OPSANI_OPTIMIZER:?Opsani Optimizer must be configured}
-      - OPSANI_TOKEN=${OPSANI_TOKEN}      
+      - OPSANI_TOKEN=${OPSANI_TOKEN}
     volumes:
       - type: bind
         source: ./servo.yaml

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "servox"
-version = "0.6.2"
+version = "0.9.0"
 description = "Opsani Servo: The Next Generation"
 homepage = "https://opsani.com/"
 repository = "https://github.com/opsani/servox"
@@ -14,8 +14,8 @@ packages = [
 python = "^3.8"
 pydantic = "^1.5.1"
 loguru = "^0.5.1"
-httpx = "^0.14.3"
-python-dotenv = "^0.14.0"
+httpx = "^0.16.1"
+python-dotenv = "^0.15.0"
 semver = "^2.10.1"
 pyaml = "^20.4.0"
 tabulate = "^0.8.7"
@@ -26,18 +26,46 @@ typer = "^0.3.0"
 bullet = "^2.1.0"
 jsonschema = "^3.2.0"
 timeago = "^1.0.14"
-kubernetes_asyncio = "^11.3.0"
+kubernetes_asyncio = ">=11.3,<13.0"
+orjson = "^3.3.1"
+uvloop = "^0.14.0"
+statesman = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.0.1"
+pytest = "^6.1.1"
 pytest-asyncio = "^0.14.0"
 pytest-cov = "^2.10.0"
 pytest-mock = "^3.3.1"
-freezegun = "^0.3.15"
+freezegun = "^1.0.0"
 asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
-respx = "^0.12.1"
+respx = "^0.16.1"
 kubetest = "^0.8.1"
 pytest-freezegun = "^0.4.2"
+yamlpath = "^3.2.0"
+isort = "^5.6.4"
+autoflake = "^1.4"
+flake8-fixme = "^1.1.1"
+flake8-isort = "^4.0.0"
+pre-commit = "^2.9.2"
+pytest-randomly = "^3.5.0"
+flake8-pytest-style = "^1.3.0"
+mypy = "^0.790"
+nitpick = "^0.23.1"
+flakehell = "^0.7.0"
+flake8-docstrings = "^1.5.0"
+flake8-quotes = "^3.2.0"
+flake8-bugbear = "^20.1.4"
+flake8-builtins = "^1.5.3"
+flake8-eradicate = "^1.0.0"
+flake8-use-fstring = "^1.1"
+flake8-annotations-coverage = "^0.0.4"
+flake8-annotations-complexity = "^0.0.5"
+flake8-annotations = "^2.4.1"
+flake8-markdown = "^0.2.0"
+flake8-bandit = "^2.1.2"
+fastapi = "^0.61.1"
+uvicorn = "^0.12.2"
+pytest-profiling = "^1.7.0"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
@@ -46,7 +74,40 @@ servo = "servo.entry_points:run_cli"
 "vegeta" = "servo.connectors.vegeta:VegetaConnector"
 "kubernetes" = "servo.connectors.kubernetes:KubernetesConnector"
 "prometheus" = "servo.connectors.prometheus:PrometheusConnector"
+"opsani_dev" = "servo.connectors.opsani_dev:OpsaniDevConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = "tests"
+src_paths = ["servo", "tests"]
+
+[tool.nitpick]
+style = "nitpick-style.toml"
+
+[tool.flakehell]
+base = "https://raw.githubusercontent.com/life4/flakehell/master/pyproject.toml"
+exclude = ["README.md", "docs", "tests"]
+format = "grouped"
+max_line_length = 120
+show_source = true
+
+[tool.flakehell.plugins]
+pycodestyle = ["+*"]
+pyflakes = ["+*"]
+nitpick = ["+*"]
+mccabe = ["+*"]
+
+# enable everything that starts from `flake8-`
+"flake8-*" = ["+*"]
+
+# disable pylint -- raising mysterious errors
+pylint = ["-*"]
+
+[tool.flakehell.exceptions."tests/"]
+pycodestyle = ["-*"]
+pyflakes = ["-*"]

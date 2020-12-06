@@ -1,24 +1,27 @@
 """Associations are virtual attributes maintained outside of an object instance.
 
 Associations provide the ability to manage state for an object without polluting
-its namespace. They are very useful for supporting Pydantic models without 
+its namespace. They are very useful for supporting Pydantic models without
 introducing new attributes that need to be considered in the schema and validation
 logic.
 """
 
+import weakref
 from typing import Any, Dict, Protocol, runtime_checkable
-from weakref import WeakKeyDictionary
 
-_associations = WeakKeyDictionary()
+_associations = weakref.WeakKeyDictionary()
+
 
 class Mixin:
-    def __init__(self, *args, **kwargs) -> None:
+    """Provides support for virtual attributes."""
+
+    def __init__(self, *args, **kwargs) -> None: # noqa: D107
         # NOTE: we are not hashable until after init
         super().__init__(*args, **kwargs)
         _associations[self] = {}
 
     def _set_association(self, name: str, obj: Any) -> None:
-        """Sets an object association by name.
+        """Set an object association by name.
 
         Args:
             name: A name for the association.
@@ -26,9 +29,8 @@ class Mixin:
         """
         _associations[self][name] = obj
 
-
     def _get_association(self, name: str, default: Any = ...) -> Any:
-        """Returns an associated object by name.
+        """Return an associated object by name.
 
         Args:
             name: The name of the association to retrieve.
@@ -45,26 +47,26 @@ class Mixin:
             return _associations[self][name]
         else:
             return _associations[self].get(name, default)
-    
+
     @property
     def _associations(self) -> Dict[str, Any]:
-        """Returns all associated objects as dictionary.
+        """Return all associated objects as a dictionary.
 
         Returns:
             A dictionary mapping of associated object names and values.
         """
-        return _associations[self]#.copy()
-    
+        return _associations[self]
+
 
 @runtime_checkable
-class Associative(Protocol):
-    """
-    Associative is a protocol that describes objects that support associations.
-    """
+class Associative(Protocol): # pragma: no cover
+    """A protocol that describes objects that support associations."""
+
     def _set_association(self, name: str, obj: Any) -> None:
         ...
+
     def _get_association(self, name: str, default: Any = ...) -> Any:
         ...
+
     def _associations(self) -> Dict[str, Any]:
         ...
-    

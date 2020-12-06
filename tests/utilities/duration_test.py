@@ -1,9 +1,6 @@
 import pytest
 
-from servo.utilities import (
-    timedelta_from_duration_str,
-    timedelta_to_duration_str,
-)
+from servo.utilities import timedelta_from_duration_str, timedelta_to_duration_str
 
 millisecond = 1
 second = 1000 * millisecond

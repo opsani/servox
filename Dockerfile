@@ -3,11 +3,11 @@ FROM python:3.8-slim
 
 ARG SERVO_ENV=development
 
-ENV SERVO_ENV=${SERVO_ENV} \    
+ENV SERVO_ENV=${SERVO_ENV} \
     # Python
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONHASHSEED=random \    
+    PYTHONHASHSEED=random \
     # PIP
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
@@ -27,6 +27,8 @@ COPY --from=vegeta /bin/vegeta /bin/vegeta
 # Build Servo
 WORKDIR /servo
 
+RUN pip install --upgrade pip setuptools
+
 # The entry point is copied in ahead of the main sources
 # so that the servo CLI is installed by Poetry. The sequencing
 # here accelerates builds by ensuring that only essential
@@ -34,15 +36,14 @@ WORKDIR /servo
 COPY poetry.lock pyproject.toml ./
 COPY servo/entry_points.py servo/entry_points.py
 
-RUN pip install poetry==1.0.* \
+RUN pip install poetry==1.1.* \
+  # Add common connectors distributed as standalone libraries
+  && poetry add servo-webhooks \
   && poetry install \
     $(if [ "$SERVO_ENV" = 'production' ]; then echo '--no-dev'; fi) \
     --no-interaction \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
-
-# Add common connectors distributed as standalone libraries
-RUN poetry add servo-webhooks
 
 # Copy the servo sources
 COPY . ./

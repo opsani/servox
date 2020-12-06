@@ -1,3 +1,6 @@
+"""Miscellaneous utility functions for working with strings.
+"""
+
 from typing import Sequence
 
 
@@ -24,5 +27,7 @@ def join_to_series(
 
 
 def commandify(module_path: str) -> str:
+    """Transform an input string into a command name usable in a CLI.
+    """
     # foo.bar.this_key => this-key
     return module_path.split(".", 1)[-1].replace("_", "-").lower()

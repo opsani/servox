@@ -2,12 +2,13 @@ name: Update Docker Hub Description
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - docs/README-DOCKER_HUB.md
       - .github/workflows/dockerhub-description.yml
 jobs:
   dockerHubDescription:
+    if: ${{ github.repository == 'opsani/servox' }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -18,4 +19,3 @@ jobs:
         DOCKERHUB_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         DOCKERHUB_REPOSITORY: opsani/servox
         README_FILEPATH: ./docs/README-DOCKER_HUB.md
-        

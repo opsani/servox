@@ -1,44 +1,46 @@
 import importlib.metadata
+import pathlib
+from typing import Optional
 
-for pkg in {"servo", "servox"}:
-    try:
-        __version__ = importlib.metadata.version(pkg)
-        break
-    except importlib.metadata.PackageNotFoundError:
-        pass
+import toml
 
-import servo.assembly
-import servo.connector
-import servo.errors
-import servo.events
-import servo.types
-import servo.cli
-import servo.utilities
-import servo.logging
 
-# Import the core classes
-# These are what most developers will need
-from .events import (
-    Event,
-    EventHandler,
-    EventResult, 
-    Preposition,
-    create_event,
-    event,
-    before_event,
-    on_event,
-    after_event,
-    event_handler,
-)
-from .connector import (    
-    AbstractBaseConfiguration,
-    BaseConfiguration,
-    BaseConnector,
-    Optimizer,
-    metadata,
-)
+def __get_version() -> Optional[str]:
+    path = pathlib.Path(__file__).resolve().parents[1] / 'pyproject.toml'
 
+    if path.exists():
+        pyproject = toml.loads(open(str(path)).read())
+        return pyproject['tool']['poetry']['version']
+    else:
+        try:
+            return importlib.metadata.version("servox")
+        except importlib.metadata.PackageNotFoundError:
+            pass
+
+    return None
+
+__version__ = __get_version() or "0.0.0"
+__cryptonym__ = "serenity now"
+
+# Add the devtools debug() function to builtins if available
+import builtins
+
+import devtools
+
+builtins.debug = devtools.debug
+
+# Promote all symbols from submodules to the top-level package
+from .assembly import *
 from .checks import *
+from .configuration import *
+from .connector import *
 from .errors import *
+from .events import *
+from .logging import *
+from .servo import *
 from .types import *
 from .utilities import *
+
+# Resolve forward references
+servo.events.EventResult.update_forward_refs()
+servo.events.EventHandler.update_forward_refs()

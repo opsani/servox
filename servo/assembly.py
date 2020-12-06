@@ -1,51 +1,40 @@
-import json
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import functools
 import os
+import pathlib
 import re
-from contextvars import ContextVar
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, List, Optional, Set, Tuple, Type, Union
 
+import pydantic
+import pydantic.json
 import yaml
-from pydantic import BaseModel, create_model
-from pydantic.json import pydantic_encoder
-from pydantic.schema import schema as pydantic_schema
 
-from servo.configuration import (
-    BaseAssemblyConfiguration,
-    BaseConfiguration,
-    ServoConfiguration
-)
-from servo.connector import (
-    BaseConnector,
-    ConnectorLoader,
-    Optimizer,
-    _connector_subclasses,
-    _default_routes,
-    _routes_for_connectors_descriptor
-)
-from servo.servo import (
-    Servo,
-    _servo_context_var
-)
-from servo.utilities import join_to_series
+import servo.configuration
+import servo.connector
+import servo.servo
+
+__all__ = ["Assembly"]
 
 
-_assembly_context_var = ContextVar("servo.Assembly.current", default=None)
+_assembly_context_var = contextvars.ContextVar("servo.Assembly.current", default=None)
 
 
-class Assembly(BaseModel):
+class Assembly(pydantic.BaseModel):
     """
-    An Assembly models the environment and runtime configuration of a Servo.
+    An Assembly models the environment and runtime configuration of a collection of Servos.
 
     Connectors are dynamically loaded via setuptools entry points
     (see https://packaging.python.org/specifications/entry-points/)
     and the settings class for a Servo instance must be created at
     runtime because the servo.yaml configuration file includes settings
-    for an arbitrary number of connectors mounted onto arbitrary keys 
+    for an arbitrary number of connectors mounted onto arbitrary keys
     in the config file.
 
     The Assembly class is responsible for handling the connector
-    loading and creating a concrete BaseAssemblyConfiguration model that supports
+    loading and creating a concrete BaseServoConfiguration model that supports
     the connectors available and activated in the assembly. An assembly
     is the combination of configuration and associated code artifacts
     in an executable environment (e.g. a Docker image or a Python virtualenv
@@ -55,149 +44,231 @@ class Assembly(BaseModel):
     of the schema family of methods. See the method docstrings for specific details.
     """
 
-    ## Configuration
-    config_file: Path
-    optimizer: Optimizer
-
-    ## Assembled settings & Servo
-    config_model: Type[BaseAssemblyConfiguration]
-    servo: Servo
+    config_file: Optional[pathlib.Path]
+    servos: List[servo.servo.Servo]
 
     @staticmethod
-    def current() -> 'Assembly':
+    def current() -> "Assembly":
         """
-        Returns the active assembly for the current execution context.
+        Return the active assembly for the current execution context.
 
         The value is managed by a contextvar and is concurrency safe.
         """
         return _assembly_context_var.get()
 
+    @staticmethod
+    def set_current(assembly: "Assembly") -> None:
+        """Set the active assembly for the current execution context."""
+        _assembly_context_var.set(assembly)
+
     @classmethod
     def assemble(
         cls,
         *,
-        config_file: Path,
-        optimizer: Optimizer,
+        config_file: Optional[pathlib.Path] = None,
+        configs: Optional[List[Dict[str, Any]]] = None,
+        optimizer: Optional[servo.configuration.Optimizer] = None,
         env: Optional[Dict[str, str]] = os.environ,
         **kwargs,
-    ) -> Tuple["Assembly", Servo, Type[BaseAssemblyConfiguration]]:
-        """Assembles a Servo by processing configuration and building a dynamic settings model"""
-        
+    ) -> "Assembly":
+        """Assemble a Servo by processing configuration and building a dynamic settings model"""
+
+        if config_file is None and configs is None:
+            raise ValueError(f"cannot assemble with a config file and config objects")
+
         _discover_connectors()
 
-        # Build our Servo configuration from the config file + environment
-        if not config_file.exists():
-            raise FileNotFoundError(f"config file '{config_file}' does not exist")
+        if config_file and not configs:
+            # Build our Servo configuration from the config file + environment
+            if not config_file.exists():
+                raise FileNotFoundError(f"config file '{config_file}' does not exist")
 
-        AssemblyConfiguration, routes = _create_config_model(
-            config_file=config_file, env=env
-        )        
-
-        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        if not (config is None or isinstance(config, dict)):
-            raise ValueError(
-                f'error: config file "{config_file}" parsed to an unexpected value of type "{config.__class__}"'
-            )
-        config = {} if config is None else config
-        assembly_config = AssemblyConfiguration.parse_obj(config)
-
-        # Initialize all active connectors
-        connectors: List[BaseConnector] = []
-        for name, connector_type in routes.items():
-            connector_config = getattr(assembly_config, name)
-            if connector_config:
-                # NOTE: If the command is routed but doesn't define a settings class this will raise
-                connector = connector_type(
-                    name=name,
-                    config=connector_config,
-                    optimizer=optimizer,
-                    __connectors__=connectors,
+            configs = list(yaml.load_all(open(config_file), Loader=yaml.FullLoader))
+            if not isinstance(configs, list):
+                raise ValueError(
+                    f'error: config file "{config_file}" parsed to an unexpected value of type "{configs.__class__}"'
                 )
-                connectors.append(connector)
 
-        # Build the servo object
-        servo = Servo(
-            config=assembly_config,
-            connectors=connectors.copy(), # Avoid self-referential reference to servo
-            optimizer=optimizer,
-            __connectors__=connectors,
-        )
-        connectors.append(servo)
-        assembly = Assembly(
+            # If we parsed an empty file, add an empty dict to work with
+            if not configs:
+                configs.append({})
+
+        if len(configs) > 1 and optimizer is not None:
+            raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
+
+        servos: List[servo.servo.Servo] = []
+        for config in configs:
+            # TODO: Needs to be public / have a better name
+            # TODO: We need to index the env vars here for multi-servo
+            servo_config_model, routes = _create_config_model(
+                config=config, env=env
+            )
+            servo_config = servo_config_model.parse_obj(config)
+            servo_optimizer = servo_config.optimizer or optimizer
+
+            # Initialize all active connectors
+            connectors: List[servo.connector.BaseConnector] = []
+            for name, connector_type in routes.items():
+                connector_config = getattr(servo_config, name)
+                if connector_config is not None:
+                    connector = connector_type(
+                        name=name,
+                        config=connector_config,
+                        optimizer=servo_optimizer,
+                        __connectors__=connectors,
+                    )
+                    connectors.append(connector)
+
+            # Build the servo object
+            servo_ = servo.servo.Servo(
+                config=servo_config,
+                connectors=connectors.copy(),  # Avoid self-referential reference to servo
+                optimizer=servo_optimizer,
+                __connectors__=connectors,
+            )
+            connectors.append(servo_)
+            servos.append(servo_)
+
+        assembly = cls(
             config_file=config_file,
-            optimizer=optimizer,
-            config_model=AssemblyConfiguration,
-            servo=servo,
+            servos=servos,
         )
 
         # Set the context vars
-        _assembly_context_var.set(assembly)
-        _servo_context_var.set(servo)
+        cls.set_current(assembly)
 
-        return assembly, servo, AssemblyConfiguration
+        # Activate the servo if we are in the common case single player mode
+        if len(servos) == 1:
+            servo.servo.Servo.set_current(servos[0])
 
-    def __init__(self, *args, servo: Servo, **kwargs):
-        super().__init__(*args, servo=servo, **kwargs)
+        return assembly
+
+    def __init__(self, *args, servos: List[servo.Servo], **kwargs) -> None:
+        super().__init__(*args, servos=servos, **kwargs)
 
         # Ensure object is shared by identity
-        self.servo = servo
+        self.servos = servos
 
     ##
     # Utility functions
 
-    @classmethod
-    def all_connector_types(cls) -> Set[Type[BaseConnector]]:
-        """Return a set of all connector types in the assembly excluding the Servo"""
-        return _connector_subclasses.copy()
+    async def dispatch_event(
+        self,
+        event: Union[servo.events.Event, str],
+        *args,
+        first: bool = False,
+        include: Optional[List[str]] = None,
+        exclude: Optional[List[str]] = None,
+        prepositions: servo.events.Preposition = (
+            servo.events.Preposition.BEFORE | servo.events.Preposition.ON | servo.events.Preposition.AFTER
+        ),
+        return_exceptions: bool = False,
+        **kwargs,
+    ) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+        """Dispatch an event to all servos active in the assembly."""
 
-    @property
-    def connectors(self) -> List[BaseConnector]:
-        """
-        Returns a list of all active connectors in the assembly including the Servo.
-        """
-        return [self.servo, *self.servo.connectors]
-
-    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
-        """Returns a schema that only includes connector model definitions"""
-        connectors = self.all_connector_types() if all else self.servo.connectors
-        config_models = list(map(lambda c: c.config_model(), connectors))
-        return pydantic_schema(config_models, title="Servo Schema")
-
-    def top_level_schema_json(self, *, all: bool = False) -> str:
-        """Return a JSON string representation of the top level schema"""
-        return json.dumps(
-            self.top_level_schema(all=all), indent=2, default=pydantic_encoder
+        group = asyncio.gather(
+            *list(
+                map(
+                    lambda s: s.dispatch_event(
+                        event,
+                        *args,
+                        first=first,
+                        include=include,
+                        exclude=exclude,
+                        prepositions=prepositions,
+                        **kwargs
+                    ),
+                    self.servos,
+                )
+            ),
+            return_exceptions=return_exceptions,
         )
+        results = await group
+        if results:
+            results = functools.reduce(lambda x, y: x + y, results)
 
+        # TODO: This needs to be tested in multi-servo
+        if first:
+            return results[0] if results else None
 
-def _module_path(cls: Type) -> str:
-    if cls.__module__:
-        return ".".join([cls.__module__, cls.__name__])
-    else:
-        return cls.__name__
+        return results
 
+    @classmethod
+    def all_connector_types(cls) -> Set[Type[servo.connector.BaseConnector]]:
+        """Return a set of all connector types in the assembly excluding the Servo"""
+        return servo.connector._connector_subclasses.copy()
 
-def _discover_connectors() -> Set[Type[BaseConnector]]:
+    async def add_servo(self, servo_: servo.servo.Servo) -> None:
+        """Add a servo to the assembly.
+
+        Once added, the servo is sent the startup event to prepare for execution.
+
+        Args:
+            servo_: The servo to add to the assembly.
+        """
+        self.servos.append(servo_)
+        await servo.startup()
+
+    async def remove_servo(self, servo_: servo.servo.Servo) -> None:
+        """Remove a servo from the assembly.
+
+        Before removal, the servo is sent the shutdown event to prepare for
+        eviction from the assembly.
+
+        Args:
+            servo_: The servo to remove from the assembly.
+        """
+        await servo.shutdown()
+        self.servos.remove(servo_)
+
+    async def startup(self):
+        """Notify all servos that the assembly is starting up."""
+        await asyncio.gather(
+                *list(
+                    map(
+                        lambda s: s.startup(),
+                        self.servos,
+                    )
+                )
+            )
+
+    async def shutdown(self):
+        """Notify all servos that the assembly is shutting down."""
+        await asyncio.gather(
+                *list(
+                    map(
+                        lambda s: s.shutdown(),
+                        self.servos,
+                    )
+                )
+            )
+
+def _discover_connectors() -> Set[Type[servo.connector.BaseConnector]]:
     """
     Discover available connectors that are registered via setuptools entry points.
 
     See ConnectorLoader for details.
     """
     connectors = set()
-    loader = ConnectorLoader()
+    loader = servo.connector.ConnectorLoader()
     for connector in loader.load():
         connectors.add(connector)
     return connectors
 
 
 def _create_config_model_from_routes(
-    routes=Dict[str, Type[BaseConnector]], *, require_fields: bool = True,
-) -> Type[BaseAssemblyConfiguration]:
+    routes=Dict[str, Type[servo.connector.BaseConnector]],
+    *,
+    require_fields: bool = True,
+) -> Type[servo.configuration.BaseServoConfiguration]:
     # Create Pydantic fields for each active route
     connector_versions: Dict[
-        Type[BaseConnector], str
+        Type[servo.connector.BaseConnector], str
     ] = {}  # use dict for uniquing and ordering
-    setting_fields: Dict[str, Tuple[Type[BaseConfiguration], Any]] = {}
+    setting_fields: Dict[
+        str, Tuple[Type[servo.configuration.BaseConfiguration], Any]
+    ] = {}
     default_value = (
         ... if require_fields else None
     )  # Pydantic uses ... for flagging fields required
@@ -213,45 +284,51 @@ def _create_config_model_from_routes(
         ] = f"{connector_class.full_name} v{connector_class.version}"
 
     # Create our model
-    servo_config_model = create_model(
-        "ServoConfiguration", __base__=BaseAssemblyConfiguration, **setting_fields,
+    servo_config_model = pydantic.create_model(
+        "ServoConfiguration",
+        __base__=servo.configuration.BaseServoConfiguration,
+        **setting_fields,
     )
 
-    connectors_series = join_to_series(list(connector_versions.values()))
+    connectors_series = servo.utilities.join_to_series(
+        list(connector_versions.values())
+    )
     servo_config_model.__config__.title = "Servo Configuration Schema"
     servo_config_model.__config__.schema_extra = {
-        "description": f"Schema for configuration of Servo v{Servo.version} with {connectors_series}"
+        "description": f"Schema for configuration of Servo v{servo.Servo.version} with {connectors_series}"
     }
 
     return servo_config_model
 
-
+# TODO: This needs a public API and better name. Prolly moves to configuration module
 def _create_config_model(
     *,
-    config_file: Path,
-    routes: Dict[str, Type[BaseConnector]] = None,
+    config: Dict[str, Any], # TODO: Could be optional?
+    routes: Dict[str, Type[servo.connector.BaseConnector]] = None,
     env: Optional[Dict[str, str]] = os.environ,
-) -> (Type[BaseAssemblyConfiguration], Dict[str, Type[BaseConnector]]):
-    # map of config key in YAML to settings class for target connector
-    if routes is None:
-        routes = _default_routes()
+) -> Tuple[
+    Type[servo.configuration.BaseServoConfiguration],
+    Dict[str, Type[servo.connector.BaseConnector]],
+]:
     require_fields: bool = False
+    # map of config key in YAML to settings class for target connector
+    routes = servo.connector._default_routes() if routes is None else routes
 
-    # NOTE: If `connectors` key is present in config file, require the keys to be present
-    if config_file.exists():
-        config = yaml.load(open(config_file), Loader=yaml.FullLoader)
-        if isinstance(config, dict):  # Config file could be blank or malformed
-            connectors_value = config.get("connectors", None)
-            if connectors_value:
-                routes = _routes_for_connectors_descriptor(connectors_value)
-                require_fields = True
+    if isinstance(config, dict):
+        # NOTE: If `connectors` key is present in the config, require the keys to be present
+        connectors_value = config.get("connectors", None)
+        if connectors_value:
+            routes = servo.connector._routes_for_connectors_descriptor(
+                connectors_value
+            )
+            require_fields = True
 
     servo_config_model = _create_config_model_from_routes(
         routes, require_fields=require_fields
     )
     return servo_config_model, routes
 
-
+# TODO: Move to the strings utility module
 def _normalize_name(name: str) -> str:
     """
     Normalizes the given name.
@@ -260,15 +337,15 @@ def _normalize_name(name: str) -> str:
 
 
 class SettingModelCacheEntry:
-    connector_type: Type[BaseConnector]
+    connector_type: Type[servo.connector.BaseConnector]
     connector_name: str
-    config_model: Type[BaseConfiguration]
+    config_model: Type[servo.configuration.BaseConfiguration]
 
     def __init__(
         self,
-        connector_type: Type[BaseConnector],
+        connector_type: Type[servo.connector.BaseConnector],
         connector_name: str,
-        config_model: Type[BaseConfiguration],
+        config_model: Type[servo.configuration.BaseConfiguration],
     ) -> None:
         self.connector_type = connector_type
         self.connector_name = connector_name
@@ -282,15 +359,15 @@ __config_models_cache__: List[SettingModelCacheEntry] = []
 
 
 def _derive_config_model_for_route(
-    name: str, model: Type[BaseConnector]
-) -> Type[BaseConfiguration]:
+    name: str, model: Type[servo.connector.BaseConnector]
+) -> Type[servo.configuration.BaseConfiguration]:
     """Inherits a new Pydantic model from the given settings and set up nested environment variables"""
     # NOTE: It is important to produce a new model name to disambiguate the models within Pydantic
     # because key-paths are guanranteed to be unique, we can utilize it as a cache key
     base_config_model = model.config_model()
 
     # See if we already have a matching model
-    config_model: Optional[Type[BaseConfiguration]] = None
+    config_model: Optional[Type[servo.configuration.BaseConfiguration]] = None
     model_names = set()
     for cache_entry in __config_models_cache__:
         model_names.add(cache_entry.config_model.__name__)
@@ -299,7 +376,7 @@ def _derive_config_model_for_route(
             break
 
     if config_model is None:
-        if base_config_model == BaseConfiguration:
+        if base_config_model == servo.configuration.BaseConfiguration:
             # Connector hasn't defined a settings class or is reusing one, use the connector class name as base name
             # This is essential for preventing `KeyError` exceptions in Pydantic schema generation
             # due to naming conflicts.
@@ -311,11 +388,9 @@ def _derive_config_model_for_route(
             # Connector is mounted at the default route, use default name
             model_name = f"{base_config_model.__qualname__}"
         else:
-            model_name = _normalize_name(
-                f"{base_config_model.__qualname__}__{name}"
-            )
+            model_name = _normalize_name(f"{base_config_model.__qualname__}__{name}")
 
-        config_model = create_model(model_name, __base__=base_config_model)
+        config_model = pydantic.create_model(model_name, __base__=base_config_model)
 
     # Cache it for reuse
     cache_entry = SettingModelCacheEntry(
