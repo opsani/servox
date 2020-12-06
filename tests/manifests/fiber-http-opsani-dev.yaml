@@ -30,6 +30,7 @@ spec:
         # Any divergence from the defaults will require corresponding
         # changes to the container ports, service definition, and/or the
         # Envoy proxy configuration file.
+        prometheus.opsani.com/scheme: http
         prometheus.opsani.com/path: /stats/prometheus
         prometheus.opsani.com/port: "9901"
         prometheus.opsani.com/scrape: "true"
@@ -49,7 +50,7 @@ spec:
       containers:
       # Primary container providing the fiber-http web service
       - name: fiber-http
-        image: opsani/fiber-http:latest
+        image: opsani/fiber-http:edge
         resources:
           requests:
             cpu: 500m

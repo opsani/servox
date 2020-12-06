@@ -5,7 +5,7 @@ import os
 import random
 import string
 import pathlib
-from typing import AsyncIterator, AsyncGenerator, Iterator, Optional
+from typing import AsyncIterator, AsyncGenerator, Iterator, List, Optional
 
 import devtools
 import fastapi
@@ -21,6 +21,23 @@ import tests.helpers
 
 # Add the devtools debug() function globally in tests
 builtins.debug = devtools.debug
+
+
+def pytest_report_header(config) -> str:
+    try:
+        for connector in servo.connector.ConnectorLoader().load():
+            servo.logger.debug(f"Loaded {connector.__qualname__}")
+    except Exception:
+        servo.logger.exception(
+            "failed loading connectors via discovery", backtrace=True, diagnose=True
+        )
+
+    names = list(
+        map(
+            lambda c: f"{c.__default_name__}-{c.version}",
+                servo.Assembly.all_connector_types())
+    )
+    return "servo connectors: " + ", ".join(names)
 
 @pytest.fixture
 def event_loop_policy(request) -> str:
