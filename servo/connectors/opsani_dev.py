@@ -16,6 +16,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     container: str
     service: str
     config_maps: Optional[List[str]]
+    prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":
@@ -213,7 +214,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise RuntimeError(f"failed: no servo pod was found")
 
         container = pod.get_container("prometheus")
-        assert container
+        assert container, "could not find a Prometheus sidecar container"
         restart_count = await container.get_restart_count()
         assert (
             restart_count == 0
@@ -226,7 +227,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise RuntimeError(f"failed: no servo pod was found")
 
         container = pod.get_container("prometheus")
-        assert container
+        assert container, "could not find Prometheus sidecar container"
 
         assert (
             len(container.obj.ports) == 1
@@ -243,21 +244,24 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise RuntimeError(f"failed: no servo pod was found")
 
         container = pod.get_container("prometheus")
-        assert container
+        assert container, "could not find a Prometheus sidecar container"
         assert (
             len(container.obj.ports) == 1
         ), f"expected 1 container port but found {len(container.obj.ports)}"
 
         # NOTE: Prometheus sidecar will be up on localhost
         async with httpx.AsyncClient(
-            base_url=PROMETHEUS_SIDECAR_BASE_URL
+            base_url=self.config.prometheus_base_url
         ) as client:
             response = await client.get("/api/v1/targets")
             response.raise_for_status()
             result = response.json()
 
         target_count = len(result["data"]["activeTargets"])
-        assert target_count > 0
+        # TODO: Warning/raise policy?
+        # assert target_count > 0, "no active targets were found"
+        if target_count > 0:
+            self.logger.warning("no active targets were found")
         return f"found {target_count} targets"
 
     async def _read_servo_pod(self) -> Optional[servo.connectors.kubernetes.Pod]:
@@ -303,26 +307,47 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Kubernetes Deployment edits
 
-    @servo.checks.require("validate service")
+    @servo.checks.require("annotations")
     async def check_deployment_annotations(self) -> None:
-        ...
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment, 
+            self.config.namespace
+        )
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        
+        annotations = deployment.pod_template_spec.metadata.annotations
+        assert annotations, f"deployment '{deployment.name}' does not have any annotations"
+        
+        # TODO: Move to a constant...
+        required_annotations = {
+            "prometheus.opsani.com/scrape",
+            "prometheus.opsani.com/scheme",
+            "prometheus.opsani.com/path",
+            "prometheus.opsani.com/port",
+        }
+        actual_annotations = set(annotations.key())
+        delta = required_annotations.difference(actual_annotations)
+        debug(delta)
+        assert not delta, f"missing annotations: {delta}"
+        
 
-    @servo.checks.require("validate service")
+    @servo.checks.require("labels")
     async def check_deployment_labels(self) -> None:
         ...
 
-    @servo.checks.require("validate service")
+    # TODO: Maybe use the docstring??
+    @servo.checks.require("envoy sidecars")
     async def check_deployment_envoy_sidecars(self) -> None:
         ...
 
     ##
     # Connecting the dots
 
-    @servo.require("validate service")
+    @servo.require("prometheus targets")
     async def check_prometheus_scraping_envoys(self) -> None:
         ...
 
-    @servo.require("validate service")
+    @servo.require("prometheus queries")
     async def check_prometheus_queries_make_sense(self) -> None:
         ...
 
