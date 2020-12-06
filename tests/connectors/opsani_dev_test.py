@@ -1,5 +1,10 @@
+import asyncio
 import os
 import re
+
+import contextlib
+
+from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union, Protocol, runtime_checkable
 
 import httpx
 import pytest
@@ -181,9 +186,6 @@ class TestChecksSidecarsInjected:
 # I send traffic through the service and it shows up in Envoy
 # The canary comes up
 
-from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union
-import asyncio
-
 # class IntegrationTests:
 #     @pytest.mark.applymanifests(
 #         "../manifests",
@@ -220,8 +222,6 @@ import asyncio
         #         debug(metrics)
         #         break
 # async def test_
-
-
 
 @pytest.mark.applymanifests(
     "opsani_dev",
@@ -278,14 +278,7 @@ class TestEverything:
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
         
-        # async with assert_check_raises(                
-        #     AssertionError,
-        #     "deployment 'fiber-http' does not have any annotations"
-        # ):
-        #     await checks.run_one(id=f"check_deployment_annotations")
-        # return
-        
-         # Deploy fiber-http with annotations and Prometheus will start scraping it
+        # Deploy fiber-http with annotations and Prometheus will start scraping it
         # TODO: this should be referencing a servo as a sidecar
         # TODO: the name here is misleading -- its in prometheus.yaml
         async with kube_port_forward("deploy/servo", 9090) as url:
@@ -297,43 +290,55 @@ class TestEverything:
             
             # TODO: Move these into library functions. Do we want replace/merge versions?
             # TODO: This is really annotate_pod_spec_template?
-            async def annotate(deployment, annotations: Dict[str, str]) -> None:
+            async def add_annotations_to_podspec_of_deployment(deployment, annotations: Dict[str, str]) -> None:
                 existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
                 existing_annotations.update(annotations)
                 deployment.pod_template_spec.metadata.annotations = existing_annotations
-                return await deployment.patch()
+                await deployment.patch()
+                await deployment.refresh()
                 
             
-            async def label(deployment, labels: List[str]) -> None:
+            async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
                 ...
             
             # NOTE: Step 1 - No annotations and fail
-            await assert_check_fails(checks.run_one(id=f"check_deployment_annotations"))
-            return
-            await assert_check_raised(
-                checks.run_one(id=f"check_deployment_annotations"),
+            # TODO: We are running these variations to test, reduce once we stabilize
+            # await assert_check_fails(checks.run_one(id=f"check_deployment_annotations"))            
+            # await assert_check_raised(
+            #     checks.run_one(id=f"check_deployment_annotations"),
+            #     AssertionError,
+            #     "deployment 'fiber-http' does not have any annotations"
+            # )
+            async with assert_check_raises_in_context(
                 AssertionError,
-                "deployment 'fiber-http' does not have any annotations"
-            )
-            async with assert_check_raises(
-                AssertionError,
-                "deployment 'fiber-http' does not have any annotations"
+                match="deployment 'fiber-http' does not have any annotations"
             ) as assertion:
                 assertion.set(checks.run_one(id=f"check_deployment_annotations"))
             
-            return
-            
             # NOTE: Step 2 - Add annotation and pass
-            # TODO: Parametrize with each annotation            
-            await annotate(deployment,
+            # Add a subset of the required annotations to catch partial setup cases
+            await add_annotations_to_podspec_of_deployment(deployment,
                 {
-                    "prometheus.opsani.com/scrape": "true",
-                    "prometheus.opsani.com/scheme": "http",
                     "prometheus.opsani.com/path": "/stats/prometheus",
                     "prometheus.opsani.com/port": "9901",
                 }
-            )                
+            )
+            await assert_check_raises(
+                checks.run_one(id=f"check_deployment_annotations"),
+                AssertionError,
+                re.escape("missing annotations: ['prometheus.opsani.com/scheme', 'prometheus.opsani.com/scrape']")
+            )
+            
+            # Fill in the missing annotations
+            await add_annotations_to_podspec_of_deployment(deployment,
+                {
+                    "prometheus.opsani.com/scrape": "true",
+                    "prometheus.opsani.com/scheme": "http",
+                }
+            )
             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
+            
+            # Step 3: Check the labels and pass
         
         # TODO: check annotations, labels, sidecars
         # TODO: Check annotation isn't there, then check it is
@@ -350,14 +355,67 @@ async def assert_check_fails(
     """
     return await assert_check(check, message, _success=False)
 
-import contextlib
+@runtime_checkable
+class Assertable(Protocol):
+    """An object that can set an assertable value."""
+
+    def set(value: Any) -> None:
+        """Set the value of the assertion."""
+        ...
+
 @contextlib.asynccontextmanager
-async def assert_check_raises(
-    check: servo.checks.Check, 
+async def assert_check_raises_in_context(    
     type_: Type[Exception], 
+    match: Optional[str] = None,
+    *,    
     message: Optional[str] = None,
+) -> AsyncIterator[Assertable]:
+    """Assert that a check fails due to a specific exception being raised within an execution context.
+    
+    The check provided can be a previously executed Check object or a coroutine that returns a Check.
+    The exception type is evalauted and the `match` parameter is matched against the underlying exception
+    via `pytest.assert_raises` and supports strings and regex objects.
+    
+    This method is an asynchronous context manager for use via the `async with ..` syntax:
+        ```
+        async with assert_check_raises_in_context(AttributeError) as assertion:
+            assertion.set(check.whatever(True))
+        ```
+    
+    The opaque `Assertable` object yielded exposes a single method `set` that accepts a `Check` object value or
+    a callable that returns a Check object. The callable can be asynchronous and will be awaited.
+    This syntax can be more readable and enables setup/teardown and debugging logic that would otherwise
+    be rather unergonomic.
+    
+    Args:
+        type_: The type of exception expected.
+        match: A string or regular expression for matching against the error raised.
+        message: An optional override for the error message returned on failure.
+    """
+    
+    class _Assertion(Assertable):
+        def set(self, value) -> None:
+            self._value = value
+        
+        async def get(self) -> servo.checks.Check:
+            if asyncio.iscoroutine(self._value):
+                return await self._value
+            else:
+                return self._value
+                
+    assertion = _Assertion()
+    yield assertion
+    value = await assertion.get()
+    
+    assert value is not None, f"invalid use as context manager: must return a Check"
+    await assert_check(value, message, _success=False, _exception_type=type_, _exception_match=match)
+
+async def assert_check_raises(
+    check, 
+    type_: Type[Exception] = Exception,
+    match: Optional[str] = None,
     *,
-    match: Optional[str] = None
+    message: Optional[str] = None,
 ) -> None:
     """Assert that a check fails due to a specific exception being raised.
     
@@ -365,40 +423,12 @@ async def assert_check_raises(
     The exception type is evalauted and the `match` parameter is matched against the underlying exception
     via `pytest.assert_raises` and supports strings and regex objects.
     
-    This method can optionally be used as an asynchronous context manager via the `async with ..` syntax:
-        ```
-        async with assert_check_raises(AttributeError) as assertion:
-            assertion.set(check.whatever(True))
-        ```
-    
-    The assertion object yielded exposes a single method `set` that accepts a `Check` object value or
-    a callable that returns a Check object. The callable can be asynchronous and will be awaited.
-    This syntax can be more readable and enables setup/teardown and debugging logic that would otherwise
-    be rather unergonomic.
+    Args:
+        check: A check object or callable that returns a check object to be evaluated.
+        type_: The type of exception expected to fail the check.
+        match: A string or regular expression to be evaluated against the message of the exception that triggered the failure.
     """
-    if callable(check):
-        class _Assertion:
-            def set(self, value) -> None:
-                self._value = value
-            
-            async def get(self) -> servo.checks.Check:
-                if asyncio.iscoroutine(self._value):
-                    return await self._value
-                else:
-                    return self._value
-                    
-        assertion = _Assertion()
-        yield assertion
-        value = await assertion.get()
-        debug("GPT BACK ", assertion, value)
-        
-        assert value is not None, f"invalid use as context manager: must return a Check"
-        await assert_check(value, message, _success=False, _exception_type=type_, _exception_match=match)
-    else:
-        await assert_check(check, message, _success=False, _exception_type=type_, _exception_match=match)
-
-async def assert_check_raised(check, *args, **kwargs):
-    async with assert_check_raises(*args, **kwargs) as assertion:
+    async with assert_check_raises_in_context(type_, match, message=message) as assertion:
         assertion.set(check)
 
 async def assert_check(
@@ -428,18 +458,19 @@ async def assert_check(
     else:
         raise TypeError(f"unknown check: {check}")
     
-    if result.success != _success:
-        # Let's get that stack trace into the output
+    # NOTE: Take care to chain the exceptions rescued by the Check for attribution
+    if _success is False and result.success is False:
+        # Make sure we failed in the right way        
         if result.exception:
             if _exception_type or _exception_match:
-                async with pytest.raises(_exception_type or Exception, match=_exception_match):
-                    raise result.exception
-                
+                with pytest.raises(_exception_type, match=_exception_match):
+                    raise result.exception                                    
+        elif _exception_type:
             raise AssertionError(
-                f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
+                f"Check(id='{result.id}') '{result.name}' was expected to raise a {_exception_type.__name__} but it did not: {assertion_message}"
             ) from result.exception
-        else:
-            if _exception_type:
-                raise AssertionError(f"Check(id='{result.id}') '{result.name}' was expected to raise a {_exception_type.__name__} but it did not: {assertion_message}")
-            
-            assert result.success, f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
+    
+    if result.success != _success:
+        raise AssertionError(
+            f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
+        ) from result.exception 
