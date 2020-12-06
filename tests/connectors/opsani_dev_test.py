@@ -150,15 +150,6 @@ class TestChecksOriginalState:
             assert check.message is not None
             assert isinstance(check.exception, httpx.HTTPStatusError)
 
-
-class TestChecksServiceUpdated:
-    ...
-
-
-class TestChecksSidecarsInjected:
-    ...
-
-
 # Errors:
 # Permissions, (Namespace, Deployment, Container, Service -> Doesnt Exist, Cant Read), ports don't match
 
@@ -167,62 +158,10 @@ class TestChecksSidecarsInjected:
 
 # init containers are ignored
 
-
 # TODO: Test deployment, pod with init container, test nginx not match,
 # TODO: check namespace affinity only scrapes in current namespace
 
-
-# Map to the app, 
-
-
-# To a full check on Opsani dev...
-# App exists
-# App has resources
-# No sidecar
-# Inject the sidecar
-# Sidecar inhected
-# Sidecar getting traffic
-# Service port and envoy proxy port match
-# I send traffic through the service and it shows up in Envoy
-# The canary comes up
-
-# class IntegrationTests:
-#     @pytest.mark.applymanifests(
-#         "../manifests",
-#         files=[
-#             "fiber-http.yaml",
-#             # "k6.yaml",
-#             # "prometheus.yaml",
-#         ],
-#     )
-#     async def test_all(
-#         self,
-#         optimizer: servo.Optimizer,
-#         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
-#     ) -> None:
-        # Deploy fiber
-        # Verify single container
-        # Do sidecar injection
-        # Update the service
-        # Check for Prometheus
-        # Check for Prometheus Targets scraping
-        # Check for Envoy
-        # Check for Envoy traffic
-        
-        
-        # Deploy fiber-http with annotations and Prometheus will start scraping it
-        # async with kube_port_forward("deploy/prometheus", 9090) as url:
-        #     config = servo.connectors.prometheus.PrometheusConfiguration.generate(base_url=url)
-        #     connector = servo.connectors.prometheus.PrometheusConnector(config=config, optimizer=optimizer)
-        #     while True:
-        #         metrics = await asyncio.wait_for(
-        #             asyncio.gather(connector.measure(control=servo.Control(duration="5s"))),
-        #             timeout=30
-        #         )
-        #         debug(metrics)
-        #         break
-# async def test_
-
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -237,6 +176,7 @@ class TestEverything:
     async def load_manifests(
         self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
+
         kube.wait_for_registered(timeout=30)
         checks.config.namespace = kube.namespace
         
@@ -246,73 +186,29 @@ class TestEverything:
         pod = deployment.get_pods()[0]
         os.environ['POD_NAME'] = pod.name
         os.environ["POD_NAMESPACE"] = kube.namespace
-    
-    # async def test_target_discovery(
-    #     self,
-    #     optimizer: servo.Optimizer,
-    #     kube_port_forward: Callable[[str, int], AsyncIterator[str]],
-    # ) -> None:
-    #     # Deploy fiber-http with annotations and Prometheus will start scraping it
-    #     async with kube_port_forward("deploy/prometheus", 9090) as url:
-    #         config = PrometheusConfiguration.generate(base_url=url)
-    #         connector = PrometheusConnector(config=config, optimizer=optimizer)
-    #         while True:
-    #             metrics = await asyncio.wait_for(
-    #                 asyncio.gather(connector.measure(control=servo.Control(duration="5s"))),
-    #                 timeout=30
-    #             )
-    #             debug(metrics)
-    #             break
 
-    # @pytest.mark.parametrize(
-    #     "resource", ["namespace", "deployment", "container", "service"]
-    # )
-    # async def test_resource_exists(
-    #     self, resource: str, checks: servo.connectors.opsani_dev.OpsaniDevChecks
-    # ) -> None:
-    #     result = await checks.run_one(id=f"check_kubernetes_{resource}")
-    #     assert result.success
-
-    async def test_all(
+    async def test_install(
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        
         # Deploy fiber-http with annotations and Prometheus will start scraping it
-        # TODO: this should be referencing a servo as a sidecar
-        # TODO: the name here is misleading -- its in prometheus.yaml
+        # FIXME: the name here is misleading -- its in prometheus.yaml
+        envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
         async with kube_port_forward("deploy/servo", 9090) as url:
             # Connect the checks to our port forward interface
-            checks.config.prometheus_base_url = url
+            checks.config.prometheus_base_url = url + servo.connectors.prometheus.API_PATH
             
             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
             
-            # TODO: Move these into library functions. Do we want replace/merge versions?
-            async def add_annotations_to_podspec_of_deployment(deployment, annotations: Dict[str, str]) -> None:
-                existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
-                existing_annotations.update(annotations)
-                deployment.pod_template_spec.metadata.annotations = existing_annotations
-                await deployment.patch()
-                await deployment.refresh()
-                
-            
-            async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
-                await deployment.refresh()
-                existing_labels = deployment.pod_template_spec.metadata.labels or {}
-                existing_labels.update(labels)
-                deployment.pod_template_spec.metadata.labels = existing_labels
-                await deployment.patch()
-                await deployment.refresh()  # TODO: Figure out a better logic for this...
-            
-            # NOTE: Step 1 - No annotations and fail
+            ## Step 1
+            servo.logger.critical("Step 1 - Verify the annotations are set on the Deployment pod spec")
             async with assert_check_raises_in_context(
                 AssertionError,
                 match="deployment 'fiber-http' does not have any annotations"
             ) as assertion:
                 assertion.set(checks.run_one(id=f"check_deployment_annotations"))
             
-            # NOTE: Step 2 - Add annotations and pass
             # Add a subset of the required annotations to catch partial setup cases
             await add_annotations_to_podspec_of_deployment(deployment,
                 {
@@ -335,7 +231,8 @@ class TestEverything:
             )
             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
             
-            # Step 3: Check the labels and pass
+            # Step 2: Verify the labels are set on the Deployment pod spec
+            servo.logger.critical("Step 2 - Verify the labels are set on the Deployment pod spec")
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_labels"),
                 AssertionError,
@@ -349,23 +246,98 @@ class TestEverything:
             )
             await assert_check(checks.run_one(id=f"check_deployment_labels"))
             
-            # Step 4: Look for sidecars running on our app and fail
+            # Step 3
+            servo.logger.critical("Step 3 - Test for Envoy sidecar injection")
             await assert_check_raises(
-                checks.run_one(id=f"check_deployment_labels"),
+                checks.run_one(id=f"check_deployment_envoy_sidecars"),
                 AssertionError,
-                re.escape("missing labels: {'sidecar.opsani.com/type': 'envoy'}")
+                re.escape("pods created against the 'fiber-http' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
             )
             
             # Add the sidecar and pass
+            await deployment.inject_sidecar(service="fiber-http")
+            await assert_check(checks.run_one(id=f"check_deployment_envoy_sidecars"))
             
-            # Step 5: Check that Prometheus has a target for the sidecar
+            # Wait for the pods to restart. Look for env vars
+            # TODO: add retry for kubernetes_asyncio.client.exceptions.ApiException: (409)
+            servo.logger.info("waiting for pods to rollout that have the Envoy sidecar")
+            await deployment.wait_until_ready(timeout=30) # TODO: config timeout
+            # FIXME: eliminate the blind sleep
+            await asyncio.sleep(15)
+            await assert_check(checks.run_one(id=f"check_pod_envoy_sidecars"))            
             
-            # Step 6: Check that the traffic metrics are flatlined for Envoy
-            # Send traffic directly through to envoy and make sure it shows up            
+            # Step 4
+            servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping targets")
+            servo.logger.info("sleeping for 7s to allow Prometheus to scrape the targets")
             
-            # Step 7: Check for our service
+            # NOTE: Prometheus is on a 5s scrape interval so we can't factor this one out
+            await asyncio.sleep(7)            
+            await assert_check(checks.run_one(id=f"check_prometheus_targets"))                        
+            
+            # Step 5
+            servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
+            await assert_check_raises(
+                checks.run_one(id=f"check_envoy_sidecar_metrics"),
+                AssertionError,
+                re.escape("Envoy is not reporting any traffic to Prometheus")
+            )
+            
+            # Send some traffic through Envoy to verify the proxy is healthy
+            pods = await deployment.get_pods()
+            pod_name = pods[0].name
+            servo.logger.debug(f"Sending test traffic to Envoy container on pod '{pod_name}'")
+            async with kube_port_forward(f"pod/{pod_name}", envoy_proxy_port) as url:
+                async with httpx.AsyncClient() as client:
+                    for i in range(10):
+                        servo.logger.debug(f"Sending request {i} to {url}")
+                        response = await client.get(url)
+                        response.raise_for_status()
+            
+            # Let Prometheus scrape to see the traffic
+            await asyncio.sleep(5)
+            await assert_check(checks.run_one(id=f"check_prometheus_targets"))
+            
+            # Step 6
+            servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
+            await assert_check_raises(
+                checks.run_one(id=f"check_service_proxy"),
+                AssertionError,
+                re.escape(f"service 'fiber-http' is not routing traffic through Envoy sidecar on port {envoy_proxy_port}")
+            )
+            
             # Update the port to point to the sidecar
+            service = await servo.connectors.kubernetes.Service.read("fiber-http", checks.config.namespace)
+            service.ports[0].target_port = envoy_proxy_port
+            await service.patch()
+            await assert_check(checks.run_one(id=f"check_service_proxy"))
+            
             # Send traffic through the service and verify it shows up in Envoy
+            port = service.ports[0].port
+            servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
+            async with kube_port_forward(f"service/fiber-http", port) as url:
+                await asyncio.sleep(2) # FIXME: sleeping because the tunnel might not be up
+                async with httpx.AsyncClient() as client:
+                    for i in range(10):
+                        servo.logger.info(f"Sending request {i} to {url}")
+                        response = await client.get(url)
+                        response.raise_for_status()
+            
+            # Let Prometheus scrape to see the traffic
+            await asyncio.sleep(5)
+            await assert_check(checks.run_one(id=f"check_prometheus_targets"))
+                        
+            # Step 7
+            servo.logger.critical("Step 7 - Bring tuning Pod online")
+            await assert_check_raises(
+                checks.run_one(id=f"check_canary_is_running"),
+                AssertionError,
+                re.escape("could not find canary pod 'fiber-http-canary'")
+            )
+            await deployment.ensure_canary_pod()
+            await assert_check(checks.run_one(id=f"check_canary_is_running"))
+            
+            # Step 9: Send traffic through the service and verify the whole thing is working
+            # TODO: 
 
 async def assert_check_fails(
     check: servo.checks.Check, 
@@ -501,3 +473,21 @@ async def assert_check(
             raise AssertionError(
                 f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
             ) from result.exception
+
+
+# TODO: Move these into library functions. Do we want replace/merge versions?
+async def add_annotations_to_podspec_of_deployment(deployment, annotations: Dict[str, str]) -> None:
+    existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
+    existing_annotations.update(annotations)
+    deployment.pod_template_spec.metadata.annotations = existing_annotations
+    await deployment.patch()
+    await deployment.refresh()
+    
+
+async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
+    await deployment.refresh()
+    existing_labels = deployment.pod_template_spec.metadata.labels or {}
+    existing_labels.update(labels)
+    deployment.pod_template_spec.metadata.labels = existing_labels
+    await deployment.patch()
+    await deployment.refresh()  # TODO: Figure out a better logic for this...

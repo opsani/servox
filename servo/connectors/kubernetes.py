@@ -1531,6 +1531,80 @@ class Deployment(KubernetesModel):
     # TODO: annotations/labels getters and setters...
     # @property
     # def annotations(self) -> Optional[Dict[str, str]]:
+    
+    # TODO: cleanup backoff
+    @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
+    async def inject_sidecar(self, *, service: Optional[str] = None, port: Optional[int] = None) -> None:
+        """
+        Injects an Envoy sidecar into a target Deployment that proxies a service
+        or literal TCP port, generating scrapable metrics usable for optimization.
+
+        The service or port argument must be provided to define how traffic is proxied
+        between the Envoy sidecar and the container responsible for fulfilling the request.
+
+        Args:
+            deployment: Name of the target Deployment to inject the sidecar into.
+            service: Name of the service to proxy. Envoy will accept ingress traffic
+                on the service port and reverse proxy requests back to the original
+                target container.
+
+        """
+
+        await self.refresh() # TODO: Need a less crude refresh strategy
+        
+        if not service or port:
+            raise ValueError(f"a service or port must be given")
+
+        if service and port:
+            raise ValueError(f"service and port cannot both be given")
+
+        # # lookup the port on the target service
+        if service:
+            ser = await Service.read(service, self.namespace)
+            port = ser.obj.spec.ports[0].target_port
+
+        # build the sidecar container
+        container = kubernetes_asyncio.client.V1Container(
+            name="opsani-envoy",  # TODO: Put this into a constant or something
+            image="opsani/envoy-proxy:latest",
+            resources=kubernetes_asyncio.client.V1ResourceRequirements(
+                requests={
+                    "cpu": "125m",
+                    "memory": "128Mi"
+                },
+                limits={
+                    "cpu": "250m",
+                    "memory": "256Mi"
+                }
+            ),
+            env=[
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(9980)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
+            ],
+            ports=[
+                kubernetes_asyncio.client.V1ContainerPort(name="service", container_port=port),
+                kubernetes_asyncio.client.V1ContainerPort(name="metrics", container_port=9901),
+            ]
+        )
+
+        # add the sidecar to the Deployment
+        self.obj.spec.template.spec.containers.append(container)
+
+        # add annotations so the servo will scrape the metrics
+        # TODO: Move this shit into another method
+        # if dep.obj.spec.template.metadata.annotations is None:
+        #     dep.obj.spec.template.metadata.annotations = {}
+
+        # dep.obj.spec.template.metadata.annotations.update({
+        #     "prometheus.opsani.com/scheme": "http",
+        #     "prometheus.opsani.com/path": "/stats/prometheus",
+        #     "prometheus.opsani.com/port": "9901",
+        #     "prometheus.opsani.com/scrape": "true"
+        # })
+
+        # patch the deployment
+        await self.patch()
         
     
     ##
@@ -3083,6 +3157,7 @@ class KubernetesConnector(servo.BaseConnector):
         )
 
     # TODO: Add support for specifying the container, targeting Pods, etc.
+    # TODO: This needs to be generalized. We also need `has_sidecar` and `remove_sidecar` methods (others?)
     async def inject_sidecar(self, deployment: str, *, service: Optional[str], port: Optional[int]) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service
@@ -3098,69 +3173,7 @@ class KubernetesConnector(servo.BaseConnector):
                 target container.
 
         """
-        # await self.config.load_kubeconfig()
-
-        if not service or port:
-            raise ValueError(f"a service or port must be given")
-
-        if service and port:
-            raise ValueError(f"service and port cannot both be given")
-
-        dep_name = deployment.split("/")[1]
-        dep = await Deployment.read(dep_name, self.config.namespace)
-
-        # lookup the port on the target service
-        if service:
-            ser = await Service.read(service, self.config.namespace)
-            port = ser.obj.spec.ports[0].port
-
-        # update the Deployment to listen on another port
-        service_port = 9980  # TODO: Constant/config option
-        for p in dep.obj.spec.template.spec.containers[0].ports:
-            if p.container_port == port:
-                p.container_port = service_port
-
-        # build the sidecar container
-        container = kubernetes_asyncio.client.V1Container(
-            name="opsani-envoy",  # TODO: Put this into a constant or something
-            image="opsani/envoy-proxy:latest",
-            resources=kubernetes_asyncio.client.V1ResourceRequirements(
-                requests={
-                    "cpu": "125m",
-                    "memory": "128Mi"
-                },
-                limits={
-                    "cpu": "250m",
-                    "memory": "256Mi"
-                }
-            ),
-            env=[
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
-            ],
-            ports=[
-                kubernetes_asyncio.client.V1ContainerPort(name="service", container_port=port),
-                kubernetes_asyncio.client.V1ContainerPort(name="metrics", container_port=9901),
-            ]
-        )
-
-        # add the sidecar to the Deployment
-        dep.obj.spec.template.spec.containers.append(container)
-
-        # add annotations so the servo will scrape the metrics
-        if dep.obj.spec.template.metadata.annotations is None:
-            dep.obj.spec.template.metadata.annotations = {}
-
-        dep.obj.spec.template.metadata.annotations.update({
-            "prometheus.opsani.com/scheme": "http",
-            "prometheus.opsani.com/path": "/stats/prometheus",
-            "prometheus.opsani.com/port": "9901",
-            "prometheus.opsani.com/scrape": "true"
-        })
-
-        # patch the deployment
-        await dep.patch()
+        raise NotImplementedError("stub out for the moment")
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
@@ -3284,6 +3297,11 @@ class Service(KubernetesModel):
             )
             servo.logger.trace("service: ", obj)
             return cls(obj)
+    
+    @property
+    def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
+        """Return the list of ports exposed by the service."""
+        return self.obj.spec.ports
 
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Service resource."""
