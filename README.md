@@ -9,11 +9,11 @@ date](https://img.shields.io/github/release-date/opsani/servox.svg)](https://git
 
 This repository contains the source code of the Opsani Servo agent.
 
-A servo is an agent that measures and orchestrates an application or service
-to the Opsani cloud optimization engine in order to identify cost savings and
-performance enhancements by applying machine learning technology. Servos are
-lightweight Python applications and are typically deployed as a container
-under an orchestration layer such as Kubernetes, ECS, or Docker Compose.
+The servo connects applications to the Opsani cloud optimization engine
+to identify cost savings and performance enhancements by applying machine
+learning technology. Servos are lightweight Python applications and are
+typically deployed as a container under an orchestration layer such as 
+Kubernetes, ECS, or Docker Compose.
 
 Servos are composed of connectors, which provide the core functionality for
 integrating with metrics, orchestration, and load generation systems/utilities.
@@ -721,7 +721,7 @@ fast customized builds:
 
 ### Upgrading Python
 
-Python interpreter updates can be a bit anoying. The Poetry virtual environment
+Python interpreter updates can be a bit annoying. The Poetry virtual environment
 will against the prior Python interpreter and you may find that running tests
 and commands will remain stuck to your previous interpreter, regardless of the
 version configured in `.python-version`.
