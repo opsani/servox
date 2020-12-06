@@ -1066,11 +1066,11 @@ class Service(KubernetesModel):
         https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#service-v1-core
     """
 
-    obj: client.V1Service
+    obj: kubernetes_asyncio.client.V1Service
 
     api_clients: ClassVar[Dict[str, Type]] = {
-        'preferred': client.CoreV1Api,
-        'v1': client.CoreV1Api,
+        'preferred': kubernetes_asyncio.client.CoreV1Api,
+        'v1': kubernetes_asyncio.client.CoreV1Api,
     }
 
     @classmethod
@@ -1082,14 +1082,14 @@ class Service(KubernetesModel):
             name: The name of the Service to read.
             namespace: The namespace to read the Service from.
         """
-        default_logger.info(f'reading service "{name}" in namespace "{namespace}"')
+        servo.logger.info(f'reading service "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
             obj = await asyncio.wait_for(
                 api_client.read_namespaced_service(name, namespace),
                 5.0
             )
-            default_logger.trace("service: ", obj)
+            servo.logger.trace("service: ", obj)
             return Service(obj)
 
     async def create(self, namespace: str = None) -> None:
@@ -1123,7 +1123,7 @@ class Service(KubernetesModel):
                 body=self.obj,
             )
 
-    async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
+    async def delete(self, options: kubernetes_asyncio.client.V1DeleteOptions = None) -> kubernetes_asyncio.client.V1Status:
         """Deletes the Service.
 
         This method expects the Service to have been loaded or otherwise
@@ -1137,7 +1137,7 @@ class Service(KubernetesModel):
             The status of the delete operation.
         """
         if options is None:
-            options = client.V1DeleteOptions()
+            options = kubernetes_asyncio.client.V1DeleteOptions()
 
         self.logger.info(f'deleting service "{self.name}"')
         self.logger.debug(f'delete options: {options}')
@@ -1206,7 +1206,7 @@ class Service(KubernetesModel):
         # must also be ready
         return True
 
-    async def status(self) -> client.V1ServiceStatus:
+    async def status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
         """Get the status of the Service.
 
         Returns:
@@ -1219,7 +1219,7 @@ class Service(KubernetesModel):
         # return the status from the service
         return self.obj.status
 
-    async def get_endpoints(self) -> List[client.V1Endpoints]:
+    async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
         """Get the endpoints for the Service.
 
         This can be useful for checking internal IP addresses used
@@ -1259,7 +1259,7 @@ class Service(KubernetesModel):
             "namespace": self.namespace,
             "path": path
         }
-        return await client.CoreV1Api().api_client.call_api(
+        return await kubernetes_asyncio.client.CoreV1Api().api_client.call_api(
             '/api/v1/namespaces/{namespace}/services/{name}/proxy/{path}',
             method,
             path_params=path_params,
@@ -3098,7 +3098,7 @@ class KubernetesConnector(servo.BaseConnector):
                 target container.
 
         """
-        await self.config.load_kubeconfig()
+        # await self.config.load_kubeconfig()
 
         if not service or port:
             raise ValueError(f"a service or port must be given")
@@ -3115,22 +3115,16 @@ class KubernetesConnector(servo.BaseConnector):
             port = ser.obj.spec.ports[0].port
 
         # update the Deployment to listen on another port
-        service_port = port + 1
+        service_port = 9980  # TODO: Constant/config option
         for p in dep.obj.spec.template.spec.containers[0].ports:
             if p.container_port == port:
                 p.container_port = service_port
 
-        # Update the PORT env var if one exists
-        # TODO: not sure if this is a general enough pattern to warrant direct support
-        for e in dep.obj.spec.template.spec.containers[0].env:
-            if e.name == "PORT" and e.value == str(port):
-                e.value = str(service_port)
-
         # build the sidecar container
-        container = V1Container(
-            name="envoy",
+        container = kubernetes_asyncio.client.V1Container(
+            name="opsani-envoy",  # TODO: Put this into a constant or something
             image="opsani/envoy-proxy:latest",
-            resources=V1ResourceRequirements(
+            resources=kubernetes_asyncio.client.V1ResourceRequirements(
                 requests={
                     "cpu": "125m",
                     "memory": "128Mi"
@@ -3141,13 +3135,13 @@ class KubernetesConnector(servo.BaseConnector):
                 }
             ),
             env=[
-                V1EnvVar(name="SERVICE_PORT", value=str(service_port)),
-                V1EnvVar(name="LISTEN_PORT", value=str(port)),
-                V1EnvVar(name="METRICS_PORT", value="9901")
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
-                V1ContainerPort(name="service", container_port=port),
-                V1ContainerPort(name="metrics", container_port=9901),
+                kubernetes_asyncio.client.V1ContainerPort(name="service", container_port=port),
+                kubernetes_asyncio.client.V1ContainerPort(name="metrics", container_port=9901),
             ]
         )
 
@@ -3159,6 +3153,7 @@ class KubernetesConnector(servo.BaseConnector):
             dep.obj.spec.template.metadata.annotations = {}
 
         dep.obj.spec.template.metadata.annotations.update({
+            "prometheus.opsani.com/scheme": "http",
             "prometheus.opsani.com/path": "/stats/prometheus",
             "prometheus.opsani.com/port": "9901",
             "prometheus.opsani.com/scrape": "true"
