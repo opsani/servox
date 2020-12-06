@@ -1053,6 +1053,244 @@ class Pod(KubernetesModel):
         return self.obj.metadata.uid
 
 
+class Service(KubernetesModel):
+    """Kubetest wrapper around a Kubernetes `Service`_ API Object.
+
+    The actual ``kubernetes.client.V1Service`` instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Service`_.
+
+    .. _Service:
+        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#service-v1-core
+    """
+
+    obj: client.V1Service
+
+    api_clients: ClassVar[Dict[str, Type]] = {
+        'preferred': client.CoreV1Api,
+        'v1': client.CoreV1Api,
+    }
+
+    @classmethod
+    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
+    async def read(cls, name: str, namespace: str) -> "Pod":
+        """Read the Service from the cluster under the given namespace.
+
+        Args:
+            name: The name of the Service to read.
+            namespace: The namespace to read the Service from.
+        """
+        default_logger.info(f'reading service "{name}" in namespace "{namespace}"')
+
+        async with cls.preferred_client() as api_client:
+            obj = await asyncio.wait_for(
+                api_client.read_namespaced_service(name, namespace),
+                5.0
+            )
+            default_logger.trace("service: ", obj)
+            return Service(obj)
+
+    async def create(self, namespace: str = None) -> None:
+        """Creates the Service under the given namespace.
+
+        Args:
+            namespace: The namespace to create the Service under.
+                If the Service was loaded via the kubetest client, the
+                namespace will already be set, so it is not needed here.
+                Otherwise, the namespace will need to be provided.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        self.logger.info(f'creating service "{self.name}" in namespace "{self.namespace}"')
+        self.logger.debug(f'service: {self.obj}')
+
+        self.obj = await self.api_client.create_namespaced_service(
+            namespace=namespace,
+            body=self.obj,
+        )
+
+    async def patch(self) -> None:
+        """
+        TODO: Add docs....
+        """
+        async with self.api_client() as api_client:
+            await api_client.patch_namespaced_service(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+
+    async def delete(self, options: client.V1DeleteOptions = None) -> client.V1Status:
+        """Deletes the Service.
+
+        This method expects the Service to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+
+        Args:
+            options: Options for Service deletion.
+
+        Returns:
+            The status of the delete operation.
+        """
+        if options is None:
+            options = client.V1DeleteOptions()
+
+        self.logger.info(f'deleting service "{self.name}"')
+        self.logger.debug(f'delete options: {options}')
+        self.logger.debug(f'service: {self.obj}')
+
+        return await self.api_client.delete_namespaced_service(
+            name=self.name,
+            namespace=self.namespace,
+            body=options,
+        )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Service resource."""
+        self.obj = await self.api_client.read_namespaced_service(
+            name=self.name,
+            namespace=self.namespace,
+        )
+
+    async def is_ready(self) -> bool:
+        """Check if the Service is in the ready state.
+
+        The readiness state is not clearly available from the Service
+        status, so to see whether or not the Service is ready this
+        will check whether the endpoints of the Service are ready.
+
+        This comes with the caveat that in order for a Service to
+        have endpoints, there needs to be some backend hooked up to it.
+        If there is no backend, the Service will never have endpoints,
+        so this will never resolve to True.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        await self.refresh()
+
+        # check the status. if there is no status, the service is
+        # definitely not ready.
+        if self.obj.status is None:
+            return False
+
+        endpoints = await self.get_endpoints()
+
+        # if the Service has no endpoints, its not ready.
+        if len(endpoints) == 0:
+            return False
+
+        # get the service endpoints and check that they are all ready.
+        for endpoint in endpoints:
+            # if we have an endpoint, but there are no subsets, we
+            # consider the endpoint to be not ready.
+            if endpoint.subsets is None:
+                return False
+
+            for subset in endpoint.subsets:
+                # if the endpoint has no addresses setup yet, its not ready
+                if subset.addresses is None or len(subset.addresses) == 0:
+                    return False
+
+                # if there are still addresses that are not ready, the
+                # service is not ready
+                not_ready = subset.not_ready_addresses
+                if not_ready is not None and len(not_ready) > 0:
+                    return False
+
+        # if we got here, then all endpoints are ready, so the service
+        # must also be ready
+        return True
+
+    async def status(self) -> client.V1ServiceStatus:
+        """Get the status of the Service.
+
+        Returns:
+            The status of the Service.
+        """
+        self.logger.info(f'checking status of service "{self.name}"')
+        # first, refresh the service state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the service
+        return self.obj.status
+
+    async def get_endpoints(self) -> List[client.V1Endpoints]:
+        """Get the endpoints for the Service.
+
+        This can be useful for checking internal IP addresses used
+        in containers, e.g. for container auto-discovery.
+
+        Returns:
+            A list of endpoints associated with the Service.
+        """
+        self.logger.info(f'getting endpoints for service "{self.name}"')
+        endpoints = await self.api_client.list_namespaced_endpoints(
+            namespace=self.namespace,
+        )
+
+        svc_endpoints = []
+        for endpoint in endpoints.items:
+            # filter to include only the endpoints with the same
+            # name as the service.
+            if endpoint.metadata.name == self.name:
+                svc_endpoints.append(endpoint)
+
+        self.logger.debug(f'endpoints: {svc_endpoints}')
+        return svc_endpoints
+
+    async def _proxy_http_request(self, method, path, **kwargs) -> tuple:
+        """Template request to proxy of a Service.
+
+        Args:
+            method: The http request method e.g. 'GET', 'POST' etc.
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_get function.
+
+        Returns:
+            The response data
+        """
+        path_params = {
+            "name": f'{self.name}:{self.obj.spec.ports[0].port}',
+            "namespace": self.namespace,
+            "path": path
+        }
+        return await client.CoreV1Api().api_client.call_api(
+            '/api/v1/namespaces/{namespace}/services/{name}/proxy/{path}',
+            method,
+            path_params=path_params,
+            **kwargs
+        )
+
+    async def proxy_http_get(self, path: str, **kwargs) -> tuple:
+        """Issue a GET request to proxy of a Service.
+
+        Args:
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_get function.
+
+        Returns:
+            The response data
+        """
+        return await self._proxy_http_request('GET', path, **kwargs)
+
+    async def proxy_http_post(self, path: str, **kwargs) -> tuple:
+        """Issue a POST request to proxy of a Service.
+
+        Args:
+            path: The URI path for the request.
+            kwargs: Keyword arguments for the proxy_http_post function.
+
+        Returns:
+            The response data
+        """
+        return await self._proxy_http_request('POST', path, **kwargs)
+
+
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
 
@@ -1447,7 +1685,6 @@ class Deployment(KubernetesModel):
             count += await pod.get_restart_count()
 
         return count
-
 
 class Millicore(int):
     """
@@ -2844,6 +3081,91 @@ class KubernetesConnector(servo.BaseConnector):
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
+
+    # TODO: Add support for specifying the container, targeting Pods, etc.
+    async def inject_sidecar(self, deployment: str, *, service: Optional[str], port: Optional[int]) -> None:
+        """
+        Injects an Envoy sidecar into a target Deployment that proxies a service
+        or literal TCP port, generating scrapable metrics usable for optimization.
+
+        The service or port argument must be provided to define how traffic is proxied
+        between the Envoy sidecar and the container responsible for fulfilling the request.
+
+        Args:
+            deployment: Name of the target Deployment to inject the sidecar into.
+            service: Name of the service to proxy. Envoy will accept ingress traffic
+                on the service port and reverse proxy requests back to the original
+                target container.
+
+        """
+        await self.config.load_kubeconfig()
+
+        if not service or port:
+            raise ValueError(f"a service or port must be given")
+
+        if service and port:
+            raise ValueError(f"service and port cannot both be given")
+
+        dep_name = deployment.split("/")[1]
+        dep = await Deployment.read(dep_name, self.config.namespace)
+
+        # lookup the port on the target service
+        if service:
+            ser = await Service.read(service, self.config.namespace)
+            port = ser.obj.spec.ports[0].port
+
+        # update the Deployment to listen on another port
+        service_port = port + 1
+        for p in dep.obj.spec.template.spec.containers[0].ports:
+            if p.container_port == port:
+                p.container_port = service_port
+
+        # Update the PORT env var if one exists
+        # TODO: not sure if this is a general enough pattern to warrant direct support
+        for e in dep.obj.spec.template.spec.containers[0].env:
+            if e.name == "PORT" and e.value == str(port):
+                e.value = str(service_port)
+
+        # build the sidecar container
+        container = V1Container(
+            name="envoy",
+            image="opsani/envoy-proxy:latest",
+            resources=V1ResourceRequirements(
+                requests={
+                    "cpu": "125m",
+                    "memory": "128Mi"
+                },
+                limits={
+                    "cpu": "250m",
+                    "memory": "256Mi"
+                }
+            ),
+            env=[
+                V1EnvVar(name="SERVICE_PORT", value=str(service_port)),
+                V1EnvVar(name="LISTEN_PORT", value=str(port)),
+                V1EnvVar(name="METRICS_PORT", value="9901")
+            ],
+            ports=[
+                V1ContainerPort(name="service", container_port=port),
+                V1ContainerPort(name="metrics", container_port=9901),
+            ]
+        )
+
+        # add the sidecar to the Deployment
+        dep.obj.spec.template.spec.containers.append(container)
+
+        # add annotations so the servo will scrape the metrics
+        if dep.obj.spec.template.metadata.annotations is None:
+            dep.obj.spec.template.metadata.annotations = {}
+
+        dep.obj.spec.template.metadata.annotations.update({
+            "prometheus.opsani.com/path": "/stats/prometheus",
+            "prometheus.opsani.com/port": "9901",
+            "prometheus.opsani.com/scrape": "true"
+        })
+
+        # patch the deployment
+        await dep.patch()
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:

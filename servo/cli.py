@@ -1612,6 +1612,37 @@ class ServoCLI(CLI):
                 typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
         @self.command(section=section)
+        def inject_sidecar(
+            context: Context,
+            target: str = typer.Argument(
+                ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
+            ),
+            service: Optional[str] = typer.Option(
+                None, "--service", "-s", help="Service to target"
+            ),
+            port: Optional[int] = typer.Option(
+                None, "--port", "-p", help="Port to target"
+            )
+        ) -> None:
+            """
+            Inject an Envoy sidecar to capture metrics
+            """
+            if not target.startswith(("deploy/", "deployment/", "pod/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+
+            if not service or port:
+                raise typer.MissingParameter("service or port must be given")
+
+            if target.startswith("deploy"):
+                connector = context.servo.get_connector("kubernetes")
+                sync(connector.inject_sidecar(deployment=target, service=service, port=port))
+
+            elif target.startswith("pod"):
+                raise typer.BadParameter("Pod sidecar injection is not yet implemented")
+            else:
+                raise typer.BadParameter(f"unexpected sidecar target: {target}")
+                
+        @self.command(section=section)
         def adjust(
             context: Context,
             settings: Optional[List[str]] = typer.Argument(
@@ -1643,7 +1674,7 @@ class ServoCLI(CLI):
                         value=value,
                     )
                     adjustments.append(adjustment)
-
+                    
                 results: List[servo.EventResult] = run_async(
                     servo_.dispatch_event(servo.Events.ADJUST, adjustments)
                 )
