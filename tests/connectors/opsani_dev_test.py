@@ -159,3 +159,287 @@ class TestChecksSidecarsInjected:
 
 # Warnings:
 # 9980 port conflict
+
+# init containers are ignored
+
+
+# TODO: Test deployment, pod with init container, test nginx not match,
+# TODO: check namespace affinity only scrapes in current namespace
+
+
+# Map to the app, 
+
+
+# To a full check on Opsani dev...
+# App exists
+# App has resources
+# No sidecar
+# Inject the sidecar
+# Sidecar inhected
+# Sidecar getting traffic
+# Service port and envoy proxy port match
+# I send traffic through the service and it shows up in Envoy
+# The canary comes up
+
+from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union
+import asyncio
+
+# class IntegrationTests:
+#     @pytest.mark.applymanifests(
+#         "../manifests",
+#         files=[
+#             "fiber-http.yaml",
+#             # "k6.yaml",
+#             # "prometheus.yaml",
+#         ],
+#     )
+#     async def test_all(
+#         self,
+#         optimizer: servo.Optimizer,
+#         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+#     ) -> None:
+        # Deploy fiber
+        # Verify single container
+        # Do sidecar injection
+        # Update the service
+        # Check for Prometheus
+        # Check for Prometheus Targets scraping
+        # Check for Envoy
+        # Check for Envoy traffic
+        
+        
+        # Deploy fiber-http with annotations and Prometheus will start scraping it
+        # async with kube_port_forward("deploy/prometheus", 9090) as url:
+        #     config = servo.connectors.prometheus.PrometheusConfiguration.generate(base_url=url)
+        #     connector = servo.connectors.prometheus.PrometheusConnector(config=config, optimizer=optimizer)
+        #     while True:
+        #         metrics = await asyncio.wait_for(
+        #             asyncio.gather(connector.measure(control=servo.Control(duration="5s"))),
+        #             timeout=30
+        #         )
+        #         debug(metrics)
+        #         break
+# async def test_
+
+
+
+@pytest.mark.applymanifests(
+    "opsani_dev",
+    files=[
+        "deployment.yaml",
+        "service.yaml",
+        # "servo.yaml",
+        "prometheus.yaml",
+    ],
+)
+class TestEverything:
+    @pytest.fixture(autouse=True)
+    async def load_manifests(
+        self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+    ) -> None:
+        kube.wait_for_registered(timeout=30)
+        checks.config.namespace = kube.namespace
+        
+        # Fake out the servo metadata in the environment
+        # These env vars are set by our manifests
+        deployment = kube.get_deployments()["servo"]
+        pod = deployment.get_pods()[0]
+        os.environ['POD_NAME'] = pod.name
+        os.environ["POD_NAMESPACE"] = kube.namespace
+    
+    # async def test_target_discovery(
+    #     self,
+    #     optimizer: servo.Optimizer,
+    #     kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    # ) -> None:
+    #     # Deploy fiber-http with annotations and Prometheus will start scraping it
+    #     async with kube_port_forward("deploy/prometheus", 9090) as url:
+    #         config = PrometheusConfiguration.generate(base_url=url)
+    #         connector = PrometheusConnector(config=config, optimizer=optimizer)
+    #         while True:
+    #             metrics = await asyncio.wait_for(
+    #                 asyncio.gather(connector.measure(control=servo.Control(duration="5s"))),
+    #                 timeout=30
+    #             )
+    #             debug(metrics)
+    #             break
+
+    # @pytest.mark.parametrize(
+    #     "resource", ["namespace", "deployment", "container", "service"]
+    # )
+    # async def test_resource_exists(
+    #     self, resource: str, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+    # ) -> None:
+    #     result = await checks.run_one(id=f"check_kubernetes_{resource}")
+    #     assert result.success
+
+    async def test_all(
+        self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        
+        # async with assert_check_raises(                
+        #     AssertionError,
+        #     "deployment 'fiber-http' does not have any annotations"
+        # ):
+        #     await checks.run_one(id=f"check_deployment_annotations")
+        # return
+        
+         # Deploy fiber-http with annotations and Prometheus will start scraping it
+        # TODO: this should be referencing a servo as a sidecar
+        # TODO: the name here is misleading -- its in prometheus.yaml
+        async with kube_port_forward("deploy/servo", 9090) as url:
+            # Connect the checks to our port forward interface
+            checks.config.prometheus_base_url = url
+            
+            deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
+            assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+            
+            # TODO: Move these into library functions. Do we want replace/merge versions?
+            # TODO: This is really annotate_pod_spec_template?
+            async def annotate(deployment, annotations: Dict[str, str]) -> None:
+                existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
+                existing_annotations.update(annotations)
+                deployment.pod_template_spec.metadata.annotations = existing_annotations
+                return await deployment.patch()
+                
+            
+            async def label(deployment, labels: List[str]) -> None:
+                ...
+            
+            # NOTE: Step 1 - No annotations and fail
+            await assert_check_fails(checks.run_one(id=f"check_deployment_annotations"))
+            return
+            await assert_check_raised(
+                checks.run_one(id=f"check_deployment_annotations"),
+                AssertionError,
+                "deployment 'fiber-http' does not have any annotations"
+            )
+            async with assert_check_raises(
+                AssertionError,
+                "deployment 'fiber-http' does not have any annotations"
+            ) as assertion:
+                assertion.set(checks.run_one(id=f"check_deployment_annotations"))
+            
+            return
+            
+            # NOTE: Step 2 - Add annotation and pass
+            # TODO: Parametrize with each annotation            
+            await annotate(deployment,
+                {
+                    "prometheus.opsani.com/scrape": "true",
+                    "prometheus.opsani.com/scheme": "http",
+                    "prometheus.opsani.com/path": "/stats/prometheus",
+                    "prometheus.opsani.com/port": "9901",
+                }
+            )                
+            await assert_check(checks.run_one(id=f"check_deployment_annotations"))
+        
+        # TODO: check annotations, labels, sidecars
+        # TODO: Check annotation isn't there, then check it is
+
+async def assert_check_fails(
+    check: servo.checks.Check, 
+    message: Optional[str] = None
+) -> None:
+    """Assert that a check fails.
+    
+    The check provided can be a previously executed Check object or a coroutine that returns a Check.
+    This assertion does not differentiate between boolean and exceptional failures. If you want to test
+    a particular exceptional failure condition, take a look at `assert_check_raises`.
+    """
+    return await assert_check(check, message, _success=False)
+
+import contextlib
+@contextlib.asynccontextmanager
+async def assert_check_raises(
+    check: servo.checks.Check, 
+    type_: Type[Exception], 
+    message: Optional[str] = None,
+    *,
+    match: Optional[str] = None
+) -> None:
+    """Assert that a check fails due to a specific exception being raised.
+    
+    The check provided can be a previously executed Check object or a coroutine that returns a Check.
+    The exception type is evalauted and the `match` parameter is matched against the underlying exception
+    via `pytest.assert_raises` and supports strings and regex objects.
+    
+    This method can optionally be used as an asynchronous context manager via the `async with ..` syntax:
+        ```
+        async with assert_check_raises(AttributeError) as assertion:
+            assertion.set(check.whatever(True))
+        ```
+    
+    The assertion object yielded exposes a single method `set` that accepts a `Check` object value or
+    a callable that returns a Check object. The callable can be asynchronous and will be awaited.
+    This syntax can be more readable and enables setup/teardown and debugging logic that would otherwise
+    be rather unergonomic.
+    """
+    if callable(check):
+        class _Assertion:
+            def set(self, value) -> None:
+                self._value = value
+            
+            async def get(self) -> servo.checks.Check:
+                if asyncio.iscoroutine(self._value):
+                    return await self._value
+                else:
+                    return self._value
+                    
+        assertion = _Assertion()
+        yield assertion
+        value = await assertion.get()
+        debug("GPT BACK ", assertion, value)
+        
+        assert value is not None, f"invalid use as context manager: must return a Check"
+        await assert_check(value, message, _success=False, _exception_type=type_, _exception_match=match)
+    else:
+        await assert_check(check, message, _success=False, _exception_type=type_, _exception_match=match)
+
+async def assert_check_raised(check, *args, **kwargs):
+    async with assert_check_raises(*args, **kwargs) as assertion:
+        assertion.set(check)
+
+async def assert_check(
+    check: Union[servo.checks.Check, Callable],
+    message: Optional[str] = None,
+    *,
+    _success: bool = True,
+    _exception_type: Optional[Type[Exception]] = None,
+    _exception_match: Optional[str] = None
+) -> None:
+    """Assert the outcome of a check matches expectations.
+    
+    The check provided can be a previously executed Check object or a coroutine that returns a Check.
+    In the event of an exceptional failure, underlying exceptions are chained to facilitate debugging.
+    This method underlies other higher level semantically named assertions prefixed with `assert_check_`.
+    
+    Args:
+        check: The check object or coroutine that returns a check object to be evaluated.
+        message: An optional message to annotate a failing assertion. When omitted, a message is syntehsized.
+    """
+    if asyncio.iscoroutine(check):
+        result = await check
+        if callable(result):
+            result = await result
+    elif isinstance(check, servo.checks.Check):
+        result = check
+    else:
+        raise TypeError(f"unknown check: {check}")
+    
+    if result.success != _success:
+        # Let's get that stack trace into the output
+        if result.exception:
+            if _exception_type or _exception_match:
+                async with pytest.raises(_exception_type or Exception, match=_exception_match):
+                    raise result.exception
+                
+            raise AssertionError(
+                f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"
+            ) from result.exception
+        else:
+            if _exception_type:
+                raise AssertionError(f"Check(id='{result.id}') '{result.name}' was expected to raise a {_exception_type.__name__} but it did not: {assertion_message}")
+            
+            assert result.success, f"Check(id='{result.id}') '{result.name}' failed: {message or result.message}"

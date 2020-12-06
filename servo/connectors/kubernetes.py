@@ -1279,6 +1279,22 @@ class Deployment(KubernetesModel):
         """
         return selector_string(self.obj.spec.selector.match_labels)
 
+    # TODO: I need to model these two and add label/annotation helpers
+    @property
+    def pod_template_spec(self) -> kubernetes_asyncio.client.models.v1_pod_spec.V1PodTemplateSpec:
+        """Return the pod template spec for instances of the Deployment."""
+        return self.obj.spec.template
+    
+    @property
+    def pod_spec(self) -> kubernetes_asyncio.client.models.v1_pod_spec.V1PodSpec:
+        """Return the pod spec for instances of the Deployment."""
+        return self.pod_template_spec.spec
+    
+    # TODO: annotations/labels getters and setters...
+    # @property
+    # def annotations(self) -> Optional[Dict[str, str]]:
+        
+    
     ##
     # Canary support
 
@@ -2771,6 +2787,8 @@ class KubernetesConnector(servo.BaseConnector):
     async def startup(self) -> None:
         # Ensure we are ready to talk to Kubernetes API
         await self.config.load_kubeconfig()
+
+        # TODO: Check that the app meets the configured constraints
 
     @servo.on_event()
     async def describe(self) -> servo.Description:

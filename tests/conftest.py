@@ -8,7 +8,7 @@ import random
 import socket
 import string
 import pathlib
-from typing import AsyncIterator, AsyncGenerator, Callable, Iterator, List, Optional, Union
+from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import devtools
 import fastapi
@@ -504,17 +504,27 @@ ForwardingTarget = Union[
 ]
 
 @contextlib.asynccontextmanager
-async def kubectl_port_forwarded(
+async def kubectl_ports_forwarded(
     target: ForwardingTarget,
-    local_port: int,
-    remote_port: int,
-    *,
+    *ports: List[Tuple[int, int]],
     kubeconfig: str,
     namespace: str,
-) -> AsyncIterator[str]:
-    """An async context manager that establishes a port-forward to a remote pod in a Kubernetes cluster and yields a URL for reaching it.
+) -> AsyncIterator[Union[str, Dict[int, str]]]:
+    """An async context manager that establishes a port-forward to remote targets in a Kubernetes cluster and yields URLs for connecting to them.
+    
+    When a single port is forwarded, a single URL is yielded. When multiple ports are forwarded, a mapping is yielded from
+    the remote target port to a URL for reaching it.
+    
+    Args:
+        target: The deployment, pod, or service to open a forward to.
+        ports: A list of integer tuples where the first item is the local port and the second is the remote.
+        kubeconfig: Path to the kubeconfig file to use when establishing the port forward.
+        namespace: The namespace that the target is running in.
+    
+    Returns:
+        A URL if a single port was forwarded else a mapping of destination ports to URLs.
 
-    Valid syntaxes are:
+    The `target` argument accepts the following syntaxes:
         - [POD NAME]
         - pod/[NAME]
         - deployment/[NAME]
@@ -536,23 +546,30 @@ async def kubectl_port_forwarded(
                 raise TypeError(f"unknown target: {repr(target)}")
 
         identifier = _identifier_for_target(target)
+        ports_arg = " ".join(list(map(lambda pair: f"{pair[0]}:{pair[1]}", ports)))
         event = asyncio.Event()
         task = asyncio.create_task(
             tests.helpers.Subprocess.shell(
-                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} {identifier} {local_port}:{remote_port}",
+                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} {identifier} {ports_arg}",
                 event=event,
                 print_output=True
         ))
 
         await event.wait()
 
-        # Check if the socket is open
-        a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if a_socket.connect_ex(("localhost", local_port)) != 0:
-            raise RuntimeError(f"port forwarding failed")
+        # Check if the sockets are open
+        for local_port, _ in ports:
+            a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if a_socket.connect_ex(("localhost", local_port)) != 0:
+                raise RuntimeError(f"port forwarding failed")
 
-        url = f"http://localhost:{local_port}"
-        yield url
+        if len(ports) == 1:
+            url = f"http://localhost:{ports[0][0]}"
+            yield url
+        else:
+            # Build a mapping of from target ports to the forwarded URL
+            ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
+            yield ports_to_urls
     finally:
         task.cancel()
 
@@ -562,19 +579,58 @@ async def kubectl_port_forwarded(
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
+# TODO: This one takes a dict of servi
+# @pytest.fixture()
+# async def kube_port_forwards(
+#     kube,
+#     unused_tcp_port_factory: Callable[[], int],
+#     kubeconfig,
+# ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
+#     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
+#     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
+#         kube.wait_for_registered(timeout=10)
+#         return kubectl_ports_forwarded(
+#             target,
+#             unused_tcp_port,
+#             remote_port,
+#             namespace=kube.namespace,
+#             kubeconfig=kubeconfig
+#         )
+
+#     return _port_forwarder
+
+# @pytest.fixture()
+# async def kube_port_forward(
+#     kube,
+#     unused_tcp_port: int,
+#     kubeconfig,
+# ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
+#     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
+#     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
+#         kube.wait_for_registered(timeout=10)
+#         ports = list(map(lambda port: (unused_tcp_port_factory(), port), remote_ports))
+#         return kubectl_ports_forwarded(
+#             target,
+#             *ports,
+#             namespace=kube.namespace,
+#             kubeconfig=kubeconfig
+#         )
+
+#     return _port_forwarder
+
 @pytest.fixture()
 async def kube_port_forward(
     kube,
-    unused_tcp_port: int,
+    unused_tcp_port_factory: Callable[[], int],
     kubeconfig,
-) -> Callable[[ForwardingTarget, int], AsyncIterator[str]]:
+) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
-    def _port_forwarder(target: ForwardingTarget, remote_port: int):
+    def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
         kube.wait_for_registered(timeout=10)
-        return kubectl_port_forwarded(
+        ports = list(map(lambda port: (unused_tcp_port_factory(), port), remote_ports))
+        return kubectl_ports_forwarded(
             target,
-            unused_tcp_port,
-            remote_port,
+            *ports,
             namespace=kube.namespace,
             kubeconfig=kubeconfig
         )
