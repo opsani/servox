@@ -67,6 +67,9 @@ flake8-bandit = "^2.1.2"
 fastapi = "^0.61.1"
 uvicorn = "^0.13.0"
 pytest-profiling = "^1.7.0"
+pytest-sugar = "^0.9.4"
+pytest-clarity = "^0.3.0-alpha.0"
+pytest-picked = "^0.4.4"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"

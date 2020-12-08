@@ -722,7 +722,7 @@ def test_vegeta_cli_schema_json(
                 ),
                 'default': 'http',
                 'env_names': [
-                    'VEGETA_FORMAT'
+                    'VEGETA_FORMAT',
                 ],
                 'allOf': [
                     {
@@ -861,7 +861,6 @@ def test_vegeta_cli_schema_json(
             },
         },
     }
-
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_text(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:

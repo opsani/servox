@@ -10,7 +10,15 @@ import servo
 import servo.connectors.kubernetes
 import tests.helpers
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("kubernetes_asyncio_config")]
+# NOTE: These tests are brittle when run under uvloop. We run these under the default
+# asyncio event loop policy to avoid exceptions relating to pytest output capture.
+# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.event_loop_policy("default"),
+    pytest.mark.integration,
+    pytest.mark.usefixtures("kubernetes_asyncio_config")
+]
 
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube: kubetest.client.TestClient) -> None:
@@ -91,10 +99,23 @@ async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
 
 
 async def test_run_servo_on_minikube(
-    minikube_servo_image: str, subprocess
+    minikube_servo_image: str, subprocess, kubeconfig: str,
 ) -> None:
     command = (
-        f'kubectl --context=servox run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
+        " --optimizer example.com/app --token 123456 version"
+    )
+    exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)
+    assert exit_code == 0, f"servo image execution failed: {stderr}"
+    assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
+
+async def test_run_servo_on_kind(
+    kind_servo_image: str,
+    subprocess,
+    kubeconfig: str,
+) -> None:
+    command = (
+        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)

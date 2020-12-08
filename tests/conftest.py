@@ -412,7 +412,6 @@ async def kind_servo_image(kind: str, servo_image: str, subprocess, kubeconfig: 
 
     yield servo_image
 
-
 @pytest.fixture()
 def random_duration() -> servo.Duration:
     seconds = random.randrange(30, 600)
@@ -511,16 +510,16 @@ async def kubectl_ports_forwarded(
     namespace: str,
 ) -> AsyncIterator[Union[str, Dict[int, str]]]:
     """An async context manager that establishes a port-forward to remote targets in a Kubernetes cluster and yields URLs for connecting to them.
-    
+
     When a single port is forwarded, a single URL is yielded. When multiple ports are forwarded, a mapping is yielded from
     the remote target port to a URL for reaching it.
-    
+
     Args:
         target: The deployment, pod, or service to open a forward to.
         ports: A list of integer tuples where the first item is the local port and the second is the remote.
         kubeconfig: Path to the kubeconfig file to use when establishing the port forward.
         namespace: The namespace that the target is running in.
-    
+
     Returns:
         A URL if a single port was forwarded else a mapping of destination ports to URLs.
 
