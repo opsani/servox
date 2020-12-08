@@ -1522,16 +1522,16 @@ class Deployment(KubernetesModel):
     def pod_template_spec(self) -> kubernetes_asyncio.client.models.v1_pod_spec.V1PodTemplateSpec:
         """Return the pod template spec for instances of the Deployment."""
         return self.obj.spec.template
-    
+
     @property
     def pod_spec(self) -> kubernetes_asyncio.client.models.v1_pod_spec.V1PodSpec:
         """Return the pod spec for instances of the Deployment."""
         return self.pod_template_spec.spec
-    
+
     # TODO: annotations/labels getters and setters...
     # @property
     # def annotations(self) -> Optional[Dict[str, str]]:
-    
+
     # TODO: cleanup backoff
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
     async def inject_sidecar(self, *, service: Optional[str] = None, port: Optional[int] = None) -> None:
@@ -1551,7 +1551,7 @@ class Deployment(KubernetesModel):
         """
 
         await self.refresh() # TODO: Need a less crude refresh strategy
-        
+
         if not service or port:
             raise ValueError(f"a service or port must be given")
 
@@ -1605,8 +1605,8 @@ class Deployment(KubernetesModel):
 
         # patch the deployment
         await self.patch()
-        
-    
+
+
     ##
     # Canary support
 
@@ -3297,7 +3297,7 @@ class Service(KubernetesModel):
             )
             servo.logger.trace("service: ", obj)
             return cls(obj)
-    
+
     @property
     def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
         """Return the list of ports exposed by the service."""

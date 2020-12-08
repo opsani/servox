@@ -207,7 +207,7 @@ class QueryResult(pydantic.BaseModel):
     status: str
     type: ResultType
     value: Any # TODO: model this
-    
+
     @property
     def metric(self) -> None:
         return self.query.metric

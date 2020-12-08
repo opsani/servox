@@ -373,7 +373,7 @@ class CheckFilter(pydantic.BaseModel):
     """A set of tags for selecting checks to be run. Checks matching any tag in the set
     are selected.
     """
-    
+
     exclusive: bool = False
 
     @property
@@ -607,8 +607,8 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
         results = await self.run_all(
             matching=CheckFilter(
-                id=id, 
-                name=name, 
+                id=id,
+                name=name,
                 exclusive=skip_requirements,
             ), halt_on=halt_on
         )

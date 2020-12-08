@@ -396,7 +396,7 @@ class TestPrometheusIntegration:
             id="dev.opsani.com/blake-ignite",
             token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
         )
-        
+
     async def test_check_targets(
         self,
         optimizer: servo.Optimizer,
@@ -404,7 +404,7 @@ class TestPrometheusIntegration:
     ) -> None:
         # Deploy Prometheus and take a look at the targets it starts scraping
         async with kube_port_forward("deploy/prometheus", 9090) as url:
-            config = PrometheusConfiguration.generate(base_url=url)            
+            config = PrometheusConfiguration.generate(base_url=url)
             connector = PrometheusConnector(config=config, optimizer=optimizer)
             targets = await asyncio.wait_for(
                 asyncio.gather(connector.targets()),
@@ -435,12 +435,12 @@ class TestPrometheusIntegration:
                 )
                 debug(metrics)
                 break
-    
+
     @pytest.mark.applymanifests(
         "../manifests",
         files=[
             "fiber-http-opsani-dev.yaml",
-            
+
         ],
     )
     async def test_load_testing(
