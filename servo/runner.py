@@ -122,6 +122,11 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             return await self._post_event(servo.api.Events.describe, status.dict())
 
         elif cmd_response.command == servo.api.Commands.measure:
+            control = Control(**cmd_response.param.get("control", {}))
+
+            if control.environment:
+                await self.environment(control.environment)
+
             measurement = await self.measure(cmd_response.param)
             self.logger.info(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
