@@ -15,7 +15,7 @@ import servo.configuration
 import servo.api
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.types import Adjustment, Control, Description, Duration, Measurement
+from servo.types import Adjustment, Control, Description, Duration, Environment, Measurement
 
 
 class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
@@ -89,6 +89,17 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"Adjustment completed {summary}")
         return aggregate_description
 
+    async def environment(
+        self, environment: Environment
+    ) -> Description:
+        self.logger.info(f"Dispatching Environment Event... mode={environment.mode}")
+        self.logger.trace(devtools.pformat(environment))
+
+        aggregate_description = Description.construct()
+        await self.servo.dispatch_event(servo.Events.ENVIRONMENT, environment.mode)
+
+        self.logger.info(f"Environment mode validated. mode={environment.mode}")
+
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
@@ -122,6 +133,9 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
             control = Control(**cmd_response.param.get("control", {}))
+
+            if control.environment:
+                await self.environment(control.environment)
 
             try:
                 description = await self.adjust(adjustments, control)

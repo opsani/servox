@@ -1220,6 +1220,15 @@ class Deployment(KubernetesModel):
         """
         return self.obj.status.observed_generation
 
+    @property
+    def annotations(self) -> dict[str, str]:
+        """
+        Returns the observed generation of the Deployment status.
+
+        The generation is observed by the deployment controller.
+        """
+        return self.obj.metadata.annotations
+
     async def is_ready(self) -> bool:
         """Check if the Deployment is in the ready state.
 
@@ -2265,6 +2274,30 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             version_id=version_id,
         )
 
+    @classmethod
+    async def environment(
+        cls, config: "KubernetesConfiguration", mode: str
+    ) -> None:
+        mismatched = []
+        for deployment_config in config.deployments:
+            deployment = await Deployment.read(deployment_config.name, deployment_config.namespace)
+            cur_mode = deployment.annotations.get(config.environment.current_mode_annotation)
+            if cur_mode in [None, '']:
+                raise servo.errors.EventError('Missing or empty value for annotation {}: {}'.format(config.environment.current_mode_annotation, cur_mode))
+            if cur_mode == mode:
+                continue
+
+            mismatched.append(deployment_config.name)
+            deployment.annotations[config.environment.desired_mode_annotation] = mode
+            deployment.patch()
+
+        if mismatched:
+            await asyncio.sleep(config.environment.sleep_delay)
+            raise servo.errors.EventError(
+                f"Mode mismatch detected on following deployment(s): {', '.join(mismatched)}", 
+                status="environment-mismatch"
+            )
+
     def to_components(self) -> List[servo.Component]:
         """
         Return a list of Component objects modeling the state of local optimization activities.
@@ -2566,6 +2599,19 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     strategy: StrategyTypes = OptimizationStrategy.DEFAULT
     replicas: servo.Replicas
 
+class KubernetesEnvironmentConfiguration(pydantic.BaseModel):
+    current_mode_annotation: str = pydantic.Field(
+        "servo.opsani.com/current-mode",
+        description="Annotation that contains the current mode of the configured deployments"
+    )
+    desired_mode_annotation: str = pydantic.Field(
+        "servo.opsani.com/desired-mode",
+        description="Annotation to be set when the current mode does not match the OKO control"
+    )
+    sleep_delay: servo.Duration = pydantic.Field(
+        "2m",
+        description="The amount of time to sleep when mode is mismatched before returning mismatch failure"
+    )
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
@@ -2577,6 +2623,10 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
     deployments: List[DeploymentConfiguration] = pydantic.Field(
         description="Deployments to be optimized.",
+    )
+    environment: KubernetesEnvironmentConfiguration = pydantic.Field(
+        KubernetesEnvironmentConfiguration(),
+        description="Configuration for infrastructure plugin; in kubernetes' case, infrastructure mode is managed as annotations on the target deployment"
     )
 
     @classmethod
@@ -2767,6 +2817,10 @@ class KubernetesChecks(servo.BaseChecks):
 )
 class KubernetesConnector(servo.BaseConnector):
     config: KubernetesConfiguration
+
+    @servo.on_event()
+    async def environment(self, mode: str) -> None:
+        await KubernetesOptimizations.environment(self.config, mode)
 
     @servo.on_event()
     async def startup(self) -> None:

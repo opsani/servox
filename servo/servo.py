@@ -36,6 +36,7 @@ class Events(str, enum.Enum):
     # Operational events
     CHECK = "check"
     DESCRIBE = "describe"
+    ENVIRONMENT = "environment"
     MEASURE = "measure"
     ADJUST = "adjust"
     PROMOTE = "promote"
@@ -89,6 +90,10 @@ class _EventDefinitions(Protocol):
 
     @servo.events.event(Events.DESCRIBE)
     async def describe(self) -> servo.types.Description:
+        ...
+
+    @servo.events.event(Events.ENVIRONMENT)
+    async def environment(self, mode: str) -> None:
         ...
 
     @servo.events.event(Events.ADJUST)

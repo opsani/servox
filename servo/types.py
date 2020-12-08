@@ -954,6 +954,13 @@ component.
             settings_dict["settings"].update(setting.__opsani_repr__())
         return {self.name: settings_dict}
 
+class Environment(BaseModel):
+    """Environment objects model parameters used to validate and/or request the mode
+    of the target environment.
+    """
+    mode: str
+    """Desired mode for the target environment
+    """
 
 class Control(BaseModel):
     """Control objects model parameters returned by the optimizer that govern
@@ -967,6 +974,10 @@ class Control(BaseModel):
     delay: Duration = cast(Duration, 0)
     """How long to wait beyond the duration in order to ensure that the metrics
     for the target interval have been aggregated and are available for reading.
+    """
+
+    environment: Optional[Environment]
+    """Desired environment parameters of the OCO
     """
 
     warmup: Duration = cast(Duration, 0)
