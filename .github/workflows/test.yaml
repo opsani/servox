@@ -22,17 +22,13 @@ jobs:
         key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-    - name: Setup Minikube
-      uses: manusa/actions-setup-minikube@v2.1.0
-      with:
-        minikube version: 'v1.13.1'
-        kubernetes version: 'v1.19.2'
-        github token: ${{ secrets.GITHUB_TOKEN }}
     - name: Drop a Kubeconfig
       run: kubectl config view --minify --flatten > tests/kubeconfig
     - name: Run unit tests
       run: poetry run pytest tests
     - name: Test CLI entrypoints
       run: poetry run servo version
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.0.0
     - name: Run integration tests
       run: poetry run pytest -s -vv -m integration --integration

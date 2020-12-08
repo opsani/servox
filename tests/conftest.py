@@ -346,6 +346,51 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
 
     yield servo_image
 
+
+### Kind
+# Depends on subprocessx. Libraries in the key of x. kowabunga. kareem. krush. ktest
+
+@pytest.fixture
+async def kind(request, subprocess, kubeconfig: str,) -> str:
+    """Run tests within a local kind cluster.
+
+    The cluster name is determined using the parametrized `kind_cluster` marker
+    or else uses "default".
+    """
+    marker = request.node.get_closest_marker("kind_cluster")
+    if marker:
+        assert len(marker.args) == 1, f"kind_cluster marker accepts a single argument but received: {repr(marker.args)}"
+        cluster = marker.args[0]
+    else:
+        cluster = "pytest-k8s-async"
+
+    # Start kind and configure environment
+    # TODO: if we create it, we should delete it (with kubernetes_cluster() as foo:)
+    exit_code, _, _ = await subprocess(f"kind get clusters | grep {cluster} || kind create cluster --name {cluster} --kubeconfig {kubeconfig}")
+    if exit_code != 0:
+        raise RuntimeError(f"failed running kind: exited with status code {exit_code}")
+
+    # Yield the cluster name
+    try:
+        yield cluster
+
+    finally:
+        exit_code, _, _ = await subprocess(f"kind delete {cluster}")
+        if exit_code != 0:
+            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+
+# TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
+# TODO: add markers for the image, cluster name.
+@pytest.fixture()
+async def kind_servo_image(kind: str, servo_image: str, subprocess) -> str:
+    """Asynchronously build a Docker image from the current working copy and load it into kind."""
+    # TODO: Figure out how to checksum this and skip it if possible
+    exit_code, _, _ = await subprocess(f"kind load docker-image --name {kind} {servo_image}")
+    if exit_code != 0:
+        raise RuntimeError(f"failed running kind: exited with status code {exit_code}")
+
+    yield servo_image
+
 @pytest.fixture()
 def random_duration() -> servo.Duration:
     seconds = random.randrange(30, 600)
@@ -444,16 +489,16 @@ async def kubectl_ports_forwarded(
     namespace: str,
 ) -> AsyncIterator[Union[str, Dict[int, str]]]:
     """An async context manager that establishes a port-forward to remote targets in a Kubernetes cluster and yields URLs for connecting to them.
-    
+
     When a single port is forwarded, a single URL is yielded. When multiple ports are forwarded, a mapping is yielded from
     the remote target port to a URL for reaching it.
-    
+
     Args:
         target: The deployment, pod, or service to open a forward to.
         ports: A list of integer tuples where the first item is the local port and the second is the remote.
         kubeconfig: Path to the kubeconfig file to use when establishing the port forward.
         namespace: The namespace that the target is running in.
-    
+
     Returns:
         A URL if a single port was forwarded else a mapping of destination ports to URLs.
 

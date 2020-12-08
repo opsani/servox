@@ -1036,6 +1036,9 @@ class TestAssembly:
                             'egeta docs for details.'
                         ),
                         'default': 'http',
+                        'env_names': [
+                            'SERVO_OTHER_FORMAT',
+                        ],
                         'allOf': [
                             {
                                 '$ref': '#/definitions/TargetFormat',
@@ -1192,6 +1195,9 @@ class TestAssembly:
                             'egeta docs for details.'
                         ),
                         'default': 'http',
+                        'env_names': [
+                            'SERVO_VEGETA_FORMAT',
+                        ],
                         'allOf': [
                             {
                                 '$ref': '#/definitions/TargetFormat',
