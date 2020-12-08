@@ -319,11 +319,11 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("annotations")
     async def check_deployment_annotations(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, 
+            self.config.deployment,
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-        
+
         annotations = deployment.pod_template_spec.metadata.annotations
         assert annotations, f"deployment '{deployment.name}' does not have any annotations"
 
@@ -335,14 +335,14 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("labels")
     async def check_deployment_labels(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, 
+            self.config.deployment,
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-        
+
         labels = deployment.pod_template_spec.metadata.labels
         assert labels, f"deployment '{deployment.name}' does not have any labels"
-        
+
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(ENVOY_SIDECAR_LABELS.items()) - set(labels.items()))
         assert not delta, f"missing labels: {delta}"
@@ -350,37 +350,37 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("envoy sidecars")
     async def check_deployment_envoy_sidecars(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, 
+            self.config.deployment,
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-        
+
         # Search the containers list for the sidecar
         for container in deployment.containers:
             if container.name == "opsani-envoy":
                 # TODO: Add more heuristics about the image, etc.
                 return
-        
+
         raise AssertionError(f"pods created against the '{deployment.name}' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
-    
+
     @servo.checks.require("envoy sidecars in pods")
     async def check_pod_envoy_sidecars(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, 
+            self.config.deployment,
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-        
+
         for pod in await deployment.get_pods():
             await pod.wait_until_ready(timeout=10, fail_on_api_error=True) # TODO: config timeout
             assert await pod.is_ready(), f"pod '{pod.name}' is not ready: {pod}"
-            
+
             # Search the containers list for the sidecar
             for container in pod.containers:
                 if container.name == "opsani-envoy":
                     # TODO: Add more heuristics about the image, etc.
                     return
-        
+
         raise AssertionError(f"pods created against the '{deployment.name}' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
 
     ##
@@ -408,7 +408,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         target_count = len(result["data"]["activeTargets"])
         assert target_count > 0, "no active targets were found"
-        
+
         return f"found {target_count} targets"
 
     @servo.check("Envoy proxies are being scraped")
@@ -437,14 +437,14 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response.raise_for_status()
                 result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
                 assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                
+
                 # TODO: Validate that result is a vector
                 # TODO: the value property should be polymorphic union
                 timestamp, value = result.value[0]["value"]
                 assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-        
+
         # TODO: return a good status message
-    
+
     @servo.check("Traffic is proxied through Envoy")
     async def check_service_proxy(self) -> str:
         proxy_service_port = ENVOY_SIDECAR_DEFAULT_PORT  # TODO: move to configuration
@@ -452,12 +452,12 @@ class OpsaniDevChecks(servo.BaseChecks):
         for port in service.ports:
             if port.target_port == proxy_service_port:
                 return
-        
+
         raise AssertionError(f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}")
         # for pod in await deployment.get_pods():
         #     await pod.wait_until_ready(timeout=10, fail_on_api_error=True) # TODO: config timeout
         #     assert await pod.is_ready(), f"pod '{pod.name}' is not ready: {pod}"
-            
+
         #     # Search the containers list for the sidecar
         #     for container in deployment.containers:
         #         if container.name == "opsani-envoy":
@@ -468,18 +468,18 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.check("Canary is running")
     async def check_canary_is_running(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, 
+            self.config.deployment,
             self.config.namespace
         )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"        
-        
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+
         try:
             await deployment.get_canary_pod()
         except Exception as error:
             raise AssertionError(
                 f"could not find canary pod '{deployment.canary_pod_name}''"
             ) from error
-    
+
     @servo.check("All metrics are healthy")
     async def check_metrics_health(self) -> None:
         ...

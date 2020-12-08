@@ -1632,7 +1632,7 @@ class ServoCLI(CLI):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")
             else:
                 raise typer.BadParameter(f"unexpected sidecar target: {target}")
-                
+
         @self.command(section=section)
         def adjust(
             context: Context,
@@ -1665,7 +1665,7 @@ class ServoCLI(CLI):
                         value=value,
                     )
                     adjustments.append(adjustment)
-                    
+
                 results: List[servo.EventResult] = run_async(
                     servo_.dispatch_event(servo.Events.ADJUST, adjustments)
                 )
