@@ -112,3 +112,10 @@ class AdjustmentRejectedError(AdjustmentFailedError):
     applied configuration from further consideration by the optimizer.
     """
     pass
+
+class EnvironmentMismatchError(EventError):
+    """An infrastructure plugin has requested an update to the optimization environment
+
+    TODO: more on this behavior
+    """
+    pass

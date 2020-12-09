@@ -2289,13 +2289,12 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
             mismatched.append(deployment_config.name)
             deployment.annotations[config.environment.desired_mode_annotation] = mode
-            deployment.patch()
+            await deployment.patch()
 
         if mismatched:
-            await asyncio.sleep(config.environment.sleep_delay)
-            raise servo.errors.EventError(
-                f"Mode mismatch detected on following deployment(s): {', '.join(mismatched)}", 
-                status="environment-mismatch"
+            await asyncio.sleep(servo.Duration(config.environment.sleep_delay).total_seconds())
+            raise servo.errors.EnvironmentMismatchError(
+                f"Mode mismatch detected on following deployment(s): {', '.join(mismatched)}"
             )
 
     def to_components(self) -> List[servo.Component]:

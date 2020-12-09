@@ -1673,6 +1673,38 @@ class ServoCLI(CLI):
                         typer.echo(f"{servo_.name}")
                     typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
+        @self.command(section=section)
+        def environment(
+            context: Context,
+            mode: str = typer.Argument(...),
+        ) -> None:
+            """
+            Dispatch environment event to one or more connectors
+            """
+            
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+
+                results: List[servo.EventResult] = run_async(
+                    servo_.dispatch_event(servo.Events.ENVIRONMENT, mode)
+                )
+                if not results:
+                    typer.echo("environment failed: no connector handled the request", err=True)
+                    raise typer.Exit(code=1)
+
+                for result in results:
+                    outcome = result.value
+
+                    if isinstance(outcome, Exception):
+                        message = str(outcome.get("message", "undefined"))
+                        raise servo.ConnectorError(
+                            f'Adjustment connector failed with error "{outcome}" and message:\n{message}'
+                        ) from outcome
+
+            typer.echo(f"Environment verified for mode \"{mode}\"")
+
+
     def add_config_commands(self, section=Section.CONFIG) -> None:
         @self.command(section=section)
         def config(
