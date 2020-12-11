@@ -2129,6 +2129,13 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         """
         ...
 
+    @abc.abstractmethod
+    async def is_ready(self) -> bool:
+        """
+        Verify Optimization target Resource/Controller is ready.
+        """
+        ...
+
     def __hash__(self):
         return hash(
             (
@@ -2324,6 +2331,12 @@ class DeploymentOptimization(BaseOptimization):
             # TODO: Return a string summary about the restarts (which pods bounced)
             raise servo.AdjustmentRejectedError(reason="unstable")
 
+    async def is_ready(self) -> bool:
+        is_ready, restart_count = await asyncio.gather(
+            self.deployment.is_ready(),
+            self.deployment.get_restart_count()
+        )
+        return is_ready and restart_count == 0
 
 class CanaryOptimization(BaseOptimization):
     """CanaryOptimization objects manage the optimization of Containers within a Deployment using
@@ -2541,6 +2554,15 @@ class CanaryOptimization(BaseOptimization):
         else:
             return await super().handle_error(error, mode)
 
+
+    async def is_ready(self) -> bool:
+        is_ready, restart_count = await asyncio.gather(
+            self.canary_pod.is_ready(),
+            self.canary_pod.get_restart_count()
+        )
+        return is_ready and restart_count == 0
+
+
     class Config:
         arbitrary_types_allowed = True
         extra = pydantic.Extra.allow
@@ -2698,6 +2720,50 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
+
+    async def is_ready(self):
+        if self.optimizations:
+            self.logger.debug(
+                f"Checking for readiness of {len(self.optimizations)} optimizations"
+            )
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(
+                        *list(map(lambda a: a.is_ready(), self.optimizations)),
+                        return_exceptions=True,
+                    ),
+                    timeout=60, # Should be fairly immediate operation
+                )
+
+                # FIXME: This error handling needs to find the right optimization
+                # that raised it
+                for result in results:
+                    if isinstance(result, Exception):
+                        for optimization in self.optimizations:
+                            if await optimization.handle_error(
+                                result, self.config.on_failure
+                            ):
+                                # Getting readiness should not fail; failure should be treated as failed sanity check
+                                raise result
+
+                    if not result:
+                        return False
+
+                return True
+
+            except asyncio.exceptions.TimeoutError as error:
+                self.logger.error(
+                    f"timed out after 60 seconds checking for optimization readiness"
+                )
+                # FIXME: Error handling likely needs to propogate to each
+                # optimization... ?
+                for optimization in self.optimizations:
+                    if await optimization.handle_error(error, self.config.on_failure):
+                        # Stop error propogation once it has been handled
+                        break
+        else:
+            self.logger.warning(f"failed to verify readiness: no optimizations")
+
 
     class Config:
         arbitrary_types_allowed = True
@@ -3153,15 +3219,25 @@ class KubernetesConnector(servo.BaseConnector):
                 p.annotate(f"waiting {settlement} for pods to settle...", False),
                 progress=p.progress,
             )
-            await progress.watch(progress_logger)
+            async def readiness_monitor() -> None:
+                while not progress.finished:
+                    if not await state.is_ready():
+                        raise servo.AdjustmentRejectedError(
+                            reason="Optimization target became unready during adjustment settlement period"
+                        )
+                    await asyncio.sleep(servo.Duration('5s').total_seconds())
+
+            await asyncio.gather(
+                progress.watch(progress_logger),
+                readiness_monitor()
+            )
+            if not await state.is_ready():
+                raise servo.AdjustmentRejectedError(
+                    reason="Optimization target became unready after adjustment settlement period"
+                )
             self.logger.info(
                 f"Settlement duration of {settlement} has elapsed, resuming optimization."
             )
-
-            if not await state.is_ready():
-                raise servo.AdjustmentRejectedError(
-                    reason="timed out waiting for Deployment to apply adjustment"
-                )
 
         description = state.to_description()
         return description
