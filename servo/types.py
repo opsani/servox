@@ -637,7 +637,7 @@ class TimeSeries(BaseModel):
         return min(self.values, key=itemgetter(1), default=None)
     
     def first(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return next(self.values, None)
+        return next(iter(self.values), None)
 
     def last(self) -> Optional[Tuple[datetime.datetime, float]]:
         return next(reversed(self.values), None)
