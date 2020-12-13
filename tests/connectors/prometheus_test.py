@@ -450,6 +450,7 @@ class TestPrometheusIntegration:
         servo.logging.set_level("TRACE")
         # Deploy fiber-http with annotations and Prometheus will start scraping it
         # TODO: Use Opsani Dev generator?
+        # TODO: This shit has to be URL escaped in the query
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             config = PrometheusConfiguration.generate(
                 base_url=url,
@@ -458,8 +459,8 @@ class TestPrometheusIntegration:
                         "throughput",
                         servo.Unit.REQUESTS_PER_SECOND,
                         query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
-                        absent=servo.connectors.prometheus.Absent.zero,
-                        step="1m",
+                        # absent=servo.connectors.prometheus.Absent.zero,
+                        step="15s",
                     ),
                     # PrometheusMetric(
                     #     "error_rate",
