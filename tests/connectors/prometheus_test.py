@@ -1,4 +1,5 @@
 import datetime
+import pathlib
 import re
 from typing import AsyncIterator
 
@@ -7,6 +8,7 @@ import httpx
 import pydantic
 import pytest
 import respx
+import typer
 
 import servo.utilities
 from servo.connectors.prometheus import (
@@ -490,15 +492,22 @@ class TestCLI:
         def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
             return PrometheusConnector(config=config)
 
-        async def test_one_active_connector(self, connector: PrometheusConnector) -> None:
+        # TODO: usefixtures for optimizer_env
+
+        def test_one_active_connector(self, optimizer_env: None, connector: PrometheusConnector, config: PrometheusConfiguration, servo_cli: servo.cli.ServoCLI, cli_runner: typer.testing.CliRunner, tmp_path: pathlib.Path) -> None:
             with respx.mock(base_url="http://localhost:9090") as respx_mock:
                 targets = envoy_sidecars()
                 request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
-                output = await connector.targets()
-                debug(output)
-
-            # TODO: This needs to output a target
-            ...
+                
+                config_file = tmp_path / "servo.yaml"
+                import tests.helpers # TODO: Turn into fixtures!
+                tests.helpers.write_config_yaml({"prometheus": config}, config_file)
+                
+                result = cli_runner.invoke(servo_cli, "prometheus targets")
+                assert result.exit_code == 0, f"expected exit status 0, got {result.exit_code}: stdout={result.stdout}, stderr={result.stderr}"
+                assert request.called
+                assert "opsani-envoy-sidecars  up        http://192.168.95.123:9901/stats/prometheus" in result.stdout
+            
 
         async def test_multiple_active_connector(self) -> None:
             # TODO: Put config into tmpdir with two connectors, invoke both, invoke each one
@@ -510,5 +519,43 @@ class TestCLI:
 # Test without active target
 # Test with multiple targets
 # Tests with specific target
-# TODO: Add targets CLI
 # TODO: Add query CLI
+
+
+class TestConnector:
+    @pytest.fixture
+    def metric(self) -> PrometheusMetric:
+        return PrometheusMetric(
+            name="test",
+            unit=Unit.REQUESTS_PER_MINUTE,
+            query="throughput",
+            step="45m",
+        )
+
+    @pytest.fixture
+    def config(self, metric: PrometheusMetric) -> PrometheusConfiguration:
+        return PrometheusConfiguration(
+            base_url="http://localhost:9090", metrics=[metric]
+        )
+
+    @pytest.fixture
+    def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
+        return PrometheusConnector(config=config)
+        
+    async def test_one_active_connector(self, connector: PrometheusConnector) -> None:
+        with respx.mock(base_url="http://localhost:9090") as respx_mock:
+            targets = envoy_sidecars()
+            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(200, json=targets))
+            targets = await connector.targets()
+            assert request.called
+            assert len(targets) == 1
+            assert targets[0].pool == 'opsani-envoy-sidecars'
+            assert targets[0].url == 'http://192.168.95.123:9901/stats/prometheus'
+            assert targets[0].health == 'up'
+            
+            import timeago
+            import pytz
+
+            utc_now = pytz.utc.localize(datetime.datetime.utcnow())
+            debug(datetime.datetime.now(), datetime.datetime.utcnow(), utc_now)
+            debug(timeago.format(targets[0].last_scraped_at, utc_now))
