@@ -71,6 +71,8 @@ data:
       // Don't bother with reading the response as we don't care
       discardResponseBodies: true,
 
+      httpDebug: 'full',
+
       /*
       IMPORTANT - Managing Connection Reuse
 
@@ -114,7 +116,7 @@ data:
           timeUnit: '10s',
 
           // Allocate enough VUs to support the entire test or the executor throttles
-          preAllocatedVUs: 700,
+          preAllocatedVUs: 10,
 
           /**
           STAGES
@@ -155,6 +157,8 @@ data:
       const durationInSeconds = 10;
       const url = `http://fiber-http.${__ENV.POD_NAMESPACE}.svc.cluster.local/`;
       const requests = buildBatch(url, 10);
+
+      console.log("LOADING URL: ", url)
 
       const before = new Date().getTime();
       while (true) {

@@ -169,7 +169,7 @@ metadata:
     app.kubernetes.io/part-of: servo
 data:
   prometheus.yaml: |
-    # Opsani Servo Prometheus Sidecar v0.6.2
+    # Opsani Servo Prometheus Sidecar v0.8.0
     # This configuration allows the Opsani Servo to discover and scrape Pods that
     # have been injected with an Envoy proxy sidecar container that emits the metrics
     # necessary for optimization. Scraping by the Prometheus sidecar is enabled by
@@ -177,9 +177,10 @@ data:
     # optimization:
     #
     # annotations:
+    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
+    #   prometheus.opsani.com/scheme: http # Scrape via HTTP by default
     #   prometheus.opsani.com/path: /stats/prometheus # Default Envoy metrics path
     #   prometheus.opsani.com/port: "9901" # Default Envoy metrics port
-    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
     #
     # Path and port collisions with the optimization target can be resolved be changing
     # the relevant annotation.
@@ -197,25 +198,58 @@ data:
     # Scrape the Envoy sidecar metrics based on matching annotations (see above)
     scrape_configs:
     - job_name: 'opsani-envoy-sidecars'
-      kubernetes_sd_configs:
-        - role: pod
+
+      # Configure access to Kubernetes API server
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
+      kubernetes_sd_configs:
+        - role: pod
+
       relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
+        # Do not attempt to scrape init containers
+        - source_labels: [__meta_kubernetes_pod_container_init]
+          action: keep
+          regex: false
+
+        # Relabel to scrape only pods that have
+        # "prometheus.opsani.com/scrape = true" annotation.
         - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape]
           action: keep
           regex: true
+
+        # Relabel to configure scrape scheme for pod scrape targets
+        # based on pod "prometheus.opsani.com/scheme = <scheme>" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+
+        # Relabel to customize metric path based on pod
+        # "prometheus.opsani.com/path = <metric path>" annotation.
         - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_path]
           action: replace
           target_label: __metrics_path__
           regex: (.+)
+
+        # Relabel to scrape only single, desired port for the pod
+        # based on pod "prometheus.opsani.com/port = <port>" annotation.
         - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_opsani_com_port]
           action: replace
-          target_label: __address__
-          regex: (.+)(?::\d+);(\d+)
+          regex: ([^:]+)(?::\d+)?;(\d+)
           replacement: $1:$2
-        - action: labelmap
-          regex: __meta_kubernetes_pod_label_(.+)
+          target_label: __address__
+
 
 
 
