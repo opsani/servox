@@ -22,8 +22,6 @@ jobs:
         key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-    - name: Drop a Kubeconfig
-      run: kubectl config view --minify --flatten > tests/kubeconfig
     - name: Run unit tests
       run: poetry run pytest tests
     - name: Test CLI entrypoints
