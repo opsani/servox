@@ -447,7 +447,7 @@ class TestPrometheusIntegration:
         optimizer: servo.Optimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        servo.logging.set_level("TRACE")
+        servo.logging.set_level("DEBUG")
         # Deploy fiber-http with annotations and Prometheus will start scraping it
         # TODO: Use Opsani Dev generator?
         # TODO: This shit has to be URL escaped in the query
