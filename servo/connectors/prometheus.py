@@ -383,51 +383,51 @@ class PrometheusConnector(servo.BaseConnector):
         start = datetime.datetime.now() + control.warmup
         end = start + control.duration
         measurement_duration = servo.Duration(control.warmup + control.duration)
-        triggered_reading: Optional[Tuple[datetime.datetime, float]] = None
-        throughput_metric = next(filter(lambda m: m.name == "throughput", metrics__))
+        # TODO: Push target metrics into config and support nore than 1
+        target_metric = next(filter(lambda m: m.name == "throughput", metrics__))
+        active_reading: Optional[Tuple[datetime.datetime, float]] = None
         
         async def check_metrics(progress: servo.EventProgress) -> None:
-            nonlocal triggered_reading
+            nonlocal active_reading
+            self.logger.info(
+                progress.annotate(f"measuring Prometheus metrics for up to {progress.timeout}...", False),
+                progress=progress.progress,
+            )
             if progress.timed_out:
                 self.logger.info(f"measurement duration of {measurement_duration} elapsed: reporting metrics")
                 progress.complete()
                 return
             else:
                 # NOTE: We need throughput to do anything meaningful. Generalize?
-                throughput_readings = await self._query_prometheus(throughput_metric, start, end)
+                throughput_readings = await self._query_prometheus(target_metric, start, end)
                 if throughput_readings:
                     latest_reading = throughput_readings[0].last()                    
-                    self.logger.trace(f"Prometheus returned reading for the `throughput` metric: {latest_reading}")
+                    self.logger.trace(f"Prometheus returned reading for the `{target_metric.name}` metric: {latest_reading}")
                     if latest_reading[1] > 0:
-                        if triggered_reading is None:
-                            triggered_reading = latest_reading
-                            self.logger.info(progress.annotate(f"read `throughput` metric value of {triggered_reading[1]} at {triggered_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
+                        if active_reading is None:
+                            active_reading = latest_reading
+                            self.logger.info(progress.annotate(f"read `{target_metric.name}` metric value of {active_reading[1]} at {active_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
                             progress.trigger()
-                        elif latest_reading[1] != triggered_reading[1]:
-                            previous_reading = triggered_reading
-                            triggered_reading = latest_reading
+                        elif latest_reading[1] != active_reading[1]:
+                            previous_reading = active_reading
+                            active_reading = latest_reading
                             if progress.settling:
-                                self.logger.info(progress.annotate(f"read updated `throughput` metric value of {triggered_reading[1]} (previously {previous_reading[1]}) at {triggered_reading[0].timestamp()} during settlement, resetting to capture more data"))
+                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {active_reading[1]} (previously {previous_reading[1]}) at {active_reading[0].timestamp()} during settlement, resetting to capture more data"))
                                 progress.reset()
                             else:
                                 # TODO: Should this just complete? How would we get here...
-                                self.logger.info(progress.annotate(f"read updated `throughput` metric value of {triggered_reading[1]} (previously {previous_reading[1]}) at {triggered_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
+                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {active_reading[1]} (previously {previous_reading[1]}) at {active_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
                                 progress.trigger()
                         else:
-                            self.logger.debug(f"metric `throughput` has not changed value, ignoring (reading={triggered_reading}, num_readings={len(throughput_readings[0].values)})")
+                            self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].values)})")
                     else:
-                        servo.logger.debug(f"Prometheus returned zero value for the `throughput` metric")
+                        servo.logger.debug(f"Prometheus returned zero value for the `{target_metric.name}` metric")
                 else:
-                    servo.logger.warning(progress.annotate(f"Prometheus returned no readings for the `throughput` metric"))
+                    servo.logger.warning(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
             
-            servo.logger.debug(f"sleeping for {throughput_metric.step} to allow metrics to aggregate")
-            await asyncio.sleep(throughput_metric.step.total_seconds())
-                        
-                    
-            self.logger.info(
-                progress.annotate(f"checking on metrics status...", False),
-                progress=progress.progress,
-            )
+            servo.logger.debug(f"sleeping for {target_metric.step} to allow metrics to aggregate")
+            await asyncio.sleep(target_metric.step.total_seconds())
+            
         # TODO: The settlement time is totally arbitrary. Configure? Push up to the server under control field?
         progress = servo.EventProgress(timeout=measurement_duration, settlement=servo.Duration("1m"))
         await progress.watch(check_metrics)
