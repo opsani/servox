@@ -21,10 +21,12 @@ import loguru
 import pydantic
 import pygments
 import pygments.formatters
-import tabulate
-import timeago
 import typer
 import yaml
+
+# Expose helpers
+from tabulate import tabulate
+from timeago import format as timeago
 
 import servo
 import servo.runner
@@ -899,7 +901,7 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def events(
@@ -1049,7 +1051,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def metrics(context: Context) -> None:
@@ -1081,7 +1083,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         self.add_cli(show_cli, section=Section.ASSEMBLY)
 
@@ -1101,7 +1103,7 @@ class ServoCLI(CLI):
                 ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         @self.command(section=Section.ASSEMBLY)
         def connectors(
@@ -1341,7 +1343,7 @@ class ServoCLI(CLI):
 
                     # Output table
                     if not quiet:
-                        typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                        typer.echo(tabulate(table, headers, tablefmt="plain"))
 
                     if ready:
                         return True
@@ -1432,7 +1434,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         def metrics_callback(
             context: typer.Context, value: Optional[List[str]]
@@ -1594,7 +1596,7 @@ class ServoCLI(CLI):
                             readings_column.extend(
                                 list(
                                     map(
-                                        lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
+                                        lambda r: f"{r[0]:.2f} ({timeago(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
                                         values,
                                     )
                                 )
@@ -1609,7 +1611,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @self.command(section=section)
         def inject_sidecar(
@@ -1711,7 +1713,7 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
     def add_config_commands(self, section=Section.CONFIG) -> None:
         @self.command(section=section)
@@ -2154,3 +2156,6 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
         Exception: Any exception raised during execution of the future.
     """
     return asyncio.get_event_loop().run_until_complete(future)
+
+def print_table(table, headers) -> None:
+    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")

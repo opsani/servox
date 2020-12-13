@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import enum
 import functools
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -7,13 +8,12 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import httpcore._exceptions
 import httpx
 import pydantic
+import pytz
 
 import servo
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
-
-import enum
 
 
 class Absent(str, enum.Enum):
@@ -70,20 +70,29 @@ class PrometheusMetric(servo.Metric):
 
 class PrometheusTarget(pydantic.BaseModel):
     """PrometheusTarget objects describe targets that are scraped by Prometheus jobs."""
+    pool: str
     url: str
-    state: bool
+    global_url: str
+    health: str # TODO: This should be an enum but I dunno what the values could be
     labels: Optional[Dict[str, str]]
+    discovered_labels: Optional[Dict[str, str]]
     last_scraped_at: Optional[datetime.datetime]
-    scrape_duration: Optional[servo.Duration]
-    error: Optional[str]
-
-    @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> List['PrometheusTarget']:
-        """Return a list of target objects from a Prometheus targets JSON representation."""
-        # TODO: Validate its a dict
-        # TODO: Validate it has a status and data key
-        # TODO: Validate it has a data.activeTargets key
-        ...
+    last_scrape_duration: Optional[servo.Duration]
+    last_error: Optional[str]
+    
+    @pydantic.root_validator(pre=True)
+    def _map_from_prometheus_json(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "pool": values["scrapePool"],
+            "url": values["scrapeUrl"],
+            "global_url": values["globalUrl"],
+            "health": values["health"],
+            "labels": values["labels"],
+            "discovered_labels": values["discoveredLabels"],
+            "last_scraped_at": values["lastScrape"],
+            "last_scrape_duration": values["lastScrapeDuration"],
+            "last_error": values["lastError"] if values["lastError"] else None
+        }
 
 
 class PrometheusConfiguration(servo.BaseConfiguration):
@@ -111,7 +120,7 @@ class PrometheusConfiguration(servo.BaseConfiguration):
 
     @classmethod
     def generate(cls, **kwargs) -> "PrometheusConfiguration":
-        """Generates a default configuration for capturing measurements from the
+        """Generate a default configuration for capturing measurements from the
         Prometheus metrics server.
 
         Returns:
@@ -390,14 +399,10 @@ class PrometheusConnector(servo.BaseConnector):
 
     async def targets(self) -> List:
         """Return a list of targets being scraped by Prometheus."""
-        # TODO: Return a list of targets as objects we can print...
         async with httpx.AsyncClient(base_url=self.config.base_url) as client:
             response = await client.get("/api/v1/targets")
-            response.raise_for_status()
-            result = response.json()
-            return result
-            # TODO: Serialize into objects...
-        ...
+            response.raise_for_status()            
+            return pydantic.parse_obj_as(List[PrometheusTarget], response.json()['data']['activeTargets'])
 
     async def _query_prometheus(
         self, metric: PrometheusMetric, start: datetime, end: datetime
@@ -488,10 +493,32 @@ class PrometheusConnector(servo.BaseConnector):
 
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")
 
-
 @app.command()
 def targets(
     context: servo.cli.Context,
 ):
     """Display the targets being scraped."""
-    context.connector.targets()
+    targets = servo.cli.run_async(context.connector.targets())
+    headers = ["POOL", "HEALTH", "URL", "LABELS", "LAST SCRAPED", "ERROR"]
+    table = []
+    for target in targets:
+        labels = sorted(
+            list(
+                map(
+                    lambda l: f"{l[0]}={l[1]}",
+                    target.labels.items(),
+                )
+            )
+        )
+        table.append(
+            [
+                target.pool,
+                target.health,
+                f"{target.url} ({target.global_url})" if target.url != target.global_url else target.url,
+                "\n".join(labels),
+                f"{target.last_scraped_at:%Y-%m-%d %H:%M:%S} ({servo.cli.timeago(target.last_scraped_at, pytz.utc.localize(datetime.datetime.now()))} in {target.last_scrape_duration})" if target.last_scraped_at else "-",
+                target.last_error or "-",
+            ]
+        )
+    
+    servo.cli.print_table(table, headers)
