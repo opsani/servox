@@ -21,12 +21,14 @@ jobs:
         path: .venv
         key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
-      run: poetry install
+      run: poetry install    
     - name: Run unit tests
       run: poetry run pytest tests
     - name: Test CLI entrypoints
       run: poetry run servo version
     - name: Create kind cluster
       uses: helm/kind-action@v1.0.0
+    - name: Drop a Kubeconfig
+      run: kubectl config view --minify --flatten > tests/kubeconfig
     - name: Run integration tests
       run: poetry run pytest -s -vv -m integration --integration
