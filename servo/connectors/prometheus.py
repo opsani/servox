@@ -127,24 +127,25 @@ class PrometheusConfiguration(servo.BaseConfiguration):
             A default configuration for PrometheusConnector objects.
         """
         return cls(
-            description="Update the base_url and metrics to match your Prometheus configuration",
-            metrics=[
-                PrometheusMetric(
-                    "throughput",
-                    servo.Unit.REQUESTS_PER_SECOND,
-                    query="rate(http_requests_total[5m])",
-                    absent=Absent.zero,
-                    step="1m",
-                ),
-                PrometheusMetric(
-                    "error_rate",
-                    servo.Unit.PERCENTAGE,
-                    query="rate(errors[5m])",
-                    absent=Absent.zero,
-                    step="1m",
-                ),
-            ],
-            **kwargs,
+            **{**dict(
+                description="Update the base_url and metrics to match your Prometheus configuration",
+                metrics=[
+                    PrometheusMetric(
+                        "throughput",
+                        servo.Unit.REQUESTS_PER_SECOND,
+                        query="rate(http_requests_total[5m])",
+                        absent=Absent.zero,
+                        step="1m",
+                    ),
+                    PrometheusMetric(
+                        "error_rate",
+                        servo.Unit.PERCENTAGE,
+                        query="rate(errors[5m])",
+                        absent=Absent.zero,
+                        step="1m",
+                    ),
+                ],
+            ), **kwargs}
         )
 
     @pydantic.validator("base_url")
@@ -215,7 +216,8 @@ class QueryResult(pydantic.BaseModel):
     query: BaseQuery
     status: str
     type: ResultType
-    value: Any # TODO: model this
+    metric: dict # TODO: dunno here...
+    values: List[Tuple[datetime.datetime, float]]
 
     @property
     def metric(self) -> None:
@@ -227,8 +229,14 @@ class QueryResult(pydantic.BaseModel):
             "query": values["query"],
             "status": values["status"],
             "type": values["data"]["resultType"],
-            "value": values["data"]["result"],
+            "metric": values["data"]["result"][0]["metric"],
+            "values": values["data"]["result"][0]["values"],
         }
+    
+    @pydantic.validator("values")
+    @classmethod
+    def _sort_values(cls, values: List[Tuple[datetime.datetime, float]]) -> List[Tuple[datetime.datetime, float]]:
+        return(sorted(values, key=lambda x: x[0]))  
 
 
 class PrometheusChecks(servo.BaseChecks):
@@ -367,24 +375,55 @@ class PrometheusConnector(servo.BaseConnector):
         self.logger.info(
             f"Starting measurement of {len(metrics__)} metrics: {servo.utilities.join_to_series(measuring_names)}"
         )
-
+        
+        # TODO: Rationalize these given the streaming metrics support
         start = datetime.datetime.now() + control.warmup
         end = start + control.duration
-
         sleep_duration = servo.Duration(control.warmup + control.duration)
-        self.logger.info(
-            f"Waiting {sleep_duration} during metrics collection ({control.warmup} warmup + {control.duration} duration)..."
-        )
-
-        progress = servo.DurationProgress(sleep_duration)
-        notifier = lambda p: self.logger.info(
-            p.annotate(f"waiting {sleep_duration} during metrics collection...", False),
-            progress=p.progress,
-        )
-        await progress.watch(notifier)
-        self.logger.info(
-            f"Done waiting {sleep_duration} for metrics collection, resuming optimization."
-        )
+        triggered_reading: Optional[Tuple[datetime.datetime, float]] = None
+        throughput_metric = next(filter(lambda m: m.name == "throughput", metrics__))
+        
+        async def check_metrics(progress: servo.EventProgress) -> None:
+            nonlocal triggered_reading
+            if progress.timed_out:
+                self.logger.info(f"measurement duration of {sleep_duration} elapsed: reporting metrics")
+                progress.complete()
+                return
+            else:
+                # NOTE: We need throughput to do anything meaningful. Generalize?
+                throughput_readings = await self._query_prometheus(throughput_metric, start, end)
+                if throughput_readings:
+                    # debug("READINGS ARE", throughput_readings)
+                    latest_reading = throughput_readings[0].last()
+                    debug("READ LATEST READING: ", latest_reading)
+                    await asyncio.sleep(1.0)
+                    self.logger.trace(f"Prometheus returned reading for the `throughput` metric: {latest_reading}")
+                    if latest_reading[1] > 0:
+                        if triggered_reading and (latest_reading[1] != triggered_reading[1]):
+                            triggered_reading = latest_reading
+                            if progress.settling:
+                                self.logger.debug("encountered non-zero metric value after being triggered, resetting to capture more data")
+                                progress.reset()
+                            else:                            
+                                self.logger.info(f"read throughput metric value of {triggered_reading[1]}, monitoring for {progress.settlement} before early reporting")
+                                progress.trigger()
+                        else:
+                            self.logger.debug("metric has not updated, ignoring")
+                    else:
+                        servo.logger.debug(f"Prometheus returned zero value for the `throughput` metric")
+                else:
+                    servo.logger.warning(f"Prometheus returned no readings for the `throughput` metric")
+                        
+                    
+            self.logger.info(
+                progress.annotate(f"checking on metrics status...", False),
+                progress=progress.progress,
+            )
+        # TODO: The settlement time is totally arbitrary. Configure? Push up to the server under control field?
+        progress = servo.EventProgress(timeout=sleep_duration, settlement=servo.Duration("1m"))
+        await progress.watch(check_metrics)
+        debug(progress, "progress is ", progress.progress)
+        # TODO: need a repr that reflects how we exited
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
@@ -430,7 +469,7 @@ class PrometheusConnector(servo.BaseConnector):
             base_url=self.config.api_url, metric=metric, start=start, end=end
         )
         result = await _query(request)
-        self.logger.trace(f"Got response data for metric {metric}: {result}")
+        self.logger.trace(f"Got response data type {result.__class__} for metric {metric}: {result}")
 
         if result.status != "success":
             # TODO: Prolly need to raise or error here?
@@ -438,7 +477,7 @@ class PrometheusConnector(servo.BaseConnector):
 
         readings = []
         # TODO: check and handle the resultType
-        if result.value == []:
+        if result.values == []:
             if metric.absent == Absent.ignore:
                 pass
             elif metric.absent == Absent.zero:
@@ -456,6 +495,7 @@ class PrometheusConnector(servo.BaseConnector):
 
                 # TODO: this is brittle...
                 # [{'metric': {}, 'value': [1607078958.682, '1']}]
+                debug("LOOKING AT", absent_result)
                 absent = int(absent_result.value[0]['value'][1]) == 1
                 if absent:
                     if metric.absent == Absent.warn:
@@ -468,25 +508,24 @@ class PrometheusConnector(servo.BaseConnector):
                         raise ValueError(f"unknown metric absent value: {metric.absent}")
 
         else:
-            for result_dict in result.value:
-                m_ = result_dict["metric"].copy()
-                # NOTE: Unpack "metrics" subdict and pack into a string
-                if "__name__" in m_:
-                    del m_["__name__"]
-                instance = m_.get("instance")
-                job = m_.get("job")
-                annotation = " ".join(
-                    map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
+            m_ = result.metric.copy()
+            # NOTE: Unpack "metrics" subdict and pack into a string
+            if "__name__" in m_:
+                del m_["__name__"]
+            instance = m_.get("instance")
+            job = m_.get("job")
+            annotation = " ".join(
+                map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
+            )
+            readings.append(
+                servo.TimeSeries(
+                    metric=metric,
+                    annotation=annotation,
+                    values=result.values,
+                    id=f"{{instance={instance},job={job}}}",
+                    metadata=dict(instance=instance, job=job),
                 )
-                readings.append(
-                    servo.TimeSeries(
-                        metric=metric,
-                        annotation=annotation,
-                        values=result_dict["values"],
-                        id=f"{{instance={instance},job={job}}}",
-                        metadata=dict(instance=instance, job=job),
-                    )
-                )
+            )
 
         return readings
 
