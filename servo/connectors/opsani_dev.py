@@ -465,7 +465,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         #             return
         ...
 
-    @servo.check("Canary is running")
+    @servo.check("Tuning pod is running")
     async def check_canary_is_running(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -477,12 +477,43 @@ class OpsaniDevChecks(servo.BaseChecks):
             await deployment.get_canary_pod()
         except Exception as error:
             raise AssertionError(
-                f"could not find canary pod '{deployment.canary_pod_name}''"
+                f"could not find tuning pod '{deployment.canary_pod_name}''"
             ) from error
 
-    @servo.check("All metrics are healthy")
-    async def check_metrics_health(self) -> None:
-        ...
+    @servo.check("Pods are processing traffic")
+    async def check_traffic_metrics(self) -> str:
+        metrics = [
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_request_rate",
+                servo.types.Unit.REQUESTS_PER_SECOND,
+                query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[10s]))',
+                step="10s"
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_request_rate",
+                servo.types.Unit.REQUESTS_PER_SECOND,
+                query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+                step="10s"
+            ),
+        ]
+        summaries = []
+        for metric in metrics:
+            query = servo.connectors.prometheus.InstantQuery(
+                base_url=self.config.prometheus_base_url,
+                metric=metric
+            )
+            async with httpx.AsyncClient() as client:
+                response = await client.get(query.url)
+                response.raise_for_status()
+                result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
+                debug("LOADED UP RESULT", result, result.values)
+                assert result.values, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                
+                timestamp, value = result.values[0]["value"]
+                assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                summaries.append(f"{metric.name}={value}{metric.unit}")
+            
+            return ", ".join(summaries)
 
 
 @servo.metadata(

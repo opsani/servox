@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import datetime
 import os
 import re
 
@@ -8,6 +10,7 @@ from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set
 
 import httpx
 import pytest
+import pytz
 import respx
 
 import servo
@@ -177,7 +180,6 @@ class TestEverything:
     async def load_manifests(
         self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
-
         kube.wait_for_registered(timeout=30)
         checks.config.namespace = kube.namespace
 
@@ -195,12 +197,17 @@ class TestEverything:
         # Deploy fiber-http with annotations and Prometheus will start scraping it
         # FIXME: the name here is misleading -- its in prometheus.yaml
         envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
-        async with kube_port_forward("deploy/servo", 9090) as url:
+        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
             # Connect the checks to our port forward interface
-            checks.config.prometheus_base_url = url + servo.connectors.prometheus.API_PATH
+            # prometheus_base_url = url + servo.connectors.prometheus.API_PATH
+            # TODO: Rationalize the URL structure
+            checks.config.prometheus_base_url = prometheus_base_url + servo.connectors.prometheus.API_PATH
 
             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+            
+            prometheus_config = servo.connectors.prometheus.PrometheusConfiguration.generate(base_url=prometheus_base_url)
+            prometheus_connector = servo.connectors.prometheus.PrometheusConnector(config=prometheus_config)
 
             ## Step 1
             servo.logger.critical("Step 1 - Verify the annotations are set on the Deployment pod spec")
@@ -211,12 +218,13 @@ class TestEverything:
                 assertion.set(checks.run_one(id=f"check_deployment_annotations"))
 
             # Add a subset of the required annotations to catch partial setup cases
-            await add_annotations_to_podspec_of_deployment(deployment,
-                {
-                    "prometheus.opsani.com/path": "/stats/prometheus",
-                    "prometheus.opsani.com/port": "9901",
-                }
-            )
+            async with change_to_resource(deployment):
+                await add_annotations_to_podspec_of_deployment(deployment,
+                    {
+                        "prometheus.opsani.com/path": "/stats/prometheus",
+                        "prometheus.opsani.com/port": "9901",
+                    }
+                )
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_annotations"),
                 AssertionError,
@@ -224,12 +232,13 @@ class TestEverything:
             )
 
             # Fill in the missing annotations
-            await add_annotations_to_podspec_of_deployment(deployment,
-                {
-                    "prometheus.opsani.com/scrape": "true",
-                    "prometheus.opsani.com/scheme": "http",
-                }
-            )
+            async with change_to_resource(deployment):
+                await add_annotations_to_podspec_of_deployment(deployment,
+                    {
+                        "prometheus.opsani.com/scrape": "true",
+                        "prometheus.opsani.com/scheme": "http",
+                    }
+                )
             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
 
             # Step 2: Verify the labels are set on the Deployment pod spec
@@ -240,11 +249,12 @@ class TestEverything:
                 re.escape("missing labels: {'sidecar.opsani.com/type': 'envoy'}")
             )
 
-            await add_labels_to_podspec_of_deployment(deployment,
-                {
-                    "sidecar.opsani.com/type": "envoy"
-                }
-            )
+            async with change_to_resource(deployment):
+                await add_labels_to_podspec_of_deployment(deployment,
+                    {
+                        "sidecar.opsani.com/type": "envoy"
+                    }
+                )
             await assert_check(checks.run_one(id=f"check_deployment_labels"))
 
             # Step 3
@@ -256,23 +266,35 @@ class TestEverything:
             )
 
             # Add the sidecar and pass
-            await deployment.inject_sidecar(service="fiber-http")
+            async with change_to_resource(deployment):
+                await deployment.inject_sidecar(service="fiber-http")
+            
             await assert_check(checks.run_one(id=f"check_deployment_envoy_sidecars"))
 
             # Wait for the pods to restart. Look for env vars
-            # TODO: add retry for kubernetes_asyncio.client.exceptions.ApiException: (409)
             servo.logger.info("waiting for pods to rollout that have the Envoy sidecar")
-            await deployment.wait_until_ready(timeout=30) # TODO: config timeout
-            # FIXME: eliminate the blind sleep
-            await asyncio.sleep(15)
+            await deployment.wait_until_ready(timeout=30)
+            # TODO: I need to wait for the pods to rotate
+            await asyncio.sleep(20) # TODO: Port waiting logic next...
             await assert_check(checks.run_one(id=f"check_pod_envoy_sidecars"))
 
             # Step 4
             servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping targets")
-            servo.logger.info("sleeping for 7s to allow Prometheus to scrape the targets")
+            servo.logger.info("waiting for Prometheus to scrape our Pods")            
 
-            # NOTE: Prometheus is on a 5s scrape interval so we can't factor this one out
-            await asyncio.sleep(7)
+            async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.PrometheusTarget]:
+                servo.logger.debug(f"Waiting for Prometheus scrape Pod targets...")
+                # NOTE: Prometheus is on a 5s scrape interval
+                scraped_since = pytz.utc.localize(datetime.datetime.now())
+                while True:
+                    targets = await prometheus_connector.targets()
+                    if targets:
+                        if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets)):
+                            return targets
+                    
+                    await asyncio.sleep(0.25)
+            
+            await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
             # Step 5
@@ -283,20 +305,24 @@ class TestEverything:
                 re.escape("Envoy is not reporting any traffic to Prometheus")
             )
 
-            # Send some traffic through Envoy to verify the proxy is healthy
-            pods = await deployment.get_pods()
-            pod = pods[0]
-            await pod.wait_until_ready(timeout=15)
-            servo.logger.debug(f"Sending test traffic to Envoy container on pod '{pod.name}'")
-            async with kube_port_forward(f"pod/{pod.name}", envoy_proxy_port) as url:
-                async with httpx.AsyncClient() as client:
-                    for i in range(10):
-                        servo.logger.debug(f"Sending request {i} to {url}")
-                        response = await client.get(url)
+            # Send some traffic through Envoy to verify the proxy is healthy            
+            async def burst_traffic_to_url(url: str, *, duration: int) -> None:
+                burst_until = datetime.datetime.now() + datetime.timedelta(seconds=duration)
+                async with httpx.AsyncClient(base_url=url) as client:
+                    servo.logger.info(f"Bursting traffic to {url} for {duration} seconds...")
+                    count = 0
+                    while datetime.datetime.now() < burst_until:
+                        response = await client.get("/")
                         response.raise_for_status()
+                        count += 1
+                    servo.logger.success(f"Bursted {count} requests to {url} over {duration} seconds.")
+            
+            servo.logger.debug(f"Sending test traffic to Envoy through deploy/fiber-http")
+            async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
+                await burst_traffic_to_url(envoy_url, duration=10)
 
             # Let Prometheus scrape to see the traffic
-            await asyncio.sleep(5)
+            await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
             # Step 6
@@ -310,25 +336,19 @@ class TestEverything:
             # Update the port to point to the sidecar
             service = await servo.connectors.kubernetes.Service.read("fiber-http", checks.config.namespace)
             service.ports[0].target_port = envoy_proxy_port
-            await service.patch()
+            async with change_to_resource(service):
+                await service.patch()
             await assert_check(checks.run_one(id=f"check_service_proxy"))
 
             # Send traffic through the service and verify it shows up in Envoy
             port = service.ports[0].port
             servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
             
-            async with kube_port_forward(f"service/fiber-http", port) as url:
-                async with httpx.AsyncClient() as client:
-                    for i in range(25):
-                        servo.logger.info(f"Sending request {i} to {url}")
-                        response = await client.get(url)
-                        try:
-                            response.raise_for_status()
-                        except:
-                            await asyncio.sleep(0.25)
+            async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                await burst_traffic_to_url(service_url, duration=10)
 
-            # Let Prometheus scrape to see the traffic
-            await asyncio.sleep(5)
+            # Let Prometheus scrape to see the traffic            
+            await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
             # Step 7
@@ -336,13 +356,32 @@ class TestEverything:
             await assert_check_raises(
                 checks.run_one(id=f"check_canary_is_running"),
                 AssertionError,
-                re.escape("could not find canary pod 'fiber-http-canary'")
+                re.escape("could not find tuning pod 'fiber-http-canary'")
             )
-            await deployment.ensure_canary_pod()
+            async with change_to_resource(deployment):
+                await deployment.ensure_canary_pod()
             await assert_check(checks.run_one(id=f"check_canary_is_running"))
 
-            # Step 9: Send traffic through the service and verify the whole thing is working
-            # TODO:
+            # Step 8
+            servo.logger.critical("Step 7 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
+            async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                await burst_traffic_to_url(service_url, duration=15)
+            
+            targets = await wait_for_targets_to_be_scraped()
+            assert len(targets) == 2
+            main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
+            tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
+            assert main.pool == "opsani-envoy-sidecars"
+            assert main.health == "up"
+            assert main.labels["app_kubernetes_io_name"] == "fiber-http"
+            
+            assert tuning.pool == "opsani-envoy-sidecars"
+            assert tuning.health == "up"            
+            assert tuning.labels["opsani_role"] == "tuning"
+            assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-canary"
+            assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
+            
+            # await assert_check(checks.run_one(id=f"check_traffic_metrics"))            
 
 async def assert_check_fails(
     check: servo.checks.Check,
@@ -496,3 +535,33 @@ async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> 
     deployment.pod_template_spec.metadata.labels = existing_labels
     await deployment.patch()
     await deployment.refresh()  # TODO: Figure out a better logic for this...
+
+@contextlib.asynccontextmanager
+async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesModel):
+    status = resource.status
+    metadata = resource.obj.metadata
+    
+    # allow the resource to be changed
+    yield
+    
+    await resource.refresh()
+    
+    # early exit if nothing changed
+    if (resource.obj.metadata.resource_version == metadata.resource_version):
+        servo.logger.debug(f"existing early: metadata resource version has not changed")
+        return
+    
+    if hasattr(status, "observed_generation"):
+        while status.observed_generation == resource.status.observed_generation:
+            await asyncio.sleep(0.05)
+            await resource.refresh()
+    
+    # wait for the change to roll out
+    if isinstance(resource, servo.connectors.kubernetes.Deployment):
+        await resource.wait_until_ready()
+    elif isinstance(resource, servo.connectors.kubernetes.Pod):
+        await resource.wait_until_ready()
+    elif isinstance(resource, servo.connectors.kubernetes.Service):
+        pass
+    else:
+        servo.logger.warning(f"no change observation strategy for Kubernetes resource of type `{resource.__class__.__name__}`")
