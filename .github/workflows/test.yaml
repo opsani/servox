@@ -44,6 +44,10 @@ jobs:
       uses: helm/kind-action@v1.0.0
       with:
         cluster_name: pytest-k8s-async
+    - name: Display kind kubeconfig
+      run: kind get kubeconfig
+    - name: Merge kind kubeconfig
+      run: kind export kubeconfig --name pytest-k8s-async --kubeconfig tests/kubeconfig
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests    
