@@ -116,3 +116,7 @@ pylint = ["-*"]
 [tool.flakehell.exceptions."tests/"]
 pycodestyle = ["-*"]
 pyflakes = ["-*"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--kube-context=servox-integration-tests"
