@@ -285,9 +285,10 @@ class TestEverything:
 
             # Send some traffic through Envoy to verify the proxy is healthy
             pods = await deployment.get_pods()
-            pod_name = pods[0].name
-            servo.logger.debug(f"Sending test traffic to Envoy container on pod '{pod_name}'")
-            async with kube_port_forward(f"pod/{pod_name}", envoy_proxy_port) as url:
+            pod = pods[0]
+            await pod.wait_until_ready(timeout=15)
+            servo.logger.debug(f"Sending test traffic to Envoy container on pod '{pod.name}'")
+            async with kube_port_forward(f"pod/{pod.name}", envoy_proxy_port) as url:
                 async with httpx.AsyncClient() as client:
                     for i in range(10):
                         servo.logger.debug(f"Sending request {i} to {url}")
