@@ -222,7 +222,7 @@ class TestEventProgress:
         assert not progress.finished
         await asyncio.sleep(0.1)
         assert progress.finished
-        assert not progress.succeeded
+        assert not progress.completed
     
     async def test_grace_time(self) -> None:
         ...
