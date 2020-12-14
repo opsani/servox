@@ -426,11 +426,11 @@ class PrometheusConnector(servo.BaseConnector):
                         if active_reading:
                             # NOTE: If we had a value and fall back to zero it could be a burst
                             if not progress.settling:
-                                servo.logger.warning(f"Prometheus returned zero value for the `{target_metric.name}` metric after returning a non-zero value. Could be a burst: {active_reading}")
+                                servo.logger.warning(f"metric `{target_metric.name}` has fallen to zero from {active_reading[1]}: may indicate a bursty traffic pattern. Will report eagerly if metric remains zero after {progress.settlement}")
                                 progress.trigger()
                             else:
                                 # NOTE: We are waiting out settlement
-                                servo.logger.warning(f"zero value metric under settlement with {progress.settlement_remaining} remaining")
+                                servo.logger.warning(f"metric `{target_metric.name}` has fallen to zero. Will report eagerly if metric remains zero in {progress.settlement_remaining}")
                         else:
                             servo.logger.debug(f"Prometheus returned zero value for the `{target_metric.name}` metric")
                 else:
