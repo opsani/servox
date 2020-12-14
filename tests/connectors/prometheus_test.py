@@ -433,6 +433,10 @@ class TestPrometheusIntegration:
                 timeout=10
             )
             debug(targets)
+    
+    async def test_target_discovery(self) -> None:
+        # Deploy fiber-http with annotations and Prometheus will start scraping it
+        ...
 
     @pytest.mark.clusterrolebinding('cluster-admin')
     @pytest.mark.applymanifests(
@@ -442,15 +446,17 @@ class TestPrometheusIntegration:
             "k6.yaml"
         ],
     )
-    async def test_target_discovery(
+    async def test_reactive_measurement(
         self,
         optimizer: servo.Optimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
+        # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
+        # port forward so we can talk to them, and then spark up the connector and it will adapt to 
+        # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
+        # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
         servo.logging.set_level("DEBUG")
-        # Deploy fiber-http with annotations and Prometheus will start scraping it
-        # TODO: Use Opsani Dev generator?
-        # TODO: This shit has to be URL escaped in the query
+        # FIXME: Absent.zero mode needs to URL escape the query string
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             config = PrometheusConfiguration.generate(
                 base_url=url,
@@ -462,21 +468,19 @@ class TestPrometheusIntegration:
                         # absent=servo.connectors.prometheus.Absent.zero,
                         step="15s",
                     ),
-                    # PrometheusMetric(
-                    #     "error_rate",
-                    #     servo.Unit.PERCENTAGE,
-                    #     query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
-                    #     absent=servo.connectors.prometheus.Absent.zero,
-                    #     step="1m",
-                    # ),
+                    PrometheusMetric(
+                        "error_rate",
+                        servo.Unit.PERCENTAGE,
+                        query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
+                        # absent=servo.connectors.prometheus.Absent.zero,
+                        step="1m",
+                    ),
                 ],                
             )
             connector = PrometheusConnector(config=config, optimizer=optimizer)
             measurement = await asyncio.wait_for(
-                # asyncio.gather(connector.measure(control=servo.Control(duration="25s"))),
-                # timeout=30
                 connector.measure(control=servo.Control(duration="10m")),
-                timeout=600
+                timeout=630 # NOTE: Always make timeout exceed control duration
             )
             debug(measurement)
 

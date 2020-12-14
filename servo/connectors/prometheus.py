@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import enum
 import functools
+import math
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -376,7 +377,7 @@ class PrometheusConnector(servo.BaseConnector):
             metrics__ = self.metrics()
         measuring_names = list(map(lambda m: m.name, metrics__))
         self.logger.info(
-            f"Starting measurement of {len(metrics__)} metrics: {servo.utilities.join_to_series(measuring_names)}"
+            f"Measuring {len(metrics__)} metrics: {servo.utilities.join_to_series(measuring_names)}"
         )
         
         # TODO: Rationalize these given the streaming metrics support
@@ -390,7 +391,7 @@ class PrometheusConnector(servo.BaseConnector):
         async def check_metrics(progress: servo.EventProgress) -> None:
             nonlocal active_reading
             self.logger.info(
-                progress.annotate(f"measuring Prometheus metrics for up to {progress.timeout}...", False),
+                progress.annotate(f"measuring Prometheus metrics for up to {progress.timeout} (eager reporting when stable for {progress.settlement})...", False),
                 progress=progress.progress,
             )
             if progress.timed_out:
@@ -406,24 +407,29 @@ class PrometheusConnector(servo.BaseConnector):
                     if latest_reading[1] > 0:
                         if active_reading is None:
                             active_reading = latest_reading
-                            self.logger.info(progress.annotate(f"read `{target_metric.name}` metric value of {active_reading[1]} at {active_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
+                            self.logger.info(progress.annotate(f"read `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit}, awaiting {progress.settlement} before reporting"))
                             progress.trigger()
                         elif latest_reading[1] != active_reading[1]:
                             previous_reading = active_reading
                             active_reading = latest_reading
+                            delta_str = _chart_delta(previous_reading[1], active_reading[1], target_metric.unit)
                             if progress.settling:
-                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {active_reading[1]} (previously {previous_reading[1]}) at {active_reading[0].timestamp()} during settlement, resetting to capture more data"))
+                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}) during settlement, resetting to capture more data"))
                                 progress.reset()
                             else:
                                 # TODO: Should this just complete? How would we get here...
-                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {active_reading[1]} (previously {previous_reading[1]}) at {active_reading[0].timestamp()}, awaiting {progress.settlement} before reporting"))
+                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}), awaiting {progress.settlement} before reporting"))
                                 progress.trigger()
                         else:
                             self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].values)})")
                     else:
                         servo.logger.debug(f"Prometheus returned zero value for the `{target_metric.name}` metric")
                 else:
-                    servo.logger.warning(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
+                    if active_reading:
+                        servo.logger.warning(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
+                    else:
+                        # NOTE: generally only happens on initialization and we don't care
+                        servo.logger.trace(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
             
             servo.logger.debug(f"sleeping for {target_metric.step} to allow metrics to aggregate")
             await asyncio.sleep(target_metric.step.total_seconds())
@@ -573,3 +579,23 @@ def targets(
         )
     
     servo.cli.print_table(table, headers)
+
+def _delta(a, b):
+    if (a == b):
+        return 0
+    elif (a < 0) and (b < 0) or (a > 0) and (b > 0):
+        if (a < b):
+            return (abs(abs(a) - abs(b)))
+        else:
+            return -(abs(abs(a) - abs(b)))
+    else:
+        return math.copysign((abs(a) + abs(b)),b)
+
+def _chart_delta(a, b, unit) -> str:
+    delta = _delta(round(a), round(b))
+    if delta == 0:
+        return "♭"
+    elif delta < 0:
+        return f"📉{delta}{unit}"
+    else:
+        return f"📈+{delta}{unit}"
