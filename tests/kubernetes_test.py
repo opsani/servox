@@ -126,8 +126,9 @@ async def test_run_servo_on_kind(
     subprocess,
     kubeconfig: str,
 ) -> None:
+    await subprocess("kubectl --kubeconfig={kubeconfig} config view", print_output=True)
     command = (
-        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach -t --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)
@@ -152,7 +153,7 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
     assert exit_code == 0, f"image publishing failed: {stderr}"
 
     command = (
-        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} run servo --attach -t --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(
