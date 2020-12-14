@@ -479,8 +479,8 @@ class TestPrometheusIntegration:
             )
             connector = PrometheusConnector(config=config, optimizer=optimizer)
             measurement = await asyncio.wait_for(
-                connector.measure(control=servo.Control(duration="10m")),
-                timeout=630 # NOTE: Always make timeout exceed control duration
+                connector.measure(control=servo.Control(duration="3m")),
+                timeout=240 # NOTE: Always make timeout exceed control duration
             )
             debug(measurement)
 
