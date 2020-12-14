@@ -153,7 +153,7 @@ async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> Non
     assert exit_code == 0, f"image publishing failed: {stderr}"
 
     command = (
-        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} --context servox-integration-tests run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(
