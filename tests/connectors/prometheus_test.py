@@ -483,6 +483,136 @@ class TestPrometheusIntegration:
                 timeout=240 # NOTE: Always make timeout exceed control duration
             )
             debug(measurement)
+    
+    # TODO: Test no traffic -- no k6, timeout at the end and return an empty measure set
+    @pytest.mark.clusterrolebinding('cluster-admin')
+    @pytest.mark.applymanifests(
+        "../manifests",
+        files=[
+            "fiber-http-opsani-dev.yaml",
+        ],
+    )
+    async def test_no_traffic(
+        self,
+        optimizer: servo.Optimizer,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
+        # port forward so we can talk to them, and then spark up the connector and it will adapt to 
+        # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
+        # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
+        servo.logging.set_level("DEBUG")
+        # FIXME: Absent.zero mode needs to URL escape the query string
+        # async with kube_port_forward(
+        #     {
+        #         "deploy/prometheus": 9090,
+        #         "service/fiber-http": 80
+        #     }
+        # ) as urls:  # TODO: urls should be a dict        
+        async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
+            async with kube_port_forward("service/fiber-http", 80) as fiber_url:
+                config = PrometheusConfiguration.generate(
+                    base_url=prometheus_url,
+                    metrics=[
+                        PrometheusMetric(
+                            "throughput",
+                            servo.Unit.REQUESTS_PER_SECOND,
+                            query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
+                            # absent=servo.connectors.prometheus.Absent.zero,
+                            step="15s",
+                        ),
+                        PrometheusMetric(
+                            "error_rate",
+                            servo.Unit.PERCENTAGE,
+                            query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
+                            # absent=servo.connectors.prometheus.Absent.zero,
+                            step="10s",
+                        ),
+                    ],                
+                )
+                connector = PrometheusConnector(config=config, optimizer=optimizer)
+                measurement = await asyncio.wait_for(
+                    connector.measure(control=servo.Control(duration="1m")),
+                    timeout=70 # NOTE: Always make timeout exceed control duration
+                )
+                assert measurement
+                debug(measurement)
+                # FIXME: This should have error_rate also
+    
+    
+    # TODO: Test burst -- no k6, pump requests to fiber directly
+    @pytest.mark.clusterrolebinding('cluster-admin')
+    @pytest.mark.applymanifests(
+        "../manifests",
+        files=[
+            "fiber-http-opsani-dev.yaml",
+        ],
+    )
+    async def test_burst_traffic(
+        self,
+        optimizer: servo.Optimizer,
+        event_loop: asyncio.AbstractEventLoop,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
+        # port forward so we can talk to them, and then spark up the connector and it will adapt to 
+        # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
+        # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
+        servo.logging.set_level("DEBUG")
+        # FIXME: Absent.zero mode needs to URL escape the query string
+        # async with kube_port_forward(
+        #     {
+        #         "deploy/prometheus": 9090,
+        #         "service/fiber-http": 80
+        #     }
+        # ) as urls:  # TODO: urls should be a dict        
+        async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
+            async with kube_port_forward("service/fiber-http", 80) as fiber_url:
+                config = PrometheusConfiguration.generate(
+                    base_url=prometheus_url,
+                    metrics=[
+                        PrometheusMetric(
+                            "throughput",
+                            servo.Unit.REQUESTS_PER_SECOND,
+                            query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
+                            # absent=servo.connectors.prometheus.Absent.zero,
+                            step="15s",
+                        ),
+                        PrometheusMetric(
+                            "error_rate",
+                            servo.Unit.PERCENTAGE,
+                            query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
+                            # absent=servo.connectors.prometheus.Absent.zero,
+                            step="1m",
+                        ),
+                    ],
+                )
+                
+                async def burst_traffic() -> None:
+                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=45)                    
+                    async with httpx.AsyncClient(base_url=fiber_url) as client:
+                        servo.logger.info(f"Bursting traffic to {fiber_url} for 45 seconds...")
+                        count = 0
+                        while datetime.datetime.now() < burst_until:
+                            response = await client.get("/")
+                            response.raise_for_status()
+                            count += 1
+                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 45 seconds.")
+                
+                connector = PrometheusConnector(config=config, optimizer=optimizer)
+                event_loop.call_later(
+                    # 15, 
+                    2,
+                    asyncio.create_task, 
+                    burst_traffic()
+                )
+                measurement = await asyncio.wait_for(
+                    connector.measure(control=servo.Control(duration="13m")),
+                    timeout=700 # NOTE: Always make timeout exceed control duration
+                )
+                assert measurement
+                debug("Finished testing burst traffic scenario: ", measurement)
+                # FIXME: This should have error also
 
     @pytest.mark.applymanifests(
         "../manifests",

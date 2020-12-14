@@ -407,23 +407,32 @@ class PrometheusConnector(servo.BaseConnector):
                     if latest_reading[1] > 0:
                         if active_reading is None:
                             active_reading = latest_reading
-                            self.logger.info(progress.annotate(f"read `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit}, awaiting {progress.settlement} before reporting"))
+                            self.logger.success(progress.annotate(f"read `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit}, awaiting {progress.settlement} before reporting"))
                             progress.trigger()
                         elif latest_reading[1] != active_reading[1]:
                             previous_reading = active_reading
                             active_reading = latest_reading
                             delta_str = _chart_delta(previous_reading[1], active_reading[1], target_metric.unit)
                             if progress.settling:
-                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}) during settlement, resetting to capture more data"))
+                                self.logger.success(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}) during settlement, resetting to capture more data"))
                                 progress.reset()
                             else:
                                 # TODO: Should this just complete? How would we get here...
-                                self.logger.info(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}), awaiting {progress.settlement} before reporting"))
+                                self.logger.success(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}), awaiting {progress.settlement} before reporting"))
                                 progress.trigger()
                         else:
                             self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].values)})")
-                    else:
-                        servo.logger.debug(f"Prometheus returned zero value for the `{target_metric.name}` metric")
+                    else:                        
+                        if active_reading:
+                            # NOTE: If we had a value and fall back to zero it could be a burst
+                            if not progress.settling:
+                                servo.logger.warning(f"Prometheus returned zero value for the `{target_metric.name}` metric after returning a non-zero value. Could be a burst: {active_reading}")
+                                progress.trigger()
+                            else:
+                                # NOTE: We are waiting out settlement
+                                servo.logger.warning(f"zero value metric under settlement with {progress.settlement_remaining} remaining")
+                        else:
+                            servo.logger.debug(f"Prometheus returned zero value for the `{target_metric.name}` metric")
                 else:
                     if active_reading:
                         servo.logger.warning(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
@@ -431,8 +440,9 @@ class PrometheusConnector(servo.BaseConnector):
                         # NOTE: generally only happens on initialization and we don't care
                         servo.logger.trace(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
             
-            servo.logger.debug(f"sleeping for {target_metric.step} to allow metrics to aggregate")
-            await asyncio.sleep(target_metric.step.total_seconds())
+            if not progress.completed and not progress.timed_out:
+                servo.logger.debug(f"sleeping for {target_metric.step} to allow metrics to aggregate")
+                await asyncio.sleep(target_metric.step.total_seconds())
             
         # TODO: The settlement time is totally arbitrary. Configure? Push up to the server under control field?
         progress = servo.EventProgress(timeout=measurement_duration, settlement=servo.Duration("1m"))
