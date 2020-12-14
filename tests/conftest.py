@@ -321,7 +321,7 @@ async def subprocess() -> tests.helpers.Subprocess:
     return tests.helpers.Subprocess()
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 async def servo_image() -> str:
     """Asynchronously build a Docker image from the current working copy and return its tag."""
     return await tests.helpers.build_docker_image()
@@ -354,7 +354,7 @@ async def minikube(request, subprocess) -> str:
         if exit_code != 0:
             raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> str:
     """Asynchronously build a Docker image from the current working copy and cache it into the minikube repository."""
     exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}")
@@ -540,7 +540,7 @@ async def kubectl_ports_forwarded(
             elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
                 return f"deployment/{target.name}"
             elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
-                return f"service/{target.name}"
+                return f"service/{target.name}"            
             else:
                 raise TypeError(f"unknown target: {repr(target)}")
 
