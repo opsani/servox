@@ -562,8 +562,9 @@ class TestPrometheusIntegration:
         # and then manually burst it with traffic via httpx, wait for the metrics to begin flowing,
         # then suspend the traffic and let it fall back to zero. If all goes well, the connector will
         # detect this change and enter into the 1 minute settlement time, early return, and report a
-        # set of readings that includes the zero readings on both sides of sides of the burst and the burst
-        # itself without needing to wait for the full duration (13 minutes).
+        # set of readings that includes the traffic burst, the zero readings on either side of the
+        # burst, and will early return once the metrics stabilize without waiting for the full
+        # measurement duration as prescribed by the control structure (13 minutes).
         servo.logging.set_level("DEBUG")
         async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
             async with kube_port_forward("service/fiber-http", 80) as fiber_url:
@@ -598,14 +599,13 @@ class TestPrometheusIntegration:
                 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
                 event_loop.call_later(
-                    # 15, 
-                    2,
+                    15, 
                     asyncio.create_task, 
                     burst_traffic()
                 )
                 measurement = await asyncio.wait_for(
                     connector.measure(control=servo.Control(duration="13m")),
-                    timeout=700 # NOTE: Always make timeout exceed control duration
+                    timeout=300 # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
                 debug("Finished testing burst traffic scenario: ", measurement)
