@@ -496,6 +496,7 @@ async def kubectl_ports_forwarded(
     target: ForwardingTarget,
     *ports: List[Tuple[int, int]],
     kubeconfig: str,
+    context: Optional[str],
     namespace: str,
 ) -> AsyncIterator[Union[str, Dict[int, str]]]:
     """An async context manager that establishes a port-forward to remote targets in a Kubernetes cluster and yields URLs for connecting to them.
@@ -535,10 +536,11 @@ async def kubectl_ports_forwarded(
 
         identifier = _identifier_for_target(target)
         ports_arg = " ".join(list(map(lambda pair: f"{pair[0]}:{pair[1]}", ports)))
+        context_arg = f"--context {context}" if context else ""
         event = asyncio.Event()
         task = asyncio.create_task(
             tests.helpers.Subprocess.shell(
-                f"kubectl --kubeconfig={kubeconfig} port-forward --namespace {namespace} {identifier} {ports_arg}",
+                f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
                 event=event,
                 print_output=True
         ))
@@ -611,6 +613,7 @@ async def kube_port_forward(
     kube,
     unused_tcp_port_factory: Callable[[], int],
     kubeconfig,
+    kube_context: Optional[str],
 ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
@@ -620,7 +623,8 @@ async def kube_port_forward(
             target,
             *ports,
             namespace=kube.namespace,
-            kubeconfig=kubeconfig
+            kubeconfig=kubeconfig,
+            context=kube_context
         )
 
     return _port_forwarder
