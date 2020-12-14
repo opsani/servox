@@ -43,4 +43,5 @@ jobs:
       with:
         cluster_name: pytest-k8s-async
     - name: Run integration tests
+      uses: prepor/action-aws-iam-authenticator@master
       run: poetry run pytest -s -vv -m integration --integration
