@@ -463,6 +463,16 @@ class EventProgress(BaseProgress):
         return self._settlement_started_at is not None
     
     @property
+    def settlement_remaining(self) -> Optional[Duration]:
+        """Return the amount of settlement time remaining before completion."""
+        if self.settling:            
+            duration = Duration(self.settlement - Duration.since(self._settlement_started_at))
+            return duration if duration.total_seconds() >= 0 else None
+        else:
+            return None
+    
+    # TODO: Figure out how to make sure this can't go backward sanely...
+    @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0
         
