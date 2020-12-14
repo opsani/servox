@@ -381,11 +381,13 @@ async def kind(request, subprocess, kubeconfig: str, kube_context: str) -> str:
         yield cluster
 
     finally:
-        exit_code, _, _ = await subprocess(f"kind delete cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
-        if exit_code != 0:
-            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-        
-        await subprocess(f"kubectl config --kubeconfig {kubeconfig} use-context {kube_context}", print_output=True)
+        # TODO: add an option to not tear down the cluster
+        if not os.getenv("GITHUB_ACTIONS"):
+            exit_code, _, _ = await subprocess(f"kind delete cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
+            if exit_code != 0:
+                raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+            
+            await subprocess(f"kubectl config --kubeconfig {kubeconfig} use-context {kube_context}", print_output=True)
 
 # TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
 # TODO: add markers for the image, cluster name.
