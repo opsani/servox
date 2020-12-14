@@ -1107,10 +1107,11 @@ class Service(KubernetesModel):
         self.logger.info(f'creating service "{self.name}" in namespace "{self.namespace}"')
         self.logger.debug(f'service: {self.obj}')
 
-        self.obj = await self.api_client.create_namespaced_service(
-            namespace=namespace,
-            body=self.obj,
-        )
+        async with self.api_client() as api_client:
+            self.obj = await api_client.create_namespaced_service(
+                namespace=namespace,
+                body=self.obj,
+            )
 
     async def patch(self) -> None:
         """
@@ -1143,18 +1144,20 @@ class Service(KubernetesModel):
         self.logger.debug(f'delete options: {options}')
         self.logger.debug(f'service: {self.obj}')
 
-        return await self.api_client.delete_namespaced_service(
-            name=self.name,
-            namespace=self.namespace,
-            body=options,
-        )
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_service(
+                name=self.name,
+                namespace=self.namespace,
+                body=options,
+            )
 
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Service resource."""
-        self.obj = await self.api_client.read_namespaced_service(
-            name=self.name,
-            namespace=self.namespace,
-        )
+        async with self.api_client() as api_client:
+            self.obj = await api_client.read_namespaced_service(
+                name=self.name,
+                namespace=self.namespace,
+            )
 
     async def is_ready(self) -> bool:
         """Check if the Service is in the ready state.
@@ -1206,7 +1209,11 @@ class Service(KubernetesModel):
         # must also be ready
         return True
 
-    async def status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
+    @property
+    def status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
+        return self.obj.status
+    
+    async def get_status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
         """Get the status of the Service.
 
         Returns:
@@ -1219,6 +1226,11 @@ class Service(KubernetesModel):
         # return the status from the service
         return self.obj.status
 
+    @property
+    def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
+        """Return the list of ports exposed by the service."""
+        return self.obj.spec.ports
+    
     async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
         """Get the endpoints for the Service.
 
@@ -1229,9 +1241,10 @@ class Service(KubernetesModel):
             A list of endpoints associated with the Service.
         """
         self.logger.info(f'getting endpoints for service "{self.name}"')
-        endpoints = await self.api_client.list_namespaced_endpoints(
-            namespace=self.namespace,
-        )
+        async with self.api_client() as api_client:
+            endpoints = await api_client.list_namespaced_endpoints(
+                namespace=self.namespace,
+            )
 
         svc_endpoints = []
         for endpoint in endpoints.items:
@@ -1590,18 +1603,6 @@ class Deployment(KubernetesModel):
 
         # add the sidecar to the Deployment
         self.obj.spec.template.spec.containers.append(container)
-
-        # add annotations so the servo will scrape the metrics
-        # TODO: Move this shit into another method
-        # if dep.obj.spec.template.metadata.annotations is None:
-        #     dep.obj.spec.template.metadata.annotations = {}
-
-        # dep.obj.spec.template.metadata.annotations.update({
-        #     "prometheus.opsani.com/scheme": "http",
-        #     "prometheus.opsani.com/path": "/stats/prometheus",
-        #     "prometheus.opsani.com/port": "9901",
-        #     "prometheus.opsani.com/scrape": "true"
-        # })
 
         # patch the deployment
         await self.patch()
@@ -3213,238 +3214,6 @@ def selector_kwargs(
         kwargs["label_selector"] = selector_string(labels)
 
     return kwargs
-
-
-class Service(KubernetesModel):
-    """Kubetest wrapper around a Kubernetes `Service`_ API Object.
-
-    The actual ``kubernetes.client.V1Service`` instance that this
-    wraps can be accessed via the ``obj`` instance member.
-
-    This wrapper provides some convenient functionality around the
-    API Object and provides some state management for the `Service`_.
-
-    .. _Service:
-        https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#service-v1-core
-    """
-
-    obj_type =kubernetes_asyncio.client.V1Service
-
-    api_clients = {
-        "preferred":kubernetes_asyncio.client.CoreV1Api,
-        "v1":kubernetes_asyncio.client.CoreV1Api,
-    }
-
-    async def create(self, namespace: str = None) -> None:
-        """Create the underlying Kubernetes resource in the cluster
-        under the given namespace.
-
-        Args:
-            namespace: The namespace to create the resource under.
-                If no namespace is provided, it will use the instance's
-                namespace member, which is set when the object is created
-                via the kubetestkubernetes_asyncio.client.
-        """
-        if namespace is None:
-            namespace = self.namespace
-
-        servo.logger.info(f'creating service "{self.name}" in namespace "{self.namespace}"')
-        servo.logger.debug(f"service: {self.obj}")
-
-        self.obj = self.api_client.create_namespaced_service(
-            namespace=namespace,
-            body=self.obj,
-        )
-
-    async def patch(self) -> None:
-        """Partially update the underlying Kubernetes resource in the cluster."""
-        servo.logger.info(f'patching service "{self.name}"')
-        servo.logger.trace(f"service: {self.obj}")
-        async with self.api_client() as api_client:
-            await api_client.patch_namespaced_service(
-                name=self.name,
-                namespace=self.namespace,
-                body=self.obj,
-            )
-
-    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions) ->kubernetes_asyncio.client.V1Status:
-        if options is None:
-            options =kubernetes_asyncio.client.V1DeleteOptions()
-
-        servo.logger.info(f'deleting service "{self.name}"')
-        servo.logger.debug(f"delete options: {options}")
-        servo.logger.debug(f"service: {self.obj}")
-
-        return self.api_client.delete_namespaced_service(
-            name=self.name,
-            namespace=self.namespace,
-            body=options,
-        )
-
-    @classmethod
-    async def read(cls, name: str, namespace: str) -> "Service":
-        """Read the Service from the cluster under the given namespace.
-
-        Args:
-            name: The name of the Pod to read.
-            namespace: The namespace to read the Pod from.
-        """
-        servo.logger.info(f'reading service "{name}" in namespace "{namespace}"')
-
-        async with cls.preferred_client() as api_client:
-            obj = await asyncio.wait_for(
-                api_client.read_namespaced_service(name, namespace), 5.0
-            )
-            servo.logger.trace("service: ", obj)
-            return cls(obj)
-
-    @property
-    def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
-        """Return the list of ports exposed by the service."""
-        return self.obj.spec.ports
-
-    async def refresh(self) -> None:
-        """Refresh the underlying Kubernetes Service resource."""
-        async with self.api_client() as api_client:
-            self.obj = await api_client.read_namespaced_service(
-                name=self.name,
-                namespace=self.namespace,
-            )
-
-    async def is_ready(self) -> bool:
-        """Check if the Service is in the ready state.
-
-        The readiness state is not clearly available from the Service
-        status, so to see whether or not the Service is ready this
-        will check whether the endpoints of the Service are ready.
-
-        This comes with the caveat that in order for a Service to
-        have endpoints, there needs to be some backend hooked up to it.
-        If there is no backend, the Service will never have endpoints,
-        so this will never resolve to True.
-
-        Returns:
-            True if in the ready state; False otherwise.
-        """
-        await self.refresh()
-
-        # check the status. if there is no status, the service is
-        # definitely not ready.
-        if self.obj.status is None:
-            return False
-
-        endpoints = await self.get_endpoints()
-
-        # if the Service has no endpoints, its not ready.
-        if len(endpoints) == 0:
-            return False
-
-        # get the service endpoints and check that they are all ready.
-        for endpoint in endpoints:
-            # if we have an endpoint, but there are no subsets, we
-            # consider the endpoint to be not ready.
-            if endpoint.subsets is None:
-                return False
-
-            for subset in endpoint.subsets:
-                # if the endpoint has no addresses setup yet, its not ready
-                if subset.addresses is None or len(subset.addresses) == 0:
-                    return False
-
-                # if there are still addresses that are not ready, the
-                # service is not ready
-                not_ready = subset.not_ready_addresses
-                if not_ready is not None and len(not_ready) > 0:
-                    return False
-
-        # if we got here, then all endpoints are ready, so the service
-        # must also be ready
-        return True
-
-    async def status(self) ->kubernetes_asyncio.client.V1ServiceStatus:
-        """Get the status of the Service.
-
-        Returns:
-            The status of the Service.
-        """
-        servo.logger.info(f'checking status of service "{self.name}"')
-        # first, refresh the service state to ensure the latest status
-        await self.refresh()
-
-        # return the status from the service
-        return self.obj.status
-
-    async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
-        """Get the endpoints for the Service.
-
-        This can be useful for checking internal IP addresses used
-        in containers, e.g. for container auto-discovery.
-
-        Returns:
-            A list of endpoints associated with the Service.
-        """
-        servo.logger.info(f'getting endpoints for service "{self.name}"')
-        endpoints = await self.api_client.list_namespaced_endpoints(
-            namespace=self.namespace,
-        )
-
-        svc_endpoints = []
-        for endpoint in endpoints.items:
-            # filter to include only the endpoints with the same
-            # name as the service.
-            if endpoint.metadata.name == self.name:
-                svc_endpoints.append(endpoint)
-
-        servo.logger.debug(f"endpoints: {svc_endpoints}")
-        return svc_endpoints
-
-    async def _proxy_http_request(self, method, path, **kwargs) -> tuple:
-        """Template request to proxy of a Service.
-
-        Args:
-            method: The http request method e.g. 'GET', 'POST' etc.
-            path: The URI path for the request.
-            kwargs: Keyword arguments for the proxy_http_get function.
-
-        Returns:
-            The response data
-        """
-        path_params = {
-            "name": f"{self.name}:{self.obj.spec.ports[0].port}",
-            "namespace": self.namespace,
-            "path": path,
-        }
-        return await kubernetes_asyncio.client.CoreV1Api().api_client.call_api(
-            "/api/v1/namespaces/{namespace}/services/{name}/proxy/{path}",
-            method,
-            path_params=path_params,
-            **kwargs,
-        )
-
-    async def proxy_http_get(self, path: str, **kwargs) -> tuple:
-        """Issue a GET request to proxy of a Service.
-
-        Args:
-            path: The URI path for the request.
-            kwargs: Keyword arguments for the proxy_http_get function.
-
-        Returns:
-            The response data
-        """
-        return await self._proxy_http_request("GET", path, **kwargs)
-
-    async def proxy_http_post(self, path: str, **kwargs) -> tuple:
-        """Issue a POST request to proxy of a Service.
-
-        Args:
-            path: The URI path for the request.
-            kwargs: Keyword arguments for the proxy_http_post function.
-
-        Returns:
-            The response data
-        """
-        return await self._proxy_http_request("POST", path, **kwargs)
-
 
 class ConfigMap(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `ConfigMap`_ API Object.
