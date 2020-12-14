@@ -126,7 +126,7 @@ async def test_run_servo_on_kind(
     subprocess,
     kubeconfig: str,
 ) -> None:
-    await subprocess("kubectl --kubeconfig={kubeconfig} config view", print_output=True)
+    await subprocess(f"kubectl --kubeconfig={kubeconfig} config view", print_output=True)
     command = (
         f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach -t --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
