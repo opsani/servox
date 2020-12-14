@@ -45,7 +45,7 @@ jobs:
       with:
         cluster_name: pytest-k8s-async
     - name: Display kind kubeconfig
-      run: kind get kubeconfig
+      run: kind get clusters && kind get kubeconfig --name pytest-k8s-async
     - name: Merge kind kubeconfig
       run: kind export kubeconfig --name pytest-k8s-async --kubeconfig tests/kubeconfig
     - name: Install AWS IAM Authenticator
