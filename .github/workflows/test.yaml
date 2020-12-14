@@ -42,6 +42,7 @@ jobs:
       uses: helm/kind-action@v1.0.0
       with:
         cluster_name: pytest-k8s-async
-    - name: Run integration tests
+    - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
+    - name: Run integration tests    
       run: poetry run pytest -s -vv -m integration --integration
