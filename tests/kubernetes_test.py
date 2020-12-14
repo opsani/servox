@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import hashlib
 
@@ -20,6 +21,15 @@ pytestmark = [
     pytest.mark.usefixtures("kubernetes_asyncio_config")
 ]
 
+
+@pytest.fixture(scope='session')
+def event_loop():
+    """Create an instance of the default event loop for each test case."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+    
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
@@ -70,7 +80,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
     response = pod.http_proxy_get("/stats/prometheus")
     assert "envoy_http_downstream_cx_length_ms_count" in response.data
 
-
+    
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
 @pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
 def test_prometheus(kube: kubetest.client.TestClient) -> None:
@@ -98,6 +108,7 @@ async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     assert "Operational Commands" in str(stdout)
 
 
+@pytest.mark.skip(reason="migrating to kind for better performance")
 async def test_run_servo_on_minikube(
     minikube_servo_image: str, subprocess, kubeconfig: str,
 ) -> None:
@@ -110,12 +121,13 @@ async def test_run_servo_on_minikube(
     assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
 async def test_run_servo_on_kind(
+    kind: str,
     kind_servo_image: str,
     subprocess,
     kubeconfig: str,
 ) -> None:
     command = (
-        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)

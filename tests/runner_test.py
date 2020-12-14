@@ -82,7 +82,7 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
 
     response = await servo_runner._post_event(servo.api.Events.whats_next, None)
     debug(response)
-    assert response.command == servo.api.Commands.describe
+    assert response.command in (servo.api.Commands.describe, servo.api.Commands.sleep)
 
     description = await servo_runner.describe()
 

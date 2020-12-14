@@ -320,11 +320,15 @@ async def subprocess() -> tests.helpers.Subprocess:
     """Return an asynchronous executor for testing subprocesses."""
     return tests.helpers.Subprocess()
 
-
-@pytest.fixture(scope="session")
-async def servo_image() -> str:
+@pytest.fixture
+async def servo_image(request) -> str:
     """Asynchronously build a Docker image from the current working copy and return its tag."""
-    return await tests.helpers.build_docker_image()
+    image_key = f"servo_image/{os.getpid()}"
+    image = request.config.cache.get(image_key, None)
+    if image is None:
+        image = await tests.helpers.build_docker_image()
+        request.config.cache.set(image_key, image)
+    return image
 
 @pytest.fixture
 async def minikube(request, subprocess) -> str:
@@ -341,7 +345,7 @@ async def minikube(request, subprocess) -> str:
         profile = "servox"
 
     # Start minikube and configure environment
-    exit_code, _, _ = await subprocess(f"minikube start -p {profile} --interactive=false --keep-context=true --wait=true")
+    exit_code, _, _ = await subprocess(f"minikube start -p {profile} --interactive=false --keep-context=true --wait=true", print_output=True)
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
@@ -350,14 +354,14 @@ async def minikube(request, subprocess) -> str:
         yield profile
 
     finally:
-        exit_code, _, _ = await subprocess(f"minikube stop -p {profile}")
+        exit_code, _, _ = await subprocess(f"minikube stop -p {profile}", print_output=True)
         if exit_code != 0:
             raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> str:
     """Asynchronously build a Docker image from the current working copy and cache it into the minikube repository."""
-    exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}")
+    exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}", print_output=True)
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 

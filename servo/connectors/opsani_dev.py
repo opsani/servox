@@ -7,7 +7,7 @@ import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
 
-PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090"
+PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090/api/v1"
 PROMETHEUS_ANNOTATION_NAMES = {
     "prometheus.opsani.com/scrape",
     "prometheus.opsani.com/scheme",
@@ -436,11 +436,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response = await client.get(query.url)
                 response.raise_for_status()
                 result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
-                assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                assert result.values, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
 
                 # TODO: Validate that result is a vector
                 # TODO: the value property should be polymorphic union
-                timestamp, value = result.value[0]["value"]
+                timestamp, value = result.values[0]["value"]
                 assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
 
         # TODO: return a good status message
