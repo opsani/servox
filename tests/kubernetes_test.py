@@ -280,7 +280,7 @@ class TestChecks:
         assert len(results)
         result = results[-1]
         assert result.id == "check_namespace"
-        assert result.success
+        assert result.success, f"expected success but failed: {result}"
 
     async def test_check_namespace_doesnt_exist(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         config.namespace = "INVALID"

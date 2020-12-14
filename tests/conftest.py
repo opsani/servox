@@ -269,7 +269,7 @@ async def kubeconfig() -> str:
 @pytest.fixture
 def kube_context(request) -> Optional[str]:
     """Return the context to be used within the kubeconfig file or None to use the default."""
-    return request.session.config.getoption('kube_context') or "servox-integration-tests"
+    return request.session.config.getoption('kube_context')
 
 
 @pytest.fixture
