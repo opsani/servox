@@ -33,6 +33,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
     return servo.connectors.opsani_dev.OpsaniDevChecks(config=config)
 
 
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -124,12 +125,12 @@ class TestChecksOriginalState:
             assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
-                "/api/v1/targets",
+                "/targets",
                 name="targets"
             ).mock(return_value=httpx.Response(200, json=[]))
 
             respx_mock.get(
-                re.compile(r"/api/v1/query_range.+"),
+                re.compile(r"/query_range.+"),
                 name="query",
             ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
             yield respx_mock
@@ -139,7 +140,7 @@ class TestChecksOriginalState:
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
         with respx.mock(base_url=servo.connectors.opsani_dev.PROMETHEUS_SIDECAR_BASE_URL) as respx_mock:
-            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(status_code=503))
+            request = respx_mock.get("/targets").mock(return_value=httpx.Response(status_code=503))
             check = await checks.run_one(id=f"check_prometheus_is_accessible")
             assert request.called
             assert check
@@ -314,13 +315,16 @@ class TestEverything:
             # Send traffic through the service and verify it shows up in Envoy
             port = service.ports[0].port
             servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
+            
             async with kube_port_forward(f"service/fiber-http", port) as url:
-                await asyncio.sleep(2) # FIXME: sleeping because the tunnel might not be up
                 async with httpx.AsyncClient() as client:
-                    for i in range(10):
+                    for i in range(25):
                         servo.logger.info(f"Sending request {i} to {url}")
                         response = await client.get(url)
-                        response.raise_for_status()
+                        try:
+                            response.raise_for_status()
+                        except:
+                            await asyncio.sleep(0.25)
 
             # Let Prometheus scrape to see the traffic
             await asyncio.sleep(5)
