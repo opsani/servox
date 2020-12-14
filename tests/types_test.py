@@ -215,12 +215,12 @@ class TestEventProgress:
         return servo.types.EventProgress()
         
     async def test_timeout(self, progress) -> None:
-        progress.timeout = Duration("1ms")
+        progress.timeout = Duration("3ms")
         assert not progress.started
         progress.start()
         assert progress.started
         assert not progress.finished
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.3)
         assert progress.finished
         assert not progress.completed
     
