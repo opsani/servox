@@ -1,3 +1,4 @@
+import asyncio
 import os
 from typing import List, Optional
 
@@ -146,7 +147,6 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         )
 
 
-# TODO: Support a decorator for setting class level tags
 class OpsaniDevChecks(servo.BaseChecks):
     config: OpsaniDevConfiguration
 
@@ -266,12 +266,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             response.raise_for_status()
             result = response.json()
 
-        target_count = len(result["data"]["activeTargets"])
-        # TODO: Warning/raise policy?
-        # assert target_count > 0, "no active targets were found"
-        if target_count > 0:
-            self.logger.warning("no active targets were found")
-        return f"found {target_count} targets"
+        return f"Prometheus is accessible at {self.config.prometheus_base_url}"
 
     async def _read_servo_pod(self) -> Optional[servo.connectors.kubernetes.Pod]:
         return await self._read_servo_pod_from_env() or next(
@@ -310,8 +305,6 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         pods = [servo.connectors.kubernetes.Pod(p) for p in pod_list.items]
         return pods
-
-    # TODO: Trigger basic checks on Prometheus connector??
 
     ##
     # Kubernetes Deployment edits
@@ -370,11 +363,8 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-
+        
         for pod in await deployment.get_pods():
-            await pod.wait_until_ready(timeout=10, fail_on_api_error=True) # TODO: config timeout
-            assert await pod.is_ready(), f"pod '{pod.name}' is not ready: {pod}"
-
             # Search the containers list for the sidecar
             for container in pod.containers:
                 if container.name == "opsani-envoy":
@@ -413,20 +403,21 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
-        # TODO: Ask Prometheus? Get its config or do I ask it to do something
-        # TODO: Might make more sense to leverage the event bus but it introduces coupling...
         metrics = [
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
+                query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[15s]))',
+                step="10s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
-                "tuning_request_rate",
+                "main_error_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m])',
-            ),
+                query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[15s]))',
+                step="10s"
+            )
         ]
+        summaries = []
         for metric in metrics:
             query = servo.connectors.prometheus.InstantQuery(
                 base_url=self.config.prometheus_base_url,
@@ -436,14 +427,26 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response = await client.get(query.url)
                 response.raise_for_status()
                 result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
-                assert result.values, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                assert result.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"                
+                
+                if metric.name == "main_request_rate":
+                    assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                    timestamp, value = result.value
+                    assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                    summaries.append(f"{metric.name}={value}{metric.unit}")
+                elif metric.name == "main_error_rate":                    
+                    if result.value is None:
+                        # NOTE: if no errors are occurring this can legitimately be None
+                        value = 0
+                    else:
+                        timestamp, value = result.value
+                        assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
+                    
+                    summaries.append(f"{metric.name}={0}{metric.unit}")
+                else:
+                    raise NotImplementedError(f"unexpected metric: {metric.name}")                
 
-                # TODO: Validate that result is a vector
-                # TODO: the value property should be polymorphic union
-                timestamp, value = result.values[0]["value"]
-                assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-
-        # TODO: return a good status message
+        return ", ".join(summaries)
 
     @servo.check("Traffic is proxied through Envoy")
     async def check_service_proxy(self) -> str:
@@ -454,16 +457,6 @@ class OpsaniDevChecks(servo.BaseChecks):
                 return
 
         raise AssertionError(f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}")
-        # for pod in await deployment.get_pods():
-        #     await pod.wait_until_ready(timeout=10, fail_on_api_error=True) # TODO: config timeout
-        #     assert await pod.is_ready(), f"pod '{pod.name}' is not ready: {pod}"
-
-        #     # Search the containers list for the sidecar
-        #     for container in deployment.containers:
-        #         if container.name == "opsani-envoy":
-        #             # TODO: May want to add more heuristics about the image, etc.
-        #             return
-        ...
 
     @servo.check("Tuning pod is running")
     async def check_canary_is_running(self) -> None:
@@ -506,10 +499,10 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response = await client.get(query.url)
                 response.raise_for_status()
                 result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
-                debug("LOADED UP RESULT", result, result.values)
-                assert result.values, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                assert result.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"
+                assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                 
-                timestamp, value = result.values[0]["value"]
+                timestamp, value = result.value
                 assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                 summaries.append(f"{metric.name}={value}{metric.unit}")
             

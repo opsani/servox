@@ -118,7 +118,7 @@ async def wait_for_condition(
     Raises:
         TimeoutError: The specified timeout was exceeded.
     """
-    servo.logger.info(f"waiting for condition: {condition}")
+    servo.logger.debug(f"waiting for condition: {condition}")
 
     # define the maximum time to wait. once this is met, we should
     # stop waiting.
@@ -151,7 +151,7 @@ async def wait_for_condition(
         await asyncio.sleep(interval)
 
     end = time.time()
-    servo.logger.info(f"wait completed (total={servo.Duration(end-start)}) {condition}")
+    servo.logger.debug(f"wait completed (total={servo.Duration(end-start)}) {condition}")
 
 
 class ResourceRequirements(enum.Flag):
@@ -844,7 +844,7 @@ class Pod(KubernetesModel):
             name: The name of the Pod to read.
             namespace: The namespace to read the Pod from.
         """
-        servo.logger.info(f'reading pod "{name}" in namespace "{namespace}"')
+        servo.logger.debug(f'reading pod "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
             obj = await asyncio.wait_for(
@@ -986,7 +986,7 @@ class Pod(KubernetesModel):
         Returns:
             A list of containers that belong to the Pod.
         """
-        self.logger.info(f'getting containers for pod "{self.name}"')
+        self.logger.debug(f'getting containers for pod "{self.name}"')
         await self.refresh()
 
         return self.containers
@@ -1082,7 +1082,7 @@ class Service(KubernetesModel):
             name: The name of the Service to read.
             namespace: The namespace to read the Service from.
         """
-        servo.logger.info(f'reading service "{name}" in namespace "{namespace}"')
+        servo.logger.debug(f'reading service "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
             obj = await asyncio.wait_for(
@@ -1434,7 +1434,7 @@ class Deployment(KubernetesModel):
         Returns:
             A list of pods that belong to the deployment.
         """
-        self.logger.info(f'getting pods for deployment "{self.name}"')
+        self.logger.debug(f'getting pods for deployment "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
@@ -1607,6 +1607,127 @@ class Deployment(KubernetesModel):
         # patch the deployment
         await self.patch()
 
+    @contextlib.asynccontextmanager
+    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+        # NOTE: The timeout_seconds argument must be an int or the request will fail
+        timeout_seconds = int(timeout.total_seconds()) if timeout else None
+        
+        # Resource version lets us track any change. Observed generation only increments
+        # when the deployment controller sees a significant change that requires rollout
+        resource_version = self.resource_version
+        observed_generation = self.status.observed_generation
+        desired_replicas = self.replicas
+        
+        self.logger.info(f"applying adjustments to Deployment '{self.name}' and rolling out to cluster")
+        
+        # Yield to let the changes be made
+        yield self
+        
+        # Return fast if nothing was changed
+        if self.resource_version == resource_version:
+            self.logger.info(
+                f"adjustments applied to Deployment '{self.name}' made no changes, continuing"
+            )
+            return
+
+        # Create a Kubernetes watch against the deployment under optimization to track changes
+        self.logger.debug(
+            f"watching deployment Using label_selector={self.label_selector}, resource_version={resource_version}"
+        )
+        
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:            
+            v1 = kubernetes_asyncio.client.AppsV1Api(api)
+            async with kubernetes_asyncio.watch.Watch().stream(
+                v1.list_namespaced_deployment,
+                self.namespace,
+                label_selector=self.label_selector,
+                timeout_seconds=timeout_seconds,
+            ) as stream:
+                async for event in stream:
+                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                    # TODO: Create an enum...
+                    event_type, deployment = event["type"], event["object"]
+                    status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
+
+                    self.logger.debug(
+                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                    )
+
+                    if event_type == "ERROR":
+                        stream.stop()
+                        # FIXME: Not sure what types we expect here
+                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+
+                    # Check that the conditions aren't reporting a failure
+                    self._check_conditions(status.conditions)
+
+                    # Early events in the watch may be against previous generation
+                    if status.observed_generation == observed_generation:
+                        self.logger.debug(
+                            "observed generation has not changed, continuing watch"
+                        )
+                        continue
+
+                    # Check the replica counts. Once available, updated, and ready match
+                    # our expected count and the unavailable count is zero we are rolled out
+                    if status.unavailable_replicas:
+                        self.logger.debug(
+                            "found unavailable replicas, continuing watch",
+                            status.unavailable_replicas,
+                        )
+                        continue
+
+                    replica_counts = [
+                        status.replicas,
+                        status.available_replicas,
+                        status.ready_replicas,
+                        status.updated_replicas,
+                    ]
+                    if replica_counts.count(desired_replicas) == len(replica_counts):
+                        # We are done: all the counts match. Stop the watch and return
+                        self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
+                        stream.stop()
+        
+    def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
+        for condition in conditions:
+            if condition.type == "Available":
+                if condition.status == "True":
+                    # If we hit on this and have not raised yet we are good to go
+                    break
+                elif condition.status in ("False", "Unknown"):
+                    # Condition has not yet been met, log status and continue monitoring
+                    self.logger.debug(
+                        f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
+                    )
+                else:
+                    raise servo.AdjustmentFailure(
+                        f"encountered unexpected Condition status '{condition.status}'"
+                    )
+
+            elif condition.type == "ReplicaFailure":
+                # TODO: Check what this error looks like
+                raise servo.AdjustmentRejectedError(
+                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    condition.status.message,
+                    reason=condition.status.reason
+                )
+
+            elif condition.type == "Progressing":
+                if condition.status in ("True", "Unknown"):
+                    # Still working
+                    self.logger.debug("Deployment update is progressing", condition)
+                    break
+                elif condition.status == "False":
+                    raise servo.AdjustmentRejectedError(
+                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        condition.status.message,
+                        reason=condition.status.reason
+                    )
+                else:
+                    raise servo.AdjustmentFailure(
+                        f"unknown deployment status condition: {condition.status}"
+                    )
 
     ##
     # Canary support
@@ -2180,81 +2301,10 @@ class DeploymentOptimization(BaseOptimization):
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
 
-        # Resource version lets us track any change. Observed generation only increments
-        # when the deployment controller sees a significant change that requires rollout
-        resource_version = self.deployment.resource_version
-        observed_generation = self.deployment.status.observed_generation
-        desired_replicas = self.deployment.replicas
-
-        # Patch the Deployment via the Kubernetes API
-        await self.deployment.patch()
-
-        # Return fast if nothing was changed
-        if self.deployment.resource_version == resource_version:
-            self.logger.info(
-                f"adjustments applied to Deployment '{self.deployment.name}' made no changes, continuing"
-            )
-            return
-
-        # Create a Kubernetes watch against the deployment under optimization to track changes
-        self.logger.info(
-            f"Using label_selector={self.deployment.label_selector}, resource_version={resource_version}"
-        )
-
         try:
-            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-                # NOTE: The timeout_seconds argument must be an int or the request will fail
-                v1 = kubernetes_asyncio.client.AppsV1Api(api)
-                async with kubernetes_asyncio.watch.Watch().stream(
-                    v1.list_namespaced_deployment,
-                    self.deployment.namespace,
-                    label_selector=self.deployment.label_selector,
-                    timeout_seconds=int(self.timeout.total_seconds()),
-                ) as stream:
-                    async for event in stream:
-                        # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
-                        # TODO: Create an enum...
-                        event_type, deployment = event["type"], event["object"]
-                        status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
-
-                        self.logger.debug(
-                            f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
-                        )
-
-                        if event_type == "ERROR":
-                            stream.stop()
-                            # FIXME: Not sure what types we expect here
-                            raise servo.AdjustmentRejectedError(reason=str(deployment))
-
-                        # Check that the conditions aren't reporting a failure
-                        self._check_conditions(status.conditions)
-
-                        # Early events in the watch may be against previous generation
-                        if status.observed_generation == observed_generation:
-                            self.logger.debug(
-                                "observed generation has not changed, continuing watch"
-                            )
-                            continue
-
-                        # Check the replica counts. Once available, updated, and ready match
-                        # our expected count and the unavailable count is zero we are rolled out
-                        if status.unavailable_replicas:
-                            self.logger.debug(
-                                "found unavailable replicas, continuing watch",
-                                status.unavailable_replicas,
-                            )
-                            continue
-
-                        replica_counts = [
-                            status.replicas,
-                            status.available_replicas,
-                            status.ready_replicas,
-                            status.updated_replicas,
-                        ]
-                        if replica_counts.count(desired_replicas) == len(replica_counts):
-                            # We are done: all the counts match. Stop the watch and return
-                            self.logger.info("adjustment applied successfully", status)
-                            stream.stop()
+            async with self.deployment.rollout() as deployment:
+                # Patch the Deployment via the Kubernetes API
+                await deployment.patch()
 
         except asyncio.TimeoutError as error:
             raise servo.AdjustmentRejectedError(
@@ -2264,46 +2314,6 @@ class DeploymentOptimization(BaseOptimization):
         if await self.deployment.get_restart_count() > 0:
             # TODO: Return a string summary about the restarts (which pods bounced)
             raise servo.AdjustmentRejectedError(reason="unstable")
-
-    def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
-        for condition in conditions:
-            if condition.type == "Available":
-                if condition.status == "True":
-                    # If we hit on this and have not raised yet we are good to go
-                    break
-                elif condition.status in ("False", "Unknown"):
-                    # Condition has not yet been met, log status and continue monitoring
-                    self.logger.debug(
-                        f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
-                    )
-                else:
-                    raise servo.AdjustmentFailure(
-                        f"encountered unexpected Condition status '{condition.status}'"
-                    )
-
-            elif condition.type == "ReplicaFailure":
-                # TODO: Check what this error looks like
-                raise servo.AdjustmentRejectedError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                    condition.status.message,
-                    reason=condition.status.reason
-                )
-
-            elif condition.type == "Progressing":
-                if condition.status in ("True", "Unknown"):
-                    # Still working
-                    self.logger.debug("Deployment update is progressing", condition)
-                    break
-                elif condition.status == "False":
-                    raise servo.AdjustmentRejectedError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                        condition.status.message,
-                        reason=condition.status.reason
-                    )
-                else:
-                    raise servo.AdjustmentFailure(
-                        f"unknown deployment status condition: {condition.status}"
-                    )
 
 
 class CanaryOptimization(BaseOptimization):

@@ -164,7 +164,7 @@ class TestChecksOriginalState:
 
 # TODO: Test deployment, pod with init container, test nginx not match,
 # TODO: check namespace affinity only scrapes in current namespace
-
+    
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
@@ -210,7 +210,7 @@ class TestEverything:
             prometheus_connector = servo.connectors.prometheus.PrometheusConnector(config=prometheus_config)
 
             ## Step 1
-            servo.logger.critical("Step 1 - Verify the annotations are set on the Deployment pod spec")
+            servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
             async with assert_check_raises_in_context(
                 AssertionError,
                 match="deployment 'fiber-http' does not have any annotations"
@@ -242,7 +242,7 @@ class TestEverything:
             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
 
             # Step 2: Verify the labels are set on the Deployment pod spec
-            servo.logger.critical("Step 2 - Verify the labels are set on the Deployment pod spec")
+            servo.logger.critical("Step 2 - Label the Deployment PodSpec")
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_labels"),
                 AssertionError,
@@ -258,32 +258,27 @@ class TestEverything:
             await assert_check(checks.run_one(id=f"check_deployment_labels"))
 
             # Step 3
-            servo.logger.critical("Step 3 - Test for Envoy sidecar injection")
+            servo.logger.critical("Step 3 - Inject Envoy sidecar container")
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_envoy_sidecars"),
                 AssertionError,
                 re.escape("pods created against the 'fiber-http' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
             )
 
-            # Add the sidecar and pass
+            # servo.logging.set_level("DEBUG")
             async with change_to_resource(deployment):
+                servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
                 await deployment.inject_sidecar(service="fiber-http")
             
             await assert_check(checks.run_one(id=f"check_deployment_envoy_sidecars"))
-
-            # Wait for the pods to restart. Look for env vars
-            servo.logger.info("waiting for pods to rollout that have the Envoy sidecar")
-            await deployment.wait_until_ready(timeout=30)
-            # TODO: I need to wait for the pods to rotate
-            await asyncio.sleep(20) # TODO: Port waiting logic next...
             await assert_check(checks.run_one(id=f"check_pod_envoy_sidecars"))
 
             # Step 4
-            servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping targets")
+            servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
             servo.logger.info("waiting for Prometheus to scrape our Pods")            
 
             async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.PrometheusTarget]:
-                servo.logger.debug(f"Waiting for Prometheus scrape Pod targets...")
+                servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
                 # NOTE: Prometheus is on a 5s scrape interval
                 scraped_since = pytz.utc.localize(datetime.datetime.now())
                 while True:
@@ -317,13 +312,14 @@ class TestEverything:
                         count += 1
                     servo.logger.success(f"Bursted {count} requests to {url} over {duration} seconds.")
             
-            servo.logger.debug(f"Sending test traffic to Envoy through deploy/fiber-http")
+            servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
             async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-                await burst_traffic_to_url(envoy_url, duration=10)
+                await burst_traffic_to_url(envoy_url, duration=20)
 
             # Let Prometheus scrape to see the traffic
             await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
+            await assert_check(checks.run_one(id=f"check_envoy_sidecar_metrics"))
 
             # Step 6
             servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
@@ -363,7 +359,7 @@ class TestEverything:
             await assert_check(checks.run_one(id=f"check_canary_is_running"))
 
             # Step 8
-            servo.logger.critical("Step 7 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
+            servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
                 await burst_traffic_to_url(service_url, duration=15)
             
@@ -381,7 +377,10 @@ class TestEverything:
             assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-canary"
             assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
             
-            # await assert_check(checks.run_one(id=f"check_traffic_metrics"))            
+            await assert_check(checks.run_one(id=f"check_traffic_metrics"))
+            
+            servo.logger.success("🥷 Opsani Dev is now deployed.")
+            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
 
 async def assert_check_fails(
     check: servo.checks.Check,
@@ -521,34 +520,37 @@ async def assert_check(
 
 # TODO: Move these into library functions. Do we want replace/merge versions?
 async def add_annotations_to_podspec_of_deployment(deployment, annotations: Dict[str, str]) -> None:
+    servo.logger.info(f"adding annotations {annotations} to PodSpec of Deployment '{deployment.name}'")
     existing_annotations = deployment.pod_template_spec.metadata.annotations or {}
     existing_annotations.update(annotations)
     deployment.pod_template_spec.metadata.annotations = existing_annotations
     await deployment.patch()
-    await deployment.refresh()
 
 
 async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> None:
-    await deployment.refresh()
+    servo.logger.info(f"adding labels {labels} to PodSpec of Deployment '{deployment.name}'")
     existing_labels = deployment.pod_template_spec.metadata.labels or {}
     existing_labels.update(labels)
     deployment.pod_template_spec.metadata.labels = existing_labels
     await deployment.patch()
-    await deployment.refresh()  # TODO: Figure out a better logic for this...
 
 @contextlib.asynccontextmanager
 async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesModel):
     status = resource.status
     metadata = resource.obj.metadata
     
-    # allow the resource to be changed
-    yield
+    if isinstance(resource, servo.connectors.kubernetes.Deployment):
+        async with resource.rollout():
+            yield
+    else:    
+        # allow the resource to be changed
+        yield
     
     await resource.refresh()
     
     # early exit if nothing changed
     if (resource.obj.metadata.resource_version == metadata.resource_version):
-        servo.logger.debug(f"existing early: metadata resource version has not changed")
+        servo.logger.debug(f"exiting early: metadata resource version has not changed")
         return
     
     if hasattr(status, "observed_generation"):
