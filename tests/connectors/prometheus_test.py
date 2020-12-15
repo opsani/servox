@@ -278,6 +278,54 @@ def envoy_sidecars() -> dict:
         },
     }
 
+class TestPrometheusQueryResult:
+    @pytest.fixture
+    def vector_result(self) -> Dict[str, Any]:
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'vector',
+                'result': [
+                    {
+                        'metric': {},
+                        'value': [
+                            1607989427.782,
+                            '19.8',
+                        ],
+                    },
+                ],
+            },
+        }
+    
+    @pytest.fixture
+    def matrix_result(self) -> dict:
+        return {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {
+                        "metric": {
+                            "__name__": "go_memstats_gc_sys_bytes",
+                            "instance": "localhost:9090",
+                            "job": "prometheus",
+                        },
+                        "values": [
+                            [1595142421.024, "3594504"],
+                            [1595142481.024, "3594504"],
+                        ],
+                    }
+                ],
+            },
+        }
+    
+    def test_parsing_vector_result(self, vector_result) -> None:
+        query = servo.connectors.prometheus.InstantQuery.construct()
+        result = servo.connectors.prometheus.QueryResult(query=query, **vector_result)
+        debug(result)
+    
+    def test_parsing_matrix_result(self) -> None:
+        ...
 
 class TestPrometheusChecks:
     @pytest.fixture
@@ -552,7 +600,7 @@ class TestPrometheusIntegration:
         self,
         optimizer: servo.Optimizer,
         event_loop: asyncio.AbstractEventLoop,
-        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],        
     ) -> None:
         # NOTE: What we are going to do here is deploy Prometheus and fiber-http on a k8s cluster,        
         # port forward so we can talk to them, and then spark up the connector and it will adapt to 
@@ -609,6 +657,7 @@ class TestPrometheusIntegration:
                 )
                 assert measurement
                 debug("Finished testing burst traffic scenario: ", measurement)
+                # TODO: Check the readings on both sides
 
     @pytest.mark.applymanifests(
         "../manifests",

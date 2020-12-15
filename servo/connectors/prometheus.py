@@ -214,12 +214,18 @@ class ResultType(str, enum.Enum):
     string = "string"
 
 class QueryResult(pydantic.BaseModel):
+    """Models a PromQL query result returned from Prometheus.
+    
+    Vector, scalar, and string result data is exposed via the
+    `value` attribute while `matrix` results are available via the
+    `values` attribute.
+    """
     query: BaseQuery
     status: str
     type: ResultType
     metric: Optional[dict] # TODO: dunno here...
+    value: Optional[Tuple[datetime.datetime, float]]
     values: Optional[List[Tuple[datetime.datetime, float]]]
-    data: Any
 
     @property
     def metric(self) -> None:
@@ -233,8 +239,8 @@ class QueryResult(pydantic.BaseModel):
             "status": values["status"],
             "type": values["data"]["resultType"],
             "metric": result.get("metric", None),
+            "value": result.get("value", None),
             "values": result.get("values", None),
-            "data": values["data"]
         }
     
     @pydantic.validator("values")
