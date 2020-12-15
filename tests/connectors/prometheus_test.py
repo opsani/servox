@@ -1,4 +1,5 @@
 import datetime
+import json
 import pathlib
 import re
 from typing import AsyncIterator
@@ -19,6 +20,7 @@ from servo.connectors.prometheus import (
     RangeQuery,
 )
 from servo.types import *
+
 
 
 class TestPrometheusMetric:
@@ -460,6 +462,7 @@ class TestPrometheusChecks:
         "prometheus.yaml",
     ]
 )
+@pytest.mark.clusterrolebinding('cluster-admin')
 class TestPrometheusIntegration:
     def optimizer(self) -> servo.Optimizer:
         return servo.Optimizer(
@@ -680,9 +683,6 @@ class TestPrometheusIntegration:
                 timeout=30
             )
             debug(metrics)
-
-# TODO: Need a better home...
-import json
 
 
 def empty_targets_response() -> Dict[str, Any]:
