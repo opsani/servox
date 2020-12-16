@@ -712,6 +712,23 @@ Pre-built Docker images are available on
 Docker Hub. The documentation for these images is available within this
 repository at [docs/README-DOCKER_HUB.md](docs/README-DOCKER_HUB.md).
 
+The latest release version is available under the `opsani/servox:latest` tag.
+The `main` development branch is published as the `opsani/servox:edge` tag.
+
+Docker images are built and published to Docker Hub via the
+[Docker GitHub Actions Workflow](.github/workflows/docker.yaml). The workflow
+builds branches, published releases, and the `main` integration branch. Pull
+Requests are not published to Docker Hub because as a publicly available
+repository it could become an attack vector.
+
+Git branches and Docker images have differing naming constraints that impact how
+tag names are computed. For example, Docker tags cannot contain slashes, which
+is a common practice for namespacing branches and tags in Git. As such, slashes
+are converted to hyphens when computing tag names for branches and tags. The
+full naming constraints on Docker image tags is covered in the [`docker
+tag`](https://docs.docker.com/engine/reference/commandline/tag/#extended-description)
+documentation.
+
 Pre-built images are built using BuildKit and can be used as the basis for very
 fast customized builds:
 
