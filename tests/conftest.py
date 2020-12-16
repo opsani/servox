@@ -5,7 +5,7 @@ import os
 import random
 import string
 import pathlib
-from typing import AsyncIterator, AsyncGenerator, Iterator, List, Optional
+from typing import AsyncIterator, AsyncGenerator, Callable, Iterator, List, Optional
 
 import devtools
 import fastapi
@@ -234,14 +234,22 @@ def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def run_in_clean_environment() -> None:
+def clean_environment() -> Callable[[None], None]:
     """Discard environment variables prefixed with `SERVO_` or `OPSANI`.
 
-    This fixture helps ensure test suite isolation from local development configuration.
+    This fixture helps ensure test suite isolation from local development
+    configuration (often set via a .env file).
+
+    Returns:
+        A callable that can be used to clean the environment on-demand.
     """
-    for key, value in os.environ.copy().items():
-        if key.startswith("SERVO_") or key.startswith("OPSANI_"):
-            os.environ.pop(key)
+    def _clean_environment():
+        for key, value in os.environ.copy().items():
+            if key.startswith("SERVO_") or key.startswith("OPSANI_"):
+                os.environ.pop(key)
+
+    _clean_environment()
+    return _clean_environment
 
 
 @pytest.fixture

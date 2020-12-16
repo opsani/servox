@@ -434,9 +434,10 @@ class CLI(typer.Typer, servo.logging.Mixin):
         servo.logging.set_level(log_level)
         servo.logging.set_colors(not no_color)
 
-        # TODO: This should be pluggable
+        # TODO: This should be pluggable. Base it off of the section?
         if ctx.invoked_subcommand not in {
             "init",
+            "connectors",
             "schema",
             "generate",
             "validate",
@@ -822,10 +823,56 @@ class ServoCLI(CLI):
         show_cli = CLI(name="show", help="Display one or more resources")
 
         @show_cli.command()
+        def connectors(
+            context: Context,
+            verbose: bool = typer.Option(
+                False, "--verbose", "-v", help="Display verbose info"
+            ),
+        ) -> None:
+            """Manage connectors"""
+
+            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
+            if verbose:
+                headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
+
+            for servo_ in context.assembly.servos:
+                if context.servo_ and context.servo_ != servo_:
+                    continue
+
+                connectors = servo_.all_connectors
+                table = []
+                connectors_by_type = {}
+                for c in connectors:
+                    c_type = c.__class__ if isinstance(c, servo.BaseConnector) else c
+                    c_list = connectors_by_type.get(c_type, [])
+                    c_list.append(c)
+                    connectors_by_type[c_type] = c_list
+
+                for connector_type in connectors_by_type.keys():
+                    names = list(
+                        map(lambda c: c.name, connectors_by_type[connector_type])
+                    )
+                    row = [
+                        "\n".join(names),
+                        connector_type.name,
+                        connector_type.version,
+                        connector_type.description,
+                    ]
+                    if verbose:
+                        row += [
+                            connector_type.homepage,
+                            connector_type.maturity,
+                            connector_type.license,
+                        ]
+                    table.append(row)
+
+                if len(context.assembly.servos) > 1:
+                    typer.echo(f"{servo_.name}")
+                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+
+        @show_cli.command()
         def components(context: Context) -> None:
-            """
-            Display adjustable components
-            """
+            """Display adjustable components"""
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
                     continue
@@ -1059,70 +1106,32 @@ class ServoCLI(CLI):
         @self.command(section=Section.ASSEMBLY)
         def connectors(
             context: Context,
-            all: bool = typer.Option(
-                False,
-                "--all",
-                "-a",
-                help="Include models from all available connectors",
-            ),
             verbose: bool = typer.Option(
                 False, "--verbose", "-v", help="Display verbose info"
             ),
         ) -> None:
-            """Manage connectors"""
-
+            """Display active connectors"""
+            table = []
             headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
-            if all:
-                headers[0] = "DEFAULT NAME"
 
-            for servo_ in context.assembly.servos:
-                if context.servo_ and context.servo_ != servo_:
-                    continue
-
-                table = []
-                connectors = (
-                    context.assembly.all_connector_types()
-                    if all
-                    else servo_.all_connectors
-                )
-
-                connectors_by_type = {}
-                for c in connectors:
-                    c_type = c.__class__ if isinstance(c, servo.BaseConnector) else c
-                    c_list = connectors_by_type.get(c_type, [])
-                    c_list.append(c)
-                    connectors_by_type[c_type] = c_list
-
-                for connector_type in connectors_by_type.keys():
-                    if all:
-                        names = [connector_type.__default_name__]
-                    else:
-                        names = list(
-                            map(lambda c: c.name, connectors_by_type[connector_type])
-                        )
-                    row = [
-                        "\n".join(names),
-                        connector_type.name,
-                        connector_type.version,
-                        connector_type.description,
+            for connector_type in servo.Assembly.all_connector_types():
+                row = [
+                    connector_type.__default_name__,
+                    connector_type.name,
+                    connector_type.version,
+                    connector_type.description,
+                ]
+                if verbose:
+                    row += [
+                        connector_type.homepage,
+                        connector_type.maturity,
+                        connector_type.license,
                     ]
-                    if verbose:
-                        row += [
-                            connector_type.homepage,
-                            connector_type.maturity,
-                            connector_type.license,
-                        ]
-                    table.append(row)
+                table.append(row)
 
-                if not all and len(context.assembly.servos) > 1:
-                    typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
-
-                # if we are printing all we only need one iteration
-                if all:
-                    break
+            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
 
     def add_ops_commands(self, section=Section.OPS) -> None:
         @self.command(section=section)

@@ -81,9 +81,11 @@ options under control. The init command will generate one for you.
 #### Displaying Info
 
 ```console
-# View the connectors
+# Display all available connectors
 ❯ servo connectors
 
+# Display instance specific info (requires configuration)
+❯ servo show connectors
 ❯ servo show events
 ❯ servo show components
 ❯ servo show metrics
@@ -267,21 +269,22 @@ class EventExample(servo.BaseConnector):
 The `event` decorator uses the parameters and return type of the decorated
 method to define the signature requirements for on event handlers registered
 against the event. The body of the decorated method must be `...`, `pass`, or an
-async generator that defines setup and tear-down behavior for on event handlers.
+async generator that yields `None` exactly once.
 
 The body of the decorated method can be used to define setup and tear-down
-activities around on event handlers. This allows for common set-up and tear-down
+activities around on event handlers. This allows for common setup and tear-down
 functionality to be defined by the event creator. This is achieved by
 implementing the body of the decorated method as an async generator that yields
 control to the on event handler:
 
 ```python
+from typing import AsyncIterator
 import servo
 
 
 class SetupAndTearDownExample(servo.BaseConnector):
     @servo.event()
-    async def trace(self, url: str) -> str:
+    async def trace(self, url: str) -> AsyncIterator[str]:
         print("Entering event handler...")
         yield
         print("Exited event handler.")

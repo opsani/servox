@@ -2,10 +2,8 @@ import json
 import os
 import re
 from pathlib import Path
-from tests.conftest import stub_servo_yaml
 
 import pytest
-import httpx
 import respx
 import yaml
 from freezegun import freeze_time
@@ -13,7 +11,7 @@ from typer import Typer
 from typer.testing import CliRunner
 
 import servo
-from servo import BaseConfiguration, Optimizer
+from servo import Optimizer
 from servo.cli import CLI, Context, ServoCLI
 from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
@@ -68,30 +66,9 @@ def test_console(cli_runner: CliRunner, servo_cli: Typer) -> None:
 def test_connectors(
     cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
 ) -> None:
-    result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
-
-def test_connectors_multiservo(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "connectors", catch_exceptions=False)
-    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
-    assert re.match("dev.opsani.com/multi-servox-1\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
-
-def test_connectors_multiservo_by_name(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 connectors", catch_exceptions=False)
-    assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
-    assert re.match("dev.opsani.com/multi-servox-2\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
-
-def test_connectors_all(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
-) -> None:
-    result = cli_runner.invoke(servo_cli, "connectors --all")
-    assert result.exit_code == 0
-    assert re.search("^DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    result = cli_runner.invoke(servo_cli, "connectors")
+    assert result.exit_code == 0, f"expected exit code 0, but found {result.exit_code}: {result.stderr}"
+    assert re.search("^NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
@@ -106,18 +83,6 @@ def test_connectors_verbose(
         "NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
         result.stdout,
     )
-
-
-def test_connectors_all_verbose(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
-) -> None:
-    result = cli_runner.invoke(servo_cli, "connectors --all -v")
-    assert result.exit_code == 0
-    assert re.match(
-        "DEFAULT NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATUR",
-        result.stdout,
-    )
-
 
 def test_check_no_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
     result = cli_runner.invoke(servo_cli, "check")
@@ -184,213 +149,246 @@ def test_check_verbose(
         "CONNECTOR\\s+CHECK\\s+ID\\s+TAGS\\s+STATUS\\s+MESSAGE", result.stdout
     )
 
+@pytest.mark.usefixtures("optimizer_env")
+class TestShow:
+    def test_help_does_not_require_optimizer_and_token(
+        self, cli_runner: CliRunner, servo_cli: Typer, clean_environment
+    ) -> None:
+        clean_environment()
+        result = cli_runner.invoke(servo_cli, "show --help")
+        assert result.exit_code == 2
+        assert "Error: Invalid value: An optimizer must be specified" in result.stderr
 
-def test_show_help_requires_optimizer(cli_runner: CliRunner, servo_cli: Typer) -> None:
-    result = cli_runner.invoke(servo_cli, "show --help")
-    assert result.exit_code == 2
-    assert "Error: Invalid value: An optimizer must be specified" in result.stderr
-
-
-def test_show_help(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show --help")
-    assert result.exit_code == 0
-    assert "Display one or more resources" in result.stdout
-
-
-def test_show_components(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
-
-def test_show_components_multiservo(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-    assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
-
-def test_show_components_multiservo_by_name(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show components", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-    assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
+    def test_help(
+        self, cli_runner: CliRunner, servo_cli: Typer
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show --help")
+        assert result.exit_code == 0
+        assert "Display one or more resources" in result.stdout
 
 
-def test_show_events_empty_config_file(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert "check    Servo\n" in result.stdout
-    assert len(result.stdout.split("\n")) == 4
-
-def test_show_events_multiservo(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-
-def test_show_events_multiservo_by_name(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show events", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+    def test_connectors(
+        self, cli_runner: CliRunner, servo_cli: Typer
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show connectors", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
-def test_show_events_all(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events -a", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("^check", result.stdout, flags=re.MULTILINE)
-    assert re.search("^adjust\\s.+", result.stdout, flags=re.MULTILINE)
-    assert re.search("^components\\s.+", result.stdout, flags=re.MULTILINE)
+    def test_components(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
 
 
-def test_show_events_includes_servo(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("Servo", result.stdout)
+    def test_events_all(
+        self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show events -a", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert re.search("^check", result.stdout, flags=re.MULTILINE)
+        assert re.search("^adjust\\s.+", result.stdout, flags=re.MULTILINE)
+        assert re.search("^components\\s.+", result.stdout, flags=re.MULTILINE)
 
 
-def test_show_events_on(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --on", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+Measure\n", result.stdout)
-    assert not re.search("before measure\\s+Measure", result.stdout)
-    assert not re.search("after measure\\s+Measure", result.stdout)
-    assert len(result.stdout.split("\n")) > 3
+    def test_events_includes_servo(
+        self, cli_runner: CliRunner, servo_cli: Typer,
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.search("Servo", result.stdout)
 
 
-def test_show_events_no_on(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show events --no-on", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+Measure\n", result.stdout)
-    assert re.search("after measure\\s+Measure", result.stdout)
+    def test_events_on(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show events --on", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert re.search("check\\s+Servo\n", result.stdout)
+        assert re.search("measure\\s+Measure\n", result.stdout)
+        assert not re.search("before measure\\s+Measure", result.stdout)
+        assert not re.search("after measure\\s+Measure", result.stdout)
+        assert len(result.stdout.split("\n")) > 3
 
 
-def test_show_events_after_on(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(
-        servo_cli, "show events --after --on", catch_exceptions=False
-    )
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+Measure\n", result.stdout)
-    assert re.search("after measure\\s+Measure", result.stdout)
+    def test_events_no_on(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show events --no-on", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert not re.search("check\\s+Servo\n", result.stdout)
+        assert not re.search("^measure\\s+Measure\n", result.stdout)
+        assert re.search("after measure\\s+Measure", result.stdout)
 
 
-def test_show_events_no_on_before(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(
-        servo_cli, "show events --no-on --before", catch_exceptions=False
-    )
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert not re.search("check\\s+Servo\n", result.stdout)
-    assert not re.search("^measure\\s+Measure\n", result.stdout)
-    assert re.search("before measure\\s+Measure", result.stdout)
-    assert re.search("after measure\\s+Measure", result.stdout)
+    def test_events_after_on(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "show events --after --on", catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert re.search("check\\s+Servo\n", result.stdout)
+        assert not re.search("^measure\\s+Measure\n", result.stdout)
+        assert re.search("after measure\\s+Measure", result.stdout)
 
 
-def test_show_events_no_after(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(
-        servo_cli, "show events --no-after", catch_exceptions=False
-    )
-    assert result.exit_code == 0
-    assert re.match("EVENT\\s+CONNECTORS", result.stdout)
-    assert re.search("check\\s+Servo\n", result.stdout)
-    assert re.search("measure\\s+Measure\n", result.stdout)
-    assert re.search("before measure\\s+Measure", result.stdout)
-    assert not re.search("after measure\\s+Measure", result.stdout)
+    def test_events_no_on_before(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "show events --no-on --before", catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert not re.search("check\\s+Servo\n", result.stdout)
+        assert not re.search("^measure\\s+Measure\n", result.stdout)
+        assert re.search("before measure\\s+Measure", result.stdout)
+        assert re.search("after measure\\s+Measure", result.stdout)
 
 
-def test_show_events_by_connector(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(
-        servo_cli, "show events --by-connector", catch_exceptions=False
-    )
-    assert result.exit_code == 0
-    assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
-    assert re.search("Servo\\s+check\n", result.stdout)
-    assert re.search(
-        "Adjust\\s+adjust\n\\s+components\n\\s+describe",
-        result.stdout,
-        flags=re.MULTILINE,
-    )
-    assert re.search(
-        "Measure\\s+describe\n\\s+before measure\n\\s+measure\n\\s+after measure\n\\s+metrics",
-        result.stdout,
-        flags=re.MULTILINE,
-    )
+    def test_events_no_after(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "show events --no-after", catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout)
+        assert re.search("check\\s+Servo\n", result.stdout)
+        assert re.search("measure\\s+Measure\n", result.stdout)
+        assert re.search("before measure\\s+Measure", result.stdout)
+        assert not re.search("after measure\\s+Measure", result.stdout)
 
 
-def test_show_metrics(
-    cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None, stub_servo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.match("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
-
-def test_show_metrics_multiservo(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-    assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
-    assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
-
-def test_show_metrics_multiservo_by_name(
-    cli_runner: CliRunner, servo_cli: Typer, stub_multiservo_yaml: Path
-) -> None:
-    result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show metrics", catch_exceptions=False)
-    assert result.exit_code == 0
-    assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
-    assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
-    assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-    assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
-    assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+    def test_events_by_connector(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(
+            servo_cli, "show events --by-connector", catch_exceptions=False
+        )
+        assert result.exit_code == 0
+        assert re.match("CONNECTOR\\s+EVENTS", result.stdout)
+        assert re.search("Servo\\s+check\n", result.stdout)
+        assert re.search(
+            "Adjust\\s+adjust\n\\s+components\n\\s+describe",
+            result.stdout,
+            flags=re.MULTILINE,
+        )
+        assert re.search(
+            "Measure\\s+describe\n\\s+before measure\n\\s+measure\n\\s+after measure\n\\s+metrics",
+            result.stdout,
+            flags=re.MULTILINE,
+        )
 
 
-def test_version(cli_runner: CliRunner, servo_cli: Typer, optimizer_env: None) -> None:
+    def test_events_empty_config_file(
+        self, cli_runner: CliRunner, servo_cli: Typer, servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("EVENT\\s+CONNECTORS", result.stdout), f"Failed to match with output: {result.stdout}"
+        assert "check    Servo\n" in result.stdout
+        assert len(result.stdout.split("\n")) == 4
+
+
+    def test_metrics(
+        self, cli_runner: CliRunner, servo_cli: Typer, stub_servo_yaml: Path
+    ) -> None:
+        result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)
+        assert result.exit_code == 0
+        assert re.match("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
+
+    @pytest.mark.usefixtures("stub_multiservo_yaml")
+    class TestMultiservo:
+        @pytest.fixture
+        def optimizer_env(self) -> None:
+            # NOTE: zero out the optimizer_env fixture as you can't use them
+            # under multiservo
+            pass
+
+        def test_connectors(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "show connectors", catch_exceptions=False)
+            assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+            assert re.match("dev.opsani.com/multi-servox-1\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+
+        def test_connectors_by_name(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show connectors", catch_exceptions=False)
+            assert result.exit_code == 0, f"Non-zero exit status code: stdout={result.stdout}, stderr={result.stderr}"
+            assert re.match("dev.opsani.com/multi-servox-2\nNAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+
+        def test_components(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "show components", catch_exceptions=False)
+            assert result.exit_code == 0
+            assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
+
+        def test_components_by_name(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show components", catch_exceptions=False)
+            assert result.exit_code == 0
+            assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
+
+        def test_events(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
+            assert result.exit_code == 0
+            assert re.search("EVENT\\s+CONNECTORS", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+
+        def test_events_by_name(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show events", catch_exceptions=False)
+            assert result.exit_code == 0
+            assert re.search("EVENT\\s+CONNECTORS", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+
+        def test_metrics(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "show metrics", catch_exceptions=False)
+            assert result.exit_code == 0
+            assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+            assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+
+        def test_metrics_by_name(
+            self, cli_runner: CliRunner, servo_cli: Typer
+        ) -> None:
+            result = cli_runner.invoke(servo_cli, "-n dev.opsani.com/multi-servox-2 show metrics", catch_exceptions=False)
+            assert result.exit_code == 0, f"non-zero exit code. stdout={result.stdout}, stderr={result.stderr}"
+            assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
+            assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
+            assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
+            assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+
+
+def test_version(cli_runner: CliRunner, servo_cli: Typer) -> None:
     result = cli_runner.invoke(servo_cli, "version")
     assert result.exit_code == 0
     assert f"Servo v{servo.__version__}" in result.stdout
