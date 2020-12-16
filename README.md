@@ -739,9 +739,15 @@ fast customized builds:
 ### Upgrading Python
 
 Python interpreter updates can be a bit annoying. The Poetry virtual environment
-will against the prior Python interpreter and you may find that running tests
-and commands will remain stuck to your previous interpreter, regardless of the
-version configured in `.python-version`.
+bundles an interpreter via a symlink when it is created. For example, when using
+`pyenv` to manage multiple interpreter versions, a virtual environment built
+under Python v3.8.6 might symlink `python` to
+`~/.pyenv/versions/3.8.6/bin/python`.
+
+If you update your interpreter version via the `.python-version` file and have
+an existing Poetry virtual environment, you will find that test runs and binary
+executions will remain "stuck" against the previously active interpretter
+version.
 
 To fix this, run `make clean-env` which will teardown and rebuild your Poetry
 virtual environment.
