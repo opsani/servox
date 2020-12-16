@@ -743,9 +743,9 @@ remote system components such as a Kubernetes cluster or Prometheus deployment.
 Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
 file at `tests/kubeconfig`.
 
-By convention, the integration testing cluster is named
-`servox-integration-tests` and the `make kubeconfig` task is provided to export
-the cluster details from your primary kubeconfig, ensuring isolation.
+By convention, the integration testing cluster is named `kubetest`
+and the `make kubeconfig` task is provided to export the cluster details
+from your primary kubeconfig, ensuring isolation.
 
 Interaction with the Kubernetes cluster is supported by the most excellent
 [kubetest](https://kubetest.readthedocs.io/en/latest/) library that provides

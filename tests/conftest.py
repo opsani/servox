@@ -256,9 +256,19 @@ def random_string() -> str:
 
 
 @pytest.fixture
-async def kubeconfig() -> str:
-    """Return the path to a kubeconfig file to use when running integraion tests."""
-    config_path = pathlib.Path(__file__).parents[0] / "kubeconfig"
+async def kubeconfig(request) -> str:
+    """Return the path to a kubeconfig file to use when running integraion tests.
+
+    To avoid inadvertantly interacting with clusters not explicitly configured
+    for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
+    """
+    config_opt = request.session.config.getoption('kube_config') or "tests/kubeconfig"
+    path = pathlib.Path(config_opt).expanduser()
+    config_path = (
+        path if path.is_absolute()
+        else request.session.config.rootpath.joinpath(path)
+    )
+
     if not config_path.exists():
         raise FileNotFoundError(
             f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
@@ -266,14 +276,10 @@ async def kubeconfig() -> str:
 
     return str(config_path)
 
-@pytest.fixture
-def kube_context(request) -> Optional[str]:
-    """Return the context to be used within the kubeconfig file or None to use the default."""
-    return request.session.config.getoption('kube_context')
 
 
 @pytest.fixture
-async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Optional[str]) -> None:
+async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optional[str]) -> None:
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import logging
 
@@ -284,9 +290,10 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
     else:
         kubeconfig = kubeconfig or os.getenv("KUBECONFIG")
         if kubeconfig:
+            kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
             await kubernetes_asyncio.config.load_kube_config(
-                config_file=os.path.expandvars(os.path.expanduser(kubeconfig)),
-                context=kube_context,
+                config_file=os.path.expandvars(kubeconfig_path),
+                context=kubecontext,
             )
         else:
             log = logging.getLogger('kubetest')
@@ -298,6 +305,7 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
             raise FileNotFoundError(
                 f"kubeconfig file not found: configure a test cluster and add kubeconfig: {kubeconfig}"
             )
+
 
 @pytest.fixture()
 async def subprocess() -> tests.helpers.Subprocess:
@@ -362,12 +370,11 @@ async def kind(request, subprocess, kubeconfig: str, kube_context: str) -> str:
     The cluster name is determined using the parametrized `kind_cluster` marker
     or else uses "default".
     """
+    cluster = "pytest-k8s"
     marker = request.node.get_closest_marker("kind_cluster")
     if marker:
         assert len(marker.args) == 1, f"kind_cluster marker accepts a single argument but received: {repr(marker.args)}"
         cluster = marker.args[0]
-    else:
-        cluster = "pytest-k8s-async"
 
     # Start kind and configure environment
     # TODO: if we create it, we should delete it (with kubernetes_cluster() as foo:)

@@ -39,8 +39,8 @@ pytest-cov = "^2.10.0"
 pytest-mock = "^3.3.1"
 freezegun = "^1.0.0"
 asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
-respx = "^0.16.1"
-kubetest = "^0.8.1"
+respx = "^0.16.2"
+kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/kubeconfig-fixture"}
 pytest-freezegun = "^0.4.2"
 yamlpath = "^3.2.0"
 isort = "^5.6.4"
