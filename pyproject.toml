@@ -39,7 +39,7 @@ pytest-mock = "^3.3.1"
 freezegun = "^1.0.0"
 asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.16.3"
-kubetest = "^0.8.1"
+kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/kubeconfig-fixture"}
 pytest-freezegun = "^0.4.2"
 yamlpath = "^3.2.0"
 isort = "^5.6.4"
