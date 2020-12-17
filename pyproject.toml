@@ -5,6 +5,7 @@ description = "Opsani Servo: The Next Generation"
 homepage = "https://opsani.com/"
 repository = "https://github.com/opsani/servox"
 authors = ["Blake Watters <blake@opsani.com>"]
+readme = "README.md"
 license = "Apache-2.0"
 packages = [
     { include = "servo" },
