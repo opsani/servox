@@ -1,10 +1,11 @@
+import abc
 import asyncio
 import datetime
 import enum
 import functools
 import math
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import httpcore._exceptions
 import httpx
@@ -81,19 +82,19 @@ class PrometheusTarget(pydantic.BaseModel):
     last_scrape_duration: Optional[servo.Duration]
     last_error: Optional[str]
     
-    @pydantic.root_validator(pre=True)
-    def _map_from_prometheus_json(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "pool": values["scrapePool"],
-            "url": values["scrapeUrl"],
-            "global_url": values["globalUrl"],
-            "health": values["health"],
-            "labels": values["labels"],
-            "discovered_labels": values["discoveredLabels"],
-            "last_scraped_at": values["lastScrape"],
-            "last_scrape_duration": values["lastScrapeDuration"],
-            "last_error": values["lastError"] if values["lastError"] else None
-        }
+    # @pydantic.root_validator(pre=True)
+    # def _map_from_prometheus_json(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    #     return {
+    #         "pool": values["scrapePool"],
+    #         "url": values["scrapeUrl"],
+    #         "global_url": values["globalUrl"],
+    #         "health": values["health"],
+    #         "labels": values["labels"],
+    #         "discovered_labels": values["discoveredLabels"],
+    #         "last_scraped_at": values["lastScrape"],
+    #         "last_scrape_duration": values["lastScrapeDuration"],
+    #         "last_error": values["lastError"] if values["lastError"] else None
+    #     }
 
 
 class PrometheusConfiguration(servo.BaseConfiguration):
@@ -149,10 +150,10 @@ class PrometheusConfiguration(servo.BaseConfiguration):
             ), **kwargs}
         )
 
-    @pydantic.validator("base_url")
-    @classmethod
-    def rstrip_base_url(cls, base_url):
-        return base_url.rstrip("/")
+    # @pydantic.validator("base_url")
+    # @classmethod
+    # def rstrip_base_url(cls, base_url):
+    #     return base_url.rstrip("/")
 
     @property
     def api_url(self) -> str:
@@ -213,40 +214,172 @@ class ResultType(str, enum.Enum):
     scalar = "scalar"
     string = "string"
 
-class QueryResult(pydantic.BaseModel):
-    """Models a PromQL query result returned from Prometheus.
+Scalar = Tuple[datetime.datetime, float]
+String = Tuple[datetime.datetime, str]
+
+# class ResultSet(pydantic.BaseModel): # TODO: QueryResponse
+#     query: BaseQuery
+#     status: str
+#     type: ResultType
+#     results: List['Result']
+#     # TODO: This may need to be polymorphic. value? result? Response class instead?
     
-    Vector, scalar, and string result data is exposed via the
-    `value` attribute while `matrix` results are available via the
-    `values` attribute.
+#     @pydantic.root_validator(pre=True)
+#     def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+#         # result = values["data"]["result"][0] if values["data"]["result"] else {}
+#         return {
+#             "query": values["query"],
+#             "status": values["status"],
+#             "type": values["data"]["resultType"],
+#             "results": values["data"]["result"],
+#             # "metric": result.get("metric", None),
+#             # "value": result.get("value", None),
+#             # "values": result.get("values", None),
+#         }
+
+# ResultMetric = TypeVar[]
+# ResultValue = Tuple[float, str] # TODO: Move to nested class? Can this just be DataPoint???
+
+class BaseVector(abc.ABC, pydantic.BaseModel):
+    metric: Dict[str, str] # TODO: These are just labels... TODO: Take the __name__ and bundle into a class?
+    
+    @abc.abstractmethod
+    def __len__(self) -> int:
+        ...
+    
+    @abc.abstractmethod
+    def __iter__(self) -> Scalar:
+        ...
+
+
+class InstantVector(BaseVector): # NOTE: Parent type is vector
     """
-    query: BaseQuery
-    status: str
-    type: ResultType
-    metric: Optional[dict] # TODO: dunno here...
-    value: Optional[Tuple[datetime.datetime, float]]
-    values: Optional[List[Tuple[datetime.datetime, float]]]
-
-    @property
-    def metric(self) -> None:
-        return self.query.metric
-
-    @pydantic.root_validator(pre=True)
-    def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        result = values["data"]["result"][0] if values["data"]["result"] else {}
-        return {
-            "query": values["query"],
-            "status": values["status"],
-            "type": values["data"]["resultType"],
-            "metric": result.get("metric", None),
-            "value": result.get("value", None),
-            "values": result.get("values", None),
-        }
+    [
+        {
+            'metric': {},
+            'value': [
+                1607989427.782,
+                '19.8',
+            ],
+        },
+    ]
+    """
+    value: Scalar
     
-    @pydantic.validator("values")
-    @classmethod
-    def _sort_values(cls, values: Optional[List[Tuple[datetime.datetime, float]]]) -> Optional[List[Tuple[datetime.datetime, float]]]:        
-        return sorted(values, key=lambda x: x[0]) if values else None
+    def __len__(self) -> int:
+        return 1
+    
+    def __iter__(self) -> Scalar:
+        return iter((self.value, ))
+
+class RangeVector(BaseVector): # NOTE: Parent type is matrix
+    """
+    [
+    {
+        "metric": { "<label_name>": "<label_value>", ... },
+        "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+    },
+    ...
+    ]
+
+    Args:
+        pydantic ([type]): [description]
+    """    
+    values: List[Scalar]
+    
+    def __len__(self) -> int:
+        return len(self.values)
+    
+    def __iter__(self) -> Scalar:
+        return iter(self.values)
+
+
+class Status(str, enum.Enum):
+    """Prometheus API query response statuses.
+    
+    See https://prometheus.io/docs/prometheus/latest/querying/api/#format-overview
+    """
+    success = "success"
+    error = "error"
+
+class Error(pydantic.BaseModel):
+    type: str = pydantic.Field(..., alias='errorType')
+    message: str = pydantic.Field(..., alias='error')
+    
+    # @pydantic.root_validator(pre=True)
+    # def _map_items(cls, values: Dict[str, str]) -> Dict[str, str]:
+    #     if values.keys() == {"errorType", "error"}:
+    #         return {
+    #             "type": values["errorType"],
+    #             "message": values["error"]
+    #         }
+    #     else:
+    #         return values
+
+class Data(pydantic.BaseModel):
+    type: ResultType = pydantic.Field(..., alias='resultType')
+    result: Union[List[InstantVector], List[RangeVector], Scalar, String]
+    
+    def __len__(self) -> int:
+        if self.is_vector:
+            return len(self.result)
+        elif self.is_value:
+            return 1
+        else:
+            raise TypeError(f"unknown data type '{self.type}'")
+    
+    def __iter__(self):
+        if self.is_vector:
+            return iter(self.result)
+        elif self.is_value:
+            return iter((self.result, ))
+        else:
+            raise TypeError(f"unknown data type '{self.type}'")
+    
+    @property
+    def is_vector(self) -> bool:
+        return self.type in (servo.connectors.prometheus.ResultType.vector, servo.connectors.prometheus.ResultType.matrix)
+    
+    @property
+    def is_value(self) -> bool:
+        return self.type in (servo.connectors.prometheus.ResultType.scalar, servo.connectors.prometheus.ResultType.string)
+    
+class Response(pydantic.BaseModel):
+    """Models a PromQL query response returned from the Prometheus API."""
+    status: Status
+    error: Optional[Error] # TODO: Constrain the response type -- status must be error?
+    warnings: Optional[List[str]]
+    data: Optional[Data]
+    # query: BaseQuery ???
+    
+    @pydantic.root_validator(pre=True)
+    def _parse_error(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        if error := dict(filter(lambda item: item[0].startswith("error"), values.items())):
+            values["error"] = error
+        return values
+    
+    # type = pydantic.Field(
+    #     "range", const=True, description="Identifies the setting as a range setting."
+    # )
+    # @pydantic.validator()
+    
+
+    # # @pydantic.root_validator(pre=True)
+    # # def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    # #     result = values["data"]["result"][0] if values["data"]["result"] else {}
+    # #     return {
+    # #         # "query": values["query"],
+    # #         # "status": values["status"],
+    # #         # "type": values["data"]["resultType"],
+    # #         "metric": result.get("metric", None),
+    # #         "value": result.get("value", None),
+    # #         "values": result.get("values", None),
+    # #     }
+    
+    # @pydantic.validator("values")
+    # @classmethod
+    # def _sort_values(cls, values: Optional[List[Tuple[datetime.datetime, float]]]) -> Optional[List[Tuple[datetime.datetime, float]]]:        
+    #     return sorted(values, key=lambda x: x[0]) if values else None
 
 
 class PrometheusChecks(servo.BaseChecks):
@@ -477,7 +610,7 @@ class PrometheusConnector(servo.BaseConnector):
     async def _query_prometheus(
         self, metric: PrometheusMetric, start: datetime, end: datetime
     ) -> List[servo.TimeSeries]:
-        async def _query(request: BaseQuery) -> QueryResult:
+        async def _query(request: BaseQuery) -> Result:
             self.logger.trace(
                 f"Querying Prometheus (`{request.metric.query}`): {request.url}"
             )
@@ -485,7 +618,8 @@ class PrometheusConnector(servo.BaseConnector):
                 try:
                     response = await client.get(request.url)
                     response.raise_for_status()
-                    return QueryResult(query=request, **response.json())
+                    # TODO: This needs to be able to map into a list to support result arrays
+                    return Result(query=request, **response.json())
                 except (
                     httpx.HTTPError,
                     httpcore._exceptions.ReadTimeout,
@@ -507,50 +641,37 @@ class PrometheusConnector(servo.BaseConnector):
             return []
 
         readings = []
-        # TODO: check and handle the resultType
-        if result.values == []:
-            if metric.absent == Absent.ignore:
-                pass
-            elif metric.absent == Absent.zero:
-                # Handled in RangeQuery
-                pass
+        if result.type == ResultType.matrix:
+            if not result.values:
+                if metric.absent == Absent.ignore:
+                    pass
+                elif metric.absent == Absent.zero:
+                    # Handled in RangeQuery
+                    pass
+                else:
+                    # Check for an absent metric
+                    absent_metric = metric.copy()
+                    absent_metric.query = f"absent({metric.query})"
+                    absent_query = InstantQuery(
+                        base_url=self.config.api_url, metric=absent_metric
+                    )
+                    absent_result = await _query(absent_query)
+                    self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
+
+                    # TODO: this is brittle...
+                    # [{'metric': {}, 'value': [1607078958.682, '1']}]
+                    absent = int(absent_result.value) == 1
+                    if absent:
+                        if metric.absent == Absent.warn:
+                            self.logger.warning(
+                                f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
+                            )
+                        elif metric.absent == Absent.fail:
+                            raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
+                        else:
+                            raise ValueError(f"unknown metric absent value: {metric.absent}")
             else:
-                # Check for an absent metric
-                absent_metric = metric.copy()
-                absent_metric.query = f"absent({metric.query})"
-                absent_query = InstantQuery(
-                    base_url=self.config.api_url, metric=absent_metric
-                )
-                absent_result = await _query(absent_query)
-                self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
-
-                # TODO: this is brittle...
-                # [{'metric': {}, 'value': [1607078958.682, '1']}]
-                absent = int(absent_result.value[0]['value'][1]) == 1
-                if absent:
-                    if metric.absent == Absent.warn:
-                        self.logger.warning(
-                            f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
-                        )
-                    elif metric.absent == Absent.fail:
-                        raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
-                    else:
-                        raise ValueError(f"unknown metric absent value: {metric.absent}")
-
-        else:
-            # debug(result)
-            # debug("HOLY SHIT REUSLT METRIC", result.metric)
-            # TODO: This should not be necessary...
-            for result_dict in result.data["result"]:
-                m_ = result_dict["metric"].copy()
-                # NOTE: Unpack "metrics" subdict and pack into a string
-                if "__name__" in m_:
-                    del m_["__name__"]
-                instance = m_.get("instance")
-                job = m_.get("job")
-                annotation = " ".join(
-                    map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
-                )
+                
                 readings.append(
                     servo.TimeSeries(
                         metric=metric,
@@ -560,8 +681,31 @@ class PrometheusConnector(servo.BaseConnector):
                         metadata=dict(instance=instance, job=job),
                     )
                 )
-
-        return readings
+        else:
+            ...
+            # debug(result)
+            # debug("HOLY SHIT REUSLT METRIC", result.metric)
+            # TODO: This should not be necessary...
+            # for result_dict in result.data["result"]:
+            #     m_ = result_dict["metric"].copy()
+            #     # NOTE: Unpack "metrics" subdict and pack into a string
+            #     if "__name__" in m_:
+            #         del m_["__name__"]
+            #     instance = m_.get("instance")
+            #     job = m_.get("job")
+            #     annotation = " ".join(
+            #         map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
+            #     )
+            #     readings.append(
+            #         servo.TimeSeries(
+            #             metric=metric,
+            #             annotation=annotation,
+            #             values=result.values,
+            #             id=f"{{instance={instance},job={job}}}",
+            #             metadata=dict(instance=instance, job=job),
+            #         )
+            #     
+        # return readings
 
 
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")

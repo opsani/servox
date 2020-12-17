@@ -10,6 +10,7 @@ import pydantic
 import pytest
 import respx
 import typer
+from servo.connectors import prometheus
 
 import servo.utilities
 from servo.connectors.prometheus import (
@@ -780,3 +781,419 @@ class TestConnector:
             utc_now = pytz.utc.localize(datetime.datetime.utcnow())
             debug(datetime.datetime.now(), datetime.datetime.utcnow(), utc_now)
             debug(timeago.format(targets[0].last_scraped_at, utc_now))
+
+
+
+########
+
+# TODO: Do you really want to iterate the parent?
+# TODO: Also allow iterate on the Result -- it will pass down
+# TODO: Special label __name__ -- the name of the metric itself
+
+class TestInstantVector:
+    @pytest.fixture
+    def vector(self) -> servo.connectors.prometheus.InstantVector:
+        return pydantic.parse_obj_as(
+            servo.connectors.prometheus.InstantVector, 
+            {
+                'metric': {},
+                'value': [
+                    1607989427.782,
+                    '19.8',
+                ],
+            }
+        )
+        
+    def test_parse(self, vector) -> None:
+        assert vector
+        assert vector.metric == {}
+        assert vector.value == (
+            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
+            19.8
+        )
+    
+    def test_len(self, vector) -> None:
+        assert vector
+        assert len(vector) == 1
+        
+    def test_iterate(self, vector) -> None:
+        assert vector
+        for sample in vector:
+            assert sample == (
+                datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
+                19.8
+            )
+
+class TestRangeVector:
+    @pytest.fixture
+    def vector(self) -> servo.connectors.prometheus.RangeVector:
+        return pydantic.parse_obj_as(
+            servo.connectors.prometheus.RangeVector, 
+            {
+                "metric": {
+                    "__name__": "go_memstats_gc_sys_bytes",
+                    "instance": "localhost:9090",
+                    "job": "prometheus",
+                },
+                "values": [
+                    [1595142421.024, "3594504"],
+                    [1595142481.024, "3594504"],
+                    [1595152585.055, "31337"],
+                ],
+            }
+        )
+        
+    def test_parse(self, vector) -> None:
+        assert vector
+        assert vector.metric == {
+            "__name__": "go_memstats_gc_sys_bytes",
+            "instance": "localhost:9090",
+            "job": "prometheus",
+        }
+        assert vector.values == [
+            (datetime.datetime(2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
+            (datetime.datetime(2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
+            (datetime.datetime(2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc), 31337.0),
+        ]
+    
+    def test_len(self, vector) -> None:
+        assert vector
+        assert len(vector) == 3
+        
+    def test_iterate(self, vector) -> None:
+        assert vector
+        expected = [
+            (datetime.datetime(2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
+            (datetime.datetime(2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
+            (datetime.datetime(2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc), 31337.0),
+        ]
+        for sample in vector:
+            assert sample == expected.pop(0)
+        assert not expected
+        
+class TestResultPrimitives:    
+    def test_scalar(self) -> None:
+        output = pydantic.parse_obj_as(servo.connectors.prometheus.Scalar, [1607989427.782, '1234'])
+        assert output
+        assert output == (
+            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
+            1234.0
+        )
+    
+    def test_string(self) -> None:
+        output = pydantic.parse_obj_as(servo.connectors.prometheus.String, [1607989427.782, 'whatever'])
+        assert output
+        assert output == (
+            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
+            'whatever'
+        )
+    
+    def test_scalar_parses_as_string(self) -> None:
+        output = pydantic.parse_obj_as(servo.connectors.prometheus.String, [1607989427.782, '1234.56'])
+        assert output
+        assert output == (
+            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
+            '1234.56'
+        )
+    
+    def test_string_does_not_parse_as_scalar(self) -> None:
+        with pytest.raises(pydantic.ValidationError, match="value is not a valid float"):
+            pydantic.parse_obj_as(servo.connectors.prometheus.Scalar, [1607989427.782, 'thug_life'])
+
+
+    # def test_vector(self) -> None:
+    #     ...
+    #     # input = {
+    #     #     'metric': {},
+    #     #     'value': [
+    #     #         1607989427.782,
+    #     #         '19.8',
+    #     #     ],
+    #     # }
+    #     # output = pydantic.parse_obj_as(servo.connectors.prometheus.InstantVector, input)
+    #     # assert output
+    #     # assert output.metric == {}
+    #     # # assert output.value == {}
+    #     # debug(output, str(output.value[0]))
+    
+    # def test_matrix(self) -> None:
+    #     ...
+    
+    # def test_vector_doesnt_parse_as_matrix(self) -> None:
+    #     ...
+    
+    # def test_matrix_doesnt_parse_as_vector(self) -> None:
+    #     ...
+
+class TestResult:
+    @pytest.fixture
+    def vector_result(self) -> Dict[str, Any]:
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'vector',
+                'result': [
+                    {
+                        'metric': {},
+                        'value': [
+                            1607989427.782,
+                            '19.8',
+                        ],
+                    },
+                ],
+            },
+        }
+    
+    def test_parse_vector_result(self, vector_result) -> None:
+        result = servo.connectors.prometheus.Result.parse_obj(vector_result)
+        debug(result)
+        ...
+    
+    # TODO: Handle an error
+    # TODO: Test string and scalar responses
+    
+    @pytest.fixture
+    def matrix_result(self) -> dict:
+        return {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {
+                        "metric": {
+                            "__name__": "go_memstats_gc_sys_bytes",
+                            "instance": "localhost:9090",
+                            "job": "prometheus",
+                        },
+                        "values": [
+                            [1595142421.024, "3594504"],
+                            [1595142481.024, "3594504"],
+                        ],
+                    }
+                ],
+            },
+        }
+
+class TestData:
+    class TestVector:
+        @pytest.fixture
+        def obj(self):
+            return {
+                "resultType" : "vector",
+                "result" : [
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "prometheus",
+                            "instance" : "localhost:9090"
+                        },
+                        "value": [ 1435781451.781, "1" ]
+                    },
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "node",
+                            "instance" : "localhost:9100"
+                        },
+                        "value" : [ 1435781451.781, "0" ]
+                    }
+                ]
+            }
+            
+        def test_parse(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            assert data.type == servo.connectors.prometheus.ResultType.vector
+            assert len(data) == 2
+        
+        def test_iterate(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            for vector in data:
+                assert isinstance(vector, servo.connectors.prometheus.InstantVector)
+                assert vector.metric["__name__"] == "up"
+                assert vector.value[0] == datetime.datetime(2015, 7, 1, 20, 10, 51, 781000, tzinfo=datetime.timezone.utc)
+    
+    class TestMatrix:
+        @pytest.fixture
+        def obj(self):
+            return {
+                "resultType" : "matrix",
+                "result" : [
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "prometheus",
+                            "instance" : "localhost:9090"
+                        },
+                        "values" : [
+                            [ 1435781430.781, "1" ],
+                            [ 1435781445.781, "1" ],
+                            [ 1435781460.781, "1" ]
+                        ]
+                    },
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "node",
+                            "instance" : "localhost:9091"
+                        },
+                        "values" : [
+                            [ 1435781430.781, "0" ],
+                            [ 1435781445.781, "0" ],
+                            [ 1435781460.781, "1" ]
+                        ]
+                    }
+                ]
+            }
+            
+        def test_parse(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            assert data.type == servo.connectors.prometheus.ResultType.matrix
+            assert len(data) == 2
+        
+        def test_iterate(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            
+            values = [
+                [(datetime.datetime(2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc), 1.0,),
+                 (datetime.datetime(2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc), 1.0,),
+                 (datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc), 1.0,),], 
+                [(datetime.datetime(2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc), 0.0,),
+                 (datetime.datetime(2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc), 0.0,),
+                 (datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc), 1.0,),]
+            ]
+            for vector in data:
+                assert isinstance(vector, servo.connectors.prometheus.RangeVector)
+                assert vector.metric["__name__"] == "up"
+                assert vector.values == values.pop(0)
+            
+            assert not values
+
+    class TestScalar:
+        @pytest.fixture
+        def obj(self):
+            return {
+                "resultType" : "scalar",
+                "result" : [1435781460.781, "1"]
+            }
+            
+        def test_parse(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            assert data.type == servo.connectors.prometheus.ResultType.scalar
+            assert len(data) == 1
+        
+        def test_iterate(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            for scalar in data:
+                assert scalar[0] == datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc)
+                assert scalar[1] == 1.0
+    
+    class TestString:
+        @pytest.fixture
+        def obj(self):
+            return {
+                "resultType" : "string",
+                "result" : [1607989427.782, 'thug_life']
+            }
+            
+        def test_parse(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            assert data.type == servo.connectors.prometheus.ResultType.string
+            assert len(data) == 1
+        
+        def test_iterate(self, obj) -> None:
+            data = servo.connectors.prometheus.Data.parse_obj(obj)
+            assert data
+            for string in data:
+                assert string[0] == datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc)
+                assert string[1] == "thug_life"
+        
+class TestResponse:
+    def test_parsing_error(self) -> None:
+        obj = {
+            "status": "error",
+            "errorType": "failure", 
+            "error": "couldn't hang",
+            "data": {},
+        }
+        response = servo.connectors.prometheus.Response.parse_obj(obj)
+        assert response.status == "error"
+        assert response.error == { "type": "failure", "message": "couldn't hang" }
+    
+    def test_parsing_vector_result(self) -> None:
+        obj = {
+            "status" : "success",
+            "data" : {
+                "resultType" : "vector",
+                "result" : [
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "prometheus",
+                            "instance" : "localhost:9090"
+                        },
+                        "value": [ 1435781451.781, "1" ]
+                    },
+                    {
+                        "metric" : {
+                            "__name__" : "up",
+                            "job" : "node",
+                            "instance" : "localhost:9100"
+                        },
+                        "value" : [ 1435781451.781, "0" ]
+                    }
+                ]
+            }
+        }
+        response = servo.connectors.prometheus.Response.parse_obj(obj)
+        assert response.status == "success"
+        assert response.error is None
+        assert response.warnings is None
+
+    
+    def test_parsing_matrix_result(self) -> None:
+        obj = {
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [
+                    {
+                        "metric": {
+                            "__name__": "go_memstats_gc_sys_bytes",
+                            "instance": "localhost:9090",
+                            "job": "prometheus",
+                        },
+                        "values": [
+                            [1595142421.024, "3594504"],
+                            [1595142481.024, "3594504"],
+                        ],
+                    }
+                ],
+            },
+        }
+        response = servo.connectors.prometheus.Response.parse_obj(obj)
+        assert response.status == "success"
+        assert response.error is None
+        assert response.warnings is None
+
+class TestError:
+    @pytest.fixture
+    def data(self) -> Dict[str, str]:
+        return { "errorType": "failure", "error": "couldn't hang" }
+
+    def test_parsing(self, data) -> None:
+        error = servo.connectors.prometheus.Error.parse_obj(data)
+        assert error
+        assert error.type == "failure"
+        assert error.message == "couldn't hang"
+    
+    def test_cannot_parse_empty(self) -> None:
+        with pytest.raises(pydantic.ValidationError):
+            servo.connectors.prometheus.Error.parse_obj({})
+    
