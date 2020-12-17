@@ -425,6 +425,10 @@ class TestPrometheusIntegration:
             token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
         )
 
+    @pytest.fixture(autouse=True)
+    def _wait_for_cluster(self, kube) -> None:
+        kube.wait_for_registered(timeout=15)
+
     async def test_check_targets(
         self,
         optimizer: servo.Optimizer,
@@ -444,7 +448,6 @@ class TestPrometheusIntegration:
         # Deploy fiber-http with annotations and Prometheus will start scraping it
         ...
 
-    @pytest.mark.clusterrolebinding('cluster-admin')
     @pytest.mark.applymanifests(
         "../manifests",
         files=[
@@ -491,7 +494,6 @@ class TestPrometheusIntegration:
             debug(measurement)
 
     # TODO: Test no traffic -- no k6, timeout at the end and return an empty measure set
-    @pytest.mark.clusterrolebinding('cluster-admin')
     @pytest.mark.applymanifests(
         "../manifests",
         files=[
@@ -550,7 +552,6 @@ class TestPrometheusIntegration:
 
 
     # TODO: Test burst -- no k6, pump requests to fiber directly
-    @pytest.mark.clusterrolebinding('cluster-admin')
     @pytest.mark.applymanifests(
         "../manifests",
         files=[
