@@ -870,7 +870,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def components(context: Context) -> None:
@@ -1114,14 +1114,13 @@ class ServoCLI(CLI):
         ) -> None:
             """Display active connectors"""
             table = []
-            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
+            headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
 
             for connector_type in servo.Assembly.all_connector_types():
                 row = [
                     connector_type.__default_name__,
-                    connector_type.name,
                     connector_type.version,
                     connector_type.description,
                 ]
@@ -1133,7 +1132,7 @@ class ServoCLI(CLI):
                     ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+            typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
     def add_ops_commands(self, section=Section.OPS) -> None:
         @self.command(section=section)

@@ -69,7 +69,7 @@ def test_connectors(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors")
     assert result.exit_code == 0, f"expected exit code 0, but found {result.exit_code}: {result.stderr}"
-    assert re.search("^NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.search("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
@@ -81,7 +81,7 @@ def test_connectors_verbose(
     result = cli_runner.invoke(servo_cli, "connectors -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
+        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
         result.stdout,
     )
 
