@@ -1212,7 +1212,7 @@ class Service(KubernetesModel):
     @property
     def status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
         return self.obj.status
-    
+
     async def get_status(self) -> kubernetes_asyncio.client.V1ServiceStatus:
         """Get the status of the Service.
 
@@ -1230,7 +1230,7 @@ class Service(KubernetesModel):
     def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
         """Return the list of ports exposed by the service."""
         return self.obj.spec.ports
-    
+
     async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
         """Get the endpoints for the Service.
 
@@ -1612,18 +1612,18 @@ class Deployment(KubernetesModel):
         """Asynchronously wait for changes to a deployment to roll out to the cluster."""
         # NOTE: The timeout_seconds argument must be an int or the request will fail
         timeout_seconds = int(timeout.total_seconds()) if timeout else None
-        
+
         # Resource version lets us track any change. Observed generation only increments
         # when the deployment controller sees a significant change that requires rollout
         resource_version = self.resource_version
         observed_generation = self.status.observed_generation
         desired_replicas = self.replicas
-        
+
         self.logger.info(f"applying adjustments to Deployment '{self.name}' and rolling out to cluster")
-        
+
         # Yield to let the changes be made
         yield self
-        
+
         # Return fast if nothing was changed
         if self.resource_version == resource_version:
             self.logger.info(
@@ -1635,8 +1635,8 @@ class Deployment(KubernetesModel):
         self.logger.debug(
             f"watching deployment Using label_selector={self.label_selector}, resource_version={resource_version}"
         )
-        
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:            
+
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AppsV1Api(api)
             async with kubernetes_asyncio.watch.Watch().stream(
                 v1.list_namespaced_deployment,
@@ -1688,7 +1688,7 @@ class Deployment(KubernetesModel):
                         # We are done: all the counts match. Stop the watch and return
                         self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
                         stream.stop()
-        
+
     def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
         for condition in conditions:
             if condition.type == "Available":

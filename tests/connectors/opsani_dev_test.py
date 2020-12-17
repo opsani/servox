@@ -164,7 +164,7 @@ class TestChecksOriginalState:
 
 # TODO: Test deployment, pod with init container, test nginx not match,
 # TODO: check namespace affinity only scrapes in current namespace
-    
+
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
@@ -205,7 +205,7 @@ class TestEverything:
 
             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
-            
+
             prometheus_config = servo.connectors.prometheus.PrometheusConfiguration.generate(base_url=prometheus_base_url)
             prometheus_connector = servo.connectors.prometheus.PrometheusConnector(config=prometheus_config)
 
@@ -269,13 +269,13 @@ class TestEverything:
             async with change_to_resource(deployment):
                 servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
                 await deployment.inject_sidecar(service="fiber-http")
-            
+
             await assert_check(checks.run_one(id=f"check_deployment_envoy_sidecars"))
             await assert_check(checks.run_one(id=f"check_pod_envoy_sidecars"))
 
             # Step 4
             servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
-            servo.logger.info("waiting for Prometheus to scrape our Pods")            
+            servo.logger.info("waiting for Prometheus to scrape our Pods")
 
             async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.PrometheusTarget]:
                 servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
@@ -286,9 +286,9 @@ class TestEverything:
                     if targets:
                         if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets)):
                             return targets
-                    
+
                     await asyncio.sleep(0.25)
-            
+
             await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
@@ -300,7 +300,7 @@ class TestEverything:
                 re.escape("Envoy is not reporting any traffic to Prometheus")
             )
 
-            # Send some traffic through Envoy to verify the proxy is healthy            
+            # Send some traffic through Envoy to verify the proxy is healthy
             async def burst_traffic_to_url(url: str, *, duration: int) -> None:
                 burst_until = datetime.datetime.now() + datetime.timedelta(seconds=duration)
                 async with httpx.AsyncClient(base_url=url) as client:
@@ -311,7 +311,7 @@ class TestEverything:
                         response.raise_for_status()
                         count += 1
                     servo.logger.success(f"Bursted {count} requests to {url} over {duration} seconds.")
-            
+
             servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
             async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
                 await burst_traffic_to_url(envoy_url, duration=20)
@@ -339,11 +339,11 @@ class TestEverything:
             # Send traffic through the service and verify it shows up in Envoy
             port = service.ports[0].port
             servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
-            
+
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
                 await burst_traffic_to_url(service_url, duration=10)
 
-            # Let Prometheus scrape to see the traffic            
+            # Let Prometheus scrape to see the traffic
             await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
@@ -362,7 +362,7 @@ class TestEverything:
             servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
                 await burst_traffic_to_url(service_url, duration=15)
-            
+
             targets = await wait_for_targets_to_be_scraped()
             assert len(targets) == 2
             main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
@@ -370,15 +370,15 @@ class TestEverything:
             assert main.pool == "opsani-envoy-sidecars"
             assert main.health == "up"
             assert main.labels["app_kubernetes_io_name"] == "fiber-http"
-            
+
             assert tuning.pool == "opsani-envoy-sidecars"
-            assert tuning.health == "up"            
+            assert tuning.health == "up"
             assert tuning.labels["opsani_role"] == "tuning"
             assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-canary"
             assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
-            
+
             await assert_check(checks.run_one(id=f"check_traffic_metrics"))
-            
+
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
 
@@ -538,26 +538,26 @@ async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> 
 async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesModel):
     status = resource.status
     metadata = resource.obj.metadata
-    
+
     if isinstance(resource, servo.connectors.kubernetes.Deployment):
         async with resource.rollout():
             yield
-    else:    
+    else:
         # allow the resource to be changed
         yield
-    
+
     await resource.refresh()
-    
+
     # early exit if nothing changed
     if (resource.obj.metadata.resource_version == metadata.resource_version):
         servo.logger.debug(f"exiting early: metadata resource version has not changed")
         return
-    
+
     if hasattr(status, "observed_generation"):
         while status.observed_generation == resource.status.observed_generation:
             await asyncio.sleep(0.05)
             await resource.refresh()
-    
+
     # wait for the change to roll out
     if isinstance(resource, servo.connectors.kubernetes.Deployment):
         await resource.wait_until_ready()

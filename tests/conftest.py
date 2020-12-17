@@ -544,7 +544,7 @@ async def kubectl_ports_forwarded(
             elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
                 return f"deployment/{target.name}"
             elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
-                return f"service/{target.name}"            
+                return f"service/{target.name}"
             else:
                 raise TypeError(f"unknown target: {repr(target)}")
 

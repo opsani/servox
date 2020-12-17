@@ -322,19 +322,19 @@ class BaseProgress(abc.ABC, BaseModel):
             return f"{status} - {str_to_annotate}"
         else:
             return f"{str_to_annotate} ({status})"
-    
+
     ##
     # Abstract methods
-    
+
     @property
     @abc.abstractmethod
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0"""
-    
+
     @abc.abstractmethod
     def reset(self) -> None:
         """Reset progress back to zero."""
-    
+
     @abc.abstractmethod
     async def wait(self) -> None:
         """Asynchronously wait for the progress to finish."""
@@ -347,7 +347,7 @@ class DurationProgress(BaseProgress):
 
     def __init__(self, duration: "Duration" = 0, **kwargs) -> None: # noqa: D107
         super().__init__(duration=duration, **kwargs)
-    
+
     @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0"""
@@ -359,11 +359,11 @@ class DurationProgress(BaseProgress):
             )
         else:
             return 0.0
-    
+
     def reset(self) -> None:
         """Reset progress back to zero."""
         self.started_at = datetime.datetime.now()
-    
+
     async def wait(self) -> None:
         """Asynchronously wait for the duration to elapse."""
         await asyncio.sleep(self.duration - self.elapsed)
@@ -371,34 +371,34 @@ class DurationProgress(BaseProgress):
 
 class EventProgress(BaseProgress):
     """EventProgress objects track progress against an indeterminate event."""
-    
+
     timeout: Optional[Duration]
     """The maximum amount of time to wait for the event to be triggered.
-    
+
     When None, the event will be awaited forever.
     """
-    
+
     settlement: Optional[Duration]
     """The amount of time to wait for progress to be reset following an event trigger before returning early.
-    
+
     When None, progress is returned immediately upon the event being triggered.
     """
 
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
     _settlement_timer: Optional[asyncio.TimerHandle] = pydantic.PrivateAttr(None)
     _settlement_started_at: Optional[datetime.datetime] = pydantic.PrivateAttr(None)
-    
+
     def __init__(self, timeout: Optional["Duration"] = None, settlement: Optional["Duration"] = None, **kwargs) -> None: # noqa: D107
-        super().__init__(timeout=timeout, settlement=settlement, **kwargs)    
-    
+        super().__init__(timeout=timeout, settlement=settlement, **kwargs)
+
     def complete(self) -> None:
         """Advance progress immediately to completion.
-        
+
         This method does not respect settlement time. Typical operation should utilize the `trigger`
         method.
         """
         self._event.set()
-    
+
     @property
     def completed(self) -> bool:
         """Return True if the progress has been completed."""
@@ -407,34 +407,34 @@ class EventProgress(BaseProgress):
     @property
     def timed_out(self) -> bool:
         """Return True if the timeout has elapsed.
-        
+
         Return False if there is no timeout configured or the progress has not been started.
         """
         if not self.timeout or not self.started: return False
         return Duration.since(self.started_at) >= self.timeout
-        
+
     def trigger(self) -> None:
         """Trigger the event to advance progress toward completion.
-        
+
         When the event is triggered, the behavior is dependent upon whether or not a
         settlement duration is configured. When None, progress is immediately advanced to 100%
         and progress is finished, notifying all observers.
-        
+
         When a settlement duration is configured, progress will begin advancing across the settlement
         duration to allow for the progress to be reset.
-        """                    
+        """
         if self.settlement:
             self._settlement_started_at = datetime.datetime.now()
             self._settlement_timer = asyncio.get_event_loop().call_later(
-                self.settlement.total_seconds(), 
+                self.settlement.total_seconds(),
                 self.complete
             )
         else:
             self.complete()
-    
+
     def reset(self) -> None:
         """Reset progress to zero by clearing the event trigger.
-        
+
         Resetting progress does not affect the timeout which will eventually finalize progress
         when elapsed.
         """
@@ -442,13 +442,13 @@ class EventProgress(BaseProgress):
             self._settlement_timer.cancel()
         self._settlement_started_at = None
         self._event.clear()
-    
+
     async def wait(self) -> None:
         """Asynchronously wait until the event condition has been triggered.
-        
+
         If the progress was initialized with a timeout, raises a TimeoutError when the timeout is
         elapsed.
-        
+
         Raises:
             TimeoutError: Raised if the timeout elapses before the event is triggered.
         """
@@ -462,25 +462,25 @@ class EventProgress(BaseProgress):
     def settling(self) -> bool:
         """Return True if the progress has been triggered but is awaiting settlement before completion."""
         return self._settlement_started_at is not None
-    
+
     @property
     def settlement_remaining(self) -> Optional[Duration]:
         """Return the amount of settlement time remaining before completion."""
-        if self.settling:            
+        if self.settling:
             duration = Duration(self.settlement - Duration.since(self._settlement_started_at))
             return duration if duration.total_seconds() >= 0 else None
         else:
             return None
-    
+
     # TODO: Figure out how to make sure this can't go backward sanely...
     @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0
-        
-        If the event has been triggered, immediately returns 100.0.        
+
+        If the event has been triggered, immediately returns 100.0.
         When progress has started but has not yet completed, the behavior is conditional upon
         the configuration of a timeout and/or settlement time.
-        
+
         When settlement is in effect, progress is relative to the amount of time remaining in the
         settlement duration. This can result in progress that goes backward as the finish moves
         forward based on the event condition being triggered.
@@ -630,31 +630,31 @@ class TimeSeries(BaseModel):
         self, metric: Metric, values: List[Tuple[datetime.datetime, float]], **kwargs
     ) -> None: # noqa: D107
         super().__init__(metric=metric, values=values, **kwargs)
-    
+
     @pydantic.validator("values")
     @classmethod
     def _sort_values(cls, values: List[Tuple[datetime.datetime, float]]) -> List[Tuple[datetime.datetime, float]]:
-        return(sorted(values, key=lambda x: x[0]))  
-    
+        return(sorted(values, key=lambda x: x[0]))
+
     # TODO: Bolt down with test coverage. Maybe better names? _reading suffix?
     def min(self) -> Optional[Tuple[datetime.datetime, float]]:
         return min(self.values, key=operator.itemgetter(1))
-    
+
     def max(self) -> Optional[Tuple[datetime.datetime, float]]:
         return max(self.values, key=operator.itemgetter(1), default=None)
 
     def min(self) -> Optional[Tuple[datetime.datetime, float]]:
         return min(self.values, key=operator.itemgetter(1), default=None)
-    
+
     def first(self) -> Optional[Tuple[datetime.datetime, float]]:
         return next(iter(self.values), None)
 
     def last(self) -> Optional[Tuple[datetime.datetime, float]]:
         return next(reversed(self.values), None)
-    
+
     def any(self) -> bool:
         return any(self.values)
-        
+
 
 
 Reading = Union[DataPoint, TimeSeries]

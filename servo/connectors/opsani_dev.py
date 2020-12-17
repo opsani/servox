@@ -363,7 +363,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.namespace
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
-        
+
         for pod in await deployment.get_pods():
             # Search the containers list for the sidecar
             for container in pod.containers:
@@ -428,23 +428,23 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response.raise_for_status()
                 results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
                 assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.type}"
-                
+
                 if metric.name == "main_request_rate":
                     assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                     timestamp, value = result.value
                     assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                     summaries.append(f"{metric.name}={value}{metric.unit}")
-                elif metric.name == "main_error_rate":                    
+                elif metric.name == "main_error_rate":
                     if result.value is None:
                         # NOTE: if no errors are occurring this can legitimately be None
                         value = 0
                     else:
                         timestamp, value = result.value
                         assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
-                    
+
                     summaries.append(f"{metric.name}={0}{metric.unit}")
                 else:
-                    raise NotImplementedError(f"unexpected metric: {metric.name}")                
+                    raise NotImplementedError(f"unexpected metric: {metric.name}")
 
         return ", ".join(summaries)
 
@@ -501,11 +501,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
                 assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"
                 assert results.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                
+
                 timestamp, value = result.value
                 assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                 summaries.append(f"{metric.name}={value}{metric.unit}")
-            
+
             return ", ".join(summaries)
 
 

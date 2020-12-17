@@ -29,7 +29,7 @@ def event_loop():
     yield loop
     loop.close()
 
-    
+
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
@@ -80,7 +80,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
     response = pod.http_proxy_get("/stats/prometheus")
     assert "envoy_http_downstream_cx_length_ms_count" in response.data
 
-    
+
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
 @pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
 def test_prometheus(kube: kubetest.client.TestClient) -> None:

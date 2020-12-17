@@ -168,52 +168,52 @@ class TestDurationProgress:
     @pytest.fixture
     def progress(self) -> servo.types.DurationProgress:
         return servo.types.DurationProgress()
-    
+
     def test_handling_zero_duration(self, progress) -> None:
         progress.duration = Duration(0)
         assert not progress.finished
         progress.start()
         assert progress.finished
-    
+
     async def test_started(self, progress) -> None:
         assert not progress.started
         progress.start()
         assert progress.started
-        
+
     async def test_start_when_already_started(self, progress) -> None:
         progress.start()
         assert progress.started
         with pytest.raises(RuntimeError, match="cannot start a progress object that has already been started"):
             progress.start()
-        
-    
+
+
     async def test_elapsed_is_none_when_not_started(self, progress) -> None:
         assert not progress.started
         assert progress.elapsed is None
-    
+
     async def test_elapsed_is_duration_when_started(self, progress) -> None:
         assert not progress.started
         assert progress.elapsed is None
         progress.start()
         assert isinstance(progress.elapsed, Duration)
-    
+
     async def test_progress_is_zero_when_not_started(self, progress) -> None:
         assert not progress.started
         assert progress.progress == 0.0
-    
+
     async def test_progress_is_float_when_started(self, progress) -> None:
         assert not progress.started
         assert progress.elapsed is None
         progress.start()
         assert isinstance(progress.progress, float)
-    
+
     # TODO: Watch, annotate, wait...
 
 class TestEventProgress:
     @pytest.fixture
     def progress(self) -> servo.types.EventProgress:
         return servo.types.EventProgress()
-        
+
     async def test_timeout(self, progress) -> None:
         progress.timeout = Duration("3ms")
         assert not progress.started
@@ -223,32 +223,32 @@ class TestEventProgress:
         await asyncio.sleep(0.3)
         assert progress.finished
         assert not progress.completed
-    
+
     async def test_grace_time(self) -> None:
         ...
-    
+
     async def test_start_when_already_started(self) -> None:
         ...
-    
+
     async def test_started(self) -> None:
         ...
-    
+
     async def test_elapsed_is_none_when_not_started(self) -> None:
         ...
-    
+
     async def test_elapsed_is_duration_when_started(self) -> None:
         ...
-    
+
     async def test_goes_to_100_if_gracetime_is_none(self) -> None:
         ...
-    
+
     # TODO: Should this just start the count instead?
     async def test_goes_to_50_if_gracetime_is_not_none(self) -> None:
         ...
-    
+
     async def test_reset_during_gracetime_sets_progress_back_to_zero(self) -> None:
         ...
-    
+
     async def test_gracetime_expires_sets_progress_to_finished(self) -> None:
         ...
 

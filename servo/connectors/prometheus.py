@@ -155,7 +155,7 @@ class BaseQuery(pydantic.BaseModel):
 
 class InstantQuery(BaseQuery):
     time: Optional[datetime.datetime]
-    
+
     @property
     def query(self) -> str:
         return self.metric.query
@@ -216,11 +216,11 @@ String = Tuple[datetime.datetime, str]
 class BaseVector(abc.ABC, pydantic.BaseModel):
     """Abstract base class for Prometheus vector types."""
     metric: Dict[str, str] # TODO: These are just labels... TODO: Take the __name__ and bundle into a class?
-    
+
     @abc.abstractmethod
     def __len__(self) -> int:
         ...
-    
+
     @abc.abstractmethod
     def __iter__(self) -> Scalar:
         ...
@@ -239,10 +239,10 @@ class InstantVector(BaseVector):
     ]
     """
     value: Scalar
-    
+
     def __len__(self) -> int:
         return 1
-    
+
     def __iter__(self) -> Scalar:
         return iter((self.value, ))
 
@@ -255,19 +255,19 @@ class RangeVector(BaseVector):
             "values": [ [ <unix_time>, "<sample_value>" ], ... ]
         },
     ]
-    """    
+    """
     values: List[Scalar]
-    
+
     def __len__(self) -> int:
         return len(self.values)
-    
+
     def __iter__(self) -> Scalar:
         return iter(self.values)
 
 
 class Status(str, enum.Enum):
     """Prometheus API query response statuses.
-    
+
     See https://prometheus.io/docs/prometheus/latest/querying/api/#format-overview
     """
     success = "success"
@@ -282,7 +282,7 @@ class Error(pydantic.BaseModel):
 class Data(pydantic.BaseModel):
     type: ResultType = pydantic.Field(..., alias='resultType')
     result: Union[List[InstantVector], List[RangeVector], Scalar, String]
-    
+
     def __len__(self) -> int:
         if self.is_vector:
             return len(self.result)
@@ -290,7 +290,7 @@ class Data(pydantic.BaseModel):
             return 1
         else:
             raise TypeError(f"unknown data type '{self.type}'")
-    
+
     def __iter__(self):
         if self.is_vector:
             return iter(self.result)
@@ -298,15 +298,15 @@ class Data(pydantic.BaseModel):
             return iter((self.result, ))
         else:
             raise TypeError(f"unknown data type '{self.type}'")
-    
+
     @property
     def is_vector(self) -> bool:
         return self.type in (servo.connectors.prometheus.ResultType.vector, servo.connectors.prometheus.ResultType.matrix)
-    
+
     @property
     def is_value(self) -> bool:
         return self.type in (servo.connectors.prometheus.ResultType.scalar, servo.connectors.prometheus.ResultType.string)
-    
+
 class Response(pydantic.BaseModel):
     """Models a PromQL query response returned from the Prometheus API."""
     query: BaseQuery
@@ -314,13 +314,13 @@ class Response(pydantic.BaseModel):
     error: Optional[Error] # TODO: Constrain the response type -- status must be error?
     warnings: Optional[List[str]]
     data: Optional[Data]
-    
+
     @pydantic.root_validator(pre=True)
     def _parse_error(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         if error := dict(filter(lambda item: item[0].startswith("error"), values.items())):
             values["error"] = error
         return values
-    
+
     def raise_for_error(self) -> None:
         if self.status == Status.error:
             raise RuntimeError(f"Prometheus query request failed with error '{self.error.type}': {self.error.messge}")
@@ -336,10 +336,10 @@ class Response(pydantic.BaseModel):
     # #         "value": result.get("value", None),
     # #         "values": result.get("values", None),
     # #     }
-    
+
     # @pydantic.validator("values")
     # @classmethod
-    # def _sort_values(cls, values: Optional[List[Tuple[datetime.datetime, float]]]) -> Optional[List[Tuple[datetime.datetime, float]]]:        
+    # def _sort_values(cls, values: Optional[List[Tuple[datetime.datetime, float]]]) -> Optional[List[Tuple[datetime.datetime, float]]]:
     #     return sorted(values, key=lambda x: x[0]) if values else None
 
 
@@ -479,7 +479,7 @@ class PrometheusConnector(servo.BaseConnector):
         self.logger.info(
             f"Measuring {len(metrics__)} metrics: {servo.utilities.join_to_series(measuring_names)}"
         )
-        
+
         # TODO: Rationalize these given the streaming metrics support
         start = datetime.datetime.now() + control.warmup
         end = start + control.duration
@@ -487,7 +487,7 @@ class PrometheusConnector(servo.BaseConnector):
         # TODO: Push target metrics into config and support nore than 1
         target_metric = next(filter(lambda m: m.name == "throughput", metrics__))
         active_reading: Optional[Tuple[datetime.datetime, float]] = None
-        
+
         async def check_metrics(progress: servo.EventProgress) -> None:
             nonlocal active_reading
             self.logger.info(
@@ -502,7 +502,7 @@ class PrometheusConnector(servo.BaseConnector):
                 # NOTE: We need throughput to do anything meaningful. Generalize?
                 throughput_readings = await self._query_prometheus(target_metric, start, end)
                 if throughput_readings:
-                    latest_reading = throughput_readings[0].last()                    
+                    latest_reading = throughput_readings[0].last()
                     self.logger.trace(f"Prometheus returned reading for the `{target_metric.name}` metric: {latest_reading}")
                     if latest_reading[1] > 0:
                         if active_reading is None:
@@ -522,7 +522,7 @@ class PrometheusConnector(servo.BaseConnector):
                                 progress.trigger()
                         else:
                             self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].values)})")
-                    else:                        
+                    else:
                         if active_reading:
                             # NOTE: If we had a value and fall back to zero it could be a burst
                             if not progress.settling:
@@ -539,11 +539,11 @@ class PrometheusConnector(servo.BaseConnector):
                     else:
                         # NOTE: generally only happens on initialization and we don't care
                         servo.logger.trace(progress.annotate(f"Prometheus returned no readings for the `{target_metric.name}` metric"))
-            
+
             if not progress.completed and not progress.timed_out:
                 servo.logger.debug(f"sleeping for {target_metric.step} to allow metrics to aggregate")
                 await asyncio.sleep(target_metric.step.total_seconds())
-            
+
         # TODO: The settlement time is totally arbitrary. Configure? Push up to the server under control field?
         progress = servo.EventProgress(timeout=measurement_duration, settlement=servo.Duration("1m"))
         await progress.watch(check_metrics)
@@ -563,7 +563,7 @@ class PrometheusConnector(servo.BaseConnector):
         """Return a list of targets being scraped by Prometheus."""
         async with httpx.AsyncClient(base_url=self.config.base_url) as client:
             response = await client.get("/api/v1/targets")
-            response.raise_for_status()            
+            response.raise_for_status()
             return pydantic.parse_obj_as(List[PrometheusTarget], response.json()['data']['activeTargets'])
 
     async def _query_prometheus(
@@ -607,9 +607,9 @@ class PrometheusConnector(servo.BaseConnector):
                 )
             else:
                 raise TypeError(f"unknown Result type '{result.__class__.name}' encountered")
-        
+
         return readings
-        
+
         # if response.type == ResultType.matrix:
         #     if not response.values:
         #         if metric.absent == Absent.ignore:
@@ -641,7 +641,7 @@ class PrometheusConnector(servo.BaseConnector):
         #                 else:
         #                     raise ValueError(f"unknown metric absent value: {metric.absent}")
         #     else:
-                
+
         #         readings.append(
         #             servo.TimeSeries(
         #                 metric=metric,
@@ -674,7 +674,7 @@ class PrometheusConnector(servo.BaseConnector):
             #             id=f"{{instance={instance},job={job}}}",
             #             metadata=dict(instance=instance, job=job),
             #         )
-            #     
+            #
         # return readings
 
 
@@ -707,7 +707,7 @@ def targets(
                 target.last_error or "-",
             ]
         )
-    
+
     servo.cli.print_table(table, headers)
 
 def _delta(a, b):
