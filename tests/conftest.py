@@ -627,7 +627,7 @@ async def kube_port_forward(
     kube,
     unused_tcp_port_factory: Callable[[], int],
     kubeconfig,
-    kube_context: Optional[str],
+    kubecontext: Optional[str],
 ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
@@ -638,7 +638,7 @@ async def kube_port_forward(
             *ports,
             namespace=kube.namespace,
             kubeconfig=kubeconfig,
-            context=kube_context
+            context=kubecontext
         )
 
     return _port_forwarder

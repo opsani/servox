@@ -23,7 +23,6 @@ from servo.connectors.prometheus import (
 from servo.types import *
 
 
-
 class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):
         metric = PrometheusMetric(
@@ -679,7 +678,6 @@ class TestCLI:
                 request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
                 
                 config_file = tmp_path / "servo.yaml"
-                debug("DROPPED ", config_file)
                 import tests.helpers # TODO: Turn into fixtures!
                 tests.helpers.write_config_yaml({"prometheus": config}, config_file)
                 
@@ -741,13 +739,6 @@ class TestConnector:
             debug(datetime.datetime.now(), datetime.datetime.utcnow(), utc_now)
             debug(timeago.format(targets[0].last_scraped_at, utc_now))
 
-
-
-########
-
-# TODO: Do you really want to iterate the parent?
-# TODO: Also allow iterate on the Result -- it will pass down
-# TODO: Special label __name__ -- the name of the metric itself
 
 class TestInstantVector:
     @pytest.fixture
@@ -999,20 +990,37 @@ class TestData:
             for string in data:
                 assert string[0] == datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc)
                 assert string[1] == "thug_life"
+
+
+@pytest.fixture
+def config() -> PrometheusConfiguration:
+    return PrometheusConfiguration(
+        base_url="http://prometheus.io/some/path/", metrics=[]
+    )
         
 class TestResponse:
-    def test_parsing_error(self) -> None:
+    def test_parsing_error(self, config) -> None:
         obj = {
             "status": "error",
             "errorType": "failure", 
             "error": "couldn't hang",
             "data": None,
         }
-        response = servo.connectors.prometheus.Response.parse_obj(obj)
+        metric = servo.connectors.prometheus.PrometheusMetric(
+            "tuning_request_rate",
+            servo.types.Unit.REQUESTS_PER_SECOND,
+            query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+            step="10s"
+        )        
+        query = servo.connectors.prometheus.InstantQuery(
+            base_url=config.base_url,
+            metric=metric
+        )
+        response = servo.connectors.prometheus.Response.parse_obj(dict(query=query, **obj))
         assert response.status == "error"
         assert response.error == { "type": "failure", "message": "couldn't hang" }
     
-    def test_parsing_vector_result(self) -> None:
+    def test_parsing_vector_result(self, query) -> None:
         obj = {
             "status" : "success",
             "data" : {
@@ -1037,13 +1045,13 @@ class TestResponse:
                 ]
             }
         }
-        response = servo.connectors.prometheus.Response.parse_obj(obj)
+        response = servo.connectors.prometheus.Response.parse_obj(dict(query=query, **obj))
         assert response.status == "success"
         assert response.error is None
         assert response.warnings is None
 
     
-    def test_parsing_matrix_result(self) -> None:
+    def test_parsing_matrix_result(self, config, query) -> None:
         obj = {
             "status": "success",
             "data": {
@@ -1063,10 +1071,10 @@ class TestResponse:
                 ],
             },
         }
-        response = servo.connectors.prometheus.Response.parse_obj(obj)
-        assert response.status == "success"
-        assert response.error is None
-        assert response.warnings is None
+        if response := servo.connectors.prometheus.Response.parse_obj(dict(query=query, **obj)):
+            assert response.status == "success"
+            assert response.error is None
+            assert response.warnings is None
 
 class TestError:
     @pytest.fixture
@@ -1082,4 +1090,72 @@ class TestError:
     def test_cannot_parse_empty(self) -> None:
         with pytest.raises(pydantic.ValidationError):
             servo.connectors.prometheus.Error.parse_obj({})
+
+
+
+
+
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.applymanifests(
+    "../manifests",
+    files=[
+        "fiber-http-opsani-dev.yaml",
+        "prometheus.yaml"
+    ],
+)
+@pytest.mark.integration
+async def test_kubetest(
+    optimizer: servo.Optimizer,
+    kube,
+    kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+) -> None:
+    # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
+    # port forward so we can talk to them, and then spark up the connector and it will adapt to 
+    # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
+    # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
+    servo.logging.set_level("DEBUG")
+    kube.wait_for_registered(timeout=30)
+    
+    async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
+        async with kube_port_forward("service/fiber-http", 80) as fiber_url:
+            config = PrometheusConfiguration.generate(
+                base_url=prometheus_url,
+                metrics=[
+                    PrometheusMetric(
+                        "throughput",
+                        servo.Unit.REQUESTS_PER_SECOND,
+                        query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
+                        # absent=servo.connectors.prometheus.Absent.zero,
+                        step="15s",
+                    ),
+                    PrometheusMetric(
+                        "error_rate",
+                        servo.Unit.PERCENTAGE,
+                        query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
+                        # absent=servo.connectors.prometheus.Absent.zero,
+                        step="10s",
+                    ),
+                ],                
+            )
+            connector = PrometheusConnector(config=config, optimizer=optimizer)
+            measurement = await asyncio.wait_for(
+                connector.measure(control=servo.Control(duration="1m")),
+                timeout=70 # NOTE: Always make timeout exceed control duration
+            )
+            assert measurement
+            # FIXME: This should have error_rate also
+    
+    
+@pytest.fixture
+def query(config):
+    metric = servo.connectors.prometheus.PrometheusMetric(
+        "tuning_request_rate",
+        servo.types.Unit.REQUESTS_PER_SECOND,
+        query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+        step="10s"
+    )        
+    return servo.connectors.prometheus.InstantQuery(
+        base_url=config.base_url,
+        metric=metric
+    )
     

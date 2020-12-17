@@ -4,6 +4,7 @@ import datetime
 import enum
 import functools
 import math
+import operator
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -308,11 +309,11 @@ class Data(pydantic.BaseModel):
     
 class Response(pydantic.BaseModel):
     """Models a PromQL query response returned from the Prometheus API."""
+    query: BaseQuery
     status: Status
     error: Optional[Error] # TODO: Constrain the response type -- status must be error?
     warnings: Optional[List[str]]
     data: Optional[Data]
-    # query: BaseQuery ???
     
     @pydantic.root_validator(pre=True)
     def _parse_error(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -320,11 +321,9 @@ class Response(pydantic.BaseModel):
             values["error"] = error
         return values
     
-    # type = pydantic.Field(
-    #     "range", const=True, description="Identifies the setting as a range setting."
-    # )
-    # @pydantic.validator()
-    
+    def raise_for_error(self) -> None:
+        if self.status == Status.error:
+            raise RuntimeError(f"Prometheus query request failed with error '{self.error.type}': {self.error.messge}")
 
     # # @pydantic.root_validator(pre=True)
     # # def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -548,8 +547,6 @@ class PrometheusConnector(servo.BaseConnector):
         # TODO: The settlement time is totally arbitrary. Configure? Push up to the server under control field?
         progress = servo.EventProgress(timeout=measurement_duration, settlement=servo.Duration("1m"))
         await progress.watch(check_metrics)
-        debug(progress, "progress is ", progress.progress)
-        # TODO: need a repr that reflects how we exited
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
@@ -572,7 +569,7 @@ class PrometheusConnector(servo.BaseConnector):
     async def _query_prometheus(
         self, metric: PrometheusMetric, start: datetime, end: datetime
     ) -> List[servo.TimeSeries]:
-        async def _query(request: BaseQuery) -> Result:
+        async def _query(request: BaseQuery) -> Response:
             self.logger.trace(
                 f"Querying Prometheus (`{request.metric.query}`): {request.url}"
             )
@@ -580,8 +577,7 @@ class PrometheusConnector(servo.BaseConnector):
                 try:
                     response = await client.get(request.url)
                     response.raise_for_status()
-                    # TODO: This needs to be able to map into a list to support result arrays
-                    return Result(query=request, **response.json())
+                    return Response(query=request, **response.json())
                 except (
                     httpx.HTTPError,
                     httpcore._exceptions.ReadTimeout,
@@ -595,56 +591,68 @@ class PrometheusConnector(servo.BaseConnector):
         request = RangeQuery(
             base_url=self.config.api_url, metric=metric, start=start, end=end
         )
-        result = await _query(request)
-        self.logger.trace(f"Got response data type {result.__class__} for metric {metric}: {result}")
-
-        if result.status != "success":
-            # TODO: Prolly need to raise or error here?
-            return []
+        response = await _query(request)
+        self.logger.trace(f"Got response data type {response.__class__} for metric {metric}: {response}")
+        response.raise_for_error()
 
         readings = []
-        if result.type == ResultType.matrix:
-            if not result.values:
-                if metric.absent == Absent.ignore:
-                    pass
-                elif metric.absent == Absent.zero:
-                    # Handled in RangeQuery
-                    pass
-                else:
-                    # Check for an absent metric
-                    absent_metric = metric.copy()
-                    absent_metric.query = f"absent({metric.query})"
-                    absent_query = InstantQuery(
-                        base_url=self.config.api_url, metric=absent_metric
-                    )
-                    absent_result = await _query(absent_query)
-                    self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
-
-                    # TODO: this is brittle...
-                    # [{'metric': {}, 'value': [1607078958.682, '1']}]
-                    absent = int(absent_result.value) == 1
-                    if absent:
-                        if metric.absent == Absent.warn:
-                            self.logger.warning(
-                                f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
-                            )
-                        elif metric.absent == Absent.fail:
-                            raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
-                        else:
-                            raise ValueError(f"unknown metric absent value: {metric.absent}")
-            else:
-                
+        for result in response.data:
+            if response.data.is_vector:
                 readings.append(
-                    servo.TimeSeries(
-                        metric=metric,
-                        annotation=annotation,
-                        values=result.values,
-                        id=f"{{instance={instance},job={job}}}",
-                        metadata=dict(instance=instance, job=job),
-                    )
+                    _time_series_from_response_vector(response, result)
                 )
-        else:
-            ...
+            elif response.data.is_value:
+                readings.append(
+                    _data_point_from_response_value(response, result)
+                )
+            else:
+                raise TypeError(f"unknown Result type '{result.__class__.name}' encountered")
+        
+        return readings
+        
+        # if response.type == ResultType.matrix:
+        #     if not response.values:
+        #         if metric.absent == Absent.ignore:
+        #             pass
+        #         elif metric.absent == Absent.zero:
+        #             # Handled in RangeQuery
+        #             pass
+        #         else:
+        # TODO: this needs to be revised
+        #             # Check for an absent metric
+        #             absent_metric = metric.copy()
+        #             absent_metric.query = f"absent({metric.query})"
+        #             absent_query = InstantQuery(
+        #                 base_url=self.config.api_url, metric=absent_metric
+        #             )
+        #             absent_result = await _query(absent_query)
+        #             self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
+
+        #             # TODO: this is brittle...
+        #             # [{'metric': {}, 'value': [1607078958.682, '1']}]
+        #             absent = int(absent_result.value) == 1
+        #             if absent:
+        #                 if metric.absent == Absent.warn:
+        #                     self.logger.warning(
+        #                         f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
+        #                     )
+        #                 elif metric.absent == Absent.fail:
+        #                     raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
+        #                 else:
+        #                     raise ValueError(f"unknown metric absent value: {metric.absent}")
+        #     else:
+                
+        #         readings.append(
+        #             servo.TimeSeries(
+        #                 metric=metric,
+        #                 annotation=annotation,
+        #                 values=result.values,
+        #                 id=f"{{instance={instance},job={job}}}",
+        #                 metadata=dict(instance=instance, job=job),
+        #             )
+        #         )
+        # else:
+            # ...
             # debug(result)
             # debug("HOLY SHIT REUSLT METRIC", result.metric)
             # TODO: This should not be necessary...
@@ -721,3 +729,25 @@ def _chart_delta(a, b, unit) -> str:
         return f"📉{delta}{unit}"
     else:
         return f"📈+{delta}{unit}"
+
+
+def _time_series_from_response_vector(response: Response, vector: BaseVector) -> servo.TimeSeries:
+    instance = vector.metric.get("instance")
+    job = vector.metric.get("job")
+    annotation = " ".join(
+        map(lambda m: "=".join(m), sorted(vector.metric.items(), key=operator.itemgetter(0)))
+    )
+    return servo.TimeSeries(
+        metric=response.query.metric,
+        annotation=annotation,
+        values=list(iter(vector)),
+        id=f"{{instance={instance},job={job}}}",
+        metadata=dict(instance=instance, job=job),
+    )
+
+def _data_point_from_response_value(response: Response, value: Union[Scalar, String]) -> servo.DataPoint:
+    return servo.DataPoint(
+        metric=response.query.metric,
+        measured_at=value[0],
+        value=value[1],
+    )

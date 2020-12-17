@@ -23,6 +23,7 @@ from typing import (
     runtime_checkable,
 )
 
+import operator
 import orjson
 import pydantic
 import pydantic.error_wrappers
@@ -593,7 +594,6 @@ class DataPoint(BaseModel):
     def __str__(self) -> str:
         return f"{self.value:.2f}{self.unit.value}"
 
-from operator import itemgetter
 
 class TimeSeries(BaseModel):
     """TimeSeries objects represent a sequence of readings taken for a Metric
@@ -638,13 +638,13 @@ class TimeSeries(BaseModel):
     
     # TODO: Bolt down with test coverage. Maybe better names? _reading suffix?
     def min(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return min(self.values, key=itemgetter(1))
+        return min(self.values, key=operator.itemgetter(1))
     
     def max(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return max(self.values, key=itemgetter(1), default=None)
+        return max(self.values, key=operator.itemgetter(1), default=None)
 
     def min(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return min(self.values, key=itemgetter(1), default=None)
+        return min(self.values, key=operator.itemgetter(1), default=None)
     
     def first(self) -> Optional[Tuple[datetime.datetime, float]]:
         return next(iter(self.values), None)
