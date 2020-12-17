@@ -182,6 +182,8 @@ class TestPrometheusRequest:
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
+        assert request.base_url, "request base_url should not be nil"
+        assert request.url, "request URL should not be nil"
         assert (
             request.url
             == "http://prometheus.default.svc.cluster.local:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
@@ -199,6 +201,8 @@ class TestPrometheusRequest:
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
+        
+        assert request.url
         assert (
             request.url
             == "http://localhost:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
@@ -280,55 +284,6 @@ def envoy_sidecars() -> dict:
             ]
         },
     }
-
-class TestPrometheusQueryResult:
-    @pytest.fixture
-    def vector_result(self) -> Dict[str, Any]:
-        return {
-            'status': 'success',
-            'data': {
-                'resultType': 'vector',
-                'result': [
-                    {
-                        'metric': {},
-                        'value': [
-                            1607989427.782,
-                            '19.8',
-                        ],
-                    },
-                ],
-            },
-        }
-    
-    @pytest.fixture
-    def matrix_result(self) -> dict:
-        return {
-            "status": "success",
-            "data": {
-                "resultType": "matrix",
-                "result": [
-                    {
-                        "metric": {
-                            "__name__": "go_memstats_gc_sys_bytes",
-                            "instance": "localhost:9090",
-                            "job": "prometheus",
-                        },
-                        "values": [
-                            [1595142421.024, "3594504"],
-                            [1595142481.024, "3594504"],
-                        ],
-                    }
-                ],
-            },
-        }
-    
-    def test_parsing_vector_result(self, vector_result) -> None:
-        query = servo.connectors.prometheus.InstantQuery.construct()
-        result = servo.connectors.prometheus.QueryResult(query=query, **vector_result)
-        debug(result)
-    
-    def test_parsing_matrix_result(self) -> None:
-        ...
 
 class TestPrometheusChecks:
     @pytest.fixture
@@ -547,6 +502,7 @@ class TestPrometheusIntegration:
     async def test_no_traffic(
         self,
         optimizer: servo.Optimizer,
+        kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
         # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
@@ -554,6 +510,8 @@ class TestPrometheusIntegration:
         # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
         # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
         servo.logging.set_level("DEBUG")
+        kube.wait_for_registered(timeout=30)
+        
         # FIXME: Absent.zero mode needs to URL escape the query string
         # async with kube_port_forward(
         #     {
@@ -714,14 +672,14 @@ class TestCLI:
         def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
             return PrometheusConnector(config=config)
 
-        # TODO: usefixtures for optimizer_env
-
+        # TODO: This needs to be an integration test
         def test_one_active_connector(self, optimizer_env: None, connector: PrometheusConnector, config: PrometheusConfiguration, servo_cli: servo.cli.ServoCLI, cli_runner: typer.testing.CliRunner, tmp_path: pathlib.Path) -> None:
             with respx.mock(base_url="http://localhost:9090") as respx_mock:
                 targets = envoy_sidecars()
                 request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
                 
                 config_file = tmp_path / "servo.yaml"
+                debug("DROPPED ", config_file)
                 import tests.helpers # TODO: Turn into fixtures!
                 tests.helpers.write_config_yaml({"prometheus": config}, config_file)
                 
@@ -764,9 +722,10 @@ class TestConnector:
     def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
         return PrometheusConnector(config=config)
         
+    # TODO: Wrap into parsing logic
     async def test_one_active_connector(self, connector: PrometheusConnector) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            targets = envoy_sidecars()
+            targets = envoy_sidecars()            
             request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(200, json=targets))
             targets = await connector.targets()
             assert request.called
@@ -900,79 +859,6 @@ class TestResultPrimitives:
         with pytest.raises(pydantic.ValidationError, match="value is not a valid float"):
             pydantic.parse_obj_as(servo.connectors.prometheus.Scalar, [1607989427.782, 'thug_life'])
 
-
-    # def test_vector(self) -> None:
-    #     ...
-    #     # input = {
-    #     #     'metric': {},
-    #     #     'value': [
-    #     #         1607989427.782,
-    #     #         '19.8',
-    #     #     ],
-    #     # }
-    #     # output = pydantic.parse_obj_as(servo.connectors.prometheus.InstantVector, input)
-    #     # assert output
-    #     # assert output.metric == {}
-    #     # # assert output.value == {}
-    #     # debug(output, str(output.value[0]))
-    
-    # def test_matrix(self) -> None:
-    #     ...
-    
-    # def test_vector_doesnt_parse_as_matrix(self) -> None:
-    #     ...
-    
-    # def test_matrix_doesnt_parse_as_vector(self) -> None:
-    #     ...
-
-class TestResult:
-    @pytest.fixture
-    def vector_result(self) -> Dict[str, Any]:
-        return {
-            'status': 'success',
-            'data': {
-                'resultType': 'vector',
-                'result': [
-                    {
-                        'metric': {},
-                        'value': [
-                            1607989427.782,
-                            '19.8',
-                        ],
-                    },
-                ],
-            },
-        }
-    
-    def test_parse_vector_result(self, vector_result) -> None:
-        result = servo.connectors.prometheus.Result.parse_obj(vector_result)
-        debug(result)
-        ...
-    
-    # TODO: Handle an error
-    # TODO: Test string and scalar responses
-    
-    @pytest.fixture
-    def matrix_result(self) -> dict:
-        return {
-            "status": "success",
-            "data": {
-                "resultType": "matrix",
-                "result": [
-                    {
-                        "metric": {
-                            "__name__": "go_memstats_gc_sys_bytes",
-                            "instance": "localhost:9090",
-                            "job": "prometheus",
-                        },
-                        "values": [
-                            [1595142421.024, "3594504"],
-                            [1595142481.024, "3594504"],
-                        ],
-                    }
-                ],
-            },
-        }
 
 class TestData:
     class TestVector:
@@ -1120,7 +1006,7 @@ class TestResponse:
             "status": "error",
             "errorType": "failure", 
             "error": "couldn't hang",
-            "data": {},
+            "data": None,
         }
         response = servo.connectors.prometheus.Response.parse_obj(obj)
         assert response.status == "error"

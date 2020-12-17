@@ -72,29 +72,15 @@ class PrometheusMetric(servo.Metric):
 
 class PrometheusTarget(pydantic.BaseModel):
     """PrometheusTarget objects describe targets that are scraped by Prometheus jobs."""
-    pool: str
-    url: str
-    global_url: str
+    pool: str = pydantic.Field(..., alias='scrapePool')
+    url: str = pydantic.Field(..., alias='scrapeUrl')
+    global_url: str = pydantic.Field(..., alias='globalUrl')
     health: str # TODO: This should be an enum but I dunno what the values could be
     labels: Optional[Dict[str, str]]
-    discovered_labels: Optional[Dict[str, str]]
-    last_scraped_at: Optional[datetime.datetime]
-    last_scrape_duration: Optional[servo.Duration]
-    last_error: Optional[str]
-    
-    # @pydantic.root_validator(pre=True)
-    # def _map_from_prometheus_json(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-    #     return {
-    #         "pool": values["scrapePool"],
-    #         "url": values["scrapeUrl"],
-    #         "global_url": values["globalUrl"],
-    #         "health": values["health"],
-    #         "labels": values["labels"],
-    #         "discovered_labels": values["discoveredLabels"],
-    #         "last_scraped_at": values["lastScrape"],
-    #         "last_scrape_duration": values["lastScrapeDuration"],
-    #         "last_error": values["lastError"] if values["lastError"] else None
-    #     }
+    discovered_labels: Optional[Dict[str, str]] = pydantic.Field(..., alias='discoveredLabels')
+    last_scraped_at: Optional[datetime.datetime] = pydantic.Field(..., alias='lastScrape')
+    last_scrape_duration: Optional[servo.Duration] = pydantic.Field(..., alias='lastScrapeDuration')
+    last_error: Optional[str] = pydantic.Field(..., alias='lastError')
 
 
 class PrometheusConfiguration(servo.BaseConfiguration):
@@ -150,21 +136,25 @@ class PrometheusConfiguration(servo.BaseConfiguration):
             ), **kwargs}
         )
 
-    # @pydantic.validator("base_url")
-    # @classmethod
-    # def rstrip_base_url(cls, base_url):
-    #     return base_url.rstrip("/")
+    @pydantic.validator("base_url")
+    @classmethod
+    def rstrip_base_url(cls, base_url):
+        return base_url.rstrip("/")
 
     @property
     def api_url(self) -> str:
         return f"{self.base_url}{API_PATH}"
 
+
 class BaseQuery(pydantic.BaseModel):
     base_url: pydantic.AnyHttpUrl
     metric: PrometheusMetric
+    timeout: Optional[servo.Duration]
 
 
 class InstantQuery(BaseQuery):
+    time: Optional[datetime.datetime]
+    
     @property
     def query(self) -> str:
         return self.metric.query
@@ -175,6 +165,8 @@ class InstantQuery(BaseQuery):
             self.base_url.rstrip("/")
             + "/query"
             + f"?query={self.query}"
+            + (f"&time={self.time.timestamp()}" if self.time else "")
+            + (f"&timeout={self.timeout}" if self.timeout else "")
         )
 
 
@@ -202,6 +194,7 @@ class RangeQuery(BaseQuery):
             + f"&start={self.start.timestamp()}"
             + f"&end={self.end.timestamp()}"
             + f"&step={self.metric.step}"
+            + (f"&timeout={self.timeout}" if self.timeout else "")
         )
 
 class ResultType(str, enum.Enum):
@@ -214,33 +207,13 @@ class ResultType(str, enum.Enum):
     scalar = "scalar"
     string = "string"
 
+
 Scalar = Tuple[datetime.datetime, float]
 String = Tuple[datetime.datetime, str]
 
-# class ResultSet(pydantic.BaseModel): # TODO: QueryResponse
-#     query: BaseQuery
-#     status: str
-#     type: ResultType
-#     results: List['Result']
-#     # TODO: This may need to be polymorphic. value? result? Response class instead?
-    
-#     @pydantic.root_validator(pre=True)
-#     def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-#         # result = values["data"]["result"][0] if values["data"]["result"] else {}
-#         return {
-#             "query": values["query"],
-#             "status": values["status"],
-#             "type": values["data"]["resultType"],
-#             "results": values["data"]["result"],
-#             # "metric": result.get("metric", None),
-#             # "value": result.get("value", None),
-#             # "values": result.get("values", None),
-#         }
-
-# ResultMetric = TypeVar[]
-# ResultValue = Tuple[float, str] # TODO: Move to nested class? Can this just be DataPoint???
 
 class BaseVector(abc.ABC, pydantic.BaseModel):
+    """Abstract base class for Prometheus vector types."""
     metric: Dict[str, str] # TODO: These are just labels... TODO: Take the __name__ and bundle into a class?
     
     @abc.abstractmethod
@@ -252,8 +225,8 @@ class BaseVector(abc.ABC, pydantic.BaseModel):
         ...
 
 
-class InstantVector(BaseVector): # NOTE: Parent type is vector
-    """
+class InstantVector(BaseVector):
+    """A sample of a metric captured at a moment in time.
     [
         {
             'metric': {},
@@ -272,18 +245,15 @@ class InstantVector(BaseVector): # NOTE: Parent type is vector
     def __iter__(self) -> Scalar:
         return iter((self.value, ))
 
-class RangeVector(BaseVector): # NOTE: Parent type is matrix
-    """
-    [
-    {
-        "metric": { "<label_name>": "<label_value>", ... },
-        "values": [ [ <unix_time>, "<sample_value>" ], ... ]
-    },
-    ...
-    ]
 
-    Args:
-        pydantic ([type]): [description]
+class RangeVector(BaseVector):
+    """A collection of samples for a metric captured over a time range.
+    [
+        {
+            "metric": { "<label_name>": "<label_value>", ... },
+            "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+        },
+    ]
     """    
     values: List[Scalar]
     
@@ -302,19 +272,11 @@ class Status(str, enum.Enum):
     success = "success"
     error = "error"
 
+
 class Error(pydantic.BaseModel):
     type: str = pydantic.Field(..., alias='errorType')
     message: str = pydantic.Field(..., alias='error')
-    
-    # @pydantic.root_validator(pre=True)
-    # def _map_items(cls, values: Dict[str, str]) -> Dict[str, str]:
-    #     if values.keys() == {"errorType", "error"}:
-    #         return {
-    #             "type": values["errorType"],
-    #             "message": values["error"]
-    #         }
-    #     else:
-    #         return values
+
 
 class Data(pydantic.BaseModel):
     type: ResultType = pydantic.Field(..., alias='resultType')

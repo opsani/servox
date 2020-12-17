@@ -426,8 +426,8 @@ class OpsaniDevChecks(servo.BaseChecks):
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
-                assert result.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"                
+                results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
+                assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.type}"
                 
                 if metric.name == "main_request_rate":
                     assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
@@ -498,9 +498,9 @@ class OpsaniDevChecks(servo.BaseChecks):
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                result = servo.connectors.prometheus.QueryResult(query=query, **response.json())
-                assert result.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"
-                assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
+                assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"
+                assert results.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
                 
                 timestamp, value = result.value
                 assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
