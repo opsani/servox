@@ -51,4 +51,5 @@ jobs:
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
+      if: github.event_name != 'pull_request'
       run: poetry run pytest -s -vv -m integration --integration

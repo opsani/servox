@@ -100,6 +100,7 @@ def test_prometheus(kube: kubetest.client.TestClient) -> None:
     assert "Prometheus Time Series Collection and Processing Server" in response.data
 
 # TODO: Parametrize to run a bunch of commands
+@pytest.mark.skip(reason="migrating to another module")
 async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
     exit_code, stdout, stderr = await subprocess(
         f"docker run --rm -i {servo_image} --help", print_output=True
