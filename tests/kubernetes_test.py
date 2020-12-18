@@ -136,6 +136,7 @@ async def test_run_servo_on_kind(
     assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
 
+@pytest.mark.skip(reason="migrating to another module")
 async def test_run_servo_on_eks(servo_image: str, kubeconfig, kubecontext, subprocess) -> None:
     # TODO: Break down into fixtures
     await subprocess("aws ecr get-login-password \

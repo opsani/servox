@@ -171,7 +171,6 @@ class TestChecksOriginalState:
     files=[
         "deployment.yaml",
         "service.yaml",
-        # "servo.yaml",
         "prometheus.yaml",
     ],
 )
@@ -285,7 +284,9 @@ class TestEverything:
                     targets = await prometheus_connector.targets()
                     if targets:
                         if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets)):
-                            return targets
+                            # NOTE: filter targets to match our namespace in
+                            # case there are other things running in the cluster
+                            return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets))
 
                     await asyncio.sleep(0.25)
 

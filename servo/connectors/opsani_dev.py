@@ -407,13 +407,13 @@ class OpsaniDevChecks(servo.BaseChecks):
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[15s]))',
+                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[15s]))',
                 step="10s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "main_error_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[15s]))',
+                query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[15s]))',
                 step="10s"
             )
         ]
@@ -426,25 +426,38 @@ class OpsaniDevChecks(servo.BaseChecks):
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
-                assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.type}"
+                results = servo.connectors.prometheus.Response(query=query, **response.json())
 
-                if metric.name == "main_request_rate":
-                    assert result.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                    timestamp, value = result.value
-                    assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                    summaries.append(f"{metric.name}={value}{metric.unit}")
-                elif metric.name == "main_error_rate":
-                    if result.value is None:
-                        # NOTE: if no errors are occurring this can legitimately be None
-                        value = 0
-                    else:
+                if results.data:
+                    assert results.data.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.type}"
+                    assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
+                    result = next(iter(results.data))
+
+                    if metric.name == "main_request_rate":
                         timestamp, value = result.value
-                        assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
+                        assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                        summaries.append(f"{metric.name}={value}{metric.unit}")
+                    elif metric.name == "main_error_rate":
+                        if result.value is None:
+                            # NOTE: if no errors are occurring this can legitimately be None
+                            value = 0
+                        else:
+                            timestamp, value = result.value
+                            assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
 
-                    summaries.append(f"{metric.name}={0}{metric.unit}")
+                        summaries.append(f"{metric.name}={0}{metric.unit}")
+                    else:
+                        raise NotImplementedError(f"unexpected metric: {metric.name}")
                 else:
-                    raise NotImplementedError(f"unexpected metric: {metric.name}")
+                    # Empty data indicates an absent metric
+                    # TODO: can maybe pull this out once absent metrics are re-enabled
+                    if metric.name == "main_request_rate":
+                        raise ValueError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
+                    elif metric.name == "main_error_rate":
+                        # no errors sounds delightful
+                        pass
+                    else:
+                        raise NotImplementedError(f"unexpected metric: {metric.name}")
 
         return ", ".join(summaries)
 
@@ -479,13 +492,13 @@ class OpsaniDevChecks(servo.BaseChecks):
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[10s]))',
+                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
                 step="10s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "tuning_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+                query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])',
                 step="10s"
             ),
         ]
@@ -498,12 +511,15 @@ class OpsaniDevChecks(servo.BaseChecks):
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                results = servo.connectors.prometheus.ResultSet(query=query, **response.json())
-                assert results.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {result.type}"
-                assert results.value, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
 
+                results = servo.connectors.prometheus.Response(query=query, **response.json())
+                assert results.data, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                assert results.data.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.type}"
+                assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
+
+                result = next(iter(results.data))
                 timestamp, value = result.value
-                assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                assert int(value) > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
                 summaries.append(f"{metric.name}={value}{metric.unit}")
 
             return ", ".join(summaries)

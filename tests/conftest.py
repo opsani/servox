@@ -372,7 +372,7 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
 # Depends on subprocessx. Libraries in the key of x. kowabunga. kareem. krush. ktest
 
 @pytest.fixture
-async def kind(request, subprocess, kubeconfig: str, kube_context: str) -> str:
+async def kind(request, subprocess, kubeconfig: str, kubecontext: str) -> str:
     """Run tests within a local kind cluster.
 
     The cluster name is determined using the parametrized `kind_cluster` marker
@@ -396,12 +396,14 @@ async def kind(request, subprocess, kubeconfig: str, kube_context: str) -> str:
         yield cluster
 
     finally:
+        # ensure default context is respected
+        await subprocess(f"kubectl config --kubeconfig {kubeconfig} use-context {kubecontext}", print_output=True)
+
         # TODO: add an option to not tear down the cluster
         if not os.getenv("GITHUB_ACTIONS"):
             exit_code, _, _ = await subprocess(f"kind delete cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
             if exit_code != 0:
                 raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-            await subprocess(f"kubectl config --kubeconfig {kubeconfig} use-context {kube_context}", print_output=True)
 
 # TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
 # TODO: add markers for the image, cluster name.
