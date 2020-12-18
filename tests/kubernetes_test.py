@@ -121,6 +121,7 @@ async def test_run_servo_on_minikube(
     assert exit_code == 0, f"servo image execution failed: {stderr}"
     assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
 
+@pytest.mark.skip(reason="migrating to a new module")
 async def test_run_servo_on_kind(
     kind: str,
     kind_servo_image: str,

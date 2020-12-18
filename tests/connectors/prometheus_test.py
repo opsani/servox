@@ -4,8 +4,10 @@ import pathlib
 import re
 from typing import AsyncIterator
 
+import chevron
 import freezegun
 import httpx
+import kubetest
 import pydantic
 import pytest
 import respx
@@ -409,13 +411,13 @@ class TestPrometheusChecks:
 # Querying for data that is null
 # Querying for data that is partially null
 
-
+@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.integration
 @pytest.mark.applymanifests(
     "../manifests",
     files=[
         "prometheus.yaml",
-    ]
+    ],
 )
 @pytest.mark.clusterrolebinding('cluster-admin')
 class TestPrometheusIntegration:
@@ -584,14 +586,14 @@ class TestPrometheusIntegration:
                         PrometheusMetric(
                             "throughput",
                             servo.Unit.REQUESTS_PER_SECOND,
-                            query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
+                            query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
                             step="15s",
                         ),
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.PERCENTAGE,
-                            query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
-                            step="1m",
+                            query=f'sum(rate(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s]))',
+                            step="15s",
                         ),
                     ],
                 )
@@ -1097,6 +1099,7 @@ class TestError:
 
 
 @pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.applymanifests(
     "../manifests",
     files=[

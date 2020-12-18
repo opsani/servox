@@ -206,6 +206,8 @@ data:
 
       kubernetes_sd_configs:
         - role: pod
+          namespaces:
+            names: [{{ namespace }}]
 
       relabel_configs:
         - action: labelmap

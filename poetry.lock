@@ -145,6 +145,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "chevron"
+version = "0.13.1"
+description = "Mustache templating language renderer"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "click"
 version = "7.1.2"
 description = "Composable command line interface toolkit"
@@ -670,7 +678,7 @@ urllib3 = ">=1.24.2"
 
 [[package]]
 name = "kubetest"
-version = "0.9.1"
+version = "0.9.3"
 description = "A Kubernetes integration test framework in Python."
 category = "dev"
 optional = false
@@ -685,8 +693,8 @@ pyyaml = ">=4.2b1"
 [package.source]
 type = "git"
 url = "https://github.com/opsani/kubetest.git"
-reference = "feature/kubeconfig-fixture"
-resolved_reference = "5a541926ac6e10ef700e3b9ce9ba83fa4597c634"
+reference = "feature/template-manifests"
+resolved_reference = "de8ddda866b63ae75230682d1e5c8531d3d014fb"
 
 [[package]]
 name = "loguru"
@@ -1538,7 +1546,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "64d554427a78c63616b75ee1724757e9a2e0163163ce61e2dc8aee4d3b33ddd7"
+content-hash = "4097877d1a54294da38437c85b81abea256ee110cdd970b2c802a7afa07b7b82"
 
 [metadata.files]
 aiohttp = [
@@ -1627,6 +1635,10 @@ cfgv = [
 chardet = [
     {file = "chardet-3.0.4-py2.py3-none-any.whl", hash = "sha256:fc323ffcaeaed0e0a02bf4d117757b98aed530d9ed4531e3e15460124c106691"},
     {file = "chardet-3.0.4.tar.gz", hash = "sha256:84ab92ed1c4d4f16916e05906b6b75a6c0fb5db821cc65e70cbd64a3e2a5eaae"},
+]
+chevron = [
+    {file = "chevron-0.13.1-py3-none-any.whl", hash = "sha256:95b0a055ef0ada5eb061d60be64a7f70670b53372ccd221d1b88adf1c41a9094"},
+    {file = "chevron-0.13.1.tar.gz", hash = "sha256:f95054a8b303268ebf3efd6bdfc8c1b428d3fc92327913b4e236d062ec61c989"},
 ]
 click = [
     {file = "click-7.1.2-py2.py3-none-any.whl", hash = "sha256:dacca89f4bfadd5de3d7489b7c8a566eee0d3676333fbb50030263894c38c0dc"},

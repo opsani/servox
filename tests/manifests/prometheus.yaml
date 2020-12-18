@@ -82,6 +82,8 @@ data:
     - job_name: 'opsani-envoy-sidecars'
       kubernetes_sd_configs:
         - role: pod
+          namespaces:
+            names: [{{ namespace }}]
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
 
       relabel_configs:
