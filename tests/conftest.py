@@ -10,6 +10,7 @@ import string
 import pathlib
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
+import chevron
 import devtools
 import fastapi
 import httpx
@@ -27,6 +28,8 @@ import tests.helpers
 # Add the devtools debug() function globally in tests
 builtins.debug = devtools.debug
 
+# Render all manifests as Mustache templates by default
+kubetest.manifest.__render__ = chevron.render
 
 def pytest_report_header(config) -> str:
     try:

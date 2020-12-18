@@ -4,7 +4,6 @@ import pathlib
 import re
 from typing import AsyncIterator
 
-import chevron
 import freezegun
 import httpx
 import kubetest
@@ -411,7 +410,6 @@ class TestPrometheusChecks:
 # Querying for data that is null
 # Querying for data that is partially null
 
-@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.integration
 @pytest.mark.applymanifests(
     "../manifests",
@@ -577,7 +575,7 @@ class TestPrometheusIntegration:
         # set of readings that includes the traffic burst, the zero readings on either side of the
         # burst, and will early return once the metrics stabilize without waiting for the full
         # measurement duration as prescribed by the control structure (13 minutes).
-        servo.logging.set_level("DEBUG")
+        servo.logging.set_level("TRACE")
         async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
             async with kube_port_forward("service/fiber-http", 80) as fiber_url:
                 config = PrometheusConfiguration.generate(
@@ -1099,7 +1097,6 @@ class TestError:
 
 
 @pytest.mark.clusterrolebinding('cluster-admin')
-@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.applymanifests(
     "../manifests",
     files=[

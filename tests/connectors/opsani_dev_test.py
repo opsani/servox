@@ -8,7 +8,6 @@ import contextlib
 
 from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union, Protocol, runtime_checkable
 
-import chevron
 import httpx
 import pytest
 import pytz
@@ -38,7 +37,6 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 
 
 @pytest.mark.clusterrolebinding('cluster-admin')
-@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -168,7 +166,6 @@ class TestChecksOriginalState:
 # TODO: check namespace affinity only scrapes in current namespace
 
 @pytest.mark.clusterrolebinding('cluster-admin')
-@pytest.mark.render_manifests.with_args(chevron.render)
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
