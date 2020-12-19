@@ -10,6 +10,7 @@ import string
 import pathlib
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
+import backoff
 import chevron
 import devtools
 import fastapi
@@ -510,6 +511,7 @@ ForwardingTarget = Union[
     servo.connectors.kubernetes.Service,
 ]
 
+@backoff.on_exception(backoff.expo, (asyncio.TimeoutError, RuntimeError), max_tries=10, max_time=10)
 @contextlib.asynccontextmanager
 async def kubectl_ports_forwarded(
     target: ForwardingTarget,
@@ -570,7 +572,7 @@ async def kubectl_ports_forwarded(
         for local_port, _ in ports:
             a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             if a_socket.connect_ex(("localhost", local_port)) != 0:
-                raise RuntimeError(f"port forwarding failed")
+                raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
 
         if len(ports) == 1:
             url = f"http://localhost:{ports[0][0]}"
