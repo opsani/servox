@@ -74,6 +74,7 @@ pytest-sugar = "^0.9.4"
 pytest-clarity = "^0.3.0-alpha.0"
 pytest-picked = "^0.4.4"
 chevron = "^0.13.1"
+pytest-xdist = "^2.2.0"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
