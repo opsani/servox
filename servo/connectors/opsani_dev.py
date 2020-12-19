@@ -187,6 +187,9 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     ##
     # Prometheus sidecar
+    @property
+    def _prometheus_api_base_url(self) -> str:
+        return self.config.prometheus_base_url + servo.connectors.prometheus.API_PATH
 
     @servo.checks.require("Prometheus ConfigMap exists")
     async def check_prometheus_config_map(self) -> None:
@@ -260,13 +263,13 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # NOTE: Prometheus sidecar will be up on localhost
         async with httpx.AsyncClient(
-            base_url=self.config.prometheus_base_url
+            base_url=self._prometheus_api_base_url
         ) as client:
             response = await client.get("/targets")
             response.raise_for_status()
             result = response.json()
 
-        return f"Prometheus is accessible at {self.config.prometheus_base_url}"
+        return f"Prometheus is accessible at {self._prometheus_api_base_url}"
 
     async def _read_servo_pod(self) -> Optional[servo.connectors.kubernetes.Pod]:
         return await self._read_servo_pod_from_env() or next(
@@ -390,7 +393,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # NOTE: Prometheus sidecar will be up on localhost
         async with httpx.AsyncClient(
-            base_url=self.config.prometheus_base_url
+            base_url=self._prometheus_api_base_url
         ) as client:
             response = await client.get("/targets")
             response.raise_for_status()
@@ -420,7 +423,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         summaries = []
         for metric in metrics:
             query = servo.connectors.prometheus.InstantQuery(
-                base_url=self.config.prometheus_base_url,
+                base_url=self._prometheus_api_base_url,
                 metric=metric
             )
             async with httpx.AsyncClient() as client:
@@ -503,7 +506,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         summaries = []
         for metric in metrics:
             query = servo.connectors.prometheus.InstantQuery(
-                base_url=self.config.prometheus_base_url,
+                base_url=self._prometheus_api_base_url,
                 metric=metric
             )
             async with httpx.AsyncClient() as client:

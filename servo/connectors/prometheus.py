@@ -325,23 +325,6 @@ class Response(pydantic.BaseModel):
         if self.status == Status.error:
             raise RuntimeError(f"Prometheus query request failed with error '{self.error.type}': {self.error.messge}")
 
-    # # @pydantic.root_validator(pre=True)
-    # # def _map_result(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-    # #     result = values["data"]["result"][0] if values["data"]["result"] else {}
-    # #     return {
-    # #         # "query": values["query"],
-    # #         # "status": values["status"],
-    # #         # "type": values["data"]["resultType"],
-    # #         "metric": result.get("metric", None),
-    # #         "value": result.get("value", None),
-    # #         "values": result.get("values", None),
-    # #     }
-
-    # @pydantic.validator("values")
-    # @classmethod
-    # def _sort_values(cls, values: Optional[List[Tuple[datetime.datetime, float]]]) -> Optional[List[Tuple[datetime.datetime, float]]]:
-    #     return sorted(values, key=lambda x: x[0]) if values else None
-
 
 class PrometheusChecks(servo.BaseChecks):
     """PrometheusChecks objects check the state of a PrometheusConfiguration to
@@ -385,8 +368,8 @@ class PrometheusChecks(servo.BaseChecks):
     async def check_targets(self) -> str:
         """Check that all targets are being scraped by Prometheus and report as healthy."""
 
-        async with httpx.AsyncClient(base_url=self.config.base_url) as client:
-            response = await client.get("/api/v1/targets")
+        async with httpx.AsyncClient(base_url=self.config.api_url) as client:
+            response = await client.get("/targets")
             response.raise_for_status()
             result = response.json()
 
@@ -561,8 +544,8 @@ class PrometheusConnector(servo.BaseConnector):
 
     async def targets(self) -> List:
         """Return a list of targets being scraped by Prometheus."""
-        async with httpx.AsyncClient(base_url=self.config.base_url) as client:
-            response = await client.get("/api/v1/targets")
+        async with httpx.AsyncClient(base_url=self.config.api_url) as client:
+            response = await client.get("/targets")
             response.raise_for_status()
             return pydantic.parse_obj_as(List[PrometheusTarget], response.json()['data']['activeTargets'])
 

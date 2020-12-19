@@ -7,6 +7,7 @@ import abc
 import asyncio
 import datetime
 import enum
+import inspect
 import time
 from typing import (
     Any,
@@ -155,6 +156,8 @@ Version = semver.VersionInfo
 Numeric = Union[pydantic.StrictFloat, pydantic.StrictInt]
 NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 
+# Describing time durations in various forms is very common
+DurationDescriptor = Union[datetime.timedelta, str, float, int]
 
 class Duration(datetime.timedelta):
     """
@@ -1380,10 +1383,6 @@ class AbstractOutputFormat(str, enum.Enum):
 
 Control.update_forward_refs()
 
-
-DurationType = Union[Duration, datetime.timedelta, str, bytes, int, float]
-
-
 HTTP_METHODS = (
     "GET",
     "POST",
@@ -1428,3 +1427,18 @@ class ErrorSeverity(str, enum.Enum):
     and the servo will test them before running any dependent checks, ensuring
     that you get a single failure that identifies the root cause.
     """
+
+# An `asyncio.Future` or an object that can be wrapped into an `asyncio.Future`
+# via `asyncio.ensure_future()`. See `isfuturistic()`.
+Futuristic = Union[asyncio.Future, Awaitable]
+
+def isfuturistic(obj: Any) -> bool:
+    """Returns True when obj is an asyncio Future or can be wrapped into one.
+
+    Futuristic objects can be passed into `asyncio.ensure_future` and methods
+    that accept awaitables such as `asyncio.gather` and `asyncio.wait_for`
+    without triggering a `TypeError`.
+    """
+    return (asyncio.isfuture(obj)
+            or asyncio.iscoroutine(obj)
+            or inspect.isawaitable(obj))
