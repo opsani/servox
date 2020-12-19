@@ -8,7 +8,7 @@ import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
 
-PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090/api/v1"
+PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090"
 PROMETHEUS_ANNOTATION_NAMES = {
     "prometheus.opsani.com/scrape",
     "prometheus.opsani.com/scheme",

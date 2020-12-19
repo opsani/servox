@@ -135,12 +135,12 @@ class TestChecksOriginalState:
             assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
-                "/targets",
+                "/ap/v1/targets",
                 name="targets"
             ).mock(return_value=httpx.Response(200, json=[]))
 
             respx_mock.get(
-                re.compile(r"/query_range.+"),
+                re.compile(r"/ap/v1/query_range.+"),
                 name="query",
             ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
             yield respx_mock
@@ -149,7 +149,7 @@ class TestChecksOriginalState:
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
         with respx.mock(base_url=servo.connectors.opsani_dev.PROMETHEUS_SIDECAR_BASE_URL) as respx_mock:
-            request = respx_mock.get("/targets").mock(return_value=httpx.Response(status_code=503))
+            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(status_code=503))
             check = await checks.run_one(id=f"check_prometheus_is_accessible")
             assert request.called
             assert check
