@@ -519,7 +519,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
                 result = next(iter(results.data))
                 timestamp, value = result.value
-                assert int(value) > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
+                assert value > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
                 summaries.append(f"{metric.name}={value}{metric.unit}")
 
             return ", ".join(summaries)
