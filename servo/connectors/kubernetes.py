@@ -1580,6 +1580,7 @@ class Deployment(KubernetesModel):
         container = kubernetes_asyncio.client.V1Container(
             name="opsani-envoy",  # TODO: Put this into a constant or something
             image="opsani/envoy-proxy:latest",
+            image_pull_policy="IfNotPresent",
             resources=kubernetes_asyncio.client.V1ResourceRequirements(
                 requests={
                     "cpu": "125m",

@@ -34,6 +34,12 @@ from servo.connectors.kubernetes import (
 from servo.types import Adjustment
 from tests.helpers import *
 
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.event_loop_policy("uvloop"),
+    pytest.mark.usefixtures("kubernetes_asyncio_config", "kube"),
+    pytest.mark.clusterrolebinding('cluster-admin')
+]
 
 class TestDNSSubdomainName:
     @pytest.fixture

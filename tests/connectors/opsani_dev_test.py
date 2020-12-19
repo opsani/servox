@@ -6,9 +6,10 @@ import re
 
 import contextlib
 
-from typing import Callable, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union, Protocol, runtime_checkable
+from typing import Callable, Coroutine, AsyncIterator, Dict, List, Optional, Any, Type, Set, Union, Protocol, runtime_checkable
 
 import httpx
+import pydantic
 import pytest
 import pytz
 import respx
@@ -18,7 +19,14 @@ import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+# pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.event_loop_policy("uvloop"),
+    pytest.mark.integration,
+    pytest.mark.usefixtures("kubernetes_asyncio_config"),
+    pytest.mark.clusterrolebinding('cluster-admin')
+]
 
 
 @pytest.fixture
@@ -36,7 +44,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
     return servo.connectors.opsani_dev.OpsaniDevChecks(config=config)
 
 
-@pytest.mark.clusterrolebinding('cluster-admin')
+# @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -48,9 +56,9 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 class TestChecksOriginalState:
     @pytest.fixture(autouse=True)
     async def load_manifests(
-        self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered(timeout=60)
         checks.config.namespace = kube.namespace
 
         # Fake out the servo metadata in the environment
@@ -138,7 +146,6 @@ class TestChecksOriginalState:
             ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
             yield respx_mock
 
-    # check_kubernetes_service_type
     async def test_check_prometheus_is_accessible(
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
     ) -> None:
@@ -165,7 +172,6 @@ class TestChecksOriginalState:
 # TODO: Test deployment, pod with init container, test nginx not match,
 # TODO: check namespace affinity only scrapes in current namespace
 
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -198,8 +204,6 @@ class TestEverything:
         envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
         async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
             # Connect the checks to our port forward interface
-            # prometheus_base_url = url + servo.connectors.prometheus.API_PATH
-            # TODO: Rationalize the URL structure
             checks.config.prometheus_base_url = prometheus_base_url + servo.connectors.prometheus.API_PATH
 
             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
@@ -315,10 +319,20 @@ class TestEverything:
 
             servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
             async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-                await burst_traffic_to_url(envoy_url, duration=20)
+                # await burst_traffic_to_url_(envoy_url).until_complete(wait_for_targets_to_be_scraped())
+                await send_traffic_to(envoy_url).until_complete(
+                    # wait_for_targets_to_be_scraped()
+                    wait_for_check_to_pass(checks.run_one(id=f"check_prometheus_targets"))
+                )
+                # traffic_burst().run_until()
+                # await burst_traffic_to_url(envoy_url, duration=20)
+
+                # await burst_traffic_to_url(envoy_url).until_condition(wait_for_targets_to_be_scraped, timeout=60)
+                # await TrafficBurst(url).
+                # await burst_traffic_to_url(envoy_url)
 
             # Let Prometheus scrape to see the traffic
-            await wait_for_targets_to_be_scraped()
+            # await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
             await assert_check(checks.run_one(id=f"check_envoy_sidecar_metrics"))
 
@@ -342,10 +356,11 @@ class TestEverything:
             servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
 
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                await burst_traffic_to_url(service_url, duration=10)
+                # await burst_traffic_to_url(service_url, duration=20)
+                await send_traffic_to(envoy_url).until_complete(wait_for_targets_to_be_scraped())
 
             # Let Prometheus scrape to see the traffic
-            await wait_for_targets_to_be_scraped()
+            # await wait_for_targets_to_be_scraped()
             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
             # Step 7
@@ -568,3 +583,103 @@ async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesMod
         pass
     else:
         servo.logger.warning(f"no change observation strategy for Kubernetes resource of type `{resource.__class__.__name__}`")
+
+async def burst_traffic_to_url(url: str, *, duration: int) -> None:
+    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=duration)
+    async with httpx.AsyncClient(base_url=url) as client:
+        servo.logger.info(f"Bursting traffic to {url} for {duration} seconds...")
+        count = 0
+        while datetime.datetime.now() < burst_until:
+            response = await client.get("/")
+            response.raise_for_status()
+            count += 1
+        servo.logger.success(f"Bursted {count} requests to {url} over {duration} seconds.")
+
+class TrafficBurst(pydantic.BaseModel):
+    url: str
+    request_count: int = 0
+    _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
+    _task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+
+    def start(self) -> None:
+        """Start the traffic burst."""
+        async def _send_requests() -> None:
+            async with httpx.AsyncClient(base_url=self.url) as client:
+                while not self._event.is_set():
+                    response = await client.get("/")
+                    response.raise_for_status()
+                    self.request_count += 1
+
+                self._task = None
+
+        self.request_count = 0
+        self._event.clear()
+        self._task = asyncio.create_task(_send_requests())
+
+    def is_running(self) -> bool:
+        self._task is not None
+
+    def stop(self) -> None:
+        """Stop the traffic burst."""
+        self._event.set()
+
+    # TODO: run_until... send_until? accept duration, int, str
+    async def until_complete(self, future, *, timeout: servo.Duration = servo.Duration("1m")) -> None:
+        try:
+            await asyncio.wait_for(
+                future,
+                timeout=timeout.total_seconds()
+            )
+        finally:
+            self.stop()
+
+    async def for_duration(self, duration: servo.Duration) -> None:
+        await duration.total_seconds()
+        self.stop()
+
+    # TODO: generator... better name? stream?
+    async def watch(self) -> None:
+        ...
+
+def send_traffic_to(url: str) -> TrafficBurst:
+    burst = TrafficBurst(url=url)
+    burst.start()
+    return burst
+
+async def wait_for_check_to_pass(
+    check: Coroutine[None, None, servo.Check],
+    *,
+    timeout: servo.Duration = servo.Duration("3m")
+) -> servo.Check:
+    async def _loop_check() -> servo.Check:
+        while True:
+            result = await check
+            if result.success:
+                break
+
+        return result
+
+    return await asyncio.wait_for(
+        _loop_check(),
+        timeout=timeout.total_seconds()
+    )
+# @contextlib.asynccontextmanager
+# async def traffic_burst(url: str, *, timeout: servo.Duration("1m")) -> None:
+#     async with httpx.AsyncClient(base_url=url) as client:
+#         servo.logger.info(f"Bursting traffic to {url} until stopped (timeout={timeout}")
+#         burst = TrafficBurst()
+#         try:
+#             await asyncio.wait_for(
+#                 burst.wait(),
+#                 timeout=timeout.total_seconds()
+#             )
+        # timeout = self.timeout.total_seconds() if self.timeout else None
+        # await asyncio.wait_for(
+        #     self._event.wait(),
+        #     timeout=timeout
+        # )
+        # while datetime.datetime.now() < burst_until:
+        #     response = await client.get("/")
+        #     response.raise_for_status()
+        #     count += 1
+        # servo.logger.success(f"Bursted {count} requests to {url} over {duration} seconds.")
