@@ -51,6 +51,7 @@ spec:
       # Primary container providing the fiber-http web service
       - name: fiber-http
         image: opsani/fiber-http:latest
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             cpu: 500m
@@ -69,8 +70,7 @@ spec:
       # Provides metrics for consumption by the Opsani Servo
       - name: envoy
         image: opsani/envoy-proxy:latest
-        # imagePullSecrets:
-        #   - name: regcred
+        imagePullPolicy: IfNotPresent
         resources:
             requests:
                 cpu: 125m

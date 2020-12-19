@@ -493,13 +493,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 "main_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
                 query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
-                step="10s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "tuning_request_rate",
                 servo.types.Unit.REQUESTS_PER_SECOND,
-                query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])',
-                step="10s"
+                query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])'
             ),
         ]
         summaries = []
