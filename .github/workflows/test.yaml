@@ -61,10 +61,6 @@ jobs:
       with:
         name: test-reports
         path: artifacts/
-    - uses: actions/upload-artifact@v2
-      with:
-        name: report.html
-        path: artifacts/report.html
     - name: Test CLI entrypoints
       run: poetry run servo version
 
