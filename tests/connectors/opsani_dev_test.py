@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+import functools
 import os
 import re
 
@@ -306,7 +307,9 @@ class TestInstall:
             servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
             async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
                 await load_generator(envoy_url).run_until(
-                    wait_for_check_to_pass(checks.run_one(id=f"check_prometheus_targets"))
+                    wait_for_check_to_pass(
+                        functools.partial(checks.run_one, id=f"check_envoy_sidecar_metrics")
+                    )
                 )
 
             # Let Prometheus scrape to see the traffic
@@ -369,7 +372,11 @@ class TestInstall:
             assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
 
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                await load_generator(service_url).run_until(wait_for_check_to_pass(checks.run_one(id=f"check_traffic_metrics")))
+                await load_generator(service_url).run_until(
+                    wait_for_check_to_pass(
+                        functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                    )
+                )
 
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
@@ -662,7 +669,7 @@ async def wait_for_check_to_pass(
 ) -> servo.Check:
     async def _loop_check() -> servo.Check:
         while True:
-            result = await check
+            result = await check()
             if result.success:
                 break
 
