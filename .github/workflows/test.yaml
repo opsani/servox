@@ -125,11 +125,11 @@ jobs:
         args: config view --minify --flatten > tests/kubeconfig
     - name: Fix permissions
       run: |
-        $(if [ -f /home/runner/.kube ]; then \
-          sudo chown -R runner:docker /home/runner/.kube \
-        else \
-          mkdir /home/runner/.kube \
-        fi)
+        if [ -f /home/runner/.kube ]; then
+          sudo chown -R runner:docker /home/runner/.kube
+        else
+          mkdir /home/runner/.kube
+        fi
         sudo chown runner:docker tests/kubeconfig
     - name: Rename EKS cluster to eks
       run: |
