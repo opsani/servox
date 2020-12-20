@@ -897,6 +897,7 @@ def adjustment() -> dict:
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
+@pytest.mark.event_loop_policy("default")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
     @pytest.fixture(autouse=True)
