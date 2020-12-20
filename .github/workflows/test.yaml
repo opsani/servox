@@ -123,18 +123,21 @@ jobs:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
       with:
         args: config view --minify --flatten > tests/kubeconfig
+    - name: Fix permissions
+      run: sudo chown -R runner:docker /home/runner/.kube tests/kubeconfig
     - name: Rename EKS cluster to eks
       run: |
-        sudo kubectl config rename-context \
+        kubectl config rename-context \
           --kubeconfig=tests/kubeconfig \
           kubetest eks
-    - name: Fix permissions
-      run: ls -al /home/runner/.kube && sudo chown -R runner /home/runner/.kube
     - name: Create kind cluster
       uses: helm/kind-action@v1.0.0
       with:
         cluster_name: kind
-        args: --kubeconfig tests/kubeconfig
+    - name: Display kind kubeconfig
+      run: kind get clusters && kind get kubeconfig --name kind
+    - name: Merge kind kubeconfig
+      run: kind export kubeconfig --name kind --kubeconfig tests/kubeconfig
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run system tests
