@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 import os
 from datetime import datetime, timedelta
@@ -71,6 +72,7 @@ class TestOptimizer:
             (None, "https://api.opsani.com/accounts/example.com/applications/my-app/"),
             ("http://localhost:1234", "http://localhost:1234"),
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_api_url(self, url, expected_api_url) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456", url=url)
@@ -326,6 +328,7 @@ class TestVegetaConfiguration:
                 "X-Account-ID: 99\n"
             ),
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_validate_target_http_valid_cases(self, http_target):
         s = VegetaConfiguration(
@@ -392,6 +395,7 @@ class TestVegetaConfiguration:
                 "invalid target: JUMP http://goku:9090/things",
             ],
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_validate_target_http_invalid_cases(self, http_target, error_message):
         with pytest.raises(ValidationError) as e:
