@@ -45,6 +45,9 @@ jobs:
   integration:
     name: Run Integration Tests
     runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@master
     - uses: actions/setup-python@v2.1.3
@@ -79,7 +82,6 @@ jobs:
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
-      if: github.event_name != 'pull_request'
       run: |
         poetry run pytest -n 6 --dist loadscope \
           -T integration --verbose
@@ -125,7 +127,7 @@ jobs:
       run: |
         sudo kubectl config rename-context \
           --kubeconfig=tests/kubeconfig \
-          $(kubectl config current-context) \
+          $(kubectl config get-contexts -o name|sed -n 1p) \
           eks
     - name: Create kind cluster
       uses: helm/kind-action@v1.0.0
