@@ -88,10 +88,8 @@ jobs:
     name: Run System Tests
     runs-on: ubuntu-latest
     if: |
-        (github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' ||
-            contains(github.ref, "release"))) ||
-          github.event_name == 'pull_request'
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@master
     - uses: actions/setup-python@v2.1.3
