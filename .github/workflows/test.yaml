@@ -76,5 +76,5 @@ jobs:
     - name: Run integration tests
       if: github.event_name != 'pull_request'
       run: |
-        poetry run pytest -n auto --dist loadscope \
+        poetry run pytest -n 6 --dist loadscope \
           -m integration --integration --verbose -s
