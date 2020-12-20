@@ -427,7 +427,7 @@ class TestPrometheusIntegration:
 
     @pytest.fixture(autouse=True)
     def _wait_for_cluster(self, kube) -> None:
-        kube.wait_for_registered(timeout=15)
+        kube.wait_for_registered(timeout=60)
 
     async def test_check_targets(
         self,
