@@ -7,7 +7,7 @@ OPSANI_TOKEN_FILE=${OPSANI_TOKEN_FILE:-/servo/opsani.token}
 exec servo \
     --config-file ${SERVO_CONFIG_FILE:-/servo/servo.yaml} \
     $(if [ ! -z ${OPSANI_OPTIMIZER} ]; then \
-        echo "--optimizer ${OPSANI_TOKEN}"; \
+        echo "--optimizer ${OPSANI_OPTIMIZER}"; \
       fi) \
     $(if [ ! -z ${OPSANI_TOKEN} ]; then \
         echo "--token ${OPSANI_TOKEN}"; \
