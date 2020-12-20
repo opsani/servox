@@ -21,15 +21,6 @@ pytestmark = [
     pytest.mark.usefixtures("kubernetes_asyncio_config")
 ]
 
-
-@pytest.fixture(scope='session')
-def event_loop():
-    """Create an instance of the default event loop for each test case."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
