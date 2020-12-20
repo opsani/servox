@@ -84,7 +84,7 @@ jobs:
     - name: Run integration tests
       run: |
         poetry run pytest -n 6 --dist loadscope \
-          -T integration --verbose
+          -T integration --verbose --durations=0 --durations-min=5
 
   system:
     name: Run System Tests
@@ -149,4 +149,4 @@ jobs:
     - name: Run system tests
       run: |
         poetry run pytest -n 6 --dist loadscope \
-          -T system --verbose
+          -T system --verbose --durations=0 --durations-min=5
