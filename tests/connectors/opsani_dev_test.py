@@ -21,8 +21,8 @@ import servo.connectors.prometheus
 
 
 pytestmark = [
+    pytest.mark.integration,
     pytest.mark.asyncio,
-    pytest.mark.event_loop_policy("default"),
     pytest.mark.usefixtures("kubernetes_asyncio_config"),
     pytest.mark.clusterrolebinding('cluster-admin')
 ]
