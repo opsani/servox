@@ -86,8 +86,8 @@ lint-docs:
 lint: typecheck
 	poetry run flakehell lint --count
 
-.PHONY: kubeconfig
-kubeconfig:
+.PHONY: test-kubeconfig
+test-kubeconfig:
 	@kubectl config view \
     	--minify --flatten \
 		> $(CURDIR)/tests/kubeconfig
