@@ -33,7 +33,7 @@ RUN pip install --upgrade pip setuptools
 # so that the servo CLI is installed by Poetry. The sequencing
 # here accelerates builds by ensuring that only essential
 # cache friendly files are in the stage when Poetry executes.
-COPY poetry.lock pyproject.toml ./
+COPY poetry.lock pyproject.toml README.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
 RUN pip install poetry==1.1.* \
