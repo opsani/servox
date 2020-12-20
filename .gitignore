@@ -27,3 +27,4 @@ var/
 .env
 logs
 .cache
+artifacts
