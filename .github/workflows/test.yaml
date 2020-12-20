@@ -132,13 +132,7 @@ jobs:
       uses: helm/kind-action@v1.0.0
       with:
         cluster_name: kind
-        config: tests/kind.config
-    - name: Display tests/kind.config
-      run: cat tests/kind.config
-    - name: Display kind kubeconfig
-      run: kind get clusters && kind get kubeconfig --name kind
-    - name: Merge kind kubeconfig
-      run: sudo kind export kubeconfig --name kind --kubeconfig tests/kubeconfig
+        args: --kubeconfig tests/kubeconfig
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run system tests
