@@ -127,8 +127,7 @@ jobs:
       run: |
         sudo kubectl config rename-context \
           --kubeconfig=tests/kubeconfig \
-          $(kubectl config get-contexts -o name|sed -n 1p) \
-          eks
+          kubetest eks
     - name: Create kind cluster
       uses: helm/kind-action@v1.0.0
       with:
