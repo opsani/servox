@@ -90,7 +90,7 @@ jobs:
     if: |
         (github.event_name == 'push' &&
           (github.ref == 'refs/heads/main' ||
-            contains(github.ref, "release")) ||
+            contains(github.ref, "release"))) ||
           github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@master
