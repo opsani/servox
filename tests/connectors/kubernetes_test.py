@@ -1,4 +1,4 @@
-# from __future__ import annotations
+from __future__ import annotations
 
 from typing import Type
 
@@ -9,7 +9,6 @@ from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
-from servo.api import descriptor_to_adjustments
 from servo.connectors.kubernetes import (
     CPU,
     CanaryOptimization,
@@ -870,30 +869,6 @@ def config(namespace: str) -> KubernetesConfiguration:
         ],
     )
 
-# TODO: Create adjustment factory -- usable in FakeAPI and direct tests
-@pytest.fixture
-def adjustment() -> dict:
-    return {
-        "application": {
-            "components": {
-                "fiber-http/fiber-http": {
-                    "settings": {
-                        "cpu": {
-                            "value": 0.375,
-                        },
-                        "mem": {
-                            "value": 0.225,
-                        },
-                        "replicas": {
-                            "value": 3,
-                        },
-                    },
-                },
-            },
-        },
-        "control": {},
-    }
-
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
@@ -915,28 +890,51 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "512.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
-    async def test_adjust(self, config, adjustment, kube):
+    async def test_adjust_cpu(self, config):
         connector = KubernetesConnector(config=config)
-        await connector.adjust(descriptor_to_adjustments(adjustment))
-        # TODO: I need a quick helper for testing adjustments
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
 
-    async def test_adjust_memory_on_deployment(self, config, adjustment):
+    async def test_adjust_memory(self, config):
         connector = KubernetesConnector(config=config)
-
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
             setting_name="mem",
             value="700Mi",
         )
         description = await connector.adjust([adjustment])
-        debug(description)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value == 734003200
 
         # Get deployment and check the pods
         # deployment = await Deployment.read("web", "default")
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
 
-    async def test_read_pod(self, config, adjustment, kube) -> None:
+    async def test_adjust_replicas(self, config):
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="replicas",
+            value="2",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.replicas')
+        assert setting
+        assert setting.value == 2
+
+    async def test_read_pod(self, config, kube) -> None:
         connector = KubernetesConnector(config=config)
         pods = kube.get_pods()
         pod_name = next(iter(pods.keys()))
@@ -946,7 +944,7 @@ class TestKubernetesConnectorIntegration:
 
     ##
     # Canary Tests
-    async def test_create_canary(self, canary_config, adjustment, namespace: str) -> None:
+    async def test_create_canary(self, canary_config, namespace: str) -> None:
         connector = KubernetesConnector(config=canary_config)
         dep = await Deployment.read("fiber-http", namespace)
         debug(dep)
