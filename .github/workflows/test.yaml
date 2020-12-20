@@ -129,7 +129,7 @@ jobs:
           --kubeconfig=tests/kubeconfig \
           kubetest eks
     - name: Fix permissions
-      run: whoami && sudo chown -R runner /home/runner/.kube/config.lock
+      run: ls -al /home/runner/.kube && sudo chown -R runner /home/runner/.kube
     - name: Create kind cluster
       uses: helm/kind-action@v1.0.0
       with:
