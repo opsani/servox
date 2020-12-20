@@ -369,7 +369,8 @@ class TestInstall:
             assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-canary"
             assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
 
-            await assert_check(checks.run_one(id=f"check_traffic_metrics"))
+            async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                await load_generator(service_url).run_until(wait_for_check_to_pass(checks.run_one(id=f"check_traffic_metrics")))
 
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
