@@ -54,15 +54,21 @@ def event_loop_policy(request) -> str:
 
     Valid values are "default" and "uvloop".
 
-    The default implementation uses the parametrized `event_loop_policy` marker
-    to select the effective policy.
+    The default implementation defers to the `event_loop_policy` marker
+    when it is set and otherwise selects a default policy based on the
+    characteristics of the test being run.
     """
     marker = request.node.get_closest_marker("event_loop_policy")
     if marker:
         assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
         event_loop_policy = marker.args[0]
     else:
-        event_loop_policy = "uvloop"
+        # NOTE: Integration tests tend to run subprocesses that trigger
+        # MagicStack/uvloop#136 io.UnsupportedOperation("redirected stdin is pseudofile, has no fileno()")
+        if "integration" in request.node.keywords:
+            event_loop_policy = "default"
+        else:
+            event_loop_policy = "uvloop"
 
     valid_policies = ("default", "uvloop")
     assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
@@ -103,9 +109,6 @@ def pytest_configure(config) -> None:
         "markers", "integration: marks integration tests with outside dependencies"
     )
     config.addinivalue_line(
-        "markers", "system: marks system tests with end to end dependencies"
-    )
-    config.addinivalue_line(
         "markers", "event_loop_policy: marks async tests to run under a parametrized asyncio runloop policy (e.g., default or uvloop)"
     )
 
@@ -119,19 +122,14 @@ def pytest_collection_modifyitems(config, items) -> None:
     skip_itegration = pytest.mark.skip(
         reason="add --integration option to run integration tests"
     )
-    skip_system = pytest.mark.skip(reason="add --system to run system tests")
 
     for item in items:
-        # Set asyncio + uvloop default markers as defaults
+        # Set asyncio default marker
         item.add_marker(pytest.mark.asyncio)
-        if not item.get_closest_marker("event_loop_policy"):
-            item.add_marker(pytest.mark.event_loop_policy("uvloop"))
 
         # Skip slow/sensitive integration & system tests by default
         if "integration" in item.keywords and not config.getoption("--integration"):
             item.add_marker(skip_itegration)
-        if "system" in item.keywords and not config.getoption("--system"):
-            item.add_marker(skip_system)
 
 
 @pytest.fixture()

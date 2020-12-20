@@ -411,7 +411,6 @@ class TestPrometheusChecks:
 # Querying for data that is partially null
 
 @pytest.mark.integration
-@pytest.mark.event_loop_policy("default")
 @pytest.mark.applymanifests(
     "../manifests",
     files=[
