@@ -1879,7 +1879,14 @@ class Deployment(KubernetesModel):
     async def get_restart_count(self) -> int:
         count = 0
         for pod in await self.get_pods():
-            count += await pod.get_restart_count()
+            try:
+                count += await pod.get_restart_count()
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404:
+                    # Pod no longer exists, move on
+                    pass
+                else:
+                    raise error
 
         return count
 
