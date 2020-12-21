@@ -1,6 +1,7 @@
 # Opsani ServoX
 
-[![Images Badge](https://images.microbadger.com/badges/image/opsani/servox.svg)](https://microbadger.com/images/opsani/servox)
+[![Images
+Badge](https://images.microbadger.com/badges/image/opsani/servox.svg)](https://microbadger.com/images/opsani/servox)
 
 Docker image for Opsani [ServoX](https://github.com/opsani/servox).
 
@@ -12,6 +13,7 @@ connectors can be added by inheriting from the image and using
 ## Supported tags and respective `Dockerfile` links
 
 - [`latest`](https://github.com/opsani/servox/blob/main/Dockerfile)
+- [`edge`](https://github.com/opsani/servox/blob/main/Dockerfile)
 
 For other versions see [releases](https://github.com/opsani/servox/releases) on
 GitHub and the available [tags on Docker
@@ -49,13 +51,14 @@ attribute of their configuration class. See `servo schema` for details.
 To display help:
 
 ```bash
-docker run --rm -i opsani/servox servo --help
+docker run --rm -i opsani/servox --help
 ```
 
 Generating a config file:
 
 ```bash
-docker run --rm -i -v $(pwd):$(pwd) opsani/servox servo generate -f $(pwd)/servo.yaml
+docker run --rm -i -v $(pwd):$(pwd) opsani/servox \
+generate -f $(pwd)/servo.yaml
 ```
 
 Running a servo:
@@ -79,7 +82,7 @@ Running a servo:
 
 ```bash
 kubectl run servo --rm --attach --restart=Never --image="opsani/servox" -- \
-servo --optimizer example.com/app --token 123456 run
+--optimizer example.com/app --token 123456 run
 ```
 
 ## Usage in Docker Compose

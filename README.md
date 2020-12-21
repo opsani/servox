@@ -81,9 +81,11 @@ options under control. The init command will generate one for you.
 #### Displaying Info
 
 ```console
-# View the connectors
+# Display all available connectors
 ❯ servo connectors
 
+# Display instance specific info (requires configuration)
+❯ servo show connectors
 ❯ servo show events
 ❯ servo show components
 ❯ servo show metrics
@@ -267,21 +269,22 @@ class EventExample(servo.BaseConnector):
 The `event` decorator uses the parameters and return type of the decorated
 method to define the signature requirements for on event handlers registered
 against the event. The body of the decorated method must be `...`, `pass`, or an
-async generator that defines setup and tear-down behavior for on event handlers.
+async generator that yields `None` exactly once.
 
 The body of the decorated method can be used to define setup and tear-down
-activities around on event handlers. This allows for common set-up and tear-down
+activities around on event handlers. This allows for common setup and tear-down
 functionality to be defined by the event creator. This is achieved by
 implementing the body of the decorated method as an async generator that yields
 control to the on event handler:
 
 ```python
+from typing import AsyncIterator
 import servo
 
 
 class SetupAndTearDownExample(servo.BaseConnector):
     @servo.event()
-    async def trace(self, url: str) -> str:
+    async def trace(self, url: str) -> AsyncIterator[str]:
         print("Entering event handler...")
         yield
         print("Exited event handler.")
@@ -712,6 +715,23 @@ Pre-built Docker images are available on
 Docker Hub. The documentation for these images is available within this
 repository at [docs/README-DOCKER_HUB.md](docs/README-DOCKER_HUB.md).
 
+The latest release version is available under the `opsani/servox:latest` tag.
+The `main` development branch is published as the `opsani/servox:edge` tag.
+
+Docker images are built and published to Docker Hub via the
+[Docker GitHub Actions Workflow](.github/workflows/docker.yaml). The workflow
+builds branches, published releases, and the `main` integration branch. Pull
+Requests are not published to Docker Hub because as a publicly available
+repository it could become an attack vector.
+
+Git branches and Docker images have differing naming constraints that impact how
+tag names are computed. For example, Docker tags cannot contain slashes, which
+is a common practice for namespacing branches and tags in Git. As such, slashes
+are converted to hyphens when computing tag names for branches and tags. The
+full naming constraints on Docker image tags is covered in the [`docker
+tag`](https://docs.docker.com/engine/reference/commandline/tag/#extended-description)
+documentation.
+
 Pre-built images are built using BuildKit and can be used as the basis for very
 fast customized builds:
 
@@ -722,9 +742,15 @@ fast customized builds:
 ### Upgrading Python
 
 Python interpreter updates can be a bit annoying. The Poetry virtual environment
-will against the prior Python interpreter and you may find that running tests
-and commands will remain stuck to your previous interpreter, regardless of the
-version configured in `.python-version`.
+bundles an interpreter via a symlink when it is created. For example, when using
+`pyenv` to manage multiple interpreter versions, a virtual environment built
+under Python v3.8.6 might symlink `python` to
+`~/.pyenv/versions/3.8.6/bin/python`.
+
+If you update your interpreter version via the `.python-version` file and have
+an existing Poetry virtual environment, you will find that test runs and binary
+executions will remain "stuck" against the previously active interpretter
+version.
 
 To fix this, run `make clean-env` which will teardown and rebuild your Poetry
 virtual environment.
@@ -743,9 +769,9 @@ remote system components such as a Kubernetes cluster or Prometheus deployment.
 Integration tests require a [kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
 file at `tests/kubeconfig`.
 
-By convention, the integration testing cluster is named
-`servox-integration-tests` and the `make kubeconfig` task is provided to export
-the cluster details from your primary kubeconfig, ensuring isolation.
+By convention, the integration testing cluster is named `kubetest`
+and the `make kubeconfig` task is provided to export the cluster details
+from your primary kubeconfig, ensuring isolation.
 
 Interaction with the Kubernetes cluster is supported by the most excellent
 [kubetest](https://kubetest.readthedocs.io/en/latest/) library that provides

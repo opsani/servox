@@ -1,4 +1,5 @@
 IMAGE_NAME ?= "opsani/servox:edge"
+KUBETEST_CONTEXT ?= "kubetest"
 
 ifneq (,$(wildcard ./.env))
     include .env
@@ -86,9 +87,14 @@ lint: typecheck
 
 .PHONY: kubeconfig
 kubeconfig:
-	kubectl config view \
+	@kubectl config view \
     	--minify --flatten \
-		--context=servox-integration-tests > $(CURDIR)/tests/kubeconfig
+		> $(CURDIR)/tests/kubeconfig
+	@kubectl config rename-context \
+		--kubeconfig=$(CURDIR)/tests/kubeconfig \
+		$(shell kubectl config current-context) \
+		$(KUBETEST_CONTEXT)
+	@echo "Saved current kubeconfig context '$(shell kubectl config current-context)' as '$(KUBETEST_CONTEXT)' in tests/kubeconfig"
 
 .PHONY: test
 test:

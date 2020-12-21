@@ -824,9 +824,12 @@ class TestMemory:
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
+    @pytest.fixture(autouse=True)
+    def _wait_for_manifests(self, kube):
+        kube.wait_for_registered(timeout=30)
+
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
-        kube.wait_for_registered(timeout=30)
         return kube.namespace
 
     async def test_describe(self, config) -> None:
@@ -836,7 +839,7 @@ class TestKubernetesConnectorIntegration:
         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "512.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
-    async def test_adjust(self, config, adjustment):
+    async def test_adjust(self, config, adjustment, kube):
         connector = KubernetesConnector(config=config)
         description = await connector.adjust(descriptor_to_adjustments(adjustment))
         # TODO: I need a quick helper for testing adjustments

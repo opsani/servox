@@ -37,15 +37,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   in the assembly when running in multi-servo mode.
 - In multi-servo configurations, concurrency can be constrained via the new
   top-level `--limit` option.
+- Connector details for a particular servo instance can now be displayed via the
+   `servo show connectors` CLI command.
 
 ### Changed
 
 - The `__codename__` support has been generalized as `cryptonym` attribute for
   all connectors.
 - Version output now includes the cryptonym.
-- Updated Pydantic to v1.7.2
+- Updated Pydantic to v1.7.3
 - Updated httpx to v0.16.1
-- Updated orjson to v3.4.3
+- Updated orjson to v3.4.6
 - Updated the `servo.errors` module with numerous new error types.
 - The `servo.events.run_event_handlers` method now always returns a list of
   `EventResult` objects when `return_exceptions` is True. Exceptions are caught
@@ -67,6 +69,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - The Docker image entry point is now multi-servo aware.
 - Servos are now named. The default name is adopted from the Optimizer ID if
   one is not directly configured.
+- The top level `servo connectors` command now displays info about all available
+  connectors rather than those that are currently active. `servo show
+  connectors` now reports instance specific connector info.
 
 ### Removed
 

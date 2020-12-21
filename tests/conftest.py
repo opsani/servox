@@ -5,7 +5,7 @@ import os
 import random
 import string
 import pathlib
-from typing import AsyncIterator, AsyncGenerator, Iterator, List, Optional
+from typing import AsyncIterator, AsyncGenerator, Callable, Iterator, List, Optional
 
 import devtools
 import fastapi
@@ -234,14 +234,22 @@ def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.fixture(autouse=True)
-def run_in_clean_environment() -> None:
+def clean_environment() -> Callable[[None], None]:
     """Discard environment variables prefixed with `SERVO_` or `OPSANI`.
 
-    This fixture helps ensure test suite isolation from local development configuration.
+    This fixture helps ensure test suite isolation from local development
+    configuration (often set via a .env file).
+
+    Returns:
+        A callable that can be used to clean the environment on-demand.
     """
-    for key, value in os.environ.copy().items():
-        if key.startswith("SERVO_") or key.startswith("OPSANI_"):
-            os.environ.pop(key)
+    def _clean_environment():
+        for key, value in os.environ.copy().items():
+            if key.startswith("SERVO_") or key.startswith("OPSANI_"):
+                os.environ.pop(key)
+
+    _clean_environment()
+    return _clean_environment
 
 
 @pytest.fixture
@@ -252,9 +260,19 @@ def random_string() -> str:
 
 
 @pytest.fixture
-async def kubeconfig() -> str:
-    """Return the path to a kubeconfig file to use when running integraion tests."""
-    config_path = pathlib.Path(__file__).parents[0] / "kubeconfig"
+async def kubeconfig(request) -> str:
+    """Return the path to a kubeconfig file to use when running integraion tests.
+
+    To avoid inadvertantly interacting with clusters not explicitly configured
+    for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
+    """
+    config_opt = request.session.config.getoption('kube_config') or "tests/kubeconfig"
+    path = pathlib.Path(config_opt).expanduser()
+    config_path = (
+        path if path.is_absolute()
+        else request.session.config.rootpath.joinpath(path)
+    )
+
     if not config_path.exists():
         raise FileNotFoundError(
             f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
@@ -262,13 +280,9 @@ async def kubeconfig() -> str:
 
     return str(config_path)
 
-@pytest.fixture
-def kube_context(request) -> Optional[str]:
-    """Return the context to be used within the kubeconfig file or None to use the default."""
-    return request.session.config.getoption('kube_context')
 
 @pytest.fixture
-async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Optional[str]) -> None:
+async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optional[str]) -> None:
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import kubernetes_asyncio.config
     import logging
@@ -278,9 +292,10 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
     else:
         kubeconfig = kubeconfig or os.getenv("KUBECONFIG")
         if kubeconfig:
+            kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
             await kubernetes_asyncio.config.load_kube_config(
-                config_file=os.path.expandvars(os.path.expanduser(kubeconfig)),
-                context=kube_context,
+                config_file=os.path.expandvars(kubeconfig_path),
+                context=kubecontext,
             )
         else:
             log = logging.getLogger('kubetest')
@@ -292,6 +307,7 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kube_context: Opti
             raise FileNotFoundError(
                 f"kubeconfig file not found: configure a test cluster and add kubeconfig: {kubeconfig}"
             )
+
 
 @pytest.fixture()
 async def subprocess() -> tests.helpers.Subprocess:
@@ -340,6 +356,56 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
     yield servo_image
+
+
+### Kind
+# Depends on subprocessx. Libraries in the key of x. kowabunga. kareem. krush. ktest
+
+@pytest.fixture
+async def kind(request, subprocess, kubeconfig: str, kube_context: str) -> str:
+    """Run tests within a local kind cluster.
+
+    The cluster name is determined using the parametrized `kind_cluster` marker
+    or else uses "default".
+    """
+    cluster = "pytest-k8s"
+    marker = request.node.get_closest_marker("kind_cluster")
+    if marker:
+        assert len(marker.args) == 1, f"kind_cluster marker accepts a single argument but received: {repr(marker.args)}"
+        cluster = marker.args[0]
+
+    # Start kind and configure environment
+    # TODO: if we create it, we should delete it (with kubernetes_cluster() as foo:)
+    exit_code, _, _ = await subprocess(f"kind get clusters | grep {cluster} || kind create cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
+    if exit_code != 0:
+        raise RuntimeError(f"failed running kind: exited with status code {exit_code}")
+
+    # Yield the cluster name
+    try:
+        # FIXME: note sure what is up with this but kind is prefixing the cluster name
+        yield cluster
+
+    finally:
+        # TODO: add an option to not tear down the cluster
+        if not os.getenv("GITHUB_ACTIONS"):
+            exit_code, _, _ = await subprocess(f"kind delete cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
+            if exit_code != 0:
+                raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+
+            await subprocess(f"kubectl config --kubeconfig {kubeconfig} use-context {kube_context}", print_output=True)
+
+# TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
+# TODO: add markers for the image, cluster name.
+@pytest.fixture
+async def kind_servo_image(kind: str, servo_image: str, subprocess, kubeconfig: str) -> str:
+    """Asynchronously build a Docker image from the current working copy and load it into kind."""
+    # TODO: Figure out how to checksum this and skip it if possible
+    exit_code, _, _ = await subprocess(f"kind load docker-image --name {kind} {servo_image}", print_output=True)
+    if exit_code != 0:
+        raise RuntimeError(f"failed running kind: exited with status code {exit_code}")
+
+    yield servo_image
+
 
 @pytest.fixture()
 def random_duration() -> servo.Duration:
