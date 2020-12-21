@@ -152,7 +152,7 @@ class BaseQuery(pydantic.BaseModel, abc.ABC):
     base_url: pydantic.AnyHttpUrl
     metric: PrometheusMetric
     timeout: Optional[servo.Duration]
-    
+
     @property
     def query(self) -> str:
         """Return the PromQL query."""
@@ -185,7 +185,7 @@ class RangeQuery(BaseQuery):
     """Range queries return a matrix result of a time series of metrics across time."""
     start: datetime.datetime
     end: datetime.datetime
-    
+
     @property
     def step(self) -> servo.Duration:
         return self.metric.step
@@ -630,7 +630,7 @@ class PrometheusConnector(servo.BaseConnector):
                             raise ValueError(f"unknown metric absent value: {metric.absent}")
                 else:
                     self.logger.info(f"Metric '{absent_metric.name}' is present in Prometheus but returned an empty result set (query='{absent_metric.query}')")
-            
+
         return readings
 
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")
