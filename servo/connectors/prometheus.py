@@ -186,6 +186,12 @@ class RangeQuery(BaseQuery):
     start: datetime.datetime
     end: datetime.datetime
 
+    @pydantic.validator("end")
+    @classmethod
+    def _validate_range(cls, end, values) -> dict:
+        assert end > values["start"], "start time must be earlier than end time"
+        return end
+
     @property
     def step(self) -> servo.Duration:
         return self.metric.step
