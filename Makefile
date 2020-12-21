@@ -86,6 +86,10 @@ lint-docs:
 lint: typecheck
 	poetry run flakehell lint --count
 
+.PHONY: scan
+scan:
+	poetry run bandit -r servo
+
 .PHONY: test-kubeconfig
 test-kubeconfig:
 	@kubectl config view \
