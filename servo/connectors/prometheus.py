@@ -147,18 +147,28 @@ class PrometheusConfiguration(servo.BaseConfiguration):
         return f"{self.base_url}{API_PATH}"
 
 
-class BaseQuery(pydantic.BaseModel):
+class BaseQuery(pydantic.BaseModel, abc.ABC):
+    """BaseQuery models common behaviors across Prometheus query types."""
     base_url: pydantic.AnyHttpUrl
     metric: PrometheusMetric
     timeout: Optional[servo.Duration]
-
-
-class InstantQuery(BaseQuery):
-    time: Optional[datetime.datetime]
-
+    
     @property
     def query(self) -> str:
-        return self.metric.query
+        """Return the PromQL query."""
+        if self.metric.absent == Absent.zero:
+            return self.metric.query + " or on() vector(0)"
+        else:
+            return self.metric.query
+
+    @abc.abstractmethod
+    def url(self) -> str:
+        """Return the URL for executing the query."""
+        ...
+
+class InstantQuery(BaseQuery):
+    """Instant queries return a vector result reading metrics at a moment in time."""
+    time: Optional[datetime.datetime]
 
     @property
     def url(self) -> str:
@@ -172,16 +182,10 @@ class InstantQuery(BaseQuery):
 
 
 class RangeQuery(BaseQuery):
+    """Range queries return a matrix result of a time series of metrics across time."""
     start: datetime.datetime
     end: datetime.datetime
-
-    @property
-    def query(self) -> str:
-        if self.metric.absent == Absent.zero:
-            return self.metric.query + " or on() vector(0)"
-        else:
-            return self.metric.query
-
+    
     @property
     def step(self) -> servo.Duration:
         return self.metric.step
@@ -563,8 +567,8 @@ class PrometheusConnector(servo.BaseConnector):
                     return Response(query=request, **response.json())
                 except (
                     httpx.HTTPError,
-                    httpcore._exceptions.ReadTimeout,
-                    httpcore._exceptions.ConnectError,
+                    httpx.ReadTimeout,
+                    httpx.ConnectError,
                 ) as error:
                     self.logger.trace(
                         f"HTTP error encountered during GET {request.url}: {error}"
@@ -579,87 +583,55 @@ class PrometheusConnector(servo.BaseConnector):
         response.raise_for_error()
 
         readings = []
-        for result in response.data:
-            if response.data.is_vector:
-                readings.append(
-                    _time_series_from_response_vector(response, result)
-                )
-            elif response.data.is_value:
-                readings.append(
-                    _data_point_from_response_value(response, result)
-                )
+        if response.data:
+            for result in response.data:
+                if response.data.is_vector:
+                    readings.append(
+                        _time_series_from_response_vector(response, result)
+                    )
+                elif response.data.is_value:
+                    readings.append(
+                        _data_point_from_response_value(response, result)
+                    )
+                else:
+                    raise TypeError(f"unknown Result type '{result.__class__.name}' encountered")
+        else:
+            # Handle absent metric cases
+            if metric.absent == Absent.ignore:
+                pass
+            elif metric.absent == Absent.zero:
+                # Handled in BaseQuery by appending to the query
+                pass
             else:
-                raise TypeError(f"unknown Result type '{result.__class__.name}' encountered")
-
+                # Determine if the metric is actually absent or just returned an empty result set
+                absent_metric = metric.copy()
+                absent_metric.query = f"absent({metric.query})"
+                absent_query = InstantQuery(
+                    base_url=self.config.api_url, metric=absent_metric
+                )
+                absent_results = await _query(absent_query)
+                self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_results}")
+                if absent_results.data:
+                    if absent_results.data.type != servo.connectors.prometheus.ResultType.vector:
+                        raise TypeError(f"expected a vector result but found {absent_results.data.type}")
+                    if len(absent_results.data) != 1:
+                        raise ValueError(f"expected a single result vector but found {len(absent_results.data)}")
+                    absent_result = next(iter(absent_results.data))
+                    absent = int(absent_result.value[1]) == 1
+                    if absent:
+                        if metric.absent == Absent.warn:
+                            self.logger.warning(
+                                f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
+                            )
+                        elif metric.absent == Absent.fail:
+                            self.logger.error(f"Required metric '{absent_metric.name}' is absent from Prometheus (query='{absent_metric.query}')")
+                            raise RuntimeError(f"Required metric '{absent_metric.name}' is absent from Prometheus")
+                        else:
+                            raise ValueError(f"unknown metric absent value: {metric.absent}")
+                else:
+                    self.logger.info(f"Metric '{absent_metric.name}' is present in Prometheus but returned an empty result set (query='{absent_metric.query}')")
+            
         return readings
-
-        # if response.type == ResultType.matrix:
-        #     if not response.values:
-        #         if metric.absent == Absent.ignore:
-        #             pass
-        #         elif metric.absent == Absent.zero:
-        #             # Handled in RangeQuery
-        #             pass
-        #         else:
-        # TODO: this needs to be revised
-        #             # Check for an absent metric
-        #             absent_metric = metric.copy()
-        #             absent_metric.query = f"absent({metric.query})"
-        #             absent_query = InstantQuery(
-        #                 base_url=self.config.api_url, metric=absent_metric
-        #             )
-        #             absent_result = await _query(absent_query)
-        #             self.logger.debug(f"Absent metric introspection returned {absent_metric}: {absent_result}")
-
-        #             # TODO: this is brittle...
-        #             # [{'metric': {}, 'value': [1607078958.682, '1']}]
-        #             absent = int(absent_result.value) == 1
-        #             if absent:
-        #                 if metric.absent == Absent.warn:
-        #                     self.logger.warning(
-        #                         f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}"
-        #                     )
-        #                 elif metric.absent == Absent.fail:
-        #                     raise RuntimeError(f"Found absent metric for query (`{absent_metric.query}`): {absent_query.url}")
-        #                 else:
-        #                     raise ValueError(f"unknown metric absent value: {metric.absent}")
-        #     else:
-
-        #         readings.append(
-        #             servo.TimeSeries(
-        #                 metric=metric,
-        #                 annotation=annotation,
-        #                 values=result.values,
-        #                 id=f"{{instance={instance},job={job}}}",
-        #                 metadata=dict(instance=instance, job=job),
-        #             )
-        #         )
-        # else:
-            # ...
-            # debug(result)
-            # debug("HOLY SHIT REUSLT METRIC", result.metric)
-            # TODO: This should not be necessary...
-            # for result_dict in result.data["result"]:
-            #     m_ = result_dict["metric"].copy()
-            #     # NOTE: Unpack "metrics" subdict and pack into a string
-            #     if "__name__" in m_:
-            #         del m_["__name__"]
-            #     instance = m_.get("instance")
-            #     job = m_.get("job")
-            #     annotation = " ".join(
-            #         map(lambda m: "=".join(m), sorted(m_.items(), key=lambda m: m[0]))
-            #     )
-            #     readings.append(
-            #         servo.TimeSeries(
-            #             metric=metric,
-            #             annotation=annotation,
-            #             values=result.values,
-            #             id=f"{{instance={instance},job={job}}}",
-            #             metadata=dict(instance=instance, job=job),
-            #         )
-            #
-        # return readings
-
 
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")
 

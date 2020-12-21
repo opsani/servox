@@ -411,6 +411,7 @@ class TestPrometheusChecks:
 # Querying for data that is partially null
 
 @pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "../manifests",
     files=[
@@ -492,6 +493,76 @@ class TestPrometheusIntegration:
                 timeout=240 # NOTE: Always make timeout exceed control duration
             )
             debug(measurement)
+    
+    async def test_range_query_empty_returns_zero_vector_in_matrix(
+        self, 
+        kube, 
+        kubernetes_asyncio_config, 
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        async with kube_port_forward("deploy/prometheus", 9090) as url:
+            import tabulate
+            
+            kube.wait_for_registered(timeout=30)
+            headers = ["MODE", "TIME", "VALUE"]
+            
+            query = servo.connectors.prometheus.RangeQuery(
+                base_url=url + "/api/v1/",
+                metric=PrometheusMetric(
+                    "invalid_metric",
+                    Unit.COUNT,
+                    query="envoy_cluster_upstream_rq_total",
+                    absent=servo.connectors.prometheus.Absent.ignore
+                ),
+                start=datetime.datetime.now() - Duration("3h"),
+                end=datetime.datetime.now(),
+            )
+            print(f"\n>>> Analayzing Prometheus Absent metrics policies for {query.metric.name} from {query.start} to {query.end}")
+            for absent in servo.connectors.prometheus.Absent:
+                print(f"\n>>> Building results for Absent data policy '{absent.name}'...")
+                rows = []
+                query.metric.absent = absent
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(query.url)
+                    assert response.status_code == 200
+                    result = response.json()
+                    assert result['status'] == 'success'
+                    assert result['data']['resultType'] == 'matrix'                    
+                    # assert len(result['data']['result']) == 1
+                    # vector = result['data']['result'][0]
+                    # assert vector['metric'] == {}
+                    # assert vector['values'][0][1] == '0'
+
+                    data = servo.connectors.prometheus.Data(**result['data'])
+                    print(f"Loaded {len(data)} results, processing...")
+                    for results in data:
+                        for result in results:
+                            rows.append([absent.name, result[0], result[1]])
+                    print(tabulate.tabulate(rows, headers, tablefmt="plain") + "\n")
+                
+
+    @pytest.mark.skip(reason="we may not want this at all")
+    async def test_instant_query_empty_returns_zero_vector(self) -> None:
+        query = servo.connectors.prometheus.InstantQuery(
+            base_url="http://localhost:9090/api/v1/",
+            metric=PrometheusMetric(
+                "envoy_cluster_upstream_rq_total",
+                Unit.COUNT,
+                query="envoy_cluster_upstream_rq_total",                    
+                absent=servo.connectors.prometheus.Absent.zero
+            ),
+        )
+        async with httpx.AsyncClient() as client:
+            response = await client.get(query.url)
+            assert response.status_code == 200
+            result = response.json()
+            assert result['status'] == 'success'
+            assert result['data']['resultType'] == 'vector'
+            assert len(result['data']['result']) == 1
+            vector = result['data']['result'][0]
+            assert vector['metric'] == {}
+            assert vector['value'][1] == '0'
+    
 
     # TODO: Test no traffic -- no k6, timeout at the end and return an empty measure set
     @pytest.mark.applymanifests(
@@ -1159,3 +1230,227 @@ def query(config):
         base_url=config.base_url,
         metric=metric
     )
+
+class TestAbsentMetrics:
+    @pytest.fixture
+    def empty_range_query_response(self) -> Dict:
+        """Returned for a range query that produces no results.
+        
+        It is ambiguous if this is due to the query constraints not matching
+        or if the metric doesn't exist.
+        """
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'matrix',
+                'result': [],
+            },
+        }
+    
+    @pytest.fixture
+    def empty_instant_query_response(self) -> Dict:
+        """Returned for an instant query that produces no results.
+        
+        It is ambiguous if this is due to the query constraints not matching
+        or if the metric doesn't exist.
+        """
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'vector',
+                'result': [],
+            },
+        }
+    
+    @pytest.fixture
+    def absent_metric_query_response(self) -> Dict:
+        """Returned by Prometheus from an absent(metric) query when the metric is absent."""
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'vector',
+                'result': [
+                    {
+                        'metric': {},
+                        'value': [
+                            1608522635.537,
+                            '1',
+                        ],
+                    },
+                ],
+            },
+        }
+    
+    @pytest.fixture
+    def present_metric_query_response(self) -> Dict:
+        """Returned by Prometheus from an absent(metric) query when the metric is present."""
+        return {
+            'status': 'success',
+            'data': {
+                'resultType': 'vector',
+                'result': [],
+            },
+        }
+    
+    @pytest.fixture
+    def connector(self) -> servo.connectors.prometheus.PrometheusConnector:
+        optimizer = servo.Optimizer(
+            id="dev.opsani.com/blake-ignite",
+            token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+        )
+        config = PrometheusConfiguration.generate(base_url='https://localhost:9090')
+        return PrometheusConnector(config=config, optimizer=optimizer)
+    
+    @pytest.fixture
+    def routes(self, 
+        empty_range_query_response, 
+        absent_metric_query_response,
+        present_metric_query_response,            
+    ) -> None:
+        respx.get(
+            "https://localhost:9090/api/v1/query_range", 
+            params={"query": "empty_metric"},
+            name="range_query_for_empty_metric"
+        ).mock(
+            return_value=httpx.Response(
+                status_code=200, 
+                json=empty_range_query_response
+            )
+        )
+        respx.get(
+            "https://localhost:9090/api/v1/query_range", 
+            params={"query": "empty_metric or on() vector(0)"},
+            name="range_query_for_empty_metric_or_zero_vector"
+        ).mock(
+            return_value=httpx.Response(
+                status_code=200, 
+                json=empty_range_query_response
+            )
+        )
+        
+    
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @respx.mock
+    async def test_that_empty_range_query_triggers_absent_check(
+        self, 
+        connector,        
+        absent,
+        routes,
+        absent_metric_query_response
+    ) -> None:
+        metric = PrometheusMetric(
+            "empty_metric",
+            Unit.COUNT,
+            query="empty_metric",
+            absent=absent
+        )
+        
+        respx.get(
+            "https://localhost:9090/api/v1/query", 
+            params={"query": "absent(empty_metric)"},
+            name="instant_query_for_absent_empty_metric"
+        ).mock(
+            return_value=httpx.Response(
+                status_code=200, 
+                json=absent_metric_query_response
+            )
+        )
+        
+        start = datetime.datetime.now()
+        end = start + Duration("36h")
+        
+        if absent == servo.connectors.prometheus.Absent.fail:
+            with pytest.raises(RuntimeError, match="Required metric 'empty_metric' is absent from Prometheus"):
+                await connector._query_prometheus(metric, start, end)
+            
+            assert respx.routes["range_query_for_empty_metric"].called
+            assert respx.routes["instant_query_for_absent_empty_metric"].called
+            
+        elif absent == servo.connectors.prometheus.Absent.zero:
+            debug("metric is ", metric, metric.query)
+            await connector._query_prometheus(metric, start, end)
+            
+            assert respx.routes["range_query_for_empty_metric_or_zero_vector"].called
+            assert not respx.routes["range_query_for_empty_metric"].called
+            assert not respx.routes["instant_query_for_absent_empty_metric"].called
+            
+        else:
+            time_series = await connector._query_prometheus(metric, start, end)
+            assert respx.routes["range_query_for_empty_metric"].called
+            
+            if absent == servo.connectors.prometheus.Absent.ignore:
+                assert not respx.routes["instant_query_for_absent_empty_metric"].called
+            elif absent == servo.connectors.prometheus.Absent.warn:
+                debug(respx.routes)
+                assert respx.routes["instant_query_for_absent_empty_metric"].called
+            else:
+                assert False, "unhandled case"
+    
+
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @respx.mock
+    async def test_that_present_metric_returns_empty_results(
+        self, 
+        connector, 
+        absent,
+        routes,
+        present_metric_query_response
+    ) -> None:
+        metric = PrometheusMetric(
+            "empty_metric",
+            Unit.COUNT,
+            query="empty_metric",
+            absent=absent
+        )
+        
+        respx.get(
+            "https://localhost:9090/api/v1/query", 
+            params={"query": "absent(empty_metric)"},
+            name="instant_query_for_absent_empty_metric"
+        ).mock(
+            return_value=httpx.Response(
+                status_code=200, 
+                json=present_metric_query_response
+            )
+        )
+        
+        metric.absent = absent
+        start = datetime.datetime.now()
+        end = start + Duration("36h")
+        
+        result = await connector._query_prometheus(metric, start, end)
+        if absent in {"zero", "ignore"}:            
+            assert respx.routes["range_query_for_empty_metric_or_zero_vector"]
+            assert not respx.routes["instant_query_for_absent_empty_metric"].called
+            assert result == []
+        else:
+            assert respx.routes["range_query_for_empty_metric"].called
+            assert respx.routes["instant_query_for_absent_empty_metric"].called
+            assert result == []
+    
+    class TestAbsentZero:
+        async def test_range_query_includes_or_on_vector(self) -> None:
+            query = servo.connectors.prometheus.RangeQuery(
+                base_url="http://localhost:9090/api/v1/",
+                metric=PrometheusMetric(
+                    "envoy_cluster_upstream_rq_total",
+                    Unit.COUNT,
+                    query="envoy_cluster_upstream_rq_total",                    
+                    absent=servo.connectors.prometheus.Absent.zero
+                ),
+                start=datetime.datetime.now(),
+                end=datetime.datetime.now() + Duration("36h"),
+            )
+            assert "or on() vector(0)" in query.url
+        
+        async def test_instant_query_includes_or_on_vector(self) -> None:
+            query = servo.connectors.prometheus.InstantQuery(
+                base_url="http://localhost:9090/api/v1/",
+                metric=PrometheusMetric(
+                    "envoy_cluster_upstream_rq_total",
+                    Unit.COUNT,
+                    query="envoy_cluster_upstream_rq_total",                    
+                    absent=servo.connectors.prometheus.Absent.zero
+                ),
+            )
+            assert query.url.endswith("or on() vector(0)")
