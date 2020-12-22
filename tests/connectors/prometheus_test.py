@@ -159,8 +159,7 @@ class TestPrometheusConfiguration:
 class TestPrometheusRequest:
     @freezegun.freeze_time("2020-01-01")
     def test_url(self):
-        request = RangeQuery(
-            base_url="http://prometheus.default.svc.cluster.local:9090/api/v1/",
+        query = RangeQuery(
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
             metric=PrometheusMetric(
@@ -169,9 +168,9 @@ class TestPrometheusRequest:
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
-        assert request.url, "request URL should not be nil"
+        assert query.url, "request URL should not be nil"
         assert (
-            request.url
+            query.url
             == "/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
 
@@ -329,13 +328,13 @@ class TestPrometheusChecks:
         request = mocked_api["query"]
         multichecks = await checks._expand_multichecks()
         check = await multichecks[0]()
-        assert request.called
         assert check
         assert check.name == 'Run query "throughput"'
         assert check.id == "check_queries_item_0"
         assert not check.critical
         assert check.success
         assert check.message == "returned 1 results"
+        assert request.called
 
     @pytest.mark.parametrize(
         "targets, success, message",
@@ -459,7 +458,6 @@ class TestPrometheusIntegration:
         kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-
         kube.wait_for_registered(timeout=30)
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             query = servo.connectors.prometheus.RangeQuery(
@@ -477,12 +475,6 @@ class TestPrometheusIntegration:
                 response = await client.get(query.url)
                 assert response.status_code == 200
                 result = response.json()
-                # assert result['status'] == 'success'
-                # assert result['data']['resultType'] == 'vector'
-                # assert len(result['data']['result']) == 1
-                # vector = result['data']['result'][0]
-                # assert vector['metric'] == {}
-                # assert vector['value'][1] == '0'
 
                 assert result['status'] == 'success'
                 assert result['data']['resultType'] == 'matrix'
@@ -539,16 +531,14 @@ class TestPrometheusIntegration:
     ) -> None:
         kube.wait_for_registered(timeout=30)
         async with kube_port_forward("deploy/prometheus", 9090) as url:
-            query = servo.connectors.prometheus.InstantQuery(
-                metric=PrometheusMetric(
-                    "invalid_metric",
-                    Unit.count,
-                    query="invalid_metric",
-                    absent=servo.connectors.prometheus.Absent.zero
-                ),
+            metric=PrometheusMetric(
+                "invalid_metric",
+                Unit.count,
+                query="invalid_metric",
+                absent=servo.connectors.prometheus.Absent.zero
             )
             client = servo.connectors.prometheus.Client(base_url=url)
-            response = await client.get_query(query)
+            response = await client.query(metric)
             response.raise_for_error()
             assert len(response.data) == 1
             assert response.data.is_vector

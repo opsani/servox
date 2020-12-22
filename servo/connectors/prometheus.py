@@ -69,9 +69,8 @@ class PrometheusMetric(servo.Metric):
             description=f'Run Prometheus query "{self.query}"',
         )
 
-
-class PrometheusTarget(pydantic.BaseModel):
-    """PrometheusTarget objects describe targets that are scraped by Prometheus jobs."""
+class Target(pydantic.BaseModel):
+    """Target objects describe targets that are scraped by Prometheus jobs."""
     pool: str = pydantic.Field(..., alias='scrapePool')
     url: str = pydantic.Field(..., alias='scrapeUrl')
     global_url: str = pydantic.Field(..., alias='globalUrl')
@@ -85,21 +84,31 @@ class PrometheusTarget(pydantic.BaseModel):
 
 class BaseQuery(pydantic.BaseModel, abc.ABC):
     """BaseQuery models common behaviors across Prometheus query types."""
-    metric: PrometheusMetric
-    timeout: Optional[servo.Duration]
-
-    @property
-    def query(self) -> str:
-        """Return the PromQL query."""
-        if self.metric.absent == Absent.zero:
-            return self.metric.query + " or on() vector(0)"
-        else:
-            return self.metric.query
+    query: str = None
+    timeout: Optional[servo.Duration] = None
+    metric: Optional[PrometheusMetric] = None
 
     @abc.abstractmethod
     def url(self) -> str:
         """Return the relative URL for executing the query."""
         ...
+
+    @property
+    def query(self) -> str:
+        _query = self.__dict__.get("query")
+        if self.metric.absent == Absent.zero:
+            return _query + " or on() vector(0)"
+
+        return _query
+
+    @pydantic.root_validator
+    @classmethod
+    def _default_query_from_metric(cls, values) -> Dict[str, Any]:
+        if not values.get("query"):
+            if metric := values.get("metric"):
+                values["query"] = metric.query
+
+        return values
 
 class InstantQuery(BaseQuery):
     """Instant queries return a vector result reading metrics at a moment in time."""
@@ -120,16 +129,22 @@ class RangeQuery(BaseQuery):
     """Range queries return a matrix result of a time series of metrics across time."""
     start: datetime.datetime
     end: datetime.datetime
+    step: servo.Duration = None
+
+    @pydantic.validator("step", pre=True, always=True)
+    @classmethod
+    def _default_step_from_metric(cls, step, values) -> str:
+        if step is None:
+            if metric := values.get("metric"):
+                return metric.step
+
+        return step
 
     @pydantic.validator("end")
     @classmethod
     def _validate_range(cls, end, values) -> dict:
         assert end > values["start"], "start time must be earlier than end time"
         return end
-
-    @property
-    def step(self) -> servo.Duration:
-        return self.metric.step
 
     @property
     def url(self) -> str:
@@ -139,7 +154,7 @@ class RangeQuery(BaseQuery):
             + f"?query={self.query}"
             + f"&start={self.start.timestamp()}"
             + f"&end={self.end.timestamp()}"
-            + f"&step={self.metric.step}"
+            + f"&step={self.step}"
             + (f"&timeout={self.timeout}" if self.timeout else "")
         )
 
@@ -275,6 +290,17 @@ class Response(pydantic.BaseModel):
         if self.status == Status.error:
             raise RuntimeError(f"Prometheus query request failed with error '{self.error.type}': {self.error.messge}")
 
+
+class MetricResponse(Response):
+    """MetricResponse objects """
+    metric: PrometheusMetric
+
+    @pydantic.root_validator(pre=True)
+    def _init_metric_from_query(cls, values) -> Dict[str, Any]:
+        if query := values.get("query"):
+            values["metric"] = query.metric
+        return values
+
     def results(self) -> Optional[List[servo.Reading]]:
         """Return DataPoint or TimeSeries representations of the query results.
 
@@ -337,16 +363,39 @@ class Client(pydantic.BaseModel):
         """Return the full URL for accessing the Prometheus API."""
         return f"{self.base_url}{API_PATH}"
 
-    async def get_query(self, query: BaseQuery) -> Response:
-        """Run a query and return the response."""
+    async def query(
+        self,
+        promql: Union[str, PrometheusMetric],
+        time: Optional[datetime.datetime] = None,
+        *,
+        timeout: Optional[servo.DurationDescriptor] = None,
+    ) -> Response:
+        """Run an instant query and return the response."""
+        if isinstance(promql, PrometheusMetric):
+            query = InstantQuery(
+                query=promql.query,
+                time=time,
+                metric=promql
+            )
+            response_type = MetricResponse
+        elif isinstance(promql, str):
+            query = InstantQuery(
+                query=promql,
+                time=time,
+            )
+            response_type = Response
+        else:
+            raise TypeError(f"unknown type")
+
         servo.logger.trace(
-            f"Querying Prometheus (`{query.metric.query}`): {query.url}"
+            f"Querying Prometheus (`{query}`): {query.url}"
         )
+
         async with httpx.AsyncClient(base_url=self.api_url) as client:
             try:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                return Response(query=query, **response.json())
+                return response_type(query=query, **response.json())
             except (
                 httpx.HTTPError,
                 httpx.ReadTimeout,
@@ -357,31 +406,67 @@ class Client(pydantic.BaseModel):
                 )
                 raise
 
-    async def get_targets(self) -> List[PrometheusTarget]:
+    async def query_range(
+        self,
+        promql: Union[str, PrometheusMetric],
+        start: datetime.datetime,
+        end: datetime.datetime,
+        step: servo.Duration = None,
+        *,
+        timeout: Optional[servo.DurationDescriptor] = None,
+    ) -> Response:
+        """Query for a matrix of time series results."""
+        if isinstance(promql, PrometheusMetric):
+            query = RangeQuery(
+                query=promql.query,
+                start=start,
+                end=end,
+                step=step or promql.step,
+                metric=promql
+            )
+            response_type = MetricResponse
+        elif isinstance(promql, str):
+            query = RangeQuery(
+                query=promql,
+                start=start,
+                end=end,
+                step=step
+            )
+            response_type = Response
+        else:
+            raise TypeError(f"unknown type")
+
+        servo.logger.trace(
+            f"Querying Prometheus (`{query}`): {query.url}"
+        )
+
+        async with httpx.AsyncClient(base_url=self.api_url) as client:
+            try:
+                response = await client.get(query.url)
+                response.raise_for_status()
+                return response_type(query=query, **response.json())
+            except (
+                httpx.HTTPError,
+                httpx.ReadTimeout,
+                httpx.ConnectError,
+            ) as error:
+                self.logger.trace(
+                    f"HTTP error encountered during GET {query.url}: {error}"
+                )
+                raise
+
+    async def get_targets(self) -> List[Target]:
         """Return a list of targets being scraped by Prometheus."""
         async with httpx.AsyncClient(base_url=self.api_url) as client:
             response = await client.get("/targets")
             response.raise_for_status()
-            return pydantic.parse_obj_as(List[PrometheusTarget], response.json()['data']['activeTargets'])
-
-    # get_range_query, get_metric_query
-    async def get_instant_query(
-        promql: str,
-        *,
-        time: Optional[datetime.datetime] = None,
-        timeout: Optional[servo.Duration] = None,
-        start: Optional[datetime.datetime] = None,
-        end: Optional[datetime.datetime] = None,
-        step: Optional[str] = None,
-    ):
-        """Run an adhoc query and return the results."""
-        ...
+            return pydantic.parse_obj_as(List[Target], response.json()['data']['activeTargets'])
 
     async def check_for_absent_metric(self, metric: PrometheusMetric) -> bool:
         # Determine if the metric is actually absent or just returned an empty result set
         absent_metric = metric.copy()
         absent_metric.query = f"absent({metric.query})"
-        response = await self.get_query(InstantQuery(metric=absent_metric))
+        response = await self.query(absent_metric)
         servo.logger.debug(f"Absent metric introspection returned {absent_metric}: {response}")
         if response.data:
             if response.data.type != servo.connectors.prometheus.ResultType.vector:
@@ -414,7 +499,7 @@ class PrometheusConfiguration(servo.BaseConfiguration):
     Metrics must include a valid query.
     """
 
-    targets: Optional[List[PrometheusTarget]]
+    targets: Optional[List[Target]]
     """An optional set of Prometheus target descriptors that are expected to be
     scraped by the Prometheus instance being queried.
     """
@@ -478,9 +563,7 @@ class PrometheusChecks(servo.BaseChecks):
             self.logger.trace(
                 f"Querying Prometheus (`{metric.query}`)"
             )
-            response = await self._client.get_query(
-                RangeQuery(metric=metric, start=start, end=end)
-            )
+            response = await self._client.query_range(metric, start, end)
             return f"returned {len(response.data)} results"
 
         return self.config.metrics, query_for_metric
@@ -651,7 +734,6 @@ class PrometheusConnector(servo.BaseConnector):
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prometheus(m, start, end), metrics__))
         )
-        debug("GATHERED READINGS: ", readings)
         all_readings = (
             functools.reduce(lambda x, y: x + y, readings) if readings else []
         )
@@ -667,14 +749,11 @@ class PrometheusConnector(servo.BaseConnector):
         self, metric: PrometheusMetric, start: datetime, end: datetime
     ) -> List[servo.TimeSeries]:
         client = Client(base_url=self.config.base_url)
-        response = await client.get_query(
-            RangeQuery(metric=metric, start=start, end=end)
-        )
+        response = await client.query_range(metric, start, end)
         self.logger.trace(f"Got response data type {response.__class__} for metric {metric}: {response}")
         response.raise_for_error()
 
         if response.data:
-            debug("data is there")
             return response.results()
         else:
             # Handle absent metric cases
