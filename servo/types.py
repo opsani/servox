@@ -655,65 +655,60 @@ class TimeSeries(BaseModel):
 
     Attributes:
         metric: The metric that the time series was measured from.
-        data_points: The data points measured for the metric across moments in time.
         id: An optional identifier contextualizing the source of the time series
             among a set of peers (e.g., instance ID, IP address, etc).
-        description: An optional human readable description about the time series.
+        annotation: An optional human readable description about the time series.
         metadata: An optional collection of arbitrary string key-value pairs that provides
             context about the time series (e.g., the total run time of the operation, the
             server from which the readings were taken, version info about the upstream
             metrics provider, etc.).
     """
     metric: Metric
-    data_points: List[DataPoint]
     id: Optional[str]
-    description: Optional[str]
+    annotation: Optional[str]
     metadata: Optional[Dict[str, str]]
+    _data_points: List[DataPoint] = pydantic.PrivateAttr()
 
     def __init__(
-        self, metric: Optional[Metric] = None, data_points: Optional[List[Tuple[datetime.datetime, float]]] = None, **kwargs
+        self, metric: Metric, data_points: List[DataPoint], **kwargs
     ) -> None: # noqa: D107
-        super().__init__(metric=metric, data_points=data_points, **kwargs)
-
-    @pydantic.validator("data_points")
-    @classmethod
-    def _sort_data_points(cls, data_points: List[DataPoint]) -> List[DataPoint]:
-        return(sorted(data_points, key=lambda p: p.time))
+        super().__init__(metric=metric, **kwargs)
+        self._data_points = sorted(data_points, key=lambda p: p.time)
 
     def __len__(self) -> int:
-        return len(self.data_points)
+        return len(self._data_points)
 
     def __iter__(self):
-        return iter(self.data_points)
+        return iter(self._data_points)
 
     def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
         if not isinstance(index, int):
             raise TypeError("values can only be retrieved by integer index")
-        return self.data_points[index]
+        return self._data_points[index]
 
     @property
     def min(self) -> Optional[DataPoint]:
         """Return the minimum data point in the series."""
-        return min(self.data_points, key=operator.itemgetter(1), default=None)
+        return min(self._data_points, key=operator.itemgetter(1), default=None)
 
     @property
     def max(self) -> Optional[DataPoint]:
         """Return the maximum data point in the series."""
-        return max(self.data_points, key=operator.itemgetter(1), default=None)
+        return max(self._data_points, key=operator.itemgetter(1), default=None)
 
     @property
     def timespan(self) -> Optional[Tuple[datetime.datetime, datetime.datetime]]:
         """Return a tuple of the earliest and latest times in the series."""
-        if self.data_points:
-            return (self.data_points[0].time, self.data_points[-1].time)
+        if self._data_points:
+            return (self._data_points[0].time, self._data_points[-1].time)
         else:
             return None
 
     @property
     def duration(self) -> Optional[Duration]:
         """Return a Duration object reflecting the time span of the series."""
-        if self.data_points:
-            return Duration(self.data_points[-1].time - self.data_points[0].time)
+        if self._data_points:
+            return Duration(self._data_points[-1].time - self._data_points[0].time)
         else:
             return None
 
@@ -1350,7 +1345,7 @@ class Measurement(BaseModel):
             expected_count = None
             for obj in value:
                 if isinstance(obj, TimeSeries):
-                    actual_count = len(obj.data_points)
+                    actual_count = len(obj._data_points)
                     if expected_count and actual_count != expected_count:
                         logger.warning(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
@@ -1371,7 +1366,7 @@ class Measurement(BaseModel):
                 }
 
                 # Fill the values with arrays of [timestamp, value] sampled from the reports
-                for date, value in reading.data_points:
+                for date, value in reading._data_points:
                     data["values"][0]["data"].append([int(date.timestamp()), value])
 
                 readings[reading.metric.name] = data

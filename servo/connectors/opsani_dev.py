@@ -453,7 +453,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise NotImplementedError(f"unexpected metric: {metric.name}")
                 else:
                     # Empty data indicates an absent metric
-                    # TODO: Use PrometheusClient to check for absent metric
+                    # TODO: Use Client to check for absent metric
                     if metric.name == "main_request_rate":
                         raise ValueError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
                     elif metric.name == "main_error_rate":

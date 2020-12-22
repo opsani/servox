@@ -268,20 +268,14 @@ class TestMeasurement:
         Measurement(readings=[])
 
     def test_accepts_empty_time_series(self, metric: Metric) -> None:
-        readings = [TimeSeries(metric=metric, data_points=[])]
+        readings = [TimeSeries(metric, [])]
         Measurement(readings=readings)
 
     @pytest.mark.xfail
     def test_rejects_mismatched_time_series_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(
-                metric=metric, values=[(datetime.now(), 1), (datetime.now(), 2)]
-            ),
-            TimeSeries(
-                metric=metric,
-                id="foo",
-                values=[(datetime.now(), 1), (datetime.now(), 2), (datetime.now(), 3)],
-            ),
+            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2)]),
+            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2), (datetime.now(), 3)], id="foo")
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)
@@ -294,9 +288,7 @@ class TestMeasurement:
     @pytest.mark.xfail
     def test_rejects_mixed_empty_and_nonempty_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(
-                metric=metric, values=[(datetime.now(), 1), (datetime.now(), 2)]
-            ),
+            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2)]),
             TimeSeries(metric=metric, data_points=[]),
         ]
         with pytest.raises(ValueError) as e:
@@ -309,13 +301,10 @@ class TestMeasurement:
 
     def test_rejects_mixed_types_of_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(
-                metric=metric,
-                data_points=[
-                    DataPoint(metric, datetime.now(), 1),
-                    DataPoint(metric, datetime.now(), 2),
-                ]
-            ),
+            TimeSeries(metric, [
+                DataPoint(metric, datetime.now(), 1),
+                DataPoint(metric, datetime.now(), 2),
+            ]),
             DataPoint(metric, datetime.now(), 123),
         ]
         with pytest.raises(ValueError) as e:
@@ -907,8 +896,8 @@ class TestTimeSeries:
         assert points[0].time > points[-1].time
         new_time_series = TimeSeries(time_series.metric, points)
         # validator will sort it back into time series
-        assert new_time_series.data_points == time_series.data_points
-        assert new_time_series.data_points[0].time < new_time_series.data_points[-1].time
+        assert new_time_series._data_points == time_series._data_points
+        assert new_time_series._data_points[0].time < new_time_series._data_points[-1].time
 
 class TestDataPoint:
     @pytest.fixture

@@ -20,6 +20,7 @@ from servo.connectors.prometheus import (
     PrometheusConnector,
     PrometheusMetric,
     RangeQuery,
+    Client
 )
 from servo.types import *
 
@@ -77,12 +78,6 @@ class TestPrometheusConfiguration:
                 "type": "type_error.none.not_allowed",
             } in error.errors()
 
-    def test_base_url_is_rstripped(self):
-        config = PrometheusConfiguration(
-            base_url="http://prometheus.io/some/path/", metrics=[]
-        )
-        assert config.base_url == "http://prometheus.io/some/path"
-
     def test_supports_localhost_url(self):
         config = PrometheusConfiguration(base_url="http://localhost:9090", metrics=[])
         assert config.base_url == "http://localhost:9090"
@@ -108,14 +103,6 @@ class TestPrometheusConfiguration:
                     },
                 },
             } in error.errors()
-
-    def test_api_url(self):
-        config = PrometheusConfiguration(
-            base_url="http://prometheus.default.svc.cluster.local:9090", metrics=[]
-        )
-        assert (
-            config.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
-        )
 
     # Metrics
     def test_metrics_required(self):
@@ -182,11 +169,10 @@ class TestPrometheusRequest:
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
-        assert request.base_url, "request base_url should not be nil"
         assert request.url, "request URL should not be nil"
         assert (
             request.url
-            == "http://prometheus.default.svc.cluster.local:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
+            == "/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
 
     @freezegun.freeze_time("2020-01-01")
@@ -205,7 +191,7 @@ class TestPrometheusRequest:
         assert request.url
         assert (
             request.url
-            == "http://localhost:9090/api/v1/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
+            == "/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
 
 
@@ -225,8 +211,7 @@ class TestPrometheusConnector:
     async def test_check(self) -> None:
         pass
 
-# @pytest.fixture
-def envoy_sidecars() -> dict:
+def targets_response_() -> dict:
     return {
         "status": "success",
         "data": {
@@ -234,35 +219,6 @@ def envoy_sidecars() -> dict:
                 {
                     "discoveredLabels": {
                         "__address__": "192.168.95.123:9901",
-                        "__meta_kubernetes_namespace": "default",
-                        "__meta_kubernetes_pod_annotation_kubectl_kubernetes_io_restartedAt": "2020-08-31T04:10:38-07:00",
-                        "__meta_kubernetes_pod_annotation_kubernetes_io_psp": "eks.privileged",
-                        "__meta_kubernetes_pod_annotation_prometheus_opsani_com_path": "/stats/prometheus",
-                        "__meta_kubernetes_pod_annotation_prometheus_opsani_com_port": "9901",
-                        "__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape": "true",
-                        "__meta_kubernetes_pod_annotationpresent_kubectl_kubernetes_io_restartedAt": "true",
-                        "__meta_kubernetes_pod_annotationpresent_kubernetes_io_psp": "true",
-                        "__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_path": "true",
-                        "__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_port": "true",
-                        "__meta_kubernetes_pod_annotationpresent_prometheus_opsani_com_scrape": "true",
-                        "__meta_kubernetes_pod_container_init": "false",
-                        "__meta_kubernetes_pod_container_name": "envoy",
-                        "__meta_kubernetes_pod_container_port_name": "metrics",
-                        "__meta_kubernetes_pod_container_port_number": "9901",
-                        "__meta_kubernetes_pod_container_port_protocol": "TCP",
-                        "__meta_kubernetes_pod_controller_kind": "ReplicaSet",
-                        "__meta_kubernetes_pod_controller_name": "web-6f756468f6",
-                        "__meta_kubernetes_pod_host_ip": "192.168.92.91",
-                        "__meta_kubernetes_pod_ip": "192.168.95.123",
-                        "__meta_kubernetes_pod_label_app": "web",
-                        "__meta_kubernetes_pod_label_pod_template_hash": "6f756468f6",
-                        "__meta_kubernetes_pod_labelpresent_app": "true",
-                        "__meta_kubernetes_pod_labelpresent_pod_template_hash": "true",
-                        "__meta_kubernetes_pod_name": "web-6f756468f6-w96f2",
-                        "__meta_kubernetes_pod_node_name": "ip-192-168-92-91.us-east-2.compute.internal",
-                        "__meta_kubernetes_pod_phase": "Running",
-                        "__meta_kubernetes_pod_ready": "true",
-                        "__meta_kubernetes_pod_uid": "c80a750c-773b-4c27-abe0-45d53a782781",
                         "__metrics_path__": "/metrics",
                         "__scheme__": "http",
                         "job": "opsani-envoy-sidecars",
@@ -285,6 +241,10 @@ def envoy_sidecars() -> dict:
         },
     }
 
+@pytest.fixture()
+def targets_response() -> dict:
+    return targets_response_()
+
 class TestPrometheusChecks:
     @pytest.fixture
     def metric(self) -> PrometheusMetric:
@@ -296,7 +256,7 @@ class TestPrometheusChecks:
         )
 
     @pytest.fixture
-    def go_memstats_gc_sys_bytes(self) -> dict:
+    def query_matrix_response(self) -> dict:
         return {
             "status": "success",
             "data": {
@@ -318,19 +278,19 @@ class TestPrometheusChecks:
         }
 
     @pytest.fixture
-    def mocked_api(self, go_memstats_gc_sys_bytes):
+    def mocked_api(self, query_matrix_response, targets_response):
         with respx.mock(
             base_url="http://localhost:9090", assert_all_called=False
         ) as respx_mock:
             respx_mock.get(
                 "/api/v1/targets",
                 name="targets"
-            ).mock(return_value=httpx.Response(200, json=[]))
+            ).mock(return_value=httpx.Response(200, json=targets_response))
 
             respx_mock.get(
                 re.compile(r"/api/v1/query_range.+"),
                 name="query",
-            ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
+            ).mock(return_value=httpx.Response(200, json=query_matrix_response))
             yield respx_mock
 
     @pytest.fixture
@@ -343,13 +303,13 @@ class TestPrometheusChecks:
     async def test_check_base_url(self, mocked_api, checks) -> None:
         request = mocked_api["targets"]
         check = await checks.check_base_url()
-        assert request.called
         assert check
         assert check.name == 'Connect to "http://localhost:9090"'
         assert check.id == "check_base_url"
         assert check.critical
         assert check.success
         assert check.message is None
+        assert request.called
 
     async def test_check_base_url_failing(self, checks) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
@@ -375,7 +335,7 @@ class TestPrometheusChecks:
         assert check.id == "check_queries_item_0"
         assert not check.critical
         assert check.success
-        assert check.message == "returned 2 results"
+        assert check.message == "returned 1 results"
 
     @pytest.mark.parametrize(
         "targets, success, message",
@@ -385,7 +345,7 @@ class TestPrometheusChecks:
                 False,
                 "caught exception (AssertionError): no targets are being scraped by Prometheus",
             ),
-            (envoy_sidecars(), True, "found 1 targets"),
+            (targets_response_(), True, "found 1 targets"),
         ],
     )
     @respx.mock
@@ -393,13 +353,13 @@ class TestPrometheusChecks:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
             request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
             check = await checks.check_targets()
-            assert request.called
             assert check
             assert check.name == "Active targets"
             assert check.id == "check_targets"
             assert not check.critical
             assert check.success == success
             assert check.message == message
+            assert request.called
 
 
 ###
@@ -497,9 +457,41 @@ class TestPrometheusIntegration:
     async def test_range_query_empty_returns_zero_vector_in_matrix(
         self,
         kube,
-        kubernetes_asyncio_config,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
+
+        kube.wait_for_registered(timeout=30)
+        async with kube_port_forward("deploy/prometheus", 9090) as url:
+            query = servo.connectors.prometheus.RangeQuery(
+                base_url=url + "/api/v1/",
+                metric=PrometheusMetric(
+                    "invalid_metric",
+                    Unit.count,
+                    query="invalid_metric",
+                    start=datetime.datetime.now() - Duration("3h"),
+                    end=datetime.datetime.now(),
+                    absent=servo.connectors.prometheus.Absent.zero
+                ),
+            )
+            async with httpx.AsyncClient() as client:
+                response = await client.get(query.url)
+                assert response.status_code == 200
+                result = response.json()
+                # assert result['status'] == 'success'
+                # assert result['data']['resultType'] == 'vector'
+                # assert len(result['data']['result']) == 1
+                # vector = result['data']['result'][0]
+                # assert vector['metric'] == {}
+                # assert vector['value'][1] == '0'
+
+                assert result['status'] == 'success'
+                assert result['data']['resultType'] == 'matrix'
+                assert len(result['data']['result']) == 1
+                vector = result['data']['result'][0]
+                assert vector['metric'] == {}
+                assert vector['values'][0][1] == '0'
+
+
         async with kube_port_forward("deploy/servo", 9090) as url:
             import tabulate
 
@@ -540,29 +532,30 @@ class TestPrometheusIntegration:
                             rows.append([absent.name, result[0], result[1]])
                     print(tabulate.tabulate(rows, headers, tablefmt="plain") + "\n")
 
-
-    @pytest.mark.skip(reason="we may not want this at all")
-    async def test_instant_query_empty_returns_zero_vector(self) -> None:
-        query = servo.connectors.prometheus.InstantQuery(
-            base_url="http://localhost:9090/api/v1/",
-            metric=PrometheusMetric(
-                "envoy_cluster_upstream_rq_total",
-                Unit.count,
-                query="envoy_cluster_upstream_rq_total",
-                absent=servo.connectors.prometheus.Absent.zero
-            ),
-        )
-        async with httpx.AsyncClient() as client:
-            response = await client.get(query.url)
-            assert response.status_code == 200
-            result = response.json()
-            assert result['status'] == 'success'
-            assert result['data']['resultType'] == 'vector'
-            assert len(result['data']['result']) == 1
-            vector = result['data']['result'][0]
-            assert vector['metric'] == {}
-            assert vector['value'][1] == '0'
-
+    async def test_instant_query_empty_returns_zero_vector(
+        self,
+        kube,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+    ) -> None:
+        kube.wait_for_registered(timeout=30)
+        async with kube_port_forward("deploy/prometheus", 9090) as url:
+            query = servo.connectors.prometheus.InstantQuery(
+                metric=PrometheusMetric(
+                    "invalid_metric",
+                    Unit.count,
+                    query="invalid_metric",
+                    absent=servo.connectors.prometheus.Absent.zero
+                ),
+            )
+            client = servo.connectors.prometheus.Client(base_url=url)
+            response = await client.get_query(query)
+            response.raise_for_error()
+            assert len(response.data) == 1
+            assert response.data.is_vector
+            result = next(iter(response.data))
+            assert result
+            assert result.metric == {}
+            assert result.value[1] == 0.0
 
     # TODO: Test no traffic -- no k6, timeout at the end and return an empty measure set
     @pytest.mark.applymanifests(
@@ -667,6 +660,7 @@ class TestPrometheusIntegration:
                     ],
                 )
 
+                # TODO: Replace this with the load tester fixture
                 async def burst_traffic() -> None:
                     burst_until = datetime.datetime.now() + datetime.timedelta(seconds=45)
                     async with httpx.AsyncClient(base_url=fiber_url) as client:
@@ -744,10 +738,9 @@ class TestCLI:
             return PrometheusConnector(config=config)
 
         # TODO: This needs to be an integration test
-        def test_one_active_connector(self, optimizer_env: None, connector: PrometheusConnector, config: PrometheusConfiguration, servo_cli: servo.cli.ServoCLI, cli_runner: typer.testing.CliRunner, tmp_path: pathlib.Path) -> None:
+        def test_one_active_connector(self, targets_response, optimizer_env: None, connector: PrometheusConnector, config: PrometheusConfiguration, servo_cli: servo.cli.ServoCLI, cli_runner: typer.testing.CliRunner, tmp_path: pathlib.Path) -> None:
             with respx.mock(base_url="http://localhost:9090") as respx_mock:
-                targets = envoy_sidecars()
-                request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
+                request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets_response))
 
                 config_file = tmp_path / "servo.yaml"
                 import tests.helpers # TODO: Turn into fixtures!
@@ -792,11 +785,9 @@ class TestConnector:
     def connector(self, config: PrometheusConfiguration) -> PrometheusConnector:
         return PrometheusConnector(config=config)
 
-    # TODO: Wrap into parsing logic
-    async def test_one_active_connector(self, connector: PrometheusConnector) -> None:
+    async def test_one_active_connector(self, connector: PrometheusConnector, targets_response) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            targets = envoy_sidecars()
-            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(200, json=targets))
+            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(200, json=targets_response))
             targets = await connector.targets()
             assert request.called
             assert len(targets) == 1
@@ -1418,15 +1409,23 @@ class TestAbsentMetrics:
         start = datetime.datetime.now()
         end = start + Duration("36h")
 
-        result = await connector._query_prometheus(metric, start, end)
-        if absent in {"zero", "ignore"}:
-            assert respx.routes["range_query_for_empty_metric_or_zero_vector"]
-            assert not respx.routes["instant_query_for_absent_empty_metric"].called
-            assert result == []
-        else:
+        if absent == "fail":
+            with pytest.raises(RuntimeError, match="Required metric 'empty_metric' is absent from Prometheus"):
+                await connector._query_prometheus(metric, start, end)
+
             assert respx.routes["range_query_for_empty_metric"].called
             assert respx.routes["instant_query_for_absent_empty_metric"].called
-            assert result == []
+        else:
+            result = await connector._query_prometheus(metric, start, end)
+
+            if absent in {"zero", "ignore"}:
+                assert respx.routes["range_query_for_empty_metric_or_zero_vector"]
+                assert not respx.routes["instant_query_for_absent_empty_metric"].called
+                assert result == []
+            else:
+                assert respx.routes["range_query_for_empty_metric"].called
+                assert respx.routes["instant_query_for_absent_empty_metric"].called
+                assert result == []
 
     class TestAbsentZero:
         async def test_range_query_includes_or_on_vector(self) -> None:
@@ -1454,3 +1453,18 @@ class TestAbsentMetrics:
                 ),
             )
             assert query.url.endswith("or on() vector(0)")
+
+class TestClient:
+    def test_base_url_is_rstripped(self):
+        client = Client(
+            base_url="http://prometheus.io/some/path/"
+        )
+        assert client.base_url == "http://prometheus.io/some/path"
+
+    def test_api_url(self):
+        client = Client(
+            base_url="http://prometheus.default.svc.cluster.local:9090"
+        )
+        assert (
+            client.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
+        )
