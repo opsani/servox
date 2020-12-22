@@ -1615,9 +1615,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
                 must filter failure modes before calling the superclass implementation.
         """
         if mode == FailureMode.CRASH:
-            raise RuntimeError(
-                "an unrecoverable failure occurred while interacting with Kubernetes"
-            ) from error
+            self.logger.error("an unrecoverable failure occurred while interacting with Kubernetes")
+            raise error
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
@@ -1628,19 +1627,21 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
             elif mode == FailureMode.ROLLBACK:
                 await self.rollback(error)
-                return True
 
             elif mode == FailureMode.DESTROY:
                 await self.destroy(error)
-                return True
+            
+            else:
+                # Trap any new modes that need to be handled
+                raise NotImplementedError(
+                    f"missing error handler for failure mode '{mode}'"
+                ) from error
+
+            raise error # Always communicate errors to backend unless ignored
 
         except Exception as handler_error:
             raise handler_error from error
 
-        # Trap any new modes that need to be handled
-        raise NotImplementedError(
-            f"missing error handler for failure mode '{mode}'"
-        ) from error
 
     @abc.abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -1881,68 +1882,69 @@ class DeploymentOptimization(BaseOptimization):
             f"Using label_selector={self.deployment.label_selector}, resource_version={resource_version}"
         )
 
-        try:
-            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-                # NOTE: The timeout_seconds argument must be an int or the request will fail
-                v1 = kubernetes_asyncio.client.AppsV1Api(api)
-                async with kubernetes_asyncio.watch.Watch().stream(
-                    v1.list_namespaced_deployment,
-                    self.deployment.namespace,
-                    label_selector=self.deployment.label_selector,
-                    timeout_seconds=int(self.timeout.total_seconds()),
-                ) as stream:
-                    async for event in stream:
-                        # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
-                        # TODO: Create an enum...
-                        event_type, deployment = event["type"], event["object"]
-                        status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
+        success = False
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            # NOTE: The timeout_seconds argument must be an int or the request will fail
+            v1 = kubernetes_asyncio.client.AppsV1Api(api)
+            async with kubernetes_asyncio.watch.Watch().stream(
+                v1.list_namespaced_deployment,
+                self.deployment.namespace,
+                label_selector=self.deployment.label_selector,
+                timeout_seconds=int(self.timeout.total_seconds()),
+            ) as stream:
+                async for event in stream:
+                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                    # TODO: Create an enum...
+                    event_type, deployment = event["type"], event["object"]
+                    status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
 
+                    self.logger.debug(
+                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                    )
+
+                    if event_type == "ERROR":
+                        stream.stop()
+                        # FIXME: Not sure what types we expect here
+                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+
+                    # Check that the conditions aren't reporting a failure
+                    self._check_conditions(status.conditions)
+
+                    # Early events in the watch may be against previous generation
+                    if status.observed_generation == observed_generation:
                         self.logger.debug(
-                            f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                            "observed generation has not changed, continuing watch"
                         )
+                        continue
 
-                        if event_type == "ERROR":
-                            stream.stop()
-                            # FIXME: Not sure what types we expect here
-                            raise servo.AdjustmentRejectedError(reason=str(deployment))
+                    # Check the replica counts. Once available, updated, and ready match
+                    # our expected count and the unavailable count is zero we are rolled out
+                    if status.unavailable_replicas:
+                        self.logger.debug(
+                            "found unavailable replicas, continuing watch",
+                            status.unavailable_replicas,
+                        )
+                        continue
 
-                        # Check that the conditions aren't reporting a failure
-                        self._check_conditions(status.conditions)
+                    replica_counts = [
+                        status.replicas,
+                        status.available_replicas,
+                        status.ready_replicas,
+                        status.updated_replicas,
+                    ]
+                    if replica_counts.count(desired_replicas) == len(replica_counts):
+                        # We are done: all the counts match. Stop the watch and return
+                        self.logger.info("adjustment applied successfully", status)
+                        stream.stop()
+                        success = True
 
-                        # Early events in the watch may be against previous generation
-                        if status.observed_generation == observed_generation:
-                            self.logger.debug(
-                                "observed generation has not changed, continuing watch"
-                            )
-                            continue
+                    if await self.deployment.get_restart_count() > 0:
+                        raise servo.AdjustmentRejectedError(reason="unstable")
 
-                        # Check the replica counts. Once available, updated, and ready match
-                        # our expected count and the unavailable count is zero we are rolled out
-                        if status.unavailable_replicas:
-                            self.logger.debug(
-                                "found unavailable replicas, continuing watch",
-                                status.unavailable_replicas,
-                            )
-                            continue
-
-                        replica_counts = [
-                            status.replicas,
-                            status.available_replicas,
-                            status.ready_replicas,
-                            status.updated_replicas,
-                        ]
-                        if replica_counts.count(desired_replicas) == len(replica_counts):
-                            # We are done: all the counts match. Stop the watch and return
-                            self.logger.info("adjustment applied successfully", status)
-                            stream.stop()
-
-                        if await self.deployment.get_restart_count() > 0:
-                            raise servo.AdjustmentRejectedError(reason="unstable")
-
-        except asyncio.TimeoutError as error:
+        if success is False:
             raise servo.AdjustmentRejectedError(
                 reason="timed out waiting for Deployment to apply adjustment"
-            ) from error
+            )
 
         if await self.deployment.get_restart_count() > 0:
             # TODO: Return a string summary about the restarts (which pods bounced)
@@ -2353,7 +2355,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                         *list(map(lambda a: a.apply(), self.optimizations)),
                         return_exceptions=True,
                     ),
-                    timeout=timeout.total_seconds(),
+                    timeout=timeout.total_seconds() + 60, # allow sub-optimization timeouts to expire first
                 )
 
                 for result in results:

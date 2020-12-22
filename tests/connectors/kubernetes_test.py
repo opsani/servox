@@ -31,6 +31,7 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirements,
 )
+from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
 from tests.helpers import *
 
@@ -876,6 +877,34 @@ class TestKubernetesConnectorIntegration:
         debug(dep)
         # description = await connector.startup()
         # debug(description)
+
+##
+# Rejection Tests using modified deployment
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+@pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
+class TestKubernetesConnectorIntegrationUnreadyCmd:
+    @pytest.fixture(autouse=True)
+    def _wait_for_manifests(self, kube):
+        kube.wait_for_registered(timeout=30)
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    async def test_adjust_never_ready(self, config, adjustment, kube: kubetest.client.TestClient) -> None:
+        # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
+        config.timeout = "45s"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        with pytest.raises(AdjustmentRejectedError):
+            description = await connector.adjust([adjustment])
+            debug(description)
 
 
 async def test_apply_no_changes():
