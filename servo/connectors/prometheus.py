@@ -392,8 +392,8 @@ class PrometheusChecks(servo.BaseChecks):
     description="Prometheus Connector for Opsani",
     version="1.5.0",
     homepage="https://github.com/opsani/prometheus-connector",
-    license=servo.License.APACHE2,
-    maturity=servo.Maturity.STABLE,
+    license=servo.License.apache2,
+    maturity=servo.Maturity.stable,
 )
 class PrometheusConnector(servo.BaseConnector):
     """PrometheusConnector objects enable servo assemblies to capture
@@ -406,7 +406,7 @@ class PrometheusConnector(servo.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.CheckFilter] = None,
-        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
         """Checks that the configuration is valid and the connector can capture
         measurements from Prometheus.

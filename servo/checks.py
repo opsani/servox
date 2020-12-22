@@ -89,7 +89,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """An optional detailed description about the condition being checked.
     """
 
-    severity: ErrorSeverity = ErrorSeverity.COMMON
+    severity: ErrorSeverity = ErrorSeverity.common
     """The relative importance of the check determining failure handling.
     """
 
@@ -191,13 +191,13 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     def critical(self) -> bool:
         """Return a boolean value that indicates if the check is of critical severity.
         """
-        return self.severity == ErrorSeverity.CRITICAL
+        return self.severity == ErrorSeverity.critical
 
     @property
     def warning(self) -> bool:
         """Return a boolean value that indicates if the check is of warning severity.
         """
-        return self.severity == ErrorSeverity.WARNING
+        return self.severity == ErrorSeverity.warning
 
     @pydantic.validator("created_at", pre=True, always=True)
     @classmethod
@@ -239,7 +239,7 @@ def check(
     *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    severity: ErrorSeverity = ErrorSeverity.COMMON,
+    severity: ErrorSeverity = ErrorSeverity.common,
     tags: Optional[List[str]] = None,
 ) -> Callable[[CheckHandler], CheckRunner]:
     """
@@ -323,7 +323,7 @@ def require(
     for detailed information.
     """
     return check(
-        name, description=description, id=id, tags=tags, severity=ErrorSeverity.CRITICAL
+        name, description=description, id=id, tags=tags, severity=ErrorSeverity.critical
     )
 
 
@@ -341,7 +341,7 @@ def warn(
     for detailed information.
     """
     return check(
-        name, description=description, id=id, tags=tags, severity=ErrorSeverity.WARNING
+        name, description=description, id=id, tags=tags, severity=ErrorSeverity.warning
     )
 
 
@@ -480,7 +480,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         config: servo.configuration.BaseConfiguration,
         *,
         matching: Optional[CheckFilter] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
         **kwargs,
     ) -> List[Check]:
         """Run checks and return a list of Check objects reflecting the results.
@@ -503,7 +503,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         self,
         *,
         matching: Optional[CheckFilter] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
     ) -> List[Check]:
         """Run all checks matching a filter and return the results.
 
@@ -558,9 +558,9 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
             # halt the run if necessary
             if check.failed and halt_on:
                 if (
-                    halt_on == ErrorSeverity.WARNING
-                    or (halt_on == ErrorSeverity.COMMON and not check.warning)
-                    or (halt_on == ErrorSeverity.CRITICAL and check.critical)
+                    halt_on == ErrorSeverity.warning
+                    or (halt_on == ErrorSeverity.common and not check.warning)
+                    or (halt_on == ErrorSeverity.critical and check.critical)
                 ):
                     break
 
@@ -571,7 +571,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         *,
         id: Optional[str] = None,
         name: Optional[str] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
         skip_requirements: bool = False,
     ) -> Check:
         """Run a single check by id or name and returns the result.
@@ -932,7 +932,7 @@ def multicheck(
     base_name: str,
     *,
     description: Optional[str] = None,
-    severity: ErrorSeverity = ErrorSeverity.COMMON,
+    severity: ErrorSeverity = ErrorSeverity.common,
     tags: Optional[List[str]] = None,
 ) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
     """Expand a method into a sequence of checks from a returned iterable and

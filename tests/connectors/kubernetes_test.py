@@ -401,7 +401,7 @@ class TestDeploymentConfiguration:
             name="testing",
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
-            strategy=OptimizationStrategy.DEFAULT,
+            strategy=OptimizationStrategy.default,
         )
         assert config.yaml(exclude_unset=True) == (
             "name: testing\n"
@@ -418,7 +418,7 @@ class TestDeploymentConfiguration:
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
             strategy=DefaultOptimizationStrategyConfiguration(
-                type=OptimizationStrategy.DEFAULT
+                type=OptimizationStrategy.default
             ),
         )
         assert config.yaml(exclude_unset=True) == (
@@ -437,7 +437,7 @@ class TestDeploymentConfiguration:
             containers=[],
             replicas=servo.Replicas(min=1, max=4),
             strategy=CanaryOptimizationStrategyConfiguration(
-                type=OptimizationStrategy.CANARY, alias="tuning"
+                type=OptimizationStrategy.canary, alias="tuning"
             ),
         )
         assert config.yaml(exclude_unset=True) == (
@@ -464,7 +464,7 @@ class TestDeploymentConfiguration:
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
         assert isinstance(config.strategy, DefaultOptimizationStrategyConfiguration)
-        assert config.strategy.type == OptimizationStrategy.DEFAULT
+        assert config.strategy.type == OptimizationStrategy.default
 
     def test_strategy_object_canary_parsing(self) -> None:
         config_yaml = (
@@ -479,7 +479,7 @@ class TestDeploymentConfiguration:
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
-        assert config.strategy.type == OptimizationStrategy.CANARY
+        assert config.strategy.type == OptimizationStrategy.canary
         assert config.strategy.alias is None
 
     def test_strategy_object_canary_parsing_with_alias(self) -> None:
@@ -496,14 +496,14 @@ class TestDeploymentConfiguration:
         config_dict = yaml.load(config_yaml, Loader=yaml.FullLoader)
         config = DeploymentConfiguration.parse_obj(config_dict)
         assert isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
-        assert config.strategy.type == OptimizationStrategy.CANARY
+        assert config.strategy.type == OptimizationStrategy.canary
         assert config.strategy.alias == "tuning"
 
 
 class TestCanaryOptimization:
     @pytest.mark.xfail
     def test_to_components_default_name(self, config) -> None:
-        config.deployments[0].strategy = OptimizationStrategy.CANARY
+        config.deployments[0].strategy = OptimizationStrategy.canary
         optimization = CanaryOptimization.construct(
             name="fiber-http-deployment/opsani/fiber-http:latest-canary",
             target_deployment_config=config.deployments[0],
@@ -520,7 +520,7 @@ class TestCanaryOptimization:
     @pytest.mark.xfail
     def test_to_components_respects_aliases(self, config) -> None:
         config.deployments[0].strategy = CanaryOptimizationStrategyConfiguration(
-            type=OptimizationStrategy.CANARY, alias="tuning"
+            type=OptimizationStrategy.canary, alias="tuning"
         )
         config.deployments[0].containers[0].alias = "main"
         optimization = CanaryOptimization.construct(
@@ -534,9 +534,9 @@ class TestCanaryOptimization:
 
 def test_compare_strategy() -> None:
     config = CanaryOptimizationStrategyConfiguration(
-        type=OptimizationStrategy.CANARY, alias="tuning"
+        type=OptimizationStrategy.canary, alias="tuning"
     )
-    assert config == OptimizationStrategy.CANARY
+    assert config == OptimizationStrategy.canary
 
 
 class TestResourceRequirements:

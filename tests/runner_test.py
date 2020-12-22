@@ -165,7 +165,7 @@ async def test_hello(
 async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunner) -> None:
     connector = servo_runner.servo.get_connector("adjust")
     with servo.utilities.pydantic.extra(connector):
-        on_handler = connector.get_event_handlers("adjust", servo.events.Preposition.ON)[0]
+        on_handler = connector.get_event_handlers("adjust", servo.events.Preposition.on)[0]
         mock = mocker.patch.object(on_handler, "handler")
         mock.side_effect = servo.errors.AdjustmentRejectedError()
         await servo_runner.servo.startup()

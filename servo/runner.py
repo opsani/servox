@@ -49,7 +49,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.DESCRIBE)
+        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
@@ -63,7 +63,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
         aggregate_measurement = Measurement.construct()
         results: List[servo.EventResult] = await self.servo.dispatch_event(
-            servo.Events.MEASURE, metrics=param.metrics, control=param.control
+            servo.Events.measure, metrics=param.metrics, control=param.control
         )
         for result in results:
             measurement = result.value
@@ -80,7 +80,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.trace(devtools.pformat(adjustments))
 
         aggregate_description = Description.construct()
-        results = await self.servo.dispatch_event(servo.Events.ADJUST, adjustments)
+        results = await self.servo.dispatch_event(servo.Events.adjust, adjustments)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)

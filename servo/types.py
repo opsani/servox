@@ -93,9 +93,9 @@ class License(enum.Enum):
     """The License enumeration defines a set of licenses that describe the
     terms under which software components are released for use."""
 
-    MIT = "MIT"
-    APACHE2 = "Apache 2.0"
-    PROPRIETARY = "Proprietary"
+    mit = "MIT"
+    apache2 = "Apache 2.0"
+    proprietary = "Proprietary"
 
     @classmethod
     def from_str(cls, identifier: str) -> "License":
@@ -115,7 +115,7 @@ class Maturity(enum.Enum):
     """The Maturity enumeration defines a set of tiers that describe how mature
     and stable a software component is considered by its developers."""
 
-    EXPERIMENTAL = "Experimental"
+    experimental = "Experimental"
     """Experimental components are in an early state of development or are
     otherwise not fully supported by the developers.
 
@@ -123,7 +123,7 @@ class Maturity(enum.Enum):
     and deployment concerns may not yet be fully addressed.
     """
 
-    STABLE = "Stable"
+    stable = "Stable"
     """Stable components can be considered production ready and released under
     Semantic Versioning expectations.
 
@@ -131,7 +131,7 @@ class Maturity(enum.Enum):
     the developers and recommended for use in a production environment.
     """
 
-    ROBUST = "Robust"
+    robust = "Robust"
     """Robust components are fully mature, stable, well documented, and battle
     tested in a variety of production environments.
     """
@@ -1128,7 +1128,7 @@ class Replicas(RangeSetting):
 class InstanceTypeUnits(str, enum.Enum):
     """InstanceTypeUnits is an enumeration that defines sources of compute instances."""
 
-    EC2 = "ec2"
+    ec2 = "ec2"
 
 
 class InstanceType(EnumSetting):
@@ -1147,7 +1147,7 @@ class InstanceType(EnumSetting):
         description="Identifies the setting as an instance type enum setting.",
     )
     unit: InstanceTypeUnits = pydantic.Field(
-        InstanceTypeUnits.EC2,
+        InstanceTypeUnits.ec2,
         description="The unit of instance types identifying the provider.",
     )
 
@@ -1458,19 +1458,19 @@ class ErrorSeverity(str, enum.Enum):
     """ErrorSeverity is an enumeration the describes the severity of an error
     and establishes semantics about how it should be handled."""
 
-    WARNING = "warning"
+    warning = "warning"
     """Warnings are advisory and do not indicate an inability to operate. By
     default, warnings will not halt execution and emit actionable messages about
     potential problems.
     """
 
-    COMMON = "common"
+    common = "common"
     """Common errors are atomic failures that have no bearing on the outcome of
     other operatios. By default, errors are non-blocking and other available checks
     will be executed.
     """
 
-    CRITICAL = "critical"
+    critical = "critical"
     """Critical errors block the execution of dependent operations.
 
     Critical failures halt the execution of a sequence of checks that are part

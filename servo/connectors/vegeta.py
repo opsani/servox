@@ -27,8 +27,8 @@ METRICS = [
 
 
 class TargetFormat(str, enum.Enum):
-    HTTP = "http"
-    JSON = "json"
+    http = "http"
+    json = "json"
 
     def __str__(self):
         return self.value
@@ -96,7 +96,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
         description="Specifies the request rate per time unit to issue against the targets. Given in the format of request/time unit.",
     )
     format: TargetFormat = pydantic.Field(
-        TargetFormat.HTTP,
+        TargetFormat.http,
         description="Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta docs for details.",
     )
     target: Optional[str] = pydantic.Field(
@@ -185,7 +185,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
         else:
             raise ValueError(f"unknown field '{field.name}'")
 
-        if format == TargetFormat.HTTP:
+        if format == TargetFormat.http:
             # Scan through the targets and run basic heuristics
             # We don't validate ordering to avoid building a full parser
             count = 0
@@ -212,7 +212,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
             if count == 0:
                 raise ValueError(f"no targets found")
 
-        elif format == TargetFormat.JSON:
+        elif format == TargetFormat.json:
             try:
                 data = json.load(value_stream)
             except json.JSONDecodeError as e:
@@ -296,8 +296,8 @@ class VegetaChecks(servo.BaseChecks):
     description="Vegeta load testing connector",
     version="0.5.0",
     homepage="https://github.com/opsani/vegeta-connector",
-    license=servo.License.APACHE2,
-    maturity=servo.Maturity.STABLE,
+    license=servo.License.apache2,
+    maturity=servo.Maturity.stable,
 )
 class VegetaConnector(servo.BaseConnector):
     config: VegetaConfiguration
@@ -317,7 +317,7 @@ class VegetaConnector(servo.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.CheckFilter] = None,
-        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
         # Take the current config and run a 5 second check against it
         check_config = self.config.copy()

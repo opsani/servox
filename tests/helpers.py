@@ -55,7 +55,7 @@ class MeasureConnector(BaseConnector):
         metrics = await self.metrics()
         return Description(metrics=metrics)
 
-    @before_event(Events.MEASURE)
+    @before_event(Events.measure)
     def before_measure(self) -> None:
         pass
 
@@ -78,7 +78,7 @@ class MeasureConnector(BaseConnector):
             ]
         )
 
-    @after_event(Events.MEASURE)
+    @after_event(Events.measure)
     def after_measure(self, results: List[servo.events.EventResult]) -> None:
         pass
 

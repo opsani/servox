@@ -530,8 +530,8 @@ class OpsaniDevChecks(servo.BaseChecks):
     description="Run connectors in a specific formation",
     version="0.0.1",
     homepage="https://github.com/opsani/servox",
-    license=servo.License.APACHE2,
-    maturity=servo.Maturity.EXPERIMENTAL,
+    license=servo.License.apache2,
+    maturity=servo.Maturity.experimental,
 )
 class OpsaniDevConnector(servo.BaseConnector):
     """Opsani Dev is a turnkey solution for optimizing a single service."""
@@ -560,7 +560,7 @@ class OpsaniDevConnector(servo.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.CheckFilter],
-        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
         return await OpsaniDevChecks.run(
             self.config, matching=matching, halt_on=halt_on

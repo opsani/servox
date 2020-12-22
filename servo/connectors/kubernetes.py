@@ -2070,23 +2070,23 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-        if mode == FailureMode.CRASH:
+        if mode == FailureMode.crash:
             raise RuntimeError(
                 "an unrecoverable failure occurred while interacting with Kubernetes"
             ) from error
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
-            if mode == FailureMode.IGNORE:
+            if mode == FailureMode.ignore:
                 self.logger.warning(f"ignoring runtime error and continuing: {error}")
                 self.logger.opt(exception=error).exception("ignoring Kubernetes error")
                 return True
 
-            elif mode == FailureMode.ROLLBACK:
+            elif mode == FailureMode.rollback:
                 await self.rollback(error)
                 return True
 
-            elif mode == FailureMode.DESTROY:
+            elif mode == FailureMode.destroy:
                 await self.destroy(error)
                 return True
 
@@ -2516,10 +2516,10 @@ class CanaryOptimization(BaseOptimization):
         self.logger.info(f'destroyed canary Pod "{self.name}"')
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
-        if mode == FailureMode.ROLLBACK or mode == FailureMode.DESTROY:
+        if mode == FailureMode.rollback or mode == FailureMode.destroy:
             # Ensure that we chain any underlying exceptions that may occur
             try:
-                if mode == FailureMode.ROLLBACK:
+                if mode == FailureMode.rollback:
                     self.logger.warning(
                         f"cannot rollback a canary Pod: falling back to destroy: {error}"
                     )
@@ -2571,13 +2571,13 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         pod_tmpl_specs = {}
 
         for deployment_config in config.deployments:
-            if deployment_config.strategy == OptimizationStrategy.DEFAULT:
+            if deployment_config.strategy == OptimizationStrategy.default:
                 optimization = await DeploymentOptimization.create(
                     deployment_config, timeout=config.timeout
                 )
                 deployment = optimization.deployment
                 container = optimization.container
-            elif deployment_config.strategy == OptimizationStrategy.CANARY:
+            elif deployment_config.strategy == OptimizationStrategy.canary:
                 optimization = await CanaryOptimization.create(
                     deployment_config, timeout=config.timeout
                 )
@@ -2786,11 +2786,11 @@ class OptimizationStrategy(str, enum.Enum):
     OptimizationStrategy is an enumeration of the possible ways to perform optimization on a Kubernetes Deployment.
     """
 
-    DEFAULT = "default"
+    default = "default"
     """The default strategy directly applies adjustments to the target Deployment and its containers.
     """
 
-    CANARY = "canary"
+    canary = "canary"
     """The canary strategy creates a servo managed standalone canary Pod based on the target Deployment and makes
     adjustments to it instead of the Deployment itself.
     """
@@ -2809,11 +2809,11 @@ class BaseOptimizationStrategyConfiguration(pydantic.BaseModel):
 
 
 class DefaultOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
-    type = pydantic.Field(OptimizationStrategy.DEFAULT, const=True)
+    type = pydantic.Field(OptimizationStrategy.default, const=True)
 
 
 class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
-    type = pydantic.Field(OptimizationStrategy.CANARY, const=True)
+    type = pydantic.Field(OptimizationStrategy.canary, const=True)
     alias: Optional[ContainerTagName]
 
 
@@ -2822,10 +2822,10 @@ class FailureMode(str, enum.Enum):
     The FailureMode enumeration defines how to handle a failed adjustment of a Kubernetes resource.
     """
 
-    ROLLBACK = "rollback"
-    DESTROY = "destroy"
-    IGNORE = "ignore"
-    CRASH = "crash"
+    rollback = "rollback"
+    destroy = "destroy"
+    ignore = "ignore"
+    crash = "crash"
 
     @classmethod
     def options(cls) -> List[str]:
@@ -2886,7 +2886,7 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
-        FailureMode.CRASH,
+        FailureMode.crash,
         description=f"How to handle a failed adjustment. Options are: {servo.utilities.strings.join_to_series(list(FailureMode.__members__.values()))}",
     )
     timeout: Optional[servo.Duration] = pydantic.Field(
@@ -2908,7 +2908,7 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
 
     name: DNSSubdomainName
     containers: List[ContainerConfiguration]
-    strategy: StrategyTypes = OptimizationStrategy.DEFAULT
+    strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
 
 
@@ -3107,8 +3107,8 @@ class KubernetesChecks(servo.BaseChecks):
     description="Kubernetes adjust connector",
     version="1.5.0",
     homepage="https://github.com/opsani/kubernetes-connector",
-    license=servo.License.APACHE2,
-    maturity=servo.Maturity.STABLE,
+    license=servo.License.apache2,
+    maturity=servo.Maturity.stable,
 )
 class KubernetesConnector(servo.BaseConnector):
     config: KubernetesConfiguration
@@ -3130,7 +3130,7 @@ class KubernetesConnector(servo.BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
 
-    @servo.before_event(servo.Events.MEASURE)
+    @servo.before_event(servo.Events.measure)
     async def before_measure(self) -> None:
         # Build state before a measurement to ensure all necessary setup is done (e.g., canary is up)
         await KubernetesOptimizations.create(self.config)
@@ -3169,7 +3169,7 @@ class KubernetesConnector(servo.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.CheckFilter],
-        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.CRITICAL,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on

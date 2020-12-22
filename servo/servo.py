@@ -26,19 +26,19 @@ class Events(str, enum.Enum):
     """An enumeration of the names of standard events defined by the servo."""
 
     # Lifecycle events
-    STARTUP = "startup"
-    SHUTDOWN = "shutdown"
+    startup = "startup"
+    shutdown = "shutdown"
 
     # Informational events
-    METRICS = "metrics"
-    COMPONENTS = "components"
+    metrics = "metrics"
+    components = "components"
 
     # Operational events
-    CHECK = "check"
-    DESCRIBE = "describe"
-    MEASURE = "measure"
-    ADJUST = "adjust"
-    PROMOTE = "promote"
+    check = "check"
+    describe = "describe"
+    measure = "measure"
+    adjust = "adjust"
+    promote = "promote"
 
 
 class _EventDefinitions(Protocol):
@@ -48,25 +48,25 @@ class _EventDefinitions(Protocol):
     """
 
     # Lifecycle events
-    @servo.events.event(Events.STARTUP)
+    @servo.events.event(Events.startup)
     async def startup(self) -> None:
         ...
 
-    @servo.events.event(Events.SHUTDOWN)
+    @servo.events.event(Events.shutdown)
     async def shutdown(self) -> None:
         ...
 
     # Informational events
-    @servo.events.event(Events.METRICS)
+    @servo.events.event(Events.metrics)
     async def metrics(self) -> List[servo.types.Metric]:
         ...
 
-    @servo.events.event(Events.COMPONENTS)
+    @servo.events.event(Events.components)
     async def components(self) -> List[servo.types.Component]:
         ...
 
     # Operational events
-    @servo.events.event(Events.MEASURE)
+    @servo.events.event(Events.measure)
     async def measure(
         self,
         *,
@@ -77,21 +77,21 @@ class _EventDefinitions(Protocol):
             await asyncio.sleep(control.delay.total_seconds())
         yield
 
-    @servo.events.event(Events.CHECK)
+    @servo.events.event(Events.check)
     async def check(
         self,
         matching: Optional[servo.checks.CheckFilter],
         halt_on: Optional[
             servo.types.ErrorSeverity
-        ] = servo.types.ErrorSeverity.CRITICAL,
+        ] = servo.types.ErrorSeverity.critical,
     ) -> List[servo.checks.Check]:
         ...
 
-    @servo.events.event(Events.DESCRIBE)
+    @servo.events.event(Events.describe)
     async def describe(self) -> servo.types.Description:
         ...
 
-    @servo.events.event(Events.ADJUST)
+    @servo.events.event(Events.adjust)
     async def adjust(
         self,
         adjustments: List[servo.types.Adjustment],
@@ -99,7 +99,7 @@ class _EventDefinitions(Protocol):
     ) -> servo.types.Description:
         ...
 
-    @servo.events.event(Events.PROMOTE)
+    @servo.events.event(Events.promote)
     async def promote(self) -> None:
         ...
 
@@ -131,8 +131,8 @@ class ServoChecks(servo.checks.BaseChecks):
 @servo.connector.metadata(
     description="Continuous Optimization Orchestrator",
     homepage="https://opsani.com/",
-    maturity=servo.types.Maturity.ROBUST,
-    license=servo.types.License.APACHE2,
+    maturity=servo.types.Maturity.robust,
+    license=servo.types.License.apache2,
     version=servo.__version__,
     cryptonym=servo.__cryptonym__,
 )
@@ -220,11 +220,11 @@ class Servo(servo.connector.BaseConnector):
 
     async def startup(self):
         """Notify all active connectors that the servo is starting up."""
-        await self.dispatch_event(Events.STARTUP, _prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.startup, _prepositions=servo.events.Preposition.on)
 
     async def shutdown(self):
         """Notify all active connectors that the servo is shutting down."""
-        await self.dispatch_event(Events.SHUTDOWN, _prepositions=servo.events.Preposition.ON)
+        await self.dispatch_event(Events.shutdown, _prepositions=servo.events.Preposition.on)
 
     @property
     def all_connectors(self) -> List[servo.connector.BaseConnector]:
@@ -283,7 +283,7 @@ class Servo(servo.connector.BaseConnector):
             setattr(self.config, name, connector.config)
 
         await self.dispatch_event(
-            Events.STARTUP, include=[connector], _prepositions=servo.events.Preposition.ON
+            Events.startup, include=[connector], _prepositions=servo.events.Preposition.on
         )
 
     async def remove_connector(
@@ -312,7 +312,7 @@ class Servo(servo.connector.BaseConnector):
             )
 
         await self.dispatch_event(
-            Events.SHUTDOWN, include=[connector_], _prepositions=servo.events.Preposition.ON
+            Events.shutdown, include=[connector_], _prepositions=servo.events.Preposition.on
         )
 
         self.connectors.remove(connector_)
@@ -342,7 +342,7 @@ class Servo(servo.connector.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.checks.CheckFilter],
-        halt_on: Optional[servo.types.ErrorSeverity] = servo.types.ErrorSeverity.CRITICAL,
+        halt_on: Optional[servo.types.ErrorSeverity] = servo.types.ErrorSeverity.critical,
     ) -> List[servo.checks.Check]:
         """Check that the servo is ready to perform optimization.
 

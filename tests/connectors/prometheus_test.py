@@ -1434,7 +1434,7 @@ class TestAbsentMetrics:
                 base_url="http://localhost:9090/api/v1/",
                 metric=PrometheusMetric(
                     "envoy_cluster_upstream_rq_total",
-                    Unit.COUNT,
+                    Unit.count,
                     query="envoy_cluster_upstream_rq_total",
                     absent=servo.connectors.prometheus.Absent.zero
                 ),

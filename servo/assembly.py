@@ -160,7 +160,7 @@ class Assembly(pydantic.BaseModel):
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         prepositions: servo.events.Preposition = (
-            servo.events.Preposition.BEFORE | servo.events.Preposition.ON | servo.events.Preposition.AFTER
+            servo.events.Preposition.before | servo.events.Preposition.on | servo.events.Preposition.after
         ),
         return_exceptions: bool = False,
         **kwargs,
