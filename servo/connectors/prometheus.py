@@ -121,14 +121,14 @@ class PrometheusConfiguration(servo.BaseConfiguration):
                 metrics=[
                     PrometheusMetric(
                         "throughput",
-                        servo.Unit.REQUESTS_PER_SECOND,
+                        servo.Unit.requests_per_second,
                         query="rate(http_requests_total[5m])",
                         absent=Absent.zero,
                         step="1m",
                     ),
                     PrometheusMetric(
                         "error_rate",
-                        servo.Unit.PERCENTAGE,
+                        servo.Unit.percentage,
                         query="rate(errors[5m])",
                         absent=Absent.zero,
                         step="1m",
@@ -514,7 +514,7 @@ class PrometheusConnector(servo.BaseConnector):
                                 self.logger.success(progress.annotate(f"read updated `{target_metric.name}` metric value of {round(active_reading[1])}{target_metric.unit} ({delta_str}), awaiting {progress.settlement} before reporting"))
                                 progress.trigger()
                         else:
-                            self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].values)})")
+                            self.logger.debug(f"metric `{target_metric.name}` has not changed value, ignoring (reading={active_reading}, num_readings={len(throughput_readings[0].data_points)})")
                     else:
                         if active_reading:
                             # NOTE: If we had a value and fall back to zero it could be a burst

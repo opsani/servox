@@ -504,34 +504,49 @@ class EventProgress(BaseProgress):
         return 0.0
 
 class Unit(str, enum.Enum):
-    """The Unit enumeration defines a standard set of units of measure for
+    """Unit is an enumeration that defines a standard set of units of measure for
     optimizable metrics.
     """
 
-    BYTES = "bytes"
-    """Digital data size in bytes.
-    """
+    float = ""
+    """A generic floating point value."""
 
-    COUNT = "count"
+    int = ""
+    """A generic integer value."""
+
+    count = ""
     """An unsigned integer count of the number of times something has happened.
     """
 
-    REQUESTS_PER_MINUTE = "rpm"
-    """Application throughput in terms of requests processed per minute.
+    rate = ""
+    """The frequency of an event across a time interval.
     """
 
-    REQUESTS_PER_SECOND = "rps"
-    """Application throughput in terms of requests processed per second.
-    """
-
-    PERCENTAGE = "%"
+    percentage = "%"
     """A ratio of one value as compared to another (e.g., errors as compared to
 total requests processed).
     """
 
-    MILLISECONDS = "ms"
+    milliseconds = "ms"
     """A time value at millisecond resolution."""
 
+    bytes = "bytes"
+    """Digital data size in bytes.
+    """
+
+    requests_per_minute = "rpm"
+    """Application throughput in terms of requests processed per minute.
+    """
+
+    requests_per_second = "rps"
+    """Application throughput in terms of requests processed per second.
+    """
+
+    def __repr__(self) -> str:
+        if self.value:
+            return f"<{self.__class__.__name__}.{self.name}: {self.value}>"
+        else:
+            return f"{self.__class__.__name__}.{self.name}"
 
 class Metric(BaseModel):
     """Metric objects model optimizable value types in a specific Unit of measure.
@@ -567,8 +582,14 @@ class Metric(BaseModel):
 class DataPoint(BaseModel):
     """DataPoint objects model a scalar value reading of a Metric.
 
+    DataPoints are iterable and indexable and behave as tuple-like objects
+    of the form `(time, value)`. The metric attribute is omitted from
+    iteration and indexing to allow data point objects to be handled as
+    programmatically interchangeable with a tuple representation.
+
     Args:
         metric: The metric being measured.
+        time: The time that the value was read for the metric.
         value: The value that was read for the metric.
 
     Returns:
@@ -576,88 +597,125 @@ class DataPoint(BaseModel):
     """
 
     metric: Metric
-    """The metric being measured.
-    """
+    """The metric that the data point was measured from."""
+
+    time: datetime.datetime
+    """The time that the data point was measured."""
 
     value: float
-    """The value that was read for the metric.
-    """
+    """The value that was measured for the metric."""
 
-    measured_at: datetime.datetime = None
-    """The time that the data point was measured.
-    """
+    def __init__(self, metric: Metric, time: datetime.datetime, value: float, **kwargs) -> None: # noqa: D107
+        super().__init__(metric=metric, time=time, value=value, **kwargs)
 
-    def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
-        super().__init__(metric=metric, value=value, **kwargs)
+    def __iter__(self):
+        return iter((self.time, self.value))
 
-    @pydantic.validator("measured_at", pre=True, always=True)
-    def _initialize_measured_at(cls, v) -> datetime.datetime:
-        return v or datetime.datetime.now()
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("values can only be retrieved by integer index")
+        if index not in (0, 1):
+            raise KeyError(f"index out of bounds: {index} not in (0, 1)")
+        return operator.getitem((self.time, self.value), index)
+
+    @property
+    def unit(self) -> Unit:
+        """Return the unit of the measured value."""
+        return self.metric.unit
 
     def __str__(self) -> str:
-        return f"{self.value:.2f}{self.unit.value}"
+        return f"{self.metric.name}: {self.value:.2f}{self.unit.value} @ {self.time}"
 
+    def __repr__(self) -> str:
+        abbrv = f" ({self.unit.value})" if self.unit.value else ""
+        return f"DataPoint({self.metric.name}{abbrv}, ({self.time}, {self.value}))"
+
+class NormalizationPolicy(str, enum.Enum):
+    """NormalizationPolicy is an enumeration that describes how measurements
+    are normalized before being reported to the optimizer.
+
+    Members:
+        passthrough: Measurements are reported as is returned by the connectors
+            without applying any normalization routines.
+        intersect: Measurements are reduced to a common set of interesecting
+            time series data. Data points measured at times that do not have
+            data points across all time series in the measurement are dropped.
+        fill: Time series in the measurement are brought into alignment by
+    """
+    passthrough = "passthrough"
+    intersect = "intersect"
+    fill = "fill"
 
 class TimeSeries(BaseModel):
-    """TimeSeries objects represent a sequence of readings taken for a Metric
-    over a period of time.
-    """
+    """TimeSeries objects models a sequence of data points containing
+    measurements of a metric indexed in time order.
 
+    TimeSeries objects are iterable and indexable for convenience in accessing
+    the data points. Data points are sorted on init to ensure a time indexed order.
+
+    Attributes:
+        metric: The metric that the time series was measured from.
+        data_points: The data points measured for the metric across moments in time.
+        id: An optional identifier contextualizing the source of the time series
+            among a set of peers (e.g., instance ID, IP address, etc).
+        description: An optional human readable description about the time series.
+        metadata: An optional collection of arbitrary string key-value pairs that provides
+            context about the time series (e.g., the total run time of the operation, the
+            server from which the readings were taken, version info about the upstream
+            metrics provider, etc.).
+    """
     metric: Metric
-    """The metric being measured.
-    """
-
-    values: List[Tuple[datetime.datetime, float]]
-    """The values read for the metric at specific moments in time.
-    """
-    # TODO: Turn this into a named tuple of time, value... Reading?
-
-    annotation: Optional[str]
-    """An optional advisory annotation providing supplemental context
-    information about the time series.
-    """
-
+    data_points: List[DataPoint]
     id: Optional[str]
-    """An optional identifier contextualizing the source of the time series
-    among a set of peers.
-    """
-
-    metadata: Optional[Dict[str, Any]]
-    """An optional collection of arbitrary key-value metadata that provides
-    context about the time series (e.g., the total run time of the operation, the
-    server from which the readings were taken, version info about the upstream
-    metrics provider, etc.).
-    """
+    description: Optional[str]
+    metadata: Optional[Dict[str, str]]
 
     def __init__(
-        self, metric: Metric, values: List[Tuple[datetime.datetime, float]], **kwargs
+        self, metric: Optional[Metric] = None, data_points: Optional[List[Tuple[datetime.datetime, float]]] = None, **kwargs
     ) -> None: # noqa: D107
-        super().__init__(metric=metric, values=values, **kwargs)
+        super().__init__(metric=metric, data_points=data_points, **kwargs)
 
-    @pydantic.validator("values")
+    @pydantic.validator("data_points")
     @classmethod
-    def _sort_values(cls, values: List[Tuple[datetime.datetime, float]]) -> List[Tuple[datetime.datetime, float]]:
-        return(sorted(values, key=lambda x: x[0]))
+    def _sort_data_points(cls, data_points: List[DataPoint]) -> List[DataPoint]:
+        return(sorted(data_points, key=lambda p: p.time))
 
-    # TODO: Bolt down with test coverage. Maybe better names? _reading suffix?
-    def min(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return min(self.values, key=operator.itemgetter(1))
+    def __len__(self) -> int:
+        return len(self.data_points)
 
-    def max(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return max(self.values, key=operator.itemgetter(1), default=None)
+    def __iter__(self):
+        return iter(self.data_points)
 
-    def min(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return min(self.values, key=operator.itemgetter(1), default=None)
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("values can only be retrieved by integer index")
+        return self.data_points[index]
 
-    def first(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return next(iter(self.values), None)
+    @property
+    def min(self) -> Optional[DataPoint]:
+        """Return the minimum data point in the series."""
+        return min(self.data_points, key=operator.itemgetter(1), default=None)
 
-    def last(self) -> Optional[Tuple[datetime.datetime, float]]:
-        return next(reversed(self.values), None)
+    @property
+    def max(self) -> Optional[DataPoint]:
+        """Return the maximum data point in the series."""
+        return max(self.data_points, key=operator.itemgetter(1), default=None)
 
-    def any(self) -> bool:
-        return any(self.values)
+    @property
+    def timespan(self) -> Optional[Tuple[datetime.datetime, datetime.datetime]]:
+        """Return a tuple of the earliest and latest times in the series."""
+        if self.data_points:
+            return (self.data_points[0].time, self.data_points[-1].time)
+        else:
+            return None
 
+    @property
+    def duration(self) -> Optional[Duration]:
+        """Return a Duration object reflecting the time span of the series."""
+        if self.data_points:
+            return Duration(self.data_points[-1].time - self.data_points[0].time)
+        else:
+            return None
 
 
 Reading = Union[DataPoint, TimeSeries]
@@ -1292,7 +1350,7 @@ class Measurement(BaseModel):
             expected_count = None
             for obj in value:
                 if isinstance(obj, TimeSeries):
-                    actual_count = len(obj.values)
+                    actual_count = len(obj.data_points)
                     if expected_count and actual_count != expected_count:
                         logger.warning(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
@@ -1313,7 +1371,7 @@ class Measurement(BaseModel):
                 }
 
                 # Fill the values with arrays of [timestamp, value] sampled from the reports
-                for date, value in reading.values:
+                for date, value in reading.data_points:
                     data["values"][0]["data"].append([int(date.timestamp()), value])
 
                 readings[reading.metric.name] = data

@@ -84,62 +84,62 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             metrics=[
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_instance_count",
-                    servo.types.Unit.COUNT,
+                    servo.types.Unit.count,
                     query='sum(envoy_cluster_membership_healthy{opsani_role!="tuning"})',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_instance_count",
-                    servo.types.Unit.COUNT,
+                    servo.types.Unit.count,
                     query='envoy_cluster_membership_healthy{opsani_role="tuning"}',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_pod_avg_request_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "total_request_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query="sum(rate(envoy_cluster_upstream_rq_total[3m]))",
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_request_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_request_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m])',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_success_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[3m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_success_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
-                    servo.types.Unit.REQUESTS_PER_SECOND,
+                    servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
-                    servo.types.Unit.MILLISECONDS,
+                    servo.types.Unit.milliseconds,
                     query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p90_latency",
-                    servo.types.Unit.MILLISECONDS,
+                    servo.types.Unit.milliseconds,
                     query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
                 ),
             ],
@@ -409,13 +409,13 @@ class OpsaniDevChecks(servo.BaseChecks):
         metrics = [
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
-                servo.types.Unit.REQUESTS_PER_SECOND,
+                servo.types.Unit.requests_per_second,
                 query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[15s]))',
                 step="10s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "main_error_rate",
-                servo.types.Unit.REQUESTS_PER_SECOND,
+                servo.types.Unit.requests_per_second,
                 query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[15s]))',
                 step="10s"
             )
@@ -453,7 +453,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise NotImplementedError(f"unexpected metric: {metric.name}")
                 else:
                     # Empty data indicates an absent metric
-                    # TODO: can maybe pull this out once absent metrics are re-enabled
+                    # TODO: Use PrometheusClient to check for absent metric
                     if metric.name == "main_request_rate":
                         raise ValueError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
                     elif metric.name == "main_error_rate":
@@ -494,12 +494,12 @@ class OpsaniDevChecks(servo.BaseChecks):
         metrics = [
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
-                servo.types.Unit.REQUESTS_PER_SECOND,
+                servo.types.Unit.requests_per_second,
                 query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "tuning_request_rate",
-                servo.types.Unit.REQUESTS_PER_SECOND,
+                servo.types.Unit.requests_per_second,
                 query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])'
             ),
         ]

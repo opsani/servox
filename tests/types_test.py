@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta
 from typing import Optional, Union
 
+import freezegun
 import pytest
-from pydantic import StrictInt, create_model
+import pydantic
 
 from servo.types import (
     Adjustment,
     Control,
     DataPoint,
     Duration,
-    DurationProgress, EventProgress,
     InstanceTypeUnits,
     Measurement,
     Metric,
@@ -68,7 +68,7 @@ class TestDuration:
         assert Duration(73729440.0).__str__() == "2y4mm3d8h24m"
 
     def test_pydantic_schema(self) -> None:
-        model = create_model("duration_model", duration=(Duration, ...))
+        model = pydantic.create_model("duration_model", duration=(Duration, ...))
         schema = model.schema()
         assert schema["properties"]["duration"] == {
             "title": "Duration",
@@ -255,11 +255,11 @@ class TestEventProgress:
 class TestMeasurement:
     @pytest.fixture
     def metric(self) -> Metric:
-        return Metric("throughput", Unit.REQUESTS_PER_MINUTE)
+        return Metric("throughput", Unit.requests_per_minute)
 
     def test_rejects_empty_data_point(self, metric: Metric) -> None:
         with pytest.raises(ValueError) as e:
-            readings = [DataPoint(metric, None)]
+            readings = [DataPoint(metric, datetime.now(), None)]
             Measurement(readings=readings)
         assert e
         assert "none is not an allowed value" in str(e.value)
@@ -268,7 +268,7 @@ class TestMeasurement:
         Measurement(readings=[])
 
     def test_accepts_empty_time_series(self, metric: Metric) -> None:
-        readings = [TimeSeries(metric=metric, values=[])]
+        readings = [TimeSeries(metric=metric, data_points=[])]
         Measurement(readings=readings)
 
     @pytest.mark.xfail
@@ -297,7 +297,7 @@ class TestMeasurement:
             TimeSeries(
                 metric=metric, values=[(datetime.now(), 1), (datetime.now(), 2)]
             ),
-            TimeSeries(metric=metric, values=[]),
+            TimeSeries(metric=metric, data_points=[]),
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)
@@ -310,9 +310,13 @@ class TestMeasurement:
     def test_rejects_mixed_types_of_readings(self, metric: Metric) -> None:
         readings = [
             TimeSeries(
-                metric=metric, values=[(datetime.now(), 1), (datetime.now(), 2)]
+                metric=metric,
+                data_points=[
+                    DataPoint(metric, datetime.now(), 1),
+                    DataPoint(metric, datetime.now(), 2),
+                ]
             ),
-            DataPoint(metric=metric, value=123),
+            DataPoint(metric, datetime.now(), 123),
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)
@@ -817,7 +821,7 @@ class TestReplicas:
         self, field_name: str, required: bool, allow_none: bool
     ) -> None:
         field = Replicas.__fields__[field_name]
-        assert field.type_ == StrictInt
+        assert field.type_ == pydantic.StrictInt
         assert field.required == required
         assert field.allow_none == allow_none
 
@@ -858,3 +862,72 @@ class TestInstanceType:
         assert field.default == InstanceTypeUnits.EC2
         assert field.required == False
         assert field.allow_none == False
+
+class TestTimeSeries:
+    @pytest.fixture
+    @freezegun.freeze_time("2020-01-21 12:00:01", auto_tick_seconds=600)
+    def time_series(self) -> DataPoint:
+        metric = Metric("throughput", Unit.requests_per_minute)
+        values = (31337.0, 666.0, 187.0, 420.0, 69.0)
+        points = list(map(lambda v: DataPoint(metric, datetime.now(), v), values))
+        return TimeSeries(metric, points)
+
+    def test_len(self, time_series: TimeSeries) -> None:
+        assert len(time_series) == 5
+
+    def test_iteration(self, time_series: TimeSeries) -> None:
+        assert list(map(lambda p: repr(p), iter(time_series))) == [
+            "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))",
+            "DataPoint(throughput (rpm), (2020-01-21 12:10:01, 666.0))",
+            "DataPoint(throughput (rpm), (2020-01-21 12:20:01, 187.0))",
+            "DataPoint(throughput (rpm), (2020-01-21 12:30:01, 420.0))",
+            "DataPoint(throughput (rpm), (2020-01-21 12:40:01, 69.0))",
+        ]
+
+    def test_indexing(self, time_series: TimeSeries) -> None:
+        assert repr(time_series[2]) == "DataPoint(throughput (rpm), (2020-01-21 12:20:01, 187.0))"
+
+    def test_min(self, time_series: TimeSeries) -> None:
+        assert repr(time_series.min) == "DataPoint(throughput (rpm), (2020-01-21 12:40:01, 69.0))"
+
+    def test_max(self, time_series: TimeSeries) -> None:
+        assert repr(time_series.max) == "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))"
+
+    def test_timespan(self, time_series: TimeSeries) -> None:
+        assert time_series.timespan == (
+            datetime(2020, 1, 21, 12, 0, 1),
+            datetime(2020, 1, 21, 12, 40, 1)
+        )
+
+    def test_duration(self, time_series: TimeSeries) -> None:
+        assert time_series.duration == Duration('40m')
+
+    def test_sorting(self, time_series: TimeSeries) -> None:
+        points = list(reversed(time_series))
+        assert points[0].time > points[-1].time
+        new_time_series = TimeSeries(time_series.metric, points)
+        # validator will sort it back into time series
+        assert new_time_series.data_points == time_series.data_points
+        assert new_time_series.data_points[0].time < new_time_series.data_points[-1].time
+
+class TestDataPoint:
+    @pytest.fixture
+    @freezegun.freeze_time("2020-01-21 12:00:01")
+    def data_point(self) -> DataPoint:
+        metric = Metric("throughput", Unit.requests_per_minute)
+        return DataPoint(metric, datetime.now(), 31337.0)
+
+    def test_iteration(self, data_point: DataPoint) -> None:
+        assert tuple(iter(data_point)) == (datetime(2020, 1, 21, 12, 0, 1), 31337.0)
+
+    def test_indexing(self, data_point: DataPoint) -> None:
+        assert data_point[0] == datetime(2020, 1, 21, 12, 0, 1)
+        assert data_point[1] == 31337.0
+        with pytest.raises(KeyError, match='index out of bounds: 3 not in \\(0, 1\\)'):
+            data_point[3]
+
+    def test_str(self, data_point: DataPoint) -> None:
+        assert str(data_point) == 'throughput: 31337.00rpm @ 2020-01-21 12:00:01'
+
+    def test_repr(self, data_point: DataPoint) -> None:
+        assert repr(data_point) == "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))"

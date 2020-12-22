@@ -28,7 +28,7 @@ class TestPrometheusMetric:
     def test_accepts_step_as_duration(self):
         metric = PrometheusMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE,
+            unit=Unit.requests_per_minute,
             query="throughput",
             step="45m",
         )
@@ -37,7 +37,7 @@ class TestPrometheusMetric:
     def test_accepts_step_as_integer_of_seconds(self):
         metric = PrometheusMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE,
+            unit=Unit.requests_per_minute,
             query="throughput",
             step=180,
         )
@@ -48,7 +48,7 @@ class TestPrometheusMetric:
     def test_query_required(self):
         try:
             PrometheusMetric(
-                name="throughput", unit=Unit.REQUESTS_PER_MINUTE, query=None
+                name="throughput", unit=Unit.requests_per_minute, query=None
             )
         except pydantic.ValidationError as error:
             assert {
@@ -153,14 +153,14 @@ class TestPrometheusConfiguration:
             metrics=[
                 PrometheusMetric(
                     "throughput",
-                    servo.Unit.REQUESTS_PER_SECOND,
+                    servo.Unit.requests_per_second,
                     query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
                     absent=servo.connectors.prometheus.Absent.zero,
                     step="1m",
                 ),
                 PrometheusMetric(
                     "error_rate",
-                    servo.Unit.PERCENTAGE,
+                    servo.Unit.percentage,
                     query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
                     absent=servo.connectors.prometheus.Absent.zero,
                     step="1m",
@@ -178,7 +178,7 @@ class TestPrometheusRequest:
             end=datetime.datetime.now() + Duration("36h"),
             metric=PrometheusMetric(
                 "go_memstats_heap_inuse_bytes",
-                Unit.BYTES,
+                Unit.bytes,
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
@@ -197,7 +197,7 @@ class TestPrometheusRequest:
             end=datetime.datetime.now() + Duration("36h"),
             metric=PrometheusMetric(
                 "go_memstats_heap_inuse_bytes",
-                Unit.BYTES,
+                Unit.bytes,
                 query="go_memstats_heap_inuse_bytes",
             ),
         )
@@ -290,7 +290,7 @@ class TestPrometheusChecks:
     def metric(self) -> PrometheusMetric:
         return PrometheusMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE,
+            unit=Unit.requests_per_minute,
             query="throughput",
             step="45m",
         )
@@ -473,14 +473,14 @@ class TestPrometheusIntegration:
                 metrics=[
                     PrometheusMetric(
                         "throughput",
-                        servo.Unit.REQUESTS_PER_SECOND,
+                        servo.Unit.requests_per_second,
                         query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
                         # absent=servo.connectors.prometheus.Absent.zero,
                         step="15s",
                     ),
                     PrometheusMetric(
                         "error_rate",
-                        servo.Unit.PERCENTAGE,
+                        servo.Unit.percentage,
                         query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
                         # absent=servo.connectors.prometheus.Absent.zero,
                         step="1m",
@@ -500,7 +500,7 @@ class TestPrometheusIntegration:
         kubernetes_asyncio_config,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        async with kube_port_forward("deploy/prometheus", 9090) as url:
+        async with kube_port_forward("deploy/servo", 9090) as url:
             import tabulate
 
             kube.wait_for_registered(timeout=30)
@@ -510,7 +510,7 @@ class TestPrometheusIntegration:
                 base_url=url + "/api/v1/",
                 metric=PrometheusMetric(
                     "invalid_metric",
-                    Unit.COUNT,
+                    Unit.count,
                     query="envoy_cluster_upstream_rq_total",
                     absent=servo.connectors.prometheus.Absent.ignore
                 ),
@@ -547,7 +547,7 @@ class TestPrometheusIntegration:
             base_url="http://localhost:9090/api/v1/",
             metric=PrometheusMetric(
                 "envoy_cluster_upstream_rq_total",
-                Unit.COUNT,
+                Unit.count,
                 query="envoy_cluster_upstream_rq_total",
                 absent=servo.connectors.prometheus.Absent.zero
             ),
@@ -598,14 +598,14 @@ class TestPrometheusIntegration:
                     metrics=[
                         PrometheusMetric(
                             "throughput",
-                            servo.Unit.REQUESTS_PER_SECOND,
+                            servo.Unit.requests_per_second,
                             query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
                             # absent=servo.connectors.prometheus.Absent.zero,
                             step="15s",
                         ),
                         PrometheusMetric(
                             "error_rate",
-                            servo.Unit.PERCENTAGE,
+                            servo.Unit.percentage,
                             query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
                             # absent=servo.connectors.prometheus.Absent.zero,
                             step="10s",
@@ -654,13 +654,13 @@ class TestPrometheusIntegration:
                     metrics=[
                         PrometheusMetric(
                             "throughput",
-                            servo.Unit.REQUESTS_PER_SECOND,
+                            servo.Unit.requests_per_second,
                             query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
                             step="15s",
                         ),
                         PrometheusMetric(
                             "error_rate",
-                            servo.Unit.PERCENTAGE,
+                            servo.Unit.percentage,
                             query=f'sum(rate(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s]))',
                             step="15s",
                         ),
@@ -728,7 +728,7 @@ class TestCLI:
         def metric(self) -> PrometheusMetric:
             return PrometheusMetric(
                 name="test",
-                unit=Unit.REQUESTS_PER_MINUTE,
+                unit=Unit.requests_per_minute,
                 query="throughput",
                 step="45m",
             )
@@ -777,7 +777,7 @@ class TestConnector:
     def metric(self) -> PrometheusMetric:
         return PrometheusMetric(
             name="test",
-            unit=Unit.REQUESTS_PER_MINUTE,
+            unit=Unit.requests_per_minute,
             query="throughput",
             step="45m",
         )
@@ -1080,7 +1080,7 @@ class TestResponse:
         }
         metric = servo.connectors.prometheus.PrometheusMetric(
             "tuning_request_rate",
-            servo.types.Unit.REQUESTS_PER_SECOND,
+            servo.types.Unit.requests_per_second,
             query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
             step="10s"
         )
@@ -1195,14 +1195,14 @@ async def test_kubetest(
                 metrics=[
                     PrometheusMetric(
                         "throughput",
-                        servo.Unit.REQUESTS_PER_SECOND,
+                        servo.Unit.requests_per_second,
                         query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
                         # absent=servo.connectors.prometheus.Absent.zero,
                         step="15s",
                     ),
                     PrometheusMetric(
                         "error_rate",
-                        servo.Unit.PERCENTAGE,
+                        servo.Unit.percentage,
                         query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
                         # absent=servo.connectors.prometheus.Absent.zero,
                         step="10s",
@@ -1222,7 +1222,7 @@ async def test_kubetest(
 def query(config):
     metric = servo.connectors.prometheus.PrometheusMetric(
         "tuning_request_rate",
-        servo.types.Unit.REQUESTS_PER_SECOND,
+        servo.types.Unit.requests_per_second,
         query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
         step="10s"
     )
@@ -1340,7 +1340,7 @@ class TestAbsentMetrics:
     ) -> None:
         metric = PrometheusMetric(
             "empty_metric",
-            Unit.COUNT,
+            Unit.count,
             query="empty_metric",
             absent=absent
         )
@@ -1398,7 +1398,7 @@ class TestAbsentMetrics:
     ) -> None:
         metric = PrometheusMetric(
             "empty_metric",
-            Unit.COUNT,
+            Unit.count,
             query="empty_metric",
             absent=absent
         )
@@ -1448,7 +1448,7 @@ class TestAbsentMetrics:
                 base_url="http://localhost:9090/api/v1/",
                 metric=PrometheusMetric(
                     "envoy_cluster_upstream_rq_total",
-                    Unit.COUNT,
+                    Unit.count,
                     query="envoy_cluster_upstream_rq_total",
                     absent=servo.connectors.prometheus.Absent.zero
                 ),

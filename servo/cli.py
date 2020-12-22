@@ -1551,11 +1551,11 @@ class ServoCLI(CLI):
 
                         if isinstance(reading, servo.TimeSeries):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            for value_tuple in reading.values:
-                                time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
+                            for data_point in reading.data_points:
+                                time_key = f"{data_point[0]:%Y-%m-%d %H:%M:%S}"
                                 timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                                 values = timestamp_to_connector.get(result.connector, [])
-                                values.append((value_tuple[1], reading))
+                                values.append((data_point[1], reading))
                                 timestamp_to_connector[result.connector] = values
                                 metric_to_timestamp[time_key] = timestamp_to_connector
 
@@ -1563,7 +1563,7 @@ class ServoCLI(CLI):
 
                         elif isinstance(reading, servo.DataPoint):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            time_key = f"{reading.measured_at:%Y-%m-%d %H:%M:%S}"
+                            time_key = f"{reading.time:%Y-%m-%d %H:%M:%S}"
                             timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                             values = timestamp_to_connector.get(result.connector, [])
                             values.append((reading.value, reading))
@@ -1636,7 +1636,7 @@ class ServoCLI(CLI):
 
             if target.startswith("deploy"):
                 connector = context.servo.get_connector("kubernetes")
-                sync(connector.inject_sidecar(deployment=target, service=service, port=port))
+                run_async(connector.inject_sidecar(deployment=target, service=service, port=port))
 
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")

@@ -1459,7 +1459,7 @@ async def test_logging() -> None:
     _connector_context_var.set(connector)
     handler = ProgressHandler(connector.report_progress, lambda m: print(m))
     connector.logger.add(handler.sink)
-    args = dict(operation="ADJUST", started_at=datetime.now())
+    args = dict(operation="ADJUST", started_at=datetime.datetime.now())
     connector.logger.info("First", progress=0, **args)
     await asyncio.sleep(0.00001)
     connector.logger.info("Second", progress=25.0, **args)

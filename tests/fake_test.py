@@ -1,3 +1,4 @@
+import datetime
 import pathlib
 import random
 from typing import Optional, Union
@@ -50,9 +51,10 @@ def measurement() -> servo.Measurement:
         readings=[
             servo.DataPoint(
                 value=31337,
+                time=datetime.datetime.now(),
                 metric=servo.Metric(
                     name="Some Metric",
-                    unit=servo.Unit.REQUESTS_PER_MINUTE,
+                    unit=servo.Unit.requests_per_minute,
                 )
             )
         ]
@@ -158,7 +160,7 @@ async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
 
     metric = servo.Metric(
         name="Some Metric",
-        unit=servo.Unit.REQUESTS_PER_MINUTE,
+        unit=servo.Unit.requests_per_minute,
     )
     await static_optimizer.request_measurement(metrics=[metric], control=servo.Control())
     await static_optimizer.submit_measurement(measurement)
@@ -234,8 +236,8 @@ def fastapi_app() -> fastapi.FastAPI:
 # Utilities
 
 METRICS = [
-    servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
-    servo.Metric("error_rate", servo.Unit.PERCENTAGE),
+    servo.Metric("throughput", servo.Unit.requests_per_minute),
+    servo.Metric("error_rate", servo.Unit.percentage),
 ]
 
 COMPONENTS = [

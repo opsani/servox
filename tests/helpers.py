@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -41,11 +42,11 @@ class MeasureConnector(BaseConnector):
         return [
             Metric(
                 name="throughput",
-                unit=Unit.REQUESTS_PER_MINUTE
+                unit=Unit.requests_per_minute
             ),
             Metric(
                 name="error_rate",
-                unit=Unit.REQUESTS_PER_MINUTE
+                unit=Unit.requests_per_minute
             )
         ]
 
@@ -67,10 +68,11 @@ class MeasureConnector(BaseConnector):
         return Measurement(
             readings=[
                 DataPoint(
+                    time=datetime.datetime.now(),
                     value=31337,
                     metric=Metric(
                         name="Some Metric",
-                        unit=Unit.REQUESTS_PER_MINUTE,
+                        unit=Unit.requests_per_minute,
                     )
                 )
             ]
