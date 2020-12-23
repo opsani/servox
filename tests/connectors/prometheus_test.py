@@ -6,7 +6,6 @@ from typing import AsyncIterator
 
 import freezegun
 import httpx
-import kubetest
 import pydantic
 import pytest
 import respx
@@ -162,11 +161,8 @@ class TestPrometheusRequest:
         query = RangeQuery(
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
-            metric=PrometheusMetric(
-                "go_memstats_heap_inuse_bytes",
-                Unit.bytes,
-                query="go_memstats_heap_inuse_bytes",
-            ),
+            query="go_memstats_heap_inuse_bytes",
+            step="1m"
         )
         assert query.url, "request URL should not be nil"
         assert (
@@ -177,19 +173,15 @@ class TestPrometheusRequest:
     @freezegun.freeze_time("2020-01-01")
     def test_other_url(self):
         request = RangeQuery(
-            base_url="http://localhost:9090/api/v1/",
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
-            metric=PrometheusMetric(
-                "go_memstats_heap_inuse_bytes",
-                Unit.bytes,
-                query="go_memstats_heap_inuse_bytes",
-            ),
+            query="go_memstats_heap_inuse_bytes",
+            step='1m'
         )
 
         assert request.url
         assert (
-            request.url
+            str(request.url)
             == "/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
 
@@ -461,17 +453,12 @@ class TestPrometheusIntegration:
         kube.wait_for_registered(timeout=30)
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             query = servo.connectors.prometheus.RangeQuery(
-                base_url=url + "/api/v1/",
-                metric=PrometheusMetric(
-                    "invalid_metric",
-                    Unit.count,
-                    query="invalid_metric",
-                    start=datetime.datetime.now() - Duration("3h"),
-                    end=datetime.datetime.now(),
-                    absent=servo.connectors.prometheus.Absent.zero
-                ),
+                query="invalid_metric OR on() vector(0)",
+                start=datetime.datetime.now() - Duration("3h"),
+                end=datetime.datetime.now(),
+                step="30s"
             )
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(base_url=url + '/api/v1/') as client:
                 response = await client.get(query.url)
                 assert response.status_code == 200
                 result = response.json()
@@ -482,47 +469,6 @@ class TestPrometheusIntegration:
                 vector = result['data']['result'][0]
                 assert vector['metric'] == {}
                 assert vector['values'][0][1] == '0'
-
-
-        async with kube_port_forward("deploy/servo", 9090) as url:
-            import tabulate
-
-            kube.wait_for_registered(timeout=30)
-            headers = ["MODE", "TIME", "VALUE"]
-
-            query = servo.connectors.prometheus.RangeQuery(
-                base_url=url + "/api/v1/",
-                metric=PrometheusMetric(
-                    "invalid_metric",
-                    Unit.count,
-                    query="envoy_cluster_upstream_rq_total",
-                    absent=servo.connectors.prometheus.Absent.ignore
-                ),
-                start=datetime.datetime.now() - Duration("3h"),
-                end=datetime.datetime.now(),
-            )
-            print(f"\n>>> Analayzing Prometheus Absent metrics policies for {query.metric.name} from {query.start} to {query.end}")
-            for absent in servo.connectors.prometheus.Absent:
-                print(f"\n>>> Building results for Absent data policy '{absent.name}'...")
-                rows = []
-                query.metric.absent = absent
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(query.url)
-                    assert response.status_code == 200
-                    result = response.json()
-                    assert result['status'] == 'success'
-                    assert result['data']['resultType'] == 'matrix'
-                    # assert len(result['data']['result']) == 1
-                    # vector = result['data']['result'][0]
-                    # assert vector['metric'] == {}
-                    # assert vector['values'][0][1] == '0'
-
-                    data = servo.connectors.prometheus.Data(**result['data'])
-                    print(f"Loaded {len(data)} results, processing...")
-                    for results in data:
-                        for result in results:
-                            rows.append([absent.name, result[0], result[1]])
-                    print(tabulate.tabulate(rows, headers, tablefmt="plain") + "\n")
 
     async def test_instant_query_empty_returns_zero_vector(
         self,
@@ -567,7 +513,6 @@ class TestPrometheusIntegration:
         servo.logging.set_level("DEBUG")
         kube.wait_for_registered(timeout=30)
 
-        # FIXME: Absent.zero mode needs to URL escape the query string
         # async with kube_port_forward(
         #     {
         #         "deploy/prometheus": 9090,
@@ -583,14 +528,14 @@ class TestPrometheusIntegration:
                             "throughput",
                             servo.Unit.requests_per_second,
                             query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
-                            # absent=servo.connectors.prometheus.Absent.zero,
+                            absent=servo.connectors.prometheus.Absent.zero,
                             step="15s",
                         ),
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.percentage,
                             query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
-                            # absent=servo.connectors.prometheus.Absent.zero,
+                            absent=servo.connectors.prometheus.Absent.zero,
                             step="10s",
                         ),
                     ],
@@ -640,12 +585,14 @@ class TestPrometheusIntegration:
                             servo.Unit.requests_per_second,
                             query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
                             step="15s",
+                            absent="ignore"
                         ),
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.percentage,
                             query=f'sum(rate(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s]))',
                             step="15s",
+                            absent="ignore"
                         ),
                     ],
                 )
@@ -933,7 +880,7 @@ class TestData:
         def test_parse(self, obj) -> None:
             data = servo.connectors.prometheus.Data.parse_obj(obj)
             assert data
-            assert data.type == servo.connectors.prometheus.ResultType.vector
+            assert data.result_type == servo.connectors.prometheus.ResultType.vector
             assert len(data) == 2
 
         def test_iterate(self, obj) -> None:
@@ -980,7 +927,7 @@ class TestData:
         def test_parse(self, obj) -> None:
             data = servo.connectors.prometheus.Data.parse_obj(obj)
             assert data
-            assert data.type == servo.connectors.prometheus.ResultType.matrix
+            assert data.result_type == servo.connectors.prometheus.ResultType.matrix
             assert len(data) == 2
 
         def test_iterate(self, obj) -> None:
@@ -1013,7 +960,7 @@ class TestData:
         def test_parse(self, obj) -> None:
             data = servo.connectors.prometheus.Data.parse_obj(obj)
             assert data
-            assert data.type == servo.connectors.prometheus.ResultType.scalar
+            assert data.result_type == servo.connectors.prometheus.ResultType.scalar
             assert len(data) == 1
 
         def test_iterate(self, obj) -> None:
@@ -1034,7 +981,7 @@ class TestData:
         def test_parse(self, obj) -> None:
             data = servo.connectors.prometheus.Data.parse_obj(obj)
             assert data
-            assert data.type == servo.connectors.prometheus.ResultType.string
+            assert data.result_type == servo.connectors.prometheus.ResultType.string
             assert len(data) == 1
 
         def test_iterate(self, obj) -> None:
@@ -1059,15 +1006,10 @@ class TestResponse:
             "error": "couldn't hang",
             "data": None,
         }
-        metric = servo.connectors.prometheus.PrometheusMetric(
-            "tuning_request_rate",
-            servo.types.Unit.requests_per_second,
-            query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
-            step="10s"
-        )
         query = servo.connectors.prometheus.InstantQuery(
             base_url=config.base_url,
-            metric=metric
+            query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+            step="10s"
         )
         response = servo.connectors.prometheus.Response.parse_obj(dict(query=query, **obj))
         assert response.status == "error"
@@ -1201,15 +1143,10 @@ async def test_kubetest(
 
 @pytest.fixture
 def query(config):
-    metric = servo.connectors.prometheus.PrometheusMetric(
-        "tuning_request_rate",
-        servo.types.Unit.requests_per_second,
-        query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
-        step="10s"
-    )
     return servo.connectors.prometheus.InstantQuery(
         base_url=config.base_url,
-        metric=metric
+        query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
+        step="10s"
     )
 
 class TestAbsentMetrics:
@@ -1325,6 +1262,7 @@ class TestAbsentMetrics:
             query="empty_metric",
             absent=absent
         )
+        assert metric.query
 
         respx.get(
             "https://localhost:9090/api/v1/query",
@@ -1419,30 +1357,13 @@ class TestAbsentMetrics:
 
     class TestAbsentZero:
         async def test_range_query_includes_or_on_vector(self) -> None:
-            query = servo.connectors.prometheus.RangeQuery(
-                base_url="http://localhost:9090/api/v1/",
-                metric=PrometheusMetric(
-                    "envoy_cluster_upstream_rq_total",
-                    Unit.count,
-                    query="envoy_cluster_upstream_rq_total",
-                    absent=servo.connectors.prometheus.Absent.zero
-                ),
-                start=datetime.datetime.now(),
-                end=datetime.datetime.now() + Duration("36h"),
+            metric=PrometheusMetric(
+                "envoy_cluster_upstream_rq_total",
+                Unit.count,
+                query="envoy_cluster_upstream_rq_total",
+                absent=servo.connectors.prometheus.Absent.zero
             )
-            assert "or on() vector(0)" in query.url
-
-        async def test_instant_query_includes_or_on_vector(self) -> None:
-            query = servo.connectors.prometheus.InstantQuery(
-                base_url="http://localhost:9090/api/v1/",
-                metric=PrometheusMetric(
-                    "envoy_cluster_upstream_rq_total",
-                    Unit.count,
-                    query="envoy_cluster_upstream_rq_total",
-                    absent=servo.connectors.prometheus.Absent.zero
-                ),
-            )
-            assert query.url.endswith("or on() vector(0)")
+            assert metric.build_query().endswith("or on() vector(0)")
 
 class TestClient:
     def test_base_url_is_rstripped(self):
@@ -1458,3 +1379,27 @@ class TestClient:
         assert (
             client.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
         )
+
+class TestInstantQuery:
+    @pytest.fixture
+    def query(self) -> servo.connectors.prometheus.InstantQuery:
+        return servo.connectors.prometheus.InstantQuery(
+            query="testing",
+            time=datetime.datetime(2020, 1, 21, 12, 0, 1),
+        )
+
+    def test_params(self, query) -> None:
+        assert query.params == {'query': 'testing', 'time': '1579636801.0'}
+
+    def test_url(self, query) -> None:
+        assert query.url == '/query?query=testing&time=1579636801.0'
+
+def test_overload():
+    metric = PrometheusMetric(
+        "empty_metric",
+        Unit.count,
+        query="empty_metric",
+        absent="zero"
+    )
+    debug(metric, metric.query, metric.build_query(), metric.__dict__)
+    assert metric.query
