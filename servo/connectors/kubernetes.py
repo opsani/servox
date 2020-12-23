@@ -1198,6 +1198,37 @@ class Deployment(KubernetesModel):
         pods = [Pod(p) for p in pod_list.items]
         return pods
 
+    async def get_latest_pods(self) -> List[Pod]:
+        """Get only the Deployment pods that belong to the latest ResourceVersion.
+
+        Returns:
+            A list of pods that belong to the latest deployment replicaset.
+        """
+        self.logger.info(f'getting replicaset for deployment "{self.name}"')
+        async with self.api_client() as api_client:
+            label_selector = self.obj.spec.selector.match_labels
+            rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
+                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
+            )
+
+        # Verify all returned RS have this deployment as an owner
+        rs_list = [
+            rs for rs in rs_list.items if rs.metadata.owner_references and any(
+                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid 
+                for ownRef in rs.metadata.owner_references)]
+        if not rs_list:
+            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
+        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+
+        return [
+            pod for pod in await self.get_pods() 
+            if any(
+                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid 
+                for ownRef in pod.obj.metadata.owner_references
+            )]
+
+
+
     @property
     def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
         """Return the status of the Deployment.
@@ -1912,6 +1943,7 @@ class DeploymentOptimization(BaseOptimization):
 
                     # Check that the conditions aren't reporting a failure
                     self._check_conditions(status.conditions)
+                    await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
                     if status.observed_generation == observed_generation:
@@ -1992,6 +2024,22 @@ class DeploymentOptimization(BaseOptimization):
                     raise servo.AdjustmentFailure(
                         f"unknown deployment status condition: {condition.status}"
                     )
+
+    async def _check_pod_conditions(self):
+        pods = await self.deployment.get_latest_pods()
+        unschedulable_pods = [
+            pod for pod in pods 
+            if pod.obj.status.conditions and any(
+                cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
+            )]
+        if unschedulable_pods:
+            pod_fmts = [] # [f"{pod.obj.metadata.name} - {', '.join(cond.message for cond)}" for pod in unschedulable_pods]
+            for pod in unschedulable_pods:
+                cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
+                pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
+
+            fmt_str = ", ".join(pod_fmts)
+            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(

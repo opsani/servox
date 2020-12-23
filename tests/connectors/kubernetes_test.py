@@ -861,6 +861,22 @@ class TestKubernetesConnectorIntegration:
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
 
+    async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration, adjustment):
+        config.timeout = "60s"
+        config.deployments[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
     async def test_read_pod(self, config, adjustment, kube) -> None:
         connector = KubernetesConnector(config=config)
         pods = kube.get_pods()
