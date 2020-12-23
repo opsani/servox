@@ -103,8 +103,3 @@ test:
 .PHONY: pre-commit
 pre-commit:
 	poetry run pre-commit run --hook-stage manual --all-files
-
-.PHONY: clean-env
-clean-env:
-	poetry env remove `poetry env info`/bin/python
-	poetry install
