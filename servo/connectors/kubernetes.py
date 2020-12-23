@@ -946,11 +946,14 @@ class Pod(KubernetesModel):
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
         self.logger.trace(f"current pod phase is {status}")
-        if phase.lower() != "running":
+        if not status.conditions: 
             return False
 
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
+            if cond.reason == "Unschedulable": # TODO: should we further constrain this check?
+                raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
                 continue
@@ -1615,7 +1618,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
                 must filter failure modes before calling the superclass implementation.
         """
         if mode == FailureMode.CRASH:
-            self.logger.error("an unrecoverable failure occurred while interacting with Kubernetes")
+            self.logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
             raise error
 
         # Ensure that we chain any underlying exceptions that may occur
@@ -2082,7 +2085,7 @@ class CanaryOptimization(BaseOptimization):
             0
         ].resources = self.canary_container.resources
         await dep_copy.delete_canary_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_canary_pod()
+        self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
 
     @property
     def cpu(self) -> CPU:
@@ -2369,7 +2372,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
             except asyncio.exceptions.TimeoutError as error:
                 self.logger.error(
-                    f"timed out after {timeout} waiting for adjustments to apply"
+                    f"timed out after {timeout} + 60s waiting for adjustments to apply"
                 )
                 for optimization in self.optimizations:
                     if await optimization.handle_error(error, self.config.on_failure):

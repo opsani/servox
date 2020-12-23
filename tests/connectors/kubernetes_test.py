@@ -878,6 +878,22 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
+    async def test_adjust_canary_insufficient_resources(self, canary_config, adjustment, namespace) -> None:
+        canary_config.timeout = "60s"
+        connector = KubernetesConnector(config=canary_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="mem",
+            value="128Gi", # impossible right?
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+
 ##
 # Rejection Tests using modified deployment
 @pytest.mark.integration
