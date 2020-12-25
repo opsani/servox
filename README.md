@@ -30,9 +30,9 @@ any Python package management system should work.
 
 * Clone the repo: `git clone git@github.com:opsani/servox`
 * Install required Python: `cd servox && pyenv install`
-* Install Poetry: `curl -sSL
-  https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py |
+* Install Poetry: `curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py |
   python`
+* Link Poetry with pyenv version: ``poetry env use `cat .python-version` ``
 * Install dependencies: `poetry install`
 * Activate the venv: `poetry shell`
 * Initialize your environment: `servo init`
@@ -739,21 +739,17 @@ fast customized builds:
 ❯ DOCKER_BUILDKIT=1 docker build -t servox --build-arg BUILDKIT_INLINE_CACHE=1 --cache-from opsani/servox:edge .
 ```
 
-### Upgrading Python
+### Switching Python Interpreters
 
-Python interpreter updates can be a bit annoying. The Poetry virtual environment
-bundles an interpreter via a symlink when it is created. For example, when using
-`pyenv` to manage multiple interpreter versions, a virtual environment built
-under Python v3.8.6 might symlink `python` to
-`~/.pyenv/versions/3.8.6/bin/python`.
+After changing Python interpreter versions you may find that you are "stuck" in
+the existing virtual environment rather than your new desired version.
 
-If you update your interpreter version via the `.python-version` file and have
-an existing Poetry virtual environment, you will find that test runs and binary
-executions will remain "stuck" against the previously active interpretter
-version.
+The problem is that Poetry is linked against the previous environment and needs
+a nudge to select the new interpreter.
 
-To fix this, run `make clean-env` which will teardown and rebuild your Poetry
-virtual environment.
+The project is bound to a local Python version via the `.python-version` file.
+Tell Poetry to bind against the locally selected environment via:
+``poetry env use `cat .python-version` ``
 
 ## Testing
 
