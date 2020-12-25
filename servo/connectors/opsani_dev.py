@@ -429,10 +429,10 @@ class OpsaniDevChecks(servo.BaseChecks):
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                results = servo.connectors.prometheus.Response(query=query, **response.json())
+                results = servo.connectors.prometheus.BaseResponse(query=query, **response.json())
 
                 if results.data:
-                    assert results.data.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.type}"
+                    assert results.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
                     assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
                     result = next(iter(results.data))
 
@@ -513,9 +513,9 @@ class OpsaniDevChecks(servo.BaseChecks):
                 response = await client.get(query.url)
                 response.raise_for_status()
 
-                results = servo.connectors.prometheus.Response(query=query, **response.json())
+                results = servo.connectors.prometheus.BaseResponse(query=query, **response.json())
                 assert results.data, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                assert results.data.type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.type}"
+                assert results.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
                 assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
 
                 result = next(iter(results.data))

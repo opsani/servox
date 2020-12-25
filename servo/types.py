@@ -157,7 +157,7 @@ Numeric = Union[pydantic.StrictFloat, pydantic.StrictInt]
 NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 
 # Describing time durations in various forms is very common
-DurationDescriptor = Union[datetime.timedelta, str, float, int]
+DurationDescriptor = Union[datetime.timedelta, str, Numeric]
 
 class Duration(datetime.timedelta):
     """
@@ -237,7 +237,7 @@ class Duration(datetime.timedelta):
         )
 
     def __repr__(self):
-        return f"Duration('{self}' {super().__str__()})"
+        return f"Duration('{self}')"
 
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
@@ -504,52 +504,40 @@ class EventProgress(BaseProgress):
         return 0.0
 
 class Unit(str, enum.Enum):
-    """Unit is an enumeration that defines a standard set of units of measure for
-    optimizable metrics.
-    """
+    """An enumeration of standard units of measure for metrics.
 
+    Member names are the name of the unit and values are an abbreviation of the unit.
+
+    ### Members:
+        float: A generic floating point value.
+        int: A generic integer value.
+        count: An unsigned integer count of the number of times something has happened.
+        rate: The frequency of an event across a time interval.
+        percentage: A ratio of one value as compared to another (e.g., errors as compared to
+            total requests processed).
+        milliseconds: A time value at millisecond resolution.
+        bytes: Digital data size in bytes.
+        requests_per_minute: Application throughput in terms of requests processed per minute.
+        requests_per_second: Application throughput in terms of requests processed per second.
+    """
     float = ""
-    """A generic floating point value."""
-
     int = ""
-    """A generic integer value."""
-
     count = ""
-    """An unsigned integer count of the number of times something has happened.
-    """
-
     rate = ""
-    """The frequency of an event across a time interval.
-    """
-
     percentage = "%"
-    """A ratio of one value as compared to another (e.g., errors as compared to
-total requests processed).
-    """
-
     milliseconds = "ms"
-    """A time value at millisecond resolution."""
-
     bytes = "bytes"
-    """Digital data size in bytes.
-    """
-
     requests_per_minute = "rpm"
-    """Application throughput in terms of requests processed per minute.
-    """
-
     requests_per_second = "rps"
-    """Application throughput in terms of requests processed per second.
-    """
 
     def __repr__(self) -> str:
         if self.value:
-            return f"<{self.__class__.__name__}.{self.name}: {self.value}>"
+            return f"<{self.__class__.__name__}.{self.name}: '{self.value}'>"
         else:
             return f"{self.__class__.__name__}.{self.name}"
 
 class Metric(BaseModel):
-    """Metric objects model optimizable value types in a specific Unit of measure.
+    """Metric objects model optimizeable value types in a specific Unit of measure.
 
     Args:
         name: The name of the metric.
@@ -650,7 +638,7 @@ class TimeSeries(BaseModel):
     """TimeSeries objects models a sequence of data points containing
     measurements of a metric indexed in time order.
 
-    TimeSeries objects are iterable and indexable for convenience in accessing
+    TimeSeries objects are sized, iterable, and indexable for convenience in accessing
     the data points. Data points are sorted on init to ensure a time indexed order.
 
     Attributes:
@@ -663,54 +651,59 @@ class TimeSeries(BaseModel):
             server from which the readings were taken, version info about the upstream
             metrics provider, etc.).
     """
-    metric: Metric
-    id: Optional[str]
-    annotation: Optional[str]
-    metadata: Optional[Dict[str, str]]
-    _data_points: List[DataPoint] = pydantic.PrivateAttr()
+    metric: Metric = pydantic.Field(...)
+    data_points: List[DataPoint] = pydantic.Field(...)
+    id: Optional[str] = None
+    annotation: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = None
 
     def __init__(
         self, metric: Metric, data_points: List[DataPoint], **kwargs
     ) -> None: # noqa: D107
-        super().__init__(metric=metric, **kwargs)
-        self._data_points = sorted(data_points, key=lambda p: p.time)
+        data_points_ = sorted(data_points, key=lambda p: p.time)
+        super().__init__(metric=metric, data_points=data_points_, **kwargs)
 
     def __len__(self) -> int:
-        return len(self._data_points)
+        return len(self.data_points)
 
     def __iter__(self):
-        return iter(self._data_points)
+        return iter(self.data_points)
 
     def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
         if not isinstance(index, int):
             raise TypeError("values can only be retrieved by integer index")
-        return self._data_points[index]
+        return self.data_points[index]
 
     @property
     def min(self) -> Optional[DataPoint]:
         """Return the minimum data point in the series."""
-        return min(self._data_points, key=operator.itemgetter(1), default=None)
+        return min(self.data_points, key=operator.itemgetter(1), default=None)
 
     @property
     def max(self) -> Optional[DataPoint]:
         """Return the maximum data point in the series."""
-        return max(self._data_points, key=operator.itemgetter(1), default=None)
+        return max(self.data_points, key=operator.itemgetter(1), default=None)
 
     @property
     def timespan(self) -> Optional[Tuple[datetime.datetime, datetime.datetime]]:
         """Return a tuple of the earliest and latest times in the series."""
-        if self._data_points:
-            return (self._data_points[0].time, self._data_points[-1].time)
+        if self.data_points:
+            return (self.data_points[0].time, self.data_points[-1].time)
         else:
             return None
 
     @property
     def duration(self) -> Optional[Duration]:
         """Return a Duration object reflecting the time span of the series."""
-        if self._data_points:
-            return Duration(self._data_points[-1].time - self._data_points[0].time)
+        if self.data_points:
+            return Duration(self.data_points[-1].time - self.data_points[0].time)
         else:
             return None
+
+    def __repr_args__(self):
+        args = super().__repr_args__()
+        additional = dict(map(lambda attr: (attr, getattr(self, attr)), ('timespan', 'duration')))
+        return {**dict(args), **additional}.items()
 
 
 Reading = Union[DataPoint, TimeSeries]
@@ -1312,6 +1305,8 @@ class Description(BaseModel):
 class Measurement(BaseModel):
     """Measurement objects model the outcome of a measure operation and contain
     a set of readings for the metrics that were measured.
+
+    Measurements are sized, indexable, and iterable.
     """
 
     readings: Readings = []
@@ -1345,7 +1340,7 @@ class Measurement(BaseModel):
             expected_count = None
             for obj in value:
                 if isinstance(obj, TimeSeries):
-                    actual_count = len(obj._data_points)
+                    actual_count = len(obj.data_points)
                     if expected_count and actual_count != expected_count:
                         logger.warning(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
@@ -1354,6 +1349,17 @@ class Measurement(BaseModel):
                         expected_count = actual_count
 
         return value
+
+    def __len__(self) -> int:
+        return len(self.readings)
+
+    def __iter__(self):
+        return iter(self.readings)
+
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("readings can only be retrieved by integer index")
+        return self.readings[index]
 
     def __opsani_repr__(self) -> dict:
         readings = {}
@@ -1366,7 +1372,7 @@ class Measurement(BaseModel):
                 }
 
                 # Fill the values with arrays of [timestamp, value] sampled from the reports
-                for date, value in reading._data_points:
+                for date, value in reading.data_points:
                     data["values"][0]["data"].append([int(date.timestamp()), value])
 
                 readings[reading.metric.name] = data

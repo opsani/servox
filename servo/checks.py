@@ -763,7 +763,7 @@ async def run_check_handler(
 
     The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item"
     in order to support building dynamic, context specific values that are assigned as attributes of
-    the Check instance given during exection. More concretely, this means that running a check handler
+    the Check instance given during execution. More concretely, this means that running a check handler
     with a non-empty arguments list will let you use provide format string input values of the form
     "Check that {item.name} work as expected (v{item.version}, release date: {item.released_At})".
 
@@ -970,7 +970,6 @@ def multicheck(
     Raises:
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
-
     def decorator(fn_: MultiCheckHandler) -> MultiCheckExpander:
         _validate_multicheck_handler(fn_)
 

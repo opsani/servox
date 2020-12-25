@@ -55,7 +55,7 @@ class TestDuration:
 
     def test_repr(self) -> None:
         duration = Duration("5h")
-        assert duration.__repr__() == "Duration('5h' 5:00:00)"
+        assert duration.__repr__() == "Duration('5h')"
 
     def test_str(self) -> None:
         duration = Duration("5h37m15s")
@@ -896,8 +896,11 @@ class TestTimeSeries:
         assert points[0].time > points[-1].time
         new_time_series = TimeSeries(time_series.metric, points)
         # validator will sort it back into time series
-        assert new_time_series._data_points == time_series._data_points
-        assert new_time_series._data_points[0].time < new_time_series._data_points[-1].time
+        assert new_time_series.data_points == time_series.data_points
+        assert new_time_series.data_points[0].time < new_time_series.data_points[-1].time
+
+    def test_repr(self, time_series: TimeSeries) -> None:
+        assert repr(time_series) == "TimeSeries(metric=Metric(name='throughput', unit=<Unit.requests_per_minute: 'rpm'>), data_points=[DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0)), DataPoint(throughput (rpm), (2020-01-21 12:10:01, 666.0)), DataPoint(throughput (rpm), (2020-01-21 12:20:01, 187.0)), DataPoint(throughput (rpm), (2020-01-21 12:30:01, 420.0)), DataPoint(throughput (rpm), (2020-01-21 12:40:01, 69.0))], id=None, annotation=None, metadata=None, timespan=(FakeDatetime(2020, 1, 21, 12, 0, 1), FakeDatetime(2020, 1, 21, 12, 40, 1)), duration=Duration('40m'))"
 
 class TestDataPoint:
     @pytest.fixture
