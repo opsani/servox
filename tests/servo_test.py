@@ -441,7 +441,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'\""""
+        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'\""""
     )
 
 
@@ -455,7 +455,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0' 0:00:00), delay=Duration('0' 0:00:00), warmup=Duration('0' 0:00:00), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'\""""
+        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'\""""
     )
 
 
