@@ -416,6 +416,10 @@ class EventProgress(BaseProgress):
         if not self.timeout or not self.started: return False
         return Duration.since(self.started_at) >= self.timeout
 
+    @property
+    def finished(self) -> bool:
+        return self.timed_out or super().finished
+
     def trigger(self) -> None:
         """Trigger the event to advance progress toward completion.
 

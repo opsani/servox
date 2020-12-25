@@ -486,7 +486,7 @@ async def assert_check(
 
     Args:
         check: The check object or coroutine that returns a check object to be evaluated.
-        message: An optional message to annotate a failing assertion. When omitted, a message is syntehsized.
+        message: An optional message to annotate a failing assertion. When omitted, a message is synthesized.
     """
     if asyncio.iscoroutine(check):
         result = await check
@@ -506,7 +506,7 @@ async def assert_check(
                     raise result.exception
         elif _exception_type:
             raise AssertionError(
-                f"Check(id='{result.id}') '{result.name}' was expected to raise a {_exception_type.__name__} but it did not: {assertion_message}"
+                f"Check(id='{result.id}') '{result.name}' was expected to raise a {_exception_type.__name__} but it did not: {message}"
             ) from result.exception
 
     if result.success != _success:
