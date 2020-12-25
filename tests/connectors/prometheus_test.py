@@ -8,6 +8,7 @@ import freezegun
 import httpx
 import pydantic
 import pytest
+import pytz
 import respx
 import typer
 import servo.connectors.prometheus
@@ -1346,14 +1347,14 @@ class TestInstantQuery:
     def query(self) -> servo.connectors.prometheus.InstantQuery:
         return servo.connectors.prometheus.InstantQuery(
             query="testing",
-            time=datetime.datetime(2020, 1, 21, 12, 0, 1),
+            time=pytz.utc.localize(datetime.datetime(2020, 1, 21, 12, 0, 1)),
         )
 
     def test_params(self, query) -> None:
-        assert query.params == {'query': 'testing', 'time': '1579636801.0'}
+        assert query.params == {'query': 'testing', 'time': '1579608001.0'}
 
     def test_url(self, query) -> None:
-        assert query.url == '/query?query=testing&time=1579636801.0'
+        assert query.url == '/query?query=testing&time=1579608001.0'
 
 class TestTargetsRequest:
     def test_(self) -> None:
