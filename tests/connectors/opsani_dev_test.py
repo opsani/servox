@@ -279,14 +279,14 @@ class TestInstall:
             servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
             servo.logger.info("waiting for Prometheus to scrape our Pods")
 
-            async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.PrometheusTarget]:
+            async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.ActiveTarget]:
                 servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
                 # NOTE: Prometheus is on a 5s scrape interval
                 scraped_since = pytz.utc.localize(datetime.datetime.now())
                 while True:
                     targets = await prometheus_connector.targets()
                     if targets:
-                        if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets)):
+                        if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets.active)):
                             # NOTE: filter targets to match our namespace in
                             # case there are other things running in the cluster
                             return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets))
