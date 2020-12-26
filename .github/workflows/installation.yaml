@@ -1,0 +1,26 @@
+name: Using
+on: [push, pull_request]
+
+jobs:
+  my_python_job:
+    name: "Clean install"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python:
+          - 3.8.5
+          - 3.8.6
+          - 3.9.0
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install python version
+      uses: gabrielfalcao/pyenv-action@v5
+      with:
+        default: "${{ matrix.python }}"
+        command: |
+          curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
+          poetry env use `cat .python-version`
+          poetry install
+    - name: Run tests
+      run: pytest .
