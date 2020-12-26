@@ -424,12 +424,12 @@ class OpsaniDevChecks(servo.BaseChecks):
         for metric in metrics:
             query = servo.connectors.prometheus.InstantQuery(
                 base_url=self._prometheus_api_base_url,
-                metric=metric
+                query=metric.query
             )
             async with httpx.AsyncClient() as client:
                 response = await client.get(query.url)
                 response.raise_for_status()
-                results = servo.connectors.prometheus.BaseResponse(query=query, **response.json())
+                results = servo.connectors.prometheus.BaseResponse(request=query, **response.json())
 
                 if results.data:
                     assert results.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
