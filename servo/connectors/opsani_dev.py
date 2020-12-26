@@ -1,8 +1,5 @@
-import asyncio
 import os
 from typing import List, Optional
-
-import httpx
 
 import servo
 import servo.connectors.kubernetes
@@ -187,9 +184,6 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     ##
     # Prometheus sidecar
-    @property
-    def _prometheus_api_base_url(self) -> str:
-        return self.config.prometheus_base_url + servo.connectors.prometheus.API_PATH
 
     @servo.checks.require("Prometheus ConfigMap exists")
     async def check_prometheus_config_map(self) -> None:
@@ -261,15 +255,9 @@ class OpsaniDevChecks(servo.BaseChecks):
             len(container.obj.ports) == 1
         ), f"expected 1 container port but found {len(container.obj.ports)}"
 
-        # NOTE: Prometheus sidecar will be up on localhost
-        async with httpx.AsyncClient(
-            base_url=self._prometheus_api_base_url
-        ) as client:
-            response = await client.get("/targets")
-            response.raise_for_status()
-            result = response.json()
-
-        return f"Prometheus is accessible at {self._prometheus_api_base_url}"
+        client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
+        await client.list_targets()
+        return f"Prometheus is accessible at {self.config.prometheus_base_url}"
 
     async def _read_servo_pod(self) -> Optional[servo.connectors.kubernetes.Pod]:
         return await self._read_servo_pod_from_env() or next(
@@ -391,18 +379,11 @@ class OpsaniDevChecks(servo.BaseChecks):
             len(container.obj.ports) == 1
         ), f"expected 1 container port but found {len(container.obj.ports)}"
 
-        # NOTE: Prometheus sidecar will be up on localhost
-        async with httpx.AsyncClient(
-            base_url=self._prometheus_api_base_url
-        ) as client:
-            response = await client.get("/targets")
-            response.raise_for_status()
-            result = response.json()
+        client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
+        targets = await client.list_targets()
+        assert len(targets.active) > 0, "no active targets were found"
 
-        target_count = len(result["data"]["activeTargets"])
-        assert target_count > 0, "no active targets were found"
-
-        return f"found {target_count} targets"
+        return f"found {targets.active} active targets"
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
@@ -420,47 +401,44 @@ class OpsaniDevChecks(servo.BaseChecks):
                 step="10s"
             )
         ]
+        client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         summaries = []
         for metric in metrics:
             query = servo.connectors.prometheus.InstantQuery(
-                base_url=self._prometheus_api_base_url,
                 query=metric.query
             )
-            async with httpx.AsyncClient() as client:
-                response = await client.get(query.url)
-                response.raise_for_status()
-                results = servo.connectors.prometheus.BaseResponse(request=query, **response.json())
 
-                if results.data:
-                    assert results.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
-                    assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
-                    result = next(iter(results.data))
+            response = await client.query(metric)
+            if response.data:
+                assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
+                assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
+                result = response.data[0]
 
-                    if metric.name == "main_request_rate":
+                if metric.name == "main_request_rate":
+                    timestamp, value = result.value
+                    assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                    summaries.append(f"{metric.name}={value}{metric.unit}")
+                elif metric.name == "main_error_rate":
+                    if result.value is None:
+                        # NOTE: if no errors are occurring this can legitimately be None
+                        value = 0
+                    else:
                         timestamp, value = result.value
-                        assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                        summaries.append(f"{metric.name}={value}{metric.unit}")
-                    elif metric.name == "main_error_rate":
-                        if result.value is None:
-                            # NOTE: if no errors are occurring this can legitimately be None
-                            value = 0
-                        else:
-                            timestamp, value = result.value
-                            assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
+                        assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
 
-                        summaries.append(f"{metric.name}={0}{metric.unit}")
-                    else:
-                        raise NotImplementedError(f"unexpected metric: {metric.name}")
+                    summaries.append(f"{metric.name}={0}{metric.unit}")
                 else:
-                    # Empty data indicates an absent metric
-                    # TODO: Use Client to check for absent metric
-                    if metric.name == "main_request_rate":
-                        raise ValueError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
-                    elif metric.name == "main_error_rate":
-                        # no errors sounds delightful
-                        pass
-                    else:
-                        raise NotImplementedError(f"unexpected metric: {metric.name}")
+                    raise NotImplementedError(f"unexpected metric: {metric.name}")
+            else:
+                # Empty data indicates a potentially absent metric
+                # TODO: Use Client to check for absent metric
+                if metric.name == "main_request_rate":
+                    raise AssertionError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
+                elif metric.name == "main_error_rate":
+                    # no errors sounds delightful
+                    pass
+                else:
+                    raise NotImplementedError(f"unexpected metric: {metric.name}")
 
         return ", ".join(summaries)
 
@@ -503,26 +481,18 @@ class OpsaniDevChecks(servo.BaseChecks):
                 query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])'
             ),
         ]
+        client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         summaries = []
         for metric in metrics:
-            query = servo.connectors.prometheus.InstantQuery(
-                base_url=self._prometheus_api_base_url,
-                metric=metric
-            )
-            async with httpx.AsyncClient() as client:
-                response = await client.get(query.url)
-                response.raise_for_status()
+            response = await client.query(metric)
+            assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+            assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
 
-                results = servo.connectors.prometheus.BaseResponse(query=query, **response.json())
-                assert results.data, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
-                assert results.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
-                assert len(results.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
+            result = response.data[0]
+            value = result.value[1]
+            assert value > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
 
-                result = next(iter(results.data))
-                timestamp, value = result.value
-                assert value > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
-                summaries.append(f"{metric.name}={value}{metric.unit}")
-
+            summaries.append(f"{metric.name}={value}{metric.unit}")
             return ", ".join(summaries)
 
 
@@ -535,7 +505,6 @@ class OpsaniDevChecks(servo.BaseChecks):
 )
 class OpsaniDevConnector(servo.BaseConnector):
     """Opsani Dev is a turnkey solution for optimizing a single service."""
-
     config: OpsaniDevConfiguration
 
     @servo.on_event()

@@ -82,7 +82,7 @@ class ActiveTarget(pydantic.BaseModel):
         pool: The group of related targets that the target belongs to.
         url: The URL that metrics were scraped from.
         global_url: An externally accessible URL to the target.
-        health: Health status ("up" or "down").
+        health: Health status ("up", "down", or "unknown").
         labels: The set of labels after relabelling has occurred.
         discovered_labels: The unmodified set of labels discovered during service
             discovery before relabelling has occurred.
@@ -93,7 +93,7 @@ class ActiveTarget(pydantic.BaseModel):
     pool: str = pydantic.Field(..., alias='scrapePool')
     url: str = pydantic.Field(..., alias='scrapeUrl')
     global_url: str = pydantic.Field(..., alias='globalUrl')
-    health: Literal['up', 'down']
+    health: Literal['up', 'down', 'unknown']
     labels: Optional[Dict[str, str]]
     discovered_labels: Optional[Dict[str, str]] = pydantic.Field(..., alias='discoveredLabels')
     last_scraped_at: Optional[datetime.datetime] = pydantic.Field(..., alias='lastScrape')
@@ -331,8 +331,8 @@ class QueryData(pydantic.BaseModel):
     """The data component of a response from a query endpoint of the Prometheus HTTP API.
 
     QueryData is an envelope enclosing the result payload of an evaluated query.
-    QueryData objects are sized and iterable. Scalar and string results are presented
-    as single item collections.
+    QueryData objects are sized, sequenced collections of results. Scalar and string results
+    are presented as single item collections.
 
     Attributes:
         result_type: The type of result returned by the query.
@@ -356,6 +356,9 @@ class QueryData(pydantic.BaseModel):
             return iter((self.result, ))
         else:
             raise TypeError(f"unknown data type '{self.result_type}'")
+
+    def __getitem__(self, index: int):
+        return list(iter(self))[index]
 
     @property
     def is_vector(self) -> bool:
@@ -426,6 +429,7 @@ class TargetsResponse(BaseResponse):
     cumulative of the active and dropped targets collections. Utilize the `active` and `dropped`
     attributes to focus on a particular collection of targets.
     """
+    data: TargetData
 
     def __len__(self) -> int:
         return self.data.__len__()

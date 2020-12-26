@@ -574,7 +574,7 @@ class Metric(BaseModel):
 class DataPoint(BaseModel):
     """DataPoint objects model a scalar value reading of a Metric.
 
-    DataPoints are iterable and indexable and behave as tuple-like objects
+    DataPoints are iterable and indexed and behave as tuple-like objects
     of the form `(time, value)`. The metric attribute is omitted from
     iteration and indexing to allow data point objects to be handled as
     programmatically interchangeable with a tuple representation.
@@ -642,8 +642,8 @@ class TimeSeries(BaseModel):
     """TimeSeries objects models a sequence of data points containing
     measurements of a metric indexed in time order.
 
-    TimeSeries objects are sized, iterable, and indexable for convenience in accessing
-    the data points. Data points are sorted on init to ensure a time indexed order.
+    TimeSeries objects are sized, sequenced collections of `DataPoint` objects.
+    Data points are sorted on init to ensure a time indexed order.
 
     Attributes:
         metric: The metric that the time series was measured from.
@@ -1310,7 +1310,7 @@ class Measurement(BaseModel):
     """Measurement objects model the outcome of a measure operation and contain
     a set of readings for the metrics that were measured.
 
-    Measurements are sized, indexable, and iterable.
+    Measurements are sized and sequenced collections of readings.
     """
 
     readings: Readings = []

@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import datetime
+import devtools
 import functools
 import os
 import re
@@ -161,7 +162,7 @@ class TestChecksOriginalState:
             assert isinstance(check.exception, httpx.HTTPStatusError)
 
 # Errors:
-# Permissions, (Namespace, Deployment, Container, Service -> Doesnt Exist, Cant Read), ports don't match
+# Permissions, (Namespace, Deployment, Container, Service -> doesn't Exist, Cant Read), ports don't match
 
 # Warnings:
 # 9980 port conflict
@@ -412,7 +413,7 @@ async def assert_check_raises_in_context(
     """Assert that a check fails due to a specific exception being raised within an execution context.
 
     The check provided can be a previously executed Check object or a coroutine that returns a Check.
-    The exception type is evalauted and the `match` parameter is matched against the underlying exception
+    The exception type is evaluated and the `match` parameter is matched against the underlying exception
     via `pytest.assert_raises` and supports strings and regex objects.
 
     This method is an asynchronous context manager for use via the `async with ..` syntax:
@@ -459,7 +460,7 @@ async def assert_check_raises(
     """Assert that a check fails due to a specific exception being raised.
 
     The check provided can be a previously executed Check object or a coroutine that returns a Check.
-    The exception type is evalauted and the `match` parameter is matched against the underlying exception
+    The exception type is evaluated and the `match` parameter is matched against the underlying exception
     via `pytest.assert_raises` and supports strings and regex objects.
 
     Args:
@@ -665,7 +666,7 @@ def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
 async def wait_for_check_to_pass(
     check: Coroutine[None, None, servo.Check],
     *,
-    timeout: servo.Duration = servo.Duration("3m")
+    timeout: servo.Duration = servo.Duration("20s")
 ) -> servo.Check:
     async def _loop_check() -> servo.Check:
         while True:
@@ -675,7 +676,16 @@ async def wait_for_check_to_pass(
 
         return result
 
-    return await asyncio.wait_for(
-        _loop_check(),
-        timeout=timeout.total_seconds()
-    )
+    try:
+        check = await asyncio.wait_for(
+            _loop_check(),
+            timeout=timeout.total_seconds()
+        )
+    except asyncio.TimeoutError as err:
+        devtools.debug("Check timed out. Final state: ", check)
+        if check.exception:
+            raise err from check.exception
+        else:
+            raise err
+
+    return check
