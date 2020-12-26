@@ -510,6 +510,10 @@ class OpsaniDevConnector(servo.BaseConnector):
     @servo.on_event()
     async def startup(self) -> None:
         servo_ = servo.Servo.current()
+        if self.maturity == servo.Maturity.experimental:
+            # Early exit on experimental Opsani Dev bits
+            return
+
         await servo_.add_connector(
             "kubernetes",
             servo.connectors.kubernetes.KubernetesConnector(
