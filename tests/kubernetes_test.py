@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import hashlib
 
@@ -10,7 +11,15 @@ import servo
 import servo.connectors.kubernetes
 import tests.helpers
 
-pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("kubernetes_asyncio_config")]
+# NOTE: These tests are brittle when run under uvloop. We run these under the default
+# asyncio event loop policy to avoid exceptions relating to pytest output capture.
+# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.event_loop_policy("default"),
+    pytest.mark.integration,
+    pytest.mark.usefixtures("kubernetes_asyncio_config")
+]
 
 @pytest.mark.applymanifests("manifests", files=["nginx.yaml"])
 def test_nginx(kube: kubetest.client.TestClient) -> None:
@@ -80,55 +89,6 @@ def test_prometheus(kube: kubetest.client.TestClient) -> None:
     pod.name = pod.name + ":9090"
     response = pod.http_proxy_get("/")
     assert "Prometheus Time Series Collection and Processing Server" in response.data
-
-# TODO: Parametrize to run a bunch of commands
-async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
-    exit_code, stdout, stderr = await subprocess(
-        f"docker run --rm -i {servo_image} --help", print_output=True
-    )
-    assert exit_code == 0, f"servo image execution failed: {stderr}"
-    assert "Operational Commands" in str(stdout)
-
-
-async def test_run_servo_on_minikube(
-    minikube_servo_image: str, subprocess
-) -> None:
-    command = (
-        f'kubectl --context=servox run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
-        " --optimizer example.com/app --token 123456 version"
-    )
-    exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)
-    assert exit_code == 0, f"servo image execution failed: {stderr}"
-    assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
-
-
-async def test_run_servo_on_eks(servo_image: str, kubeconfig, subprocess) -> None:
-    # TODO: Break down into fixtures
-    await subprocess("aws ecr get-login-password \
-                    --region us-west-2 \
-                | docker login \
-                    --username AWS \
-                    --password-stdin 207598546954.dkr.ecr.us-west-2.amazonaws.com",
-                    print_output=True
-    )
-    ecr_image = (
-        "207598546954.dkr.ecr.us-west-2.amazonaws.com/servox-integration-tests:latest"
-    )
-    command = f"docker tag {servo_image} {ecr_image}" f" && docker push {ecr_image}"
-    exit_code, stdout, stderr = await subprocess(command, print_output=True)
-    assert exit_code == 0, f"image publishing failed: {stderr}"
-
-    command = (
-        f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Always --restart=Never --image="{ecr_image}" --'
-        " --optimizer example.com/app --token 123456 version"
-    )
-    exit_code, stdout, stderr = await subprocess(
-        command,
-        print_output=True,
-    )
-    assert exit_code == 0, f"servo image execution failed: {stderr}"
-    assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
-
 
 def test_deploy_servo_fiberhttp_vegeta_measure() -> None:
     pass
@@ -246,7 +206,7 @@ class TestChecks:
         assert len(results)
         result = results[-1]
         assert result.id == "check_namespace"
-        assert result.success
+        assert result.success, f"expected success but failed: {result}"
 
     async def test_check_namespace_doesnt_exist(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         config.namespace = "INVALID"

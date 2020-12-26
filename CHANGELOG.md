@@ -39,6 +39,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   top-level `--limit` option.
 - Connector details for a particular servo instance can now be displayed via the
    `servo show connectors` CLI command.
+- Extensive new development and testing tooling.
 
 ### Changed
 

@@ -17,6 +17,7 @@ from servo.connectors.vegeta import VegetaConnector
 from servo.servo import Servo
 from tests.helpers import MeasureConnector
 
+
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner(mix_stderr=False)
@@ -68,7 +69,7 @@ def test_connectors(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "connectors")
     assert result.exit_code == 0, f"expected exit code 0, but found {result.exit_code}: {result.stderr}"
-    assert re.search("^NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
+    assert re.search("^NAME\\s+VERSION\\s+DESCRIPTION\n", result.stdout)
 
 
 def test_connectors_verbose(
@@ -80,7 +81,7 @@ def test_connectors_verbose(
     result = cli_runner.invoke(servo_cli, "connectors -v")
     assert result.exit_code == 0
     assert re.match(
-        "NAME\\s+TYPE\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
+        "NAME\\s+VERSION\\s+DESCRIPTION\\s+HOMEPAGE\\s+MATURITY\\s+LICENSE",
         result.stdout,
     )
 
@@ -373,8 +374,8 @@ class TestShow:
             assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-            assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
-            assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("error_rate\\s+requests_per_minute\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("throughput\\s+requests_per_minute\\s+\\(rpm\\)\\s+Measure", result.stdout)
 
         def test_metrics_by_name(
             self, cli_runner: CliRunner, servo_cli: Typer
@@ -384,8 +385,8 @@ class TestShow:
             assert re.search("METRIC\\s+UNIT\\s+CONNECTORS", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
             assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-            assert re.search("error_rate\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
-            assert re.search("throughput\\s+REQUESTS_PER_MINUTE\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("error_rate\\s+requests_per_minute\\s+\\(rpm\\)\\s+Measure", result.stdout)
+            assert re.search("throughput\\s+requests_per_minute\\s+\\(rpm\\)\\s+Measure", result.stdout)
 
 
 def test_version(cli_runner: CliRunner, servo_cli: Typer) -> None:

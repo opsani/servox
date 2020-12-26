@@ -78,6 +78,7 @@ format:
 typecheck:
 	poetry run mypy servo || true
 
+.PHONY: lint-docs
 lint-docs:
 	poetry run flake8-markdown "**/*.md" || true
 
@@ -85,8 +86,12 @@ lint-docs:
 lint: typecheck
 	poetry run flakehell lint --count
 
-.PHONY: kubeconfig
-kubeconfig:
+.PHONY: scan
+scan:
+	poetry run bandit -r servo
+
+.PHONY: test-kubeconfig
+test-kubeconfig:
 	@kubectl config view \
     	--minify --flatten \
 		> $(CURDIR)/tests/kubeconfig
@@ -96,10 +101,25 @@ kubeconfig:
 		$(KUBETEST_CONTEXT)
 	@echo "Saved current kubeconfig context '$(shell kubectl config current-context)' as '$(KUBETEST_CONTEXT)' in tests/kubeconfig"
 
-.PHONY: test
-test:
-	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg tests
-
 .PHONY: pre-commit
 pre-commit:
 	poetry run pre-commit run --hook-stage manual --all-files
+
+.PHONY: test
+test:
+	poetry run pytest -n auto --dist loadscope
+
+.PHONY: test-coverage
+	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg
+
+.PHONY: test-unit
+test-unit:
+	poetry run pytest -T unit -n auto --dist loadscope
+
+.PHONY: test-integration
+test-integration:
+	poetry run pytest -T integration -n auto --dist loadscope
+
+.PHONY: test-system
+test-system:
+	poetry run pytest -T system -n auto --dist loadscope

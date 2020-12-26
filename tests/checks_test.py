@@ -165,7 +165,7 @@ async def test_check_aborts_on_failed_requirement() -> None:
             return Check(name="1", success=True)
 
         def check_two(self) -> Check:
-            return Check(name="2", success=False, severity=ErrorSeverity.CRITICAL)
+            return Check(name="2", success=False, severity=ErrorSeverity.critical)
 
         def check_three(self) -> Check:
             return Check(name="3", success=True)
@@ -218,13 +218,13 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
         (
             123,
             ValueError,
-            ('caught exception: check method returned unexpected value of type "int"'),
+            ('caught exception (ValueError): check method returned unexpected value of type "int"'),
         ),
         (
             (False, 187),
             ValueError,
             (
-                "caught exception: 1 validation error for Check\n"
+                "caught exception (ValidationError): 1 validation error for Check\n"
                 "message\n"
                 "  str type expected (type=type_error.str)"
             ),
@@ -233,7 +233,7 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
             (666, "fail"),
             ValueError,
             (
-                "caught exception: 1 validation error for Check\n"
+                "caught exception (ValidationError): 1 validation error for Check\n"
                 "success\n"
                 "  value could not be parsed to a boolean (type=type_error.bool)"
             ),
@@ -491,7 +491,7 @@ async def test_filtering(name, id, tags, expected_ids) -> None:
 
 
 class RequirementChecks(BaseChecks):
-    @check("required-1", severity=ErrorSeverity.CRITICAL)
+    @check("required-1", severity=ErrorSeverity.critical)
     def check_one(self) -> None:
         ...
 
@@ -522,7 +522,7 @@ class RequirementChecks(BaseChecks):
         # no filter, halt at not-required-2
         (
             None,
-            ErrorSeverity.CRITICAL,
+            ErrorSeverity.critical,
             {
                 "required-1": True,
                 "not-required-1": True,
@@ -546,7 +546,7 @@ class RequirementChecks(BaseChecks):
         # run not-required-1, trigger 1 requirement, no failures
         (
             "not-required-1",
-            ErrorSeverity.CRITICAL,
+            ErrorSeverity.critical,
             {"not-required-1": True, "required-1": True},
         ),
         # run not-required-2, trigger 1 requirement, fail
@@ -554,7 +554,7 @@ class RequirementChecks(BaseChecks):
         # run required-3, trigger 2 requirements, halt at required-2
         (
             "not-required-3",
-            ErrorSeverity.CRITICAL,
+            ErrorSeverity.critical,
             {"required-1": True, "required-2": False},
         ),
         # run all required-3, trigger 2 requirements, required-2 fails
@@ -571,7 +571,7 @@ class RequirementChecks(BaseChecks):
         # run not-required-1 and not-required-3
         (
             ("not-required-1", "not-required-3"),
-            ErrorSeverity.CRITICAL,
+            ErrorSeverity.critical,
             {
                 "required-1": True,
                 "not-required-1": True,
@@ -869,7 +869,7 @@ async def test_handles_method_attrs() -> None:
 
 
 class WarningChecks(BaseChecks):
-    @check("warning-1", severity=ErrorSeverity.WARNING)
+    @check("warning-1", severity=ErrorSeverity.warning)
     def check_one(self) -> None:
         raise RuntimeError("Failure")
 
@@ -886,7 +886,7 @@ async def test_warnings() -> None:
             "warning-1",
             "check_one",
             False,
-            "caught exception: Failure",
+            "caught exception (RuntimeError): Failure",
         ],
         [
             "warning-2",

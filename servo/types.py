@@ -7,6 +7,7 @@ import abc
 import asyncio
 import datetime
 import enum
+import inspect
 import time
 from typing import (
     Any,
@@ -23,6 +24,7 @@ from typing import (
     runtime_checkable,
 )
 
+import operator
 import orjson
 import pydantic
 import pydantic.error_wrappers
@@ -91,9 +93,9 @@ class License(enum.Enum):
     """The License enumeration defines a set of licenses that describe the
     terms under which software components are released for use."""
 
-    MIT = "MIT"
-    APACHE2 = "Apache 2.0"
-    PROPRIETARY = "Proprietary"
+    mit = "MIT"
+    apache2 = "Apache 2.0"
+    proprietary = "Proprietary"
 
     @classmethod
     def from_str(cls, identifier: str) -> "License":
@@ -113,7 +115,7 @@ class Maturity(enum.Enum):
     """The Maturity enumeration defines a set of tiers that describe how mature
     and stable a software component is considered by its developers."""
 
-    EXPERIMENTAL = "Experimental"
+    experimental = "Experimental"
     """Experimental components are in an early state of development or are
     otherwise not fully supported by the developers.
 
@@ -121,7 +123,7 @@ class Maturity(enum.Enum):
     and deployment concerns may not yet be fully addressed.
     """
 
-    STABLE = "Stable"
+    stable = "Stable"
     """Stable components can be considered production ready and released under
     Semantic Versioning expectations.
 
@@ -129,7 +131,7 @@ class Maturity(enum.Enum):
     the developers and recommended for use in a production environment.
     """
 
-    ROBUST = "Robust"
+    robust = "Robust"
     """Robust components are fully mature, stable, well documented, and battle
     tested in a variety of production environments.
     """
@@ -154,6 +156,8 @@ Version = semver.VersionInfo
 Numeric = Union[pydantic.StrictFloat, pydantic.StrictInt]
 NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 
+# Describing time durations in various forms is very common
+DurationDescriptor = Union[datetime.timedelta, str, Numeric]
 
 class Duration(datetime.timedelta):
     """
@@ -233,7 +237,7 @@ class Duration(datetime.timedelta):
         )
 
     def __repr__(self):
-        return f"Duration('{self}' {super().__str__()})"
+        return f"Duration('{self}')"
 
     def __eq__(self, other) -> bool:
         if isinstance(other, str):
@@ -248,56 +252,39 @@ class Duration(datetime.timedelta):
     def human_readable(self) -> str:
         return str(self)
 
-
-class DurationProgress(BaseModel):
-    """
-    DurationProgress objects track progress across a fixed time duration.
-    """
-
-    duration: Duration
-    """The duration of the operation for which progress is being tracked.
-    """
-
+# TODO: Need an abstract progress... probably becomes a new module
+class BaseProgress(abc.ABC, BaseModel):
     started_at: Optional[datetime.datetime]
-    """The time that progress tracking was started.
-    """
-
-    def __init__(self, duration: "Duration", **kwargs) -> None: # noqa: D107
-        super().__init__(duration=duration, **kwargs)
+    """The time that progress tracking was started."""
 
     def start(self) -> None:
-        """
-        Starts progress tracking.
+        """Start progress tracking.
 
         The current time when `start` is called is used as the starting point to track progress.
 
         Raises:
-            AssertionError: Raised if the object has already been started.
+            RuntimeError: Raised if the object has already been started.
         """
-        assert not self.started
+        if self.started:
+            raise RuntimeError("cannot start a progress object that has already been started")
         self.started_at = datetime.datetime.now()
 
     @property
     def started(self) -> bool:
-        """
-        Returns a boolean value that indicates if progress tracking has started.
-        """
+        """Return a boolean value that indicates if progress tracking has started."""
         return self.started_at is not None
 
     @property
     def finished(self) -> bool:
-        """
-        Returns a boolean value that indicates if the duration has elapsed and progress is 100%.
-        """
-        return self.progress >= 100
+        """Return a boolean value that indicates if the progress has reached 100%."""
+        return self.progress and self.progress >= 100
 
     async def watch(
         self,
         notify: Callable[["DurationProgress"], Union[None, Awaitable[None]]],
         every: Duration = Duration("5s"),
     ) -> None:
-        """
-        Asynchronously watches progress tracking and invoke a callback to periodically report on progress.
+        """Asynchronously watch progress tracking and invoke a callback to periodically report on progress.
 
         Args:
             notify: An (optionally asynchronous) callable object to periodically invoke for progress reporting.
@@ -320,26 +307,12 @@ class DurationProgress(BaseModel):
             await async_notifier()
 
     @property
-    def progress(self) -> float:
-        """Returns completion progress percentage as a floating point value from 0.0 to
-        100.0"""
-        if self.started:
-            return (
-                min(100.0, 100.0 * (self.elapsed / self.duration))
-                if self.duration
-                else 100.0
-            )
-        else:
-            return 0.0
-
-    @property
-    def elapsed(self) -> Duration:
-        """Returns the total time elapsed since progress tracking was started as a Duration value."""
-        return Duration.since(self.started_at) if self.started else Duration(0)
+    def elapsed(self) -> Optional[Duration]:
+        """Return the total time elapsed since progress tracking was started as a Duration value."""
+        return Duration.since(self.started_at) if self.started else None
 
     def annotate(self, str_to_annotate: str, prefix=True) -> str:
-        """
-        Annotates and returns a string with details about progress status.
+        """Return a string annotated with details about progress status.
 
         Args:
             str_to_annotate: The string to annotate with progress status.
@@ -353,39 +326,222 @@ class DurationProgress(BaseModel):
         else:
             return f"{str_to_annotate} ({status})"
 
+    ##
+    # Abstract methods
+
+    @property
+    @abc.abstractmethod
+    def progress(self) -> float:
+        """Return completion progress percentage as a floating point value from 0.0 to 100.0"""
+
+    @abc.abstractmethod
+    def reset(self) -> None:
+        """Reset progress back to zero."""
+
+    @abc.abstractmethod
+    async def wait(self) -> None:
+        """Asynchronously wait for the progress to finish."""
+
+class DurationProgress(BaseProgress):
+    """DurationProgress objects track progress across a fixed time duration."""
+
+    duration: Duration
+    """The duration of the operation for which progress is being tracked."""
+
+    def __init__(self, duration: "Duration" = 0, **kwargs) -> None: # noqa: D107
+        super().__init__(duration=duration, **kwargs)
+
+    @property
+    def progress(self) -> float:
+        """Return completion progress percentage as a floating point value from 0.0 to 100.0"""
+        if self.started:
+            return (
+                min(100.0, 100.0 * (self.elapsed / self.duration))
+                if self.duration
+                else 100.0
+            )
+        else:
+            return 0.0
+
+    def reset(self) -> None:
+        """Reset progress back to zero."""
+        self.started_at = datetime.datetime.now()
+
+    async def wait(self) -> None:
+        """Asynchronously wait for the duration to elapse."""
+        await asyncio.sleep(self.duration - self.elapsed)
+
+
+class EventProgress(BaseProgress):
+    """EventProgress objects track progress against an indeterminate event."""
+
+    timeout: Optional[Duration]
+    """The maximum amount of time to wait for the event to be triggered.
+
+    When None, the event will be awaited forever.
+    """
+
+    settlement: Optional[Duration]
+    """The amount of time to wait for progress to be reset following an event trigger before returning early.
+
+    When None, progress is returned immediately upon the event being triggered.
+    """
+
+    _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
+    _settlement_timer: Optional[asyncio.TimerHandle] = pydantic.PrivateAttr(None)
+    _settlement_started_at: Optional[datetime.datetime] = pydantic.PrivateAttr(None)
+
+    def __init__(self, timeout: Optional["Duration"] = None, settlement: Optional["Duration"] = None, **kwargs) -> None: # noqa: D107
+        super().__init__(timeout=timeout, settlement=settlement, **kwargs)
+
+    def complete(self) -> None:
+        """Advance progress immediately to completion.
+
+        This method does not respect settlement time. Typical operation should utilize the `trigger`
+        method.
+        """
+        self._event.set()
+
+    @property
+    def completed(self) -> bool:
+        """Return True if the progress has been completed."""
+        return self._event.is_set()
+
+    @property
+    def timed_out(self) -> bool:
+        """Return True if the timeout has elapsed.
+
+        Return False if there is no timeout configured or the progress has not been started.
+        """
+        if not self.timeout or not self.started: return False
+        return Duration.since(self.started_at) >= self.timeout
+
+    @property
+    def finished(self) -> bool:
+        return self.timed_out or super().finished
+
+    def trigger(self) -> None:
+        """Trigger the event to advance progress toward completion.
+
+        When the event is triggered, the behavior is dependent upon whether or not a
+        settlement duration is configured. When None, progress is immediately advanced to 100%
+        and progress is finished, notifying all observers.
+
+        When a settlement duration is configured, progress will begin advancing across the settlement
+        duration to allow for the progress to be reset.
+        """
+        if self.settlement:
+            self._settlement_started_at = datetime.datetime.now()
+            self._settlement_timer = asyncio.get_event_loop().call_later(
+                self.settlement.total_seconds(),
+                self.complete
+            )
+        else:
+            self.complete()
+
+    def reset(self) -> None:
+        """Reset progress to zero by clearing the event trigger.
+
+        Resetting progress does not affect the timeout which will eventually finalize progress
+        when elapsed.
+        """
+        if self._settlement_timer:
+            self._settlement_timer.cancel()
+        self._settlement_started_at = None
+        self._event.clear()
+
+    async def wait(self) -> None:
+        """Asynchronously wait until the event condition has been triggered.
+
+        If the progress was initialized with a timeout, raises a TimeoutError when the timeout is
+        elapsed.
+
+        Raises:
+            TimeoutError: Raised if the timeout elapses before the event is triggered.
+        """
+        timeout = self.timeout.total_seconds() if self.timeout else None
+        await asyncio.wait_for(
+            self._event.wait(),
+            timeout=timeout
+        )
+
+    @property
+    def settling(self) -> bool:
+        """Return True if the progress has been triggered but is awaiting settlement before completion."""
+        return self._settlement_started_at is not None
+
+    @property
+    def settlement_remaining(self) -> Optional[Duration]:
+        """Return the amount of settlement time remaining before completion."""
+        if self.settling:
+            duration = Duration(self.settlement - Duration.since(self._settlement_started_at))
+            return duration if duration.total_seconds() >= 0 else None
+        else:
+            return None
+
+    # TODO: Figure out how to make sure this can't go backward sanely...
+    @property
+    def progress(self) -> float:
+        """Return completion progress percentage as a floating point value from 0.0 to 100.0
+
+        If the event has been triggered, immediately returns 100.0.
+        When progress has started but has not yet completed, the behavior is conditional upon
+        the configuration of a timeout and/or settlement time.
+
+        When settlement is in effect, progress is relative to the amount of time remaining in the
+        settlement duration. This can result in progress that goes backward as the finish moves
+        forward based on the event condition being triggered.
+        """
+        if self._event.is_set():
+            return 100.0
+        elif self.started:
+            if self.settling:
+                return (
+                    min(100.0, 100.0 * (Duration.since(self._settlement_started_at) / self.settlement))
+                )
+            elif self.timeout:
+                return (
+                    min(100.0, 100.0 * (self.elapsed / self.timeout))
+                )
+
+        # NOTE: Without a timeout or settlement duration we advance from 0 to 100. Like a true gangsta
+        return 0.0
 
 class Unit(str, enum.Enum):
-    """The Unit enumeration defines a standard set of units of measure for
-    optimizable metrics.
+    """An enumeration of standard units of measure for metrics.
+
+    Member names are the name of the unit and values are an abbreviation of the unit.
+
+    ### Members:
+        float: A generic floating point value.
+        int: A generic integer value.
+        count: An unsigned integer count of the number of times something has happened.
+        rate: The frequency of an event across a time interval.
+        percentage: A ratio of one value as compared to another (e.g., errors as compared to
+            total requests processed).
+        milliseconds: A time value at millisecond resolution.
+        bytes: Digital data size in bytes.
+        requests_per_minute: Application throughput in terms of requests processed per minute.
+        requests_per_second: Application throughput in terms of requests processed per second.
     """
+    float = ""
+    int = ""
+    count = ""
+    rate = ""
+    percentage = "%"
+    milliseconds = "ms"
+    bytes = "bytes"
+    requests_per_minute = "rpm"
+    requests_per_second = "rps"
 
-    BYTES = "bytes"
-    """Digital data size in bytes.
-    """
-
-    COUNT = "count"
-    """An unsigned integer count of the number of times something has happened.
-    """
-
-    REQUESTS_PER_MINUTE = "rpm"
-    """Application throughput in terms of requests processed per minute.
-    """
-
-    REQUESTS_PER_SECOND = "rps"
-    """Application throughput in terms of requests processed per second.
-    """
-
-    PERCENTAGE = "%"
-    """A ratio of one value as compared to another (e.g., errors as compared to
-total requests processed).
-    """
-
-    MILLISECONDS = "ms"
-    """A time value at millisecond resolution."""
-
+    def __repr__(self) -> str:
+        if self.value:
+            return f"<{self.__class__.__name__}.{self.name}: '{self.value}'>"
+        else:
+            return f"{self.__class__.__name__}.{self.name}"
 
 class Metric(BaseModel):
-    """Metric objects model optimizable value types in a specific Unit of measure.
+    """Metric objects model optimizeable value types in a specific Unit of measure.
 
     Args:
         name: The name of the metric.
@@ -418,8 +574,14 @@ class Metric(BaseModel):
 class DataPoint(BaseModel):
     """DataPoint objects model a scalar value reading of a Metric.
 
+    DataPoints are iterable and indexed and behave as tuple-like objects
+    of the form `(time, value)`. The metric attribute is omitted from
+    iteration and indexing to allow data point objects to be handled as
+    programmatically interchangeable with a tuple representation.
+
     Args:
         metric: The metric being measured.
+        time: The time that the value was read for the metric.
         value: The value that was read for the metric.
 
     Returns:
@@ -427,62 +589,125 @@ class DataPoint(BaseModel):
     """
 
     metric: Metric
-    """The metric being measured.
-    """
+    """The metric that the data point was measured from."""
+
+    time: datetime.datetime
+    """The time that the data point was measured."""
 
     value: float
-    """The value that was read for the metric.
-    """
+    """The value that was measured for the metric."""
 
-    measured_at: datetime.datetime = None
-    """The time that the data point was measured.
-    """
+    def __init__(self, metric: Metric, time: datetime.datetime, value: float, **kwargs) -> None: # noqa: D107
+        super().__init__(metric=metric, time=time, value=value, **kwargs)
 
-    def __init__(self, metric: Metric, value: float, **kwargs) -> None: # noqa: D107
-        super().__init__(metric=metric, value=value, **kwargs)
+    def __iter__(self):
+        return iter((self.time, self.value))
 
-    @pydantic.validator("measured_at", pre=True, always=True)
-    def _initialize_measured_at(cls, v) -> datetime.datetime:
-        return v or datetime.datetime.now()
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("values can only be retrieved by integer index")
+        if index not in (0, 1):
+            raise KeyError(f"index out of bounds: {index} not in (0, 1)")
+        return operator.getitem((self.time, self.value), index)
+
+    @property
+    def unit(self) -> Unit:
+        """Return the unit of the measured value."""
+        return self.metric.unit
 
     def __str__(self) -> str:
-        return f"{self.value:.2f}{self.unit.value}"
+        return f"{self.metric.name}: {self.value:.2f}{self.unit.value} @ {self.time}"
 
+    def __repr__(self) -> str:
+        abbrv = f" ({self.unit.value})" if self.unit.value else ""
+        return f"DataPoint({self.metric.name}{abbrv}, ({self.time}, {self.value}))"
+
+class NormalizationPolicy(str, enum.Enum):
+    """NormalizationPolicy is an enumeration that describes how measurements
+    are normalized before being reported to the optimizer.
+
+    Members:
+        passthrough: Measurements are reported as is returned by the connectors
+            without applying any normalization routines.
+        intersect: Measurements are reduced to a common set of interesecting
+            time series data. Data points measured at times that do not have
+            data points across all time series in the measurement are dropped.
+        fill: Time series in the measurement are brought into alignment by
+    """
+    passthrough = "passthrough"
+    intersect = "intersect"
+    fill = "fill"
 
 class TimeSeries(BaseModel):
-    """TimeSeries objects represent a sequence of readings taken for a Metric
-    over a period of time.
-    """
+    """TimeSeries objects models a sequence of data points containing
+    measurements of a metric indexed in time order.
 
-    metric: Metric
-    """The metric being measured.
-    """
+    TimeSeries objects are sized, sequenced collections of `DataPoint` objects.
+    Data points are sorted on init to ensure a time indexed order.
 
-    values: List[Tuple[datetime.datetime, float]]
-    """The values read for the metric at specific moments in time.
+    Attributes:
+        metric: The metric that the time series was measured from.
+        id: An optional identifier contextualizing the source of the time series
+            among a set of peers (e.g., instance ID, IP address, etc).
+        annotation: An optional human readable description about the time series.
+        metadata: An optional collection of arbitrary string key-value pairs that provides
+            context about the time series (e.g., the total run time of the operation, the
+            server from which the readings were taken, version info about the upstream
+            metrics provider, etc.).
     """
-
-    annotation: Optional[str]
-    """An optional advisory annotation providing supplemental context
-    information about the time series.
-    """
-
-    id: Optional[str]
-    """An optional identifier contextualizing the source of the time series
-    among a set of peers.
-    """
-
-    metadata: Optional[Dict[str, Any]]
-    """An optional collection of arbitrary key-value metadata that provides
-    context about the time series (e.g., the total run time of the operation, the
-    server from which the readings were taken, version info about the upstream
-    metrics provider, etc.).
-    """
+    metric: Metric = pydantic.Field(...)
+    data_points: List[DataPoint] = pydantic.Field(...)
+    id: Optional[str] = None
+    annotation: Optional[str] = None
+    metadata: Optional[Dict[str, str]] = None
 
     def __init__(
-        self, metric: Metric, values: List[Tuple[datetime.datetime, float]], **kwargs
+        self, metric: Metric, data_points: List[DataPoint], **kwargs
     ) -> None: # noqa: D107
-        super().__init__(metric=metric, values=values, **kwargs)
+        data_points_ = sorted(data_points, key=lambda p: p.time)
+        super().__init__(metric=metric, data_points=data_points_, **kwargs)
+
+    def __len__(self) -> int:
+        return len(self.data_points)
+
+    def __iter__(self):
+        return iter(self.data_points)
+
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("values can only be retrieved by integer index")
+        return self.data_points[index]
+
+    @property
+    def min(self) -> Optional[DataPoint]:
+        """Return the minimum data point in the series."""
+        return min(self.data_points, key=operator.itemgetter(1), default=None)
+
+    @property
+    def max(self) -> Optional[DataPoint]:
+        """Return the maximum data point in the series."""
+        return max(self.data_points, key=operator.itemgetter(1), default=None)
+
+    @property
+    def timespan(self) -> Optional[Tuple[datetime.datetime, datetime.datetime]]:
+        """Return a tuple of the earliest and latest times in the series."""
+        if self.data_points:
+            return (self.data_points[0].time, self.data_points[-1].time)
+        else:
+            return None
+
+    @property
+    def duration(self) -> Optional[Duration]:
+        """Return a Duration object reflecting the time span of the series."""
+        if self.data_points:
+            return Duration(self.data_points[-1].time - self.data_points[0].time)
+        else:
+            return None
+
+    def __repr_args__(self):
+        args = super().__repr_args__()
+        additional = dict(map(lambda attr: (attr, getattr(self, attr)), ('timespan', 'duration')))
+        return {**dict(args), **additional}.items()
 
 
 Reading = Union[DataPoint, TimeSeries]
@@ -895,7 +1120,7 @@ class Replicas(RangeSetting):
 class InstanceTypeUnits(str, enum.Enum):
     """InstanceTypeUnits is an enumeration that defines sources of compute instances."""
 
-    EC2 = "ec2"
+    ec2 = "ec2"
 
 
 class InstanceType(EnumSetting):
@@ -914,7 +1139,7 @@ class InstanceType(EnumSetting):
         description="Identifies the setting as an instance type enum setting.",
     )
     unit: InstanceTypeUnits = pydantic.Field(
-        InstanceTypeUnits.EC2,
+        InstanceTypeUnits.ec2,
         description="The unit of instance types identifying the provider.",
     )
 
@@ -1084,6 +1309,8 @@ class Description(BaseModel):
 class Measurement(BaseModel):
     """Measurement objects model the outcome of a measure operation and contain
     a set of readings for the metrics that were measured.
+
+    Measurements are sized and sequenced collections of readings.
     """
 
     readings: Readings = []
@@ -1117,7 +1344,7 @@ class Measurement(BaseModel):
             expected_count = None
             for obj in value:
                 if isinstance(obj, TimeSeries):
-                    actual_count = len(obj.values)
+                    actual_count = len(obj.data_points)
                     if expected_count and actual_count != expected_count:
                         logger.warning(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
@@ -1126,6 +1353,17 @@ class Measurement(BaseModel):
                         expected_count = actual_count
 
         return value
+
+    def __len__(self) -> int:
+        return len(self.readings)
+
+    def __iter__(self):
+        return iter(self.readings)
+
+    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+        if not isinstance(index, int):
+            raise TypeError("readings can only be retrieved by integer index")
+        return self.readings[index]
 
     def __opsani_repr__(self) -> dict:
         readings = {}
@@ -1138,7 +1376,7 @@ class Measurement(BaseModel):
                 }
 
                 # Fill the values with arrays of [timestamp, value] sampled from the reports
-                for date, value in reading.values:
+                for date, value in reading.data_points:
                     data["values"][0]["data"].append([int(date.timestamp()), value])
 
                 readings[reading.metric.name] = data
@@ -1208,10 +1446,6 @@ class AbstractOutputFormat(str, enum.Enum):
 
 Control.update_forward_refs()
 
-
-DurationType = Union[Duration, datetime.timedelta, str, bytes, int, float]
-
-
 HTTP_METHODS = (
     "GET",
     "POST",
@@ -1229,19 +1463,19 @@ class ErrorSeverity(str, enum.Enum):
     """ErrorSeverity is an enumeration the describes the severity of an error
     and establishes semantics about how it should be handled."""
 
-    WARNING = "warning"
+    warning = "warning"
     """Warnings are advisory and do not indicate an inability to operate. By
     default, warnings will not halt execution and emit actionable messages about
     potential problems.
     """
 
-    COMMON = "common"
+    common = "common"
     """Common errors are atomic failures that have no bearing on the outcome of
     other operatios. By default, errors are non-blocking and other available checks
     will be executed.
     """
 
-    CRITICAL = "critical"
+    critical = "critical"
     """Critical errors block the execution of dependent operations.
 
     Critical failures halt the execution of a sequence of checks that are part
@@ -1256,3 +1490,18 @@ class ErrorSeverity(str, enum.Enum):
     and the servo will test them before running any dependent checks, ensuring
     that you get a single failure that identifies the root cause.
     """
+
+# An `asyncio.Future` or an object that can be wrapped into an `asyncio.Future`
+# via `asyncio.ensure_future()`. See `isfuturistic()`.
+Futuristic = Union[asyncio.Future, Awaitable]
+
+def isfuturistic(obj: Any) -> bool:
+    """Returns True when obj is an asyncio Future or can be wrapped into one.
+
+    Futuristic objects can be passed into `asyncio.ensure_future` and methods
+    that accept awaitables such as `asyncio.gather` and `asyncio.wait_for`
+    without triggering a `TypeError`.
+    """
+    return (asyncio.isfuture(obj)
+            or asyncio.iscoroutine(obj)
+            or inspect.isawaitable(obj))

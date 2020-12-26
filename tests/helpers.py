@@ -1,18 +1,19 @@
 from __future__ import annotations
+
 import asyncio
-import fastapi
+import contextlib
+import datetime
 import json
 import os
-import contextlib
 import pathlib
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Type, Union
 
+import fastapi
+import kubernetes_asyncio.client
+import uvicorn
 import yaml
 from pydantic.json import pydantic_encoder
-import uvicorn
-
-import kubernetes_asyncio.client
 
 import servo.events
 import servo.types
@@ -23,6 +24,7 @@ from servo.logging import logger
 from servo.servo import Events
 from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
+
 
 class StubBaseConfiguration(BaseConfiguration):
     name: Optional[str]
@@ -40,11 +42,11 @@ class MeasureConnector(BaseConnector):
         return [
             Metric(
                 name="throughput",
-                unit=Unit.REQUESTS_PER_MINUTE
+                unit=Unit.requests_per_minute
             ),
             Metric(
                 name="error_rate",
-                unit=Unit.REQUESTS_PER_MINUTE
+                unit=Unit.requests_per_minute
             )
         ]
 
@@ -53,7 +55,7 @@ class MeasureConnector(BaseConnector):
         metrics = await self.metrics()
         return Description(metrics=metrics)
 
-    @before_event(Events.MEASURE)
+    @before_event(Events.measure)
     def before_measure(self) -> None:
         pass
 
@@ -66,16 +68,17 @@ class MeasureConnector(BaseConnector):
         return Measurement(
             readings=[
                 DataPoint(
+                    time=datetime.datetime.now(),
                     value=31337,
                     metric=Metric(
                         name="Some Metric",
-                        unit=Unit.REQUESTS_PER_MINUTE,
+                        unit=Unit.requests_per_minute,
                     )
                 )
             ]
         )
 
-    @after_event(Events.MEASURE)
+    @after_event(Events.measure)
     def after_measure(self, results: List[servo.events.EventResult]) -> None:
         pass
 
@@ -169,11 +172,12 @@ def json_key_path(json_str: str, key_path: str) -> Any:
 
 
 class Subprocess:
+    @staticmethod
     async def shell(
-        self,
         cmd: str,
         *,
         timeout: Timeout = None,
+        event: Optional[asyncio.Event] = None,
         print_output: bool = False,
         log_output: bool = True,
         **kwargs,
@@ -191,6 +195,8 @@ class Subprocess:
                     print(m)
                 if log_output:
                     logger.debug(m)
+                if event:
+                    event.set()
 
             return output_callback
 
@@ -208,6 +214,7 @@ class Subprocess:
         cmd: str,
         *,
         timeout: Timeout = None,
+        event: Optional[asyncio.Event] = None,
         print_output: bool = False,
         log_output: bool = True,
         **kwargs,
@@ -215,6 +222,7 @@ class Subprocess:
         return await self.shell(
             cmd,
             timeout=timeout,
+            event=event,
             print_output=print_output,
             log_output=log_output,
             **kwargs,

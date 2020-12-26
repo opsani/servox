@@ -21,10 +21,12 @@ import loguru
 import pydantic
 import pygments
 import pygments.formatters
-import tabulate
-import timeago
 import typer
 import yaml
+
+# Expose helpers
+from tabulate import tabulate
+from timeago import format as timeago
 
 import servo
 import servo.runner
@@ -32,22 +34,22 @@ import servo.utilities.yaml
 
 
 class Section(str, enum.Enum):
-    ASSEMBLY = "Assembly Commands"
-    OPS = "Operational Commands"
-    CONFIG = "Configuration Commands"
-    CONNECTORS = "Connector Commands"
-    COMMANDS = "Commands"
-    OTHER = "Other Commands"
+    assembly = "Assembly Commands"
+    ops = "Operational Commands"
+    config = "Configuration Commands"
+    connectors = "Connector Commands"
+    commands = "Commands"
+    other = "Other Commands"
 
 
 class LogLevel(str, enum.Enum):
-    TRACE = "TRACE"
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    SUCCESS = "SUCCESS"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
+    trace = "TRACE"
+    debug = "DEBUG"
+    info = "INFO"
+    success = "SUCCESS"
+    warning = "WARNING"
+    error = "ERROR"
+    critical = "CRITICAL"
 
 
 class ConfigOutputFormat(servo.AbstractOutputFormat):
@@ -97,7 +99,7 @@ class Context(typer.Context):
     connector: Optional[servo.BaseConnector] = None
 
     # NOTE: Section defaults generally only apply to Groups (see notes below)
-    section: Section = Section.COMMANDS
+    section: Section = Section.commands
 
     @classmethod
     def attributes(cls) -> Set[str]:
@@ -131,7 +133,7 @@ class Context(typer.Context):
         assembly: Optional[servo.Assembly] = None,
         servo_: Optional[servo.Servo] = None,
         connector: Optional[servo.BaseConnector] = None,
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         token: Optional[str] = None,
         token_file: Optional[pathlib.Path] = None,
         base_url: Optional[str] = None,
@@ -215,7 +217,7 @@ class Group(click.Group, ContextMixin):
 
             # Determine the command section
             # NOTE: We may have non-CLI instances so we guard attribute access
-            section = getattr(command, "section", Section.COMMANDS)
+            section = getattr(command, "section", Section.commands)
 
             commands = sections_of_commands.get(section, [])
             commands.append(
@@ -234,8 +236,8 @@ class Group(click.Group, ContextMixin):
 
             # Sort the connector and other commands as ordering isn't explicit
             if section in (
-                Section.CONNECTORS,
-                Section.OTHER,
+                Section.connectors,
+                Section.other,
             ):
                 commands = sorted(commands)
 
@@ -255,7 +257,7 @@ class OrderedGroup(Group):
 
 
 class CLI(typer.Typer, servo.logging.Mixin):
-    section: Section = Section.COMMANDS
+    section: Section = Section.commands
 
     def __init__(
         self,
@@ -264,7 +266,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None,
         callback: Optional[Callable] = typer.models.Default(None),
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         **kwargs,
     ) -> None: # noqa: D107
 
@@ -409,7 +411,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
             help="Limit multi-servo concurrency",
         ),
         log_level: LogLevel = typer.Option(
-            LogLevel.INFO,
+            LogLevel.info,
             "--log-level",
             "-l",
             envvar="SERVO_LOG_LEVEL",
@@ -650,7 +652,7 @@ class ConnectorCLI(CLI):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None,
         callback: Optional[Callable] = typer.models.Default(None),
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         **kwargs,
     ) -> None: # noqa: D107
         # Register for automated inclusion in the ServoCLI
@@ -745,7 +747,7 @@ class ServoCLI(CLI):
         return servo.logger
 
     def add_assembly_commands(self) -> None:
-        @self.command(section=Section.ASSEMBLY)
+        @self.command(section=Section.assembly)
         def init(
             context: Context,
             dotenv: bool = typer.Option(
@@ -868,7 +870,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def components(context: Context) -> None:
@@ -877,7 +879,7 @@ class ServoCLI(CLI):
                 if context.servo_ and context.servo_ != servo_:
                     continue
 
-                results = run_async(servo_.dispatch_event(servo.Events.COMPONENTS))
+                results = run_async(servo_.dispatch_event(servo.Events.components))
                 headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
                 table = []
                 for result in results:
@@ -899,7 +901,7 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def events(
@@ -954,30 +956,30 @@ class ServoCLI(CLI):
                     if False in preposition_switched:
                         # Handle explicit exclusions
                         prepositions = [
-                            servo.Preposition.BEFORE,
-                            servo.Preposition.ON,
-                            servo.Preposition.AFTER,
+                            servo.Preposition.before,
+                            servo.Preposition.on,
+                            servo.Preposition.after,
                         ]
                         if before == False:
-                            prepositions.remove(servo.Preposition.BEFORE)
+                            prepositions.remove(servo.Preposition.before)
                         if on == False:
-                            prepositions.remove(servo.Preposition.ON)
+                            prepositions.remove(servo.Preposition.on)
                         if after == False:
-                            prepositions.remove(servo.Preposition.AFTER)
+                            prepositions.remove(servo.Preposition.after)
                     else:
                         # Add explicit inclusions
                         prepositions = []
                         if before:
-                            prepositions.append(servo.Preposition.BEFORE)
+                            prepositions.append(servo.Preposition.before)
                         if on:
-                            prepositions.append(servo.Preposition.ON)
+                            prepositions.append(servo.Preposition.on)
                         if after:
-                            prepositions.append(servo.Preposition.AFTER)
+                            prepositions.append(servo.Preposition.after)
                 else:
                     prepositions = [
-                        servo.Preposition.BEFORE,
-                        servo.Preposition.ON,
-                        servo.Preposition.AFTER,
+                        servo.Preposition.before,
+                        servo.Preposition.on,
+                        servo.Preposition.after,
                     ]
 
                 sorted_event_names = sorted(
@@ -1011,7 +1013,7 @@ class ServoCLI(CLI):
                                     )
                                 )
                                 if handlers:
-                                    if preposition != servo.Preposition.ON:
+                                    if preposition != servo.Preposition.on:
                                         event_labels.append(f"{preposition} {event_name}")
                                     else:
                                         event_labels.append(event_name)
@@ -1040,7 +1042,7 @@ class ServoCLI(CLI):
                                         )
                                     )
                                 )
-                                if preposition != servo.Preposition.ON:
+                                if preposition != servo.Preposition.on:
                                     label = f"{preposition} {event_name}"
                                 else:
                                     label = event_name
@@ -1049,7 +1051,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def metrics(context: Context) -> None:
@@ -1081,11 +1083,11 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-        self.add_cli(show_cli, section=Section.ASSEMBLY)
+        self.add_cli(show_cli, section=Section.assembly)
 
-        @self.command("list", section=Section.ASSEMBLY)
+        @self.command("list", section=Section.assembly)
         def list_(
             context: Context,
         ) -> None:
@@ -1101,9 +1103,9 @@ class ServoCLI(CLI):
                 ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
-        @self.command(section=Section.ASSEMBLY)
+        @self.command(section=Section.assembly)
         def connectors(
             context: Context,
             verbose: bool = typer.Option(
@@ -1112,14 +1114,13 @@ class ServoCLI(CLI):
         ) -> None:
             """Display active connectors"""
             table = []
-            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
+            headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
 
             for connector_type in servo.Assembly.all_connector_types():
                 row = [
                     connector_type.__default_name__,
-                    connector_type.name,
                     connector_type.version,
                     connector_type.description,
                 ]
@@ -1131,9 +1132,9 @@ class ServoCLI(CLI):
                     ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+            typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-    def add_ops_commands(self, section=Section.OPS) -> None:
+    def add_ops_commands(self, section=Section.ops) -> None:
         @self.command(section=section)
         def run(
             context: Context,
@@ -1185,7 +1186,7 @@ class ServoCLI(CLI):
                 False, "--tag", "-t", help="Filter by tag"
             ),
             halt_on: Optional[servo.ErrorSeverity] = typer.Option(
-                servo.ErrorSeverity.CRITICAL,
+                servo.ErrorSeverity.critical,
                 "--halt-on",
                 "-h",
                 help="Halt running on failure severity",
@@ -1257,13 +1258,13 @@ class ServoCLI(CLI):
                     self.connectors_named(connectors, servo_) if connectors
                     else list(
                         filter(
-                            lambda c: c.responds_to_event(servo.Events.CHECK),
+                            lambda c: c.responds_to_event(servo.Events.check),
                             servo_.all_connectors,
                         )
                     )
 
                 )
-                validate_connectors_respond_to_event(connector_objs, servo.Events.CHECK)
+                validate_connectors_respond_to_event(connector_objs, servo.Events.check)
 
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
                 progress.start()
@@ -1272,7 +1273,7 @@ class ServoCLI(CLI):
                     args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                     constraints = dict(filter(lambda i: bool(i[1]), args.items()))
                     results: List[servo.EventResult] = await servo_.dispatch_event(
-                        servo.Events.CHECK,
+                        servo.Events.check,
                         servo.CheckFilter(**constraints),
                         include=connector_objs,
                         halt_on=halt_on,
@@ -1341,7 +1342,7 @@ class ServoCLI(CLI):
 
                     # Output table
                     if not quiet:
-                        typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                        typer.echo(tabulate(table, headers, tablefmt="plain"))
 
                     if ready:
                         return True
@@ -1405,7 +1406,7 @@ class ServoCLI(CLI):
                 )
 
                 results: List[servo.EventResult] = run_async(
-                    servo_.dispatch_event(servo.Events.DESCRIBE, include=connectors_)
+                    servo_.dispatch_event(servo.Events.describe, include=connectors_)
                 )
                 headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
                 table = []
@@ -1432,7 +1433,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         def metrics_callback(
             context: typer.Context, value: Optional[List[str]]
@@ -1498,7 +1499,7 @@ class ServoCLI(CLI):
                     self.connectors_named(connectors, servo_) if connectors
                     else list(
                         filter(
-                            lambda c: c.responds_to_event(servo.Events.MEASURE),
+                            lambda c: c.responds_to_event(servo.Events.measure),
                             servo_.all_connectors,
                         )
                     )
@@ -1508,7 +1509,7 @@ class ServoCLI(CLI):
                     # Filter target connectors by metrics
                     results: List[servo.EventResult] = run_async(
                         servo_.dispatch_event(
-                            servo.Events.METRICS, include=connectors_
+                            servo.Events.metrics, include=connectors_
                         )
                     )
                     for result in results:
@@ -1520,7 +1521,7 @@ class ServoCLI(CLI):
                 # Capture the measurements
                 results: List[servo.EventResult] = run_async(
                     servo_.dispatch_event(
-                        servo.Events.MEASURE,
+                        servo.Events.measure,
                         metrics=metrics,
                         control=servo.Control(duration=duration),
                         include=connectors_,
@@ -1550,11 +1551,11 @@ class ServoCLI(CLI):
 
                         if isinstance(reading, servo.TimeSeries):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            for value_tuple in reading.values:
-                                time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
+                            for data_point in reading.data_points:
+                                time_key = f"{data_point[0]:%Y-%m-%d %H:%M:%S}"
                                 timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                                 values = timestamp_to_connector.get(result.connector, [])
-                                values.append((value_tuple[1], reading))
+                                values.append((data_point[1], reading))
                                 timestamp_to_connector[result.connector] = values
                                 metric_to_timestamp[time_key] = timestamp_to_connector
 
@@ -1562,7 +1563,7 @@ class ServoCLI(CLI):
 
                         elif isinstance(reading, servo.DataPoint):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            time_key = f"{reading.measured_at:%Y-%m-%d %H:%M:%S}"
+                            time_key = f"{reading.time:%Y-%m-%d %H:%M:%S}"
                             timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                             values = timestamp_to_connector.get(result.connector, [])
                             values.append((reading.value, reading))
@@ -1594,7 +1595,7 @@ class ServoCLI(CLI):
                             readings_column.extend(
                                 list(
                                     map(
-                                        lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
+                                        lambda r: f"{r[0]:.2f} ({timeago(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
                                         values,
                                     )
                                 )
@@ -1609,7 +1610,38 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
+
+        @self.command(section=section)
+        def inject_sidecar(
+            context: Context,
+            target: str = typer.Argument(
+                ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
+            ),
+            service: Optional[str] = typer.Option(
+                None, "--service", "-s", help="Service to target"
+            ),
+            port: Optional[int] = typer.Option(
+                None, "--port", "-p", help="Port to target"
+            )
+        ) -> None:
+            """
+            Inject an Envoy sidecar to capture metrics
+            """
+            if not target.startswith(("deploy/", "deployment/", "pod/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+
+            if not service or port:
+                raise typer.MissingParameter("service or port must be given")
+
+            if target.startswith("deploy"):
+                connector = context.servo.get_connector("kubernetes")
+                run_async(connector.inject_sidecar(deployment=target, service=service, port=port))
+
+            elif target.startswith("pod"):
+                raise typer.BadParameter("Pod sidecar injection is not yet implemented")
+            else:
+                raise typer.BadParameter(f"unexpected sidecar target: {target}")
 
         @self.command(section=section)
         def adjust(
@@ -1645,7 +1677,7 @@ class ServoCLI(CLI):
                     adjustments.append(adjustment)
 
                 results: List[servo.EventResult] = run_async(
-                    servo_.dispatch_event(servo.Events.ADJUST, adjustments)
+                    servo_.dispatch_event(servo.Events.adjust, adjustments)
                 )
                 if not results:
                     typer.echo("adjustment failed: no connector handled the request", err=True)
@@ -1680,9 +1712,9 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-    def add_config_commands(self, section=Section.CONFIG) -> None:
+    def add_config_commands(self, section=Section.config) -> None:
         @self.command(section=section)
         def config(
             context: Context,
@@ -2036,9 +2068,9 @@ class ServoCLI(CLI):
 
     def add_connector_commands(self) -> None:
         for cli in ConnectorCLI.__clis__:
-            self.add_cli(cli, section=Section.CONNECTORS)
+            self.add_cli(cli, section=Section.connectors)
 
-        @self.command(section=Section.OTHER)
+        @self.command(section=Section.other)
         def version(
             context: Context,
             connector: Optional[str] = typer.Argument(
@@ -2123,3 +2155,6 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
         Exception: Any exception raised during execution of the future.
     """
     return asyncio.get_event_loop().run_until_complete(future)
+
+def print_table(table, headers) -> None:
+    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")

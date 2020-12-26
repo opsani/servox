@@ -1,6 +1,8 @@
 import pathlib
+
 import servo
 import tests
+
 
 def test_config(servo_yaml: pathlib.Path) -> None:
     config_model = servo.assembly._create_config_model_from_routes(

@@ -1,9 +1,35 @@
 name: Run Tests
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+    - 'docs/**'
+    - '*.md'
+    - Makefile
+  pull_request:
+    paths-ignore:
+    - 'docs/**'
+    - '*.md'
+    - Makefile
+    branches:
+      - main
 
 jobs:
-  pytest:
-    name: pytest
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: 'same_content'
+          paths_ignore: '["**/README.md", "**/docs/**"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+
+  unit:
+    needs: pre_job
+    if: needs.pre_job.outputs.should_skip != 'true'
+    name: Run Unit Tests
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@master
@@ -13,16 +39,148 @@ jobs:
         architecture: x64
     - name: Install and configure Poetry
       run: |
-        pip install poetry==1.0.*
+        pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
     - name: Set up cache
       uses: actions/cache@v2.1.1
+      id: cached-poetry-dependencies
       with:
         path: .venv
         key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-    - name: Run pytest
-      run: poetry run pytest tests
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+    - name: Run tests
+      run: |
+        poetry run pytest --cov=servo --cov-config=setup.cfg --doctest-modules \
+          --cov-report=term-missing:skip-covered \
+          --cov-report=xml:artifacts/coverage.xml --cov-report=html:artifacts/coverage-html \
+          --junitxml=artifacts/report.xml --html=artifacts/report.html \
+          --self-contained-html
+    - uses: actions/upload-artifact@v2
+      with:
+        name: test-reports
+        path: artifacts/
     - name: Test CLI entrypoints
       run: poetry run servo version
+
+  integration:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    needs: pre_job
+    if: |
+      needs.pre_job.outputs.should_skip != 'true' &&
+      (github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      startsWith(github.ref, 'refs/heads/bugfix/') ||
+      startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'pull_request' ||
+      contains(github.event.head_commit.message, '#test:integration'))
+    steps:
+    - uses: actions/checkout@master
+    - uses: actions/setup-python@v2.1.3
+      with:
+        python-version: '3.8'
+        architecture: x64
+    - name: Install and configure Poetry
+      run: |
+        pip install poetry==1.1.*
+        poetry config virtualenvs.in-project true
+    - name: Set up cache
+      uses: actions/cache@v2.1.1
+      id: cached-poetry-dependencies
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+    - name: Install dependencies
+      run: poetry install
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    - name: Create tests/kubeconfig
+      uses: kodermax/kubectl-aws-eks@master
+      env:
+        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      with:
+        args: config view --minify --flatten > tests/kubeconfig
+    - name: Install AWS IAM Authenticator
+      uses: prepor/action-aws-iam-authenticator@master
+    - name: Run integration tests
+      run: |
+        poetry run pytest -n 6 --dist loadscope \
+          -T integration --verbose --durations=0 --durations-min=5
+
+  system:
+    name: Run System Tests
+    runs-on: ubuntu-latest
+    needs: pre_job
+    if: |
+      needs.pre_job.outputs.should_skip != 'true' &&
+      (github.ref == 'refs/heads/main' ||
+      startsWith(github.ref, 'refs/heads/release/') ||
+      startsWith(github.ref, 'refs/heads/bugfix/') ||
+      startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'pull_request' ||
+      contains(github.event.head_commit.message, '#test:system'))
+    steps:
+    - uses: actions/checkout@master
+    - uses: actions/setup-python@v2.1.3
+      with:
+        python-version: '3.8'
+        architecture: x64
+    - name: Install and configure Poetry
+      run: |
+        pip install poetry==1.1.*
+        poetry config virtualenvs.in-project true
+    - name: Set up cache
+      uses: actions/cache@v2.1.1
+      id: cached-poetry-dependencies
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+    - name: Install dependencies
+      run: poetry install
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+    - name: Create tests/kubeconfig
+      uses: kodermax/kubectl-aws-eks@master
+      env:
+        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+      with:
+        args: config view --minify --flatten > tests/kubeconfig
+    - name: Fix permissions
+      run: |
+        if [ -f /home/runner/.kube ]; then
+          sudo chown -R runner:docker /home/runner/.kube
+        else
+          mkdir /home/runner/.kube
+        fi
+        sudo chown runner:docker tests/kubeconfig
+    - name: Rename EKS cluster to eks
+      run: |
+        kubectl config rename-context \
+          --kubeconfig=tests/kubeconfig \
+          kubetest eks
+    - name: Create kind cluster
+      uses: helm/kind-action@v1.0.0
+      with:
+        cluster_name: kind
+    - name: Display kind kubeconfig
+      run: kind get clusters && kind get kubeconfig --name kind
+    - name: Merge kind kubeconfig
+      run: kind export kubeconfig --name kind --kubeconfig tests/kubeconfig
+    - name: Install AWS IAM Authenticator
+      uses: prepor/action-aws-iam-authenticator@master
+    - name: Run system tests
+      run: |
+        poetry run pytest -n 6 --dist loadscope \
+          -T system --verbose --durations=0 --durations-min=5
