@@ -289,7 +289,7 @@ class TestInstall:
                         if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets.active)):
                             # NOTE: filter targets to match our namespace in
                             # case there are other things running in the cluster
-                            return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets))
+                            return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets.active))
 
                     await asyncio.sleep(0.25)
 

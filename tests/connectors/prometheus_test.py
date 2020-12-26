@@ -566,7 +566,7 @@ class TestPrometheusIntegration:
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
-                assert len(time_series) > 7
+                assert len(time_series) >= 5
                 assert time_series.min.value == 0.0
                 assert time_series.max.value >= 10.0
                 assert time_series[0].value == 0.0
