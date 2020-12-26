@@ -1051,60 +1051,6 @@ class TestError:
             servo.connectors.prometheus.Error.parse_obj({})
 
 
-
-
-
-@pytest.mark.clusterrolebinding('cluster-admin')
-@pytest.mark.applymanifests(
-    "../manifests",
-    files=[
-        "fiber-http-opsani-dev.yaml",
-        "prometheus.yaml"
-    ],
-)
-@pytest.mark.integration
-async def test_kubetest(
-    optimizer: servo.Optimizer,
-    kube,
-    kube_port_forward: Callable[[str, int], AsyncIterator[str]],
-) -> None:
-    # NOTE: What we are going to do here is deploy Prometheus, fiber-http, and k6 on a k8s cluster,
-    # port forward so we can talk to them, and then spark up the connector and it will adapt to
-    # changes in traffic. If it holds steady for 1 minute, it will early report. This supports bursty traffic.
-    # Measurements are taken based on the `step` of the target metric (currently hardwired to `throughput`).
-    servo.logging.set_level("DEBUG")
-    kube.wait_for_registered(timeout=30)
-
-    async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
-        async with kube_port_forward("service/fiber-http", 80) as fiber_url:
-            config = PrometheusConfiguration.generate(
-                base_url=prometheus_url,
-                metrics=[
-                    PrometheusMetric(
-                        "throughput",
-                        servo.Unit.requests_per_second,
-                        query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
-                        # absent=servo.connectors.prometheus.Absent.zero,
-                        step="15s",
-                    ),
-                    PrometheusMetric(
-                        "error_rate",
-                        servo.Unit.percentage,
-                        query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
-                        # absent=servo.connectors.prometheus.Absent.zero,
-                        step="10s",
-                    ),
-                ],
-            )
-            connector = PrometheusConnector(config=config, optimizer=optimizer)
-            measurement = await asyncio.wait_for(
-                connector.measure(control=servo.Control(duration="1m")),
-                timeout=70 # NOTE: Always make timeout exceed control duration
-            )
-            assert measurement
-            # FIXME: This should have error_rate also
-
-
 @pytest.fixture
 def query(config):
     return servo.connectors.prometheus.InstantQuery(
