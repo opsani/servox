@@ -20,8 +20,8 @@ jobs:
         default: "${{ matrix.python }}"
         command: |
           curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
-          source $HOME/.poetry/env
           poetry env use `cat .python-version`
           poetry install
+          source $HOME/.poetry/env
     - name: Run tests
       run: pytest .
