@@ -28,12 +28,13 @@ jobs:
       with:
         default: "${{ matrix.python }}"
         versions: 3.8.5, 3.8.6, 3.9.0
-        command: |
-          curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
-          source $HOME/.poetry/env
-          pyenv install -s
-          poetry env info
-          poetry env use `cat .python-version`
+    - name: Install Poetry
+      run: |
+        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
+        source $HOME/.poetry/env
+        pyenv install -s
+        poetry env info
+        poetry env use `cat .python-version`
     - name: Cache dependencies
       uses: actions/cache@v2.1.1
       id: cached-poetry-dependencies
