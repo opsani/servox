@@ -14,11 +14,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+      with:
+          fetch-depth: 1
     - name: Cache pyenv versions
       uses: actions/cache@v2.1.1
       id: cached-pyenvs
       with:
-        key: ${{ runner.os }}-python-${{ hashFiles('.python-version') }}
+        path: .
+        key: ${{ runner.os }}-python-${{ matrix.python }}
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v7
       if: steps.cached-pyenvs.outputs.cache-hit != 'true'
