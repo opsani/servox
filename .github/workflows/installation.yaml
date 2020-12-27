@@ -30,8 +30,7 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
           source $HOME/.poetry/env
           pyenv install -s
-          pyenv rehash
-          poetry config virtualenvs.in-project true
+          pyenv activate `cat .python-version`
           poetry env use `cat .python-version`
     - name: Cache dependencies
       uses: actions/cache@v2.1.1
