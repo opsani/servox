@@ -622,7 +622,8 @@ async def kubectl_ports_forwarded(
                 f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
                 event=event,
                 print_output=True
-        ))
+            )
+        )
 
         await event.wait()
 
@@ -641,12 +642,6 @@ async def kubectl_ports_forwarded(
             yield ports_to_urls
     finally:
         task.cancel()
-
-        # Cancel outstanding tasks
-        tasks = [t for t in asyncio.all_tasks() if t not in [asyncio.current_task()]]
-        [task.cancel() for task in tasks]
-
-        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.fixture()
