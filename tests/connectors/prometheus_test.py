@@ -11,16 +11,16 @@ import pytest
 import pytz
 import respx
 import typer
-import servo.connectors.prometheus
 
+import servo.connectors.prometheus
 import servo.utilities
 from servo.connectors.prometheus import (
+    Client,
     PrometheusChecks,
     PrometheusConfiguration,
     PrometheusConnector,
     PrometheusMetric,
     RangeQuery,
-    Client
 )
 from servo.types import *
 
@@ -606,7 +606,7 @@ class TestCLI:
                 request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets_response))
 
                 config_file = tmp_path / "servo.yaml"
-                import tests.helpers # TODO: Turn into fixtures!
+                import tests.helpers  # TODO: Turn into fixtures!
                 tests.helpers.write_config_yaml({"prometheus": config}, config_file)
 
                 result = cli_runner.invoke(servo_cli, "prometheus targets", catch_exceptions=False)
@@ -1203,7 +1203,7 @@ class TestAbsentMetrics:
             assert not respx.routes["instant_query_for_absent_empty_metric"].called
 
         else:
-            time_series = await connector._query_prometheus(metric, start, end)
+            await connector._query_prometheus(metric, start, end)
             assert respx.routes["range_query_for_empty_metric"].called
 
             if absent == servo.connectors.prometheus.Absent.ignore:

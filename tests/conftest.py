@@ -7,7 +7,6 @@ import pathlib
 import random
 import socket
 import string
-import pathlib
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import backoff
@@ -115,6 +114,7 @@ def pytest_addoption(parser) -> None:
     )
 
 import enum
+
 
 class TestType(str, enum.Enum):
     unit = "unit"
