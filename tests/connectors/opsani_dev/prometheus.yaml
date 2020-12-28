@@ -36,56 +36,54 @@ data:
       metrics:
         - name: main_instance_count
           query: sum(envoy_cluster_membership_healthy{opsani_role!="tuning"}) OR ON() vector(0)
-          unit: count
         - name: tuning_instance_count
           query: envoy_cluster_membership_healthy{opsani_role="tuning"} OR ON() vector(0)
-          unit: count
 
         - name: main_pod_avg_request_rate
           query: avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m])) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
         - name: total_request_rate
           query: sum(rate(envoy_cluster_upstream_rq_total[3m])) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
         - name: main_request_rate
           query: sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m])) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
         - name: tuning_request_rate
           query: rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m]) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
 
         - name: main_success_rate
           query: sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[3m])) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
         - name: tuning_success_rate
           query: rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m]) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
 
         - name: main_error_rate
           query: sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m])) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
         - name: tuning_error_rate
           query: rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m]) OR ON() vector(0)
-          unit: rps
+          unit: req / sec
 
         - name: main_p99_latency
           query: avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
         - name: tuning_p99_latency
           query: avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
         - name: main_p90_latency
           query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
         - name: tuning_p90_latency
           query: avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
         - name: main_p50_latency
           query: avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
         - name: tuning_p50_latency
           query: avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m]))) OR ON() vector(0)
-          unit: ms
+          unit: milliseconds
 ---
 apiVersion: apps/v1
 kind: Deployment

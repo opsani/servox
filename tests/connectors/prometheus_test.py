@@ -123,7 +123,7 @@ class TestPrometheusConfiguration:
             "base_url: http://prometheus:9090\n"
             "metrics:\n"
             "- name: throughput\n"
-            "  unit: rps\n"
+            "  unit: req / sec\n"
             "  query: rate(http_requests_total[5m])\n"
             "  step: 1m\n"
             "  absent: ignore\n"

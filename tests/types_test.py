@@ -119,28 +119,28 @@ def test_parse_measure_command_response_including_units() -> None:
                     "unit": "%",
                 },
                 "latency_total": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_mean": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_50th": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_90th": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_95th": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_99th": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_max": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
                 "latency_min": {
-                    "unit": "ms",
+                    "unit": "milliseconds",
                 },
             },
         },

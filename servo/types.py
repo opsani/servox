@@ -529,10 +529,10 @@ class Unit(str, enum.Enum):
     count = ""
     rate = ""
     percentage = "%"
-    milliseconds = "ms"
+    milliseconds = "milliseconds"
     bytes = "bytes"
     requests_per_minute = "rpm"
-    requests_per_second = "rps"
+    requests_per_second = "req / sec"
 
     def __repr__(self) -> str:
         if self.value:

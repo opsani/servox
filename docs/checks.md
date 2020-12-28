@@ -391,7 +391,7 @@ prometheus:
   metrics:
   - name: throughput
     query: rate(http_requests_total[1s])[3m]
-    unit: rps
+    unit: req / sec
   - name: error_rate
     query: rate(errors)
     unit: '%'
