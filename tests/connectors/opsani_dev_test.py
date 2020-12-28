@@ -27,6 +27,7 @@ import pytz
 import respx
 
 import servo
+import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
