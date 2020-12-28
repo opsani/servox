@@ -515,14 +515,14 @@ class OpsaniDevConnector(servo.BaseConnector):
         #     return
 
         await servo_.add_connector(
-            "kubernetes",
+            "opsani-dev:kubernetes",
             servo.connectors.kubernetes.KubernetesConnector(
                 optimizer=self.optimizer,
                 config=self.config.generate_kubernetes_config(),
             ),
         )
         await servo_.add_connector(
-            "prometheus",
+            "opsani-dev:prometheus",
             servo.connectors.prometheus.PrometheusConnector(
                 optimizer=self.optimizer,
                 config=self.config.generate_prometheus_config(),
