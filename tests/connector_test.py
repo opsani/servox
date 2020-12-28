@@ -1304,7 +1304,7 @@ class TestConnectorEvents:
 
             class NonAsyncEvent(TestConnectorEvents.FakeConnector):
                 @event()
-                def invalid_event(self):
+                def some_other_invalid_event(self):
                     pass
 
         assert e
