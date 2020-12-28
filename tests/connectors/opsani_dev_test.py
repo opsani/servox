@@ -354,11 +354,11 @@ class TestInstall:
 
             # Step 7
             servo.logger.critical("Step 7 - Bring tuning Pod online")
-            await assert_check_raises(
-                checks.run_one(id=f"check_canary_is_running"),
-                AssertionError,
-                re.escape("could not find tuning pod 'fiber-http-canary'")
-            )
+            # await assert_check_raises(
+            #     checks.run_one(id=f"check_canary_is_running"),
+            #     AssertionError,
+            #     re.escape("could not find tuning pod 'fiber-http-canary'")
+            # )
             async with change_to_resource(deployment):
                 await deployment.ensure_canary_pod()
             await assert_check(checks.run_one(id=f"check_canary_is_running"))
