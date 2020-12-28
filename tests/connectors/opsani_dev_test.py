@@ -3,6 +3,7 @@ import contextlib
 import datetime
 import functools
 import os
+import pathlib
 import re
 from typing import (
     Any,
@@ -212,7 +213,7 @@ class TestInstall:
         envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
         async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
             # Connect the checks to our port forward interface
-            checks.config.prometheus_base_url = prometheus_base_url #+ servo.connectors.prometheus.API_PATH
+            checks.config.prometheus_base_url = prometheus_base_url
 
             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
@@ -386,6 +387,106 @@ class TestInstall:
                         functools.partial(checks.run_one, id=f"check_traffic_metrics")
                     )
                 )
+
+            servo.logger.success("🥷 Opsani Dev is now deployed.")
+            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+
+    async def test_install_wait(
+        self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+        kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+        load_generator: Callable[[], 'LoadGenerator'],
+        tmp_path: pathlib.Path
+    ) -> None:
+        # Deploy fiber-http with annotations and Prometheus will start scraping it
+        envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
+        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+            # Connect the checks to our port forward interface
+            checks.config.prometheus_base_url = prometheus_base_url
+            servo.logging.set_level("DEBUG")
+
+            deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
+            assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+
+            async def remedy_check(id: str) -> None:
+                servo.logger.warning(f"Remedying failing check '{id}'...")
+                if id == 'check_deployment_annotations':
+                    ## Step 1
+                    servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
+                    async with change_to_resource(deployment):
+                        await add_annotations_to_podspec_of_deployment(deployment,
+                            {
+                                "prometheus.opsani.com/path": "/stats/prometheus",
+                                "prometheus.opsani.com/port": "9901",
+                                "prometheus.opsani.com/scrape": "true",
+                                "prometheus.opsani.com/scheme": "http",
+                            }
+                        )
+
+                elif id == 'check_deployment_labels':
+                    # Step 2: Verify the labels are set on the Deployment pod spec
+                    servo.logger.critical("Step 2 - Label the Deployment PodSpec")
+                    async with change_to_resource(deployment):
+                        await add_labels_to_podspec_of_deployment(deployment,
+                            {
+                                "sidecar.opsani.com/type": "envoy"
+                            }
+                        )
+
+                elif id == 'check_deployment_envoy_sidecars':
+                    # Step 3
+                    servo.logger.critical("Step 3 - Inject Envoy sidecar container")
+                    async with change_to_resource(deployment):
+                        servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
+                        await deployment.inject_sidecar(service="fiber-http")
+
+                elif id == 'check_prometheus_targets':
+                    # Step 4
+                    servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
+                    servo.logger.info("waiting for Prometheus to scrape our Pods")
+                    await asyncio.sleep(0.25)
+
+                elif id == 'check_envoy_sidecar_metrics':
+                    # Step 5
+                    servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
+                    servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
+                    async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
+                        await load_generator(envoy_url).run_until('5s')
+
+                elif id == 'check_service_proxy':
+                    # Step 6
+                    servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
+
+                    # Update the port to point to the sidecar
+                    service = await servo.connectors.kubernetes.Service.read("fiber-http", checks.config.namespace)
+                    service.ports[0].target_port = envoy_proxy_port
+                    async with change_to_resource(service):
+                        await service.patch()
+
+                elif id == 'check_canary_is_running':
+                    servo.logger.critical("Step 7 - Bring tuning Pod online")
+                    # TODO: This should happen automatically?
+                    async with change_to_resource(deployment):
+                        await deployment.ensure_canary_pod()
+
+                elif id == 'check_traffic_metrics':
+                    # Step 8
+                    servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
+                    async with kube_port_forward(f"service/fiber-http", 80) as service_url:
+                        await load_generator(service_url).run_until(asyncio.sleep(1.0))
+
+                else:
+                    raise AssertionError(f"unhandled check: '{id}'")
+
+            async def loop_checks() -> None:
+                while True:
+                    results = await checks.run_all()
+                    next_failure = next(filter(lambda r: r.success is False, results), None)
+                    if next_failure:
+                        await remedy_check(next_failure.id)
+                    else:
+                        break
+
+            await asyncio.wait_for(loop_checks(), 90.0)
 
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
