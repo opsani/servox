@@ -77,7 +77,10 @@ class Condition(servo.logging.Mixin):
         self.last_check = False
 
     def __str__(self) -> str:
-        return f"<Condition (name: {self.name}, met: {self.last_check})>"
+        if self.last_check:
+            return f"{self.name} is ready"
+        else:
+            return f"Waiting on {self.name}"
 
     def __repr__(self) -> str:
         return self.__str__()
