@@ -59,7 +59,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
     containers = pod.get_containers()
     assert len(containers) == 2, "should have fiber-http and an envoy sidecar"
     assert containers[0].obj.name == "fiber-http"
-    assert containers[1].obj.name == "envoy"
+    assert containers[1].obj.name == "opsani-envoy"
 
     # Check services
     response = pod.http_proxy_get("/")

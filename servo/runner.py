@@ -154,7 +154,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             await asyncio.sleep(duration.total_seconds())
 
             # Return a status so we have a simple API contract
-            return servo.api.Status(status="slept", message=msg)
+            return servo.api.Status(status="ok", message=msg)
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
