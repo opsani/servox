@@ -1146,7 +1146,7 @@ dev = ["pre-commit", "tox", "pytest-asyncio"]
 
 [[package]]
 name = "pytest-picked"
-version = "0.4.4"
+version = "0.4.6"
 description = "Run the tests related to the changed files"
 category = "dev"
 optional = false
@@ -1640,7 +1640,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "d8623e9bdcb48f8cc34f2769a2bc622277d0dbf3fe50be8c46f9eaf04937fe0a"
+content-hash = "0b2d0538778ea0d136effe21f05a39e99f1d3809d6656b561d0a4f2a7217792f"
 
 [metadata.files]
 aiohttp = [
@@ -2260,7 +2260,8 @@ pytest-mock = [
     {file = "pytest_mock-3.4.0-py3-none-any.whl", hash = "sha256:c0fc979afac4aaba545cbd01e9c20736eb3fefb0a066558764b07d3de8f04ed3"},
 ]
 pytest-picked = [
-    {file = "pytest-picked-0.4.4.tar.gz", hash = "sha256:1c7c070d622403e109d2e8cd8054e44c117065b5ab79dc39cb5697ffd867309f"},
+    {file = "pytest-picked-0.4.6.tar.gz", hash = "sha256:e1ec7aee5d2cd3a91f676fd0afd7620a26c0ccc21e604152bbc5137f430e6c00"},
+    {file = "pytest_picked-0.4.6-py3-none-any.whl", hash = "sha256:8bc744222a39ecc84cbcb87251fb69810ee576a80f84cc77fc47222818b3fa7c"},
 ]
 pytest-profiling = [
     {file = "pytest-profiling-1.7.0.tar.gz", hash = "sha256:93938f147662225d2b8bd5af89587b979652426a8a6ffd7e73ec4a23e24b7f29"},
