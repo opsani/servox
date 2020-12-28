@@ -879,16 +879,16 @@ class PrometheusConnector(servo.BaseConnector):
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
-                absent = await client.check_is_metric_absent(metric)
-                if metric.absent == Absent.warn:
-                    servo.logger.warning(
-                        f"Found absent metric for query (`{metric.query}`)"
-                    )
-                elif metric.absent == Absent.fail:
-                    servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
-                    raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
-                else:
-                    raise ValueError(f"unknown metric absent value: {metric.absent}")
+                if await client.check_is_metric_absent(metric):
+                    if metric.absent == Absent.warn:
+                        servo.logger.warning(
+                            f"Found absent metric for query (`{metric.query}`)"
+                        )
+                    elif metric.absent == Absent.fail:
+                        servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
+                        raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
+                    else:
+                        raise ValueError(f"unknown metric absent value: {metric.absent}")
 
             return []
 
@@ -1030,15 +1030,15 @@ class EagerMetricObserver(pydantic.BaseModel):
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
-                absent = await client.check_is_metric_absent(metric)
-                if metric.absent == Absent.warn:
-                    servo.logger.warning(
-                        f"Found absent metric for query (`{metric.query}`)"
-                    )
-                elif metric.absent == Absent.fail:
-                    servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
-                    raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
-                else:
-                    raise ValueError(f"unknown metric absent value: {metric.absent}")
+                if await client.check_is_metric_absent(metric):
+                    if metric.absent == Absent.warn:
+                        servo.logger.warning(
+                            f"Found absent metric for query (`{metric.query}`)"
+                        )
+                    elif metric.absent == Absent.fail:
+                        servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
+                        raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
+                    else:
+                        raise ValueError(f"unknown metric absent value: {metric.absent}")
 
             return []

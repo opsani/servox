@@ -1,7 +1,9 @@
 import os
 
 import pytest
+
 import tests.helpers
+
 
 @pytest.fixture
 async def servo_image(request) -> str:

@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 
 import freezegun
-import pytest
 import pydantic
+import pytest
 
 from servo.types import (
     Adjustment,
@@ -162,7 +162,10 @@ def test_parse_measure_command_response_including_units() -> None:
     ]
 
 
-import servo, asyncio
+import asyncio
+
+import servo
+
 
 class TestDurationProgress:
     @pytest.fixture

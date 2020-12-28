@@ -7,7 +7,6 @@ import pathlib
 import random
 import socket
 import string
-import pathlib
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import backoff
@@ -115,6 +114,7 @@ def pytest_addoption(parser) -> None:
     )
 
 import enum
+
 
 class TestType(str, enum.Enum):
     unit = "unit"
@@ -272,7 +272,6 @@ def pytest_collection_modifyitems(config, items) -> None:
         else:
             if ((type_mark.name == TestType.integration and not config.getoption("--integration"))
                 or (type_mark.name == TestType.system and not config.getoption("--system"))):
-                    opt = config.getoption("--integration")
                     item.add_marker(
                         pytest.mark.skip(
                             reason=f"{type_mark.name} tests not enabled. Run with --{type_mark.name} to enable"

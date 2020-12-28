@@ -8,6 +8,7 @@ import asyncio
 import datetime
 import enum
 import inspect
+import operator
 import time
 from typing import (
     Any,
@@ -24,7 +25,6 @@ from typing import (
     runtime_checkable,
 )
 
-import operator
 import orjson
 import pydantic
 import pydantic.error_wrappers
