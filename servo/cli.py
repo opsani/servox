@@ -1272,12 +1272,15 @@ class ServoCLI(CLI):
                 )
                 validate_connectors_respond_to_event(connector_objs, servo.Events.check)
 
-                kubeconfig = "~/.kube/config" or os.getenv("KUBECONFIG")
-                if kubeconfig:
+                if os.getenv("KUBERNETES_SERVICE_HOST"):
+                    kubernetes_asyncio.config.load_incluster_config()
+                else:
+                    kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
                     kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
-                    await kubernetes_asyncio.config.load_kube_config(
-                        config_file=os.path.expandvars(kubeconfig_path),
-                    )
+                    if kubeconfig_path.exists():
+                        await kubernetes_asyncio.config.load_kube_config(
+                            config_file=os.path.expandvars(kubeconfig_path),
+                        )
 
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
                 while not progress.finished:
