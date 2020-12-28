@@ -253,7 +253,3 @@ def test_log_execution_time_no_args() -> None:
     logger.add(lambda m: messages.append(m), level=0)
     log_me()
     assert messages[0].record["message"] == "Function 'log_me' executed in 15s"
-
-def test_lorenzo_test() -> None:
-    reset_to_defaults()
-    servo.logger.info("Test test.")
