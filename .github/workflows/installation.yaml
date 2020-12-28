@@ -47,4 +47,6 @@ jobs:
         poetry install
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
-      run: poetry run pytest
+      run: |
+        source $HOME/.poetry/env
+        poetry run pytest
