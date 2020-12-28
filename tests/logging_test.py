@@ -20,9 +20,9 @@ from servo.logging import (
     set_level,
 )
 
-
+from typing import Iterator
 @pytest.fixture(autouse=True)
-def reset_logging() -> None:
+def reset_logging() -> Iterator[None]:
     _connector_context_var.set(None)
     _event_context_var.set(None)
     servo.Assembly.set_current(None)
@@ -253,3 +253,7 @@ def test_log_execution_time_no_args() -> None:
     logger.add(lambda m: messages.append(m), level=0)
     log_me()
     assert messages[0].record["message"] == "Function 'log_me' executed in 15s"
+
+def test_lorenzo_test() -> None:
+    reset_to_defaults()
+    servo.logger.info("Test test.")
