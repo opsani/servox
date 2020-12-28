@@ -1,5 +1,7 @@
 name: Quick Start
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
 
 jobs:
   quick_start:
