@@ -542,8 +542,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 if ctx.servo_ is None:
                     raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
 
-        run_async(assembly.startup())
-
     @staticmethod
     def connectors_named(names: List[str], servo_: servo.Servo) -> List[servo.BaseConnector]:
         connectors: List[servo.BaseConnector] = []
