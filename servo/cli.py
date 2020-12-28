@@ -1277,7 +1277,6 @@ class ServoCLI(CLI):
                     kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
                     await kubernetes_asyncio.config.load_kube_config(
                         config_file=os.path.expandvars(kubeconfig_path),
-                        context='kubetest',
                     )
 
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
@@ -1293,7 +1292,7 @@ class ServoCLI(CLI):
                         servo.CheckFilter(**constraints),
                         include=connector_objs,
                         halt_on=halt_on,
-                    )
+                    ) or []
 
                     if progressive:
                         if result := next(iter(results), None):
