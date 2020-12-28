@@ -1277,7 +1277,7 @@ class ServoCLI(CLI):
                     kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
                     await kubernetes_asyncio.config.load_kube_config(
                         config_file=os.path.expandvars(kubeconfig_path),
-                        # context=kubecontext,
+                        context='kubetest',
                     )
 
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
