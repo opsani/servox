@@ -1245,23 +1245,20 @@ class TestAbsentMetrics:
         start = datetime.datetime.now()
         end = start + Duration("36h")
 
-        if absent == "fail":
-            with pytest.raises(RuntimeError, match="Required metric 'empty_metric' is absent from Prometheus"):
-                await connector._query_prometheus(metric, start, end)
-
+        result = await connector._query_prometheus(metric, start, end)
+        if absent == "zero":
+            # NOTE: Zero will append the `or on() vector(0)` suffix and never trigger `absent()`
+            assert respx.routes["range_query_for_empty_metric_or_zero_vector"].called
+            assert not respx.routes["instant_query_for_absent_empty_metric"].called
+            assert result == []
+        elif absent == "ignore":
+            # NOTE: Ignore doesn't care and won't issue the absent() query
+            assert respx.routes["range_query_for_empty_metric"].called
+            assert not respx.routes["instant_query_for_absent_empty_metric"].called
+        else:
             assert respx.routes["range_query_for_empty_metric"].called
             assert respx.routes["instant_query_for_absent_empty_metric"].called
-        else:
-            result = await connector._query_prometheus(metric, start, end)
-
-            if absent in {"zero", "ignore"}:
-                assert respx.routes["range_query_for_empty_metric_or_zero_vector"]
-                assert not respx.routes["instant_query_for_absent_empty_metric"].called
-                assert result == []
-            else:
-                assert respx.routes["range_query_for_empty_metric"].called
-                assert respx.routes["instant_query_for_absent_empty_metric"].called
-                assert result == []
+            assert result == []
 
     class TestAbsentZero:
         async def test_range_query_includes_or_on_vector(self) -> None:
