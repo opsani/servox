@@ -72,6 +72,7 @@ async def running_servo(
         # await asyncio.gather(*tasks, return_exceptions=True)
 
 # TODO: Switch this over to using a FakeAPI
+@pytest.mark.xfail(reason="too brittle.")
 async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
     response = await servo_runner._post_event(

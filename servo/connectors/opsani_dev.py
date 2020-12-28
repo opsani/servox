@@ -193,15 +193,15 @@ class OpsaniDevChecks(servo.BaseChecks):
         self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
         assert config, "failed: no config map named 'prometheus-config'"
 
-    @servo.checks.check("Prometheus sidecar injected")
+    @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise RuntimeError(f"failed: no servo pod is running in namespace '{self.config.namespace}'")
 
         if not pod.get_container("prometheus"):
             raise RuntimeError(
-                f"failed: no 'prometheus' container found in pod '{pod.name}'"
+                f"failed: no 'prometheus' container found in pod '{pod.name}' in namespace '{self.config.namespace}'"
             )
 
     @servo.checks.check("Prometheus sidecar is ready")
@@ -286,7 +286,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         """
         async with servo.connectors.kubernetes.Pod.preferred_client() as api_client:
             label_selector = servo.connectors.kubernetes.selector_string(
-                {"app.servo.connectors.kubernetes.io/name": "servo"}
+                {"app.kubernetes.io/name": "servo"}
             )
             pod_list: servo.connectors.kubernetes.client.V1PodList = (
                 await api_client.list_namespaced_pod(
@@ -461,7 +461,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
         try:
-            await deployment.get_canary_pod()
+            await deployment.ensure_canary_pod()
         except Exception as error:
             raise AssertionError(
                 f"could not find tuning pod '{deployment.canary_pod_name}''"
@@ -510,19 +510,19 @@ class OpsaniDevConnector(servo.BaseConnector):
     @servo.on_event()
     async def startup(self) -> None:
         servo_ = servo.Servo.current()
-        if self.maturity == servo.Maturity.experimental:
-            # Early exit on experimental Opsani Dev bits
-            return
+        # if self.maturity == servo.Maturity.experimental:
+        #     # Early exit on experimental Opsani Dev bits
+        #     return
 
         await servo_.add_connector(
-            "kubernetes",
+            "opsani-dev:kubernetes",
             servo.connectors.kubernetes.KubernetesConnector(
                 optimizer=self.optimizer,
                 config=self.config.generate_kubernetes_config(),
             ),
         )
         await servo_.add_connector(
-            "prometheus",
+            "opsani-dev:prometheus",
             servo.connectors.prometheus.PrometheusConnector(
                 optimizer=self.optimizer,
                 config=self.config.generate_prometheus_config(),
