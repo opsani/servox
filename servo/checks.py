@@ -252,7 +252,7 @@ def check(
     into a check function or method.
 
     The decorator requires a `name` parameter to identify the check as well as an optional
-    informative `description`, an `id` for succintly referencing the check, and a `severity`
+    informative `description`, an `id` for succinctly referencing the check, and a `severity`
     value that determines how failure is reported and affects depdendent checks.
     The body of the decorated function is used to perform the business logic of running
     the check. The decorator wraps the original function body into a handler that runs the
@@ -286,7 +286,6 @@ def check(
         )
 
         if asyncio.iscoroutinefunction(fn):
-
             @functools.wraps(fn)
             async def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
@@ -294,7 +293,6 @@ def check(
                 return check
 
         else:
-
             @functools.wraps(fn)
             def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()

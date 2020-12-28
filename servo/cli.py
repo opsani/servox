@@ -5,6 +5,7 @@ import datetime
 import enum
 import functools
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -17,6 +18,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pat
 import bullet
 import click
 import devtools
+import kubernetes_asyncio
 import loguru
 import pydantic
 import pygments
@@ -541,8 +543,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
                 if ctx.servo_ is None:
                     raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
-
-        run_async(assembly.startup())
 
     @staticmethod
     def connectors_named(names: List[str], servo_: servo.Servo) -> List[servo.BaseConnector]:
@@ -1200,15 +1200,21 @@ class ServoCLI(CLI):
                 "-q",
                 help="Do not echo generated output to stdout",
             ),
+            progressive: bool = typer.Option(
+                False,
+                "--progressive",
+                "-p",
+                help="Execute checks and emit output progressively",
+            ),
             wait: Optional[str] = typer.Option(
                 None,
                 "--wait",
                 "-w",
                 help="Wait for checks to pass",
-                metavar="[DURATION]",
+                metavar="[TIMEOUT]",
             ),
             delay: Optional[str] = typer.Option(
-                None,
+                "15s",
                 "--delay",
                 "-d",
                 help="Delay duration. Requires --wait",
@@ -1266,10 +1272,22 @@ class ServoCLI(CLI):
                 )
                 validate_connectors_respond_to_event(connector_objs, servo.Events.check)
 
-                progress = servo.DurationProgress(servo.Duration(wait or 0))
-                progress.start()
+                if os.getenv("KUBERNETES_SERVICE_HOST"):
+                    kubernetes_asyncio.config.load_incluster_config()
+                else:
+                    kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
+                    kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
+                    if kubeconfig_path.exists():
+                        await kubernetes_asyncio.config.load_kube_config(
+                            config_file=os.path.expandvars(kubeconfig_path),
+                        )
 
-                while True:
+                progress = servo.DurationProgress(servo.Duration(wait or 0))
+                while not progress.finished:
+                    if not progress.started:
+                        # run at least one time
+                        progress.start()
+
                     args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                     constraints = dict(filter(lambda i: bool(i[1]), args.items()))
                     results: List[servo.EventResult] = await servo_.dispatch_event(
@@ -1277,84 +1295,87 @@ class ServoCLI(CLI):
                         servo.CheckFilter(**constraints),
                         include=connector_objs,
                         halt_on=halt_on,
-                    )
+                    ) or []
 
-                    def check_status_to_str(check: servo.Check) -> str:
-                        if check.success:
-                            return "√ PASSED"
-                        else:
-                            if check.warning:
-                                return "! WARNING"
+                    if progressive:
+                        if result := next(iter(results), None):
+                            checks: List[servo.Check] = result.value
+                            next_failure = next(filter(lambda c: c.success is False, checks), None)
+
+                            if next_failure:
+                                servo.logger.warning(f"Check '{next_failure.name}' failed: {next_failure.message}")
                             else:
-                                return "X FAILED"
-
-                    table = []
-                    ready = True
-                    if verbose:
-                        headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
-                        for result in results:
-                            checks: List[servo.Check] = result.value
-                            names, ids, tags, statuses, comments = [], [], [], [], []
-                            for check in checks:
-                                names.append(check.name)
-                                ids.append(check.id)
-                                tags.append(", ".join(check.tags) if check.tags else "-")
-                                statuses.append(check_status_to_str(check))
-                                comments.append(textwrap.shorten(check.message or "-", 70))
-                                ready &= check.success
-
-                            if not names:
-                                continue
-
-                            row = [
-                                result.connector.name,
-                                "\n".join(names),
-                                "\n".join(ids),
-                                "\n".join(tags),
-                                "\n".join(statuses),
-                                "\n".join(comments),
-                            ]
-                            table.append(row)
+                                # nothing is left failing, spike the football
+                                typer.echo(f"🔥 All checks are now passing.")
+                                done = True
                     else:
-                        headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                        for result in results:
-                            checks: List[servo.Check] = result.value
-                            if not checks:
-                                continue
+                        table = []
+                        ready = True
+                        if verbose:
+                            headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
+                            for result in results:
+                                checks: List[servo.Check] = result.value
+                                names, ids, tags, statuses, comments = [], [], [], [], []
+                                for check in checks:
+                                    names.append(check.name)
+                                    ids.append(check.id)
+                                    tags.append(", ".join(check.tags) if check.tags else "-")
+                                    statuses.append(_check_status_to_str(check))
+                                    comments.append(textwrap.shorten(check.message or "-", 70))
+                                    ready &= check.success
 
-                            success = True
-                            errors = []
-                            for check in checks:
-                                success &= check.passed
-                                check.success or errors.append(
-                                    f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                                if not names:
+                                    continue
+
+                                row = [
+                                    result.connector.name,
+                                    "\n".join(names),
+                                    "\n".join(ids),
+                                    "\n".join(tags),
+                                    "\n".join(statuses),
+                                    "\n".join(comments),
+                                ]
+                                table.append(row)
+                        else:
+                            headers = ["CONNECTOR", "STATUS", "ERRORS"]
+                            for result in results:
+                                checks: List[servo.Check] = result.value
+                                if not checks:
+                                    continue
+
+                                success = True
+                                errors = []
+                                for check in checks:
+                                    success &= check.passed
+                                    check.success or errors.append(
+                                        f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                                    )
+                                ready &= success
+                                status = "√ PASSED" if success else "X FAILED"
+                                message = functools.reduce(
+                                    lambda m, e: m
+                                    + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
+                                    errors,
+                                    "",
                                 )
-                            ready &= success
-                            status = "√ PASSED" if success else "X FAILED"
-                            message = functools.reduce(
-                                lambda m, e: m
-                                + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
-                                errors,
-                                "",
-                            )
-                            row = [result.connector.name, status, message]
-                            table.append(row)
+                                row = [result.connector.name, status, message]
+                                table.append(row)
 
-                    # Output table
-                    if not quiet:
-                        typer.echo(tabulate(table, headers, tablefmt="plain"))
+                        # Output table
+                        if not quiet:
+                            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
-                    if ready:
-                        return True
-                    elif progress.finished:
-                        # Don't log a timeout if we aren't running in wait mode
-                        if progress.duration:
-                            self.logger.error(
-                                f"timed out waiting for checks to pass {progress.duration}"
-                            )
-                        return False
+                        if ready:
+                            return True
+                        elif progress.finished:
+                            # Don't log a timeout if we aren't running in wait mode
+                            if progress.duration:
+                                self.logger.error(
+                                    f"timed out waiting for checks to pass {progress.duration}"
+                                )
+                            return False
 
-                    if delay is not None:
+                    if not done and delay is not None:
                         self.logger.info(
                             f"waiting for {delay} before rerunning failing checks"
                         )
@@ -2158,3 +2179,12 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
 
 def print_table(table, headers) -> None:
     typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
+
+def _check_status_to_str(check: servo.Check) -> str:
+    if check.success:
+        return "√ PASSED"
+    else:
+        if check.warning:
+            return "! WARNING"
+        else:
+            return "X FAILED"
