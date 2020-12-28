@@ -622,7 +622,8 @@ async def kubectl_ports_forwarded(
                 f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
                 event=event,
                 print_output=True
-        ))
+            )
+        )
 
         await event.wait()
 
