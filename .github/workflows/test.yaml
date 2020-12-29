@@ -171,7 +171,7 @@ jobs:
           --kubeconfig=tests/kubeconfig \
           kubetest eks
     - name: Create kind cluster
-      uses: helm/kind-action@v1.0.0
+      uses: helm/kind-action@v1.1.0
       with:
         cluster_name: kind
     - name: Display kind kubeconfig
