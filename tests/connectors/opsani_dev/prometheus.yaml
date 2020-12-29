@@ -36,10 +36,10 @@ data:
       metrics:
         - name: main_instance_count
           query: sum(envoy_cluster_membership_healthy{opsani_role!="tuning"}) OR ON() vector(0)
-          unit: count
+
         - name: tuning_instance_count
           query: envoy_cluster_membership_healthy{opsani_role="tuning"} OR ON() vector(0)
-          unit: count
+
 
         - name: main_pod_avg_request_rate
           query: avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m])) OR ON() vector(0)

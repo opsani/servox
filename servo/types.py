@@ -555,11 +555,11 @@ class Metric(BaseModel):
     """The name of the metric.
     """
 
-    unit: Unit
+    unit: Unit = Unit.float
     """The unit that the metric is measured in (e.g., requests per second).
     """
 
-    def __init__(self, name: str, unit: Unit, **kwargs) -> None: # noqa: D107
+    def __init__(self, name: str, unit: Unit = Unit.float, **kwargs) -> None: # noqa: D107
         super().__init__(name=name, unit=unit, **kwargs)
 
     def __hash__(self):
