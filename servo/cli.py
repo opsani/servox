@@ -1397,6 +1397,7 @@ class ServoCLI(CLI):
                             self.logger.info(
                                 f"waiting for {delay} before rerunning failing checks"
                             )
+                            typer.echo("\n")
                             await asyncio.sleep(servo.Duration(delay).total_seconds())
 
                         if progress.finished:
