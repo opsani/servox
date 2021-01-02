@@ -1320,21 +1320,20 @@ class ServoCLI(CLI):
                                     failure = check
                                     break
 
+                            ready = failure is None
                             if failure:
-                                servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}", component=failure.id)
+                                # TODO: add a .component property?
+                                servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")#, component=failure.id)
                                 # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
                                 if failure.hint:
-                                    servo.logger.info(f"Hint: {failure.hint}", component=failure.id)
+                                    servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
                                     # typer.echo(f"  Hint: {failure.hint}")
                             else:
                                 # nothing is left failing, spike the football
-                                # typer.echo(f"🔥 All checks are now passing.")
                                 servo.logger.info("🔥 All checks passed.")
-                                ready = True
-                                return True
+                                # typer.echo(f"🔥 All checks are now passing.")
                         else:
                             typer.echo(f"WARNING: No checks found -- returning.")
-                            ready = True
                     else:
                         table = []
                         if verbose:

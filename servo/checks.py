@@ -842,12 +842,15 @@ def _set_check_result(
         check.success = False
         check.exception = result
 
-        # NOTE: When a CheckError is raised, we can assume the output is crafted
         if isinstance(result, CheckError):
-            # TODO: Handle fanciness...
+            # when a CheckError, we can assume the output is crafted
             check.message = str(result)
             check.hint = result.hint
+        elif isinstance(result, AssertionError):
+            # assertions are self explanatory
+            check.message = str(result)
         else:
+            # arbitrary exceptions we have no idea, so be more pedantic
             check.message = f"caught exception ({result.__class__.__name__}): {str(result) or repr(result)}"
     else:
         raise ValueError(

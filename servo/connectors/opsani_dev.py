@@ -1,4 +1,6 @@
+import json
 import os
+import operator
 from typing import List, Optional
 
 import servo
@@ -6,11 +8,11 @@ import servo.connectors.kubernetes
 import servo.connectors.prometheus
 
 PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090"
-PROMETHEUS_ANNOTATION_NAMES = {
-    "prometheus.opsani.com/scrape",
-    "prometheus.opsani.com/scheme",
-    "prometheus.opsani.com/path",
-    "prometheus.opsani.com/port",
+PROMETHEUS_ANNOTATION_DEFAULTS = {
+    "prometheus.opsani.com/scrape": "true",
+    "prometheus.opsani.com/scheme": "http",
+    "prometheus.opsani.com/path": "/stats/prometheus",
+    "prometheus.opsani.com/port": "9901",
 }
 ENVOY_SIDECAR_LABELS = {
     "sidecar.opsani.com/type": "envoy"
@@ -197,27 +199,27 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_prometheus_sidecar_exists(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod is running in namespace '{self.config.namespace}'")
+            raise servo.checks.CheckError(f"no servo pod is running in namespace '{self.config.namespace}'")
 
         if not pod.get_container("prometheus"):
-            raise RuntimeError(
-                f"failed: no 'prometheus' container found in pod '{pod.name}' in namespace '{self.config.namespace}'"
+            raise servo.checks.CheckError(
+                f"no 'prometheus' container found in pod '{pod.name}' in namespace '{self.config.namespace}'"
             )
 
     @servo.checks.check("Prometheus sidecar is ready")
     async def check_prometheus_sidecar_is_ready(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise servo.checks.CheckError(f"no servo pod was found")
 
         if not await pod.is_ready():
-            raise RuntimeError(f"failed: pod '{pod.name}' is not ready")
+            raise servo.checks.CheckError(f"pod '{pod.name}' is not ready")
 
     @servo.checks.warn("Prometheus sidecar is stable")
     async def check_prometheus_restart_count(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise servo.checks.CheckError(f"no servo pod was found")
 
         container = pod.get_container("prometheus")
         assert container, "could not find a Prometheus sidecar container"
@@ -230,7 +232,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_prometheus_container_port(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise servo.checks.CheckError(f"failed: no servo pod was found")
 
         container = pod.get_container("prometheus")
         assert container, "could not find Prometheus sidecar container"
@@ -247,7 +249,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_prometheus_is_accessible(self) -> str:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise servo.checks.CheckError(f"no servo pod was found")
 
         container = pod.get_container("prometheus")
         assert container, "could not find a Prometheus sidecar container"
@@ -300,7 +302,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Kubernetes Deployment edits
 
-    @servo.checks.require("annotations")
+    @servo.checks.require("Deployment PodSpec has expected annotations")
     async def check_deployment_annotations(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -308,15 +310,22 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
-        annotations = deployment.pod_template_spec.metadata.annotations
-        assert annotations, f"deployment '{deployment.name}' does not have any annotations"
-
         # NOTE: Only check for annotation keys
+        annotations = deployment.pod_template_spec.metadata.annotations or dict()
         actual_annotations = set(annotations.keys())
-        delta = PROMETHEUS_ANNOTATION_NAMES.difference(actual_annotations)
-        assert not delta, f"missing annotations: {sorted(delta)}"
+        delta = set(PROMETHEUS_ANNOTATION_DEFAULTS.keys()).difference(actual_annotations)
+        if delta:
+            annotations = dict(map(lambda k: (k, PROMETHEUS_ANNOTATION_DEFAULTS[k]), delta))
+            patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
+            patch_json = json.dumps(patch, indent=None)
+            command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
+            desc = ', '.join(delta)
+            raise servo.checks.CheckError(
+                f"deployment '{deployment.name}' is missing annotations: {desc}",
+                hint=f"Patch annotations via: `{command}`"
+            )
 
-    @servo.checks.require("labels")
+    @servo.checks.require("Deployment PodSpec has expected labels")
     async def check_deployment_labels(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -329,9 +338,17 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(ENVOY_SIDECAR_LABELS.items()) - set(labels.items()))
-        assert not delta, f"missing labels: {delta}"
+        if delta:
+            desc = ' '.join(map('='.join, delta.items()))
+            patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
+            patch_json = json.dumps(patch, indent=None)
+            command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
+            raise servo.checks.CheckError(
+                f"deployment '{deployment.name}' is missing labels: {desc}",
+                hint=f"Patch labels via: `{command}`"
+            )
 
-    @servo.checks.require("envoy sidecars")
+    @servo.checks.require("Deployment has Envoy sidecar container")
     async def check_deployment_envoy_sidecars(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -345,9 +362,9 @@ class OpsaniDevChecks(servo.BaseChecks):
                 # TODO: Add more heuristics about the image, etc.
                 return
 
-        raise AssertionError(f"pods created against the '{deployment.name}' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
+        raise servo.checks.CheckError(f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')")
 
-    @servo.checks.require("envoy sidecars in pods")
+    @servo.checks.require("Pods have Envoy sidecar containers")
     async def check_pod_envoy_sidecars(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -355,23 +372,25 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
+        pods_without_sidecars = []
         for pod in await deployment.get_pods():
             # Search the containers list for the sidecar
-            for container in pod.containers:
-                if container.name == "opsani-envoy":
-                    # TODO: Add more heuristics about the image, etc.
-                    return
+            if not pod.get_container('opsani-envoy'):
+                # TODO: Add more heuristics about the image, etc.
+                pods_without_sidecars.append(pod)
 
-        raise AssertionError(f"pods created against the '{deployment.name}' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
+        if pods_without_sidecars:
+            desc = ', '.join(map(operator.attrgetter("name"), pods_without_sidecars))
+            raise servo.checks.CheckError(f"pods '{desc}' do not have envoy sidecar container ('opsani-envoy')")
 
     ##
     # Connecting the dots
 
-    @servo.require("prometheus targets")
+    @servo.require("Prometheus is discovering targets")
     async def check_prometheus_targets(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
-            raise RuntimeError(f"failed: no servo pod was found")
+            raise servo.checks.CheckError(f"no servo pod was found")
 
         container = pod.get_container("prometheus")
         assert container, "could not find a Prometheus sidecar container"
@@ -416,7 +435,11 @@ class OpsaniDevChecks(servo.BaseChecks):
 
                 if metric.name == "main_request_rate":
                     timestamp, value = result.value
-                    assert int(value) > 0, f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})"
+                    if not value > 0.0:
+                        raise servo.checks.CheckError(
+                            f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
+                            hint=f"Send traffic to your application on port 9980. Try `kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & watch -n 0.25 curl -v http://localhost:9980/`"
+                        )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
                     if result.value is None:
@@ -450,7 +473,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             if port.target_port == proxy_service_port:
                 return
 
-        raise AssertionError(f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}")
+        raise servo.checks.CheckError(f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}")
 
     @servo.check("Tuning pod is running")
     async def check_canary_is_running(self) -> None:
@@ -463,7 +486,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         try:
             await deployment.ensure_canary_pod()
         except Exception as error:
-            raise AssertionError(
+            raise servo.checks.CheckError(
                 f"could not find tuning pod '{deployment.canary_pod_name}''"
             ) from error
 
