@@ -473,7 +473,14 @@ class OpsaniDevChecks(servo.BaseChecks):
             if port.target_port == proxy_service_port:
                 return
 
-        raise servo.checks.CheckError(f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}")
+        # TODO: This patch is somewhat naive. We need to allow config of specific port (we just look at the first one)
+        patch = {"spec": { "type": service.obj.spec.type, "ports": [ {"protocol": "TCP", "port": service.ports[0].port, "targetPort": proxy_service_port }]}}
+        patch_json = json.dumps(patch, indent=None)
+        command = f"kubectl --namespace {self.config.namespace} patch service {self.config.service} -p '{patch_json}'"
+        raise servo.checks.CheckError(
+            f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
+            hint=f"Update target port via: `{command}`"
+        )
 
     @servo.check("Tuning pod is running")
     async def check_canary_is_running(self) -> None:
