@@ -13,7 +13,7 @@ import subprocess
 import sys
 import textwrap
 import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Literal, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click
@@ -1207,7 +1207,7 @@ class ServoCLI(CLI):
                 help="Execute checks and emit output progressively",
             ),
             wait: Optional[str] = typer.Option(
-                None,
+                "30m",
                 "--wait",
                 "-w",
                 help="Wait for checks to pass",
@@ -1282,7 +1282,16 @@ class ServoCLI(CLI):
                             config_file=os.path.expandvars(kubeconfig_path),
                         )
 
+                if wait:
+                    summary = "Running checks"
+                    summary += " progressively" if progressive else ""
+                    summary += f" for up to {wait} with a delay of {delay} between iterations"
+                    servo.logger.info(summary)
+                    # typer.echo(summary)
+
+                passing = set()
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
+                ready = True
                 while not progress.finished:
                     if not progress.started:
                         # run at least one time
@@ -1300,17 +1309,34 @@ class ServoCLI(CLI):
                     if progressive:
                         if result := next(iter(results), None):
                             checks: List[servo.Check] = result.value
-                            next_failure = next(filter(lambda c: c.success is False, checks), None)
+                            failure = None
+                            for check in checks:
+                                if check.success:
+                                    # FIXME: This should hold Check objects but hashing isn't matching
+                                    if check.id not in passing:
+                                        servo.logger.success(f"✅ Check '{check.name}' passed", component=check.id)
+                                        passing.add(check.id)
+                                else:
+                                    failure = check
+                                    break
 
-                            if next_failure:
-                                servo.logger.warning(f"Check '{next_failure.name}' failed: {next_failure.message}")
+                            if failure:
+                                servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}", component=failure.id)
+                                # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
+                                if failure.hint:
+                                    servo.logger.info(f"Hint: {failure.hint}", component=failure.id)
+                                    # typer.echo(f"  Hint: {failure.hint}")
                             else:
                                 # nothing is left failing, spike the football
-                                typer.echo(f"🔥 All checks are now passing.")
-                                done = True
+                                # typer.echo(f"🔥 All checks are now passing.")
+                                servo.logger.info("🔥 All checks passed.")
+                                ready = True
+                                return True
+                        else:
+                            typer.echo(f"WARNING: No checks found -- returning.")
+                            ready = True
                     else:
                         table = []
-                        ready = True
                         if verbose:
                             headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
                             for result in results:
@@ -1365,21 +1391,22 @@ class ServoCLI(CLI):
                         if not quiet:
                             typer.echo(tabulate(table, headers, tablefmt="plain"))
 
-                        if ready:
-                            return True
-                        elif progress.finished:
+                    if ready:
+                        return True
+                    else:
+                        if delay is not None:
+                            self.logger.info(
+                                f"waiting for {delay} before rerunning failing checks"
+                            )
+                            await asyncio.sleep(servo.Duration(delay).total_seconds())
+
+                        if progress.finished:
                             # Don't log a timeout if we aren't running in wait mode
                             if progress.duration:
                                 self.logger.error(
                                     f"timed out waiting for checks to pass {progress.duration}"
                                 )
                             return False
-
-                    if not done and delay is not None:
-                        self.logger.info(
-                            f"waiting for {delay} before rerunning failing checks"
-                        )
-                        time.sleep(servo.Duration(delay).total_seconds())
 
             # Check all targeted servos
             if context.servo:
