@@ -319,8 +319,8 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         # If we didn't find the client in the api_clients dict, use the
         # preferred version.
         if c is None:
-            self.logger.warning(
-                f"unknown version ({self.api_version}), falling back to preferred version"
+            self.logger.debug(
+                f"unknown API version ({self.api_version}) for {self.__class__.__name__}, falling back to preferred version"
             )
             c = self.api_clients.get("preferred")
             if c is None:
@@ -920,7 +920,8 @@ class Pod(KubernetesModel):
         async with self.api_client() as api_client:
             self.obj = await asyncio.wait_for(
                 api_client.read_namespaced_pod_status(
-                    name=self.name, namespace=self.namespace
+                    name=self.name,
+                    namespace=self.namespace,
                 ),
                 5.0,
             )
@@ -1082,7 +1083,7 @@ class Service(KubernetesModel):
             name: The name of the Service to read.
             namespace: The namespace to read the Service from.
         """
-        servo.logger.debug(f'reading service "{name}" in namespace "{namespace}"')
+        servo.logger.trace(f'reading service "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
             obj = await asyncio.wait_for(
@@ -1786,7 +1787,7 @@ class Deployment(KubernetesModel):
         # Look for an existing canary
         try:
             if canary_pod := await self.get_canary_pod():
-                self.logger.info(
+                self.logger.debug(
                     f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
                 )
                 return canary_pod
