@@ -105,6 +105,10 @@ test-kubeconfig:
 pre-commit:
 	poetry run pre-commit run --hook-stage manual --all-files
 
+.PHONY: autotest
+autotest:
+	poetry run watchgod autotest.main
+
 .PHONY: test
 test:
 	poetry run pytest -n auto --dist loadscope
