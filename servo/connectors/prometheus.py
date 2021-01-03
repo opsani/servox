@@ -955,6 +955,10 @@ class EagerMetricObserver(pydantic.BaseModel):
     async def observe(self, progress: servo.EventProgress) -> None:
         if not self.metrics:
             # bail if there are no eager metrics to observe
+            servo.logger.info(
+                progress.annotate(f"measuring Prometheus metrics for {progress.timeout}", False),
+                progress=progress.progress,
+            )
             return
 
         servo.logger.info(
