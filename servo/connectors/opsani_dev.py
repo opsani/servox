@@ -347,7 +347,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
-            desc = ', '.join(delta)
+            desc = ', '.join(sorted(delta))
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
                 hint=f"Patch annotations via: `{command}`"
@@ -488,7 +488,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 # Empty data indicates a potentially absent metric
                 # TODO: Use Client to check for absent metric
                 if metric.name == "main_request_rate":
-                    raise AssertionError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
+                    raise servo.checks.CheckError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
                 elif metric.name == "main_error_rate":
                     # no errors sounds delightful
                     pass
