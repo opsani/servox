@@ -64,9 +64,10 @@ Tag = pydantic.constr(
 )
 
 class CheckError(RuntimeError):
-    def __init__(self, message: str, *, hint: Optional[str] = None) -> None:
+    def __init__(self, message: str, *, hint: Optional[str] = None, remedy: Optional[Callable[[], None]] = None) -> None:
         super().__init__(message)
         self.hint = hint
+        self.remedy = remedy
 
 
 class Check(pydantic.BaseModel, servo.logging.Mixin):
@@ -120,6 +121,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """
 
     hint: Optional[pydantic.StrictStr] = None
+    remedy: Optional[Union[Callable[[], None], Awaitable[None]]] = None
 
     exception: Optional[Exception]
     """
@@ -846,6 +848,7 @@ def _set_check_result(
             # when a CheckError, we can assume the output is crafted
             check.message = str(result)
             check.hint = result.hint
+            check.remedy = result.remedy
         elif isinstance(result, AssertionError):
             # assertions are self explanatory
             check.message = str(result)

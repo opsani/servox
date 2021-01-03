@@ -1225,6 +1225,11 @@ class ServoCLI(CLI):
                 "--run",
                 help="Run the servo when checks pass",
             ),
+            remedy: bool = typer.Option(
+                False,
+                "--remedy",
+                help="Attempt to automatically remedy failures",
+            ),
             exit_on_success: bool = typer.Option(True, hidden=True),
         ) -> None:
             """
@@ -1330,6 +1335,15 @@ class ServoCLI(CLI):
                                 # TODO: add a .component property?
                                 servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")#, component=failure.id)
                                 # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
+                                if remedy and failure.remedy:
+                                    servo.logger.info("💡 Attempting to apply remedy...")
+                                    if asyncio.iscoroutinefunction(failure.remedy):
+                                        run_async(failure.remedy())
+                                    elif asyncio.iscoroutine(failure.remedy):
+                                        asyncio.create_task(failure.remedy)
+                                    else:
+                                        failure.remedy()
+
                                 if failure.hint:
                                     servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
                                     # typer.echo(f"  Hint: {failure.hint}")

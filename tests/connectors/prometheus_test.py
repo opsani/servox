@@ -688,7 +688,7 @@ class TestConnector:
         # here we are just verifying wiring to connector
         results = await connector.check()
         assert results
-        assert len(results) == 1
+        assert len(results) > 0
         assert results[0].id == 'check_base_url'
 
     @respx.mock

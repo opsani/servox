@@ -1,6 +1,7 @@
 import json
 import os
 import operator
+import subprocess
 from typing import List, Optional
 
 import servo
@@ -350,7 +351,8 @@ class OpsaniDevChecks(servo.BaseChecks):
             desc = ', '.join(sorted(delta))
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
-                hint=f"Patch annotations via: `{command}`"
+                hint=f"Patch annotations via: `{command}`",
+                remedy=lambda: subprocess.run(command, shell=True)
             )
 
     @servo.checks.require("Deployment PodSpec has expected labels")
@@ -373,7 +375,8 @@ class OpsaniDevChecks(servo.BaseChecks):
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing labels: {desc}",
-                hint=f"Patch labels via: `{command}`"
+                hint=f"Patch labels via: `{command}`",
+                remedy=lambda: subprocess.run(command, shell=True)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
@@ -394,7 +397,8 @@ class OpsaniDevChecks(servo.BaseChecks):
         command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
-            hint=f"Inject Envoy sidecar container via: `{command}`"
+            hint=f"Inject Envoy sidecar container via: `{command}`",
+            remedy=lambda: subprocess.run(command, shell=True)
         )
 
     @servo.checks.require("Pods have Envoy sidecar containers")
@@ -469,9 +473,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 if metric.name == "main_request_rate":
                     timestamp, value = result.value
                     if not value > 0.0:
+                        command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & watch -n 0.25 curl -v http://localhost:9980/"
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
-                            hint=f"Send traffic to your application on port 9980. Try `kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & watch -n 0.25 curl -v http://localhost:9980/`"
+                            hint=f"Send traffic to your application on port 9980. Try `{command}`",
+                            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
                         )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
@@ -512,7 +518,8 @@ class OpsaniDevChecks(servo.BaseChecks):
         command = f"kubectl --namespace {self.config.namespace} patch service {self.config.service} -p '{patch_json}'"
         raise servo.checks.CheckError(
             f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
-            hint=f"Update target port via: `{command}`"
+            hint=f"Update target port via: `{command}`",
+            remedy=lambda: subprocess.run(command, shell=True)
         )
 
     @servo.check("Tuning pod is running")
