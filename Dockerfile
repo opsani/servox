@@ -17,7 +17,7 @@ ENV SERVO_ENV=${SERVO_ENV} \
     POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git curl \
+  && apt-get install -y --no-install-recommends git curl watch \
   && apt-get purge -y --auto-remove \
   && rm -rf /var/lib/apt/lists/*
 
