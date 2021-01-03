@@ -86,7 +86,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             aggregate_description.components.extend(description.components)
             aggregate_description.metrics.extend(description.metrics)
 
-        self.logger.info(f"Adjustment completed {summary}")
+        self.logger.success(f"Adjustment completed {summary}")
         return aggregate_description
 
     @backoff.on_exception(
