@@ -47,7 +47,7 @@ jobs:
         source $HOME/.poetry/env
         poetry config virtualenvs.in-project true
         poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
         source $HOME/.poetry/env
