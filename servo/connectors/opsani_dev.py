@@ -50,6 +50,10 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             deployments=[
                 servo.connectors.kubernetes.DeploymentConfiguration(
                     name=self.deployment,
+                    strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
+                        type=servo.connectors.kubernetes.OptimizationStrategy.canary,
+                        alias="tuning"
+                    ),
                     replicas=servo.Replicas(
                         min=1,
                         max=2,
@@ -57,6 +61,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     containers=[
                         servo.connectors.kubernetes.ContainerConfiguration(
                             name=self.container,
+                            alias="main",
                             cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
                             memory=servo.connectors.kubernetes.Memory(
                                 min="256 MiB", max="4.0 GiB", step="128 MiB"
@@ -120,16 +125,19 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
+                    absent="zero"
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
+                    absent="zero"
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
+                    absent="zero"
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
