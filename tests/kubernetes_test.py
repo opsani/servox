@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import hashlib
 
@@ -295,8 +296,9 @@ class TestChecks:
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestService:
     @pytest.fixture(autouse=True)
-    def wait(self, kube) -> None:
+    async def wait(self, kube) -> None:
         kube.wait_for_registered(timeout=30)
+        await asyncio.sleep(0.0001)
 
 
     async def test_read_service(self, kube: kubetest.client.TestClient) -> None:

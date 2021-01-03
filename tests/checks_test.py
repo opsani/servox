@@ -33,7 +33,7 @@ def test_serialize_with_exception() -> None:
     exception = RuntimeError("Testing")
     check = Check(name="Test", success=False, exception=exception)
     assert check.json() == (
-        '{"name": "Test", "id": "1bab7e8d", "description": null, "severity": "common", "tags": null, "success": false, "message": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
+        '{"name": "Test", "id": "1bab7e8d", "description": null, "severity": "common", "tags": null, "success": false, "message": null, "hint": null, "exception": "RuntimeError(\'Testing\')", "created_at": "2020-08-24T00:00:00", "run_at": null, "runtime": null}'
     )
 
 

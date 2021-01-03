@@ -225,8 +225,8 @@ class TestInstall:
             ## Step 1
             servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
             async with assert_check_raises_in_context(
-                AssertionError,
-                match="deployment 'fiber-http' does not have any annotations"
+                servo.checks.CheckError,
+                match="deployment 'fiber-http' is missing annotations"
             ) as assertion:
                 assertion.set(checks.run_one(id=f"check_deployment_annotations"))
 
@@ -240,8 +240,8 @@ class TestInstall:
                 )
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_annotations"),
-                AssertionError,
-                re.escape("missing annotations: ['prometheus.opsani.com/scheme', 'prometheus.opsani.com/scrape']")
+                servo.checks.CheckError,
+                re.escape("deployment 'fiber-http' is missing annotations: prometheus.opsani.com/scheme, prometheus.opsani.com/scrape")
             )
 
             # Fill in the missing annotations
@@ -258,8 +258,8 @@ class TestInstall:
             servo.logger.critical("Step 2 - Label the Deployment PodSpec")
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_labels"),
-                AssertionError,
-                re.escape("missing labels: {'sidecar.opsani.com/type': 'envoy'}")
+                servo.checks.CheckError,
+                re.escape("deployment 'fiber-http' is missing labels: sidecar.opsani.com/type=envoy")
             )
 
             async with change_to_resource(deployment):
@@ -274,8 +274,8 @@ class TestInstall:
             servo.logger.critical("Step 3 - Inject Envoy sidecar container")
             await assert_check_raises(
                 checks.run_one(id=f"check_deployment_envoy_sidecars"),
-                AssertionError,
-                re.escape("pods created against the 'fiber-http' pod spec do not have an Opsani Envoy sidecar container ('opsani-envoy')")
+                servo.checks.CheckError,
+                re.escape("deployment 'fiber-http' pod template spec does not include envoy sidecar container ('opsani-envoy')")
             )
 
             # servo.logging.set_level("DEBUG")
@@ -283,8 +283,8 @@ class TestInstall:
                 servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
                 await deployment.inject_sidecar(service="fiber-http")
 
-            await assert_check(checks.run_one(id=f"check_deployment_envoy_sidecars"))
-            await assert_check(checks.run_one(id=f"check_pod_envoy_sidecars"))
+            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_deployment_envoy_sidecars"))
+            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_pod_envoy_sidecars"))
 
             # Step 4
             servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
@@ -311,7 +311,7 @@ class TestInstall:
             servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
             await assert_check_raises(
                 checks.run_one(id=f"check_envoy_sidecar_metrics"),
-                AssertionError,
+                servo.checks.CheckError,
                 re.escape("Envoy is not reporting any traffic to Prometheus")
             )
 
@@ -324,14 +324,14 @@ class TestInstall:
                 )
 
             # Let Prometheus scrape to see the traffic
-            await assert_check(checks.run_one(id=f"check_prometheus_targets"))
-            await assert_check(checks.run_one(id=f"check_envoy_sidecar_metrics"))
+            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_prometheus_targets"))
+            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_envoy_sidecar_metrics"))
 
             # Step 6
             servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
             await assert_check_raises(
                 checks.run_one(id=f"check_service_proxy"),
-                AssertionError,
+                servo.checks.CheckError,
                 re.escape(f"service 'fiber-http' is not routing traffic through Envoy sidecar on port {envoy_proxy_port}")
             )
 
@@ -340,7 +340,7 @@ class TestInstall:
             service.ports[0].target_port = envoy_proxy_port
             async with change_to_resource(service):
                 await service.patch()
-            await assert_check(checks.run_one(id=f"check_service_proxy"))
+            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_service_proxy"))
 
             # Send traffic through the service and verify it shows up in Envoy
             port = service.ports[0].port
@@ -367,6 +367,7 @@ class TestInstall:
             servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
             async with kube_port_forward(f"service/fiber-http", port) as service_url:
                 await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
+                await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
 
             targets = await wait_for_targets_to_be_scraped()
             assert len(targets) == 2
@@ -391,6 +392,12 @@ class TestInstall:
 
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+
+            # Cancel outstanding tasks
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            [task.cancel() for task in tasks]
+
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def test_install_wait(
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
@@ -766,6 +773,9 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         async with change_to_resource(deployment):
             servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
             await deployment.inject_sidecar(service="fiber-http")
+
+    elif id == 'check_pod_envoy_sidecars':
+        pass
 
     elif id == 'check_prometheus_targets':
         # Step 4

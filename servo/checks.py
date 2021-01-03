@@ -63,6 +63,11 @@ Tag = pydantic.constr(
     strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$"
 )
 
+class CheckError(RuntimeError):
+    def __init__(self, message: str, *, hint: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+
 
 class Check(pydantic.BaseModel, servo.logging.Mixin):
     """
@@ -113,6 +118,8 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     The message is presented to users and should be informative. Long
     messages may be truncated on display.
     """
+
+    hint: Optional[pydantic.StrictStr] = None
 
     exception: Optional[Exception]
     """
@@ -213,6 +220,9 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
                 values["name"].encode("utf-8"), digest_size=4
             ).hexdigest()
         )
+
+    def __hash__(self):
+        return hash((self.id,))
 
     class Config:
         validate_assignment = True
@@ -831,7 +841,17 @@ def _set_check_result(
     elif isinstance(result, Exception):
         check.success = False
         check.exception = result
-        check.message = f"caught exception ({result.__class__.__name__}): {str(result) or repr(result)}"
+
+        if isinstance(result, CheckError):
+            # when a CheckError, we can assume the output is crafted
+            check.message = str(result)
+            check.hint = result.hint
+        elif isinstance(result, AssertionError):
+            # assertions are self explanatory
+            check.message = str(result)
+        else:
+            # arbitrary exceptions we have no idea, so be more pedantic
+            check.message = f"caught exception ({result.__class__.__name__}): {str(result) or repr(result)}"
     else:
         raise ValueError(
             f'check method returned unexpected value of type "{result.__class__.__name__}"'

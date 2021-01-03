@@ -321,7 +321,7 @@ class TestPrometheusChecks:
             (
                 {"status": "success", "data": {"activeTargets": []}},
                 False,
-                "caught exception (AssertionError): no targets are being scraped by Prometheus",
+                "no targets are being scraped by Prometheus",
             ),
             (targets_response_(), True, "found 1 targets"),
         ],
