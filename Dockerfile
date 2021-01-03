@@ -17,12 +17,17 @@ ENV SERVO_ENV=${SERVO_ENV} \
     POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git \
+  && apt-get install -y --no-install-recommends git curl \
   && apt-get purge -y --auto-remove \
   && rm -rf /var/lib/apt/lists/*
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
+
+# Add kubectl
+RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN chmod +x ./kubectl
+RUN mv ./kubectl /usr/local/bin
 
 # Build Servo
 WORKDIR /servo
