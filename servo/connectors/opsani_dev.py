@@ -470,6 +470,20 @@ class OpsaniDevChecks(servo.BaseChecks):
                 assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
                 result = response.data[0]
 
+                import datetime, httpx
+
+                async def _load_proxy() -> None:
+                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=15)
+                    target_url = f"http://{self.config.deployment}:{ENVOY_SIDECAR_DEFAULT_PORT}"
+                    async with httpx.AsyncClient(base_url=target_url) as client:
+                        servo.logger.info(f"Bursting traffic to {target_url} for 15 seconds...")
+                        count = 0
+                        while datetime.datetime.now() < burst_until:
+                            response = await client.get("/")
+                            response.raise_for_status()
+                            count += 1
+                        servo.logger.success(f"Bursted {count} requests to {target_url} over 15 seconds.")
+
                 if metric.name == "main_request_rate":
                     timestamp, value = result.value
                     if not value > 0.0:
@@ -477,7 +491,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                             hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+                            remedy=_load_proxy()
                         )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
