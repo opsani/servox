@@ -351,7 +351,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
                 hint=f"Patch annotations via: `{command}`",
-                remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
             )
 
     @servo.checks.require("Deployment PodSpec has expected labels")
@@ -375,7 +375,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
-                remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
@@ -392,12 +392,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 # TODO: Add more heuristics about the image, etc.
                 return
 
-        #command = f"servo inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
-            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
         )
 
     @servo.checks.require("Pods have Envoy sidecar containers")
@@ -462,7 +461,6 @@ class OpsaniDevChecks(servo.BaseChecks):
             query = servo.connectors.prometheus.InstantQuery(
                 query=metric.query
             )
-
             response = await client.query(metric)
             if response.data:
                 assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
@@ -476,7 +474,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                             hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+                            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
                         )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
@@ -518,8 +516,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
             hint=f"Update target port via: `{command}`",
-            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
-
+            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
         )
 
     @servo.check("Tuning pod is running")

@@ -1332,17 +1332,32 @@ class ServoCLI(CLI):
 
                             ready = failure is None
                             if failure:
-                                # TODO: add a .component property?
                                 servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")#, component=failure.id)
                                 # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
-                                if remedy and failure.remedy:
-                                    servo.logger.info("💡 Attempting to apply remedy...")
+                                if failure.remedy:
                                     if asyncio.iscoroutinefunction(failure.remedy):
-                                        run_async(failure.remedy())
+                                        task = asyncio.create_task(failure.remedy())
                                     elif asyncio.iscoroutine(failure.remedy):
-                                        asyncio.create_task(failure.remedy)
+                                        task = asyncio.create_task(failure.remedy)
                                     else:
-                                        failure.remedy()
+                                        async def fn() -> None:
+                                            result = failure.remedy()
+                                            if asyncio.iscoroutine(result):
+                                                await result
+
+                                        task = asyncio.create_task(fn())
+
+                                    if remedy:
+                                        servo.logger.info("💡 Attempting to apply remedy...")
+                                        try:
+                                            await asyncio.wait_for(
+                                                task,
+                                                10.0
+                                            )
+                                        except asyncio.TimeoutError:
+                                            pass
+                                    else:
+                                        task.cancel()
 
                                 if failure.hint:
                                     servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
