@@ -1432,10 +1432,7 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    typer_click_object = typer.main.get_group(self)
-                    context.invoke(
-                        typer_click_object.commands["run"]
-                    )
+                    servo.runner.AssemblyRunner(servo.Assembly.current()).run()
                 elif not exit_on_success:
                     return
 
