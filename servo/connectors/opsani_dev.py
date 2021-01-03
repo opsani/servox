@@ -1,7 +1,6 @@
 import json
 import os
 import operator
-import subprocess
 from typing import List, Optional
 
 import servo
@@ -352,7 +351,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
                 hint=f"Patch annotations via: `{command}`",
-                remedy=lambda: subprocess.run(command, shell=True)
+                remedy=servo.utilities.subprocess.run_subprocess_shell(command)
             )
 
     @servo.checks.require("Deployment PodSpec has expected labels")
@@ -376,7 +375,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
-                remedy=lambda: subprocess.run(command, shell=True)
+                remedy=servo.utilities.subprocess.run_subprocess_shell(command)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
@@ -398,7 +397,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
-            remedy=lambda: subprocess.run(command, shell=True)
+            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
         )
 
     @servo.checks.require("Pods have Envoy sidecar containers")
@@ -470,20 +469,6 @@ class OpsaniDevChecks(servo.BaseChecks):
                 assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
                 result = response.data[0]
 
-                import datetime, httpx
-
-                async def _load_proxy() -> None:
-                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=15)
-                    target_url = f"http://{self.config.deployment}:{ENVOY_SIDECAR_DEFAULT_PORT}"
-                    async with httpx.AsyncClient(base_url=target_url) as client:
-                        servo.logger.info(f"Bursting traffic to {target_url} for 15 seconds...")
-                        count = 0
-                        while datetime.datetime.now() < burst_until:
-                            response = await client.get("/")
-                            response.raise_for_status()
-                            count += 1
-                        servo.logger.success(f"Bursted {count} requests to {target_url} over 15 seconds.")
-
                 if metric.name == "main_request_rate":
                     timestamp, value = result.value
                     if not value > 0.0:
@@ -491,7 +476,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                             hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=_load_proxy()
+                            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
                         )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
@@ -533,7 +518,8 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
             hint=f"Update target port via: `{command}`",
-            remedy=lambda: subprocess.run(command, shell=True)
+            remedy=servo.utilities.subprocess.run_subprocess_shell(command)
+
         )
 
     @servo.check("Tuning pod is running")
