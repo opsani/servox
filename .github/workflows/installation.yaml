@@ -41,7 +41,7 @@ jobs:
       id: cached-poetry-dependencies
       with:
         path: .venv
-        key: venv-${{ runner.os }}-installation-${{ hashFiles('**/poetry.lock') }}
+        key: venv-${{ runner.os }}-python-${{ matrix.python }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: |
         source $HOME/.poetry/env
