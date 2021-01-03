@@ -1220,6 +1220,11 @@ class ServoCLI(CLI):
                 help="Delay duration. Requires --wait",
                 metavar="[DURATION]",
             ),
+            run: bool = typer.Option(
+                False,
+                "--run",
+                help="Run the servo when checks pass",
+            ),
             exit_on_success: bool = typer.Option(True, hidden=True),
         ) -> None:
             """
@@ -1425,8 +1430,14 @@ class ServoCLI(CLI):
                 ready = functools.reduce(lambda x, y: x and y, results)
 
             # Return instead of exiting if we are being invoked
-            if ready and not exit_on_success:
-                return
+            if ready:
+                if run:
+                    typer_click_object = typer.main.get_group(self)
+                    context.invoke(
+                        typer_click_object.commands["run"]
+                    )
+                elif not exit_on_success:
+                    return
 
             exit_code = 0 if ready else 1
             raise typer.Exit(exit_code)
