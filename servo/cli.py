@@ -1666,6 +1666,9 @@ class ServoCLI(CLI):
             target: str = typer.Argument(
                 ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
             ),
+            namespace: str = typer.Option(
+                "default", "--namespace", "-n", help="Namespace of the target"
+            ),
             service: Optional[str] = typer.Option(
                 None, "--service", "-s", help="Service to target"
             ),
@@ -1682,9 +1685,25 @@ class ServoCLI(CLI):
             if not service or port:
                 raise typer.MissingParameter("service or port must be given")
 
+            # TODO: Dry this up...
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes_asyncio.config.load_incluster_config()
+            else:
+                kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
+                kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
+                if kubeconfig_path.exists():
+                    run_async(kubernetes_asyncio.config.load_kube_config(
+                        config_file=os.path.expandvars(kubeconfig_path),
+                    ))
+
             if target.startswith("deploy"):
-                connector = context.servo.get_connector("kubernetes")
-                run_async(connector.inject_sidecar(deployment=target, service=service, port=port))
+                deployment = run_async(
+                    servo.connectors.kubernetes.Deployment.read(
+                        target.split('/', 1)[1], namespace
+                    )
+                )
+                run_async(deployment.inject_sidecar(service=service, port=port))
+                typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
 
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")
