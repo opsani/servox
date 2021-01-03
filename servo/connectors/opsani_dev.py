@@ -140,6 +140,16 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     absent="zero"
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
+                    "main_p99_latency",
+                    servo.types.Unit.milliseconds,
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                ),
+                servo.connectors.prometheus.PrometheusMetric(
+                    "tuning_p99_latency",
+                    servo.types.Unit.milliseconds,
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                ),
+                servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
                     servo.types.Unit.milliseconds,
                     query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
@@ -148,6 +158,16 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     "tuning_p90_latency",
                     servo.types.Unit.milliseconds,
                     query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                ),
+                servo.connectors.prometheus.PrometheusMetric(
+                    "main_p50_latency",
+                    servo.types.Unit.milliseconds,
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                ),
+                servo.connectors.prometheus.PrometheusMetric(
+                    "tuning_p50_latency",
+                    servo.types.Unit.milliseconds,
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
                 ),
             ],
             **kwargs,
