@@ -7,12 +7,6 @@ jobs:
   quick_start:
     name: Pyenv Quick Start
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python:
-          - 3.8.5
-          - 3.8.6
-          - 3.9.0
 
     steps:
     - uses: actions/checkout@v2
@@ -23,11 +17,10 @@ jobs:
       id: cached-pyenvs
       with:
         path: .
-        key: ${{ runner.os }}-python-${{ matrix.python }}
+        key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v7
       with:
-        default: "${{ matrix.python }}"
         versions: 3.8.5, 3.8.6, 3.9.0
     - name: Install Poetry
       run: |
@@ -41,13 +34,13 @@ jobs:
       id: cached-poetry-dependencies
       with:
         path: .venv
-        key: venv-${{ runner.os }}-python-${{ matrix.python }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        key: venv-${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: |
         source $HOME/.poetry/env
         poetry config virtualenvs.in-project true
         poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
         source $HOME/.poetry/env
