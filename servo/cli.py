@@ -1214,7 +1214,7 @@ class ServoCLI(CLI):
                 metavar="[TIMEOUT]",
             ),
             delay: Optional[str] = typer.Option(
-                "15s",
+                "10s",
                 "--delay",
                 "-d",
                 help="Delay duration. Requires --wait",

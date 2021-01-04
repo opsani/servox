@@ -445,14 +445,14 @@ class OpsaniDevChecks(servo.BaseChecks):
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
                 servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[15s]))',
-                step="10s"
+                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[5s]))',
+                step="5s"
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "main_error_rate",
                 servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[15s]))',
-                step="10s"
+                query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[5s]))',
+                step="5s"
             )
         ]
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
@@ -471,7 +471,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                     timestamp, value = result.value
                     if not value > 0.0:
                         # command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & watch -n 0.25 curl -v http://localhost:9980/"
-                        command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 7s | vegeta report"
+                        command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report"
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                             hint=f"Send traffic to your application on port 9980. Try `{command}`",
