@@ -13,7 +13,6 @@ import weakref
 from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
 
 import pydantic
-import pydantic.main
 
 import servo.errors
 import servo.utilities.inspect
@@ -238,7 +237,7 @@ class EventHandler(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["servo.connector.BaseConnector"]]  # NOTE: Optional due to decorator
+    connector_type: Optional[Type["servo.BaseConnector"]]  # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -253,7 +252,7 @@ class EventResult(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "servo.connector.BaseConnector"
+    connector: "servo.BaseConnector"
     created_at: datetime.datetime = None
     value: Any
 
@@ -595,7 +594,7 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List["servo.connector.BaseConnector"] = None,
+        __connectors__: List["servo.BaseConnector"] = None,
         **kwargs,
     ) -> None: # noqa: D107
         super().__init__(
@@ -657,7 +656,7 @@ class Mixin:
         return handler
 
     @property
-    def __connectors__(self) -> List["servo.connector.BaseConnector"]:
+    def __connectors__(self) -> List["servo.BaseConnector"]:
         return _connector_event_bus[self]
 
     async def dispatch_event(
@@ -665,8 +664,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
-        exclude: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
+        include: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        exclude: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
         return_exceptions: bool = False,
         _prepositions: Preposition = (
             Preposition.before | Preposition.on | Preposition.after
@@ -713,7 +712,7 @@ class Mixin:
             A list of event result objects detailing the results returned.
         """
         results: List[EventResult] = []
-        connectors: List["servo.connector.BaseConnector"] = self.__connectors__
+        connectors: List["servo.BaseConnector"] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
         if include is not None:
