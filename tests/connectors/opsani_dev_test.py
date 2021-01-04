@@ -734,10 +734,7 @@ async def wait_for_check_to_pass(
         )
     except asyncio.TimeoutError as err:
         devtools.debug("Check timed out. Final state: ", check)
-        if check.exception:
-            raise err from check.exception
-        else:
-            raise err
+        raise err
 
     return check
 
