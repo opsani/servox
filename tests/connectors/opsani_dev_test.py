@@ -427,7 +427,7 @@ class TestInstall:
                     else:
                         break
 
-            await asyncio.wait_for(loop_checks(), 90.0)
+            await asyncio.wait_for(loop_checks(), 300.0)
 
             servo.logger.success("🥷 Opsani Dev is now deployed.")
             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
