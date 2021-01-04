@@ -325,7 +325,6 @@ class TestInstall:
 
             # Let Prometheus scrape to see the traffic
             await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_prometheus_targets"))
-            await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_envoy_sidecar_metrics"))
 
             # Step 6
             servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
