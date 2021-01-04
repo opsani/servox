@@ -493,7 +493,11 @@ class OpsaniDevChecks(servo.BaseChecks):
                 # Empty data indicates a potentially absent metric
                 # TODO: Use Client to check for absent metric
                 if metric.name == "main_request_rate":
-                    raise servo.checks.CheckError(f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})")
+                    command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
+                    raise servo.checks.CheckError(
+                        f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
+                        remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                    )
                 elif metric.name == "main_error_rate":
                     # no errors sounds delightful
                     pass
