@@ -1,5 +1,6 @@
 import asyncio
 import builtins
+import enum
 import contextlib
 import json
 import os
@@ -20,7 +21,6 @@ import typer.testing
 import uvloop
 import yaml
 
-import servo
 import servo.cli
 import servo.connectors.kubernetes
 import tests.helpers
@@ -112,8 +112,6 @@ def pytest_addoption(parser) -> None:
         metavar="TYPE",
         help="only run tests of the type TYPE.",
     )
-
-import enum
 
 
 class TestType(str, enum.Enum):
