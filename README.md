@@ -883,6 +883,7 @@ testing  tasks availble including:
   report.
 * `make test-kubeconfig` - Generate a kubeconfig file at tests/kubeconfig. See
   details in [Integration Testing](#integration-testing) below.
+* `make autotest` - Automatically run tests based on filesystem changes.
 
 Testing tasks will run in subprocess distributed mode by default (see below).
 
