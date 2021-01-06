@@ -13,7 +13,6 @@ import weakref
 from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
 
 import pydantic
-import pydantic.main
 
 import servo.errors
 import servo.utilities.inspect
@@ -119,10 +118,10 @@ EventCallable = TypeVar("EventCallable", bound=Callable[..., Any])
 
 
 class Preposition(enum.Flag):
-    BEFORE = enum.auto()
-    ON = enum.auto()
-    AFTER = enum.auto()
-    ALL = BEFORE | ON | AFTER
+    before = enum.auto()
+    on = enum.auto()
+    after = enum.auto()
+    all = before | on | after
 
     @classmethod
     def from_str(cls, prep: str) -> "Preposition":
@@ -130,20 +129,20 @@ class Preposition(enum.Flag):
             return prep
 
         if prep == "before":
-            return Preposition.BEFORE
+            return Preposition.before
         elif prep == "on":
-            return Preposition.ON
+            return Preposition.on
         elif prep == "after":
-            return Preposition.AFTER
+            return Preposition.after
         else:
             raise ValueError(f"unsupported value for Preposition '{prep}'")
 
     def __str__(self):
-        if self == Preposition.BEFORE:
+        if self == Preposition.before:
             return "before"
-        elif self == Preposition.ON:
+        elif self == Preposition.on:
             return "on"
-        elif self == Preposition.AFTER:
+        elif self == Preposition.after:
             return "after"
 
 
@@ -155,7 +154,7 @@ class EventContext(pydantic.BaseModel):
     @classmethod  # Usable as a validator
     def from_str(cls, event_str) -> Optional["EventContext"]:
         if event := get_event(event_str, None):
-            return EventContext(preposition=Preposition.ON, event=event)
+            return EventContext(preposition=Preposition.on, event=event)
 
         components = event_str.split(":", 1)
         if len(components) < 2:
@@ -179,16 +178,16 @@ class EventContext(pydantic.BaseModel):
         return v or datetime.datetime.now()
 
     def is_before(self) -> bool:
-        return self.preposition == Preposition.BEFORE
+        return self.preposition == Preposition.before
 
     def is_on(self) -> bool:
-        return self.preposition == Preposition.ON
+        return self.preposition == Preposition.on
 
     def is_after(self) -> bool:
-        return self.preposition == Preposition.AFTER
+        return self.preposition == Preposition.after
 
     def __str__(self):
-        if self.preposition == Preposition.ON:
+        if self.preposition == Preposition.on:
             return self.event.name
         else:
             return f"{self.preposition}:{self.event.name}"
@@ -238,7 +237,7 @@ class EventHandler(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["servo.connector.BaseConnector"]]  # NOTE: Optional due to decorator
+    connector_type: Optional[Type["servo.BaseConnector"]]  # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -253,7 +252,7 @@ class EventResult(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "servo.connector.BaseConnector"
+    connector: "servo.BaseConnector"
     created_at: datetime.datetime = None
     value: Any
 
@@ -417,7 +416,7 @@ def before_event(
     :param event: The event or name of the event to run the handler before.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.BEFORE, **kwargs)
+    return event_handler(event, Preposition.before, **kwargs)
 
 
 def on_event(
@@ -428,7 +427,7 @@ def on_event(
     :param event: The event or name of the event to run the handler on.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.ON, **kwargs)
+    return event_handler(event, Preposition.on, **kwargs)
 
 
 def after_event(
@@ -442,12 +441,12 @@ def after_event(
     :param event: The event or name of the event to run the handler after.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.AFTER, **kwargs)
+    return event_handler(event, Preposition.after, **kwargs)
 
 
 def event_handler(
     event_name: Optional[str] = None,
-    preposition: Preposition = Preposition.ON,
+    preposition: Preposition = Preposition.on,
     **kwargs,
 ) -> Callable[[EventCallable], EventCallable]:
     """Register a decorated function as an event handler.
@@ -467,7 +466,7 @@ def event_handler(
         event = _events.get(name, None)
         if event is None:
             raise ValueError(f"Unknown event '{name}'")
-        if preposition != Preposition.ON:
+        if preposition != Preposition.on:
             name = f"{preposition}:{name}"
 
         # Build namespaces that can resolve names for the event definition and handler
@@ -482,7 +481,7 @@ def event_handler(
         handler_mod_name = handler_localns.get("__module__", None)
         handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
 
-        if preposition == Preposition.BEFORE:
+        if preposition == Preposition.before:
             before_handler_signature = inspect.Signature.from_callable(__before_handler)
             servo.utilities.inspect.assert_equal_callable_descriptors(
                 servo.utilities.inspect.CallableDescriptor(
@@ -500,7 +499,7 @@ def event_handler(
                 name=name,
                 callable_description="before event handler"
             )
-        elif preposition == Preposition.ON:
+        elif preposition == Preposition.on:
             servo.utilities.inspect.assert_equal_callable_descriptors(
                 servo.utilities.inspect.CallableDescriptor(
                     signature=event.signature,
@@ -517,7 +516,7 @@ def event_handler(
                 name=name,
                 callable_description="event handler"
             )
-        elif preposition == Preposition.AFTER:
+        elif preposition == Preposition.after:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
             servo.utilities.inspect.assert_equal_callable_descriptors(
                 servo.utilities.inspect.CallableDescriptor(
@@ -595,7 +594,7 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List["servo.connector.BaseConnector"] = None,
+        __connectors__: List["servo.BaseConnector"] = None,
         **kwargs,
     ) -> None: # noqa: D107
         super().__init__(
@@ -623,7 +622,7 @@ class Mixin:
 
     @classmethod
     def get_event_handlers(
-        cls, event: Union[Event, str], preposition: Preposition = Preposition.ALL
+        cls, event: Union[Event, str], preposition: Preposition = Preposition.all
     ) -> List[EventHandler]:
         """
         Retrieves the event handlers for the given event and preposition.
@@ -657,7 +656,7 @@ class Mixin:
         return handler
 
     @property
-    def __connectors__(self) -> List["servo.connector.BaseConnector"]:
+    def __connectors__(self) -> List["servo.BaseConnector"]:
         return _connector_event_bus[self]
 
     async def dispatch_event(
@@ -665,11 +664,11 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
-        exclude: Optional[List[Union[str, "servo.connector.BaseConnector"]]] = None,
+        include: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        exclude: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
         return_exceptions: bool = False,
         _prepositions: Preposition = (
-            Preposition.BEFORE | Preposition.ON | Preposition.AFTER
+            Preposition.before | Preposition.on | Preposition.after
         ),
         **kwargs,
     ) -> Union[Optional[EventResult], List[EventResult]]:
@@ -713,7 +712,7 @@ class Mixin:
             A list of event result objects detailing the results returned.
         """
         results: List[EventResult] = []
-        connectors: List["servo.connector.BaseConnector"] = self.__connectors__
+        connectors: List["servo.BaseConnector"] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
         if include is not None:
@@ -733,11 +732,11 @@ class Mixin:
             raise ValueError(f"invalid target connectors: cannot dispatch events to connectors that are in the active servo")
 
         # Invoke the before event handlers
-        if _prepositions & Preposition.BEFORE:
+        if _prepositions & Preposition.before:
             for connector in connectors:
                 try:
                     results = await connector.run_event_handlers(
-                        event, Preposition.BEFORE
+                        event, Preposition.before
                     )
 
                 except servo.errors.EventCancelledError as error:
@@ -746,12 +745,12 @@ class Mixin:
                     return []
 
         # Invoke the on event handlers and gather results
-        if _prepositions & Preposition.ON:
+        if _prepositions & Preposition.on:
             if first:
                 # A single responder has been requested
                 for connector in connectors:
                     results = await connector.run_event_handlers(
-                        event, Preposition.ON, *args, return_exceptions=return_exceptions, **kwargs
+                        event, Preposition.on, *args, return_exceptions=return_exceptions, **kwargs
                     )
                     if results:
                         break
@@ -760,7 +759,7 @@ class Mixin:
                     *list(
                         map(
                             lambda c: c.run_event_handlers(
-                                event, Preposition.ON, return_exceptions=return_exceptions, *args, **kwargs
+                                event, Preposition.on, return_exceptions=return_exceptions, *args, **kwargs
                             ),
                             connectors,
                         )
@@ -771,12 +770,12 @@ class Mixin:
                 results = functools.reduce(lambda x, y: x + y, results, [])
 
         # Invoke the after event handlers
-        if _prepositions & Preposition.AFTER:
+        if _prepositions & Preposition.after:
             await asyncio.gather(
                 *list(
                     map(
                         lambda c: c.run_event_handlers(
-                            event, Preposition.AFTER, results
+                            event, Preposition.after, results
                         ),
                         connectors,
                     )
@@ -844,7 +843,7 @@ class Mixin:
 
                 except Exception as error:
                     if (isinstance(error, servo.errors.EventCancelledError) and
-                        preposition != Preposition.BEFORE):
+                        preposition != Preposition.before):
                         if return_exceptions:
                             self.logger.warning(f"Cannot cancel an event from an {preposition} handler: event dispatched")
                         else:

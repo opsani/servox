@@ -1,6 +1,6 @@
 from __future__ import annotations
-import datetime
 
+import datetime
 from typing import Optional
 
 __all__ = (
@@ -88,11 +88,9 @@ class EventError(ConnectorError):
 
 class UnexpectedEventError(EventError):
     """The optimizer reported that an unexpected error was submitted."""
-    pass
 
 class EventCancelledError(EventError):
     """The event was cancelled and processing was halted."""
-    pass
 
 class AdjustmentFailedError(EventError):
     """A failure occurred while attempting to perform an adjustment.
@@ -101,7 +99,6 @@ class AdjustmentFailedError(EventError):
     adjustment was not fully applied due to a transient failure, lost
     connection, interruption, etc. and be retried by the optimizer.
     """
-    pass
 
 class AdjustmentRejectedError(AdjustmentFailedError):
     """The adjustment was irrecoverably rejected when applied.
@@ -111,4 +108,3 @@ class AdjustmentRejectedError(AdjustmentFailedError):
     other such definitive error condition is encountered that excludes the
     applied configuration from further consideration by the optimizer.
     """
-    pass

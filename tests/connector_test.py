@@ -1,11 +1,12 @@
 import asyncio
+import itertools
 import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pytest
 import httpx
+import pytest
 import respx
 import yaml
 from pydantic import Extra, ValidationError
@@ -71,6 +72,7 @@ class TestOptimizer:
             (None, "https://api.opsani.com/accounts/example.com/applications/my-app/"),
             ("http://localhost:1234", "http://localhost:1234"),
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_api_url(self, url, expected_api_url) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456", url=url)
@@ -80,7 +82,7 @@ class TestOptimizer:
 class TestLicense:
     def test_license_from_string(self):
         l = License.from_str("MIT")
-        assert l == License.MIT
+        assert l == License.mit
 
     def test_license_from_string_invalid_raises(self):
         with pytest.raises(NameError) as e:
@@ -91,7 +93,7 @@ class TestLicense:
 class TestMaturity:
     def test_maturity_from_string(self):
         l = Maturity.from_str("Stable")
-        assert l == Maturity.STABLE
+        assert l == Maturity.stable
 
     def test_license_from_string_invalid_raises(self):
         with pytest.raises(NameError) as e:
@@ -253,7 +255,7 @@ class TestVegetaConfiguration:
         s = VegetaConfiguration(
             rate="0", format="http", target="GET http://example.com"
         )
-        assert s.format == TargetFormat.HTTP
+        assert s.format == TargetFormat.http
 
     def test_validate_target_with_json_format(self) -> None:
         s = VegetaConfiguration(
@@ -261,7 +263,7 @@ class TestVegetaConfiguration:
             format="json",
             target='{ "url": "http://example.com", "method": "GET" }',
         )
-        assert s.format == TargetFormat.JSON
+        assert s.format == TargetFormat.json
 
     def test_validate_target_http_doesnt_match_schema(self) -> None:
         with pytest.raises(ValidationError) as e:
@@ -326,6 +328,7 @@ class TestVegetaConfiguration:
                 "X-Account-ID: 99\n"
             ),
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_validate_target_http_valid_cases(self, http_target):
         s = VegetaConfiguration(
@@ -392,6 +395,7 @@ class TestVegetaConfiguration:
                 "invalid target: JUMP http://goku:9090/things",
             ],
         ],
+        ids=(f"target-{i}" for i in itertools.count())
     )
     def test_validate_target_http_invalid_cases(self, http_target, error_message):
         with pytest.raises(ValidationError) as e:
@@ -638,11 +642,11 @@ def test_vegeta_homepage() -> None:
 
 
 def test_vegeta_license() -> None:
-    assert VegetaConnector.license == License.APACHE2
+    assert VegetaConnector.license == License.apache2
 
 
 def test_vegeta_maturity() -> None:
-    assert VegetaConnector.maturity == Maturity.STABLE
+    assert VegetaConnector.maturity == Maturity.stable
 
 
 ## Vegeta CLI tests
@@ -722,7 +726,7 @@ def test_vegeta_cli_schema_json(
                 ),
                 'default': 'http',
                 'env_names': [
-                    'VEGETA_FORMAT'
+                    'VEGETA_FORMAT',
                 ],
                 'allOf': [
                     {
@@ -861,7 +865,6 @@ def test_vegeta_cli_schema_json(
             },
         },
     }
-
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_text(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
@@ -1301,7 +1304,7 @@ class TestConnectorEvents:
 
             class NonAsyncEvent(TestConnectorEvents.FakeConnector):
                 @event()
-                def invalid_event(self):
+                def some_other_invalid_event(self):
                     pass
 
         assert e
@@ -1339,7 +1342,7 @@ class TestConnectorEvents:
         connector = TestConnectorEvents.AnotherFakeConnector(config=config)
         _enter = mocker.spy(connector, "_enter")
         _exit = mocker.spy(connector, "_exit")
-        results = await connector.run_event_handlers(event, Preposition.ON)
+        results = await connector.run_event_handlers(event, Preposition.on)
         assert results[0].value == 13
         _enter.assert_called_once()
         _exit.assert_called_once()
@@ -1370,7 +1373,7 @@ class TestConnectorEvents:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["example_event"]
-        results = await connector.run_event_handlers(event, Preposition.ON)
+        results = await connector.run_event_handlers(event, Preposition.on)
         assert results is not None
         result = results[0]
         assert result.event.name == "example_event"
@@ -1381,7 +1384,7 @@ class TestConnectorEvents:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         event = _events["get_event_context"]
-        results = await connector.run_event_handlers(event, Preposition.ON)
+        results = await connector.run_event_handlers(event, Preposition.on)
         assert results is not None
         result = results[0]
         assert result.event.name == "get_event_context"
@@ -1389,7 +1392,7 @@ class TestConnectorEvents:
         assert result.value
         assert result.value.event == event
         assert result.value.preposition is not None
-        assert result.value.preposition == Preposition.ON
+        assert result.value.preposition == Preposition.on
         assert result.value.created_at.replace(
             microsecond=0
         ) == result.value.created_at.replace(microsecond=0)
@@ -1398,7 +1401,7 @@ class TestConnectorEvents:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         with pytest.raises(ValueError) as e:
-            await connector.run_event_handlers("unknown_event", Preposition.ON)
+            await connector.run_event_handlers("unknown_event", Preposition.on)
         assert e
         assert str(e.value) == "event must be an Event object, got str"
 
@@ -1432,7 +1435,7 @@ class TestConnectorEvents:
     def test_event_context_str_comparison(self) -> None:
         assert _events is not None
         event = _events["example_event"]
-        context = EventContext(event=event, preposition=Preposition.ON)
+        context = EventContext(event=event, preposition=Preposition.on)
         assert context == "example_event"
         assert context == "on:example_event"
         assert context != "before:example_event"
@@ -1456,7 +1459,7 @@ async def test_logging() -> None:
     _connector_context_var.set(connector)
     handler = ProgressHandler(connector.report_progress, lambda m: print(m))
     connector.logger.add(handler.sink)
-    args = dict(operation="ADJUST", started_at=datetime.now())
+    args = dict(operation="ADJUST", started_at=datetime.datetime.now())
     connector.logger.info("First", progress=0, **args)
     await asyncio.sleep(0.00001)
     connector.logger.info("Second", progress=25.0, **args)

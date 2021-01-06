@@ -1,0 +1,19 @@
+{
+  "configurations": [
+    {
+      "name": "Python: Attach to Local Debugger",
+      "type": "python",
+      "request": "attach",
+      "connect": {
+        "host": "localhost",
+        "port": 10001
+      },
+      "pathMappings": [
+        {
+          "localRoot": "${workspaceFolder}",
+          "remoteRoot": "."
+        }
+      ]
+    }
+  ]
+}

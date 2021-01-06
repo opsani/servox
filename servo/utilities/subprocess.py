@@ -328,7 +328,7 @@ async def _read_lines_from_output_stream(
     encoding: str = "utf-8",
 ) -> None:
     """
-    Asynchronouysly read a subprocess output stream line by line,
+    Asynchronously read a subprocess output stream line by line,
     optionally invoking a callback with each line as it is read.
 
     :param stream: An IO stream reader linked to the stdout or stderr of a subprocess.

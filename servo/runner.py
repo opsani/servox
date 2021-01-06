@@ -11,8 +11,8 @@ import pydantic
 import typer
 
 import servo as servox
-import servo.configuration
 import servo.api
+import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
@@ -49,7 +49,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.DESCRIBE)
+        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
@@ -63,7 +63,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
         aggregate_measurement = Measurement.construct()
         results: List[servo.EventResult] = await self.servo.dispatch_event(
-            servo.Events.MEASURE, metrics=param.metrics, control=param.control
+            servo.Events.measure, metrics=param.metrics, control=param.control
         )
         for result in results:
             measurement = result.value
@@ -80,13 +80,13 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.trace(devtools.pformat(adjustments))
 
         aggregate_description = Description.construct()
-        results = await self.servo.dispatch_event(servo.Events.ADJUST, adjustments)
+        results = await self.servo.dispatch_event(servo.Events.adjust, adjustments)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
             aggregate_description.metrics.extend(description.metrics)
 
-        self.logger.info(f"Adjustment completed {summary}")
+        self.logger.success(f"Adjustment completed {summary}")
         return aggregate_description
 
     @backoff.on_exception(
@@ -154,7 +154,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             await asyncio.sleep(duration.total_seconds())
 
             # Return a status so we have a simple API contract
-            return servo.api.Status(status="slept", message=msg)
+            return servo.api.Status(status="ok", message=msg)
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
@@ -210,7 +210,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             await connect()
         except:
             servo.logger.exception("exception encountered during connect")
-            pass
 
         await asyncio.create_task(self.main_loop(), name="main loop")
 

@@ -1,12 +1,13 @@
 import abc
 import collections
 import random
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import fastapi
 import statesman
 
 import servo
+
 
 class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     class States(statesman.StateEnum):
@@ -284,8 +285,8 @@ async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[serv
 # Utilities
 
 METRICS = [
-    servo.Metric("throughput", servo.Unit.REQUESTS_PER_MINUTE),
-    servo.Metric("error_rate", servo.Unit.PERCENTAGE),
+    servo.Metric("throughput", servo.Unit.requests_per_minute),
+    servo.Metric("error_rate", servo.Unit.percentage),
 ]
 
 COMPONENTS = [

@@ -5,6 +5,7 @@ import datetime
 import enum
 import functools
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -12,19 +13,22 @@ import subprocess
 import sys
 import textwrap
 import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Literal, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click
 import devtools
+import kubernetes_asyncio
 import loguru
 import pydantic
 import pygments
 import pygments.formatters
-import tabulate
-import timeago
 import typer
 import yaml
+
+# Expose helpers
+from tabulate import tabulate
+from timeago import format as timeago
 
 import servo
 import servo.runner
@@ -32,22 +36,22 @@ import servo.utilities.yaml
 
 
 class Section(str, enum.Enum):
-    ASSEMBLY = "Assembly Commands"
-    OPS = "Operational Commands"
-    CONFIG = "Configuration Commands"
-    CONNECTORS = "Connector Commands"
-    COMMANDS = "Commands"
-    OTHER = "Other Commands"
+    assembly = "Assembly Commands"
+    ops = "Operational Commands"
+    config = "Configuration Commands"
+    connectors = "Connector Commands"
+    commands = "Commands"
+    other = "Other Commands"
 
 
 class LogLevel(str, enum.Enum):
-    TRACE = "TRACE"
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    SUCCESS = "SUCCESS"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
+    trace = "TRACE"
+    debug = "DEBUG"
+    info = "INFO"
+    success = "SUCCESS"
+    warning = "WARNING"
+    error = "ERROR"
+    critical = "CRITICAL"
 
 
 class ConfigOutputFormat(servo.AbstractOutputFormat):
@@ -97,7 +101,7 @@ class Context(typer.Context):
     connector: Optional[servo.BaseConnector] = None
 
     # NOTE: Section defaults generally only apply to Groups (see notes below)
-    section: Section = Section.COMMANDS
+    section: Section = Section.commands
 
     @classmethod
     def attributes(cls) -> Set[str]:
@@ -131,7 +135,7 @@ class Context(typer.Context):
         assembly: Optional[servo.Assembly] = None,
         servo_: Optional[servo.Servo] = None,
         connector: Optional[servo.BaseConnector] = None,
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         token: Optional[str] = None,
         token_file: Optional[pathlib.Path] = None,
         base_url: Optional[str] = None,
@@ -215,7 +219,7 @@ class Group(click.Group, ContextMixin):
 
             # Determine the command section
             # NOTE: We may have non-CLI instances so we guard attribute access
-            section = getattr(command, "section", Section.COMMANDS)
+            section = getattr(command, "section", Section.commands)
 
             commands = sections_of_commands.get(section, [])
             commands.append(
@@ -234,8 +238,8 @@ class Group(click.Group, ContextMixin):
 
             # Sort the connector and other commands as ordering isn't explicit
             if section in (
-                Section.CONNECTORS,
-                Section.OTHER,
+                Section.connectors,
+                Section.other,
             ):
                 commands = sorted(commands)
 
@@ -255,7 +259,7 @@ class OrderedGroup(Group):
 
 
 class CLI(typer.Typer, servo.logging.Mixin):
-    section: Section = Section.COMMANDS
+    section: Section = Section.commands
 
     def __init__(
         self,
@@ -264,7 +268,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None,
         callback: Optional[Callable] = typer.models.Default(None),
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         **kwargs,
     ) -> None: # noqa: D107
 
@@ -409,7 +413,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
             help="Limit multi-servo concurrency",
         ),
         log_level: LogLevel = typer.Option(
-            LogLevel.INFO,
+            LogLevel.info,
             "--log-level",
             "-l",
             envvar="SERVO_LOG_LEVEL",
@@ -540,8 +544,6 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 if ctx.servo_ is None:
                     raise typer.BadParameter(f"No servo was found named \"{ctx.name}\"")
 
-        run_async(assembly.startup())
-
     @staticmethod
     def connectors_named(names: List[str], servo_: servo.Servo) -> List[servo.BaseConnector]:
         connectors: List[servo.BaseConnector] = []
@@ -650,7 +652,7 @@ class ConnectorCLI(CLI):
         help: Optional[str] = None,
         command_type: Optional[Type[click.Command]] = None,
         callback: Optional[Callable] = typer.models.Default(None),
-        section: Section = Section.COMMANDS,
+        section: Section = Section.commands,
         **kwargs,
     ) -> None: # noqa: D107
         # Register for automated inclusion in the ServoCLI
@@ -745,7 +747,7 @@ class ServoCLI(CLI):
         return servo.logger
 
     def add_assembly_commands(self) -> None:
-        @self.command(section=Section.ASSEMBLY)
+        @self.command(section=Section.assembly)
         def init(
             context: Context,
             dotenv: bool = typer.Option(
@@ -868,7 +870,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def components(context: Context) -> None:
@@ -877,7 +879,7 @@ class ServoCLI(CLI):
                 if context.servo_ and context.servo_ != servo_:
                     continue
 
-                results = run_async(servo_.dispatch_event(servo.Events.COMPONENTS))
+                results = run_async(servo_.dispatch_event(servo.Events.components))
                 headers = ["COMPONENT", "SETTINGS", "CONNECTOR"]
                 table = []
                 for result in results:
@@ -899,7 +901,7 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def events(
@@ -954,30 +956,30 @@ class ServoCLI(CLI):
                     if False in preposition_switched:
                         # Handle explicit exclusions
                         prepositions = [
-                            servo.Preposition.BEFORE,
-                            servo.Preposition.ON,
-                            servo.Preposition.AFTER,
+                            servo.Preposition.before,
+                            servo.Preposition.on,
+                            servo.Preposition.after,
                         ]
                         if before == False:
-                            prepositions.remove(servo.Preposition.BEFORE)
+                            prepositions.remove(servo.Preposition.before)
                         if on == False:
-                            prepositions.remove(servo.Preposition.ON)
+                            prepositions.remove(servo.Preposition.on)
                         if after == False:
-                            prepositions.remove(servo.Preposition.AFTER)
+                            prepositions.remove(servo.Preposition.after)
                     else:
                         # Add explicit inclusions
                         prepositions = []
                         if before:
-                            prepositions.append(servo.Preposition.BEFORE)
+                            prepositions.append(servo.Preposition.before)
                         if on:
-                            prepositions.append(servo.Preposition.ON)
+                            prepositions.append(servo.Preposition.on)
                         if after:
-                            prepositions.append(servo.Preposition.AFTER)
+                            prepositions.append(servo.Preposition.after)
                 else:
                     prepositions = [
-                        servo.Preposition.BEFORE,
-                        servo.Preposition.ON,
-                        servo.Preposition.AFTER,
+                        servo.Preposition.before,
+                        servo.Preposition.on,
+                        servo.Preposition.after,
                     ]
 
                 sorted_event_names = sorted(
@@ -1011,7 +1013,7 @@ class ServoCLI(CLI):
                                     )
                                 )
                                 if handlers:
-                                    if preposition != servo.Preposition.ON:
+                                    if preposition != servo.Preposition.on:
                                         event_labels.append(f"{preposition} {event_name}")
                                     else:
                                         event_labels.append(event_name)
@@ -1040,7 +1042,7 @@ class ServoCLI(CLI):
                                         )
                                     )
                                 )
-                                if preposition != servo.Preposition.ON:
+                                if preposition != servo.Preposition.on:
                                     label = f"{preposition} {event_name}"
                                 else:
                                     label = event_name
@@ -1049,7 +1051,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
         @show_cli.command()
         def metrics(context: Context) -> None:
@@ -1081,11 +1083,11 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-        self.add_cli(show_cli, section=Section.ASSEMBLY)
+        self.add_cli(show_cli, section=Section.assembly)
 
-        @self.command("list", section=Section.ASSEMBLY)
+        @self.command("list", section=Section.assembly)
         def list_(
             context: Context,
         ) -> None:
@@ -1101,9 +1103,9 @@ class ServoCLI(CLI):
                 ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
-        @self.command(section=Section.ASSEMBLY)
+        @self.command(section=Section.assembly)
         def connectors(
             context: Context,
             verbose: bool = typer.Option(
@@ -1112,14 +1114,13 @@ class ServoCLI(CLI):
         ) -> None:
             """Display active connectors"""
             table = []
-            headers = ["NAME", "TYPE", "VERSION", "DESCRIPTION"]
+            headers = ["NAME", "VERSION", "DESCRIPTION"]
             if verbose:
                 headers += ["HOMEPAGE", "MATURITY", "LICENSE"]
 
             for connector_type in servo.Assembly.all_connector_types():
                 row = [
                     connector_type.__default_name__,
-                    connector_type.name,
                     connector_type.version,
                     connector_type.description,
                 ]
@@ -1131,9 +1132,9 @@ class ServoCLI(CLI):
                     ]
                 table.append(row)
 
-            typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+            typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-    def add_ops_commands(self, section=Section.OPS) -> None:
+    def add_ops_commands(self, section=Section.ops) -> None:
         @self.command(section=section)
         def run(
             context: Context,
@@ -1185,7 +1186,7 @@ class ServoCLI(CLI):
                 False, "--tag", "-t", help="Filter by tag"
             ),
             halt_on: Optional[servo.ErrorSeverity] = typer.Option(
-                servo.ErrorSeverity.CRITICAL,
+                servo.ErrorSeverity.critical,
                 "--halt-on",
                 "-h",
                 help="Halt running on failure severity",
@@ -1199,19 +1200,35 @@ class ServoCLI(CLI):
                 "-q",
                 help="Do not echo generated output to stdout",
             ),
+            progressive: bool = typer.Option(
+                False,
+                "--progressive",
+                "-p",
+                help="Execute checks and emit output progressively",
+            ),
             wait: Optional[str] = typer.Option(
-                None,
+                "30m",
                 "--wait",
                 "-w",
                 help="Wait for checks to pass",
-                metavar="[DURATION]",
+                metavar="[TIMEOUT]",
             ),
             delay: Optional[str] = typer.Option(
-                None,
+                "10s",
                 "--delay",
                 "-d",
                 help="Delay duration. Requires --wait",
                 metavar="[DURATION]",
+            ),
+            run: bool = typer.Option(
+                False,
+                "--run",
+                help="Run the servo when checks pass",
+            ),
+            remedy: bool = typer.Option(
+                False,
+                "--remedy",
+                help="Attempt to automatically remedy failures",
             ),
             exit_on_success: bool = typer.Option(True, hidden=True),
         ) -> None:
@@ -1257,107 +1274,173 @@ class ServoCLI(CLI):
                     self.connectors_named(connectors, servo_) if connectors
                     else list(
                         filter(
-                            lambda c: c.responds_to_event(servo.Events.CHECK),
+                            lambda c: c.responds_to_event(servo.Events.check),
                             servo_.all_connectors,
                         )
                     )
 
                 )
-                validate_connectors_respond_to_event(connector_objs, servo.Events.CHECK)
+                validate_connectors_respond_to_event(connector_objs, servo.Events.check)
 
+                if os.getenv("KUBERNETES_SERVICE_HOST"):
+                    kubernetes_asyncio.config.load_incluster_config()
+                else:
+                    kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
+                    kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
+                    if kubeconfig_path.exists():
+                        await kubernetes_asyncio.config.load_kube_config(
+                            config_file=os.path.expandvars(kubeconfig_path),
+                        )
+
+                if wait:
+                    summary = "Running checks"
+                    summary += " progressively" if progressive else ""
+                    summary += f" for up to {wait} with a delay of {delay} between iterations"
+                    servo.logger.info(summary)
+                    # typer.echo(summary)
+
+                passing = set()
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
-                progress.start()
+                ready = True
+                while not progress.finished:
+                    if not progress.started:
+                        # run at least one time
+                        progress.start()
 
-                while True:
                     args = dict(name=parse_re(name), id=parse_id(id), tags=parse_csv(tag))
                     constraints = dict(filter(lambda i: bool(i[1]), args.items()))
                     results: List[servo.EventResult] = await servo_.dispatch_event(
-                        servo.Events.CHECK,
+                        servo.Events.check,
                         servo.CheckFilter(**constraints),
                         include=connector_objs,
                         halt_on=halt_on,
-                    )
+                    ) or []
 
-                    def check_status_to_str(check: servo.Check) -> str:
-                        if check.success:
-                            return "√ PASSED"
-                        else:
-                            if check.warning:
-                                return "! WARNING"
+                    if progressive:
+                        if result := next(iter(results), None):
+                            checks: List[servo.Check] = result.value
+                            failure = None
+                            for check in checks:
+                                if check.success:
+                                    # FIXME: This should hold Check objects but hashing isn't matching
+                                    if check.id not in passing:
+                                        servo.logger.success(f"✅ Check '{check.name}' passed", component=check.id)
+                                        passing.add(check.id)
+                                else:
+                                    failure = check
+                                    break
+
+                            ready = failure is None
+                            if failure:
+                                servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")#, component=failure.id)
+                                # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
+                                if failure.remedy:
+                                    if asyncio.iscoroutinefunction(failure.remedy):
+                                        task = asyncio.create_task(failure.remedy())
+                                    elif asyncio.iscoroutine(failure.remedy):
+                                        task = asyncio.create_task(failure.remedy)
+                                    else:
+                                        async def fn() -> None:
+                                            result = failure.remedy()
+                                            if asyncio.iscoroutine(result):
+                                                await result
+
+                                        task = asyncio.create_task(fn())
+
+                                    if remedy:
+                                        servo.logger.info("💡 Attempting to apply remedy...")
+                                        try:
+                                            await asyncio.wait_for(
+                                                task,
+                                                10.0
+                                            )
+                                        except asyncio.TimeoutError:
+                                            pass
+                                    else:
+                                        task.cancel()
+
+                                if failure.hint:
+                                    servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
+                                    # typer.echo(f"  Hint: {failure.hint}")
                             else:
-                                return "X FAILED"
-
-                    table = []
-                    ready = True
-                    if verbose:
-                        headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
-                        for result in results:
-                            checks: List[servo.Check] = result.value
-                            names, ids, tags, statuses, comments = [], [], [], [], []
-                            for check in checks:
-                                names.append(check.name)
-                                ids.append(check.id)
-                                tags.append(", ".join(check.tags) if check.tags else "-")
-                                statuses.append(check_status_to_str(check))
-                                comments.append(textwrap.shorten(check.message or "-", 70))
-                                ready &= check.success
-
-                            if not names:
-                                continue
-
-                            row = [
-                                result.connector.name,
-                                "\n".join(names),
-                                "\n".join(ids),
-                                "\n".join(tags),
-                                "\n".join(statuses),
-                                "\n".join(comments),
-                            ]
-                            table.append(row)
+                                # nothing is left failing, spike the football
+                                servo.logger.info("🔥 All checks passed.")
+                                # typer.echo(f"🔥 All checks are now passing.")
+                        else:
+                            typer.echo(f"WARNING: No checks found -- returning.")
                     else:
-                        headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                        for result in results:
-                            checks: List[servo.Check] = result.value
-                            if not checks:
-                                continue
+                        table = []
+                        if verbose:
+                            headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
+                            for result in results:
+                                checks: List[servo.Check] = result.value
+                                names, ids, tags, statuses, comments = [], [], [], [], []
+                                for check in checks:
+                                    names.append(check.name)
+                                    ids.append(check.id)
+                                    tags.append(", ".join(check.tags) if check.tags else "-")
+                                    statuses.append(_check_status_to_str(check))
+                                    comments.append(textwrap.shorten(check.message or "-", 70))
+                                    ready &= check.success
 
-                            success = True
-                            errors = []
-                            for check in checks:
-                                success &= check.passed
-                                check.success or errors.append(
-                                    f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                                if not names:
+                                    continue
+
+                                row = [
+                                    result.connector.name,
+                                    "\n".join(names),
+                                    "\n".join(ids),
+                                    "\n".join(tags),
+                                    "\n".join(statuses),
+                                    "\n".join(comments),
+                                ]
+                                table.append(row)
+                        else:
+                            headers = ["CONNECTOR", "STATUS", "ERRORS"]
+                            for result in results:
+                                checks: List[servo.Check] = result.value
+                                if not checks:
+                                    continue
+
+                                success = True
+                                errors = []
+                                for check in checks:
+                                    success &= check.passed
+                                    check.success or errors.append(
+                                        f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                                    )
+                                ready &= success
+                                status = "√ PASSED" if success else "X FAILED"
+                                message = functools.reduce(
+                                    lambda m, e: m
+                                    + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
+                                    errors,
+                                    "",
                                 )
-                            ready &= success
-                            status = "√ PASSED" if success else "X FAILED"
-                            message = functools.reduce(
-                                lambda m, e: m
-                                + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
-                                errors,
-                                "",
-                            )
-                            row = [result.connector.name, status, message]
-                            table.append(row)
+                                row = [result.connector.name, status, message]
+                                table.append(row)
 
-                    # Output table
-                    if not quiet:
-                        typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                        # Output table
+                        if not quiet:
+                            typer.echo(tabulate(table, headers, tablefmt="plain"))
 
                     if ready:
                         return True
-                    elif progress.finished:
-                        # Don't log a timeout if we aren't running in wait mode
-                        if progress.duration:
-                            self.logger.error(
-                                f"timed out waiting for checks to pass {progress.duration}"
+                    else:
+                        if delay is not None:
+                            self.logger.info(
+                                f"waiting for {delay} before rerunning failing checks"
                             )
-                        return False
+                            typer.echo("\n")
+                            await asyncio.sleep(servo.Duration(delay).total_seconds())
 
-                    if delay is not None:
-                        self.logger.info(
-                            f"waiting for {delay} before rerunning failing checks"
-                        )
-                        time.sleep(servo.Duration(delay).total_seconds())
+                        if progress.finished:
+                            # Don't log a timeout if we aren't running in wait mode
+                            if progress.duration:
+                                self.logger.error(
+                                    f"timed out waiting for checks to pass {progress.duration}"
+                                )
+                            return False
 
             # Check all targeted servos
             if context.servo:
@@ -1376,8 +1459,11 @@ class ServoCLI(CLI):
                 ready = functools.reduce(lambda x, y: x and y, results)
 
             # Return instead of exiting if we are being invoked
-            if ready and not exit_on_success:
-                return
+            if ready:
+                if run:
+                    servo.runner.AssemblyRunner(servo.Assembly.current()).run()
+                elif not exit_on_success:
+                    return
 
             exit_code = 0 if ready else 1
             raise typer.Exit(exit_code)
@@ -1405,7 +1491,7 @@ class ServoCLI(CLI):
                 )
 
                 results: List[servo.EventResult] = run_async(
-                    servo_.dispatch_event(servo.Events.DESCRIBE, include=connectors_)
+                    servo_.dispatch_event(servo.Events.describe, include=connectors_)
                 )
                 headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
                 table = []
@@ -1432,7 +1518,7 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain"))
+                typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         def metrics_callback(
             context: typer.Context, value: Optional[List[str]]
@@ -1498,7 +1584,7 @@ class ServoCLI(CLI):
                     self.connectors_named(connectors, servo_) if connectors
                     else list(
                         filter(
-                            lambda c: c.responds_to_event(servo.Events.MEASURE),
+                            lambda c: c.responds_to_event(servo.Events.measure),
                             servo_.all_connectors,
                         )
                     )
@@ -1508,7 +1594,7 @@ class ServoCLI(CLI):
                     # Filter target connectors by metrics
                     results: List[servo.EventResult] = run_async(
                         servo_.dispatch_event(
-                            servo.Events.METRICS, include=connectors_
+                            servo.Events.metrics, include=connectors_
                         )
                     )
                     for result in results:
@@ -1520,7 +1606,7 @@ class ServoCLI(CLI):
                 # Capture the measurements
                 results: List[servo.EventResult] = run_async(
                     servo_.dispatch_event(
-                        servo.Events.MEASURE,
+                        servo.Events.measure,
                         metrics=metrics,
                         control=servo.Control(duration=duration),
                         include=connectors_,
@@ -1550,11 +1636,11 @@ class ServoCLI(CLI):
 
                         if isinstance(reading, servo.TimeSeries):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            for value_tuple in reading.values:
-                                time_key = f"{value_tuple[0]:%Y-%m-%d %H:%M:%S}"
+                            for data_point in reading.data_points:
+                                time_key = f"{data_point[0]:%Y-%m-%d %H:%M:%S}"
                                 timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                                 values = timestamp_to_connector.get(result.connector, [])
-                                values.append((value_tuple[1], reading))
+                                values.append((data_point[1], reading))
                                 timestamp_to_connector[result.connector] = values
                                 metric_to_timestamp[time_key] = timestamp_to_connector
 
@@ -1562,7 +1648,7 @@ class ServoCLI(CLI):
 
                         elif isinstance(reading, servo.DataPoint):
                             metric_to_timestamp = aggregated_by_metric.get(metric, {})
-                            time_key = f"{reading.measured_at:%Y-%m-%d %H:%M:%S}"
+                            time_key = f"{reading.time:%Y-%m-%d %H:%M:%S}"
                             timestamp_to_connector = metric_to_timestamp.get(time_key, {})
                             values = timestamp_to_connector.get(result.connector, [])
                             values.append((reading.value, reading))
@@ -1594,7 +1680,7 @@ class ServoCLI(CLI):
                             readings_column.extend(
                                 list(
                                     map(
-                                        lambda r: f"{r[0]:.2f} ({timeago.format(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
+                                        lambda r: f"{r[0]:.2f} ({timeago(timestamp) if humanize else timestamp}) {attribute_connector(connector, r[1])}",
                                         values,
                                     )
                                 )
@@ -1609,7 +1695,57 @@ class ServoCLI(CLI):
 
                 if len(context.assembly.servos) > 1:
                     typer.echo(f"{servo_.name}")
-                typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
+
+        @self.command(section=section)
+        def inject_sidecar(
+            context: Context,
+            target: str = typer.Argument(
+                ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
+            ),
+            namespace: str = typer.Option(
+                "default", "--namespace", "-n", help="Namespace of the target"
+            ),
+            service: Optional[str] = typer.Option(
+                None, "--service", "-s", help="Service to target"
+            ),
+            port: Optional[int] = typer.Option(
+                None, "--port", "-p", help="Port to target"
+            )
+        ) -> None:
+            """
+            Inject an Envoy sidecar to capture metrics
+            """
+            if not target.startswith(("deploy/", "deployment/", "pod/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+
+            if not service or port:
+                raise typer.MissingParameter("service or port must be given")
+
+            # TODO: Dry this up...
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes_asyncio.config.load_incluster_config()
+            else:
+                kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
+                kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
+                if kubeconfig_path.exists():
+                    run_async(kubernetes_asyncio.config.load_kube_config(
+                        config_file=os.path.expandvars(kubeconfig_path),
+                    ))
+
+            if target.startswith("deploy"):
+                deployment = run_async(
+                    servo.connectors.kubernetes.Deployment.read(
+                        target.split('/', 1)[1], namespace
+                    )
+                )
+                run_async(deployment.inject_sidecar(service=service, port=port))
+                typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
+
+            elif target.startswith("pod"):
+                raise typer.BadParameter("Pod sidecar injection is not yet implemented")
+            else:
+                raise typer.BadParameter(f"unexpected sidecar target: {target}")
 
         @self.command(section=section)
         def adjust(
@@ -1645,7 +1781,7 @@ class ServoCLI(CLI):
                     adjustments.append(adjustment)
 
                 results: List[servo.EventResult] = run_async(
-                    servo_.dispatch_event(servo.Events.ADJUST, adjustments)
+                    servo_.dispatch_event(servo.Events.adjust, adjustments)
                 )
                 if not results:
                     typer.echo("adjustment failed: no connector handled the request", err=True)
@@ -1680,9 +1816,9 @@ class ServoCLI(CLI):
 
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
-                    typer.echo(tabulate.tabulate(table, headers, tablefmt="plain") + "\n")
+                    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
-    def add_config_commands(self, section=Section.CONFIG) -> None:
+    def add_config_commands(self, section=Section.config) -> None:
         @self.command(section=section)
         def config(
             context: Context,
@@ -2036,9 +2172,9 @@ class ServoCLI(CLI):
 
     def add_connector_commands(self) -> None:
         for cli in ConnectorCLI.__clis__:
-            self.add_cli(cli, section=Section.CONNECTORS)
+            self.add_cli(cli, section=Section.connectors)
 
-        @self.command(section=Section.OTHER)
+        @self.command(section=Section.other)
         def version(
             context: Context,
             connector: Optional[str] = typer.Argument(
@@ -2123,3 +2259,15 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
         Exception: Any exception raised during execution of the future.
     """
     return asyncio.get_event_loop().run_until_complete(future)
+
+def print_table(table, headers) -> None:
+    typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
+
+def _check_status_to_str(check: servo.Check) -> str:
+    if check.success:
+        return "√ PASSED"
+    else:
+        if check.warning:
+            return "! WARNING"
+        else:
+            return "X FAILED"

@@ -3,7 +3,7 @@ node_modules
 .vscode
 __pycache__
 .coverage
-servo.yaml
+/servo.yaml
 
 # Distribution / packaging
 .Python
@@ -23,7 +23,8 @@ var/
 .installed.cfg
 *.egg
 /bin
-.env*
-.env
-logs
+/.env*
+/.env
+/logs
 .cache
+artifacts

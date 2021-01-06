@@ -17,12 +17,17 @@ ENV SERVO_ENV=${SERVO_ENV} \
     POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git \
+  && apt-get install -y --no-install-recommends git curl watch \
   && apt-get purge -y --auto-remove \
   && rm -rf /var/lib/apt/lists/*
 
 # Install Vegeta
 COPY --from=vegeta /bin/vegeta /bin/vegeta
+
+# Add kubectl
+RUN curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+RUN chmod +x ./kubectl
+RUN mv ./kubectl /usr/local/bin
 
 # Build Servo
 WORKDIR /servo
@@ -33,12 +38,10 @@ RUN pip install --upgrade pip setuptools
 # so that the servo CLI is installed by Poetry. The sequencing
 # here accelerates builds by ensuring that only essential
 # cache friendly files are in the stage when Poetry executes.
-COPY poetry.lock pyproject.toml README.md ./
+COPY poetry.lock pyproject.toml README.md CHANGELOG.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
 RUN pip install poetry==1.1.* \
-  # Add common connectors distributed as standalone libraries
-  && poetry add servo-webhooks \
   && poetry install \
     $(if [ "$SERVO_ENV" = 'production' ]; then echo '--no-dev'; fi) \
     --no-interaction \

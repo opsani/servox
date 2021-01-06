@@ -63,6 +63,12 @@ Tag = pydantic.constr(
     strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$"
 )
 
+class CheckError(RuntimeError):
+    def __init__(self, message: str, *, hint: Optional[str] = None, remedy: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(message)
+        self.hint = hint
+        self.remedy = remedy
+
 
 class Check(pydantic.BaseModel, servo.logging.Mixin):
     """
@@ -89,7 +95,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """An optional detailed description about the condition being checked.
     """
 
-    severity: ErrorSeverity = ErrorSeverity.COMMON
+    severity: ErrorSeverity = ErrorSeverity.common
     """The relative importance of the check determining failure handling.
     """
 
@@ -113,6 +119,9 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     The message is presented to users and should be informative. Long
     messages may be truncated on display.
     """
+
+    hint: Optional[pydantic.StrictStr] = None
+    remedy: Optional[Union[Callable[[], None], Awaitable[None]]] = None
 
     exception: Optional[Exception]
     """
@@ -191,13 +200,13 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     def critical(self) -> bool:
         """Return a boolean value that indicates if the check is of critical severity.
         """
-        return self.severity == ErrorSeverity.CRITICAL
+        return self.severity == ErrorSeverity.critical
 
     @property
     def warning(self) -> bool:
         """Return a boolean value that indicates if the check is of warning severity.
         """
-        return self.severity == ErrorSeverity.WARNING
+        return self.severity == ErrorSeverity.warning
 
     @pydantic.validator("created_at", pre=True, always=True)
     @classmethod
@@ -213,6 +222,9 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
                 values["name"].encode("utf-8"), digest_size=4
             ).hexdigest()
         )
+
+    def __hash__(self):
+        return hash((self.id,))
 
     class Config:
         validate_assignment = True
@@ -239,7 +251,7 @@ def check(
     *,
     description: Optional[str] = None,
     id: Optional[str] = None,
-    severity: ErrorSeverity = ErrorSeverity.COMMON,
+    severity: ErrorSeverity = ErrorSeverity.common,
     tags: Optional[List[str]] = None,
 ) -> Callable[[CheckHandler], CheckRunner]:
     """
@@ -252,7 +264,7 @@ def check(
     into a check function or method.
 
     The decorator requires a `name` parameter to identify the check as well as an optional
-    informative `description`, an `id` for succintly referencing the check, and a `severity`
+    informative `description`, an `id` for succinctly referencing the check, and a `severity`
     value that determines how failure is reported and affects depdendent checks.
     The body of the decorated function is used to perform the business logic of running
     the check. The decorator wraps the original function body into a handler that runs the
@@ -286,7 +298,6 @@ def check(
         )
 
         if asyncio.iscoroutinefunction(fn):
-
             @functools.wraps(fn)
             async def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
@@ -294,7 +305,6 @@ def check(
                 return check
 
         else:
-
             @functools.wraps(fn)
             def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
@@ -323,7 +333,7 @@ def require(
     for detailed information.
     """
     return check(
-        name, description=description, id=id, tags=tags, severity=ErrorSeverity.CRITICAL
+        name, description=description, id=id, tags=tags, severity=ErrorSeverity.critical
     )
 
 
@@ -341,7 +351,7 @@ def warn(
     for detailed information.
     """
     return check(
-        name, description=description, id=id, tags=tags, severity=ErrorSeverity.WARNING
+        name, description=description, id=id, tags=tags, severity=ErrorSeverity.warning
     )
 
 
@@ -374,6 +384,8 @@ class CheckFilter(pydantic.BaseModel):
     are selected.
     """
 
+    exclusive: bool = False
+
     @property
     def any(self) -> bool:
         """Return True if any constraints are in effect."""
@@ -385,7 +397,7 @@ class CheckFilter(pydantic.BaseModel):
         return bool(self.name is None and self.id is None and self.tags is None)
 
     def matches(self, check: Check) -> bool:
-        """Matche a check against the filter.
+        """Match a check against the filter.
 
         Args:
             check: The check to match against the filter.
@@ -427,9 +439,9 @@ class CheckFilter(pydantic.BaseModel):
         elif isinstance(attr, str):
             return value == attr
         elif isinstance(attr, Sequence):
-            return value in attr
+            return value in attr and not self.exclusive
         elif isinstance(attr, Pattern):
-            return bool(attr.search(value))
+            return bool(attr.search(value)) and not self.exclusive
         else:
             raise ValueError(
                 f'unexpected value of type "{attr.__class__.__name__}": {attr}'
@@ -478,11 +490,10 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         config: servo.configuration.BaseConfiguration,
         *,
         matching: Optional[CheckFilter] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
         **kwargs,
     ) -> List[Check]:
-        """
-        Run checks and return a list of Check objects reflecting the results.
+        """Run checks and return a list of Check objects reflecting the results.
 
         Checks are implemented as instance methods prefixed with `check_` that return a `Check`
         object. Please refer to the `BaseChecks` class documentation for details.
@@ -502,10 +513,9 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         self,
         *,
         matching: Optional[CheckFilter] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
     ) -> List[Check]:
-        """
-        Run all checks matching a filter and return the results.
+        """Run all checks matching a filter and return the results.
 
         Args:
             matching: An optional filter to limit the set of checks that are run.
@@ -558,9 +568,9 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
             # halt the run if necessary
             if check.failed and halt_on:
                 if (
-                    halt_on == ErrorSeverity.WARNING
-                    or (halt_on == ErrorSeverity.COMMON and not check.warning)
-                    or (halt_on == ErrorSeverity.CRITICAL and check.critical)
+                    halt_on == ErrorSeverity.warning
+                    or (halt_on == ErrorSeverity.common and not check.warning)
+                    or (halt_on == ErrorSeverity.critical and check.critical)
                 ):
                     break
 
@@ -571,13 +581,15 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
         *,
         id: Optional[str] = None,
         name: Optional[str] = None,
-        halt_on: Optional[ErrorSeverity] = ErrorSeverity.CRITICAL,
+        halt_on: Optional[ErrorSeverity] = ErrorSeverity.critical,
+        skip_requirements: bool = False,
     ) -> Check:
         """Run a single check by id or name and returns the result.
 
         Args:
             id: The id of the check to run. Defaults to None.
             name: The name of the check. Defaults to None.
+            skip_requirements: When True, prerequisites are skipped.
 
         Raises:
             ValueError: Raised if no check exists with the given id or name.
@@ -604,7 +616,11 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 )
 
         results = await self.run_all(
-            matching=CheckFilter(id=id, name=name), halt_on=halt_on
+            matching=CheckFilter(
+                id=id,
+                name=name,
+                exclusive=skip_requirements,
+            ), halt_on=halt_on
         )
         if not results:
             for attr in ("id", "name"):
@@ -621,7 +637,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 if value is not None:
                     raise RuntimeError(
                         f"failed running check: check {attr} {repr(value)} was not run due to a prerequisite failure: check id '{result.id}' failed: \"{result.message}\""
-                    )
+                    ) from result.exception
 
         return result
 
@@ -757,7 +773,7 @@ async def run_check_handler(
 
     The first item in args (if any) is given to the `format` builtin as arguments named "self" and "item"
     in order to support building dynamic, context specific values that are assigned as attributes of
-    the Check instance given during exection. More concretely, this means that running a check handler
+    the Check instance given during execution. More concretely, this means that running a check handler
     with a non-empty arguments list will let you use provide format string input values of the form
     "Check that {item.name} work as expected (v{item.version}, release date: {item.released_At})".
 
@@ -827,7 +843,18 @@ def _set_check_result(
     elif isinstance(result, Exception):
         check.success = False
         check.exception = result
-        check.message = f"caught exception: {str(result) or repr(result)}"
+
+        if isinstance(result, CheckError):
+            # when a CheckError, we can assume the output is crafted
+            check.message = str(result)
+            check.hint = result.hint
+            check.remedy = result.remedy
+        elif isinstance(result, AssertionError):
+            # assertions are self explanatory
+            check.message = str(result)
+        else:
+            # arbitrary exceptions we have no idea, so be more pedantic
+            check.message = f"caught exception ({result.__class__.__name__}): {str(result) or repr(result)}"
     else:
         raise ValueError(
             f'check method returned unexpected value of type "{result.__class__.__name__}"'
@@ -926,7 +953,7 @@ def multicheck(
     base_name: str,
     *,
     description: Optional[str] = None,
-    severity: ErrorSeverity = ErrorSeverity.COMMON,
+    severity: ErrorSeverity = ErrorSeverity.common,
     tags: Optional[List[str]] = None,
 ) -> Callable[[MultiCheckHandler], MultiCheckExpander]:
     """Expand a method into a sequence of checks from a returned iterable and
@@ -964,7 +991,6 @@ def multicheck(
     Raises:
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
-
     def decorator(fn_: MultiCheckHandler) -> MultiCheckExpander:
         _validate_multicheck_handler(fn_)
 

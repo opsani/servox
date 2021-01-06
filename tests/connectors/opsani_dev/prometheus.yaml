@@ -36,10 +36,10 @@ data:
       metrics:
         - name: main_instance_count
           query: sum(envoy_cluster_membership_healthy{opsani_role!="tuning"}) OR ON() vector(0)
-          unit: count
+
         - name: tuning_instance_count
           query: envoy_cluster_membership_healthy{opsani_role="tuning"} OR ON() vector(0)
-          unit: count
+
 
         - name: main_pod_avg_request_rate
           query: avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m])) OR ON() vector(0)
@@ -159,6 +159,102 @@ spec:
                 values:
                 - servo
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/part-of: servo
+data:
+  prometheus.yaml: |
+    # Opsani Servo Prometheus Sidecar v0.8.0
+    # This configuration allows the Opsani Servo to discover and scrape Pods that
+    # have been injected with an Envoy proxy sidecar container that emits the metrics
+    # necessary for optimization. Scraping by the Prometheus sidecar is enabled by
+    # adding the following annotations to the Pod spec of the Deployment under
+    # optimization:
+    #
+    # annotations:
+    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
+    #   prometheus.opsani.com/scheme: http # Scrape via HTTP by default
+    #   prometheus.opsani.com/path: /stats/prometheus # Default Envoy metrics path
+    #   prometheus.opsani.com/port: "9901" # Default Envoy metrics port
+    #
+    # Path and port collisions with the optimization target can be resolved be changing
+    # the relevant annotation.
+
+    # Scrape the targets every 5 seconds.
+    # Since we are only looking at specifically annotated Envoy sidecar containers
+    # with a known metrics surface area and retain the values for <= 24 hours, we
+    # can scrape aggressively. The higher scrape resolution is helpful for testing
+    # and running checks that verify configuration health.
+    global:
+      scrape_interval: 5s
+      scrape_timeout: 5s
+      evaluation_interval: 5s
+
+    # Scrape the Envoy sidecar metrics based on matching annotations (see above)
+    scrape_configs:
+    - job_name: 'opsani-envoy-sidecars'
+
+      # Configure access to Kubernetes API server
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+      kubernetes_sd_configs:
+        - role: pod
+          namespaces:
+            names: [{{ namespace }}]
+
+      relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
+        # Do not attempt to scrape init containers
+        - source_labels: [__meta_kubernetes_pod_container_init]
+          action: keep
+          regex: false
+
+        # Relabel to scrape only pods that have
+        # "prometheus.opsani.com/scrape = true" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape]
+          action: keep
+          regex: true
+
+        # Relabel to configure scrape scheme for pod scrape targets
+        # based on pod "prometheus.opsani.com/scheme = <scheme>" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+
+        # Relabel to customize metric path based on pod
+        # "prometheus.opsani.com/path = <metric path>" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+
+        # Relabel to scrape only single, desired port for the pod
+        # based on pod "prometheus.opsani.com/port = <port>" annotation.
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_opsani_com_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+
+
+
+
 # apiVersion: v1
 # kind: Secret
 # metadata:
@@ -169,15 +265,6 @@ spec:
 # type: Opaque
 # data:
 #   token: $OPSANI_TOKEN_BASE64
-
-# ---
-# apiVersion: v1
-# kind: ServiceAccount
-# metadata:
-#   name: servo
-#   labels:
-#     app.kubernetes.io/name: servo
-#     app.kubernetes.io/component: core
 
 # ---
 # Cluster Role for the servo itself
@@ -260,61 +347,11 @@ spec:
 # - kind: ServiceAccount
 #   name: servo
 
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: servo
+#   labels:
+#     app.kubernetes.io/name: servo
+#     app.kubernetes.io/component: core
 # ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: prometheus-config
-  labels:
-    app.kubernetes.io/name: prometheus
-    app.kubernetes.io/component: metrics
-    app.kubernetes.io/part-of: servo
-data:
-  prometheus.yaml: |
-    # Opsani Servo Prometheus Sidecar v0.6.2
-    # This configuration allows the Opsani Servo to discover and scrape Pods that
-    # have been injected with an Envoy proxy sidecar container that emits the metrics
-    # necessary for optimization. Scraping by the Prometheus sidecar is enabled by
-    # adding the following annotations to the Pod spec of the Deployment under
-    # optimization:
-    #
-    # annotations:
-    #   prometheus.opsani.com/path: /stats/prometheus # Default Envoy metrics path
-    #   prometheus.opsani.com/port: "9901" # Default Envoy metrics port
-    #   prometheus.opsani.com/scrape: "true" # Opt-in for scraping by the servo
-    #
-    # Path and port collisions with the optimization target can be resolved be changing
-    # the relevant annotation.
-
-    # Scrape the targets every 5 seconds.
-    # Since we are only looking at specifically annotated Envoy sidecar containers
-    # with a known metrics surface area and retain the values for <= 24 hours, we
-    # can scrape aggressively. The higher scrape resolution is helpful for testing
-    # and running checks that verify configuration health.
-    global:
-      scrape_interval: 5s
-      scrape_timeout: 5s
-      evaluation_interval: 5s
-
-    # Scrape the Envoy sidecar metrics based on matching annotations (see above)
-    scrape_configs:
-    - job_name: 'opsani-envoy-sidecars'
-      kubernetes_sd_configs:
-        - role: pod
-      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-
-      relabel_configs:
-        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_scrape]
-          action: keep
-          regex: true
-        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_opsani_com_path]
-          action: replace
-          target_label: __metrics_path__
-          regex: (.+)
-        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_opsani_com_port]
-          action: replace
-          target_label: __address__
-          regex: (.+)(?::\d+);(\d+)
-          replacement: $1:$2
-        - action: labelmap
-          regex: __meta_kubernetes_pod_label_(.+)
