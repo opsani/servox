@@ -2384,7 +2384,7 @@ class DeploymentOptimization(BaseOptimization):
         except asyncio.TimeoutError as error:
             raise servo.AdjustmentRejectedError(
                 reason="timed out waiting for Deployment to apply adjustment"
-            )
+            ) from error
 
         if await self.deployment.get_restart_count() > 0:
             # TODO: Return a string summary about the restarts (which pods bounced)
