@@ -2377,7 +2377,7 @@ class DeploymentOptimization(BaseOptimization):
 
 
         try:
-            async with self.deployment.rollout(timeout=self.timeout.total_seconds()) as deployment:
+            async with self.deployment.rollout(timeout=self.timeout) as deployment:
                 # Patch the Deployment via the Kubernetes API
                 await deployment.patch()
 
