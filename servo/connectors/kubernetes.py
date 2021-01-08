@@ -946,7 +946,7 @@ class Pod(KubernetesModel):
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
         self.logger.trace(f"current pod phase is {status}")
-        if not status.conditions: 
+        if not status.conditions:
             return False
 
         self.logger.trace(f"checking status conditions {status.conditions}")
@@ -1465,16 +1465,16 @@ class Deployment(KubernetesModel):
         # Verify all returned RS have this deployment as an owner
         rs_list = [
             rs for rs in rs_list.items if rs.metadata.owner_references and any(
-                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid 
+                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
                 for ownRef in rs.metadata.owner_references)]
         if not rs_list:
             raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
         latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
 
         return [
-            pod for pod in await self.get_pods() 
+            pod for pod in await self.get_pods()
             if any(
-                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid 
+                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
                 for ownRef in pod.obj.metadata.owner_references
             )]
 
@@ -1726,11 +1726,11 @@ class Deployment(KubernetesModel):
                         self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
                         stream.stop()
                         return
-            
+
             # watch doesn't raise a timeoutError when when elapsed so do it as fall through
             raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
 
-            
+
 
     def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
         for condition in conditions:
@@ -1775,7 +1775,7 @@ class Deployment(KubernetesModel):
     async def _check_pod_conditions(self):
         pods = await self.get_latest_pods()
         unschedulable_pods = [
-            pod for pod in pods 
+            pod for pod in pods
             if pod.obj.status.conditions and any(
                 cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
             )]
@@ -2128,7 +2128,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-        if mode == FailureMode.CRASH:
+        if mode == FailureMode.crash:
             self.logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
             raise error
 
@@ -2144,7 +2144,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
             elif mode == FailureMode.destroy:
                 await self.destroy(error)
-            
+
             else:
                 # Trap any new modes that need to be handled
                 raise NotImplementedError(
@@ -2802,7 +2802,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                             ):
                                 # Getting readiness should not fail; failure should be treated as failed sanity check
                                 raise result
-                    
+
                     if not result:
                         return False
 
