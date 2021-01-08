@@ -28,6 +28,7 @@ jobs:
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
         source $HOME/.poetry/env
         pyenv install -s
+        poetry config virtualenvs.in-project true
         poetry env info
         poetry env use `cat .python-version`
     - name: Cache dependencies
@@ -39,9 +40,8 @@ jobs:
     - name: Install dependencies
       run: |
         source $HOME/.poetry/env
-        poetry config virtualenvs.in-project true
         poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
         source $HOME/.poetry/env
