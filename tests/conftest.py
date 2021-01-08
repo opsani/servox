@@ -194,7 +194,7 @@ def pytest_runtest_setup(item):
     if type_mark.name == TestType.integration:
         config_path = kubeconfig_path_from_config(item.config)
         if not config_path.exists():
-            item.fail(f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}")
+            pytest.fail(f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}")
 
 def selected_types_for_item(item) -> Optional[List[TestType]]:
     type_option = item.config.getoption("-T")
