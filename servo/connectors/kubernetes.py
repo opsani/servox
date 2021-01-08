@@ -2395,7 +2395,7 @@ class DeploymentOptimization(BaseOptimization):
             self.deployment.is_ready(),
             self.deployment.get_restart_count()
         )
-        return is_ready and restart_count < 1
+        return is_ready and restart_count == 0
 
 class CanaryOptimization(BaseOptimization):
     """CanaryOptimization objects manage the optimization of Containers within a Deployment using
@@ -2619,7 +2619,7 @@ class CanaryOptimization(BaseOptimization):
             self.canary_pod.is_ready(),
             self.canary_pod.get_restart_count()
         )
-        return is_ready and restart_count < 1
+        return is_ready and restart_count == 0
 
 
     class Config:
@@ -2794,6 +2794,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                     timeout=60, # Should be fairly immediate operation
                 )
 
+                # FIXME: This error handling needs to find the right optimization
+                # that raised it
                 for result in results:
                     if isinstance(result, Exception):
                         for optimization in self.optimizations:
@@ -2812,6 +2814,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.error(
                     f"timed out after 60 seconds checking for optimization readiness"
                 )
+                # FIXME: Error handling likely needs to propogate to each
+                # optimization... ?
                 for optimization in self.optimizations:
                     if await optimization.handle_error(error, self.config.on_failure):
                         # Stop error propogation once it has been handled

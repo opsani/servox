@@ -903,6 +903,20 @@ class TestKubernetesConnectorIntegration:
         assert setting
         assert setting.value == 250
 
+    async def test_adjust_cpu_with_settlement(self, config):
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
     async def test_adjust_memory(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
