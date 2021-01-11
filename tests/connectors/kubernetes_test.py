@@ -903,6 +903,10 @@ class TestKubernetesConnectorIntegration:
         assert setting
         assert setting.value == 250
 
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
     async def test_adjust_cpu_with_settlement(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
@@ -916,6 +920,30 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http.cpu')
         assert setting
         assert setting.value == 250
+
+    async def test_adjust_cpu_at_non_zero_container_index(self, config):
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+
+        # Inject a sidecar at index zero
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
+        assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
+        await deployment.inject_sidecar(service="fiber-http", index=0)
+
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
 
     async def test_adjust_memory(self, config):
         connector = KubernetesConnector(config=config)

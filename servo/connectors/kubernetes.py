@@ -1544,6 +1544,12 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    def set_container(self, name: str, container: Container) -> None:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
+        self.containers[index] = container
+        self.obj.spec.template.spec.containers[index] = container.obj
+
     @property
     def replicas(self) -> int:
         """
@@ -1582,7 +1588,13 @@ class Deployment(KubernetesModel):
 
     # TODO: cleanup backoff
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
-    async def inject_sidecar(self, *, service: Optional[str] = None, port: Optional[int] = None) -> None:
+    async def inject_sidecar(
+        self,
+        *,
+        service: Optional[str] = None,
+        port: Optional[int] = None,
+        index: Optional[int] = None
+        ) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service
         or literal TCP port, generating scrapable metrics usable for optimization.
@@ -1638,7 +1650,10 @@ class Deployment(KubernetesModel):
         )
 
         # add the sidecar to the Deployment
-        self.obj.spec.template.spec.containers.append(container)
+        if index is None:
+            self.obj.spec.template.spec.containers.append(container)
+        else:
+            self.obj.spec.template.spec.containers.insert(index, container)
 
         # patch the deployment
         await self.patch()
@@ -2477,10 +2492,9 @@ class CanaryOptimization(BaseOptimization):
             )
 
     async def apply(self) -> None:
+        """Apply the adjustments to the target."""
         dep_copy = copy.copy(self.target_deployment)
-        dep_copy.obj.spec.template.spec.containers[
-            0
-        ].resources = self.canary_container.resources
+        dep_copy.set_container(self.canary_container.name, self.canary_container)
         await dep_copy.delete_canary_pod(raise_if_not_found=False)
         self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
 
