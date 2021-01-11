@@ -743,7 +743,6 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
     if id == 'check_deployment_annotations':
         ## Step 1
         servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
-        await asyncio.sleep(600)
         async with change_to_resource(deployment):
             await add_annotations_to_podspec_of_deployment(deployment,
                 {
