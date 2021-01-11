@@ -30,6 +30,7 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirements,
 )
+from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
 from tests.helpers import *
 
@@ -962,6 +963,22 @@ class TestKubernetesConnectorIntegration:
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
 
+    async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
+        config.timeout = "60s"
+        config.deployments[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
@@ -992,6 +1009,35 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
+    async def test_adjust_canary_insufficient_resources(self, canary_config, namespace) -> None:
+        canary_config.timeout = "60s"
+        connector = KubernetesConnector(config=canary_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="mem",
+            value="128Gi", # impossible right?
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+
+    async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
+        connector = KubernetesConnector(config=canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value == 250
 
     async def test_apply_no_changes(self):
         # resource_version stays the same and early exits
@@ -1055,3 +1101,32 @@ class TestKubernetesConnectorIntegration:
 
     async def test_checks(self, config: KubernetesConfiguration):
         await KubernetesChecks.run(config)
+
+
+##
+# Rejection Tests using modified deployment
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+@pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
+class TestKubernetesConnectorIntegrationUnreadyCmd:
+    @pytest.fixture(autouse=True)
+    def _wait_for_manifests(self, kube):
+        kube.wait_for_registered(timeout=30)
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
+        # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
+        config.timeout = "45s"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        with pytest.raises(AdjustmentRejectedError):
+            description = await connector.adjust([adjustment])
+            debug(description)

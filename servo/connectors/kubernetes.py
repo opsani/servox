@@ -946,11 +946,14 @@ class Pod(KubernetesModel):
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
         self.logger.trace(f"current pod phase is {status}")
-        if phase.lower() != "running":
+        if not status.conditions:
             return False
 
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
+            if cond.reason == "Unschedulable": # TODO: should we further constrain this check?
+                raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
                 continue
@@ -1446,6 +1449,37 @@ class Deployment(KubernetesModel):
         pods = [Pod(p) for p in pod_list.items]
         return pods
 
+    async def get_latest_pods(self) -> List[Pod]:
+        """Get only the Deployment pods that belong to the latest ResourceVersion.
+
+        Returns:
+            A list of pods that belong to the latest deployment replicaset.
+        """
+        self.logger.info(f'getting replicaset for deployment "{self.name}"')
+        async with self.api_client() as api_client:
+            label_selector = self.obj.spec.selector.match_labels
+            rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
+                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
+            )
+
+        # Verify all returned RS have this deployment as an owner
+        rs_list = [
+            rs for rs in rs_list.items if rs.metadata.owner_references and any(
+                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
+                for ownRef in rs.metadata.owner_references)]
+        if not rs_list:
+            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
+        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+
+        return [
+            pod for pod in await self.get_pods()
+            if any(
+                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
+                for ownRef in pod.obj.metadata.owner_references
+            )]
+
+
+
     @property
     def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
         """Return the status of the Deployment.
@@ -1678,6 +1712,7 @@ class Deployment(KubernetesModel):
 
                     # Check that the conditions aren't reporting a failure
                     self._check_conditions(status.conditions)
+                    await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
                     if status.observed_generation == observed_generation:
@@ -1705,6 +1740,12 @@ class Deployment(KubernetesModel):
                         # We are done: all the counts match. Stop the watch and return
                         self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
                         stream.stop()
+                        return
+
+            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
+            raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
+
+
 
     def _check_conditions(self, conditions: List[kubernetes_asyncio.client.V1DeploymentCondition]) -> None:
         for condition in conditions:
@@ -1745,6 +1786,22 @@ class Deployment(KubernetesModel):
                     raise servo.AdjustmentFailure(
                         f"unknown deployment status condition: {condition.status}"
                     )
+
+    async def _check_pod_conditions(self):
+        pods = await self.get_latest_pods()
+        unschedulable_pods = [
+            pod for pod in pods
+            if pod.obj.status.conditions and any(
+                cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
+            )]
+        if unschedulable_pods:
+            pod_fmts = [] # [f"{pod.obj.metadata.name} - {', '.join(cond.message for cond)}" for pod in unschedulable_pods]
+            for pod in unschedulable_pods:
+                cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
+                pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
+
+            fmt_str = ", ".join(pod_fmts)
+            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
 
     ##
     # Canary support
@@ -2087,9 +2144,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
                 must filter failure modes before calling the superclass implementation.
         """
         if mode == FailureMode.crash:
-            raise RuntimeError(
-                "an unrecoverable failure occurred while interacting with Kubernetes"
-            ) from error
+            self.logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
+            raise error
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
@@ -2100,19 +2156,21 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
             elif mode == FailureMode.rollback:
                 await self.rollback(error)
-                return True
 
             elif mode == FailureMode.destroy:
                 await self.destroy(error)
-                return True
+
+            else:
+                # Trap any new modes that need to be handled
+                raise NotImplementedError(
+                    f"missing error handler for failure mode '{mode}'"
+                ) from error
+
+            raise error # Always communicate errors to backend unless ignored
 
         except Exception as handler_error:
             raise handler_error from error
 
-        # Trap any new modes that need to be handled
-        raise NotImplementedError(
-            f"missing error handler for failure mode '{mode}'"
-        ) from error
 
     @abc.abstractmethod
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -2332,8 +2390,9 @@ class DeploymentOptimization(BaseOptimization):
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
 
+
         try:
-            async with self.deployment.rollout() as deployment:
+            async with self.deployment.rollout(timeout=self.timeout) as deployment:
                 # Patch the Deployment via the Kubernetes API
                 await deployment.patch()
 
@@ -2437,7 +2496,7 @@ class CanaryOptimization(BaseOptimization):
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.set_container(self.canary_container.name, self.canary_container)
         await dep_copy.delete_canary_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_canary_pod()
+        self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
 
     @property
     def cpu(self) -> CPU:
@@ -2710,7 +2769,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                         *list(map(lambda a: a.apply(), self.optimizations)),
                         return_exceptions=True,
                     ),
-                    timeout=timeout.total_seconds(),
+                    timeout=timeout.total_seconds() + 60, # allow sub-optimization timeouts to expire first
                 )
 
                 for result in results:
@@ -2724,7 +2783,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
             except asyncio.exceptions.TimeoutError as error:
                 self.logger.error(
-                    f"timed out after {timeout} waiting for adjustments to apply"
+                    f"timed out after {timeout} + 60s waiting for adjustments to apply"
                 )
                 for optimization in self.optimizations:
                     if await optimization.handle_error(error, self.config.on_failure):
