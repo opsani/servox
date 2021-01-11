@@ -1024,7 +1024,7 @@ class TestKubernetesConnectorIntegration:
 
         assert "Insufficient memory." in str(rejection_info.value)
 
-    
+
     async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
         connector = KubernetesConnector(config=canary_config)
         adjustment = Adjustment(
