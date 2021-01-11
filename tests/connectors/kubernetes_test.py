@@ -861,8 +861,8 @@ def config(namespace: str) -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="fiber-http",
-                        cpu=CPU(min="125m", max="800m", step="125m"),
-                        memory=Memory(min="128MiB", max="0.8GiB", step="32MiB"),
+                        cpu=CPU(min="50m", max="800m", step="125m"),
+                        memory=Memory(min="64MiB", max="0.8GiB", step="32MiB"),
                     )
                 ],
             )
@@ -885,8 +885,8 @@ class TestKubernetesConnectorIntegration:
     async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 500
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "512.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust_cpu(self, config):

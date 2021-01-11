@@ -140,7 +140,7 @@ class TestChecks:
                                 min="250m", max="4000m", step="125m"
                             ),
                             memory=servo.connectors.kubernetes.Memory(
-                                min="256MiB", max="4.0GiB", step="128MiB"
+                                min="64MiB", max="4.0GiB", step="128MiB"
                             ),
                         )
                     ],
