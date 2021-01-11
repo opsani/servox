@@ -89,9 +89,9 @@ class Status(pydantic.BaseModel):
     def from_error(cls, error: servo.errors.BaseError) -> "Status":
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
-            status = Statuses.rejected
+            status = ServoStatuses.rejected
         else:
-            status = Statuses.failed
+            status = ServoStatuses.failed
 
         return cls(status=status, message=str(error), reason=error.reason)
 
