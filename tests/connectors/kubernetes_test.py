@@ -1024,6 +1024,20 @@ class TestKubernetesConnectorIntegration:
 
         assert "Insufficient memory." in str(rejection_info.value)
 
+    
+    async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
+        connector = KubernetesConnector(config=canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value == 250
 
     async def test_apply_no_changes(self):
         # resource_version stays the same and early exits
