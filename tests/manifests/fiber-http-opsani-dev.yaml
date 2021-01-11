@@ -54,10 +54,10 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            cpu: 500m
-            memory: 512Mi
+            cpu: 50m
+            memory: 64Mi
           limits:
-            cpu: 1500m
+            cpu: 500m
             memory: 1Gi
         ports:
           # The ingress port that Envoy will reverse proxy requests
