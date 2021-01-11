@@ -34,8 +34,8 @@ class BaseError(RuntimeError):
         self._reason = reason
         self._assembly = assembly or servo.Assembly.current()
         self._servo = servo_ or servo.Servo.current()
-        self._connector = connector or self._servo.connector
-        self._event = event or self._servo.event
+        self._connector = connector or getattr(self._servo, "connector", None)
+        self._event = event or getattr(self._servo, "event", None)
         self._created_at = datetime.datetime.now()
 
     @property
