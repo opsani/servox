@@ -716,7 +716,7 @@ def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
 async def wait_for_check_to_pass(
     check: Coroutine[None, None, servo.Check],
     *,
-    timeout: servo.Duration = servo.Duration("20s")
+    timeout: servo.Duration = servo.Duration("45s")
 ) -> servo.Check:
     async def _loop_check() -> servo.Check:
         while True:
