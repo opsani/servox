@@ -166,6 +166,7 @@ class ProgressHandler:
             except asyncio.CancelledError:
                 pass  # Task cancellation should not be logged as an error.
             except Exception as error:  # pylint: disable=broad-except
+                logger.warning(f"encountered exception while processing progress logging: {error}")
                 if self._exception_handler:
                     if asyncio.iscoroutinefunction(self._exception_handler):
                         await self._exception_handler(error)
