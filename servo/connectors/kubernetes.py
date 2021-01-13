@@ -1325,9 +1325,9 @@ class ControllerModel(KubernetesModel):
     @classmethod
     async def read_from_configuration(cls, config: ControllerConfiguration) -> Union[Deployment, Rollout]:
         if isinstance(config, DeploymentConfiguration):
-            controller = await Deployment.read(config.name, cast(str, config.namespace))
+            return await Deployment.read(config.name, cast(str, config.namespace))
         elif isinstance(config, RolloutConfiguration):
-            controller = await Rollout.read(config.name, cast(str, config.namespace))
+            return await Rollout.read(config.name, cast(str, config.namespace))
         else:
             raise NotImplementedError(f"missing Controller model implementation for '{type(config).__name__}'")
 
@@ -2352,7 +2352,7 @@ class RolloutBaseModel(pydantic.BaseModel):
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
 # https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
-# NOTE/TODO: fields typed with Any should maintain the same form when dumped as when they are parsed. Should the need 
+# NOTE/TODO: fields typed with Any should maintain the same form when dumped as when they are parsed. Should the need
 #   arise to interact with such fields, they will need to have an explicit type defined so the alias_generator is applied
 class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
     match_expressions: Any
@@ -2509,7 +2509,7 @@ ROLLOUT_VERSION = "v1alpha1"
 ROLLOUT_PURAL = "rollouts"
 
 ROLLOUT_CONST_ARGS = dict(
-    group=ROLLOUT_GROUP, 
+    group=ROLLOUT_GROUP,
     version=ROLLOUT_VERSION,
     plural=ROLLOUT_PURAL,
 )
@@ -2714,7 +2714,7 @@ class Rollout(ControllerModel):
             }
         async with kubernetes_asyncio.client.api_client.ApiClient() as api_client:
             return api_client._ApiClient__deserialize_model(pod_dict, kubernetes_asyncio.client.V1Pod)
-        
+
 
 class Millicore(int):
     """
