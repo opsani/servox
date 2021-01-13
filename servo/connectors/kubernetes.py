@@ -3832,7 +3832,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         description="Deployments to be optimized.",
     )
 
-    rollouts: List[DeploymentConfiguration] = pydantic.Field(
+    rollouts: List[RolloutConfiguration] = pydantic.Field(
         description="Argo rollouts to be optimized.",
         default=[],
     )
