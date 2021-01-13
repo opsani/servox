@@ -6,8 +6,10 @@ import json
 import os
 import pathlib
 import random
+import shutil
 import socket
 import string
+import subprocess as sys_sp
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import backoff
@@ -387,8 +389,15 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 
 # Ensure no files from the working copy and found
 @pytest.fixture(autouse=True)
-def run_from_tmp_path(tmp_path: pathlib.Path) -> None:
+def run_from_tmp_path(tmp_path: pathlib.Path, directory: str = None, files: List[str]=None) -> None:
     """Change the working directory to a temporary path to help isolate the test suite."""
+    print(sys_sp.check_output("pwd"))
+    if directory:
+        if files:
+            for f_name in files:
+                shutil.copy(f"{directory}/{f_name}", tmp_path)
+        else:
+            shutil.copy(f"{directory}/*", tmp_path)
     os.chdir(tmp_path)
 
 

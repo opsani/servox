@@ -5,6 +5,7 @@ from typing import Type
 import kubetest.client
 import pydantic
 import pytest
+import subprocess
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -1130,3 +1131,40 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError):
             description = await connector.adjust([adjustment])
             debug(description)
+
+##
+# Tests against an ArgoCD rollout
+@pytest.mark.integration
+# @pytest.mark.clusterrolebinding('cluster-admin')
+# @pytest.mark.usefixtures("kubernetes_asyncio_config")
+# @pytest.mark.applymanifests("../manifests", files=["argo-rollouts-install.yaml", "fiber-http-rollout-opsani-dev.yaml"])
+@pytest.mark.parametrize("run_from_tmp_path", [("tests/manifests" , ["fiber-http-rollout-opsani-dev.yaml"])], indirect=True)
+class TestKubernetesConnectorRolloutIntegration:
+    @pytest.fixture()
+    def _manage_rollout(self):
+        rollout_crd_cmd = ["kubectl", "apply", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        subprocess.check_call(rollout_crd_cmd)
+
+        print(subprocess.check_output("ls"))
+
+        rollout_cmd = ["kubectl", "apply", "-f", "../manifests/fiber-http-rollout-opsani-dev.yaml"]
+        subprocess.check_call(rollout_cmd)
+
+        yield
+
+        rollout_cmd[1] = "delete"
+        subprocess.check_call(rollout_cmd)
+        rollout_crd_cmd[1] = "delete"
+        subprocess.check_call(rollout_crd_cmd)
+
+    # @pytest.fixture
+    # def namespace(self, kube: kubetest.client.TestClient) -> str:
+    #     return kube.namespace
+
+    @pytest.mark.usefixtures("_manage_rollout")
+    async def test_describe(self, config) -> None:
+        connector = KubernetesConnector(config=config)
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
