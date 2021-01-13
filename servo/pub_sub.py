@@ -10,7 +10,7 @@ import json
 import re
 import yaml
 
-from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, Optional, Pattern, Set, Union
+from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Union
 
 import pydantic
 import servo.types
@@ -155,7 +155,7 @@ class Channel(pydantic.BaseModel):
         name: The unique name of the Channel within the Exchange.
         description: An optional supplemental description of the Channel.
         created_at: The date and time that the Channel was created.
-        exchange: The pub/sub Exchange that the Channel belongs
+        exchange: The pub/sub Exchange that the Channel belongs to.
     """
     name: ChannelName
     description: Optional[str] = None
@@ -165,6 +165,13 @@ class Channel(pydantic.BaseModel):
     async def publish(self, message: Message) -> None:
         """Publish a Message into the Channel."""
         await self.exchange.publish(message, self)
+
+    def __hash__(self): # noqa: D105
+        return hash(
+            (
+                self.name,
+            )
+        )
 
 
 class Publisher(pydantic.BaseModel):
@@ -186,8 +193,8 @@ class Publisher(pydantic.BaseModel):
 class Exchange(pydantic.BaseModel):
     """An Exchange facilitates the publication and subscription of Messages in Channels."""
     channels: Set[Channel] = {}
-    _publishers: Set[Subscriber] = pydantic.PrivateAttr({})
-    _subscribers: Set[Subscriber] = pydantic.PrivateAttr({})
+    _publishers: List[Subscriber] = pydantic.PrivateAttr([])
+    _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _queue_processor: asyncio.Task = pydantic.PrivateAttr()
 
