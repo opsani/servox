@@ -6,9 +6,9 @@ import contextlib
 import codecs
 import datetime
 import functools
-import json
+import json as json_
 import re
-import yaml
+import yaml as yaml_
 
 from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Union
 
@@ -56,11 +56,28 @@ class Message(pydantic.BaseModel):
         metadata: Metadata = {},
         **kwargs
     ) -> Message:
-        # TODO: validate that input makes sense
-        # TODO: serialize JSON and YAML inputs
-        # TODO: Handle content_type defaults
-        if not isinstance(text, str):
+        if len(filter(None, [content, text, json, yaml])) > 1:
+            raise ValueError(f"only one argument of content, text, json, or yaml can be given")
+
+        if text is not None and not isinstance(text, str):
             raise ValueError(f"Text Messages can only be created with `str` content: got '{text.__class__.__name__}'")
+
+        if content is None:
+            if text:
+                content = text.encode()
+            elif json:
+                content = json_.dumps(json)
+            elif yaml:
+                content = yaml_.dump(yaml)
+
+        if content_type is None:
+            if text is not None:
+                content_type = "text/plain"
+            elif json is not None:
+                content_type = "application/json"
+            elif yaml is not None:
+                content_type = "application/x-yaml"
+
         super().__init__(content=content, content_type=content_type, metadata=metadata)
 
     @property
@@ -83,12 +100,12 @@ class Message(pydantic.BaseModel):
         return self._text
 
     def json(self) -> Any:
-        """Return a representation of the message content deserialized from JSON."""
-        return json.load(self.content)
+        """Return a representation of the message content deserialized as JSON."""
+        return json_.load(self.content)
 
     def yaml(self) -> Any:
-        """Return a representation of the message content deserialized from YAML."""
-        return yaml.load(self.content)
+        """Return a representation of the message content deserialized as YAML."""
+        return yaml_.load(self.content)
 
 
 Selector = Union[Pattern, str]
@@ -101,6 +118,7 @@ class Subscription(pydantic.BaseModel):
     def matches(self, message: Message, channel: Channel) -> bool:
          """Return True if the message and/or channel given match the subscription."""
          # TODO: evaluate as a string glob or regex
+         return True
 
 
 Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
@@ -185,6 +203,8 @@ class Publisher(pydantic.BaseModel):
     """
     exchange: Exchange
     channel: Channel
+
+    # TODO: Allow publishing to *sub-channels*?
 
     async def __call__(self, message: Message) -> None:
         await self.exchange.publish(message, self.channel)
@@ -371,6 +391,7 @@ class Exchange(pydantic.BaseModel):
 
 
 class Mixin(pydantic.BaseModel):
+    """Provides a simple pub/sub stack for subclasses."""
     __private_attributes__ = {
         '_exchange': pydantic.PrivateAttr(default_factory=Exchange),
         '_publisher_tasks': pydantic.PrivateAttr({})
@@ -402,6 +423,8 @@ class Mixin(pydantic.BaseModel):
         """
         def decorator(fn):
             self.exchange.create_subscriber(selector, callback=fn)
+
+        return decorator
 
     def publisher(self, channel: Union[Channel, str], every: servo.types.DurationDescriptor) -> None:
         """Transform a function into a repeating pub/sub Publisher.
@@ -435,3 +458,5 @@ class Mixin(pydantic.BaseModel):
 
             task = asyncio.create_task(_repeating_publisher())
             self._publisher_tasks.add(task)
+
+        return decorator
