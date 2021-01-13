@@ -6,6 +6,7 @@ import abc
 import asyncio
 import contextlib
 import copy
+from datetime import datetime
 import enum
 import itertools
 import os
@@ -660,7 +661,7 @@ class Container(servo.logging.Mixin):
         raise RuntimeError(f"Unable to determine container status for {container_name}")
 
     @property
-    def resources(self) ->kubernetes_asyncio.client.V1ResourceRequirements:
+    def resources(self) -> Union[kubernetes_asyncio.client.V1ResourceRequirements, RolloutV1ResourceRequirements]:
         """
         Return the resource requirements for the Container.
 
@@ -670,7 +671,7 @@ class Container(servo.logging.Mixin):
         return self.obj.resources
 
     @resources.setter
-    def resources(self, resources:kubernetes_asyncio.client.V1ResourceRequirements) -> None:
+    def resources(self, resources:Union[kubernetes_asyncio.client.V1ResourceRequirements, RolloutV1ResourceRequirements]) -> None:
         """
         Set the resource requirements for the Container.
 
@@ -866,13 +867,22 @@ class Pod(KubernetesModel):
             namespace = self.namespace
 
         self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
-        self.logger.trace(f"pod: {self.obj}")
+        sanitized_pod = self._get_create_pod()
+        self.logger.trace(f"pod: {sanitized_pod}")
 
         async with self.preferred_client() as api_client:
             self.obj = await api_client.create_namespaced_pod(
                 namespace=namespace,
-                body=self.obj,
+                body=sanitized_pod,
             )
+
+    def _get_create_pod(self):
+        """Safely remove properties that are incompatible with create_namespaced_pod by copying only the references being updated
+        """
+        pod = copy.copy(self.obj)
+        pod.metadata = copy.copy(self.obj.metadata)
+        pod.metadata.resource_version = None
+        return pod
 
     async def patch(self) -> None:
         """
@@ -1307,6 +1317,373 @@ class Service(KubernetesModel):
         """
         return await self._proxy_http_request('POST', path, **kwargs)
 
+
+class ControllerModel(KubernetesModel):
+    """Abstract base class for wrappers of kubernetes api controller classes. Currently supports standard Deployments, and argo Rollouts
+    """
+
+    @classmethod
+    async def read_from_configuration(cls, config: ControllerConfiguration) -> Union[Deployment, Rollout]:
+        if isinstance(config, DeploymentConfiguration):
+            controller = await Deployment.read(config.name, cast(str, config.namespace))
+        elif isinstance(config, RolloutConfiguration):
+            controller = await Rollout.read(config.name, cast(str, config.namespace))
+        else:
+            raise NotImplementedError(f"missing Controller model implementation for '{type(config).__name__}'")
+
+    async def get_pods(self) -> List[Pod]:
+        """Get the pods for the controller.
+        Returns:
+            A list of pods that belong to the deployment.
+        """
+        self.logger.info(f'getting pods for {self.kind} "{self.name}"')
+
+        async with Pod.preferred_client() as api_client:
+            pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
+                namespace=self.namespace, label_selector=self.match_label_selector
+            )
+
+        pods = [Pod(p) for p in pod_list.items]
+        return pods
+
+    async def get_latest_pods(self) -> List[Pod]:
+        """Get only the Controller pods that belong to the latest ResourceVersion.
+        Returns:
+            A list of pods that belong to the latest controller replicaset.
+        """
+        self.logger.info(f'getting replicaset for deployment "{self.name}"')
+        # TODO: break up below functionality into methods of a Replicaset wrapper class
+        async with self.api_client() as api_client:
+            rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
+                namespace=self.namespace, label_selector=self.match_label_selector, resource_version=self.resource_version
+            )
+
+        # Verify all returned RS have this controller as an owner
+        rs_list = [
+            rs for rs in rs_list.items if rs.metadata.owner_references and any(
+                    ownRef.kind == self.kind and ownRef.uid == self.uid
+                for ownRef in rs.metadata.owner_references)]
+        if not rs_list:
+            raise servo.ConnectorError('Unable to locate replicaset(s) for {self.kind} "{self.name}"')
+        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+
+        return [
+            pod for pod in await self.get_pods()
+            if any(
+                    ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
+                for ownRef in pod.obj.metadata.owner_references
+            )]
+
+    @property
+    def kind(self) -> str:
+        """The kind of the Kubernetes controller (``obj.kind``)."""
+        return cast(str, self.obj.kind)
+
+    @property
+    def resource_version(self) -> str:
+        """
+        Returns the resource version of the Controller.
+        """
+        return self.obj.metadata.resource_version
+
+    @property
+    def observed_generation(self) -> str:
+        """
+        Returns the observed generation of the Controller status.
+        The generation is observed by the controller.
+        """
+        return self.obj.status.observed_generation
+
+    @property
+    def uid(self) -> str:
+        """
+        Gets the UID for the Controller.
+        """
+        return self.obj.metadata.uid
+
+    async def is_ready(self) -> bool:
+        """Check if the Controller is in the ready state.
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        await self.refresh()
+
+        # if there is no status, the deployment is definitely not ready
+        status = self.obj.status
+        if status is None:
+            return False
+
+        # check the status for the number of total replicas and compare
+        # it to the number of ready replicas. if the numbers are
+        # equal, the deployment is ready; otherwise it is not ready.
+        total = status.replicas
+        ready = status.ready_replicas
+
+        if total is None:
+            return False
+
+        return total == ready
+
+    @property
+    def containers(self) -> List[Container]:
+        """
+        Return a list of Container objects from the underlying pod template spec.
+        """
+        return list(
+            map(lambda c: Container(c, None), self.obj.spec.template.spec.containers)
+        )
+
+    def find_container(self, name: str) -> Optional[Container]:
+        """
+        Return the container with the given name.
+        """
+        return next(filter(lambda c: c.name == name, self.containers), None)
+
+    def set_container(self, name: str, container: Container) -> None:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
+        # self.containers[index] = container # this isn't a real property, its an anonymous list returned by the syntax sugar, re-assigning a list item won't update the source list (updating the container within should update the source container though...)
+        self.obj.spec.template.spec.containers[index] = container.obj
+
+    @property
+    def replicas(self) -> int:
+        """
+        Return the number of desired pods.
+        """
+        return self.obj.spec.replicas
+
+    @replicas.setter
+    def replicas(self, replicas: int) -> None:
+        """
+        Set the number of desired pods.
+        """
+        self.obj.spec.replicas = replicas
+
+    @property
+    def match_labels(self) -> Dict[str, str]:
+        """
+        Return labels used for pod association
+        """
+        return self.obj.spec.selector.match_labels
+
+    @property
+    def match_label_selector(self) -> str:
+        """
+        Return a string for matching pods of the Controller in Kubernetes API calls.
+        """
+        return selector_string(self.match_labels)
+
+    @property
+    def labels(self) -> Dict[str, str]:
+        """
+        Return labels applied to the controller
+        """
+        return self.obj.metadata.labels
+
+    @property
+    def label_selector(self) -> str:
+        """
+        Return a string for matching the Controller in Kubernetes API calls.
+        """
+        return selector_string(self.labels)
+
+    @abc.abstractmethod
+    async def inject_sidecar(
+        self,
+        *,
+        service: Optional[str] = None,
+        port: Optional[int] = None,
+        index: Optional[int] = None
+        ) -> None:
+        """
+        Injects an Envoy sidecar into a target Deployment that proxies a service
+        or literal TCP port, generating scrapable metrics usable for optimization.
+
+        The service or port argument must be provided to define how traffic is proxied
+        between the Envoy sidecar and the container responsible for fulfilling the request.
+
+        Args:
+            deployment: Name of the target Deployment to inject the sidecar into.
+            service: Name of the service to proxy. Envoy will accept ingress traffic
+                on the service port and reverse proxy requests back to the original
+                target container.
+
+        """
+        ...
+
+    @abc.abstractmethod
+    @contextlib.asynccontextmanager
+    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+        ...
+
+    ##
+    # Canary support
+    @abc.abstractmethod
+    async def get_sanitized_pod_template(self) -> kubernetes_asyncio.client.V1Pod:
+        """
+        Retrieve the template defined for this Controller's pods while removing properties that would conflict with the call to create_namespaced_pod
+        """
+        ...
+
+    @property
+    def canary_pod_name(self) -> str:
+        """
+        Return the name of canary Pod for this Deployment.
+        """
+        return f"{self.name}-canary"
+
+    async def get_canary_pod(self) -> Pod:
+        """
+        Retrieve the canary Pod for this Deployment (if any).
+
+        Will raise a Kubernetes API exception if not found.
+        """
+        return await Pod.read(self.canary_pod_name, self.namespace)
+
+    async def delete_canary_pod(
+        self, *, raise_if_not_found: bool = True, timeout: servo.Numeric = 600
+    ) -> Optional[Pod]:
+        """
+        Delete the canary Pod.
+        """
+        try:
+            canary = await self.get_canary_pod()
+            self.logger.warning(
+                f"Deleting canary Pod '{canary.name}' from namespace '{canary.namespace}'..."
+            )
+            await canary.delete()
+            await canary.wait_until_deleted(timeout=timeout)
+            self.logger.info(
+                f"Deleted canary Pod '{canary.name}' from namespace '{canary.namespace}'."
+            )
+            return canary
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != "Not Found" and raise_if_not_found:
+                raise
+
+        return None
+
+    async def ensure_canary_pod(self, *, timeout: servo.Numeric = 600) -> Pod:
+        """
+        Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
+
+        TODO: docs...
+        """
+        canary_pod_name = self.canary_pod_name
+        namespace = self.namespace
+        self.logger.debug(
+            f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+        )
+
+        # Look for an existing canary
+        try:
+            if canary_pod := await self.get_canary_pod():
+                self.logger.debug(
+                    f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+                )
+                return canary_pod
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != "Not Found":
+                raise
+
+        # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
+        self.logger.trace(f"building new canary")
+        pod_obj = await self.get_sanitized_pod_template()
+
+        pod_obj.metadata.name = canary_pod_name
+        if pod_obj.metadata.annotations is None:
+            pod_obj.metadata.annotations = {}
+        pod_obj.metadata.annotations["opsani.com/opsani_tuning_for"] = self.name
+        if pod_obj.metadata.labels is None:
+            pod_obj.metadata.labels = {}
+        pod_obj.metadata.labels["opsani_role"] = "tuning"
+
+        if isinstance(self, Rollout): # Add argo specific label to allow active service to adopt the canary pod
+            pod_obj.metadata.labels["rollouts-pod-template-hash"] = self.obj.status.current_pod_hash
+
+        canary_pod = Pod(obj=pod_obj)
+        canary_pod.namespace = namespace
+        self.logger.trace(f"initialized new canary: {canary_pod}")
+
+        # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
+        SERVO_POD_NAME = os.environ.get("POD_NAME")
+        SERVO_POD_NAMESPACE = os.environ.get("POD_NAMESPACE")
+        if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
+            self.logger.debug(
+                f"running within Kubernetes, registering as Pod controller... (pod={SERVO_POD_NAME}, namespace={SERVO_POD_NAMESPACE})"
+            )
+            servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
+            pod_controller = next(
+                iter(
+                    ow
+                    for ow in servo_pod.obj.metadata.owner_references
+                    if ow.controller
+                )
+            )
+
+            # # TODO: Create a ReplicaSet class...
+            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+                api_client =kubernetes_asyncio.client.AppsV1Api(api)
+
+                servo_rs:kubernetes_asyncio.client.V1ReplicaSet = (
+                    await api_client.read_namespaced_replica_set(
+                        name=pod_controller.name, namespace=SERVO_POD_NAMESPACE
+                    )
+                )  # still ephemeral
+                rs_controller = next(
+                    iter(
+                        ow for ow in servo_rs.metadata.owner_references if ow.controller
+                    )
+                )
+                servo_dep:kubernetes_asyncio.client.V1Deployment = (
+                    await api_client.read_namespaced_deployment(
+                        name=rs_controller.name, namespace=SERVO_POD_NAMESPACE
+                    )
+                )
+
+            canary_pod.obj.metadata.owner_references = [
+               kubernetes_asyncio.client.V1OwnerReference(
+                    api_version=servo_dep.api_version,
+                    block_owner_deletion=True,
+                    controller=True,  # Ensures the pod will not be adopted by another controller
+                    kind="Deployment",
+                    name=servo_dep.metadata.name,
+                    uid=servo_dep.metadata.uid,
+                )
+            ]
+
+        # Create the Pod and wait for it to get ready
+        self.logger.info(
+            f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'"
+        )
+        await canary_pod.create()
+
+        self.logger.info(
+            f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready..."
+        )
+        await canary_pod.wait_until_ready(timeout=timeout)
+
+        # TODO: Check for unexpected changes to version, etc.
+
+        await canary_pod.refresh()
+        await canary_pod.get_containers()
+
+        return canary_pod
+
+    async def get_restart_count(self) -> int:
+        count = 0
+        for pod in await self.get_pods():
+            try:
+                count += await pod.get_restart_count()
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404:
+                    # Pod no longer exists, move on
+                    pass
+                else:
+                    raise error
+
+        return count
 
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
@@ -1963,6 +2340,382 @@ class Deployment(KubernetesModel):
 
         return count
 
+# Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
+def to_lower_camel(string: str) -> str:
+    split = string.split('_')
+    return split[0] + ''.join(word.capitalize() for word in split[1:])
+
+class RolloutBaseModel(pydantic.BaseModel):
+    class Config:
+        # arbitrary_types_allowed = True
+        alias_generator = to_lower_camel
+
+# Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
+# https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
+# NOTE/TODO: fields typed with Any should maintain the same form when dumped as when they are parsed. Should the need 
+#   arise to interact with such fields, they will need to have an explicit type defined so the alias_generator is applied
+class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
+    match_expressions: Any
+    match_labels: Dict[str, str]
+
+class RolloutV1ObjectMeta(RolloutBaseModel):
+    annotations: Dict[str, str]
+    cluster_name: Optional[str]
+    creation_timestamp: Optional[datetime]
+    deletion_grace_period_seconds: Optional[int]
+    deletion_timestamp: Optional[datetime]
+    finalizers: Optional[List[str]]
+    generate_name: Optional[str]
+    generation: Optional[int]
+    labels: Dict[str, str]
+    managed_fields: Any
+    name: Optional[str]
+    namespace: Optional[str]
+    owner_references: Any
+    resource_version: Optional[str]
+    self_link: Optional[str]
+    uid: Optional[str]
+
+class RolloutV1ResourceRequirements(RolloutBaseModel):
+    limits: Optional[Dict[str, str]]
+    requests: Optional[Dict[str, str]]
+
+class RolloutV1Container(RolloutBaseModel):
+    args: Optional[List[str]]
+    command: Optional[List[str]]
+    env: Any
+    env_from: Any
+    image: str
+    image_pull_policy: Optional[str]
+    lifecycle: Any
+    liveness_probe: Any
+    name: str
+    ports: Any
+    readiness_probe: Any
+    resources: Optional[RolloutV1ResourceRequirements]
+    security_context: Any
+    startup_probe: Any
+    stdin: Optional[bool]
+    stdin_once: Optional[bool]
+    termination_message_path: Optional[str]
+    termination_message_policy: Optional[str]
+    tty: Optional[bool]
+    volume_devices: Any
+    volume_mounts: Any
+    working_dir: Optional[str]
+
+class RolloutV1PodSpec(RolloutBaseModel):
+    active_deadline_seconds: Optional[int]
+    affinity: Any
+    automount_service_account_token: Optional[bool]
+    containers: List[RolloutV1Container]
+    dns_config: Any
+    dns_policy: Optional[str]
+    enable_service_links: Optional[bool]
+    ephemeral_containers: Any
+    host_aliases: Any
+    host_ipc: Optional[bool]
+    host_network: Optional[bool]
+    host_pid: Optional[bool]
+    hostname: Optional[str]
+    image_pull_secrets: Any
+    init_containers: Optional[List[RolloutV1Container]]
+    node_name: Optional[str]
+    node_selector: Optional[Dict[str, str]]
+    overhead: Optional[Dict[str, str]]
+    preemption_policy: Optional[str]
+    priority: Optional[int]
+    priority_class_name: Optional[str]
+    readiness_gates: Any
+    restart_policy: Optional[str]
+    runtime_class_name: Optional[str]
+    scheduler_name: Optional[str]
+    security_context: Any
+    service_account: Optional[str]
+    service_account_name: Optional[str]
+    share_process_namespace: Optional[bool]
+    subdomain: Optional[str]
+    termination_grace_period_seconds: Optional[int]
+    tolerations: Any
+    topology_spread_constraints: Any
+    volumes: Any
+
+class RolloutV1PodTemplateSpec(RolloutBaseModel):
+    metadata: RolloutV1ObjectMeta
+    spec: RolloutV1PodSpec
+
+class RolloutSpec(RolloutBaseModel):
+    replicas: int
+    selector: RolloutV1LabelSelector
+    template: RolloutV1PodTemplateSpec
+    min_ready_seconds: Optional[int]
+    revision_history_limit: int
+    paused: Optional[bool]
+    progress_deadline_seconds: Optional[int]
+    restart_at: Optional[datetime]
+    strategy: Any
+
+class RolloutBlueGreenStatus(RolloutBaseModel):
+    active_selector: Optional[str]
+    post_promotion_analysis_run: Optional[str]
+    post_promotion_analysis_run_status: Any
+    pre_promotion_analysis_run: Optional[str]
+    pre_promotion_analysis_run_status: Any
+    preview_selector: Optional[str]
+    previous_active_selector: Optional[str]
+    scale_down_delay_start_time: Optional[datetime]
+    scale_up_preview_check_point: Optional[bool]
+
+class RolloutStatusCondition(RolloutBaseModel):
+    last_transition_time: datetime
+    last_update_time: datetime
+    message: str
+    reason: str
+    status: str
+    type: str
+
+class RolloutStatus(RolloutBaseModel):
+    HPA_replicas: Optional[int]
+    abort: Optional[bool]
+    aborted_at: Optional[datetime]
+    available_replicas: Optional[int]
+    blue_green: RolloutBlueGreenStatus
+    canary: Any #  TODO type this out if connector needs to interact with it
+    collision_count: Optional[int]
+    conditions: List[RolloutStatusCondition]
+    controller_pause: Optional[bool]
+    current_pod_hash: str
+    current_step_hash: Optional[str]
+    current_step_index: Optional[int]
+    observed_generation: str
+    pause_conditions: Any
+    ready_replicas: int
+    replicas: int
+    restarted_at: Optional[datetime]
+    selector: str
+    stable_RS: Optional[str]
+    updated_replicas: int
+
+class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
+    api_version: str
+    kind: str
+    metadata: RolloutV1ObjectMeta
+    spec: RolloutSpec
+    status: RolloutStatus
+
+# TODO expose to config if needed
+ROLLOUT_GROUP = "argoproj.io"
+ROLLOUT_VERSION = "v1alpha1"
+ROLLOUT_PURAL = "rollouts"
+
+ROLLOUT_CONST_ARGS = dict(
+    group=ROLLOUT_GROUP, 
+    version=ROLLOUT_VERSION,
+    plural=ROLLOUT_PURAL,
+)
+
+class Rollout(ControllerModel):
+    """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
+    The actual instance that this
+    wraps can be accessed via the ``obj`` instance member.
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Rollout`.
+    .. Rollout:
+        https://argoproj.github.io/argo-rollouts/features/specification/
+    """
+
+    obj: RolloutObj
+
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred":kubernetes_asyncio.client.CustomObjectsApi,
+        "argoproj.io/v1alpha1":kubernetes_asyncio.client.CustomObjectsApi,
+    }
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the Rollout under the given namespace.
+        Args:
+            namespace: The namespace to create the Rollout under.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        self.logger.info(
+            f'creating rollout "{self.name}" in namespace "{namespace}"'
+        )
+        self.logger.debug(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
+                namespace=namespace,
+                body=self.obj.dict(by_alias=True, exclude_none=True),
+                **ROLLOUT_CONST_ARGS,
+            ))
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "Rollout":
+        """Read a Rollout by name under the given namespace.
+        Args:
+            name: The name of the Deployment to read.
+            namespace: The namespace to read the Deployment from.
+        """
+
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.get_namespaced_custom_object(
+                namespace=namespace,
+                name=name,
+                **ROLLOUT_CONST_ARGS,
+            )
+            return Rollout(RolloutObj.parse_obj(obj))
+
+    async def patch(self) -> None:
+        """Update the changed attributes of the Deployment."""
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
+                namespace=self.namespace,
+                name=self.name,
+                body=self.obj.dict(by_alias=True, exclude_none=True),
+                **ROLLOUT_CONST_ARGS,
+            ))
+
+    async def inject_sidecar(
+        self,
+        *,
+        service: Optional[str] = None,
+        port: Optional[int] = None,
+        index: Optional[int] = None
+        ) -> None:
+        """
+        Injects an Envoy sidecar into a target Rollout that proxies a service
+        or literal TCP port, generating scrapable metrics usable for optimization.
+
+        The service or port argument must be provided to define how traffic is proxied
+        between the Envoy sidecar and the container responsible for fulfilling the request.
+
+        Args:
+            deployment: Name of the target Rollout to inject the sidecar into.
+            service: Name of the service to proxy. Envoy will accept ingress traffic
+                on the service port and reverse proxy requests back to the original
+                target container.
+
+        """
+        # NOTE: this is only used in tests and cli with a hard coded Deployment object so this shouldn't cause issues for the time being
+        raise NotImplementedError('To be implemented in future update')
+
+    @contextlib.asynccontextmanager
+    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+        """
+        Yield self to caller to allow updates then wait for application and readiness of changes
+        """
+        if timeout is not None:
+            timeout = timeout.total_seconds()
+
+        # Yield to let the changes be made
+        yield self
+
+         # TODO convert this logic to a proper watch
+        start_time = time.time()
+        async with self.api_client() as api_client:
+            while True:
+                # Sleep first to give Argo a chance to sync
+                await asyncio.sleep(15)
+                try:
+                    resource_list = await api_client.list_namespaced_custom_object(
+                        namespace=self.namespace,
+                        watch=False,
+                        label_selector=self.label_selector,
+                        **ROLLOUT_CONST_ARGS,
+                    )
+
+                    tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
+                    latest: RolloutStatusCondition = next(iter(sorted(tgt_status.conditions, key= lambda x: x.last_update_time)))
+                    if not latest.type in ['Available','Progressing']:
+                        reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
+                        raise RuntimeError(latest['message'], reason=reason)
+                    else:
+                        if tgt_status.blue_green.active_selector == tgt_status.blue_green.preview_selector:
+                            break
+
+                except kubernetes_asyncio.client.ApiException as e:
+                    raise RuntimeError("Exception when calling CustomObjectsApi->list_namespaced_custom_object") from e
+
+                if timeout is not None and time.time() - start_time > timeout:
+                    raise RuntimeError('Timed out waiting for activeSelector to match previewSelector', status='rejected', reason='unstable')
+
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        """Delete the Rollout.
+        This method expects the Rollout to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+        Args:
+            options: Unsupported, options for Deployment deletion.
+        Returns:
+            The status of the delete operation.
+        """
+        if options is not None:
+            raise RuntimeError("Rollout deletion does not support V1DeleteOptions")
+
+        self.logger.info(f'deleting rollout "{self.name}"')
+        self.logger.trace(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_custom_object(
+                namespace=self.namespace,
+                name=self.name,
+                **ROLLOUT_CONST_ARGS,
+            )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Rollout resource."""
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
+                namespace=self.namespace,
+                name=self.name,
+            ))
+
+    async def rollback(self) -> None:
+        # TODO rollbacks are automated in Argo Rollouts, not sure if making this No Op will cause issues
+        #   but I was unable to locate a means of triggering a rollout rollback manually
+        raise TypeError(
+            (
+                "rollback is not supported under the optimization of rollouts because rollbacks are applied to "
+                "Kubernetes Deployment objects whereas this is automated by argocd"
+            )
+        )
+
+    async def get_status(self) -> RolloutStatus:
+        """Get the status of the Rollout.
+        Returns:
+            The status of the Rollout.
+        """
+        self.logger.info(f'checking status of rollout "{self.name}"')
+        # first, refresh the rollout state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the rollout
+        return self.obj.status
+
+    @property
+    def status(self) -> RolloutStatus:
+        """Return the status of the Rollout.
+        Returns:
+            The status of the Rollout.
+        """
+        return self.obj.status
+
+    async def get_sanitized_pod_template(self) -> kubernetes_asyncio.client.V1Pod:
+        """
+        Retrieve the template defined for this Rollout's pods while removing properties that would conflict with the call to create_namespaced_pod
+        also casts Rollout model into kubernete_asyncio object model
+        """
+        pod_dict = {
+                'metadata': self.obj.spec.template.metadata.dict(by_alias=True, exclude_none=True),
+                'spec': self.obj.spec.template.spec.dict(by_alias=True, exclude_none=True)
+            }
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api_client:
+            return api_client._ApiClient__deserialize_model(pod_dict, kubernetes_asyncio.client.V1Pod)
+        
+
 class Millicore(int):
     """
     The Millicore class represents one one-thousandth of a vCPU or hyperthread in Kubernetes.
@@ -2169,7 +2922,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             raise error # Always communicate errors to backend unless ignored
 
         except Exception as handler_error:
-            raise handler_error from error
+            self.logger.exception(f"handle_error failed with unrecoverable error: {handler_error.__class__.__name__} - {str(handler_error)}")
+            raise error # Always communicate errors to backend unless ignored
 
 
     @abc.abstractmethod
@@ -2221,14 +2975,16 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
+# TODO: rename class and all references to ControllerOptimization
 class DeploymentOptimization(BaseOptimization):
     """
     The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
     Deployment and its associated containers.
     """
 
-    deployment_config: "DeploymentConfiguration"
-    deployment: Deployment
+    # TODO: rename deployment properties and all references to 'controller'
+    deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
+    deployment: Union[Deployment, Rollout]
     container_config: "ContainerConfiguration"
     container: Container
 
@@ -2236,7 +2992,7 @@ class DeploymentOptimization(BaseOptimization):
     async def create(
         cls, config: "DeploymentConfiguration", **kwargs
     ) -> "DeploymentOptimization":
-        deployment = await Deployment.read(config.name, config.namespace)
+        deployment = await ControllerModel.read_from_configuration(config)
 
         replicas = config.replicas.copy()
         replicas.value = deployment.replicas
@@ -2418,8 +3174,9 @@ class CanaryOptimization(BaseOptimization):
     of its siblings.
     """
 
-    target_deployment: Deployment
-    target_deployment_config: "DeploymentConfiguration"
+    # TODO: rename deployment and all references to controller
+    target_deployment: Union[Deployment, Rollout]
+    target_deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
 
     target_container: Container
     target_container_config: "ContainerConfiguration"
@@ -2430,12 +3187,12 @@ class CanaryOptimization(BaseOptimization):
 
     @classmethod
     async def create(
-        cls, config: "DeploymentConfiguration", **kwargs
+        cls, config: Union["DeploymentConfiguration", "RolloutConfiguration"], **kwargs
     ) -> "CanaryOptimization":
-        deployment = await Deployment.read(config.name, cast(str, config.namespace))
+        deployment = await ControllerModel.read_from_configuration(config)
         if not deployment:
             raise ValueError(
-                f'cannot create CanaryOptimization: target Deployment "{config.name}" does not exist in Namespace "{config.namespace}"'
+                f'cannot create CanaryOptimization: target Controller "{config.name}" does not exist in Namespace "{config.namespace}"'
             )
 
         # Ensure that we have a canary Pod
@@ -2622,7 +3379,8 @@ class CanaryOptimization(BaseOptimization):
                 return True
 
             except Exception as handler_error:
-                raise handler_error from error
+                self.logger.exception(f"handle_error failed with unrecoverable error: {handler_error.__class__.__name__} - {str(handler_error)}")
+                raise error # Always communicate errors to backend unless ignored
 
         else:
             return await super().handle_error(error, mode)
@@ -3041,15 +3799,25 @@ StrategyTypes = Union[
 ]
 
 
-class DeploymentConfiguration(BaseKubernetesConfiguration):
+# TODO: change all DeploymentConfiguration typings to ControllerConfiguration
+class ControllerConfiguration(BaseKubernetesConfiguration):
     """
-    The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Deployment.
+    The DeploymentConfiguration class models the configuration of an optimizable Kubernetes Controller.
     """
 
     name: DNSSubdomainName
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
+class DeploymentConfiguration(ControllerConfiguration):
+    """
+    Identifies configuration of standard deployment
+    """
+
+class RolloutConfiguration(ControllerConfiguration):
+    """
+    Identifies configuration of and argo rollout
+    """
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
@@ -3062,6 +3830,11 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
     deployments: List[DeploymentConfiguration] = pydantic.Field(
         description="Deployments to be optimized.",
+    )
+
+    rollouts: List[DeploymentConfiguration] = pydantic.Field(
+        description="Argo rollouts to be optimized.",
+        default=[],
     )
 
     @classmethod
