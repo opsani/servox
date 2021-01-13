@@ -16,6 +16,7 @@ from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable,
 import pydantic
 import servo.types
 
+
 Metadata = Dict[str, str]
 ByteStream = Union[Iterable[bytes], AsyncIterable[bytes]]
 MessageContent = Union[str, bytes, ByteStream]
@@ -64,11 +65,11 @@ class Message(pydantic.BaseModel):
             raise ValueError(f"Text Messages can only be created with `str` content: got '{text.__class__.__name__}'")
 
         if content is None:
-            if text:
+            if text is not None:
                 content = text.encode()
-            elif json:
+            elif json is not None:
                 content = json_.dumps(json)
-            elif yaml:
+            elif yaml is not None:
                 content = yaml_.dump(yaml)
 
         if content_type is None:
@@ -142,16 +143,43 @@ Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
 class Subscriber(pydantic.BaseModel):
     """A Subscriber consumes relevant Messages published to an Exchange.
 
-    Subscribers are asynchronously callable to notify them when a new Message
-    has been published.
+    Subscribers are asynchronously callable for notification of the publication of new Messages.
+    Subscriber objects can be used as asynchronous iterators to process Messages.
+
+    Attributes:
+        exchange: The pub/sub exchange that the Subscriber belongs to.
+        subscription: A descriptor of the types of Messages that the Subscriber is interested in.
+        callback: An optional callable to be invoked whben the Subscriber is notified of new Messages.
+
+     Usage:
+            ```
+            async for message, channel in subscriber:
+                print(f"Notified of a new Message: {message}, {channel}")
+            ```
     """
     exchange: Exchange
     subscription: Subscription
     callback: Optional[Callback]
 
+    _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
+    _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
+
     # TODO: Validate the callback function arity
 
+    def stop(self) -> None:
+        """Stop the subscriber from processing any further Messages."""
+        self._event.set()
+
+    @property
+    def is_running(self) -> bool:
+        """Return True if the subscriber is processing Messages."""
+        return not self._event.is_set()
+
     async def __call__(self, message: Message, channel: Channel) -> None:
+        if not self.is_running:
+            servo.logger.warning(f"ignoring call to non-running Subscriber: {self}")
+            return
+
         if self.subscription.matches(message, channel):
             if self.callback:
                 if asyncio.iscoroutinefunction(self.callback):
@@ -159,9 +187,24 @@ class Subscriber(pydantic.BaseModel):
                 else:
                     self.callback(message, channel)
 
-            # TODO: yield to the async iterator
+    def __aiter__(self):
+        return self
 
-    # TODO: Add the async iterator support here.
+    async def __anext__(self):
+        try:
+            return await self.next()
+        except:  # noqa: E722
+            await self.close()
+            raise
+
+    async def next(self):
+        while True:
+            if not self.is_running:
+                raise StopAsyncIteration
+
+            message, channel = self._queue.get()
+            await self(message, channel)
+
 
     class Config:
         arbitrary_types_allowed = True
