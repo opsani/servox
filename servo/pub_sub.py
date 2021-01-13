@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import codecs
 import datetime
+import fnmatch
 import functools
 import json as json_
 import re
@@ -101,7 +102,7 @@ class Message(pydantic.BaseModel):
 
     def json(self) -> Any:
         """Return a representation of the message content deserialized as JSON."""
-        return json_.load(self.content)
+        return json_.loads(self.content)
 
     def yaml(self) -> Any:
         """Return a representation of the message content deserialized as YAML."""
@@ -112,13 +113,27 @@ Selector = Union[Pattern, str]
 
 
 class Subscription(pydantic.BaseModel):
-    """A Subscription describes Channels and Messages interesting to a Subscriber."""
+    """A Subscription describes Channels and Messages interesting to a Subscriber.
+
+    Attributes:
+        selector: A string glob or regular expression pattern for matching Channels.
+    """
     selector: Selector
 
     def matches(self, message: Message, channel: Channel) -> bool:
-         """Return True if the message and/or channel given match the subscription."""
-         # TODO: evaluate as a string glob or regex
-         return True
+        """Return True if the message and/or channel given match the subscription.
+
+        Args:
+            message: A Message to evaluate.
+            channel: The Channel that the Message was published to.
+        """
+        selector = self.selector
+        if isinstance(selector, re.Pattern):
+            return re.match(selector, channel.name)
+        elif isinstance(selector, str):
+            return fnmatch.fnmatch(channel.name, selector)
+
+        raise ValueError(f"unknown selector type: {selector.__class__.__name__}")
 
 
 Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
