@@ -258,7 +258,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         # Setup logging
         # TODO: encapsulate all this shit
-        async def report_progress(self, **kwargs) -> None:
+        async def _report_progress(**kwargs) -> None:
             # Forward to the active servo...
             await servo.Servo.current().report_progress(**kwargs)
 
@@ -286,7 +286,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 asyncio.create_task(runner.main_loop(), name="main loop")
 
         self.progress_handler = servo.logging.ProgressHandler(
-            report_progress, self.logger.warning, handle_progress_exception
+            _report_progress, self.logger.warning, handle_progress_exception
         )
         self.logger.add(self.progress_handler.sink, catch=True)
 
