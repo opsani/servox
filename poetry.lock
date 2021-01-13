@@ -1132,7 +1132,7 @@ pytest = ">=2.9.0"
 
 [[package]]
 name = "pytest-mock"
-version = "3.4.0"
+version = "3.5.1"
 description = "Thin-wrapper around the mock package for easier use with pytest"
 category = "dev"
 optional = false
@@ -1648,7 +1648,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "a90e0d4d3468c923cf5e424545f759f223b79937647359cbd07cb695410da746"
+content-hash = "7f3df95bcd8b93ea9f2eeec317d44f662d4705d9aa8d7b06fde76f5b9de554e8"
 
 [metadata.files]
 aiohttp = [
@@ -2265,8 +2265,8 @@ pytest-metadata = [
     {file = "pytest_metadata-1.11.0-py2.py3-none-any.whl", hash = "sha256:576055b8336dd4a9006dd2a47615f76f2f8c30ab12b1b1c039d99e834583523f"},
 ]
 pytest-mock = [
-    {file = "pytest-mock-3.4.0.tar.gz", hash = "sha256:c3981f5edee6c4d1942250a60d9b39d38d5585398de1bfce057f925bdda720f4"},
-    {file = "pytest_mock-3.4.0-py3-none-any.whl", hash = "sha256:c0fc979afac4aaba545cbd01e9c20736eb3fefb0a066558764b07d3de8f04ed3"},
+    {file = "pytest-mock-3.5.1.tar.gz", hash = "sha256:a1e2aba6af9560d313c642dae7e00a2a12b022b80301d9d7fc8ec6858e1dd9fc"},
+    {file = "pytest_mock-3.5.1-py3-none-any.whl", hash = "sha256:379b391cfad22422ea2e252bdfc008edd08509029bcde3c25b2c0bd741e0424e"},
 ]
 pytest-picked = [
     {file = "pytest-picked-0.4.6.tar.gz", hash = "sha256:e1ec7aee5d2cd3a91f676fd0afd7620a26c0ccc21e604152bbc5137f430e6c00"},
