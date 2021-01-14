@@ -206,15 +206,6 @@ class Exchange(pydantic.BaseModel):
         """Return True if the Exchange is processing Messages."""
         return self._queue_processor is not None and not self._queue_processor.done()
 
-    def __repr_args__(self) -> pydantic.ReprArgs:
-        return [
-            ('running', self.is_running),
-            ('channel_names', list(map(lambda c: c.name, self.channels))),
-            ('publisher_count', len(self._publishers)),
-            ('subscriber_count', len(self._subscribers)),
-            ('queue_size', self._queue.qsize()),
-        ]
-
     @property
     def channels(self) -> Set[Channel]:
         """Return the set of Channels in the Exchange."""
@@ -352,6 +343,22 @@ class Exchange(pydantic.BaseModel):
             ValueError: Raised if the given subscriber is not in the Exchange.
         """
         self._subscribers.remove(subscriber)
+
+    def __repr_args__(self) -> pydantic.ReprArgs:
+        return [
+            ('running', self.is_running),
+            ('channel_names', list(map(lambda c: c.name, self._channels))),
+            ('publisher_count', len(self._publishers)),
+            ('subscriber_count', len(self._subscribers)),
+            ('queue_size', self._queue.qsize()),
+        ]
+
+    def __eq__(self, other) -> bool:
+        # compare exchanges by object identity rather than fields
+        if isinstance(other, Exchange):
+            return id(self) == id(other)
+
+        return False
 
 
 Channel.update_forward_refs()
@@ -534,30 +541,27 @@ class Publisher(pydantic.BaseModel):
 
 
 class Mixin(pydantic.BaseModel):
-    """Provides a simple pub/sub stack for subclasses."""
+    """Provides a simple pub/sub stack for subclasses.
+
+    Attributes:
+        exchange: The pub/sub Exchange that the object belongs to.
+    """
     __private_attributes__ = {
-        '_exchange': pydantic.PrivateAttr(default_factory=Exchange),
-        '_publisher_tasks': pydantic.PrivateAttr({})
+        '_publishers_map': pydantic.PrivateAttr({}),
+        '_subscribers_map': pydantic.PrivateAttr({}),
     }
+    exchange: Exchange = pydantic.Field(default_factory=Exchange)
 
-    @property
-    def exchange(self) -> Exchange:
-        """Return the pub/sub Exchange."""
-        return self._exchange
-
-    @exchange.setter
-    def exchange(self, exchange: Exchange):
-        """Set the pub/sub Exchange."""
-        self._exchange = exchange
-
-    # TODO: Do we need/want cancellation for decorated subscribers?
-    # TODO: Let you set the async task names?
-
-    def subscriber(self, selector: Selector) -> None:
+    def subscriber(self, selector: Selector, *, name: Optional[str] = None) -> None:
         """Transform a function into a pub/sub Subscriber.
 
         The decorated function may be synchronous or asynchronous but must accept
         two arguments: `message: Message, channel: Channel`.
+
+        Args:
+            selector: A string or regular expression pattern matching Channels of interest.
+            name: A name for the subscriber. When ommitted, defaults to the name of
+                the decorated function.
 
         Usage:
             ```
@@ -568,11 +572,48 @@ class Mixin(pydantic.BaseModel):
             ```
         """
         def decorator(fn):
-            self.exchange.create_subscriber(selector, callback=fn)
+            name_ = name or fn.__name__
+            if name_ in self._publishers_map:
+                raise KeyError(f"a Subscriber named '{name_}' already exists")
+
+            subscriber = self.exchange.create_subscriber(selector, callback=fn)
+            self._subscribers_map[name_] = subscriber
 
         return decorator
 
-    def publisher(self, channel: Union[Channel, str], *, every: Optional[servo.types.DurationDescriptor] = None) -> None:
+    def cancel_subscribers(self, *names: List[str]) -> None:
+        """Cancel active pub/sub subscribers.
+
+        When called without any names all subscribers are cancelled.
+
+        Args:
+            names: The names of the subscribers to cancel. When no names are given,
+                all subscribers are cancelled.
+
+        Raises:
+            KeyError: Raised if there is no subscriber with the given name.
+        """
+        subscribers = (
+            list(map(self._subscribers_map.get, names)) if names
+            else self._subscribers_map.values()
+        )
+
+        for subscriber in subscribers:
+            subscriber.stop()
+            self.exchange.remove_subscriber(subscriber)
+
+        self._subscribers_map = dict(
+            filter(lambda i: i[1] not in subscribers, self._subscribers_map.items())
+        )
+
+
+    def publisher(
+        self,
+        channel: Union[Channel, str],
+        *,
+        every: Optional[servo.types.DurationDescriptor] = None,
+        name: Optional[str] = None
+    ) -> None:
         """Transform a function into a pub/sub Publisher.
 
         When the `every` argument is not None, the publisher sleeps for the given duration to support
@@ -606,6 +647,10 @@ class Mixin(pydantic.BaseModel):
             if not asyncio.iscoroutinefunction(fn):
                 raise ValueError("decorated function must be asynchronous")
 
+            name_ = name or fn.__name__
+            if name_ in self._publishers_map:
+                raise KeyError(f"a Publisher named '{name_}' already exists")
+
             publisher = self.exchange.create_publisher(channel)
             if every is not None:
                 duration = every if isinstance(every, servo.Duration) else servo.Duration(every)
@@ -620,9 +665,34 @@ class Mixin(pydantic.BaseModel):
                         await asyncio.sleep(duration.total_seconds())
 
             task = asyncio.create_task(_repeating_publisher())
-            self._publisher_tasks.add(task)
+            self._publishers_map[name_] = (publisher, task)
 
         return decorator
+
+    def cancel_publishers(self, *names: List[str]) -> None:
+        """Cancel active pub/sub publishers.
+
+        When called without any names all publishers are cancelled.
+
+        Args:
+            names: The names of the publishers to cancel. When no names are given,
+                all publishers are cancelled.
+
+        Raises:
+            KeyError: Raised if there is no publishers with the given name.
+        """
+        publisher_tuples = (
+            list(map(self._publishers_map.get, names)) if names
+            else self._publishers_map.values()
+        )
+
+        for publisher, task in publisher_tuples:
+            self.exchange.remove_publisher(publisher)
+            task.cancel()
+
+        self._publishers_map = dict(
+            filter(lambda i: i[1] not in publisher_tuples, self._publishers_map.items())
+        )
 
 
 async def _deliver_message_to_subscribers(message: Message, channel: Channel, subscribers: List[Subscriber]) -> None:

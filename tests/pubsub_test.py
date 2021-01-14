@@ -7,7 +7,7 @@ import servo
 import servo.pubsub
 import servo.utilities.pydantic
 
-from typing import List
+from typing import List, Optional
 
 class TestMessage:
     def test_text_message(self) -> None:
@@ -498,14 +498,171 @@ class TestExchange:
         assert results[0] == results[1]
 
 class HostObject(servo.pubsub.Mixin):
-    ...
+    async def _test_publisher_decorator(self, *, name: Optional[str] = None) -> None:
+        @self.publisher("metrics", name=name)
+        async def _manual_publisher(publisher: servo.pubsub.Publisher) -> None:
+            await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
+            await asyncio.sleep(30)
+
+    async def _test_repeating_publisher_decorator(self) -> None:
+        @self.publisher("metrics", every="10ms")
+        async def _repeating_publisher(publisher: servo.pubsub.Publisher) -> None:
+            await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
+
+    async def _test_subscriber_decorator(self, callback, *, name: Optional[str] = None) -> None:
+        @self.subscriber("metrics", name=name)
+        async def _message_received(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            callback(message, channel)
 
 class TestMixin:
-    async def test_exchange_property(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+    @pytest.fixture
+    async def host_object(self) -> HostObject:
+        host_object = HostObject()
+        yield host_object
+        if host_object.exchange.is_running:
+            await host_object.exchange.shutdown()
+        else:
+            host_object.exchange.clear()
 
-    async def test_publisher_decorator(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+    async def test_exchange_property(self, host_object: HostObject) -> None:
+        assert host_object.exchange
 
-    async def test_subscriber_decorator(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+    async def test_exchange_property_setter(self, host_object: HostObject, exchange: servo.pubsub.Exchange) -> None:
+        assert host_object.exchange
+        assert host_object.exchange != exchange
+        host_object.exchange = exchange
+        assert host_object.exchange == exchange
+
+    async def test_publisher_decorator_repeating(self, host_object: HostObject) -> None:
+        assert len(host_object.exchange._publishers) == 0
+        await host_object._test_repeating_publisher_decorator()
+        assert len(host_object.exchange._publishers) == 1
+        assert host_object.exchange._queue.qsize() == 0
+        await asyncio.sleep(0.2)
+        assert host_object.exchange._queue.qsize() >= 10
+
+    async def test_publisher_decorator(self, host_object: HostObject) -> None:
+        assert len(host_object.exchange._publishers) == 0
+        await host_object._test_publisher_decorator()
+        assert len(host_object.exchange._publishers) == 1
+        assert host_object.exchange._queue.qsize() == 0
+        await asyncio.sleep(0.2)
+        assert host_object.exchange._queue.qsize() == 1
+
+    async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        await host_object._test_subscriber_decorator(stub)
+        host_object.exchange.start()
+        channel = host_object.exchange.create_channel("metrics")
+        message = servo.pubsub.Message(json={"throughput": "31337rps"})
+        await host_object.exchange.publish(message, channel)
+        await asyncio.sleep(0.2)
+        stub.assert_called_once_with(message, channel)
+
+    async def test_pubsub_between_decorators(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        notifications = []
+        def _callback(message, channel) -> None:
+            notification = f"Message #{len(notifications)} '{message.text}' (channel: '{channel.name}')"
+            notifications.append(notification)
+
+        await host_object._test_subscriber_decorator(_callback)
+        await host_object._test_repeating_publisher_decorator()
+        host_object.exchange.start()
+
+        await asyncio.sleep(0.2)
+        assert len(notifications) > 10
+        assert notifications[0:5] == [
+            "Message #0 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #1 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #2 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #3 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #4 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+        ]
+
+    async def test_cancel_subscribers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        await host_object._test_subscriber_decorator(stub)
+        await host_object._test_subscriber_decorator(stub, name="another_subscriber")
+        with servo.utilities.pydantic.extra(host_object.exchange):
+            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+            host_object.cancel_subscribers('_message_received')
+            spy.assert_called_once()
+
+            subscriber = spy.call_args.args[0]
+            assert not subscriber.is_running
+            assert subscriber not in host_object.exchange._subscribers
+            assert len(host_object.exchange._subscribers) == 1
+            assert len(host_object._subscribers_map) == 1
+            assert host_object._subscribers_map['another_subscriber']
+
+
+    async def test_cancel_all_subscribers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        await host_object._test_subscriber_decorator(stub, name="one_subscriber")
+        await host_object._test_subscriber_decorator(stub, name="two_subscriber")
+        await host_object._test_subscriber_decorator(stub, name="three_subscriber")
+        assert len(host_object.exchange._subscribers) == 3
+        with servo.utilities.pydantic.extra(host_object.exchange):
+            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+            host_object.cancel_subscribers()
+            spy.assert_called()
+            assert spy.call_count == 3
+
+            for args in spy.call_args_list:
+                subscriber, = args[0]
+                assert not subscriber.is_running
+                assert subscriber not in host_object.exchange._subscribers
+
+            assert len(host_object.exchange._subscribers) == 0
+            assert len(host_object._subscribers_map) == 0
+
+    async def test_cancel_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        await host_object._test_subscriber_decorator(stub)
+        await host_object._test_subscriber_decorator(stub, name="another_subscriber")
+        with servo.utilities.pydantic.extra(host_object.exchange):
+            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+            host_object.cancel_subscribers('_message_received')
+            spy.assert_called_once()
+
+            subscriber = spy.call_args.args[0]
+            assert not subscriber.is_running
+            assert subscriber not in host_object.exchange._subscribers
+            assert len(host_object.exchange._subscribers) == 1
+            assert len(host_object._subscribers_map) == 1
+            assert host_object._subscribers_map['another_subscriber']
+
+    async def test_cancel_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        await host_object._test_publisher_decorator()
+        await host_object._test_publisher_decorator(name="another_publisher")
+        assert len(host_object._publishers_map) == 2
+        assert host_object._publishers_map['_manual_publisher']
+        assert host_object._publishers_map['another_publisher']
+
+        with servo.utilities.pydantic.extra(host_object.exchange):
+            spy = mocker.spy(host_object.exchange, "remove_publisher")
+            host_object.cancel_publishers('_manual_publisher')
+            spy.assert_called_once()
+
+            publisher = spy.call_args.args[0]
+            assert subscriber not in host_object.exchange._publishers
+            assert len(host_object.exchange._publishers) == 1
+            assert len(host_object._publishers_map) == 1
+            assert host_object._publishers_map['another_publisher']
+
+    async def test_cancel_all_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        await host_object._test_publisher_decorator(name="one_publisher")
+        await host_object._test_publisher_decorator(name="two_publisher")
+        await host_object._test_publisher_decorator(name="three_publisher")
+        with servo.utilities.pydantic.extra(host_object.exchange):
+            spy = mocker.spy(host_object.exchange, "remove_publisher")
+            host_object.cancel_publishers()
+            spy.assert_called()
+            assert spy.call_count == 3
+
+            for args in spy.call_args_list:
+                publisher, = args[0]
+                assert publisher not in host_object.exchange._publishers
+
+            assert len(host_object.exchange._publishers) == 0
+            assert len(host_object._publishers_map) == 0
