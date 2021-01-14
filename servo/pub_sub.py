@@ -302,21 +302,8 @@ class Exchange(pydantic.BaseModel):
                 # Exit condition
                 break
 
-            results = asyncio.gather(
-                *list(
-                    map(
-                        lambda subscriber: subscriber(message, channel),
-                        self._subscribers
-                    )
-                ),
-                return_exceptions=True
-            )
-
-            # Log failures without aborting
-            with servo.logger.catch(message="Subscriber raised exception"):
-                for result in results:
-                    if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                        raise result
+            # Notify subscribers in a new task to avoid blocking the queue
+            asyncio.create_task(_deliver_message_to_subscribers(message, channel, self._subscribers))
 
             self._queue.task_done()
 
@@ -518,3 +505,21 @@ class Mixin(pydantic.BaseModel):
             self._publisher_tasks.add(task)
 
         return decorator
+
+
+async def _deliver_message_to_subscribers(message: Message, channel: Channel, subscribers: Set[Subscriber]) -> None:
+    results = asyncio.gather(
+        *list(
+            map(
+                lambda subscriber: subscriber(message, channel),
+                subscribers
+            )
+        ),
+        return_exceptions=True
+    )
+
+    # Log failures without aborting
+    with servo.logger.catch(message="Subscriber raised exception"):
+        for result in results:
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                raise result
