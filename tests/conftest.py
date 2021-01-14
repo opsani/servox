@@ -6,7 +6,6 @@ import json
 import os
 import pathlib
 import random
-import shutil
 import socket
 import string
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
