@@ -1135,10 +1135,9 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
 ##
 # Tests against an ArgoCD rollout
+# @pytest.mark.clusterrolebinding('cluster-admin') # May be needed
 @pytest.mark.integration
-# @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
-# @pytest.mark.applymanifests("../manifests", files=["argo-rollouts-install.yaml", "fiber-http-rollout-opsani-dev.yaml"])
 class TestKubernetesConnectorRolloutIntegration:
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
@@ -1146,8 +1145,8 @@ class TestKubernetesConnectorRolloutIntegration:
 
     @pytest.fixture(autouse=True)
     def _manage_rollout(self, namespace, pytestconfig):
-        rollout_crd_cmd = ["kubectl", "apply", "-n", namespace, "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
-        subprocess.check_call(rollout_crd_cmd)
+        # rollout_crd_cmd = ["kubectl", "apply", "-n", namespace, "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        # subprocess.check_call(rollout_crd_cmd)
 
         rollout_cmd = ["kubectl", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
         subprocess.check_call(rollout_cmd)
@@ -1158,8 +1157,8 @@ class TestKubernetesConnectorRolloutIntegration:
 
         rollout_cmd[1] = "delete"
         subprocess.check_call(rollout_cmd)
-        rollout_crd_cmd[1] = "delete"
-        subprocess.check_call(rollout_crd_cmd)
+        # rollout_crd_cmd[1] = "delete"
+        # subprocess.check_call(rollout_crd_cmd)
 
     @pytest.fixture()
     def _rollout_config(self, config: KubernetesConfiguration):
