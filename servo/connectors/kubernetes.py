@@ -3816,7 +3816,7 @@ class DeploymentConfiguration(ControllerConfiguration):
 
 class RolloutConfiguration(ControllerConfiguration):
     """
-    Identifies configuration of and argo rollout
+    Identifies configuration of an argo rollout
     """
 
 
