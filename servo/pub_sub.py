@@ -11,7 +11,7 @@ import json as json_
 import re
 import yaml as yaml_
 
-from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Union
+from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union
 
 import pydantic
 import servo.types
@@ -143,8 +143,11 @@ Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
 class Subscriber(pydantic.BaseModel):
     """A Subscriber consumes relevant Messages published to an Exchange.
 
+    Subscribers can either invoke a callback when a new Message is available or
+    can be used as an asynchronous iterator to process Messages. The `stop` method
+    will halt message processing and stop async iteration.
+
     Subscribers are asynchronously callable for notification of the publication of new Messages.
-    Subscriber objects can be used as asynchronous iterators to process Messages.
 
     Attributes:
         exchange: The pub/sub exchange that the Subscriber belongs to.
@@ -153,22 +156,38 @@ class Subscriber(pydantic.BaseModel):
 
      Usage:
             ```
+            # Processing via a callback
+            async def _my_callback(message: Message, channel: Channel) -> None:
+                print(f"Notified of a new Message: {message}, {channel}")
+
+            subscriber = Subscriber(exchange=exchange, subscription=subscription, callback=callback)
+
+            # Processing via async iteration
+            subscriber = Subscriber(exchange=exchange, subscription=subscription)
+
             async for message, channel in subscriber:
                 print(f"Notified of a new Message: {message}, {channel}")
+
+                # Break out of processing
+                subscriber.stop()
             ```
     """
     exchange: Exchange
     subscription: Subscription
     callback: Optional[Callback]
 
+    # supports usage as an async iterator
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
 
     # TODO: Validate the callback function arity
+    # TODO: should we put a limit on the queue size and warn on overflow?
 
     def stop(self) -> None:
         """Stop the subscriber from processing any further Messages."""
         self._event.set()
+        # TODO: Should this be removing from the Exchange?
+        # TODO: does this need to be async and join the queue to empty it?
 
     @property
     def is_running(self) -> bool:
@@ -177,7 +196,7 @@ class Subscriber(pydantic.BaseModel):
 
     async def __call__(self, message: Message, channel: Channel) -> None:
         if not self.is_running:
-            servo.logger.warning(f"ignoring call to non-running Subscriber: {self}")
+            servo.logger.warning(f"ignoring call to stopped Subscriber: {self}")
             return
 
         if self.subscription.matches(message, channel):
@@ -186,25 +205,24 @@ class Subscriber(pydantic.BaseModel):
                     await self.callback(message, channel)
                 else:
                     self.callback(message, channel)
+            else:
+                # enqueue for processing via async iteration
+                await self._queue.put((message, channel))
 
-    def __aiter__(self):
+    def __aiter__(self) -> Subscriber:
+        if self.callback:
+            raise RuntimeError("Subscriber objects with a callback cannot be used as an async iterator")
         return self
 
-    async def __anext__(self):
-        try:
-            return await self.next()
-        except:  # noqa: E722
-            await self.close()
-            raise
+    async def __anext__(self) -> Tuple[Message, Channel]:
+        if not self.is_running:
+            raise StopAsyncIteration
 
-    async def next(self):
-        while True:
-            if not self.is_running:
-                raise StopAsyncIteration
+        message, channel = self._queue.get()
+        if message is None:
+            raise StopAsyncIteration
 
-            message, channel = self._queue.get()
-            await self(message, channel)
-
+        return (message, channel)
 
     class Config:
         arbitrary_types_allowed = True
@@ -451,6 +469,9 @@ class Mixin(pydantic.BaseModel):
     def exchange(self, exchange: Exchange):
         """Set the pub/sub Exchange."""
         self._exchange = exchange
+
+    # TODO: Do we need/want cancellation for decorated subscribers?
+    # TODO: Let you set the async task names?
 
     def subscriber(self, selector: Selector) -> None:
         """Transform a function into a pub/sub Subscriber.
