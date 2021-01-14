@@ -2501,7 +2501,7 @@ class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit fro
     kind: str
     metadata: RolloutV1ObjectMeta
     spec: RolloutSpec
-    status: RolloutStatus
+    status: Optional[RolloutStatus]
 
 # TODO expose to config if needed
 ROLLOUT_GROUP = "argoproj.io"
@@ -3424,7 +3424,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for deployment_config in config.deployments:
+        for deployment_config in config.deployments + config.rollouts:
             if deployment_config.strategy == OptimizationStrategy.default:
                 optimization = await DeploymentOptimization.create(
                     deployment_config, timeout=config.timeout
