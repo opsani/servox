@@ -1136,40 +1136,40 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 ##
 # Tests against an ArgoCD rollout
 # @pytest.mark.clusterrolebinding('cluster-admin') # May be needed
-@pytest.mark.integration
-@pytest.mark.usefixtures("kubernetes_asyncio_config")
-class TestKubernetesConnectorRolloutIntegration:
-    @pytest.fixture
-    def namespace(self, kube: kubetest.client.TestClient) -> str:
-        return kube.namespace
+# @pytest.mark.integration
+# @pytest.mark.usefixtures("kubernetes_asyncio_config")
+# class TestKubernetesConnectorRolloutIntegration:
+#     @pytest.fixture
+#     def namespace(self, kube: kubetest.client.TestClient) -> str:
+#         return kube.namespace
 
-    @pytest.fixture(autouse=True)
-    def _manage_rollout(self, namespace, pytestconfig):
-        # rollout_crd_cmd = ["kubectl", "apply", "-n", namespace, "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
-        # subprocess.check_call(rollout_crd_cmd)
+#     @pytest.fixture(autouse=True)
+#     def _manage_rollout(self, namespace, pytestconfig):
+#         rollout_crd_cmd = ["kubectl", "apply", "-n", namespace, "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+#         subprocess.check_call(rollout_crd_cmd)
 
-        rollout_cmd = ["kubectl", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
-        subprocess.check_call(rollout_cmd)
+#         rollout_cmd = ["kubectl", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
+#         subprocess.check_call(rollout_cmd)
 
-        #TODO: wait for rollout readiness
+#         #TODO: wait for rollout readiness
 
-        yield
+#         yield
 
-        rollout_cmd[1] = "delete"
-        subprocess.check_call(rollout_cmd)
-        # rollout_crd_cmd[1] = "delete"
-        # subprocess.check_call(rollout_crd_cmd)
+#         rollout_cmd[1] = "delete"
+#         subprocess.check_call(rollout_cmd)
+#         rollout_crd_cmd[1] = "delete"
+#         subprocess.check_call(rollout_crd_cmd)
 
-    @pytest.fixture()
-    def _rollout_config(self, config: KubernetesConfiguration):
-        config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in config.deployments ]
-        config.deployments = []
-        return config
+#     @pytest.fixture()
+#     def _rollout_config(self, config: KubernetesConfiguration):
+#         config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in config.deployments ]
+#         config.deployments = []
+#         return config
 
-    # @pytest.mark.usefixtures("_manage_rollout")
-    async def test_describe(self, _rollout_config) -> None:
-        connector = KubernetesConnector(config=_rollout_config)
-        description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
-        assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
+#     # @pytest.mark.usefixtures("_manage_rollout")
+#     async def test_describe(self, _rollout_config) -> None:
+#         connector = KubernetesConnector(config=_rollout_config)
+#         description = await connector.describe()
+#         assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
+#         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+#         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
