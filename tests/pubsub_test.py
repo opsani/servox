@@ -77,6 +77,8 @@ async def exchange() -> servo.pubsub.Exchange:
     # Shutdown the exchange it is left running
     if exchange.is_running:
         await exchange.shutdown()
+    else:
+        exchange.clear()
 
 @pytest.fixture
 def channel(exchange: servo.pubsub.Exchange) -> servo.pubsub.Channel:
@@ -290,9 +292,40 @@ class TestExchange:
         assert exchange.is_running
         await exchange.shutdown()
 
+    def test_clear(self, exchange: servo.pubsub.Exchange) -> None:
+        for i in range(3):
+            name = f"channel-{i}"
+            exchange.create_channel(name)
+            exchange.create_publisher(name)
+            exchange.create_subscriber(name)
+
+        assert len(exchange.channels) == 3
+        assert len(exchange._publishers) == 3
+        assert len(exchange._subscribers) == 3
+        exchange.clear()
+        assert len(exchange.channels) == 0
+        assert len(exchange._publishers) == 0
+        assert len(exchange._subscribers) == 0
+
     async def test_shutdown(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
-        # Purge all objects
+        for i in range(3):
+            name = f"channel-{i}"
+            exchange.create_channel(name)
+            exchange.create_publisher(name)
+            exchange.create_subscriber(name)
+
+        exchange.start()
+        assert exchange.is_running
+        assert len(exchange.channels) == 3
+        assert len(exchange._publishers) == 3
+        assert len(exchange._subscribers) == 3
+
+        await exchange.shutdown()
+
+        assert not exchange.is_running
+        assert len(exchange.channels) == 0
+        assert len(exchange._publishers) == 0
+        assert len(exchange._subscribers) == 0
 
     async def test_get_channel(self, exchange: servo.pubsub.Exchange) -> None:
         assert exchange.get_channel('whatever') is None

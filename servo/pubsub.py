@@ -173,6 +173,13 @@ class Exchange(pydantic.BaseModel):
             raise RuntimeError("the Exchange is already running")
         self._queue_processor = asyncio.create_task(self._process_queue())
 
+    def clear(self) -> None:
+        """Clear the Exchange by discarding all channels, publishers, and subscribers."""
+        # Purge all our children to break object cycles
+        self._channels.clear()
+        self._publishers.clear()
+        self._subscribers.clear()
+
     async def shutdown(self) -> None:
         """Shutdown the Exchange by processing all Messages and clearing all child objects."""
         if not self.is_running:
@@ -180,11 +187,7 @@ class Exchange(pydantic.BaseModel):
         await self._queue.join()
         self._queue_processor.cancel()
         await asyncio.gather(self._queue_processor, return_exceptions=True)
-
-        # Purge all our children to break object cycles
-        self.channels.clear()
-        self._publishers.clear()
-        self._subscribers.clear()
+        self.clear()
 
     async def _process_queue(self) -> None:
         while True:
@@ -467,8 +470,6 @@ class Subscriber(pydantic.BaseModel):
     # supports usage as an async iterator
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
-
-    # TODO: should we put a limit on the queue size and warn on overflow?
 
     def stop(self) -> None:
         """Stop the subscriber from processing any further Messages."""
