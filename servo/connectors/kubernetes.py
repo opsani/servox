@@ -1017,6 +1017,12 @@ class Pod(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    def set_container(self, name: str, container: Container) -> None:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
+        # self.containers[index] = container # this isn't a real property, its an anonymous list returned by the syntax sugar, re-assigning a list item won't update the source list (updating the container within should update the source container though...)
+        self.obj.spec.containers[index] = container.obj
+
     async def get_restart_count(self) -> int:
         """Get the total number of Container restarts for the Pod.
 
@@ -2618,28 +2624,28 @@ class Rollout(ControllerModel):
             while True:
                 # Sleep first to give Argo a chance to sync
                 await asyncio.sleep(15)
-                try:
-                    resource_list = await api_client.list_namespaced_custom_object(
-                        namespace=self.namespace,
-                        watch=False,
-                        label_selector=self.label_selector,
-                        **ROLLOUT_CONST_ARGS,
-                    )
 
-                    tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
-                    latest: RolloutStatusCondition = next(iter(sorted(tgt_status.conditions, key= lambda x: x.last_update_time)))
-                    if not latest.type in ['Available','Progressing']:
-                        reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
-                        raise RuntimeError(latest['message'], reason=reason)
-                    else:
-                        if tgt_status.blue_green.active_selector == tgt_status.blue_green.preview_selector:
-                            break
+                resource_list = await api_client.list_namespaced_custom_object(
+                    namespace=self.namespace,
+                    watch=False,
+                    label_selector=self.label_selector,
+                    **ROLLOUT_CONST_ARGS,
+                )
 
-                except kubernetes_asyncio.client.ApiException as e:
-                    raise RuntimeError("Exception when calling CustomObjectsApi->list_namespaced_custom_object") from e
+                # TODO: finish debug and fix
+                # pprint(resource_list)
+
+                tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
+                latest: RolloutStatusCondition = next(iter(sorted(tgt_status.conditions, key= lambda x: x.last_update_time)))
+                if not latest.type in ['Available','Progressing']:
+                    reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
+                    raise RuntimeError(latest['message'], reason=reason)
+                else:
+                    if tgt_status.blue_green.active_selector == tgt_status.blue_green.preview_selector:
+                        break
 
                 if timeout is not None and time.time() - start_time > timeout:
-                    raise RuntimeError('Timed out waiting for activeSelector to match previewSelector', status='rejected', reason='unstable')
+                    raise servo.AdjustmentRejectedError('Timed out waiting for activeSelector to match previewSelector', reason='unstable')
 
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
@@ -3250,10 +3256,24 @@ class CanaryOptimization(BaseOptimization):
 
     async def apply(self) -> None:
         """Apply the adjustments to the target."""
-        dep_copy = copy.copy(self.target_deployment)
-        dep_copy.set_container(self.canary_container.name, self.canary_container)
-        await dep_copy.delete_canary_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
+        self.canary_pod.set_container(self.canary_container.name, self.canary_container)
+        create_obj = copy.deepcopy(self.canary_pod.obj)
+
+        await self.target_deployment.delete_canary_pod(raise_if_not_found=False)
+
+        # Create the Pod and wait for it to get ready
+        self.canary_pod.obj = create_obj # restore updated pod state
+        self.logger.info(
+            f"Creating adjusted canary Pod '{self.canary_pod.obj.metadata.name}' in namespace '{self.canary_pod.obj.metadata.namespace}'"
+        )
+        await self.canary_pod.create()
+        self.logger.info(
+            f"Created adjusted canary Pod '{self.canary_pod.obj.metadata.name}' in namespace '{self.canary_pod.obj.metadata.namespace}', waiting for it to become ready..."
+        )
+        await self.canary_pod.wait_until_ready(timeout=600)
+
+        await self.canary_pod.refresh()
+        await self.canary_pod.get_containers()
 
     @property
     def cpu(self) -> CPU:

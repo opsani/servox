@@ -30,6 +30,7 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirements,
+    Rollout,
     RolloutConfiguration,
 )
 from servo.errors import AdjustmentRejectedError
@@ -1145,6 +1146,7 @@ class TestKubernetesConnectorRolloutIntegration:
 
     @pytest.fixture(autouse=True)
     def _manage_rollout(self, namespace, pytestconfig):
+        # Setup
         # Rollouts are picky about installation namespace
         ns_cmd = [ "kubectl", "create", "namespace", "argo-rollouts" ]
         subprocess.check_call(ns_cmd)
@@ -1156,12 +1158,13 @@ class TestKubernetesConnectorRolloutIntegration:
         subprocess.check_call(rollout_cmd)
 
         #TODO: wait for rollout readiness
-        wait_cmd = [ "kubectl", "wait", "--for=condition=available", "-n", namespace, "rollout", "fiber-http" ]
+        wait_cmd = [ "kubectl", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
         subprocess.check_call(wait_cmd)
         # kubectl wait --for=condition=ready rollout fiber-http
 
-        yield
+        yield   # Test runs
 
+        # Teardown
         rollout_cmd[1] = "delete"
         subprocess.check_call(rollout_cmd)
         rollout_crd_cmd[1] = "delete"
@@ -1175,10 +1178,72 @@ class TestKubernetesConnectorRolloutIntegration:
         config.deployments = []
         return config
 
-    # @pytest.mark.usefixtures("_manage_rollout")
+    @pytest.fixture()
+    def _rollout_canary_config(self, canary_config: KubernetesConfiguration):
+        canary_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in canary_config.deployments ]
+        canary_config.deployments = []
+        return canary_config
+
     async def test_describe(self, _rollout_config) -> None:
         connector = KubernetesConnector(config=_rollout_config)
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
+
+    async def test_adjust_cpu(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
+    ##
+    # Canary Tests
+    async def test_create_canary(self, _rollout_canary_config, namespace: str) -> None:
+        connector = KubernetesConnector(config=_rollout_canary_config)
+        rol = await Rollout.read("fiber-http", namespace)
+        debug(rol)
+
+        description = await connector.describe()
+        debug(description)
+
+    # async def test_adjust_canary_insufficient_resources(self, canary_config, namespace) -> None:
+    #     canary_config.timeout = "60s"
+    #     connector = KubernetesConnector(config=canary_config)
+
+    #     adjustment = Adjustment(
+    #         component_name="fiber-http/fiber-http-canary",
+    #         setting_name="mem",
+    #         value="128Gi", # impossible right?
+    #     )
+    #     with pytest.raises(AdjustmentRejectedError) as rejection_info:
+    #         description = await connector.adjust([adjustment])
+    #         debug(description)
+
+    #     assert "Insufficient memory." in str(rejection_info.value)
+
+
+    async def test_adjust_canary_cpu_with_settlement(self, _rollout_canary_config, namespace):
+        connector = KubernetesConnector(config=_rollout_canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value == 250
