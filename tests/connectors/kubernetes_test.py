@@ -1172,7 +1172,7 @@ class TestKubernetesConnectorRolloutIntegration:
 
         ns_cmd[2] = "delete"
         subprocess.check_call(ns_cmd)
-        
+
 
     @pytest.fixture(autouse=True)
     def _manage_rollout(self, namespace, pytestconfig, session_kubeconfig):
