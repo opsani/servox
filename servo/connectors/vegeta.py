@@ -339,9 +339,10 @@ class VegetaConnector(servo.BaseConnector):
         summary = f"Loading {number_of_urls} URL(s) for {self.config._duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate} (reporting every {self.config.reporting_interval})"
         self.logger.info(summary)
 
-        # Run the load generation
+        # Run the load generator, publishing metrics for interested subscribers
+        publisher = self.pubsub_exchange.create_publisher('loadgen.vegeta')
         _, vegeta_reports = await _run_vegeta(
-            config=self.config, warmup_until=warmup_until
+            config=self.config, warmup_until=warmup_until, publisher=publisher
         )
 
         self.logger.info(
@@ -366,7 +367,9 @@ class VegetaConnector(servo.BaseConnector):
 
 
 async def _run_vegeta(
-    config: VegetaConfiguration, warmup_until: Optional[datetime.datetime] = None
+    config: VegetaConfiguration,
+    warmup_until: Optional[datetime.datetime] = None,
+    publisher: Optional[servo.Publisher] = None,
 ) -> Tuple[int, List[VegetaReport]]:
     vegeta_reports: List[VegetaReport] = []
     vegeta_cmd = _build_vegeta_command(config)
@@ -380,6 +383,9 @@ async def _run_vegeta(
         if warmup_until is None or datetime.datetime.now() > warmup_until:
             if not progress.started:
                 progress.start()
+
+            if publisher:
+                await publisher(servo.Message(json=vegeta_report))
 
             vegeta_reports.append(vegeta_report)
             summary = _summarize_report(vegeta_report, config)
