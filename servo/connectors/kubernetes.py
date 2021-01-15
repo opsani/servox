@@ -955,7 +955,12 @@ class Pod(KubernetesModel):
         # the 'failed' or 'success' state will no longer be running,
         # so we only care if the pod is in the 'running' state.
         phase = status.phase
-        self.logger.trace(f"current pod phase is {status}")
+        self.logger.trace(f"current pod phase is {phase}")
+
+        if phase == "Failed":
+            if status.reason and status.reason.startswith("OutOf"):
+                raise servo.AdjustmentRejectedError(status.message, reason=status.reason)
+
         if not status.conditions:
             return False
 
