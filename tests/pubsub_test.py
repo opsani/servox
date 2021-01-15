@@ -621,13 +621,30 @@ class TestMixin:
         await asyncio.sleep(0.2)
         assert host_object.pubsub_exchange._queue.qsize() >= 10
 
-    async def test_publisher_decorator(self, host_object: HostObject) -> None:
+    async def test_publisher_decorator_manual(self, host_object: HostObject) -> None:
         assert len(host_object.pubsub_exchange._publishers) == 0
         await host_object._test_publisher_decorator()
         assert len(host_object.pubsub_exchange._publishers) == 1
         assert host_object.pubsub_exchange._queue.qsize() == 0
         await asyncio.sleep(0.2)
         assert host_object.pubsub_exchange._queue.qsize() == 1
+
+    async def test_publisher_context_manager(self, host_object: HostObject) -> None:
+        assert len(host_object.pubsub_exchange._publishers) == 0
+        async with host_object.publisher('metrics') as publisher:
+            assert publisher
+            assert len(host_object.pubsub_exchange._publishers) == 1
+            assert host_object.pubsub_exchange._queue.qsize() == 0
+            await publisher(servo.pubsub.Message(text="context manager FTW!"))
+            assert host_object.pubsub_exchange._queue.qsize() == 1
+
+        assert len(host_object.pubsub_exchange._publishers) == 0
+        assert host_object.pubsub_exchange._queue.qsize() == 1
+
+    async def test_publisher_context_manager_rejects_every_arg(self, host_object: HostObject) -> None:
+        with pytest.raises(TypeError, match='Cannot create repeating publisher when used as a context manager: `every` must be None'):
+            async with host_object.publisher('metrics', every="10s") as publisher:
+                ...
 
     async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         stub = mocker.stub()

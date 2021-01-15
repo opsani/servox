@@ -575,6 +575,57 @@ class Publisher(pydantic.BaseModel):
         await self.exchange.publish(message, self.channel)
 
 
+class _PublisherMethod:
+    def __init__(
+        self,
+        parent: Mixin,
+        channel: Union[Channel, str],
+        *,
+        every: Optional[servo.types.DurationDescriptor] = None,
+        name: Optional[str] = None
+    ) -> None:
+        super().__init__()
+        self.pubsub_exchange = parent.pubsub_exchange
+        self._publishers_map = parent._publishers_map
+        self.channel = channel
+        self.every = every
+        self.name = name
+
+    def __call__(self, fn) -> None:
+        if not asyncio.iscoroutinefunction(fn):
+            raise ValueError("decorated function must be asynchronous")
+
+        name_ = self.name or fn.__name__
+        if name_ in self._publishers_map:
+            raise KeyError(f"a Publisher named '{name_}' already exists")
+
+        publisher = self.pubsub_exchange.create_publisher(self.channel)
+        if self.every is not None:
+            duration = self.every if isinstance(self.every, servo.Duration) else servo.Duration(self.every)
+        else:
+            duration = None
+
+        @functools.wraps(fn)
+        async def _repeating_publisher() -> None:
+            while True:
+                await fn(publisher)
+                if duration is not None:
+                    await asyncio.sleep(duration.total_seconds())
+
+        task = asyncio.create_task(_repeating_publisher())
+        self._publishers_map[name_] = (publisher, task)
+
+    async def __aenter__(self) -> None:
+        if self.every is not None:
+            raise TypeError(f"Cannot create repeating publisher when used as a context manager: `every` must be None")
+
+        self.publisher = self.pubsub_exchange.create_publisher(self.channel)
+        return self.publisher
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self.pubsub_exchange.remove_publisher(self.publisher)
+
+
 class Mixin(pydantic.BaseModel):
     """Provides a simple pub/sub stack for subclasses.
 
@@ -650,7 +701,6 @@ class Mixin(pydantic.BaseModel):
             filter(lambda i: i[1] not in subscribers, self._subscribers_map.items())
         )
 
-
     def publisher(
         self,
         channel: Union[Channel, str],
@@ -658,26 +708,36 @@ class Mixin(pydantic.BaseModel):
         every: Optional[servo.types.DurationDescriptor] = None,
         name: Optional[str] = None
     ) -> None:
-        """Transform a function into a pub/sub Publisher.
+        """Create a Publisher in the pub/sub Exchange.
 
-        When the `every` argument is not None, the publisher sleeps for the given duration to support
-        publishing messages on a repeating time interval.
+        This method can be used as a decorator or as a context manager.
 
-        The decorated function must be asynchronous and accept a single argument: `publisher: Publisher`.
+        When used as a decorator, the Publisher created is persistent and will
+        continue executing until cancelled. The `every` argument configures the
+        publication of messages on a repeating time interval. When `every` is
+        None, the caller is responsible for managing the sleep schedule of the
+        Publisher. The decorated function must be asynchronous and accept a
+        single argument: `publisher: Publisher`.
 
-        Args:
-            channel: The Channel or the name of the Channel to bind the Publisher to.
-            every: Optional Duration descriptor specifying how often the Publisher is to be awakened.
+        When used as a context manager, a temporary Publisher is created,
+        attached to the Exchange, and automatically cancelled and removed upon
+        exit from the managed context block scope.
+
+        Args: channel: The Channel or the name of the Channel to bind the
+            Publisher to. every: Optional Duration descriptor specifying how
+            often the Publisher is to be awakened.
 
         Usage:
             ```
-            # Using a repeating interval
+            # As a decorator
+
+            ## Using a repeating interval...
             def repeating_example(self) -> None:
                 @self.publisher("metrics", every="15s")
                 async def _publish_metrics(publisher: Publisher) -> None:
                     await publisher(Message(json={"throughput": "31337rps"}))
 
-            # Manually sleeping the publisher loop
+            ## Manually sleeping the publisher loop...
             def manual_example(self) -> None:
                 @self.publisher("metrics")
                 async def _publish_metrics(publisher: Publisher) -> None:
@@ -685,33 +745,17 @@ class Mixin(pydantic.BaseModel):
 
                     seconds_to_sleep = random.randint(1, 15)
                     await asyncio.sleep(seconds_to_sleep)
+
+            # As a context manager
+
+            def context_manager_example(self) -> None:
+                # Send 5 messages to the `metrics` channel and exit
+                async with self.publisher("metrics") as publisher:
+                    for _ in range(5):
+                        await publisher(Message(json={"throughput": "31337rps"}))
             ```
         """
-        def decorator(fn) -> None:
-            if not asyncio.iscoroutinefunction(fn):
-                raise ValueError("decorated function must be asynchronous")
-
-            name_ = name or fn.__name__
-            if name_ in self._publishers_map:
-                raise KeyError(f"a Publisher named '{name_}' already exists")
-
-            publisher = self.pubsub_exchange.create_publisher(channel)
-            if every is not None:
-                duration = every if isinstance(every, servo.Duration) else servo.Duration(every)
-            else:
-                duration = None
-
-            @functools.wraps(fn)
-            async def _repeating_publisher() -> None:
-                while True:
-                    await fn(publisher)
-                    if duration is not None:
-                        await asyncio.sleep(duration.total_seconds())
-
-            task = asyncio.create_task(_repeating_publisher())
-            self._publishers_map[name_] = (publisher, task)
-
-        return decorator
+        return _PublisherMethod(self, channel=channel, every=every, name=name)
 
     def cancel_publishers(self, *names: List[str]) -> None:
         """Cancel active pub/sub publishers.

@@ -340,10 +340,10 @@ class VegetaConnector(servo.BaseConnector):
         self.logger.info(summary)
 
         # Run the load generator, publishing metrics for interested subscribers
-        publisher = self.pubsub_exchange.create_publisher('loadgen.vegeta')
-        _, vegeta_reports = await _run_vegeta(
-            config=self.config, warmup_until=warmup_until, publisher=publisher
-        )
+        async with self.publisher('loadgen.vegeta') as publisher:
+            _, vegeta_reports = await _run_vegeta(
+                config=self.config, warmup_until=warmup_until, publisher=publisher
+            )
 
         self.logger.info(
             f"Producing time series readings from {len(vegeta_reports)} Vegeta reports"
