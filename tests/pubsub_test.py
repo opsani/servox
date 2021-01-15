@@ -1,5 +1,6 @@
 import asyncio
 import re
+import operator
 import pytest
 import pytest_mock
 import pydantic
@@ -337,6 +338,7 @@ class TestExchange:
         channel = exchange.create_channel("whatever")
         assert channel is not None
         assert channel.name == 'whatever'
+        assert channel.exchange == exchange
         assert len(exchange.channels) == 1
 
     async def test_create_channel_names_must_be_unique(self, exchange: servo.pubsub.Exchange) -> None:
@@ -387,6 +389,7 @@ class TestExchange:
         channel = exchange.create_channel("metrics")
         publisher = exchange.create_publisher(channel)
         assert publisher
+        assert publisher.exchange == exchange
         assert publisher in exchange._publishers
 
     async def test_create_publisher_by_channel_name(self, exchange: servo.pubsub.Exchange) -> None:
@@ -413,6 +416,7 @@ class TestExchange:
     async def test_create_subscriber(self, exchange: servo.pubsub.Exchange) -> None:
         subscriber = exchange.create_subscriber('whatever')
         assert subscriber
+        assert subscriber.exchange == exchange
         assert subscriber in exchange._subscribers
 
     async def test_remove_subscriber(self, exchange: servo.pubsub.Exchange) -> None:
@@ -479,7 +483,6 @@ class TestExchange:
             asyncio.gather(_publisher_func(), _subscriber_func()),
             timeout=3.0
         )
-        import operator
         assert len(results) == 2
         assert len(results[0]) == 10
         assert len(results[1]) == 10
@@ -496,6 +499,63 @@ class TestExchange:
             "Test Message #9",
         ]
         assert results[0] == results[1]
+
+    async def test_current_context_in_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        exchange.start()
+        assert servo.pubsub.current_context() is None
+        message = servo.pubsub.Message(text='Testing')
+
+        event = asyncio.Event()
+        current_context = None
+
+        async def _callback(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            nonlocal current_context
+            current_context = servo.pubsub.current_context()
+            event.set()
+
+        subscriber = exchange.create_subscriber('metrics*')
+        subscriber.callback = _callback
+
+        publisher = exchange.create_publisher("metrics.http.production")
+        await publisher(message)
+        await event.wait()
+        assert current_context is not None
+        assert current_context == (message, publisher.channel)
+        assert current_context[1].exchange == exchange
+        assert servo.pubsub.current_context() is None
+
+
+    async def test_current_context_in_iterator(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        exchange.start()
+        publisher = exchange.create_publisher("metrics.http.production")
+        message = servo.pubsub.Message(text='Some Message')
+        event = asyncio.Event()
+        current_context = None
+
+        async def _publisher_func() -> None:
+            # Wait for subscriber registration
+            await event.wait()
+            await publisher(message)
+
+        async def _subscriber_func() -> None:
+            nonlocal current_context
+
+            async with exchange.subscribe('metrics*') as subscription:
+                # Trigger the Publisher to begin sending messages
+                event.set()
+
+                async for message, channel in subscription:
+                    current_context = servo.pubsub.current_context()
+                    subscription.stop()
+
+        await asyncio.wait_for(
+            asyncio.gather(_publisher_func(), _subscriber_func()),
+            timeout=3.0
+        )
+        assert current_context is not None
+        assert current_context == (message, publisher.channel)
+        assert current_context[1].exchange == exchange
+        assert servo.pubsub.current_context() is None
 
 class HostObject(servo.pubsub.Mixin):
     async def _test_publisher_decorator(self, *, name: Optional[str] = None) -> None:
@@ -523,6 +583,10 @@ class TestMixin:
             await host_object.exchange.shutdown()
         else:
             host_object.exchange.clear()
+
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        [task.cancel() for task in tasks]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def test_exchange_property(self, host_object: HostObject) -> None:
         assert host_object.exchange

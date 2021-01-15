@@ -4,6 +4,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import contextlib
+import contextvars
 import codecs
 import datetime
 import fnmatch
@@ -159,6 +160,20 @@ class Channel(pydantic.BaseModel):
         )
 
 
+_context_var = contextvars.ContextVar("servo.pubsub.current_context", default=None)
+
+def current_context() -> Optional[Tuple[Message, Channel]]:
+    """Return the Message and Channel for the current execution context, if any.
+
+    The context is set upon entry into a Subscriber and restored to its previous
+    state upon return. If `current_context()` is not `None`, then the currently
+    executing operation was triggered by a pub/sub Message.
+
+    The value is managed by a contextvar and is concurrency safe.
+    """
+    return _context_var.get()
+
+
 class Exchange(pydantic.BaseModel):
     """An Exchange facilitates the publication and subscription of Messages in Channels."""
     _channels: Set[Channel] = pydantic.PrivateAttr(set())
@@ -231,6 +246,7 @@ class Exchange(pydantic.BaseModel):
         if self.get_channel(name) is not None:
             raise ValueError(f"A Channel named '{name}' already exists")
         channel = Channel(name=name, description=description, exchange=self)
+        channel.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._channels.add(channel)
         return channel
 
@@ -282,6 +298,7 @@ class Exchange(pydantic.BaseModel):
             channel_ = self.create_channel(channel)
 
         publisher = Publisher(exchange=self, channel=channel_)
+        publisher.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._publishers.append(publisher)
         return publisher
 
@@ -330,6 +347,7 @@ class Exchange(pydantic.BaseModel):
         """
         subscription = Subscription(selector=selector)
         subscriber = Subscriber(exchange=self, subscription=subscription, callback=callback)
+        subscriber.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._subscribers.append(subscriber)
         return subscriber
 
@@ -477,6 +495,7 @@ class Subscriber(pydantic.BaseModel):
     # supports usage as an async iterator
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
+    _reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
     def stop(self) -> None:
         """Stop the subscriber from processing any further Messages."""
@@ -510,14 +529,20 @@ class Subscriber(pydantic.BaseModel):
         return self
 
     async def __anext__(self) -> Tuple[Message, Channel]:
+        def _stop_iteration() -> None:
+            if self._reset_token:
+                _context_var.reset(self._reset_token)
+            raise StopAsyncIteration
+
         if not self.is_running:
-            raise StopAsyncIteration
+            _stop_iteration()
 
-        message, channel = await self._queue.get()
-        if message is None:
-            raise StopAsyncIteration
+        message_context = await self._queue.get()
+        if message_context is None:
+            _stop_iteration()
 
-        return (message, channel)
+        self._reset_token = _context_var.set(message_context)
+        return message_context
 
     class Config:
         arbitrary_types_allowed = True
@@ -542,6 +567,8 @@ class Publisher(pydantic.BaseModel):
 
 class Mixin(pydantic.BaseModel):
     """Provides a simple pub/sub stack for subclasses.
+
+    The exchange is initialized into a stopped state.
 
     Attributes:
         exchange: The pub/sub Exchange that the object belongs to.
@@ -696,6 +723,7 @@ class Mixin(pydantic.BaseModel):
 
 
 async def _deliver_message_to_subscribers(message: Message, channel: Channel, subscribers: List[Subscriber]) -> None:
+    reset_token = _context_var.set((message, channel))
     results = await asyncio.gather(
         *list(
             map(
@@ -711,3 +739,5 @@ async def _deliver_message_to_subscribers(message: Message, channel: Channel, su
         for result in results:
             if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                 raise result
+
+    _context_var.reset(reset_token)
