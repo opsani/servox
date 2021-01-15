@@ -1214,15 +1214,53 @@ class TestKubernetesConnectorRolloutIntegration:
         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
-    # TODO: uncomment when rollout fixed
-    # async def test_adjust_cpu(self, _rollout_config):
+    async def test_adjust_cpu(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
+    async def test_adjust_cpu_with_settlement(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+    # TODO: uncomment when sidecar support in rollouts
+    # async def test_adjust_cpu_at_non_zero_container_index(self, _rollout_config):
     #     connector = KubernetesConnector(config=_rollout_config)
     #     adjustment = Adjustment(
     #         component_name="fiber-http/fiber-http",
     #         setting_name="cpu",
     #         value=".250",
     #     )
-    #     description = await connector.adjust([adjustment])
+
+    #     # Inject a sidecar at index zero
+    #     rollout = await servo.connectors.kubernetes.Rollout.read('fiber-http', config.namespace)
+    #     assert rollout, f"failed loading rollout 'fiber-http' in namespace '{config.namespace}'"
+    #     await rollout.inject_sidecar(service="fiber-http", index=0)
+
+    #     control = servo.Control(settlement='1s')
+    #     description = await connector.adjust([adjustment], control)
     #     assert description is not None
     #     setting = description.get_setting('fiber-http/fiber-http.cpu')
     #     assert setting
@@ -1231,6 +1269,48 @@ class TestKubernetesConnectorRolloutIntegration:
     #     # Describe it again and make sure it matches
     #     description = await connector.describe()
     #     assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
+    async def test_adjust_memory(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="700Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value == 734003200
+
+    async def test_adjust_rollout_insufficient_resources(self, _rollout_config):
+        _rollout_config.timeout = "60s"
+        _rollout_config.rollouts[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=_rollout_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+    async def test_adjust_replicas(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="replicas",
+            value="2",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.replicas')
+        assert setting
+        assert setting.value == 2
 
     ##
     # Canary Tests

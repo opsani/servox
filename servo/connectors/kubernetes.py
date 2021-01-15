@@ -1364,7 +1364,8 @@ class ControllerModel(KubernetesModel):
         """
         self.logger.info(f'getting replicaset for deployment "{self.name}"')
         # TODO: break up below functionality into methods of a Replicaset wrapper class
-        async with self.api_client() as api_client:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            api_client =kubernetes_asyncio.client.AppsV1Api(api)
             rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
                 namespace=self.namespace, label_selector=self.match_label_selector, resource_version=self.resource_version
             )
@@ -1384,6 +1385,22 @@ class ControllerModel(KubernetesModel):
                     ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
                 for ownRef in pod.obj.metadata.owner_references
             )]
+
+    async def _check_pod_conditions(self):
+        pods = await self.get_latest_pods()
+        unschedulable_pods = [
+            pod for pod in pods
+            if pod.obj.status.conditions and any(
+                cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
+            )]
+        if unschedulable_pods:
+            pod_fmts = [] # [f"{pod.obj.metadata.name} - {', '.join(cond.message for cond)}" for pod in unschedulable_pods]
+            for pod in unschedulable_pods:
+                cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
+                pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
+
+            fmt_str = ", ".join(pod_fmts)
+            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
 
     @property
     def kind(self) -> str:
@@ -2512,7 +2529,7 @@ class RolloutStatus(RolloutBaseModel):
     restarted_at: Optional[datetime]
     selector: str
     stable_RS: Optional[str]
-    updated_replicas: int
+    updated_replicas: Optional[int]
 
 class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
     api_version: str
@@ -2624,40 +2641,123 @@ class Rollout(ControllerModel):
         """
         Yield self to caller to allow updates then wait for application and readiness of changes
         """
-        if timeout is not None:
-            timeout = timeout.total_seconds()
+        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+        # NOTE: The timeout_seconds argument must be an int or the request will fail
+        timeout_seconds = int(timeout.total_seconds()) if timeout else None
+
+        # Resource version lets us track any change. Observed generation only increments
+        # when the deployment controller sees a significant change that requires rollout
+        resource_version = self.resource_version
+        observed_generation = self.status.observed_generation
+        desired_replicas = self.replicas
+
+        self.logger.info(f"applying adjustments to Rollout '{self.name}' and rolling out to cluster")
 
         # Yield to let the changes be made
         yield self
 
-         # TODO convert this logic to a proper watch
-        start_time = time.time()
-        async with self.api_client() as api_client:
-            while True:
-                # Sleep first to give Argo a chance to sync
-                await asyncio.sleep(15)
+        # Return fast if nothing was changed
+        if self.resource_version == resource_version:
+            self.logger.info(
+                f"adjustments applied to Rollout '{self.name}' made no changes, continuing"
+            )
+            return
 
-                resource_list = await api_client.list_namespaced_custom_object(
-                    namespace=self.namespace,
-                    watch=False,
-                    label_selector=self.label_selector,
-                    **ROLLOUT_CONST_ARGS,
+        # Create a Kubernetes watch against the deployment under optimization to track changes
+        self.logger.debug(
+            f"watching rollout Using label_selector={self.label_selector}, resource_version={resource_version}"
+        )
+
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            co = kubernetes_asyncio.client.CustomObjectsApi(api)
+            async with kubernetes_asyncio.watch.Watch().stream(
+                co.list_namespaced_custom_object,
+                namespace=self.namespace,
+                label_selector=self.label_selector,
+                **ROLLOUT_CONST_ARGS,
+                timeout_seconds=timeout_seconds,
+            ) as stream:
+                async for event in stream:
+                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                    # TODO: Create an enum...
+                    event_type, rollout = event["type"], RolloutObj.parse_obj(event["object"])
+                    status: RolloutStatus = rollout.status
+
+                    self.logger.debug(
+                        f"rollout watch yielded event: {event_type} {rollout.kind} {rollout.metadata.name} in {rollout.metadata.namespace}: {status}"
+                    )
+
+                    if event_type == "ERROR":
+                        stream.stop()
+                        # FIXME: Not sure what types we expect here
+                        raise servo.AdjustmentRejectedError(reason=str(rollout))
+
+                    # Check that the conditions aren't reporting a failure
+                    self._check_conditions(status.conditions)
+                    await self._check_pod_conditions()
+
+                    # Early events in the watch may be against previous generation
+                    if status.observed_generation == observed_generation:
+                        self.logger.debug(
+                            "observed generation has not changed, continuing watch"
+                        )
+                        continue
+
+                    replica_counts = [
+                        status.replicas,
+                        status.available_replicas,
+                        status.ready_replicas,
+                        status.updated_replicas,
+                    ]
+                    if replica_counts.count(desired_replicas) == len(replica_counts):
+                        # We are done: all the counts match. Stop the watch and return
+                        self.logger.success(f"adjustments to Rollout '{self.name}' rolled out successfully", status)
+                        stream.stop()
+                        return
+
+            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
+            raise servo.AdjustmentRejectedError(reason="timed out waiting for Rollout to apply adjustment")
+
+    def _check_conditions(self, conditions: List[RolloutStatusCondition]) -> None:
+        for condition in conditions:
+            if condition.type == "Available":
+                if condition.status == "True":
+                    # If we hit on this and have not raised yet we are good to go
+                    break
+                elif condition.status in ("False", "Unknown"):
+                    # Condition has not yet been met, log status and continue monitoring
+                    self.logger.debug(
+                        f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
+                    )
+                else:
+                    raise servo.AdjustmentFailure(
+                        f"encountered unexpected Condition status '{condition.status}'"
+                    )
+
+            elif condition.type == "ReplicaFailure":
+                # TODO: Check what this error looks like
+                raise servo.AdjustmentRejectedError(
+                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    condition.status.message,
+                    reason=condition.status.reason
                 )
 
-                # TODO: finish debug and fix
-                # pprint(resource_list)
-
-                tgt_status: RolloutStatus = RolloutStatus.parse_obj(resource_list['items'][0]['status'])
-                latest: RolloutStatusCondition = next(iter(sorted(tgt_status.conditions, key= lambda x: x.last_update_time)))
-                if not latest.type in ['Available','Progressing']:
-                    reason = 'scheduling-failed' if 'exceeded quota' in latest.message else latest.type
-                    raise RuntimeError(latest['message'], reason=reason)
+            
+            elif condition.type == "Progressing":
+                if condition.status in ("True", "Unknown"):
+                    # Still working
+                    self.logger.debug("Deployment update is progressing", condition)
+                    break
+                elif condition.status == "False":
+                    raise servo.AdjustmentRejectedError(
+                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        condition.status.message,
+                        reason=condition.status.reason
+                    )
                 else:
-                    if tgt_status.blue_green.active_selector == tgt_status.blue_green.preview_selector:
-                        break
-
-                if timeout is not None and time.time() - start_time > timeout:
-                    raise servo.AdjustmentRejectedError('Timed out waiting for activeSelector to match previewSelector', reason='unstable')
+                    raise servo.AdjustmentFailure(
+                        f"unknown deployment status condition: {condition.status}"
+                    )
 
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
@@ -2666,7 +2766,7 @@ class Rollout(ControllerModel):
         assigned a namespace already. If it has not, the namespace will need
         to be set manually.
         Args:
-            options: Unsupported, options for Deployment deletion.
+            options: Unsupported, options for Rollout deletion.
         Returns:
             The status of the delete operation.
         """
@@ -2689,6 +2789,7 @@ class Rollout(ControllerModel):
             self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
                 namespace=self.namespace,
                 name=self.name,
+                **ROLLOUT_CONST_ARGS
             ))
 
     async def rollback(self) -> None:
