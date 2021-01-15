@@ -1620,11 +1620,18 @@ class ControllerModel(KubernetesModel):
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get("POD_NAME")
         SERVO_POD_NAMESPACE = os.environ.get("POD_NAMESPACE")
+        servo_pod = None
         if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
             self.logger.debug(
                 f"running within Kubernetes, registering as Pod controller... (pod={SERVO_POD_NAME}, namespace={SERVO_POD_NAMESPACE})"
             )
-            servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
+            try:
+                servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
+            except:
+                self.logger.exception(f'Unable to retrieve Servo pod {SERVO_POD_NAME}')
+                servo_pod = None
+
+        if servo_pod is not None:
             pod_controller = next(
                 iter(
                     ow
