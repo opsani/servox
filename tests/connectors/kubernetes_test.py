@@ -1025,7 +1025,8 @@ class TestKubernetesConnectorIntegration:
             description = await connector.adjust([adjustment])
             debug(description)
 
-        assert "Insufficient memory." in str(rejection_info.value)
+        rej_msg = str(rejection_info.value)
+        assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
 
 
     async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
