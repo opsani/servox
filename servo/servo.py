@@ -15,6 +15,7 @@ import servo.checks
 import servo.configuration
 import servo.connector
 import servo.events
+import servo.pubsub
 import servo.types
 import servo.utilities
 import servo.utilities.pydantic
@@ -222,9 +223,17 @@ class Servo(servo.connector.BaseConnector):
         """Notify all active connectors that the servo is starting up."""
         await self.dispatch_event(Events.startup, _prepositions=servo.events.Preposition.on)
 
+        # Start up the pub/sub exchange
+        if not self.pubsub_exchange.is_running:
+            self.pubsub_exchange.start()
+
     async def shutdown(self):
         """Notify all active connectors that the servo is shutting down."""
         await self.dispatch_event(Events.shutdown, _prepositions=servo.events.Preposition.on)
+
+        # Shut down the pub/sub exchange
+        if self.pubsub_exchange.is_running:
+            await self.pubsub_exchange.shutdown()
 
     @property
     def all_connectors(self) -> List[servo.connector.BaseConnector]:
@@ -275,8 +284,13 @@ class Servo(servo.connector.BaseConnector):
 
         connector.name = name
         connector._servo_config = self.config.servo
+
+        # Add to the event bus
         self.connectors.append(connector)
         self.__connectors__.append(connector)
+
+        # Add to the pub/sub exchange
+        connector.pubsub_exchange = self.pubsub_exchange
 
         # Register our name into the config class
         with servo.utilities.pydantic.extra(self.config):
@@ -315,8 +329,14 @@ class Servo(servo.connector.BaseConnector):
             Events.shutdown, include=[connector_], _prepositions=servo.events.Preposition.on
         )
 
+        # Remove from the event bus
         self.connectors.remove(connector_)
         self.__connectors__.remove(connector_)
+
+        # Remove from the pub/sub exchange
+        connector_.cancel_subscribers()
+        connector_.cancel_publishers()
+        connector_.pubsub_exchange = servo.pubsub.Exchange()
 
         with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)

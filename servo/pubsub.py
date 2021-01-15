@@ -571,20 +571,20 @@ class Mixin(pydantic.BaseModel):
     The exchange is initialized into a stopped state.
 
     Attributes:
-        exchange: The pub/sub Exchange that the object belongs to.
+        pubsub_exchange: The pub/sub Exchange that the object belongs to.
     """
     __private_attributes__ = {
         '_publishers_map': pydantic.PrivateAttr({}),
         '_subscribers_map': pydantic.PrivateAttr({}),
     }
-    exchange: Exchange = pydantic.Field(default_factory=Exchange)
+    pubsub_exchange: Exchange = pydantic.Field(default_factory=Exchange)
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
         # NOTE: Assign the exchange directly as Pydantic will copy it
-        if exchange := kwargs.get('exchange'):
-            self.exchange = exchange
+        if exchange := kwargs.get('pubsub_exchange'):
+            self.pubsub_exchange = exchange
 
     def subscriber(self, selector: Selector, *, name: Optional[str] = None) -> None:
         """Transform a function into a pub/sub Subscriber.
@@ -610,7 +610,7 @@ class Mixin(pydantic.BaseModel):
             if name_ in self._publishers_map:
                 raise KeyError(f"a Subscriber named '{name_}' already exists")
 
-            subscriber = self.exchange.create_subscriber(selector, callback=fn)
+            subscriber = self.pubsub_exchange.create_subscriber(selector, callback=fn)
             self._subscribers_map[name_] = subscriber
 
         return decorator
@@ -634,7 +634,7 @@ class Mixin(pydantic.BaseModel):
 
         for subscriber in subscribers:
             subscriber.stop()
-            self.exchange.remove_subscriber(subscriber)
+            self.pubsub_exchange.remove_subscriber(subscriber)
 
         self._subscribers_map = dict(
             filter(lambda i: i[1] not in subscribers, self._subscribers_map.items())
@@ -685,7 +685,7 @@ class Mixin(pydantic.BaseModel):
             if name_ in self._publishers_map:
                 raise KeyError(f"a Publisher named '{name_}' already exists")
 
-            publisher = self.exchange.create_publisher(channel)
+            publisher = self.pubsub_exchange.create_publisher(channel)
             if every is not None:
                 duration = every if isinstance(every, servo.Duration) else servo.Duration(every)
             else:
@@ -721,7 +721,7 @@ class Mixin(pydantic.BaseModel):
         )
 
         for publisher, task in publisher_tuples:
-            self.exchange.remove_publisher(publisher)
+            self.pubsub_exchange.remove_publisher(publisher)
             task.cancel()
 
         self._publishers_map = dict(

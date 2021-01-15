@@ -579,52 +579,52 @@ class TestMixin:
     async def host_object(self) -> HostObject:
         host_object = HostObject()
         yield host_object
-        if host_object.exchange.is_running:
-            await host_object.exchange.shutdown()
+        if host_object.pubsub_exchange.is_running:
+            await host_object.pubsub_exchange.shutdown()
         else:
-            host_object.exchange.clear()
+            host_object.pubsub_exchange.clear()
 
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         [task.cancel() for task in tasks]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def test_init_with_exchange(self) -> None:
+    async def test_init_with_pubsub_exchange(self) -> None:
         exchange = servo.pubsub.Exchange()
-        obj = HostObject(exchange=exchange)
-        assert obj.exchange == exchange
+        obj = HostObject(pubsub_exchange=exchange)
+        assert obj.pubsub_exchange == exchange
 
     async def test_exchange_property(self, host_object: HostObject) -> None:
-        assert host_object.exchange
+        assert host_object.pubsub_exchange
 
     async def test_exchange_property_setter(self, host_object: HostObject, exchange: servo.pubsub.Exchange) -> None:
-        assert host_object.exchange
-        assert host_object.exchange != exchange
-        host_object.exchange = exchange
-        assert host_object.exchange == exchange
+        assert host_object.pubsub_exchange
+        assert host_object.pubsub_exchange != exchange
+        host_object.pubsub_exchange = exchange
+        assert host_object.pubsub_exchange == exchange
 
     async def test_publisher_decorator_repeating(self, host_object: HostObject) -> None:
-        assert len(host_object.exchange._publishers) == 0
+        assert len(host_object.pubsub_exchange._publishers) == 0
         await host_object._test_repeating_publisher_decorator()
-        assert len(host_object.exchange._publishers) == 1
-        assert host_object.exchange._queue.qsize() == 0
+        assert len(host_object.pubsub_exchange._publishers) == 1
+        assert host_object.pubsub_exchange._queue.qsize() == 0
         await asyncio.sleep(0.2)
-        assert host_object.exchange._queue.qsize() >= 10
+        assert host_object.pubsub_exchange._queue.qsize() >= 10
 
     async def test_publisher_decorator(self, host_object: HostObject) -> None:
-        assert len(host_object.exchange._publishers) == 0
+        assert len(host_object.pubsub_exchange._publishers) == 0
         await host_object._test_publisher_decorator()
-        assert len(host_object.exchange._publishers) == 1
-        assert host_object.exchange._queue.qsize() == 0
+        assert len(host_object.pubsub_exchange._publishers) == 1
+        assert host_object.pubsub_exchange._queue.qsize() == 0
         await asyncio.sleep(0.2)
-        assert host_object.exchange._queue.qsize() == 1
+        assert host_object.pubsub_exchange._queue.qsize() == 1
 
     async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         stub = mocker.stub()
         await host_object._test_subscriber_decorator(stub)
-        host_object.exchange.start()
-        channel = host_object.exchange.create_channel("metrics")
+        host_object.pubsub_exchange.start()
+        channel = host_object.pubsub_exchange.create_channel("metrics")
         message = servo.pubsub.Message(json={"throughput": "31337rps"})
-        await host_object.exchange.publish(message, channel)
+        await host_object.pubsub_exchange.publish(message, channel)
         await asyncio.sleep(0.2)
         stub.assert_called_once_with(message, channel)
 
@@ -636,7 +636,7 @@ class TestMixin:
 
         await host_object._test_subscriber_decorator(_callback)
         await host_object._test_repeating_publisher_decorator()
-        host_object.exchange.start()
+        host_object.pubsub_exchange.start()
 
         await asyncio.sleep(0.2)
         assert len(notifications) > 10
@@ -652,15 +652,15 @@ class TestMixin:
         stub = mocker.stub()
         await host_object._test_subscriber_decorator(stub)
         await host_object._test_subscriber_decorator(stub, name="another_subscriber")
-        with servo.utilities.pydantic.extra(host_object.exchange):
-            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
+            spy = mocker.spy(host_object.pubsub_exchange, "remove_subscriber")
             host_object.cancel_subscribers('_message_received')
             spy.assert_called_once()
 
             subscriber = spy.call_args.args[0]
             assert not subscriber.is_running
-            assert subscriber not in host_object.exchange._subscribers
-            assert len(host_object.exchange._subscribers) == 1
+            assert subscriber not in host_object.pubsub_exchange._subscribers
+            assert len(host_object.pubsub_exchange._subscribers) == 1
             assert len(host_object._subscribers_map) == 1
             assert host_object._subscribers_map['another_subscriber']
 
@@ -670,9 +670,9 @@ class TestMixin:
         await host_object._test_subscriber_decorator(stub, name="one_subscriber")
         await host_object._test_subscriber_decorator(stub, name="two_subscriber")
         await host_object._test_subscriber_decorator(stub, name="three_subscriber")
-        assert len(host_object.exchange._subscribers) == 3
-        with servo.utilities.pydantic.extra(host_object.exchange):
-            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+        assert len(host_object.pubsub_exchange._subscribers) == 3
+        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
+            spy = mocker.spy(host_object.pubsub_exchange, "remove_subscriber")
             host_object.cancel_subscribers()
             spy.assert_called()
             assert spy.call_count == 3
@@ -680,24 +680,24 @@ class TestMixin:
             for args in spy.call_args_list:
                 subscriber, = args[0]
                 assert not subscriber.is_running
-                assert subscriber not in host_object.exchange._subscribers
+                assert subscriber not in host_object.pubsub_exchange._subscribers
 
-            assert len(host_object.exchange._subscribers) == 0
+            assert len(host_object.pubsub_exchange._subscribers) == 0
             assert len(host_object._subscribers_map) == 0
 
     async def test_cancel_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         stub = mocker.stub()
         await host_object._test_subscriber_decorator(stub)
         await host_object._test_subscriber_decorator(stub, name="another_subscriber")
-        with servo.utilities.pydantic.extra(host_object.exchange):
-            spy = mocker.spy(host_object.exchange, "remove_subscriber")
+        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
+            spy = mocker.spy(host_object.pubsub_exchange, "remove_subscriber")
             host_object.cancel_subscribers('_message_received')
             spy.assert_called_once()
 
             subscriber = spy.call_args.args[0]
             assert not subscriber.is_running
-            assert subscriber not in host_object.exchange._subscribers
-            assert len(host_object.exchange._subscribers) == 1
+            assert subscriber not in host_object.pubsub_exchange._subscribers
+            assert len(host_object.pubsub_exchange._subscribers) == 1
             assert len(host_object._subscribers_map) == 1
             assert host_object._subscribers_map['another_subscriber']
 
@@ -708,14 +708,14 @@ class TestMixin:
         assert host_object._publishers_map['_manual_publisher']
         assert host_object._publishers_map['another_publisher']
 
-        with servo.utilities.pydantic.extra(host_object.exchange):
-            spy = mocker.spy(host_object.exchange, "remove_publisher")
+        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
+            spy = mocker.spy(host_object.pubsub_exchange, "remove_publisher")
             host_object.cancel_publishers('_manual_publisher')
             spy.assert_called_once()
 
             publisher = spy.call_args.args[0]
-            assert subscriber not in host_object.exchange._publishers
-            assert len(host_object.exchange._publishers) == 1
+            assert subscriber not in host_object.pubsub_exchange._publishers
+            assert len(host_object.pubsub_exchange._publishers) == 1
             assert len(host_object._publishers_map) == 1
             assert host_object._publishers_map['another_publisher']
 
@@ -723,15 +723,15 @@ class TestMixin:
         await host_object._test_publisher_decorator(name="one_publisher")
         await host_object._test_publisher_decorator(name="two_publisher")
         await host_object._test_publisher_decorator(name="three_publisher")
-        with servo.utilities.pydantic.extra(host_object.exchange):
-            spy = mocker.spy(host_object.exchange, "remove_publisher")
+        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
+            spy = mocker.spy(host_object.pubsub_exchange, "remove_publisher")
             host_object.cancel_publishers()
             spy.assert_called()
             assert spy.call_count == 3
 
             for args in spy.call_args_list:
                 publisher, = args[0]
-                assert publisher not in host_object.exchange._publishers
+                assert publisher not in host_object.pubsub_exchange._publishers
 
-            assert len(host_object.exchange._publishers) == 0
+            assert len(host_object.pubsub_exchange._publishers) == 0
             assert len(host_object._publishers_map) == 0

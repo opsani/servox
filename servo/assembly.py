@@ -14,6 +14,7 @@ import yaml
 
 import servo.configuration
 import servo.connector
+import servo.pubsub
 import servo.servo
 
 __all__ = ["Assembly"]
@@ -96,6 +97,8 @@ class Assembly(pydantic.BaseModel):
         if len(configs) > 1 and optimizer is not None:
             raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
 
+        # Set up the event bus and pub/sub exchange
+        pubsub_exchange = servo.pubsub.Exchange()
         servos: List[servo.servo.Servo] = []
         for config in configs:
             # TODO: Needs to be public / have a better name
@@ -116,6 +119,7 @@ class Assembly(pydantic.BaseModel):
                         config=connector_config,
                         optimizer=servo_optimizer,
                         __connectors__=connectors,
+                        pubsub_exchange=pubsub_exchange,
                     )
                     connectors.append(connector)
 
@@ -125,6 +129,7 @@ class Assembly(pydantic.BaseModel):
                 connectors=connectors.copy(),  # Avoid self-referential reference to servo
                 optimizer=servo_optimizer,
                 __connectors__=connectors,
+                pubsub_exchange=pubsub_exchange,
             )
             connectors.append(servo_)
             servos.append(servo_)

@@ -127,6 +127,11 @@ def test_servo_routes_and_connectors_reference_same_objects(servo: Servo) -> Non
         subconnector_ids = list(map(lambda c: id(c), conn.__connectors__))
         assert subconnector_ids == connector_ids
 
+def test_servo_and_connectors_share_pubsub_exchange(servo: Servo) -> None:
+    exchange = servo.pubsub_exchange
+    for connector in servo.__connectors__:
+        assert connector.pubsub_exchange == exchange
+        assert id(connector.pubsub_exchange) == id(exchange)
 
 async def test_dispatch_event(servo: Servo) -> None:
     results = await servo.dispatch_event("this_is_an_event")
@@ -352,6 +357,12 @@ async def test_startup_event(mocker, servo: servo) -> None:
     await servo.startup()
     assert connector.started_up == True
 
+async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    assert not servo.pubsub_exchange.is_running
+    await servo.startup()
+    assert servo.pubsub_exchange.is_running
+    await servo.pubsub_exchange.shutdown()
 
 async def test_shutdown_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
@@ -359,6 +370,12 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     on_spy = mocker.spy(on_handler, "handler")
     await servo.shutdown()
     on_spy.assert_called()
+
+async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
+    servo.pubsub_exchange.start()
+    assert servo.pubsub_exchange.is_running
+    await servo.shutdown()
+    assert not servo.pubsub_exchange.is_running
 
 
 async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:

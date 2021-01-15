@@ -1527,13 +1527,13 @@ class TestPubSub:
             optimizer=Optimizer(id="example.com/my-app", token="123456"),
             config=BaseConfiguration(),
         )
-        pubsub_connector.exchange.start()
+        pubsub_connector.pubsub_exchange.start()
         try:
             yield pubsub_connector
         finally:
             pubsub_connector.cancel_publishers()
             pubsub_connector.cancel_subscribers()
-            await pubsub_connector.exchange.shutdown()
+            await pubsub_connector.pubsub_exchange.shutdown()
 
     async def test_pubsub(self, connector: 'TestPubSub.PubSubConnector', mocker: pytest_mock.MockFixture) -> None:
         notifications = []
