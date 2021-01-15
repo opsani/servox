@@ -1145,53 +1145,53 @@ class TestKubernetesConnectorRolloutIntegration:
         return kube.namespace
 
     @pytest.fixture(autouse=True, scope="session")
-    def _cleanup_rollouts(self, pytestconfig):
+    def _cleanup_rollouts(self, session_kubeconfig):
         """
         Remove rollout installation in case namespace still in place from interrupted test run
         """
-        rollout_crd_cmd = ["kubectl", "delete", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "delete", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
         subprocess.run(rollout_crd_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        ns_cmd = [ "kubectl", "delete", "namespace", "argo-rollouts" ]
+        ns_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "delete", "namespace", "argo-rollouts" ]
         subprocess.run(ns_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     @pytest.fixture(autouse=True, scope="session")
-    def _install_rollouts(self):
+    def _install_rollouts(self, session_kubeconfig):
         # Setup
         # Rollouts are picky about installation namespace
-        ns_cmd = [ "kubectl", "create", "namespace", "argo-rollouts" ]
+        ns_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "create", "namespace", "argo-rollouts" ]
         subprocess.check_call(ns_cmd)
 
-        rollout_crd_cmd = ["kubectl", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
         subprocess.check_call(rollout_crd_cmd)
 
         yield # Tests run
 
-        rollout_crd_cmd[1] = "delete"
+        rollout_crd_cmd[2] = "delete"
         subprocess.check_call(rollout_crd_cmd)
 
-        ns_cmd[1] = "delete"
+        ns_cmd[2] = "delete"
         subprocess.check_call(ns_cmd)
         
 
     @pytest.fixture(autouse=True)
-    def _manage_rollout(self, namespace, pytestconfig):
+    def _manage_rollout(self, namespace, pytestconfig, session_kubeconfig):
         """
         Apply manifest of the target rollout being tested against
         """
 
-        rollout_cmd = ["kubectl", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
+        rollout_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
         subprocess.check_call(rollout_cmd)
 
         #TODO: wait for rollout readiness
-        wait_cmd = [ "kubectl", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
+        wait_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
         subprocess.check_call(wait_cmd)
         # kubectl wait --for=condition=ready rollout fiber-http
 
         yield   # Test runs
 
         # Teardown
-        rollout_cmd[1] = "delete"
+        rollout_cmd[2] = "delete"
         subprocess.check_call(rollout_cmd)
 
     @pytest.fixture()

@@ -426,6 +426,22 @@ def kubeconfig_path_from_config(config) -> pathlib.Path:
     )
     return config_path
 
+@pytest.fixture(scope="session")
+def session_kubeconfig(pytestconfig) -> str:
+    """Return the path to a kubeconfig file to use when running integraion tests.
+
+    To avoid inadvertantly interacting with clusters not explicitly configured
+    for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
+    """
+    config_path = kubeconfig_path_from_config(pytestconfig)
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
+        )
+
+    return str(config_path)
+
 @pytest.fixture
 async def kubeconfig(request) -> str:
     """Return the path to a kubeconfig file to use when running integraion tests.
