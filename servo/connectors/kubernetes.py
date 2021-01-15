@@ -2742,7 +2742,7 @@ class Rollout(ControllerModel):
                     reason=condition.status.reason
                 )
 
-            
+
             elif condition.type == "Progressing":
                 if condition.status in ("True", "Unknown"):
                     # Still working
