@@ -579,6 +579,13 @@ class Mixin(pydantic.BaseModel):
     }
     exchange: Exchange = pydantic.Field(default_factory=Exchange)
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+        # NOTE: Assign the exchange directly as Pydantic will copy it
+        if exchange := kwargs.get('exchange'):
+            self.exchange = exchange
+
     def subscriber(self, selector: Selector, *, name: Optional[str] = None) -> None:
         """Transform a function into a pub/sub Subscriber.
 

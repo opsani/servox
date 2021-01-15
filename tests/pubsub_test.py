@@ -588,6 +588,11 @@ class TestMixin:
         [task.cancel() for task in tasks]
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def test_init_with_exchange(self) -> None:
+        exchange = servo.pubsub.Exchange()
+        obj = HostObject(exchange=exchange)
+        assert obj.exchange == exchange
+
     async def test_exchange_property(self, host_object: HostObject) -> None:
         assert host_object.exchange
 
