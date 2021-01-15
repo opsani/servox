@@ -40,6 +40,10 @@ MessageContent = Union[str, bytes, ByteStream]
 class Message(pydantic.BaseModel):
     """A Message is information published to a Channel within an Exchange.
 
+    The `json` and `yaml` arguments respect an informal protocol. If the input argument
+    responds to `json()` or `yaml()` methods respectively they are called to perform
+    serialization.
+
     Attributes:
         content: The content of the message.
         content_type: A MIME Type describing the message content encoding.
@@ -83,9 +87,15 @@ class Message(pydantic.BaseModel):
             if text is not None:
                 content = text.encode()
             elif json is not None:
-                content = json_.dumps(json)
+                content = (
+                    json.json() if (hasattr(json, 'json') and callable(json.json))
+                    else json_.dumps(json)
+                )
             elif yaml is not None:
-                content = yaml_.dump(yaml)
+                content = (
+                    yaml.yaml() if (hasattr(yaml, 'yaml') and callable(yaml.yaml))
+                    else yaml_.dump(yaml)
+                )
 
         if content_type is None:
             if text is not None:

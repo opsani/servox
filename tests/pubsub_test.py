@@ -1,9 +1,11 @@
 import asyncio
-import re
+import datetime
+import freezegun
 import operator
 import pytest
 import pytest_mock
 import pydantic
+import re
 import servo
 import servo.pubsub
 import servo.utilities.pydantic
@@ -32,6 +34,15 @@ class TestMessage:
         assert message.text == '{"key": "value"}'
         assert message.content_type == 'application/json'
         assert message.content == b'{"key": "value"}'
+
+    @freezegun.freeze_time("2021-01-01 12:00:01")
+    def test_json_message_via_protocol(self) -> None:
+        # NOTE: Use Pydantic's json() method support
+        channel = servo.pubsub.Channel.construct(name="whatever", created_at=datetime.datetime.now())
+        message = servo.pubsub.Message(json=channel)
+        assert message.text == '{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
+        assert message.content_type == 'application/json'
+        assert message.content == b'{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
 
     def test_yaml_message(self) -> None:
         message = servo.pubsub.Message(yaml={"key": "value"})
