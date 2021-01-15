@@ -189,7 +189,6 @@ class Servo(servo.connector.BaseConnector):
 
         return results
 
-
     def __init__(
         self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
     ) -> None: # noqa: D107
