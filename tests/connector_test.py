@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_mock
 import respx
 import yaml
 from pydantic import Extra, ValidationError
@@ -1507,3 +1508,48 @@ def test_logger_binds_connector_name() -> None:
     logger.info("Testing")
     record = messages[0].record
     assert record["extra"]["connector"].name == "measure"
+
+class TestPubSub:
+    class PubSubConnector(MeasureConnector):
+        async def _create_publisher(self, *, name: Optional[str] = None) -> None:
+            @self.publisher("metrics", name=name, every="0.1ms")
+            async def _publisher(publisher: servo.pubsub.Publisher) -> None:
+                await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
+
+        async def _create_subscriber(self, callback, *, name: Optional[str] = None) -> None:
+            @self.subscriber("metrics", name=name)
+            async def _subscriber(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+                callback(message, channel)
+
+    @pytest.fixture
+    async def connector(self) -> 'TestPubSub.PubSubConnector':
+        pubsub_connector = TestPubSub.PubSubConnector(
+            optimizer=Optimizer(id="example.com/my-app", token="123456"),
+            config=BaseConfiguration(),
+        )
+        pubsub_connector.exchange.start()
+        try:
+            yield pubsub_connector
+        finally:
+            pubsub_connector.cancel_publishers()
+            pubsub_connector.cancel_subscribers()
+            await pubsub_connector.exchange.shutdown()
+
+    async def test_pubsub(self, connector: 'TestPubSub.PubSubConnector', mocker: pytest_mock.MockFixture) -> None:
+        notifications = []
+        def _callback(message, channel) -> None:
+            notification = f"Message #{len(notifications)} '{message.text}' (channel: '{channel.name}')"
+            notifications.append(notification)
+
+        await connector._create_publisher()
+        await connector._create_subscriber(_callback)
+
+        await asyncio.sleep(0.2)
+        assert len(notifications) > 10
+        assert notifications[0:5] == [
+            "Message #0 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #1 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #2 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #3 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #4 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+        ]
