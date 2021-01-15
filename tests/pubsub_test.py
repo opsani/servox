@@ -570,18 +570,18 @@ class TestExchange:
 
 class HostObject(servo.pubsub.Mixin):
     async def _test_publisher_decorator(self, *, name: Optional[str] = None) -> None:
-        @self.publisher("metrics", name=name)
+        @self.publish("metrics", name=name)
         async def _manual_publisher(publisher: servo.pubsub.Publisher) -> None:
             await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
             await asyncio.sleep(30)
 
     async def _test_repeating_publisher_decorator(self) -> None:
-        @self.publisher("metrics", every="10ms")
+        @self.publish("metrics", every="10ms")
         async def _repeating_publisher(publisher: servo.pubsub.Publisher) -> None:
             await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
 
     async def _test_subscriber_decorator(self, callback, *, name: Optional[str] = None) -> None:
-        @self.subscriber("metrics", name=name)
+        @self.subscribe("metrics", name=name)
         async def _message_received(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
             callback(message, channel)
 
@@ -631,7 +631,7 @@ class TestMixin:
 
     async def test_publisher_context_manager(self, host_object: HostObject) -> None:
         assert len(host_object.pubsub_exchange._publishers) == 0
-        async with host_object.publisher('metrics') as publisher:
+        async with host_object.publish('metrics') as publisher:
             assert publisher
             assert len(host_object.pubsub_exchange._publishers) == 1
             assert host_object.pubsub_exchange._queue.qsize() == 0
@@ -643,7 +643,7 @@ class TestMixin:
 
     async def test_publisher_context_manager_rejects_every_arg(self, host_object: HostObject) -> None:
         with pytest.raises(TypeError, match='Cannot create repeating publisher when used as a context manager: `every` must be None'):
-            async with host_object.publisher('metrics', every="10s") as publisher:
+            async with host_object.publish('metrics', every="10s") as publisher:
                 ...
 
     async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
@@ -654,6 +654,31 @@ class TestMixin:
         message = servo.pubsub.Message(json={"throughput": "31337rps"})
         await host_object.pubsub_exchange.publish(message, channel)
         await asyncio.sleep(0.2)
+        stub.assert_called_once_with(message, channel)
+
+    async def test_subscriber_context_manager(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        host_object.pubsub_exchange.start()
+        message = servo.pubsub.Message(json={"throughput": "31337rps"})
+        channel = host_object.pubsub_exchange.create_channel("metrics")
+        event = asyncio.Event()
+
+        async def _publisher() -> None:
+            await event.wait()
+            await host_object.pubsub_exchange.publish(message, channel)
+
+        async def _subscriber() -> None:
+            async with host_object.subscribe('metrics') as subscriber:
+                event.set()
+
+                async for message, channel in subscriber:
+                    stub(message, channel)
+                    subscriber.stop()
+
+        await asyncio.wait_for(
+            asyncio.gather(_publisher(), _subscriber()),
+            timeout=3.0
+        )
         stub.assert_called_once_with(message, channel)
 
     async def test_pubsub_between_decorators(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:

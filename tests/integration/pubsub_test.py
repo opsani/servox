@@ -19,7 +19,7 @@ class TestVegeta:
         )
         return servo.connectors.vegeta.VegetaConnector(config=config)
 
-    async def test_subscribe_via_exchange(self, connector) -> None:
+    async def test_subscribe_via_exchange_subscriber_object(self, connector) -> None:
         reports = []
 
         async def _callback(message, channel) -> None:
@@ -32,6 +32,21 @@ class TestVegeta:
             connector.measure(control=servo.Control(duration="5s")),
             timeout=7 # NOTE: Always make timeout exceed control duration
         )
+        assert len(reports) > 5
+
+    async def test_subscribe_via_exchange_context_manager(self, connector) -> None:
+        connector.pubsub_exchange.start()
+        reports = []
+
+        async def _subscribe_to_vegeta() -> None:
+            async with connector.subscribe("loadgen.vegeta") as subscriber:
+                async for message, channel in subscriber:
+                    debug("Vegeta Reported: ", message.json())
+                    reports.append(message.json())
+
+        task = asyncio.create_task(_subscribe_to_vegeta())
+        await connector.measure(control=servo.Control(duration="3s"))
+        task.cancel()
         assert len(reports) > 5
 
 

@@ -626,6 +626,35 @@ class _PublisherMethod:
         self.pubsub_exchange.remove_publisher(self.publisher)
 
 
+class _SubscriberMethod:
+    def __init__(
+        self,
+        parent: Mixin,
+        selector: Selector,
+        name: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.pubsub_exchange = parent.pubsub_exchange
+        self._subscribers_map = parent._subscribers_map
+        self.selector = selector
+        self.name = name
+
+    def __call__(self, fn) -> None:
+        name_ = self.name or fn.__name__
+        if name_ in self._subscribers_map:
+            raise KeyError(f"a Subscriber named '{name_}' already exists")
+
+        subscriber = self.pubsub_exchange.create_subscriber(self.selector, callback=fn)
+        self._subscribers_map[name_] = subscriber
+
+    async def __aenter__(self) -> None:
+        self.subscriber = self.pubsub_exchange.create_subscriber(self.selector)
+        return self.subscriber
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self.pubsub_exchange.remove_subscriber(self.subscriber)
+
+
 class Mixin(pydantic.BaseModel):
     """Provides a simple pub/sub stack for subclasses.
 
@@ -647,11 +676,21 @@ class Mixin(pydantic.BaseModel):
         if exchange := kwargs.get('pubsub_exchange'):
             self.pubsub_exchange = exchange
 
-    def subscriber(self, selector: Selector, *, name: Optional[str] = None) -> None:
-        """Transform a function into a pub/sub Subscriber.
+    def subscribe(self, selector: Selector, *, name: Optional[str] = None) -> None:
+        """Create a Subscriber in the pub/sub Exchange.
 
-        The decorated function may be synchronous or asynchronous but must accept
-        two arguments: `message: Message, channel: Channel`.
+        This method can be used as a decorator or as a context manager.
+
+        When used as a decorator, the decorated function may be synchronous or
+        asynchronous but must accept two arguments: `message: Message, channel:
+        Channel`. The Subscriber created is persistent and will continue
+        processing Messages until explicitly cancelled.
+
+        When used as a context manager, a temporary Subscriber is created,
+        attached to the Exchange, and automatically cancelled and removed upon
+        exit from the managed context block scope. Messages are consumed via
+        use of the Subscriber as an async iterator (`async for X in Y` syntax).
+        Iteration can be terminated via the `stop` method of the Subscriber.
 
         Args:
             selector: A string or regular expression pattern matching Channels of interest.
@@ -660,21 +699,23 @@ class Mixin(pydantic.BaseModel):
 
         Usage:
             ```
-            def some_method(self) -> None:
-                @self.subscriber("metrics.*")
+            # As a decorator
+            def _decorator_example(self) -> None:
+                @self.subscribe("metrics.*")
+                def _message_received(message: Message, channel: Channel) -> None:
+                    print(f"Notified of a new Message: {message}, {channel}")
+
+            # As a context manager
+            def _context_manager_example(self) -> None:
+                async with self.subscribe("metrics.*") as subscriber:
+                    async for message, channel in subscriber:
+                        print(f"Notified of a new Message: {message}, {channel}")
+
                 def _message_received(message: Message, channel: Channel) -> None:
                     print(f"Notified of a new Message: {message}, {channel}")
             ```
         """
-        def decorator(fn):
-            name_ = name or fn.__name__
-            if name_ in self._publishers_map:
-                raise KeyError(f"a Subscriber named '{name_}' already exists")
-
-            subscriber = self.pubsub_exchange.create_subscriber(selector, callback=fn)
-            self._subscribers_map[name_] = subscriber
-
-        return decorator
+        return _SubscriberMethod(self, selector=selector, name=name)
 
     def cancel_subscribers(self, *names: List[str]) -> None:
         """Cancel active pub/sub subscribers.
@@ -701,7 +742,7 @@ class Mixin(pydantic.BaseModel):
             filter(lambda i: i[1] not in subscribers, self._subscribers_map.items())
         )
 
-    def publisher(
+    def publish(
         self,
         channel: Union[Channel, str],
         *,
@@ -723,9 +764,12 @@ class Mixin(pydantic.BaseModel):
         attached to the Exchange, and automatically cancelled and removed upon
         exit from the managed context block scope.
 
-        Args: channel: The Channel or the name of the Channel to bind the
-            Publisher to. every: Optional Duration descriptor specifying how
-            often the Publisher is to be awakened.
+        Args:
+            channel: The Channel or name of the Channel to bind the Publisher to.
+            every: Optional Duration descriptor specifying how often the Publisher
+                is to be awakened.
+            name: An optional name to assign to the Publisher. When omitted, the
+                name of the decorated function is used.
 
         Usage:
             ```
@@ -733,13 +777,13 @@ class Mixin(pydantic.BaseModel):
 
             ## Using a repeating interval...
             def repeating_example(self) -> None:
-                @self.publisher("metrics", every="15s")
+                @self.publish("metrics", every="15s")
                 async def _publish_metrics(publisher: Publisher) -> None:
                     await publisher(Message(json={"throughput": "31337rps"}))
 
             ## Manually sleeping the publisher loop...
             def manual_example(self) -> None:
-                @self.publisher("metrics")
+                @self.publish("metrics")
                 async def _publish_metrics(publisher: Publisher) -> None:
                     await publisher(Message(json={"throughput": "31337rps"}))
 
@@ -750,7 +794,7 @@ class Mixin(pydantic.BaseModel):
 
             def context_manager_example(self) -> None:
                 # Send 5 messages to the `metrics` channel and exit
-                async with self.publisher("metrics") as publisher:
+                async with self.publish("metrics") as publisher:
                     for _ in range(5):
                         await publisher(Message(json={"throughput": "31337rps"}))
             ```
