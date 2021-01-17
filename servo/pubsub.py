@@ -235,7 +235,10 @@ def current_context() -> Optional[Tuple[Message, Channel]]:
 
 
 class Exchange(pydantic.BaseModel):
-    """An Exchange facilitates the publication and subscription of Messages in Channels."""
+    """An Exchange facilitates the publication and subscription of Messages in Channels.
+
+    Exchange objects are asynchronously iterable and will yield every Message published.
+    """
     _channels: Set[Channel] = pydantic.PrivateAttr(set())
     _publishers: List[Publisher] = pydantic.PrivateAttr([])
     _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
@@ -263,6 +266,32 @@ class Exchange(pydantic.BaseModel):
         self._queue_processor.cancel()
         await asyncio.gather(self._queue_processor, return_exceptions=True)
         self.clear()
+
+    def stop(self) -> None:
+        """Stop the current async iterator.
+
+        The iterator to be stopped is determined by the current iteration scope.
+        Calling stop on a parent iterator scope will trigger a `RuntimeError`.
+
+        Raises:
+            RuntimeError: Raised if there is not an active iterator or the receiver
+                is not being iterated in the local scope.
+        """
+        iterator = _current_iterator()
+        if iterator is not None:
+            subscribers = list(filter(lambda s: s.subscription.selector == '*', self._subscribers))
+            if iterator.subscriber not in subscribers:
+                raise RuntimeError(f"Attempted to stop an inactive iterator")
+            iterator.stop()
+        else:
+            raise RuntimeError("Attempted to stop outside of an iterator")
+
+    def __aiter__(self):  # noqa: D105
+        if not self.running:
+            raise RuntimeError(f"Cannot iterate messages in an Exchange that is not running")
+        subscriber = self.create_subscriber('*')
+        iterator: _Iterator = subscriber.__aiter__()
+        return iterator
 
     async def _process_queue(self) -> None:
         while True:

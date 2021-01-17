@@ -761,6 +761,29 @@ class TestExchange:
         assert current_context[1].exchange == exchange
         assert servo.pubsub.current_context() is None
 
+    async def test_iteration(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockFixture) -> None:
+        channel = exchange.create_channel('whatever')
+        messages = []
+
+        async def _subscriber() -> None:
+            async for message in exchange:
+                messages.append(message)
+
+                if len(messages) == 3:
+                    exchange.stop()
+
+        async def _publisher() -> None:
+            for i in range(3):
+                await exchange.publish(servo.pubsub.Message(text=f"Message: {i}"), channel)
+
+        exchange.start()
+        await task_graph(
+            _publisher(),
+            _subscriber(),
+            timeout=5.0
+        )
+        assert messages
+
 class HostObject(servo.pubsub.Mixin):
     async def _test_publisher_decorator(self, *, name: Optional[str] = None) -> None:
         @self.publish("metrics", name=name)
