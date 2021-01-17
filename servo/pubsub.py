@@ -219,6 +219,12 @@ class Channel(pydantic.BaseModel):
             )
         )
 
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, str):
+            return self.name == other
+
+        return super().__eq__(other)
+
 
 _current_context_var = contextvars.ContextVar("servo.pubsub.current_context", default=None)
 

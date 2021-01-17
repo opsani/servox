@@ -144,6 +144,10 @@ class TestChannel:
         assert copy_of_channel in channels
         assert channel in channels
 
+    def test_comparable_to_str(self, channel: servo.pubsub.Channel) -> None:
+        assert channel != 'foo'
+        assert channel == 'metrics'
+
     async def test_publish(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
         message = servo.pubsub.Message(text="foo")
         with servo.utilities.pydantic.extra(channel.exchange):
