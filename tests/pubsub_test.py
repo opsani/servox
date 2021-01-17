@@ -96,7 +96,8 @@ async def exchange() -> servo.pubsub.Exchange:
 
 @pytest.fixture
 def channel(exchange: servo.pubsub.Exchange) -> servo.pubsub.Channel:
-    return servo.pubsub.Channel(name="metrics", exchange=exchange)
+    # return servo.pubsub.Channel(name="metrics", exchange=exchange)
+    return exchange.create_channel("metrics")
 
 class TestChannel:
     class TestValidations:
@@ -164,24 +165,22 @@ class TestChannel:
         messages = []
 
         async def _subscriber() -> None:
-            debug("SUBSCRIBER STARTED")
             async for message in channel:
-                debug("MESSAGE: ", message, channel)
                 messages.append(message)
 
+                if len(messages) == 3:
+                    channel.stop()
+
         async def _publisher() -> None:
-            await asyncio.sleep(1.0)
             for i in range(3):
                 await channel.publish(servo.pubsub.Message(text=f"Message: {i}"))
 
-            debug("DONE sending messages")
-
+        channel.exchange.start()
         await task_graph(
             _publisher(),
             _subscriber(),
-            timeout=1
+            timeout=5.0
         )
-        debug(messages)
         assert messages
 
 class TestSubscription:

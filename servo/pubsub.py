@@ -184,16 +184,32 @@ class Channel(pydantic.BaseModel):
         for subscriber in self.exchange._subscribers_to_channel(self, exclusive=True):
             subscriber.cancel()
 
-    # TODO: put an iterator on here that runs until the channel closes
-    # TODO: the iterator method creates a temp subscriber and then iterates it
-    # TODO: create an _Iterable parent class
+    def stop(self) -> None:
+        """Stop the current async iterator.
 
-    def __aiter__(self): # noqa: D105
+        The iterator to be stopped is determined by the current iteration scope.
+        Calling stop on a parent iterator scope will trigger a `RuntimeError`.
+
+        Raises:
+            RuntimeError: Raised if there is not an active iterator or the receiver
+                is not being iterated in the local scope.
+        """
+        iterator = _current_iterator()
+        if iterator is not None:
+            # Find subscribers to this channel
+            subscribers = self.exchange._subscribers_to_channel(self, exclusive=True)
+            if iterator.subscriber not in subscribers:
+                raise RuntimeError(f"Attempted to stop an inactive iterator")
+            iterator.stop()
+        else:
+            raise RuntimeError("Attempted to stop outside of an iterator")
+
+    def __aiter__(self):  # noqa: D105
         if self.closed:
             raise RuntimeError(f"Cannot iterate messages in a closed Channel")
         subscriber = self.exchange.create_subscriber(self.name)
-        iterator = _Iterator(subscriber)
-        # self._iterators.append(iterator)
+        iterator: _Iterator = subscriber.__aiter__()
+        iterator.yield_channel = False
         return iterator
 
     def __hash__(self): # noqa: D105
@@ -417,11 +433,11 @@ class Exchange(pydantic.BaseModel):
         """
         self._subscribers.remove(subscriber)
 
-    def _subscribers_to_channel(self, channel: Channel, *, exclusive: bool = False) -> List[Channel]:
+    def _subscribers_to_channel(self, channel: Channel, *, exclusive: bool = False) -> List[Subscriber]:
         if exclusive:
-            return list(filter(lambda c: c.subscription.name == channel.name, self._channels))
+            return list(filter(lambda s: s.subscription.selector == channel.name, self._subscribers))
         else:
-            return list(filter(lambda c: c.subscription.matches(c), self._channels))
+            return list(filter(lambda s: s.subscription.matches(channel), self._subscribers))
 
     def __repr_args__(self) -> pydantic.ReprArgs:
         return [
@@ -523,6 +539,7 @@ _current_iterator_var = contextvars.ContextVar("servo.pubsub._Iterator.current",
 
 class _Iterator(pydantic.BaseModel):
     subscriber: Subscriber
+    yield_channel: bool = True
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _stopped: asyncio.Event = pydantic.PrivateAttr(False)
     _message_reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
@@ -563,9 +580,10 @@ class _Iterator(pydantic.BaseModel):
             self._stop_iteration()
 
         _current_context_var.set(message_context)
-        # TODO: Here I need to support modes. When we iterate from channel, we only want message.
-        # TODO: maybe I can just do this with an overloaded iterator on channel?
-        return message_context
+        if self.yield_channel:
+            return message_context
+        else:
+            return message_context[0]
 
     def __hash__(self): # noqa: D105
         return hash(
@@ -682,7 +700,7 @@ class Subscriber(pydantic.BaseModel):
                 else:
                     await iterator(message, channel)
 
-    def __aiter__(self) -> Subscriber:
+    def __aiter__(self):  # noqa: D105
         iterator = _Iterator(self)
         self._iterators.append(iterator)
         return iterator
