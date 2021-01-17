@@ -13,7 +13,7 @@ import json as json_
 import re
 import yaml as yaml_
 
-from typing import Any, AsyncIterable, AsyncContextManager, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union
+from typing import Any, AsyncIterable, AsyncContextManager, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union
 
 import pydantic
 import servo.types
@@ -157,10 +157,44 @@ class Channel(pydantic.BaseModel):
     description: Optional[str] = None
     created_at: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
     exchange: Exchange
+    _closed: bool = pydantic.PrivateAttr(False)
 
     async def publish(self, message: Message) -> None:
         """Publish a Message into the Channel."""
+        if self.closed:
+            raise RuntimeError(f"Cannot publish messages to a closed Channel")
         await self.exchange.publish(message, self)
+
+    @property
+    def closed(self) -> bool:
+        """Return True if the channel has been closed and can no longer receive messages."""
+        return self._closed
+
+    async def close(self) -> None:
+        """Close the channel.
+
+        Closing a channel will cancel any exclusive Subscribers. Exclusive Subscribers are
+        subscribed with the literal channel name and not through a pattern.
+        """
+        if self.closed:
+            raise RuntimeError("Channel is already closed")
+
+        self._closed = True
+
+        for subscriber in self.exchange._subscribers_to_channel(self, exclusive=True):
+            subscriber.cancel()
+
+    # TODO: put an iterator on here that runs until the channel closes
+    # TODO: the iterator method creates a temp subscriber and then iterates it
+    # TODO: create an _Iterable parent class
+
+    def __aiter__(self): # noqa: D105
+        if self.closed:
+            raise RuntimeError(f"Cannot iterate messages in a closed Channel")
+        subscriber = self.exchange.create_subscriber(self.name)
+        iterator = _Iterator(subscriber)
+        # self._iterators.append(iterator)
+        return iterator
 
     def __hash__(self): # noqa: D105
         return hash(
@@ -170,7 +204,7 @@ class Channel(pydantic.BaseModel):
         )
 
 
-_context_var = contextvars.ContextVar("servo.pubsub.current_context", default=None)
+_current_context_var = contextvars.ContextVar("servo.pubsub.current_context", default=None)
 
 def current_context() -> Optional[Tuple[Message, Channel]]:
     """Return the Message and Channel for the current execution context, if any.
@@ -181,7 +215,7 @@ def current_context() -> Optional[Tuple[Message, Channel]]:
 
     The value is managed by a contextvar and is concurrency safe.
     """
-    return _context_var.get()
+    return _current_context_var.get()
 
 
 class Exchange(pydantic.BaseModel):
@@ -194,7 +228,7 @@ class Exchange(pydantic.BaseModel):
 
     def start(self) -> None:
         """Start exchanging Messages between Publishers and Subscribers."""
-        if self.is_running:
+        if self.running:
             raise RuntimeError("the Exchange is already running")
         self._queue_processor = asyncio.create_task(self._process_queue())
 
@@ -207,7 +241,7 @@ class Exchange(pydantic.BaseModel):
 
     async def shutdown(self) -> None:
         """Shutdown the Exchange by processing all Messages and clearing all child objects."""
-        if not self.is_running:
+        if not self.running:
             raise RuntimeError("the Exchange is not running")
         await self._queue.join()
         self._queue_processor.cancel()
@@ -227,7 +261,7 @@ class Exchange(pydantic.BaseModel):
             self._queue.task_done()
 
     @property
-    def is_running(self) -> bool:
+    def running(self) -> bool:
         """Return True if the Exchange is processing Messages."""
         return self._queue_processor is not None and not self._queue_processor.done()
 
@@ -259,6 +293,17 @@ class Exchange(pydantic.BaseModel):
         channel.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._channels.add(channel)
         return channel
+
+    def remove_channel(self, channel: Channel) -> None:
+        """Remove a Channel from the Exchange.
+
+        Args:
+            channel: The Channel to remove.
+
+        Raises:
+            ValueError: Raised if the given Channel is not in the Exchange.
+        """
+        self._channels.remove(channel)
 
     async def publish(self, message: Message, channel: Union[Channel, str]) -> None:
         """Publish a Message to a Channel, notifying all Subscribers asynchronously.
@@ -372,9 +417,15 @@ class Exchange(pydantic.BaseModel):
         """
         self._subscribers.remove(subscriber)
 
+    def _subscribers_to_channel(self, channel: Channel, *, exclusive: bool = False) -> List[Channel]:
+        if exclusive:
+            return list(filter(lambda c: c.subscription.name == channel.name, self._channels))
+        else:
+            return list(filter(lambda c: c.subscription.matches(c), self._channels))
+
     def __repr_args__(self) -> pydantic.ReprArgs:
         return [
-            ('running', self.is_running),
+            ('running', self.running),
             ('channel_names', list(map(lambda c: c.name, self._channels))),
             ('publisher_count', len(self._publishers)),
             ('subscriber_count', len(self._subscribers)),
@@ -389,23 +440,24 @@ class Exchange(pydantic.BaseModel):
         return False
 
 
-Channel.update_forward_refs()
-
-
 class BaseSubscription(abc.ABC, pydantic.BaseModel):
     """Abstract base class for pub/sub subscriptions.
 
-    Subscriptions are responsible for matching the Messages and Channels
-    that a Subscriber is interested in.
+    Subscriptions are responsible for matching the Channels and Messages
+    that a Subscriber is interested in. Subclass implementations must provide
+    a `matches` method that evaluates the given `Channel` and optional `Message`
+    objects. Subscriptions must always be matchable against channels. The message
+    is provided for implementing attribute or content based matching when evaluating
+    a published message.
     """
 
     @abc.abstractmethod
-    def matches(self, message: Message, channel: Channel) -> bool:
-        """Return True if the message and/or channel given match the subscription.
+    def matches(self, channel: Channel, message: Optional[Message] = None) -> bool:
+        """Return True if the channel and message match the subscription.
 
         Args:
-            message: A Message to evaluate.
-            channel: The Channel that the Message was published to.
+            channel: The Channel to match against.
+            message: The optional Message to match against.
         """
 
 
@@ -447,13 +499,16 @@ class Subscription(BaseSubscription):
 
         return v
 
-    def matches(self, message: Message, channel: Channel) -> bool:
-        """Return True if the message and/or channel given match the subscription.
+    def matches(self, channel: Channel, message: Optional[Message] = None) -> bool:
+        """Return True if the channel and message matches the subscription.
 
         Args:
-            message: A Message to evaluate.
-            channel: The Channel that the Message was published to.
+            channel: The Channel to match against.
+            message: The optional Message to match against.
         """
+        if channel is None:
+            raise ValueError("`channel` cannot be `None`")
+
         selector = self.selector
         if isinstance(selector, re.Pattern):
             return bool(selector.fullmatch(channel.name))
@@ -463,15 +518,72 @@ class Subscription(BaseSubscription):
         raise ValueError(f"unknown selector type: {selector.__class__.__name__}")
 
 
+_current_iterator_var = contextvars.ContextVar("servo.pubsub._Iterator.current", default=None)
+
+
+class _Iterator(pydantic.BaseModel):
+    subscriber: Subscriber
+    _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
+    _stopped: asyncio.Event = pydantic.PrivateAttr(False)
+    _message_reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
+    _iterator_reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
+
+    def __init__(self, subscriber: Subscriber, **kwargs) -> None:
+        super().__init__(**kwargs, subscriber=subscriber)
+        self.subscriber = subscriber  # Pydantic copying
+        self._message_reset_token = _current_context_var.set(None)
+        self._iterator_reset_token = _current_iterator_var.set(self)
+
+    def stop(self) -> None:
+        self._stopped = True
+        self._queue.put_nowait(
+            None
+        )
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped
+
+    async def __call__(self, message: Message, channel: Channel) -> None:
+        await self._queue.put(
+            (message, channel)
+        )
+
+    def _stop_iteration(self) -> None:
+        _current_context_var.reset(self._message_reset_token)
+        _current_iterator_var.reset(self._iterator_reset_token)
+        raise StopAsyncIteration
+
+    async def __anext__(self) -> Tuple[Message, Channel]:
+        if self.stopped:
+            self._stop_iteration()
+
+        message_context = await self._queue.get()
+        if message_context is None:
+            self._stop_iteration()
+
+        _current_context_var.set(message_context)
+        # TODO: Here I need to support modes. When we iterate from channel, we only want message.
+        # TODO: maybe I can just do this with an overloaded iterator on channel?
+        return message_context
+
+    def __hash__(self): # noqa: D105
+        return hash(
+            (
+                id(self),
+            )
+        )
+
+
 Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
 
 
 class Subscriber(pydantic.BaseModel):
     """A Subscriber consumes relevant Messages published to an Exchange.
 
-    Subscribers can either invoke a callback when a new Message is available or
-    can be used as an asynchronous iterator to process Messages. The `stop` method
-    will halt message processing and stop async iteration.
+    Subscribers can invoke a callback when a new Message is published and can be used
+    as an asynchronous iterator to process Messages. The `cancel` method
+    will halt message processing and stop any attached async iterators.
 
     Subscribers are asynchronously callable for notification of the publication of new Messages.
 
@@ -495,68 +607,94 @@ class Subscriber(pydantic.BaseModel):
                 print(f"Notified of a new Message: {message}, {channel}")
 
                 # Break out of processing
-                subscriber.stop()
+                subscriber.cancel()
             ```
     """
     exchange: Exchange
     subscription: Subscription
     callback: Optional[Callback]
-
-    # supports usage as an async iterator
-    _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
-    _reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
+    _iterators: List[_Iterator] = pydantic.PrivateAttr([])
 
     def stop(self) -> None:
-        """Stop the subscriber from processing any further Messages."""
+        """Stop the current async iterator.
+
+        The iterator to be stopped is determined by the current iteration scope.
+        Calling stop on a parent iterator scope will trigger a `RuntimeError`.
+
+        Raises:
+            RuntimeError: Raised if there is not an active iterator or the receiver
+                is not being iterated in the local scope.
+        """
+        iterator = _current_iterator()
+        if iterator is not None:
+            if iterator.subscriber != self:
+                raise RuntimeError(f"Attempted to stop an inactive iterator")
+            iterator.stop()
+        else:
+            raise RuntimeError("Attempted to stop outside of an iterator")
+
+    def cancel(self) -> None:
+        """Cancel the subscriber from receiving any further Messages.
+
+        Any objects waiting on the Subscriber and any async iterators are released.
+
+        Raises:
+            RuntimeError: Raised if the Subscriber has alreayd been cancelled.
+        """
+        if self.cancelled:
+            raise RuntimeError(f"Subscriber is already cancelled")
         self._event.set()
 
+        # Stop any attached iterators
+        for iterator in self._iterators:
+            iterator.stop()
+
+        self._iterators.clear()
+
     @property
-    def is_running(self) -> bool:
+    def cancelled(self) -> bool:
         """Return True if the subscriber is processing Messages."""
-        return not self._event.is_set()
+        return self._event.is_set()
+
+    async def wait(self) -> None:
+        """Wait for the subscriber to be cancelled.
+
+        The caller will block until the Subscriber is cancelled.
+        """
+        await self._event.wait()
 
     async def __call__(self, message: Message, channel: Channel) -> None:
-        if not self.is_running:
-            servo.logger.warning(f"ignoring call to stopped Subscriber: {self}")
+        if self.cancelled:
+            servo.logger.warning(f"ignoring call to cancelled Subscriber: {self}")
             return
 
-        if self.subscription.matches(message, channel):
+        if self.subscription.matches(channel, message):
             if self.callback:
                 if asyncio.iscoroutinefunction(self.callback):
                     await self.callback(message, channel)
                 else:
                     self.callback(message, channel)
-            else:
-                # enqueue for processing via async iteration
-                await self._queue.put(
-                    (message, channel)
-                )
+
+            for _, iterator in enumerate(self._iterators):
+                if iterator.stopped:
+                    self._iterators.remove(iterator)
+                else:
+                    await iterator(message, channel)
 
     def __aiter__(self) -> Subscriber:
-        if self.callback:
-            raise RuntimeError("Subscriber objects with a callback cannot be used as an async iterator")
-        return self
+        iterator = _Iterator(self)
+        self._iterators.append(iterator)
+        return iterator
 
-    async def __anext__(self) -> Tuple[Message, Channel]:
-        def _stop_iteration() -> None:
-            if self._reset_token:
-                _context_var.reset(self._reset_token)
-            raise StopAsyncIteration
+    def __eq__(self, other) -> bool:
+        # compare exchanges by object identity rather than fields
+        if isinstance(other, Subscriber):
+            return id(self) == id(other)
 
-        if not self.is_running:
-            _stop_iteration()
-
-        message_context = await self._queue.get()
-        if message_context is None:
-            _stop_iteration()
-
-        self._reset_token = _context_var.set(message_context)
-        return message_context
-
+        return False
     class Config:
         arbitrary_types_allowed = True
-
 
 
 class Publisher(pydantic.BaseModel):
@@ -658,7 +796,20 @@ class _SubscriberMethod:
 class Mixin(pydantic.BaseModel):
     """Provides a simple pub/sub stack for subclasses.
 
-    The exchange is initialized into a stopped state.
+    The `Mixin` class provides a very high-level API for interacting with the
+    pub/sub system. Most of the details of the module are abstracted away and
+    the interface exposed focuses three concepts: subscribing, publishing,
+    and cancellation. The API is opinionated and provides methods that are
+    usable as callable methods, decorators, or context managers. This keeps
+    down the cognitive load for downstream developers and narrows the surface
+    area in terms of attributes and methods introduced into subclasses. All
+    functionality provided by the mixin is implemented on the lower level
+    APIs of the module. It provides expressive, flexible abstractions but
+    if you want them but inheriting from `Mixin` is not required to utilize
+    the core functionality.
+
+    The exchange is initialized into a stopped state and must be started to
+    begin message exchange.
 
     Attributes:
         pubsub_exchange: The pub/sub Exchange that the object belongs to.
@@ -735,7 +886,8 @@ class Mixin(pydantic.BaseModel):
         )
 
         for subscriber in subscribers:
-            subscriber.stop()
+            if not subscriber.cancelled:
+                subscriber.cancel()
             self.pubsub_exchange.remove_subscriber(subscriber)
 
         self._subscribers_map = dict(
@@ -820,7 +972,8 @@ class Mixin(pydantic.BaseModel):
 
         for publisher, task in publisher_tuples:
             self.pubsub_exchange.remove_publisher(publisher)
-            task.cancel()
+            if not task.done():
+                task.cancel()
 
         self._publishers_map = dict(
             filter(lambda i: i[1] not in publisher_tuples, self._publishers_map.items())
@@ -828,7 +981,7 @@ class Mixin(pydantic.BaseModel):
 
 
 async def _deliver_message_to_subscribers(message: Message, channel: Channel, subscribers: List[Subscriber]) -> None:
-    reset_token = _context_var.set((message, channel))
+    reset_token = _current_context_var.set((message, channel))
     results = await asyncio.gather(
         *list(
             map(
@@ -845,4 +998,11 @@ async def _deliver_message_to_subscribers(message: Message, channel: Channel, su
             if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                 raise result
 
-    _context_var.reset(reset_token)
+    _current_context_var.reset(reset_token)
+
+
+def _current_iterator() -> Optional[AsyncIterator]:
+    return servo.pubsub._current_iterator_var.get()
+
+Channel.update_forward_refs()
+_Iterator.update_forward_refs()

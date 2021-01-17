@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import freezegun
+import itertools
 import operator
 import pytest
 import pytest_mock
@@ -10,7 +11,8 @@ import servo
 import servo.pubsub
 import servo.utilities.pydantic
 
-from typing import List, Optional
+from typing import Callable, List, Optional
+
 
 class TestMessage:
     def test_text_message(self) -> None:
@@ -87,7 +89,7 @@ async def exchange() -> servo.pubsub.Exchange:
     yield exchange
 
     # Shutdown the exchange it is left running
-    if exchange.is_running:
+    if exchange.running:
         await exchange.shutdown()
     else:
         exchange.clear()
@@ -148,6 +150,40 @@ class TestChannel:
             await channel.publish(message)
             spy.assert_called_once_with(message, channel)
 
+    async def test_publish_fails_if_channel_is_closed(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
+        await channel.close()
+        assert channel.closed
+        with pytest.raises(RuntimeError, match='Cannot publish messages to a closed Channel'):
+            await channel.publish(servo.pubsub.Message(text="foo"))
+
+    async def test_closing_channel_cancels_exclusive_subscribers(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
+        ...
+        # TODO: attach one subscriber directly, one via glob, and one via regex and then close the channel
+
+    async def test_iteration(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
+        messages = []
+
+        async def _subscriber() -> None:
+            debug("SUBSCRIBER STARTED")
+            async for message in channel:
+                debug("MESSAGE: ", message, channel)
+                messages.append(message)
+
+        async def _publisher() -> None:
+            await asyncio.sleep(1.0)
+            for i in range(3):
+                await channel.publish(servo.pubsub.Message(text=f"Message: {i}"))
+
+            debug("DONE sending messages")
+
+        await task_graph(
+            _publisher(),
+            _subscriber(),
+            timeout=1
+        )
+        debug(messages)
+        assert messages
+
 class TestSubscription:
     def test_string_selector(self) -> None:
         subscription = servo.pubsub.Subscription(selector="metrics")
@@ -169,8 +205,15 @@ class TestSubscription:
         other_channel = servo.pubsub.Channel(name="other", exchange=exchange)
         message = servo.pubsub.Message(text="foo")
         subscription = servo.pubsub.Subscription(selector="metrics")
-        assert subscription.matches(message, metrics_channel)
-        assert not subscription.matches(message, other_channel)
+        assert subscription.matches(metrics_channel, message)
+        assert not subscription.matches(other_channel, message)
+
+    def test_match_no_message(self, exchange: servo.pubsub.Exchange) -> None:
+        metrics_channel = servo.pubsub.Channel(name="metrics", exchange=exchange)
+        other_channel = servo.pubsub.Channel(name="other", exchange=exchange)
+        subscription = servo.pubsub.Subscription(selector="metrics")
+        assert subscription.matches(metrics_channel)
+        assert not subscription.matches(other_channel)
 
     @pytest.mark.parametrize(
         ("selector", "matches"),
@@ -188,7 +231,7 @@ class TestSubscription:
         metrics_channel = servo.pubsub.Channel(name="metrics.prometheus.http", exchange=exchange)
         message = servo.pubsub.Message(text="foo")
         subscription = servo.pubsub.Subscription(selector=selector)
-        assert subscription.matches(message, metrics_channel) == matches
+        assert subscription.matches(metrics_channel, message) == matches
 
     @pytest.mark.parametrize(
         ("selector", "matches"),
@@ -207,7 +250,7 @@ class TestSubscription:
         channel = servo.pubsub.Channel(name="metrics.prometheus.http", exchange=exchange)
         message = servo.pubsub.Message(text="foo")
         subscription = servo.pubsub.Subscription(selector=selector)
-        assert subscription.matches(message, channel) == matches, f"expected regex pattern '{selector}' match of '{channel.name}' to == {matches}"
+        assert subscription.matches(channel, message) == matches, f"expected regex pattern '{selector}' match of '{channel.name}' to == {matches}"
 
 
 @pytest.fixture
@@ -215,69 +258,215 @@ def subscriber(exchange: servo.pubsub.Exchange, subscription: servo.pubsub.Subsc
     return servo.pubsub.Subscriber(exchange=exchange, subscription=subscription)
 
 @pytest.fixture
-def subscription() -> servo.pubsub.Subscription:
+def subscription(exchange: servo.pubsub.Exchange) -> servo.pubsub.Subscription:
     return servo.pubsub.Subscription(selector="metrics*")
 
 
 class TestSubscriber:
-    def test_is_running_on_create(self, subscriber: servo.pubsub.Subscriber) -> None:
-        assert subscriber.is_running
+    def test_not_cancelled_on_create(self, subscriber: servo.pubsub.Subscriber) -> None:
+        assert not subscriber.cancelled
 
-    class TestCallback:
-        async def test_cannot_use_as_iterator(self, subscriber: servo.pubsub.Subscriber, mocker: pytest_mock.MockerFixture) -> None:
-            subscriber.callback = mocker.Mock()
-            with pytest.raises(RuntimeError, match="Subscriber objects with a callback cannot be used as an async iterator"):
-                async for message, channel in subscriber:
-                    ...
+    async def test_sync_callback_is_invoked(self, subscriber: servo.pubsub.Subscriber, mocker: pytest_mock.MockerFixture) -> None:
+        callback = mocker.Mock()
+        subscriber.callback = callback
 
-        async def test_sync_callback_is_invoked(self, subscriber: servo.pubsub.Subscriber, mocker: pytest_mock.MockerFixture) -> None:
-            callback = mocker.Mock()
-            subscriber.callback = callback
+        message = servo.pubsub.Message(text="foo")
+        channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
+        await subscriber(message, channel)
+        callback.assert_called_once_with(message, channel)
 
-            message = servo.pubsub.Message(text="foo")
-            channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
-            await subscriber(message, channel)
-            callback.assert_called_once_with(message, channel)
+    async def test_async_callback_is_invoked(self, subscriber: servo.pubsub.Subscriber, mocker: pytest_mock.MockerFixture) -> None:
+        callback = mocker.AsyncMock()
+        subscriber.callback = callback
 
-        async def test_async_callback_is_invoked(self, subscriber: servo.pubsub.Subscriber, mocker: pytest_mock.MockerFixture) -> None:
-            callback = mocker.AsyncMock()
-            subscriber.callback = callback
+        message = servo.pubsub.Message(text="foo")
+        channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
+        await subscriber(message, channel)
+        callback.assert_called_once_with(message, channel)
 
-            message = servo.pubsub.Message(text="foo")
-            channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
-            await subscriber(message, channel)
-            callback.assert_called_once_with(message, channel)
+    async def test_async_iteration(self, subscriber: servo.pubsub.Subscriber) -> None:
+        message = servo.pubsub.Message(text="foo")
+        channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
 
-    class TestAsyncIterator:
-        async def test_matched_messages_are_enqueued(self, subscriber: servo.pubsub.Subscriber) -> None:
-            message = servo.pubsub.Message(text="foo")
-            channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
-            await subscriber(message, channel)
-            assert subscriber._queue.qsize() == 1
-
-        async def test_non_matched_messages_are_not_enqueued(self, subscriber: servo.pubsub.Subscriber) -> None:
-            message = servo.pubsub.Message(text="foo")
-            channel = servo.pubsub.Channel(name="not.gonna.match", exchange=subscriber.exchange)
-            await subscriber(message, channel)
-            assert subscriber._queue.qsize() == 0
-
-        async def test_consuming_messages_via_async_iterator(self, subscriber: servo.pubsub.Subscriber) -> None:
-            message = servo.pubsub.Message(text="foo")
-            channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
-            for _ in range(3):
-                await subscriber(message, channel)
-            assert subscriber._queue.qsize() == 3
-
-            messages = []
+        messages = []
+        event = asyncio.Event()
+        async def _processor() -> None:
+            event.set()
             async for message_, channel_ in subscriber:
                 assert message_ == message
                 assert channel_ == channel
                 messages.append(message_)
 
                 if len(messages) == 3:
+                    subscriber.cancel()
+
+        task = asyncio.create_task(_processor())
+        await event.wait()
+        for _ in range(3):
+            await subscriber(message, channel)
+        await task
+        assert len(messages) == 3
+
+    @pytest.fixture
+    async def iterator_task_factory(self) -> Callable[[], asyncio.Task]:
+        # TODO: This should accept a callback for customization
+        async def _iterator_task_factory(subscriber: servo.pubsub.Subscriber) -> asyncio.Task:
+            event = asyncio.Event()
+            async def _iterate() -> None:
+                messages = []
+                event.set()
+                async for message_, channel_ in subscriber:
+                    messages.append(message_)
+
+                    if len(messages) == 3:
+                        subscriber.stop()
+
+                return messages
+
+            task = asyncio.create_task(_iterate())
+            await event.wait()
+            return task
+        return _iterator_task_factory
+
+    async def test_multiple_iterators(self, subscriber: servo.pubsub.Subscriber, iterator_task_factory: Callable[[], asyncio.Task]) -> None:
+        message = servo.pubsub.Message(text="foo")
+        channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
+
+        tasks = await asyncio.gather(
+            iterator_task_factory(subscriber),
+            iterator_task_factory(subscriber),
+            iterator_task_factory(subscriber)
+        )
+        for _ in range(3):
+            await subscriber(message, channel)
+        results = await asyncio.gather(*tasks)
+        messages = list(itertools.chain(*results))
+        assert len(messages) == 9
+
+    async def test_iterator_context(self, channel: servo.pubsub.Subscriber, subscriber: servo.pubsub.Subscriber) -> None:
+        other_subscriber = servo.pubsub.Subscriber(exchange=subscriber.exchange, subscription=subscriber.subscription)
+
+        async def _create_iterator(subscriber_, current):
+            assert servo.pubsub._current_iterator() == current
+            async for message_, channel_ in subscriber_:
+                iterator = servo.pubsub._current_iterator()
+                assert iterator
+                assert iterator is not None, "Iterator context should not be None"
+                assert iterator.subscriber == subscriber_
+                subscriber_.stop()
+
+        task = asyncio.gather(*[
+            _create_iterator(subscriber, None),
+            _create_iterator(other_subscriber, None),
+        ])
+        await asyncio.sleep(0.1)
+
+        for subscriber in [subscriber, other_subscriber]:
+            await subscriber(servo.pubsub.Message(text="foo"), channel)
+
+        await task
+
+    async def test_waiting(self, channel: servo.pubsub.Subscriber, subscriber: servo.pubsub.Subscriber) -> None:
+        async def _iterator() -> None:
+            async for message, channel in subscriber:
+                subscriber.cancel()
+
+        await asyncio.wait_for(
+            task_graph(
+                subscriber(servo.pubsub.Message(text="foo"), channel),
+                _iterator(),
+                subscriber.wait()
+            ),
+            timeout=1.0
+        )
+        assert subscriber.cancelled
+
+    async def test_cannot_stop_inactive_iterator(self, channel, subscriber: servo.pubsub.Subscriber) -> None:
+        other_subscriber = servo.pubsub.Subscriber(exchange=subscriber.exchange, subscription=subscriber.subscription)
+
+        await asyncio.sleep(5)
+        async def _test() -> self:
+            with pytest.raises(RuntimeError, match="Attempted to stop an inactive iterator"):
+                async for message_, channel_ in subscriber:
+                    iterator = servo.pubsub._current_iterator()
+                    assert iterator
+                    assert iterator.subscriber == subscriber
+                    other_subscriber.stop()
+
+        await asyncio.gather(
+            _test(),
+            subscriber(servo.pubsub.Message(text="foo"), channel)
+        )
+
+    async def test_cannot_stop_without_an_iterator(self, subscriber: servo.pubsub.Subscriber) -> None:
+        with pytest.raises(RuntimeError, match="Attempted to stop outside of an iterator"):
+            subscriber.stop()
+
+    async def test_cancellation_stops_all_iterators(self, channel, subscriber: servo.pubsub.Subscriber) -> None:
+        async def _create_iterator():
+            # will block waiting for messages
+            async for message_, channel_ in subscriber:
+                ...
+
+        async def _cancel():
+            subscriber.cancel()
+
+        await asyncio.wait_for(
+            task_graph(
+                _cancel(),
+                _create_iterator(), _create_iterator(), _create_iterator()
+            ),
+            timeout=1.0
+        )
+
+    async def _test_cannot_stop_nested_iterator(self, subscriber: servo.pubsub.Subscriber, iterator_task_factory: Callable[[], asyncio.Task]) -> None:
+        channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
+        assert channel
+        other_subscriber = subscriber.exchange.create_subscriber('metrics')
+        assert other_subscriber
+
+        async def _boom() -> None:
+            debug("OUTER WAIT", subscriber, other_subscriber)
+            async for message_, channel_ in subscriber:
+                debug("INNER WAIT")
+                # other_subscriber.stop()
+                async for message_, channel_ in other_subscriber:
+                    # Try to cancel the other subscriber to blow it up
                     subscriber.stop()
 
-            assert len(messages) == 3
+        task = asyncio.create_task(_boom())
+
+        async def _emit_messages(*subscribers, channel) -> None:
+            while True:
+                for subscriber in subscribers:
+                    debug("\n\nSENDIND TO", subscriber)
+                    await subscriber(servo.pubsub.Message(text="foo"), channel)
+                    debug("BACK", subscriber)
+                debug("SENT")
+
+        debug("GATHERING")
+        await asyncio.gather(_emit_messages(subscriber, other_subscriber, channel=channel), task)
+        # debug("emitting")
+        # await _emit_messages(subscriber, other_subscriber, channel=channel)
+        # debug("waiting on task")
+        # await task
+        # await asyncio.gather(*tasks)
+        # await asyncio.gather()
+        # with pytest.raises
+        # other_subscriber
+        # async def _iterate() -> None:
+        #     async for message_, channel_ in subscriber:
+        #         messages.append(message_)
+
+        #         if len(messages) == 3:
+        #             subscriber.stop()
+
+        #     return messages
+
+        # task = asyncio.create_task(_iterate())
+        # other_subscriber = subscriber.exchange.create_subscriber('whatever', callback=lambda m, c: subscriber.stop())
+
+
 
 
 @pytest.fixture
@@ -296,12 +485,12 @@ class TestPublisher:
 
 class TestExchange:
     def test_starts_not_running(self, exchange: servo.pubsub.Exchange) -> None:
-        assert not exchange.is_running
+        assert not exchange.running
 
     async def test_start(self, exchange: servo.pubsub.Exchange) -> None:
-        assert not exchange.is_running
+        assert not exchange.running
         exchange.start()
-        assert exchange.is_running
+        assert exchange.running
         await exchange.shutdown()
 
     def test_clear(self, exchange: servo.pubsub.Exchange) -> None:
@@ -327,14 +516,14 @@ class TestExchange:
             exchange.create_subscriber(name)
 
         exchange.start()
-        assert exchange.is_running
+        assert exchange.running
         assert len(exchange.channels) == 3
         assert len(exchange._publishers) == 3
         assert len(exchange._subscribers) == 3
 
         await exchange.shutdown()
 
-        assert not exchange.is_running
+        assert not exchange.running
         assert len(exchange.channels) == 0
         assert len(exchange._publishers) == 0
         assert len(exchange._subscribers) == 0
@@ -356,6 +545,12 @@ class TestExchange:
         exchange.create_channel("whatever")
         with pytest.raises(ValueError, match="A Channel named 'whatever' already exists"):
             exchange.create_channel("whatever")
+
+    async def test_remove_publisher(self, exchange: servo.pubsub.Exchange) -> None:
+        channel = exchange.create_channel("whatever")
+        assert channel in exchange.channels
+        channel = exchange.remove_channel(channel)
+        assert channel not in exchange.channel
 
     async def test_publish(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
@@ -486,7 +681,7 @@ class TestExchange:
                     messages.append(message)
 
                     if len(messages) == 10:
-                        subscription.stop()
+                        subscription.cancel()
 
             return messages
 
@@ -535,7 +730,6 @@ class TestExchange:
         assert current_context[1].exchange == exchange
         assert servo.pubsub.current_context() is None
 
-
     async def test_current_context_in_iterator(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
         publisher = exchange.create_publisher("metrics.http.production")
@@ -557,7 +751,7 @@ class TestExchange:
 
                 async for message, channel in subscription:
                     current_context = servo.pubsub.current_context()
-                    subscription.stop()
+                    subscription.cancel()
 
         await asyncio.wait_for(
             asyncio.gather(_publisher_func(), _subscriber_func()),
@@ -590,7 +784,7 @@ class TestMixin:
     async def host_object(self) -> HostObject:
         host_object = HostObject()
         yield host_object
-        if host_object.pubsub_exchange.is_running:
+        if host_object.pubsub_exchange.running:
             await host_object.pubsub_exchange.shutdown()
         else:
             host_object.pubsub_exchange.clear()
@@ -647,13 +841,15 @@ class TestMixin:
                 ...
 
     async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
+        event = asyncio.Event()
         stub = mocker.stub()
+        stub.side_effect=lambda x,y: event.set()
         await host_object._test_subscriber_decorator(stub)
         host_object.pubsub_exchange.start()
         channel = host_object.pubsub_exchange.create_channel("metrics")
         message = servo.pubsub.Message(json={"throughput": "31337rps"})
         await host_object.pubsub_exchange.publish(message, channel)
-        await asyncio.sleep(0.2)
+        await event.wait()
         stub.assert_called_once_with(message, channel)
 
     async def test_subscriber_context_manager(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
@@ -673,7 +869,7 @@ class TestMixin:
 
                 async for message, channel in subscriber:
                     stub(message, channel)
-                    subscriber.stop()
+                    subscriber.cancel()
 
         await asyncio.wait_for(
             asyncio.gather(_publisher(), _subscriber()),
@@ -711,12 +907,11 @@ class TestMixin:
             spy.assert_called_once()
 
             subscriber = spy.call_args.args[0]
-            assert not subscriber.is_running
+            assert subscriber.cancelled
             assert subscriber not in host_object.pubsub_exchange._subscribers
             assert len(host_object.pubsub_exchange._subscribers) == 1
             assert len(host_object._subscribers_map) == 1
             assert host_object._subscribers_map['another_subscriber']
-
 
     async def test_cancel_all_subscribers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         stub = mocker.stub()
@@ -732,27 +927,11 @@ class TestMixin:
 
             for args in spy.call_args_list:
                 subscriber, = args[0]
-                assert not subscriber.is_running
+                assert subscriber.cancelled
                 assert subscriber not in host_object.pubsub_exchange._subscribers
 
             assert len(host_object.pubsub_exchange._subscribers) == 0
             assert len(host_object._subscribers_map) == 0
-
-    async def test_cancel_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
-        stub = mocker.stub()
-        await host_object._test_subscriber_decorator(stub)
-        await host_object._test_subscriber_decorator(stub, name="another_subscriber")
-        with servo.utilities.pydantic.extra(host_object.pubsub_exchange):
-            spy = mocker.spy(host_object.pubsub_exchange, "remove_subscriber")
-            host_object.cancel_subscribers('_message_received')
-            spy.assert_called_once()
-
-            subscriber = spy.call_args.args[0]
-            assert not subscriber.is_running
-            assert subscriber not in host_object.pubsub_exchange._subscribers
-            assert len(host_object.pubsub_exchange._subscribers) == 1
-            assert len(host_object._subscribers_map) == 1
-            assert host_object._subscribers_map['another_subscriber']
 
     async def test_cancel_publishers(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         await host_object._test_publisher_decorator()
@@ -788,3 +967,51 @@ class TestMixin:
 
             assert len(host_object.pubsub_exchange._publishers) == 0
             assert len(host_object._publishers_map) == 0
+
+
+class CountDownLatch:
+    def __init__(self, count=1):
+        self._count = count
+        self._condition = asyncio.Condition()
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    async def decrement(self):
+        async with self._condition:
+            self._count -= 1
+            if self._count <= 0:
+                self._condition.notify_all()
+
+    async def wait(self):
+        async with self._condition:
+            await self._condition.wait()
+
+
+async def task_graph(task, *dependencies, timeout: Optional[servo.Duration] = None):
+    async def _main_task():
+        await latch.wait()
+        await _run_task(task)
+
+    async def _run_task(task):
+        if asyncio.iscoroutinefunction(task):
+            await task()
+        elif asyncio.iscoroutine(task):
+            await task
+        else:
+            task()
+
+    async def _dependent_task(task):
+        await latch.decrement()
+        await _run_task(task)
+
+    latch = CountDownLatch(len(dependencies))
+    timeout_ = timeout and servo.Duration(timeout).total_seconds()
+    await asyncio.wait_for(
+        asyncio.gather(
+            _main_task(),
+            *list(map(_dependent_task, dependencies))
+        ),
+        timeout=timeout_
+    )

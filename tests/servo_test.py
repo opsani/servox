@@ -359,9 +359,9 @@ async def test_startup_event(mocker, servo: servo) -> None:
 
 async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
-    assert not servo.pubsub_exchange.is_running
+    assert not servo.pubsub_exchange.running
     await servo.startup()
-    assert servo.pubsub_exchange.is_running
+    assert servo.pubsub_exchange.running
     await servo.pubsub_exchange.shutdown()
 
 async def test_shutdown_event(mocker, servo: servo) -> None:
@@ -373,9 +373,9 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
 
 async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
     servo.pubsub_exchange.start()
-    assert servo.pubsub_exchange.is_running
+    assert servo.pubsub_exchange.running
     await servo.shutdown()
-    assert not servo.pubsub_exchange.is_running
+    assert not servo.pubsub_exchange.running
 
 
 async def test_dispatching_event_that_doesnt_exist(mocker, servo: servo) -> None:

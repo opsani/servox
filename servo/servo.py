@@ -223,7 +223,7 @@ class Servo(servo.connector.BaseConnector):
         await self.dispatch_event(Events.startup, _prepositions=servo.events.Preposition.on)
 
         # Start up the pub/sub exchange
-        if not self.pubsub_exchange.is_running:
+        if not self.pubsub_exchange.running:
             self.pubsub_exchange.start()
 
     async def shutdown(self):
@@ -231,7 +231,7 @@ class Servo(servo.connector.BaseConnector):
         await self.dispatch_event(Events.shutdown, _prepositions=servo.events.Preposition.on)
 
         # Shut down the pub/sub exchange
-        if self.pubsub_exchange.is_running:
+        if self.pubsub_exchange.running:
             await self.pubsub_exchange.shutdown()
 
     @property
