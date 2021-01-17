@@ -628,6 +628,23 @@ class TestExchange:
         assert subscriber.exchange == exchange
         assert subscriber in exchange._subscribers
 
+    async def test_create_subscriber_with_dependency(self, exchange: servo.pubsub.Exchange) -> None:
+        async def _dependency() -> None:
+            ...
+
+        exchange.start()
+        subscriber = exchange.create_subscriber('whatever', until_done=_dependency())
+        async for event in subscriber:
+            # block forever unless the dependency intervenes
+            ...
+
+    async def test_create_subscriber_with_timeout(self, exchange: servo.pubsub.Exchange) -> None:
+        exchange.start()
+        subscriber = exchange.create_subscriber('whatever', timeout=0.01)
+        async for event in subscriber:
+            # block forever unless the timeout intervenes
+            ...
+
     async def test_remove_subscriber(self, exchange: servo.pubsub.Exchange) -> None:
         subscriber = exchange.create_subscriber('whatever')
         assert subscriber

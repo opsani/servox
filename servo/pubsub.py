@@ -420,7 +420,13 @@ class Exchange(pydantic.BaseModel):
         self._publishers.remove(publisher)
 
     @contextlib.asynccontextmanager
-    async def subscribe(self, selector: Selector) -> AsyncContextManager[Subscriber]:
+    async def subscribe(
+        self,
+        selector: Selector,
+        *,
+        timeout: Optional[servo.types.DurationDescriptor] = None,
+        until_done: Optional[servo.types.Futuristic] = None
+    ) -> AsyncContextManager[Subscriber]:
         """An async context manager for subscribing to Messages in the Exchange.
 
         A Subscriber is created, yielded to the caller, and deleted upon return.
@@ -435,18 +441,27 @@ class Exchange(pydantic.BaseModel):
         Yields:
             Subscriber: The block temporary subscriber.
         """
-        subscriber = self.create_subscriber(selector)
+        subscriber = self.create_subscriber(selector, timeout=timeout, until_done=until_done)
         try:
             yield subscriber
         finally:
             self._subscribers.remove(subscriber)
 
-    def create_subscriber(self, selector: Selector, *, callback: Optional[Callback] = None) -> Subscriber:
+    def create_subscriber(
+        self,
+        selector: Selector,
+        *,
+        callback: Optional[Callback] = None,
+        timeout: Optional[servo.types.DurationDescriptor] = None,
+        until_done: Optional[servo.types.Futuristic] = None
+    ) -> Subscriber:
         """Create and return a new Subscriber with the given selector.
 
         Args:
             selector: A string or regular expression pattern matching Channels of interest.
             callback: An optional callback for processing Messages received.
+            timeout: An optional duration description for specifying when to cancel the request.
+            until_done: An optional future to to tie the subscription lifetime to.
 
         Returns:
             A new Subscriber object listening for Messages.
@@ -455,6 +470,22 @@ class Exchange(pydantic.BaseModel):
         subscriber = Subscriber(exchange=self, subscription=subscription, callback=callback)
         subscriber.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._subscribers.append(subscriber)
+
+        # Handle async affordances
+        def _cancelizer(*args, **kwargs) -> None:
+            if not subscriber.cancelled:
+                subscriber.cancel()
+
+        if until_done:
+            future = asyncio.ensure_future(until_done)
+            future.add_done_callback(_cancelizer)
+
+        if timeout is not None:
+            asyncio.get_event_loop().call_later(
+                servo.Duration(timeout).total_seconds(),
+                _cancelizer
+            )
+
         return subscriber
 
     def remove_subscriber(self, subscriber: Subscriber) -> None:
@@ -823,20 +854,25 @@ class _SubscriberMethod:
         parent: Mixin,
         selector: Selector,
         name: Optional[str] = None,
+        timeout: Optional[servo.types.DurationDescriptor] = None,
+        until_done: Optional[servo.types.Futuristic] = None
     ) -> None:
         super().__init__()
         self.pubsub_exchange = parent.pubsub_exchange
         self._subscribers_map = parent._subscribers_map
         self.selector = selector
         self.name = name
+        self.timeout = timeout
+        self.until_done = until_done
 
     def __call__(self, fn) -> None:
         name_ = self.name or fn.__name__
         if name_ in self._subscribers_map:
             raise KeyError(f"a Subscriber named '{name_}' already exists")
 
-        subscriber = self.pubsub_exchange.create_subscriber(self.selector, callback=fn)
-        self._subscribers_map[name_] = subscriber
+        self._subscribers_map[name_] = self.pubsub_exchange.create_subscriber(
+            self.selector, callback=fn, timeout=self.timeout, until_done=self.until_done
+        )
 
     async def __aenter__(self) -> None:
         self.subscriber = self.pubsub_exchange.create_subscriber(self.selector)
@@ -880,7 +916,14 @@ class Mixin(pydantic.BaseModel):
         if exchange := kwargs.get('pubsub_exchange'):
             self.pubsub_exchange = exchange
 
-    def subscribe(self, selector: Selector, *, name: Optional[str] = None) -> None:
+    def subscribe(
+        self,
+        selector: Selector,
+        *,
+        name: Optional[str] = None,
+        timeout: Optional[servo.types.DurationDescriptor] = None,
+        until_done: Optional[asyncio.Future] = None
+    ) -> None:
         """Create a Subscriber in the pub/sub Exchange.
 
         This method can be used as a decorator or as a context manager.
@@ -919,7 +962,14 @@ class Mixin(pydantic.BaseModel):
                     print(f"Notified of a new Message: {message}, {channel}")
             ```
         """
-        return _SubscriberMethod(self, selector=selector, name=name)
+        return _SubscriberMethod(
+            self,
+            selector=selector,
+            name=name,
+            timeout=timeout,
+            until_done=until_done
+        )
+
 
     def cancel_subscribers(self, *names: List[str]) -> None:
         """Cancel active pub/sub subscribers.
