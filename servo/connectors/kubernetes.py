@@ -1345,7 +1345,7 @@ class ControllerModel(KubernetesModel):
     async def get_pods(self) -> List[Pod]:
         """Get the pods for the controller.
         Returns:
-            A list of pods that belong to the deployment.
+            A list of pods that belong to the controller.
         """
         self.logger.info(f'getting pods for {self.kind} "{self.name}"')
 
@@ -1362,7 +1362,7 @@ class ControllerModel(KubernetesModel):
         Returns:
             A list of pods that belong to the latest controller replicaset.
         """
-        self.logger.info(f'getting replicaset for deployment "{self.name}"')
+        self.logger.info(f'getting replicaset for {self.kind} "{self.name}"')
         # TODO: break up below functionality into methods of a Replicaset wrapper class
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             api_client =kubernetes_asyncio.client.AppsV1Api(api)
@@ -1436,14 +1436,14 @@ class ControllerModel(KubernetesModel):
         """
         await self.refresh()
 
-        # if there is no status, the deployment is definitely not ready
+        # if there is no status, the controller is definitely not ready
         status = self.obj.status
         if status is None:
             return False
 
         # check the status for the number of total replicas and compare
         # it to the number of ready replicas. if the numbers are
-        # equal, the deployment is ready; otherwise it is not ready.
+        # equal, the controller is ready; otherwise it is not ready.
         total = status.replicas
         ready = status.ready_replicas
 
@@ -1524,14 +1524,14 @@ class ControllerModel(KubernetesModel):
         index: Optional[int] = None
         ) -> None:
         """
-        Injects an Envoy sidecar into a target Deployment that proxies a service
+        Injects an Envoy sidecar into a target Controller that proxies a service
         or literal TCP port, generating scrapable metrics usable for optimization.
 
         The service or port argument must be provided to define how traffic is proxied
         between the Envoy sidecar and the container responsible for fulfilling the request.
 
         Args:
-            deployment: Name of the target Deployment to inject the sidecar into.
+            self: Reference to the target controller to inject the sidecar into.
             service: Name of the service to proxy. Envoy will accept ingress traffic
                 on the service port and reverse proxy requests back to the original
                 target container.
@@ -1542,7 +1542,7 @@ class ControllerModel(KubernetesModel):
     @abc.abstractmethod
     @contextlib.asynccontextmanager
     async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
-        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+        """Asynchronously wait for changes to a controller to roll out to the cluster."""
         ...
 
     ##
@@ -1557,13 +1557,13 @@ class ControllerModel(KubernetesModel):
     @property
     def canary_pod_name(self) -> str:
         """
-        Return the name of canary Pod for this Deployment.
+        Return the name of canary Pod for this Controller.
         """
         return f"{self.name}-canary"
 
     async def get_canary_pod(self) -> Pod:
         """
-        Retrieve the canary Pod for this Deployment (if any).
+        Retrieve the canary Pod for this Controller (if any).
 
         Will raise a Kubernetes API exception if not found.
         """
@@ -1601,14 +1601,14 @@ class ControllerModel(KubernetesModel):
         canary_pod_name = self.canary_pod_name
         namespace = self.namespace
         self.logger.debug(
-            f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+            f"ensuring existence of canary pod '{canary_pod_name}' based on {self.kind} '{self.name}' in namespace '{namespace}'"
         )
 
         # Look for an existing canary
         try:
             if canary_pod := await self.get_canary_pod():
                 self.logger.debug(
-                    f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+                    f"found existing canary pod '{canary_pod_name}' based on {self.kind} '{self.name}' in namespace '{namespace}'"
                 )
                 return canary_pod
         except kubernetes_asyncio.client.exceptions.ApiException as e:
@@ -2292,8 +2292,8 @@ class Rollout(ControllerModel):
     async def read(cls, name: str, namespace: str) -> "Rollout":
         """Read a Rollout by name under the given namespace.
         Args:
-            name: The name of the Deployment to read.
-            namespace: The namespace to read the Deployment from.
+            name: The name of the Rollout to read.
+            namespace: The namespace to read the Rollout from.
         """
 
         async with cls.preferred_client() as api_client:
@@ -2305,7 +2305,7 @@ class Rollout(ControllerModel):
             return Rollout(RolloutObj.parse_obj(obj))
 
     async def patch(self) -> None:
-        """Update the changed attributes of the Deployment."""
+        """Update the changed attributes of the Rollout."""
         async with self.api_client() as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 namespace=self.namespace,
@@ -2329,7 +2329,7 @@ class Rollout(ControllerModel):
         between the Envoy sidecar and the container responsible for fulfilling the request.
 
         Args:
-            deployment: Name of the target Rollout to inject the sidecar into.
+            self: Reference to the target rollout to inject the sidecar into.
             service: Name of the service to proxy. Envoy will accept ingress traffic
                 on the service port and reverse proxy requests back to the original
                 target container.
@@ -2343,12 +2343,12 @@ class Rollout(ControllerModel):
         """
         Yield self to caller to allow updates then wait for application and readiness of changes
         """
-        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+        """Asynchronously wait for changes to an argo rollout custom resource to roll out to the cluster."""
         # NOTE: The timeout_seconds argument must be an int or the request will fail
         timeout_seconds = int(timeout.total_seconds()) if timeout else None
 
         # Resource version lets us track any change. Observed generation only increments
-        # when the deployment controller sees a significant change that requires rollout
+        # when the controller sees a significant change that requires rollout
         resource_version = self.resource_version
         observed_generation = self.status.observed_generation
         desired_replicas = self.replicas
@@ -2365,7 +2365,7 @@ class Rollout(ControllerModel):
             )
             return
 
-        # Create a Kubernetes watch against the deployment under optimization to track changes
+        # Create a Kubernetes watch against the rollout under optimization to track changes
         self.logger.debug(
             f"watching rollout Using label_selector={self.label_selector}, resource_version={resource_version}"
         )
@@ -2448,7 +2448,7 @@ class Rollout(ControllerModel):
             elif condition.type == "Progressing":
                 if condition.status in ("True", "Unknown"):
                     # Still working
-                    self.logger.debug("Deployment update is progressing", condition)
+                    self.logger.debug("Rollout update is progressing", condition)
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
@@ -2458,7 +2458,7 @@ class Rollout(ControllerModel):
                     )
                 else:
                     raise servo.AdjustmentFailure(
-                        f"unknown deployment status condition: {condition.status}"
+                        f"unknown rollout status condition: {condition.status}"
                     )
 
 
