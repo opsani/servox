@@ -1720,7 +1720,7 @@ class ControllerModel(KubernetesModel):
 
         return count
 
-class Deployment(KubernetesModel):
+class Deployment(ControllerModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
 
     The actual ``kubernetes.client.V1Deployment`` instance that this
@@ -1844,54 +1844,6 @@ class Deployment(KubernetesModel):
         # return the status from the deployment
         return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
 
-    async def get_pods(self) -> List[Pod]:
-        """Get the pods for the Deployment.
-
-        Returns:
-            A list of pods that belong to the deployment.
-        """
-        self.logger.debug(f'getting pods for deployment "{self.name}"')
-
-        async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
-            pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
-                namespace=self.namespace, label_selector=selector_string(label_selector)
-            )
-
-        pods = [Pod(p) for p in pod_list.items]
-        return pods
-
-    async def get_latest_pods(self) -> List[Pod]:
-        """Get only the Deployment pods that belong to the latest ResourceVersion.
-
-        Returns:
-            A list of pods that belong to the latest deployment replicaset.
-        """
-        self.logger.info(f'getting replicaset for deployment "{self.name}"')
-        async with self.api_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
-            rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
-                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
-            )
-
-        # Verify all returned RS have this deployment as an owner
-        rs_list = [
-            rs for rs in rs_list.items if rs.metadata.owner_references and any(
-                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
-                for ownRef in rs.metadata.owner_references)]
-        if not rs_list:
-            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
-        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
-
-        return [
-            pod for pod in await self.get_pods()
-            if any(
-                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
-                for ownRef in pod.obj.metadata.owner_references
-            )]
-
-
-
     @property
     def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
         """Return the status of the Deployment.
@@ -1900,88 +1852,6 @@ class Deployment(KubernetesModel):
             The status of the Deployment.
         """
         return cast(kubernetes_asyncio.client.V1DeploymentStatus, self.obj.status)
-
-    @property
-    def resource_version(self) -> str:
-        """
-        Returns the resource version of the Deployment.
-        """
-        return self.obj.metadata.resource_version
-
-    @property
-    def observed_generation(self) -> str:
-        """
-        Returns the observed generation of the Deployment status.
-
-        The generation is observed by the deployment controller.
-        """
-        return self.obj.status.observed_generation
-
-    async def is_ready(self) -> bool:
-        """Check if the Deployment is in the ready state.
-
-        Returns:
-            True if in the ready state; False otherwise.
-        """
-        await self.refresh()
-
-        # if there is no status, the deployment is definitely not ready
-        status = self.obj.status
-        if status is None:
-            return False
-
-        # check the status for the number of total replicas and compare
-        # it to the number of ready replicas. if the numbers are
-        # equal, the deployment is ready; otherwise it is not ready.
-        total = status.replicas
-        ready = status.ready_replicas
-
-        if total is None:
-            return False
-
-        return total == ready
-
-    @property
-    def containers(self) -> List[Container]:
-        """
-        Return a list of Container objects from the underlying pod template spec.
-        """
-        return list(
-            map(lambda c: Container(c, None), self.obj.spec.template.spec.containers)
-        )
-
-    def find_container(self, name: str) -> Optional[Container]:
-        """
-        Return the container with the given name.
-        """
-        return next(filter(lambda c: c.name == name, self.containers), None)
-
-    def set_container(self, name: str, container: Container) -> None:
-        """Set the container with the given name to a new value."""
-        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
-        self.containers[index] = container
-        self.obj.spec.template.spec.containers[index] = container.obj
-
-    @property
-    def replicas(self) -> int:
-        """
-        Return the number of desired pods.
-        """
-        return self.obj.spec.replicas
-
-    @replicas.setter
-    def replicas(self, replicas: int) -> None:
-        """
-        Set the number of desired pods.
-        """
-        self.obj.spec.replicas = replicas
-
-    @property
-    def label_selector(self) -> str:
-        """
-        Return a string for matching the Deployment in Kubernetes API calls.
-        """
-        return selector_string(self.obj.spec.selector.match_labels)
 
     # TODO: I need to model these two and add label/annotation helpers
     @property
@@ -1993,6 +1863,14 @@ class Deployment(KubernetesModel):
     def pod_spec(self) -> kubernetes_asyncio.client.models.v1_pod_spec.V1PodSpec:
         """Return the pod spec for instances of the Deployment."""
         return self.pod_template_spec.spec
+
+    async def get_sanitized_pod_template(self) -> kubernetes_asyncio.client.V1Pod:
+        """
+        Retrieve the template defined for this Deployments's pods while removing properties that would conflict with the call to create_namespaced_pod
+        """
+        return kubernetes_asyncio.client.V1Pod(
+            metadata=self.pod_template_spec.metadata, spec=self.pod_spec
+        )
 
     # TODO: annotations/labels getters and setters...
     # @property
@@ -2198,182 +2076,6 @@ class Deployment(KubernetesModel):
                     raise servo.AdjustmentFailure(
                         f"unknown deployment status condition: {condition.status}"
                     )
-
-    async def _check_pod_conditions(self):
-        pods = await self.get_latest_pods()
-        unschedulable_pods = [
-            pod for pod in pods
-            if pod.obj.status.conditions and any(
-                cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
-            )]
-        if unschedulable_pods:
-            pod_fmts = [] # [f"{pod.obj.metadata.name} - {', '.join(cond.message for cond)}" for pod in unschedulable_pods]
-            for pod in unschedulable_pods:
-                cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
-                pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
-
-            fmt_str = ", ".join(pod_fmts)
-            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
-
-    ##
-    # Canary support
-
-    @property
-    def canary_pod_name(self) -> str:
-        """
-        Return the name of canary Pod for this Deployment.
-        """
-        return f"{self.name}-canary"
-
-    async def get_canary_pod(self) -> Pod:
-        """
-        Retrieve the canary Pod for this Deployment (if any).
-
-        Will raise a Kubernetes API exception if not found.
-        """
-        return await Pod.read(self.canary_pod_name, self.namespace)
-
-    async def delete_canary_pod(
-        self, *, raise_if_not_found: bool = True, timeout: servo.Numeric = 600
-    ) -> Optional[Pod]:
-        """
-        Delete the canary Pod.
-        """
-        try:
-            canary = await self.get_canary_pod()
-            self.logger.warning(
-                f"Deleting canary Pod '{canary.name}' from namespace '{canary.namespace}'..."
-            )
-            await canary.delete()
-            await canary.wait_until_deleted(timeout=timeout)
-            self.logger.info(
-                f"Deleted canary Pod '{canary.name}' from namespace '{canary.namespace}'."
-            )
-            return canary
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != "Not Found" and raise_if_not_found:
-                raise
-
-        return None
-
-    async def ensure_canary_pod(self, *, timeout: servo.Numeric = 600) -> Pod:
-        """
-        Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
-
-        TODO: docs...
-        """
-        canary_pod_name = self.canary_pod_name
-        namespace = self.namespace
-        self.logger.debug(
-            f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
-        )
-
-        # Look for an existing canary
-        try:
-            if canary_pod := await self.get_canary_pod():
-                self.logger.debug(
-                    f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
-                )
-                return canary_pod
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != "Not Found":
-                raise
-
-        # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
-        self.logger.trace(f"building new canary")
-        pod_obj =kubernetes_asyncio.client.V1Pod(
-            metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec
-        )
-        pod_obj.metadata.name = canary_pod_name
-        if pod_obj.metadata.annotations is None:
-            pod_obj.metadata.annotations = {}
-        pod_obj.metadata.annotations["opsani.com/opsani_tuning_for"] = self.name
-        if pod_obj.metadata.labels is None:
-            pod_obj.metadata.labels = {}
-        pod_obj.metadata.labels["opsani_role"] = "tuning"
-
-        canary_pod = Pod(obj=pod_obj)
-        canary_pod.namespace = namespace
-        self.logger.trace(f"initialized new canary: {canary_pod}")
-
-        # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
-        SERVO_POD_NAME = os.environ.get("POD_NAME")
-        SERVO_POD_NAMESPACE = os.environ.get("POD_NAMESPACE")
-        if SERVO_POD_NAME is not None and SERVO_POD_NAMESPACE is not None:
-            self.logger.debug(
-                f"running within Kubernetes, registering as Pod controller... (pod={SERVO_POD_NAME}, namespace={SERVO_POD_NAMESPACE})"
-            )
-            servo_pod = await Pod.read(SERVO_POD_NAME, SERVO_POD_NAMESPACE)
-            pod_controller = next(
-                iter(
-                    ow
-                    for ow in servo_pod.obj.metadata.owner_references
-                    if ow.controller
-                )
-            )
-
-            # # TODO: Create a ReplicaSet class...
-            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-                api_client =kubernetes_asyncio.client.AppsV1Api(api)
-
-                servo_rs:kubernetes_asyncio.client.V1ReplicaSet = (
-                    await api_client.read_namespaced_replica_set(
-                        name=pod_controller.name, namespace=SERVO_POD_NAMESPACE
-                    )
-                )  # still ephemeral
-                rs_controller = next(
-                    iter(
-                        ow for ow in servo_rs.metadata.owner_references if ow.controller
-                    )
-                )
-                servo_dep:kubernetes_asyncio.client.V1Deployment = (
-                    await api_client.read_namespaced_deployment(
-                        name=rs_controller.name, namespace=SERVO_POD_NAMESPACE
-                    )
-                )
-
-            canary_pod.obj.metadata.owner_references = [
-               kubernetes_asyncio.client.V1OwnerReference(
-                    api_version=servo_dep.api_version,
-                    block_owner_deletion=True,
-                    controller=True,  # Ensures the pod will not be adopted by another controller
-                    kind="Deployment",
-                    name=servo_dep.metadata.name,
-                    uid=servo_dep.metadata.uid,
-                )
-            ]
-
-        # Create the Pod and wait for it to get ready
-        self.logger.info(
-            f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'"
-        )
-        await canary_pod.create()
-
-        self.logger.info(
-            f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready..."
-        )
-        await canary_pod.wait_until_ready(timeout=timeout)
-
-        # TODO: Check for unexpected changes to version, etc.
-
-        await canary_pod.refresh()
-        await canary_pod.get_containers()
-
-        return canary_pod
-
-    async def get_restart_count(self) -> int:
-        count = 0
-        for pod in await self.get_pods():
-            try:
-                count += await pod.get_restart_count()
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
-                if error.status == 404:
-                    # Pod no longer exists, move on
-                    pass
-                else:
-                    raise error
-
-        return count
 
 # Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
 def to_lower_camel(string: str) -> str:

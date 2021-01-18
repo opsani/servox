@@ -1184,10 +1184,8 @@ class TestKubernetesConnectorRolloutIntegration:
         rollout_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
         subprocess.check_call(rollout_cmd)
 
-        #TODO: wait for rollout readiness
         wait_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
         subprocess.check_call(wait_cmd)
-        # kubectl wait --for=condition=ready rollout fiber-http
 
         yield   # Test runs
 
