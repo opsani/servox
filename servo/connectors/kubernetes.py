@@ -2796,14 +2796,12 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-# TODO: rename class and all references to ControllerOptimization
 class DeploymentOptimization(BaseOptimization):
     """
     The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
-    Deployment and its associated containers.
+    Deployment (or Deployment-like resource) and its associated containers.
     """
 
-    # TODO: rename deployment properties and all references to 'controller'
     deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
     deployment: Union[Deployment, Rollout]
     container_config: "ContainerConfiguration"
@@ -2990,12 +2988,11 @@ class DeploymentOptimization(BaseOptimization):
         return is_ready and restart_count == 0
 
 class CanaryOptimization(BaseOptimization):
-    """CanaryOptimization objects manage the optimization of Containers within a Deployment using
-    a canary Pod that is adjusted independently and compared against the performance and cost profile
+    """CanaryOptimization objects manage the optimization of Containers within a Deployment (or Deployment-like object)
+    using a canary Pod that is adjusted independently and compared against the performance and cost profile
     of its siblings.
     """
 
-    # TODO: rename deployment and all references to controller
     target_deployment: Union[Deployment, Rollout]
     target_deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
 
