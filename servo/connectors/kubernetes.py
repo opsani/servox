@@ -2033,7 +2033,7 @@ class CPU(servo.CPU):
         #   so require it to be configured as `compute` to prevent unintended modifications
         if values.get('limit_min') is not None and values.get('requirements') != ResourceRequirements.compute:
             raise ValueError('Configuration of limit_min only supported on `compute` requirement as both requirements are updated in adjustment')
-        
+
         return values
 
     def __opsani_repr__(self) -> dict:
@@ -2091,7 +2091,7 @@ class Memory(servo.Memory):
         #   so require it to be configured as `compute` to prevent unintended modifications
         if values.get('limit_min') is not None and values.get('requirements') != ResourceRequirements.compute:
             raise ValueError('Configuration of limit_min only supported on `compute` requirement as both requirements are updated in adjustment')
-        
+
         return values
 
     def __opsani_repr__(self) -> dict:

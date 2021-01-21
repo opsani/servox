@@ -980,7 +980,7 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http.mem')
         assert setting
         assert setting.value.human_readable() == "64.0Mi"
-        
+
         deployments = kube.get_deployments()
         fiber_deploy = deployments.get("fiber-http")
         fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
@@ -996,7 +996,7 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http.mem')
         assert setting
         assert setting.value.human_readable() == "256.0Mi"
-        
+
         deployments = kube.get_deployments()
         fiber_deploy = deployments.get("fiber-http")
         fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
@@ -1015,7 +1015,7 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http.cpu')
         assert setting
         assert setting.value.human_readable() == '50m'
-        
+
         deployments = kube.get_deployments()
         fiber_deploy = deployments.get("fiber-http")
         fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
@@ -1031,7 +1031,7 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http.cpu')
         assert setting
         assert setting.value.human_readable() == '175m'
-        
+
         deployments = kube.get_deployments()
         fiber_deploy = deployments.get("fiber-http")
         fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
