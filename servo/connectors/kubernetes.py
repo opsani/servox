@@ -765,7 +765,7 @@ class Container(servo.logging.Mixin):
     def set_resource_requirements(
         self,
         name: str,
-        value: Union[str, Sequence[str]],
+        value: Union[Union[Millicore, ShortByteSize], Sequence[Union[Millicore, ShortByteSize]]],
         requirements: ResourceRequirements = ResourceRequirements.compute,
         *,
         clear_others: bool = False,
@@ -801,7 +801,7 @@ class Container(servo.logging.Mixin):
 
             if requirement & requirements:
                 req_value = values.pop(0) if len(values) else default
-                req_dict[name] = req_value
+                req_dict[name] = req_value.human_readable()
 
             else:
                 if clear_others:
@@ -2022,7 +2022,19 @@ class CPU(servo.CPU):
     max: Millicore
     step: Millicore
     value: Optional[Millicore]
+    limit_min: Optional[Millicore] = pydantic.Field(
+        description="Minimum value below which the container CPU limits will not be adjusted (NOTE: requires config of ResourceRequirements.compute)",
+    )
     requirements: ResourceRequirements = ResourceRequirements.compute
+
+    @pydantic.root_validator
+    def check_requirements_config(cls, values):
+        # Called after field validation; limit_min requires modification of both ResourceRequirements
+        #   so require it to be configured as `compute` to prevent unintended modifications
+        if values.get('limit_min') is not None and values.get('requirements') != ResourceRequirements.compute:
+            raise ValueError('Configuration of limit_min only supported on `compute` requirement as both requirements are updated in adjustment')
+        
+        return values
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -2053,6 +2065,11 @@ class ShortByteSize(pydantic.ByteSize):
             v = v * GiB
         return super().validate(v)
 
+    def human_readable(self) -> str:
+        sup = super().human_readable()
+        if sup[-1] == 'B' and sup[-2].isalpha():
+            sup = sup[0:-1]
+        return sup
 
 class Memory(servo.Memory):
     """
@@ -2063,7 +2080,19 @@ class Memory(servo.Memory):
     min: ShortByteSize
     max: ShortByteSize
     step: ShortByteSize
+    limit_min: Optional[ShortByteSize] = pydantic.Field(
+        description="Minimum value below which the container memory limits will not be adjusted (NOTE: requires config of ResourceRequirements.compute)",
+    )
     requirements: ResourceRequirements = ResourceRequirements.compute
+
+    @pydantic.root_validator
+    def check_requirements_config(cls, values):
+        # Called after field validation; limit_min requires modification of both ResourceRequirements
+        #   so require it to be configured as `compute` to prevent unintended modifications
+        if values.get('limit_min') is not None and values.get('requirements') != ResourceRequirements.compute:
+            raise ValueError('Configuration of limit_min only supported on `compute` requirement as both requirements are updated in adjustment')
+        
+        return values
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -2085,8 +2114,9 @@ def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str,
         if (isinstance(value, (int, float)) or
             (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
             value = f"{value}Gi"
+        value = ShortByteSize.validate(value)
     elif setting == "cpu":
-        value = str(Millicore.parse(value))
+        value = Millicore.parse(value)
     elif setting == "replicas":
         value = int(float(value))
 
@@ -2330,16 +2360,22 @@ class DeploymentOptimization(BaseOptimization):
         to enable aggregation of related adjustments and asynchronous application.
         """
         setting_name, value = _normalize_adjustment(adjustment)
-        self.logger.info(f"adjusting {setting_name} to {value}")
+        self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config to trigger validations
             setting = getattr(self.container_config, setting_name)
-            setting.value = value
+            setting.value = value.human_readable()
+
+            if setting.limit_min is not None:
+                limit_val = max(setting.limit_min, value)
+                val_arg = [value, limit_val]
+            else:
+                val_arg = value
 
             requirements = setting.requirements
             self.container.set_resource_requirements(
-                setting_name, value, requirements, clear_others=True
+                setting_name, val_arg, requirements, clear_others=True
             )
 
         elif setting_name == "replicas":
@@ -2469,18 +2505,25 @@ class CanaryOptimization(BaseOptimization):
         )
 
     def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
-        setting, value = _normalize_adjustment(adjustment)
-        self.logger.info(f"adjusting {setting} to {value}")
+        setting_name, value = _normalize_adjustment(adjustment)
+        self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
 
-        if setting in ("cpu", "memory"):
-            requirements = getattr(
-                self.target_container_config, setting
-            ).requirements
+        if setting_name in ("cpu", "memory"):
+            setting = getattr(self.target_container_config, setting_name)
+            # setting.value = value.human_readable()
+
+            if setting.limit_min is not None:
+                limit_val = max(setting.limit_min, value)
+                val_arg = [value, limit_val]
+            else:
+                val_arg = value
+
+            requirements = setting.requirements
             self.canary_container.set_resource_requirements(
-                setting, value, requirements, clear_others=True
+                setting_name, val_arg, requirements, clear_others=True
             )
 
-        elif setting == "replicas":
+        elif setting_name == "replicas":
             if value != 1:
                 servo.logger.warning(
                     f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"'
@@ -2488,7 +2531,7 @@ class CanaryOptimization(BaseOptimization):
 
         else:
             raise servo.AdjustmentFailure(
-                f"failed adjustment of unsupported Kubernetes setting '{setting}'"
+                f"failed adjustment of unsupported Kubernetes setting '{setting_name}'"
             )
 
     async def apply(self) -> None:
