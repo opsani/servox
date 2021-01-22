@@ -793,6 +793,7 @@ class TestMemory:
             "max": 4294967296,
             "step": 268435456,
             "value": None,
+            "limit_min": None,
             "pinned": False,
             "requirements": ResourceRequirements.compute,
         } == memory.dict()
@@ -831,9 +832,9 @@ class TestMemory:
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization["min"] == "128.0MiB"
-        assert serialization["max"] == "4.0GiB"
-        assert serialization["step"] == "256.0MiB"
+        assert serialization["min"] == "128.0Mi"
+        assert serialization["max"] == "4.0Gi"
+        assert serialization["step"] == "256.0Mi"
 
 def test_millicpu():
     class Model(pydantic.BaseModel):
