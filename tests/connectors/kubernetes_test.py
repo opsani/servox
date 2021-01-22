@@ -21,6 +21,7 @@ from servo.connectors.kubernetes import (
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    KubernetesAdjustment,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -351,9 +352,9 @@ class TestKubernetesConfiguration:
             ("deployments[0].containers[0].cpu.max", "4"),
             ("deployments[0].containers[0].cpu.step", "125m"),
             # Memory
-            ("deployments[0].containers[0].memory.min", "256.0MiB"),
-            ("deployments[0].containers[0].memory.max", "4.0GiB"),
-            ("deployments[0].containers[0].memory.step", "128.0MiB"),
+            ("deployments[0].containers[0].memory.min", "256.0Mi"),
+            ("deployments[0].containers[0].memory.max", "4.0Gi"),
+            ("deployments[0].containers[0].memory.step", "128.0Mi"),
         ],
     )
     def test_generate_emits_human_readable_values(
@@ -614,18 +615,22 @@ class TestContainer:
         )
 
     @pytest.mark.parametrize(
-        "name, value, requirements, kwargs, resources_dict",
+        "adjustment, requirements, kwargs, resources_dict",
         [
             (
-                "cpu",
-                ("50m", "250m"),
+                KubernetesAdjustment(
+                    component_name="unit-test",
+                    setting_name="cpu",
+                    value=("50m", "250m")),
                 ...,
                 ...,
                 {"limits": {"cpu": "250m"}, "requests": {"cpu": "50m", "memory": "3G"}},
             ),
             (
-                "cpu",
-                "500m",
+                KubernetesAdjustment(
+                    component_name="unit-test",
+                    setting_name="cpu",
+                    value="500m"),
                 ResourceRequirements.limit,
                 dict(clear_others=True),
                 {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
@@ -633,7 +638,7 @@ class TestContainer:
         ],
     )
     def test_set_resource_requirements(
-        self, container, name, value, requirements, kwargs, resources_dict
+        self, container, adjustment, requirements, kwargs, resources_dict
     ) -> None:
         resources = client.V1ResourceRequirements()
         resources.requests = {"cpu": "100m", "memory": "3G"}
@@ -646,16 +651,21 @@ class TestContainer:
         if kwargs == ...:
             kwargs = container.set_resource_requirements.__kwdefaults__
 
-        container.set_resource_requirements(name, value, requirements, **kwargs)
+        container.set_resource_requirements(*adjustment.normalize_adjustment(), requirements, **kwargs)
         assert container.resources.to_dict() == resources_dict
 
     def test_set_resource_requirements_handles_null_requirements_dict(self, container):
         container.resources = client.V1ResourceRequirements()
 
-        container.set_resource_requirements("cpu", "1000m")
+        adjustment = KubernetesAdjustment(
+            component_name="unit-test",
+            setting_name="cpu",
+            value="1000m",
+        )
+        container.set_resource_requirements(*adjustment.normalize_adjustment())
         assert container.resources.to_dict() == {
-            "limits": {"cpu": "1000m"},
-            "requests": {"cpu": "1000m"},
+            "limits": {"cpu": "1"},
+            "requests": {"cpu": "1"},
         }
 
 
@@ -702,6 +712,7 @@ class TestCPU:
             "max": 4000,
             "step": 125,
             "value": None,
+            "limit_min": None,
             "pinned": False,
             "requirements": ResourceRequirements.compute,
         } == cpu.dict()

@@ -781,7 +781,7 @@ class Container(servo.logging.Mixin):
             clear_others: When True, any requirements not specified in the input arguments are cleared.
         """
 
-        values = [value] if isinstance(value, str) else list(value)
+        values = [value] if isinstance(value, (Millicore, ShortByteSize)) else list(value)
         default = values[0]
         for requirement in list(ResourceRequirements):
             # skip named combinations of flags
@@ -2103,24 +2103,35 @@ class Memory(servo.Memory):
             o_dict["mem"][field] = float(value) / GiB if value is not None else None
         return o_dict
 
+class KubernetesAdjustment(servo.Adjustment):
+    def normalize_adjustment(self: KubernetesAdjustment) -> Tuple[str, servo.Numeric]:
+        """Normalize an adjustment object into a Kubernetes native setting key/value pair."""
+        setting = "memory" if self.setting_name == "mem" else self.setting_name
+        values = [self.value] if isinstance(self.value, (str, int, float)) else self.value
+        ret_values = []
 
-def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str, servo.Numeric]]:
-    """Normalize an adjustment object into a Kubernetes native setting key/value pair."""
-    setting = "memory" if adjustment.setting_name == "mem" else adjustment.setting_name
-    value = adjustment.value
+        if setting == "memory":
+            def parse_val(value):
+                # Add GiB suffix to Numerics and Numeric strings
+                if (isinstance(value, (int, float)) or
+                    (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
+                    value = f"{value}Gi"
+                return ShortByteSize.validate(value)
+        elif setting == "cpu":
+            def parse_val(value):
+                return Millicore.parse(value)
+        elif setting == "replicas":
+            def parse_val(value):
+                return int(float(value))
+        else:
+            raise NotImplementedError(
+                    f"missing error normalization logic for setting '{setting}'"
+                ) 
 
-    if setting == "memory":
-        # Add GiB suffix to Numerics and Numeric strings
-        if (isinstance(value, (int, float)) or
-            (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
-            value = f"{value}Gi"
-        value = ShortByteSize.validate(value)
-    elif setting == "cpu":
-        value = Millicore.parse(value)
-    elif setting == "replicas":
-        value = int(float(value))
+        for value in values:
+            ret_values.append(parse_val(value))
 
-    return setting, value
+        return setting, ret_values if len(ret_values) > 1 else ret_values[0]
 
 class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     """
@@ -2352,14 +2363,14 @@ class DeploymentOptimization(BaseOptimization):
             servo.Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
         ]
 
-    def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
+    def adjust(self, adjustment: KubernetesAdjustment, control: servo.Control = servo.Control()) -> None:
         """
         Adjust the settings on the Deployment or a component Container.
 
         Adjustments do not take effect on the cluster until the `apply` method is invoked
         to enable aggregation of related adjustments and asynchronous application.
         """
-        setting_name, value = _normalize_adjustment(adjustment)
+        setting_name, value = adjustment.normalize_adjustment()
         self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
 
         if setting_name in ("cpu", "memory"):
@@ -2504,8 +2515,8 @@ class CanaryOptimization(BaseOptimization):
             "deployment configuration must have one or more containers"
         )
 
-    def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
-        setting_name, value = _normalize_adjustment(adjustment)
+    def adjust(self, adjustment: KubernetesAdjustment, control: servo.Control = servo.Control()) -> None:
+        setting_name, value = adjustment.normalize_adjustment()
         self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
 
         if setting_name in ("cpu", "memory"):
@@ -2795,6 +2806,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for adjustment in adjustments:
             if adjustable := self.find_optimization(adjustment.component_name):
                 self.logger.info(f"adjusting {adjustment.component_name}: {adjustment}")
+                adjustment = KubernetesAdjustment.parse_obj(adjustment) # cast adjustment type to access normalizing function
                 adjustable.adjust(adjustment)
 
             else:

@@ -18,6 +18,7 @@ from typing import (
     List,
     Optional,
     Protocol,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -1417,7 +1418,7 @@ class Adjustment(BaseModel):
     """The name of the setting to be adjusted.
     """
 
-    value: Union[str, Numeric]
+    value: Union[str, Numeric, Sequence[Union[str, Numeric]]]
     """The value to be applied to the setting being adjusted.
     """
 
