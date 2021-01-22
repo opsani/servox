@@ -10,6 +10,8 @@ import datetime
 import fnmatch
 import functools
 import json as json_
+import random
+import string
 import re
 import yaml as yaml_
 import weakref
@@ -857,6 +859,45 @@ class _PublisherMethod:
         self.pubsub_exchange.remove_publisher(self.publisher)
 
 
+def _random_string() -> str:
+    characters = string.ascii_lowercase + string.digits + '-'
+    return "".join(random.choice(characters) for i in range(32))
+
+
+class _ChannelMethod:
+    def __init__(
+        self,
+        parent: Mixin,
+        name: Optional[str],
+        description: Optional[str],
+    ) -> None:
+        super().__init__()
+        self.pubsub_exchange = parent.pubsub_exchange
+        self.name = name or self._random_unique_channel_name()
+        self.description = description
+
+    def _random_unique_channel_name(self) -> str:
+        while True:
+            name = _random_string()
+            if self.pubsub_exchange.get_channel(name) is None:
+                return name
+
+    async def __aenter__(self) -> None:
+        channel = self.pubsub_exchange.get_channel(self.name)
+        if channel:
+            self.temporary = False
+        else:
+            self.temporary = True
+            channel = self.pubsub_exchange.create_channel(self.name, self.description)
+        self.channel = channel
+        return channel
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        if self.temporary:
+            await self.channel.close()
+            self.pubsub_exchange.remove_channel(self.channel)
+
+
 class _SubscriberMethod:
     def __init__(
         self,
@@ -925,6 +966,34 @@ class Mixin(pydantic.BaseModel):
         if exchange := kwargs.get('pubsub_exchange'):
             self.pubsub_exchange = exchange
 
+    def channel(
+        self,
+        name: Optional[str] = None,
+        description: Optional[str] = None
+    ):
+        """A context manager for retrieving pub/sub Channels.
+
+        Retrieves a Channel with find-or-create semantics from the Exchange. If
+        an existing Channel is found, it is yieled to the block. If no Channel
+        with the given name exists or the name is omitted, a temporary Channel
+        is created, yielded to the context block, and closed and removed from
+        the Exchange upon return.
+
+        The `name` may be omitted in which case a unique name is generated. If
+        an existing Channel is referenced, then the Channel is not closed or
+        removed upon return.
+
+        Args:
+            name: A name for the temporary Channel. When omitted, a random
+                unique name is generated.
+            description: An optional textual description of the Channel.
+        """
+        return _ChannelMethod(
+            self,
+            name=name,
+            description=description
+        )
+
     def subscribe(
         self,
         selector: Selector,
@@ -932,7 +1001,7 @@ class Mixin(pydantic.BaseModel):
         name: Optional[str] = None,
         timeout: Optional[servo.types.DurationDescriptor] = None,
         until_done: Optional[asyncio.Future] = None
-    ) -> None:
+    ):
         """Create a Subscriber in the pub/sub Exchange.
 
         This method can be used as a decorator or as a context manager.
@@ -950,7 +1019,7 @@ class Mixin(pydantic.BaseModel):
 
         Args:
             selector: A string or regular expression pattern matching Channels of interest.
-            name: A name for the subscriber. When ommitted, defaults to the name of
+            name: A name for the subscriber. When omitted, defaults to the name of
                 the decorated function.
 
         Usage:
@@ -978,7 +1047,6 @@ class Mixin(pydantic.BaseModel):
             timeout=timeout,
             until_done=until_done
         )
-
 
     def cancel_subscribers(self, *names: List[str]) -> None:
         """Cancel active pub/sub subscribers.

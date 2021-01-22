@@ -97,8 +97,7 @@ async def exchange() -> servo.pubsub.Exchange:
 
 @pytest.fixture
 def channel(exchange: servo.pubsub.Exchange) -> servo.pubsub.Channel:
-    # return servo.pubsub.Channel(name="metrics", exchange=exchange)
-    return exchange.create_channel("metrics")
+    return servo.pubsub.Channel(name="metrics", exchange=exchange)
 
 class TestChannel:
     class TestValidations:
@@ -995,6 +994,33 @@ class TestMixin:
 
             assert len(host_object.pubsub_exchange._publishers) == 0
             assert len(host_object._publishers_map) == 0
+
+    async def test_channel_async_context_manager_temporary(self, host_object: HostObject) -> None:
+        assert host_object.pubsub_exchange.get_channel('metrics') is None
+        async with host_object.channel('metrics', 'the description') as channel:
+            assert channel
+            assert channel.name == 'metrics'
+            assert channel.description == 'the description'
+            assert host_object.pubsub_exchange.get_channel('metrics') == channel
+        assert host_object.pubsub_exchange.get_channel('metrics') is None
+
+    async def test_channel_async_context_manager_existing(self, host_object: HostObject) -> None:
+        existing_channel = host_object.pubsub_exchange.create_channel("metrics")
+        async with host_object.channel('metrics') as channel:
+            assert channel
+            assert channel == existing_channel
+        assert host_object.pubsub_exchange.get_channel('metrics') == existing_channel
+        assert not existing_channel.closed
+
+    async def test_channel_async_context_manager_temporary_random_name(self, host_object: HostObject) -> None:
+        name = None
+        channel_ref = None
+        async with host_object.channel() as channel:
+            assert channel
+            channel_ref = channel
+            name = channel.name
+        assert host_object.pubsub_exchange.get_channel(name) is None
+        assert channel_ref.closed
 
 
 class CountDownLatch:
