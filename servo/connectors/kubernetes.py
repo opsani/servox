@@ -2126,7 +2126,7 @@ class KubernetesAdjustment(servo.Adjustment):
         else:
             raise NotImplementedError(
                     f"missing error normalization logic for setting '{setting}'"
-                ) 
+                )
 
         for value in values:
             ret_values.append(parse_val(value))
