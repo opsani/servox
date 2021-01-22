@@ -52,8 +52,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'cpu', 'memory', 'service', 'config_maps',
-        'prometheus_base_url']
+        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'service', 'cpu', 'memory', 'prometheus_base_url']
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -61,6 +60,7 @@ class TestConfig:
             "namespace: default\n"
             "deployment: app-deployment\n"
             "container: main\n"
+            "service: app\n"
             "cpu:\n"
             "  min: 250m\n"
             "  max: '4'\n"
@@ -69,7 +69,6 @@ class TestConfig:
             "  min: 256.0MiB\n"
             "  max: 4.0GiB\n"
             "  step: 128.0MiB\n"
-            "service: app\n"
         )
 
 
