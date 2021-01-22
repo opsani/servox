@@ -12,6 +12,7 @@ import functools
 import json as json_
 import re
 import yaml as yaml_
+import weakref
 
 from typing import Any, AsyncIterable, AsyncContextManager, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union
 
@@ -138,7 +139,21 @@ ChannelName = pydantic.constr(
 )
 
 
-class Channel(pydantic.BaseModel):
+class _ExchangeChildModel(pydantic.BaseModel):
+    # NOTE: Pydantic and weakref use __slots__
+    _exchange: Exchange = pydantic.PrivateAttr(None)
+    __slots__ = ('__weakref__')
+
+    def __init__(self, *args, exchange: Exchange, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._exchange = weakref.ref(exchange)
+
+    @property
+    def exchange(self) -> Exchange:
+        """The pub/sub Exchange that the object belongs to."""
+        return self._exchange()
+
+class Channel(_ExchangeChildModel):
     """A Channel groups related Messages within an Exchange.
 
     Channel names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
@@ -156,7 +171,6 @@ class Channel(pydantic.BaseModel):
     name: ChannelName
     description: Optional[str] = None
     created_at: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
-    exchange: Exchange
     _closed: bool = pydantic.PrivateAttr(False)
 
     async def publish(self, message: Message) -> None:
@@ -250,6 +264,7 @@ class Exchange(pydantic.BaseModel):
     _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _queue_processor: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+    __slots__ = ('__weakref__')
 
     def start(self) -> None:
         """Start exchanging Messages between Publishers and Subscribers."""
@@ -259,7 +274,6 @@ class Exchange(pydantic.BaseModel):
 
     def clear(self) -> None:
         """Clear the Exchange by discarding all channels, publishers, and subscribers."""
-        # Purge all our children to break object cycles
         self._channels.clear()
         self._publishers.clear()
         self._subscribers.clear()
@@ -341,7 +355,6 @@ class Exchange(pydantic.BaseModel):
         if self.get_channel(name) is not None:
             raise ValueError(f"A Channel named '{name}' already exists")
         channel = Channel(name=name, description=description, exchange=self)
-        channel.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._channels.add(channel)
         return channel
 
@@ -404,7 +417,6 @@ class Exchange(pydantic.BaseModel):
             channel_ = self.create_channel(channel)
 
         publisher = Publisher(exchange=self, channel=channel_)
-        publisher.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._publishers.append(publisher)
         return publisher
 
@@ -468,7 +480,6 @@ class Exchange(pydantic.BaseModel):
         """
         subscription = Subscription(selector=selector)
         subscriber = Subscriber(exchange=self, subscription=subscription, callback=callback)
-        subscriber.exchange = self  # NOTE: pydantic implicitly copies models on init
         self._subscribers.append(subscriber)
 
         # Handle async affordances
@@ -662,7 +673,7 @@ class _Iterator(pydantic.BaseModel):
 Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
 
 
-class Subscriber(pydantic.BaseModel):
+class Subscriber(_ExchangeChildModel):
     """A Subscriber consumes relevant Messages published to an Exchange.
 
     Subscribers can invoke a callback when a new Message is published and can be used
@@ -694,7 +705,6 @@ class Subscriber(pydantic.BaseModel):
                 subscriber.cancel()
             ```
     """
-    exchange: Exchange
     subscription: Subscription
     callback: Optional[Callback]
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
@@ -738,7 +748,7 @@ class Subscriber(pydantic.BaseModel):
 
     @property
     def cancelled(self) -> bool:
-        """Return True if the subscriber is processing Messages."""
+        """Return True if the subscriber has been cancelled."""
         return self._event.is_set()
 
     async def wait(self) -> None:
@@ -781,7 +791,7 @@ class Subscriber(pydantic.BaseModel):
         arbitrary_types_allowed = True
 
 
-class Publisher(pydantic.BaseModel):
+class Publisher(_ExchangeChildModel):
     """A Publisher broadcasts Messages to a Channel in an Exchange.
 
     Publishers are asynchronously callable to publish a Message.
@@ -790,7 +800,6 @@ class Publisher(pydantic.BaseModel):
         exchange: The pub/sub Exchange that the Publisher belongs to.
         channel: The Channel that the Publisher publishes Messages to.
     """
-    exchange: Exchange
     channel: Channel
 
     async def __call__(self, message: Message) -> None:

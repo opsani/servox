@@ -10,6 +10,7 @@ import re
 import servo
 import servo.pubsub
 import servo.utilities.pydantic
+import weakref
 
 from typing import Callable, List, Optional
 
@@ -101,9 +102,9 @@ def channel(exchange: servo.pubsub.Exchange) -> servo.pubsub.Channel:
 
 class TestChannel:
     class TestValidations:
-        def test_name_required(self) -> None:
+        def test_name_required(self, exchange: servo.pubsub.Exchange) -> None:
             with pytest.raises(pydantic.ValidationError) as excinfo:
-                servo.pubsub.Channel()
+                servo.pubsub.Channel(exchange=exchange)
 
             assert {
                 "loc": ("name",),
@@ -111,9 +112,9 @@ class TestChannel:
                 "type": "value_error.missing",
             } in excinfo.value.errors()
 
-        def test_name_constraints(self) -> None:
+        def test_name_constraints(self, exchange: servo.pubsub.Exchange) -> None:
             with pytest.raises(pydantic.ValidationError) as excinfo:
-                servo.pubsub.Channel(name="THIS_IS_INVALID")
+                servo.pubsub.Channel(exchange=exchange, name="THIS_IS_INVALID")
 
             assert {
                 "loc": ("name",),
@@ -125,14 +126,8 @@ class TestChannel:
             } in excinfo.value.errors()
 
         def test_exchange_required(self) -> None:
-            with pytest.raises(pydantic.ValidationError) as excinfo:
+            with pytest.raises(TypeError, match=re.escape("__init__() missing 1 required keyword-only argument: 'exchange'")):
                 servo.pubsub.Channel()
-
-            assert {
-                "loc": ("exchange",),
-                "msg": "field required",
-                "type": "value_error.missing",
-            } in excinfo.value.errors()
 
     def test_hashing(self, channel: servo.pubsub.Channel) -> None:
         channels = {channel,}
@@ -161,9 +156,17 @@ class TestChannel:
         with pytest.raises(RuntimeError, match='Cannot publish messages to a closed Channel'):
             await channel.publish(servo.pubsub.Message(text="foo"))
 
-    async def test_closing_channel_cancels_exclusive_subscribers(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
-        ...
-        # TODO: attach one subscriber directly, one via glob, and one via regex and then close the channel
+    async def test_closing_channel_cancels_exclusive_subscribers(self, exchange: servo.pubsub.Exchange, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
+        exclusive_subscriber = exchange.create_subscriber(channel.name)
+        glob_subscriber = exchange.create_subscriber(channel.name + '*')
+        regex_subscriber = exchange.create_subscriber(f'/{channel.name}.*/')
+
+        await channel.close()
+        assert channel.closed
+
+        assert exclusive_subscriber.cancelled
+        assert not glob_subscriber.cancelled
+        assert not regex_subscriber.cancelled
 
     async def test_iteration(self, channel: servo.pubsub.Channel, mocker: pytest_mock.MockFixture) -> None:
         messages = []
@@ -386,8 +389,8 @@ class TestSubscriber:
 
     async def test_cannot_stop_inactive_iterator(self, channel, subscriber: servo.pubsub.Subscriber) -> None:
         other_subscriber = servo.pubsub.Subscriber(exchange=subscriber.exchange, subscription=subscriber.subscription)
+        event = asyncio.Event()
 
-        await asyncio.sleep(5)
         async def _test() -> self:
             with pytest.raises(RuntimeError, match="Attempted to stop an inactive iterator"):
                 async for message_, channel_ in subscriber:
@@ -396,9 +399,12 @@ class TestSubscriber:
                     assert iterator.subscriber == subscriber
                     other_subscriber.stop()
 
+            event.set()
+
         await asyncio.gather(
             _test(),
-            subscriber(servo.pubsub.Message(text="foo"), channel)
+            subscriber(servo.pubsub.Message(text="foo"), channel),
+            event.wait()
         )
 
     async def test_cannot_stop_without_an_iterator(self, subscriber: servo.pubsub.Subscriber) -> None:
@@ -422,54 +428,33 @@ class TestSubscriber:
             timeout=1.0
         )
 
-    async def _test_cannot_stop_nested_iterator(self, subscriber: servo.pubsub.Subscriber, iterator_task_factory: Callable[[], asyncio.Task]) -> None:
+    async def test_cannot_stop_nested_iterator(self, subscriber: servo.pubsub.Subscriber, iterator_task_factory: Callable[[], asyncio.Task]) -> None:
         channel = servo.pubsub.Channel(name="metrics", exchange=subscriber.exchange)
         assert channel
         other_subscriber = subscriber.exchange.create_subscriber('metrics')
         assert other_subscriber
 
         async def _boom() -> None:
-            debug("OUTER WAIT", subscriber, other_subscriber)
             async for message_, channel_ in subscriber:
-                debug("INNER WAIT")
-                # other_subscriber.stop()
                 async for message_, channel_ in other_subscriber:
-                    # Try to cancel the other subscriber to blow it up
+                    # Try to cancel the outer subscriber to trigger the exception
                     subscriber.stop()
-
-        task = asyncio.create_task(_boom())
 
         async def _emit_messages(*subscribers, channel) -> None:
             while True:
                 for subscriber in subscribers:
-                    debug("\n\nSENDIND TO", subscriber)
                     await subscriber(servo.pubsub.Message(text="foo"), channel)
-                    debug("BACK", subscriber)
-                debug("SENT")
 
-        debug("GATHERING")
-        await asyncio.gather(_emit_messages(subscriber, other_subscriber, channel=channel), task)
-        # debug("emitting")
-        # await _emit_messages(subscriber, other_subscriber, channel=channel)
-        # debug("waiting on task")
-        # await task
-        # await asyncio.gather(*tasks)
-        # await asyncio.gather()
-        # with pytest.raises
-        # other_subscriber
-        # async def _iterate() -> None:
-        #     async for message_, channel_ in subscriber:
-        #         messages.append(message_)
+                await asyncio.sleep(0.0001)
 
-        #         if len(messages) == 3:
-        #             subscriber.stop()
-
-        #     return messages
-
-        # task = asyncio.create_task(_iterate())
-        # other_subscriber = subscriber.exchange.create_subscriber('whatever', callback=lambda m, c: subscriber.stop())
-
-
+        with pytest.raises(RuntimeError, match='Attempted to stop an inactive iterator'):
+            await asyncio.wait_for(
+                asyncio.gather(
+                    _emit_messages(subscriber, other_subscriber, channel=channel),
+                    _boom()
+                ),
+                timeout=1.0
+            )
 
 
 @pytest.fixture
@@ -1058,3 +1043,23 @@ async def task_graph(task, *dependencies, timeout: Optional[servo.Duration] = No
         ),
         timeout=timeout_
     )
+
+def test_weakref_to_exchange() -> None:
+    exchange = servo.pubsub.Exchange()
+    assert weakref.proxy(exchange)
+
+def test_garbage_collection_of_exchange() -> None:
+    exchange = servo.pubsub.Exchange()
+    channel = exchange.create_channel('foo')
+    publisher = exchange.create_publisher(channel)
+    subscriber = exchange.create_subscriber('foo')
+
+    assert channel.exchange == exchange
+    assert publisher.exchange == exchange
+    assert subscriber.exchange == exchange
+
+    del exchange
+
+    assert channel.exchange is None
+    assert publisher.exchange is None
+    assert subscriber.exchange is None
