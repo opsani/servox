@@ -458,17 +458,77 @@ class TestSubscriber:
 
 @pytest.fixture
 def publisher(exchange: servo.pubsub.Exchange, channel: servo.pubsub.Channel) -> servo.pubsub.Publisher:
-    return servo.pubsub.Publisher(exchange=exchange, channel=channel)
+    return servo.pubsub.Publisher(exchange=exchange, channels=[channel])
+
+@pytest.fixture
+def multipublisher(exchange: servo.pubsub.Exchange) -> servo.pubsub.Publisher:
+    raw_metrics = servo.pubsub.Channel(name="metrics.raw", exchange=exchange)
+    normalized_metrics = servo.pubsub.Channel(name="metrics.normalized", exchange=exchange)
+    return servo.pubsub.Publisher(exchange=exchange, channels=[raw_metrics, normalized_metrics])
 
 
 class TestPublisher:
-    async def test_calling_publishes_to_exchange(self, publisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+    async def test_calling_publishes_to_exchange(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
         message = servo.pubsub.Message(text="foo")
-        with servo.utilities.pydantic.extra(publisher.exchange):
-            spy = mocker.spy(publisher.exchange, "publish")
-            await publisher(message)
-            spy.assert_called_once_with(message, publisher.channel)
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            await multipublisher(message)
+            spy.assert_has_calls([
+                mocker.call(message, multipublisher.channels[0]),
+                mocker.call(message, multipublisher.channels[1])
+            ])
+            assert spy.call_count == 2
 
+    async def test_calling_with_one_channel(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+        message = servo.pubsub.Message(text="foo")
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            await multipublisher(message, multipublisher.channels[0])
+            spy.assert_called_once_with(message, multipublisher.channels[0])
+            assert spy.call_count == 1
+
+    async def test_calling_with_two_channels(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+        message = servo.pubsub.Message(text="foo")
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            await multipublisher(message, *multipublisher.channels)
+            spy.assert_has_calls([
+                mocker.call(message, multipublisher.channels[0]),
+                mocker.call(message, multipublisher.channels[1])
+            ])
+            assert spy.call_count == 2
+
+    async def test_calling_with_one_channel_name(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+        message = servo.pubsub.Message(text="foo")
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            await multipublisher(message, 'metrics.raw')
+            spy.assert_called_once_with(message, multipublisher.channels[0])
+            assert spy.call_count == 1
+
+    async def test_calling_with_invalid_channel(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+        message = servo.pubsub.Message(text="foo")
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            with pytest.raises(ValueError, match="Publisher is not bound to Channel: 'invalid'"):
+                await multipublisher(message, 'invalid')
+
+    async def test_switching_message_by_channel(self, multipublisher: servo.pubsub.Publisher, mocker: pytest_mock.MockFixture) -> None:
+        foo = servo.pubsub.Message(text="foo")
+        bar = servo.pubsub.Message(text="bar")
+        with servo.utilities.pydantic.extra(multipublisher.exchange):
+            spy = mocker.spy(multipublisher.exchange, "publish")
+            for channel in multipublisher.channels:
+                if channel == 'metrics.raw':
+                    await multipublisher(foo, channel)
+                elif channel == 'metrics.normalized':
+                    await multipublisher(bar, channel)
+
+            spy.assert_has_calls([
+                mocker.call(foo, multipublisher.channels[0]),
+                mocker.call(bar, multipublisher.channels[1])
+            ])
+            assert spy.call_count == 2
 
 class TestExchange:
     def test_starts_not_running(self, exchange: servo.pubsub.Exchange) -> None:
@@ -648,7 +708,7 @@ class TestExchange:
         publisher = exchange.create_publisher("metrics.http.production")
         await publisher(message)
         await event.wait()
-        callback.assert_awaited_once_with(message, publisher.channel)
+        callback.assert_awaited_once_with(message, publisher.channels[0])
 
     async def test_repr(self, exchange: servo.pubsub.Exchange) -> None:
         exchange.create_publisher('whatever')
@@ -730,7 +790,7 @@ class TestExchange:
         await publisher(message)
         await event.wait()
         assert current_context is not None
-        assert current_context == (message, publisher.channel)
+        assert current_context == (message, publisher.channels[0])
         assert current_context[1].exchange == exchange
         assert servo.pubsub.current_context() is None
 
@@ -762,7 +822,7 @@ class TestExchange:
             timeout=3.0
         )
         assert current_context is not None
-        assert current_context == (message, publisher.channel)
+        assert current_context == (message, publisher.channels[0])
         assert current_context[1].exchange == exchange
         assert servo.pubsub.current_context() is None
 

@@ -394,31 +394,36 @@ class Exchange(pydantic.BaseModel):
             (message, channel_)
         )
 
-    def create_publisher(self, channel: Union[Channel, str]) -> Publisher:
-        """Create a new Publisher bound to a Channel.
+    def create_publisher(self, *channels: List[Union[Channel, str]]) -> Publisher:
+        """Create a new Publisher bound to one or more Channels.
 
-        If the `channel` does not already exist in the Exchange it is automatically created.
+        If a Channel referenced does not already exist in the Exchange it is automatically created.
 
         Args:
-            channel: The Channel or name of the Channel to bind the Publisher to.
+            channels: The list of Channel objects or names to bind the Publisher to.
 
         Raises:
-            TypeError: Raised if the `channel` argument is of the wrong type.
+            TypeError: Raised if the `channels` argument contains an object of the wrong type.
             ValueError: Raised if the Channel is not valid.
 
         Returns:
-            A new Publisher object bound to the desired Channel and the Exchange.
+            A new Publisher object bound to the desired Channels and the Exchange.
         """
-        if not isinstance(channel, (Channel, str)):
-            raise TypeError(f"channel argument must be a `str` or `Channel`, got: {channel.__class__.__name__}")
+        for channel in channels:
+            if not isinstance(channel, (Channel, str)):
+                raise TypeError(f"channel argument must be a `str` or `Channel`, got: {channel.__class__.__name__}")
 
-        channel_ = (
-            self.get_channel(channel) if isinstance(channel, str) else channel
-        )
-        if channel_ is None:
-            channel_ = self.create_channel(channel)
+        channels_ = []
+        for channel in channels:
+            channel_ = (
+                self.get_channel(channel) if isinstance(channel, str) else channel
+            )
+            if channel_ is None:
+                channel_ = self.create_channel(channel)
 
-        publisher = Publisher(exchange=self, channel=channel_)
+            channels_.append(channel_)
+
+        publisher = Publisher(exchange=self, channels=channels_)
         self._publishers.append(publisher)
         return publisher
 
@@ -794,25 +799,32 @@ class Subscriber(_ExchangeChildModel):
 
 
 class Publisher(_ExchangeChildModel):
-    """A Publisher broadcasts Messages to a Channel in an Exchange.
+    """A Publisher broadcasts Messages to Channels in an Exchange.
 
     Publishers are asynchronously callable to publish a Message.
 
     Attributes:
         exchange: The pub/sub Exchange that the Publisher belongs to.
-        channel: The Channel that the Publisher publishes Messages to.
+        channels: The Channels that the Publisher publishes Messages to.
     """
-    channel: Channel
+    channels: pydantic.conlist(Channel, min_items=1)
 
-    async def __call__(self, message: Message) -> None:
-        await self.exchange.publish(message, self.channel)
+    async def __call__(self, message: Message, *channels: List[Union[Channel, str]]) -> None:
+        for channel in (channels or self.channels):
+            if channel_ := self._find_channel(channel):
+                await self.exchange.publish(message, channel_)
+            else:
+                raise ValueError(f"Publisher is not bound to Channel: '{channel}'")
+
+    def _find_channel(self, channel: Union[Channel, str]) -> Optional[Channel]:
+        return next(filter(lambda c: c == channel, self.channels), None)
 
 
 class _PublisherMethod:
     def __init__(
         self,
         parent: Mixin,
-        channel: Union[Channel, str],
+        channels: List[Union[Channel, str]],
         *,
         every: Optional[servo.types.DurationDescriptor] = None,
         name: Optional[str] = None
@@ -820,7 +832,7 @@ class _PublisherMethod:
         super().__init__()
         self.pubsub_exchange = parent.pubsub_exchange
         self._publishers_map = parent._publishers_map
-        self.channel = channel
+        self.channels = channels
         self.every = every
         self.name = name
 
@@ -832,7 +844,7 @@ class _PublisherMethod:
         if name_ in self._publishers_map:
             raise KeyError(f"a Publisher named '{name_}' already exists")
 
-        publisher = self.pubsub_exchange.create_publisher(self.channel)
+        publisher = self.pubsub_exchange.create_publisher(*self.channels)
         if self.every is not None:
             duration = self.every if isinstance(self.every, servo.Duration) else servo.Duration(self.every)
         else:
@@ -852,7 +864,7 @@ class _PublisherMethod:
         if self.every is not None:
             raise TypeError(f"Cannot create repeating publisher when used as a context manager: `every` must be None")
 
-        self.publisher = self.pubsub_exchange.create_publisher(self.channel)
+        self.publisher = self.pubsub_exchange.create_publisher(*self.channels)
         return self.publisher
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -879,7 +891,8 @@ class _ChannelMethod:
     def _random_unique_channel_name(self) -> str:
         while True:
             name = _random_string()
-            if self.pubsub_exchange.get_channel(name) is None:
+            if (self.pubsub_exchange.get_channel(name) is None
+                and re.match(ChannelName.regex, name)):
                 return name
 
     async def __aenter__(self) -> None:
@@ -1076,8 +1089,7 @@ class Mixin(pydantic.BaseModel):
 
     def publish(
         self,
-        channel: Union[Channel, str],
-        *,
+        *channels: List[Union[Channel, str]],
         every: Optional[servo.types.DurationDescriptor] = None,
         name: Optional[str] = None
     ) -> None:
@@ -1131,7 +1143,7 @@ class Mixin(pydantic.BaseModel):
                         await publisher(Message(json={"throughput": "31337rps"}))
             ```
         """
-        return _PublisherMethod(self, channel=channel, every=every, name=name)
+        return _PublisherMethod(self, channels=channels, every=every, name=name)
 
     def cancel_publishers(self, *names: List[str]) -> None:
         """Cancel active pub/sub publishers.
