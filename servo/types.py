@@ -303,6 +303,7 @@ class BaseProgress(abc.ABC, BaseModel):
         while True:
             if self.finished:
                 break
+
             await asyncio.sleep(every.total_seconds())
             await async_notifier()
 
@@ -506,6 +507,17 @@ class EventProgress(BaseProgress):
 
         # NOTE: Without a timeout or settlement duration we advance from 0 to 100. Like a true gangsta
         return 0.0
+
+    async def watch(
+        self,
+        notify: Callable[["DurationProgress"], Union[None, Awaitable[None]]],
+        every: Optional[Duration] = None,
+    ) -> None:
+        # NOTE: Handle the case where reporting interval < timeout (matters mostly for tests)
+        if every == None:
+            every = min(Duration("5s"), self.timeout)
+
+        return await super().watch(notify, every)
 
 class Unit(str, enum.Enum):
     """An enumeration of standard units of measure for metrics.
