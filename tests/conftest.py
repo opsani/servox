@@ -197,7 +197,7 @@ def pytest_runtest_setup(item):
             pytest.fail(
                 f'Cannot run {type_mark.name} tests: '
                 f'kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}\n '
-                'Hint: See README.md and run `make kubeconfig`'
+                'Hint: See README.md and run `make test-kubeconfig`'
             )
 
 def selected_types_for_item(item) -> Optional[List[TestType]]:
