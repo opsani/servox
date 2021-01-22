@@ -2371,7 +2371,8 @@ class DeploymentOptimization(BaseOptimization):
         to enable aggregation of related adjustments and asynchronous application.
         """
         setting_name, value = adjustment.normalize_adjustment()
-        self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
+        log_val = value.human_readable() if isinstance(value, (Millicore, ShortByteSize)) else value
+        self.logger.info(f"adjusting {setting_name} to {log_val}")
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config to trigger validations
@@ -2517,7 +2518,8 @@ class CanaryOptimization(BaseOptimization):
 
     def adjust(self, adjustment: KubernetesAdjustment, control: servo.Control = servo.Control()) -> None:
         setting_name, value = adjustment.normalize_adjustment()
-        self.logger.info(f"adjusting {setting_name} to {value.human_readable()}")
+        log_val = value.human_readable() if isinstance(value, (Millicore, ShortByteSize)) else value
+        self.logger.info(f"adjusting {setting_name} to {log_val}")
 
         if setting_name in ("cpu", "memory"):
             setting = getattr(self.target_container_config, setting_name)

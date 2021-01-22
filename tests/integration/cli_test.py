@@ -56,7 +56,7 @@ async def test_generate_opsani_dev(project_path: pathlib.Path, subprocess) -> No
             "    max: '4'\n"
             "    step: 125m\n"
             "  memory:\n"
-            "    min: 256.0MiB\n"
-            "    max: 4.0GiB\n"
-            "    step: 128.0MiB\n"
+            "    min: 256.0Mi\n"
+            "    max: 4.0Gi\n"
+            "    step: 128.0Mi\n"
         )

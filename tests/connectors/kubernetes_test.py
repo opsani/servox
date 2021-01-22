@@ -900,7 +900,7 @@ class TestKubernetesConnectorIntegration:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0Mi"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust_cpu(self, config):
