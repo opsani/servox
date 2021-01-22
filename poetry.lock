@@ -724,7 +724,7 @@ pyyaml = ">=4.2b1"
 type = "git"
 url = "https://github.com/opsani/kubetest.git"
 reference = "feature/template-manifests"
-resolved_reference = "88d378b28febe2e60d28a99c3d1e4c74cea6d375"
+resolved_reference = "6979a9205738e80f5b14410c3bea9ae18d937095"
 
 [[package]]
 name = "loguru"
