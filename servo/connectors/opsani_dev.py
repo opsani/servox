@@ -24,7 +24,8 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     deployment: str
     container: str
     service: str
-    config_maps: Optional[List[str]]
+    cpu: servo.connectors.kubernetes.CPU
+    memory: servo.connectors.kubernetes.Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
 
     @classmethod
@@ -34,6 +35,8 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             deployment="app-deployment",
             container="main",
             service="app",
+            cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
+            memory=servo.connectors.kubernetes.Memory(min="256 MiB", max="4.0 GiB", step="128 MiB"),
         )
 
     def generate_kubernetes_config(
@@ -42,7 +45,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         """Generate a configuration for running an Opsani Dev optimization under servo.connectors.kubernetes.
 
         Returns:
-            A tuple of connector name and a Kubernetes connector configuration object.
+            A Kubernetes connector configuration object.
         """
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
@@ -55,17 +58,15 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                         alias="tuning"
                     ),
                     replicas=servo.Replicas(
-                        min=1,
-                        max=2,
+                        min=0,
+                        max=1,
                     ),
                     containers=[
                         servo.connectors.kubernetes.ContainerConfiguration(
                             name=self.container,
                             alias="main",
-                            cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
-                            memory=servo.connectors.kubernetes.Memory(
-                                min="256 MiB", max="4.0 GiB", step="128 MiB"
-                            ),
+                            cpu=self.cpu,
+                            memory=self.memory,
                         )
                     ],
                 )
@@ -80,7 +81,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         Prometheus and Envoy sidecars to produce and aggregate the necessary metrics.
 
         Returns:
-            A tuple of connector name and a Prometheus connector configuration object.
+            A Prometheus connector configuration object.
         """
         return servo.connectors.prometheus.PrometheusConfiguration(
             description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
@@ -125,19 +126,19 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
-                    absent="zero"
+                    absent=servo.connectors.prometheus.Absent.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
-                    absent="zero"
+                    absent=servo.connectors.prometheus.Absent.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
-                    absent="zero"
+                    absent=servo.connectors.prometheus.Absent.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p99_latency",
@@ -569,11 +570,11 @@ class OpsaniDevChecks(servo.BaseChecks):
 
 
 @servo.metadata(
-    description="Run connectors in a specific formation",
-    version="0.0.1",
+    description="Optimize a single service via a tuning instance and an Envoy sidecar",
+    version="2.0.0",
     homepage="https://github.com/opsani/servox",
     license=servo.License.apache2,
-    maturity=servo.Maturity.experimental,
+    maturity=servo.Maturity.stable,
 )
 class OpsaniDevConnector(servo.BaseConnector):
     """Opsani Dev is a turnkey solution for optimizing a single service."""
@@ -581,10 +582,7 @@ class OpsaniDevConnector(servo.BaseConnector):
 
     @servo.on_event()
     async def startup(self) -> None:
-        servo_ = servo.Servo.current()
-        # if self.maturity == servo.Maturity.experimental:
-        #     # Early exit on experimental Opsani Dev bits
-        #     return
+        servo_ = servo.Servo.current()  # TODO: should I have self.servo and self.assembly convenience functions??? This could be different than current_servo!
 
         await servo_.add_connector(
             "opsani-dev:kubernetes",

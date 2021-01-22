@@ -51,7 +51,7 @@ class SubprocessResult(NamedTuple):
 async def stream_subprocess_exec(
     program: str,
     *args,
-    cwd: pathlib.Path = pathlib.Path.cwd(),
+    cwd: Union[pathlib.Path, Callable[[], pathlib.Path]] = pathlib.Path.cwd,
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -83,7 +83,7 @@ async def stream_subprocess_exec(
     process = await asyncio.create_subprocess_exec(
         program,
         *args,
-        cwd=cwd,
+        cwd=(cwd() if callable(cwd) else cwd),
         env=env,
         stdin=stdin,
         stdout=stdout,
@@ -210,7 +210,7 @@ async def run_subprocess_shell(
 async def stream_subprocess_shell(
     cmd: str,
     *,
-    cwd: pathlib.Path = pathlib.Path.cwd(),
+    cwd: Union[pathlib.Path, Callable[[], pathlib.Path]] = pathlib.Path.cwd,
     env: Optional[Dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
@@ -240,7 +240,7 @@ async def stream_subprocess_shell(
     """
     process = await asyncio.create_subprocess_shell(
         cmd,
-        cwd=cwd,
+        cwd=(cwd() if callable(cwd) else cwd),
         env=env,
         stdin=stdin,
         stdout=stdout,

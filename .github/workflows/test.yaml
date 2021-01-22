@@ -52,7 +52,8 @@ jobs:
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
-        poetry run pytest --cov=servo --cov-config=setup.cfg --doctest-modules \
+        poetry run pytest -T unit -n 6 --dist loadscope \
+          --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered \
           --cov-report=xml:artifacts/coverage.xml --cov-report=html:artifacts/coverage-html \
           --junitxml=artifacts/report.xml --html=artifacts/report.html \

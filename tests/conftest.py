@@ -191,10 +191,14 @@ def pytest_runtest_setup(item):
     # NOTE: If integration is selected but theres no kubeconfig, fail them clearly
     type_mark, _ = gather_marks_for_item(item)
     assert type_mark, "test should have a type"
-    if type_mark.name == TestType.integration:
+    if type_mark.name in {TestType.integration, TestType.system}:
         config_path = kubeconfig_path_from_config(item.config)
         if not config_path.exists():
-            pytest.fail(f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}")
+            pytest.fail(
+                f'Cannot run {type_mark.name} tests: '
+                f'kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}\n '
+                'Hint: See README.md and run `make test-kubeconfig`'
+            )
 
 def selected_types_for_item(item) -> Optional[List[TestType]]:
     type_option = item.config.getoption("-T")
@@ -444,19 +448,12 @@ def session_kubeconfig(pytestconfig) -> str:
 
 @pytest.fixture
 async def kubeconfig(request) -> str:
-    """Return the path to a kubeconfig file to use when running integraion tests.
+    """Return the path to a kubeconfig file to use when running integration tests.
 
     To avoid inadvertantly interacting with clusters not explicitly configured
     for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
     """
-    config_path = kubeconfig_path_from_config(request.session.config)
-
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}"
-        )
-
-    return str(config_path)
+    return kubeconfig_path_from_config(request.session.config)
 
 
 @pytest.fixture
