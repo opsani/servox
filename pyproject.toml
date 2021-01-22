@@ -84,10 +84,10 @@ watchgod = "^0.6"
 servo = "servo.entry_points:run_cli"
 
 [tool.poetry.plugins."servo.connectors"]
-"vegeta" = "servo.connectors.vegeta:VegetaConnector"
-"kubernetes" = "servo.connectors.kubernetes:KubernetesConnector"
-"prometheus" = "servo.connectors.prometheus:PrometheusConnector"
-"opsani_dev" = "servo.connectors.opsani_dev:OpsaniDevConnector"
+vegeta = "servo.connectors.vegeta:VegetaConnector"
+kubernetes = "servo.connectors.kubernetes:KubernetesConnector"
+prometheus = "servo.connectors.prometheus:PrometheusConnector"
+opsani_dev = "servo.connectors.opsani_dev:OpsaniDevConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
