@@ -23,10 +23,9 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     namespace: str
     deployment: str
     container: str
+    service: str
     cpu: servo.connectors.kubernetes.CPU
     memory: servo.connectors.kubernetes.Memory
-    service: str
-    config_maps: Optional[List[str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
 
     @classmethod
