@@ -1110,6 +1110,7 @@ class TestKubernetesConnectorIntegration:
 ##
 # Rejection Tests using modified deployment
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
@@ -1137,8 +1138,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
 ##
 # Tests against an ArgoCD rollout
-# @pytest.mark.clusterrolebinding('cluster-admin') # May be needed
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestKubernetesConnectorRolloutIntegration:
     @pytest.fixture
