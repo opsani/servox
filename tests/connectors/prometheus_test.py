@@ -667,7 +667,7 @@ class TestConnector:
                 "result": []
             }
         }))
-        measurement = await connector.measure(control=servo.Control(duration="1s"))
+        measurement = await connector.measure(control=servo.Control(duration="0.0001s"))
         assert measurement is not None
 
     async def test_metrics(self, connector) -> None:
