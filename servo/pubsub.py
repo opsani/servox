@@ -242,13 +242,14 @@ class Channel(_ExchangeChildModel):
         return super().__eq__(other)
 
 
-_current_context_var = contextvars.ContextVar("servo.pubsub.current_context", default=None)
+_current_context_var = contextvars.ContextVar("servo.pubsub.current_message", default=None)
 
-def current_context() -> Optional[Tuple[Message, Channel]]:
+
+def current_message() -> Optional[Tuple[Message, Channel]]:
     """Return the Message and Channel for the current execution context, if any.
 
     The context is set upon entry into a Subscriber and restored to its previous
-    state upon return. If `current_context()` is not `None`, then the currently
+    state upon exit. If `current_message()` is not `None`, then the currently
     executing operation was triggered by a pub/sub Message.
 
     The value is managed by a contextvar and is concurrency safe.

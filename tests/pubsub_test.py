@@ -770,17 +770,17 @@ class TestExchange:
         ]
         assert results[0] == results[1]
 
-    async def test_current_context_in_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+    async def test_current_message_in_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
-        assert servo.pubsub.current_context() is None
+        assert servo.pubsub.current_message() is None
         message = servo.pubsub.Message(text='Testing')
 
         event = asyncio.Event()
-        current_context = None
+        current_message = None
 
         async def _callback(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
-            nonlocal current_context
-            current_context = servo.pubsub.current_context()
+            nonlocal current_message
+            current_message = servo.pubsub.current_message()
             event.set()
 
         subscriber = exchange.create_subscriber('metrics*')
@@ -789,17 +789,17 @@ class TestExchange:
         publisher = exchange.create_publisher("metrics.http.production")
         await publisher(message)
         await event.wait()
-        assert current_context is not None
-        assert current_context == (message, publisher.channels[0])
-        assert current_context[1].exchange == exchange
-        assert servo.pubsub.current_context() is None
+        assert current_message is not None
+        assert current_message == (message, publisher.channels[0])
+        assert current_message[1].exchange == exchange
+        assert servo.pubsub.current_message() is None
 
-    async def test_current_context_in_iterator(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+    async def test_current_message_in_iterator(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
         publisher = exchange.create_publisher("metrics.http.production")
         message = servo.pubsub.Message(text='Some Message')
         event = asyncio.Event()
-        current_context = None
+        current_message = None
 
         async def _publisher_func() -> None:
             # Wait for subscriber registration
@@ -807,24 +807,24 @@ class TestExchange:
             await publisher(message)
 
         async def _subscriber_func() -> None:
-            nonlocal current_context
+            nonlocal current_message
 
             async with exchange.subscribe('metrics*') as subscription:
                 # Trigger the Publisher to begin sending messages
                 event.set()
 
                 async for message, channel in subscription:
-                    current_context = servo.pubsub.current_context()
+                    current_message = servo.pubsub.current_message()
                     subscription.cancel()
 
         await asyncio.wait_for(
             asyncio.gather(_publisher_func(), _subscriber_func()),
             timeout=3.0
         )
-        assert current_context is not None
-        assert current_context == (message, publisher.channels[0])
-        assert current_context[1].exchange == exchange
-        assert servo.pubsub.current_context() is None
+        assert current_message is not None
+        assert current_message == (message, publisher.channels[0])
+        assert current_message[1].exchange == exchange
+        assert servo.pubsub.current_message() is None
 
     async def test_iteration(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockFixture) -> None:
         channel = exchange.create_channel('whatever')
