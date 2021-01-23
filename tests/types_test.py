@@ -4,6 +4,7 @@ from typing import Optional, Union
 import freezegun
 import pydantic
 import pytest
+import pytest_mock
 
 from servo.types import (
     Adjustment,
@@ -210,7 +211,14 @@ class TestDurationProgress:
         progress.start()
         assert isinstance(progress.progress, float)
 
-    # TODO: Watch, annotate, wait...
+    async def test_async_iterator_updates(self, progress, mocker: pytest_mock.MockFixture) -> None:
+        stub = mocker.stub()
+        progress.duration = servo.Duration('0.5ms')
+        async for update in progress.every('0.3ms'):
+            stub(update.progress)
+
+        stub.assert_called()
+        assert progress.progress == 100.0
 
 class TestEventProgress:
     @pytest.fixture

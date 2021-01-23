@@ -13,6 +13,7 @@ import time
 from typing import (
     Any,
     Awaitable,
+    AsyncIterator,
     Callable,
     Dict,
     List,
@@ -252,7 +253,7 @@ class Duration(datetime.timedelta):
     def human_readable(self) -> str:
         return str(self)
 
-# TODO: Need an abstract progress... probably becomes a new module
+
 class BaseProgress(abc.ABC, BaseModel):
     started_at: Optional[datetime.datetime]
     """The time that progress tracking was started."""
@@ -307,6 +308,33 @@ class BaseProgress(abc.ABC, BaseModel):
             await asyncio.sleep(every.total_seconds())
             await async_notifier()
 
+    def every(self, duration: DurationDescriptor) -> AsyncIterator[BaseProgress]:
+        """Return an async iterator yielding a progress update every duration seconds.
+
+        Args:
+            duration: The Duration on which to yield progress updates.
+        """
+        class _Iterator:
+            def __init__(self, progress: servo.BaseProgress, duration: servo.Duration) -> None:
+                self.progress = progress
+                self.duration = duration
+
+            def __aiter__(self):  # noqa: D105
+                return self
+
+            async def __anext__(self):
+                while True:
+                    if self.progress.finished:
+                        raise StopAsyncIteration
+
+                    await asyncio.sleep(self.duration.total_seconds())
+                    return self.progress
+
+        self.start()
+        return _Iterator(self, servo.Duration(duration))
+
+    # TODO: add async context manager flavor: async with servo.DurationProgress('3m') as progress:
+
     @property
     def elapsed(self) -> Optional[Duration]:
         """Return the total time elapsed since progress tracking was started as a Duration value."""
@@ -351,6 +379,8 @@ class DurationProgress(BaseProgress):
 
     def __init__(self, duration: "Duration" = 0, **kwargs) -> None: # noqa: D107
         super().__init__(duration=duration, **kwargs)
+
+    # TODO: add a to_float, to_int, whatever methods
 
     @property
     def progress(self) -> float:
@@ -1420,7 +1450,6 @@ class Adjustment(BaseModel):
     value: Union[str, Numeric]
     """The value to be applied to the setting being adjusted.
     """
-
     @property
     def selector(self) -> str:
         """Returns a fully qualified string identifier for accessing the referenced resource."""
