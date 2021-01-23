@@ -333,7 +333,17 @@ class BaseProgress(abc.ABC, BaseModel):
         self.start()
         return _Iterator(self, servo.Duration(duration))
 
-    # TODO: add async context manager flavor: async with servo.DurationProgress('3m') as progress:
+    async def __aenter__(self) -> None:
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        ...
+
+    def __float__(self) -> float:
+        return self.progress
+
+    def __int__(self) -> int:
+        return int(self.progress)
 
     @property
     def elapsed(self) -> Optional[Duration]:
