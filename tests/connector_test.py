@@ -1433,6 +1433,46 @@ class TestConnectorEvents:
         assert result.connector == connector
         assert result.value == 12345
 
+    async def test_event_dispatch_context_manager(self, mocker: pytest_mock.MockFixture) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        messages = set()
+
+        async with connector.dispatch_event(_events["example_event"]) as event:
+            # TODO: Eliminate the channel argument
+            @event.subscribe
+            async def _subscriber(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+                messages.add(f"Decorator Message: {message.text}")
+
+            event.subscribe(lambda message, channel: messages.add(f"Lambda Message: {message.text}"))
+            async def _iterator() -> None:
+                async for message in event.channel:
+                    messages.add(f"Iterator Message: {message.text}")
+
+            async def _poke() -> None:
+                for i in range(5):
+                    await event.channel.publish(servo.pubsub.Message(text=f"Message {i}"))
+
+            connector.pubsub_exchange.start()
+            await asyncio.gather(_poke(), _iterator(), event())
+            assert messages == {'Decorator Message: Message 0',
+                'Decorator Message: Message 1',
+                'Decorator Message: Message 2',
+                'Decorator Message: Message 3',
+                'Decorator Message: Message 4',
+                'Iterator Message: Message 0',
+                'Iterator Message: Message 1',
+                'Iterator Message: Message 2',
+                'Iterator Message: Message 3',
+                'Iterator Message: Message 4',
+                'Lambda Message: Message 0',
+                'Lambda Message: Message 1',
+                'Lambda Message: Message 2',
+                'Lambda Message: Message 3',
+                'Lambda Message: Message 4'
+            }
+
+
     def test_event_context_str_comparison(self) -> None:
         assert _events is not None
         event = _events["example_event"]

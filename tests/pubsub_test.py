@@ -113,14 +113,14 @@ class TestChannel:
 
         def test_name_constraints(self, exchange: servo.pubsub.Exchange) -> None:
             with pytest.raises(pydantic.ValidationError) as excinfo:
-                servo.pubsub.Channel(exchange=exchange, name="THIS_IS_INVALID")
+                servo.pubsub.Channel(exchange=exchange, name="THIS_IS_INVALID***")
 
             assert {
                 "loc": ("name",),
-                "msg": 'string does not match regex "^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$"',
+                "msg": 'string does not match regex "^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$"',
                 "type": "value_error.str.regex",
                 'ctx': {
-                    'pattern': '^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$',
+                    'pattern': '^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$',
                 }
             } in excinfo.value.errors()
 

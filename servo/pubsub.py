@@ -137,14 +137,13 @@ ChannelName = pydantic.constr(
     strip_whitespace=True,
     min_length=1,
     max_length=253,
-    regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.-])*[0-9A-Za-z]$",
+    regex="^[0-9a-zA-Z]([0-9a-zA-Z\\.\\-_])*[0-9A-Za-z]$",
 )
 
 
 class _ExchangeChildModel(pydantic.BaseModel):
-    # NOTE: Pydantic and weakref use __slots__
     _exchange: Exchange = pydantic.PrivateAttr(None)
-    __slots__ = ('__weakref__')
+    __slots__ = ('__weakref__')  # NOTE: Pydantic and weakref both use __slots__
 
     def __init__(self, *args, exchange: Exchange, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -155,12 +154,13 @@ class _ExchangeChildModel(pydantic.BaseModel):
         """The pub/sub Exchange that the object belongs to."""
         return self._exchange()
 
+
 class Channel(_ExchangeChildModel):
     """A Channel groups related Messages within an Exchange.
 
-    Channel names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+    Channel names must:
         * contain no more than 253 characters
-        * contain only lowercase alphanumeric characters, '-' or '.'
+        * contain only lowercase alphanumeric characters, '-', '_', or '.'
         * start with an alphanumeric character
         * end with an alphanumeric character
 
@@ -267,7 +267,7 @@ class Exchange(pydantic.BaseModel):
     _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _queue_processor: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
-    __slots__ = ('__weakref__')
+    __slots__ = ('__weakref__')  # NOTE: Pydantic and weakref both use __slots__
 
     def start(self) -> None:
         """Start exchanging Messages between Publishers and Subscribers."""
@@ -910,7 +910,6 @@ class _ChannelMethod:
         if self.temporary:
             await self.channel.close()
             self.pubsub_exchange.remove_channel(self.channel)
-
 
 class _SubscriberMethod:
     def __init__(

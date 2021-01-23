@@ -15,6 +15,7 @@ from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Op
 import pydantic
 
 import servo.errors
+import servo.pubsub
 import servo.utilities.inspect
 import servo.utilities.strings
 
@@ -659,7 +660,7 @@ class Mixin:
     def __connectors__(self) -> List["servo.BaseConnector"]:
         return _connector_event_bus[self]
 
-    async def dispatch_event(
+    def dispatch_event(
         self,
         event: Union[Event, str],
         *args,
@@ -711,7 +712,7 @@ class Mixin:
         Returns:
             A list of event result objects detailing the results returned.
         """
-        results: List[EventResult] = []
+        # results: List[EventResult] = []
         connectors: List["servo.BaseConnector"] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
@@ -731,61 +732,18 @@ class Mixin:
         if not set(connectors).issubset(self.__connectors__):
             raise ValueError(f"invalid target connectors: cannot dispatch events to connectors that are in the active servo")
 
-        # Invoke the before event handlers
-        if _prepositions & Preposition.before:
-            for connector in connectors:
-                try:
-                    results = await connector.run_event_handlers(
-                        event, Preposition.before
-                    )
-
-                except servo.errors.EventCancelledError as error:
-                    # Return an empty result set
-                    self.logger.warning(f"event cancelled by before event handler on connector \"{connector.name}\": {error}")
-                    return []
-
-        # Invoke the on event handlers and gather results
-        if _prepositions & Preposition.on:
-            if first:
-                # A single responder has been requested
-                for connector in connectors:
-                    results = await connector.run_event_handlers(
-                        event, Preposition.on, *args, return_exceptions=return_exceptions, **kwargs
-                    )
-                    if results:
-                        break
-            else:
-                group = asyncio.gather(
-                    *list(
-                        map(
-                            lambda c: c.run_event_handlers(
-                                event, Preposition.on, return_exceptions=return_exceptions, *args, **kwargs
-                            ),
-                            connectors,
-                        )
-                    ),
-                )
-                results = await group
-                results = list(filter(lambda r: r is not None, results))
-                results = functools.reduce(lambda x, y: x + y, results, [])
-
-        # Invoke the after event handlers
-        if _prepositions & Preposition.after:
-            await asyncio.gather(
-                *list(
-                    map(
-                        lambda c: c.run_event_handlers(
-                            event, Preposition.after, results
-                        ),
-                        connectors,
-                    )
-                )
-            )
-
-        if first:
-            return results[0] if results else None
-
-        return results
+        return _DispatchEvent(
+            connectors=connectors,
+            event=event,
+            parent=self,
+            args=args,
+            first=first,
+            include=include,
+            exclude=exclude,
+            return_exceptions=return_exceptions,
+            _prepositions=_prepositions,
+            kwargs=kwargs,
+        )
 
     async def run_event_handlers(
         self,
@@ -819,18 +777,18 @@ class Mixin:
             )
             for event_handler in event_handlers:
                 # NOTE: Explicit kwargs take precendence over those defined during handler declaration
-                handler_kwargs = event_handler.kwargs.copy()
-                handler_kwargs.update(kwargs)
+                merged_kwargs = event_handler.kwargs.copy()
+                merged_kwargs.update(kwargs)
                 try:
                     method = types.MethodType(event_handler.handler, self)
                     async with event.on_handler_context_manager(self):
                         if asyncio.iscoroutinefunction(method):
                             value = await asyncio.create_task(
-                                method(*args, **kwargs),
+                                method(*args, **merged_kwargs),
                                 name=f"{preposition}:{event}",
                             )
                         else:
-                            value = method(*args, **kwargs)
+                            value = method(*args, **merged_kwargs)
 
                     result = EventResult(
                         connector=self,
@@ -874,6 +832,7 @@ class Mixin:
 
         return results
 
+    # TODO: This moves to a function
     @property
     def current_event(self) -> Optional[EventContext]:
         """
@@ -888,3 +847,162 @@ class Mixin:
 
 
 _is_base_class_defined = True
+
+import servo.pubsub
+
+class _DispatchEvent:
+    def __init__(
+        self,
+        event: Union[Event, str],
+        connectors: List["servo.BaseConnector"],
+        parent: servo.pubsub.Mixin,
+        args: List[Any],
+        first: bool = False,
+        include: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        exclude: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        return_exceptions: bool = False,
+        _prepositions: Preposition = (
+            Preposition.before | Preposition.on | Preposition.after
+        ),
+        kwargs: Dict[str, Any] = {},
+    ) -> None:
+        super().__init__()
+        self._event = event
+        self._connectors = connectors
+        self._args = args
+        self._first = first
+        self._include = include
+        self._exclude = exclude
+        self._return_exceptions = return_exceptions
+        self._prepositions = _prepositions
+        self._parent = parent
+        self._kwargs = kwargs
+
+        # Execution state
+        self._run = False
+        self._results = None
+        self._channel = None
+
+    @property
+    def event(self) -> Event:
+        return self._event
+
+    @property
+    def channel(self) -> Optional[servo.pubsub.Channel]:
+        return self._channel
+
+    @property
+    def results(self) -> Optional[List[EventResult]]:
+        return self._results
+
+    @property
+    def done(self) -> bool:
+        return self._run is True
+
+    @property
+    def success(self) -> bool:
+        return self.done and self.results is not None
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}.{self.event}: done={self.done}, success={self.success}, channel='{self.channel and self.channel.name}'>"
+
+    def __await__(self):
+        # NOTE: If we are awaited, make the caller wait on run() instead
+        return self.run().__await__()
+
+    def subscribe(
+        self,
+        *args
+    ):
+        subscriber_method = servo.pubsub._SubscriberMethod(
+            self._parent,
+            selector=self.channel.name,
+        )
+        # NOTE: Enables use as a decorator or callable
+        if len(args) == 0:
+            return subscriber_method
+        else:
+            return subscriber_method(*args)
+
+
+    async def __aenter__(self) -> None:
+        self._channel = self._parent.pubsub_exchange.create_channel(f'servo.events.{self.event.name}.{id(self)}')
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        if not self.done:
+            self._results = await self.run()
+
+    async def run(self) -> List[EventResult]:
+        if self.done:
+            raise RuntimeError(f"Event dispatch has already run")
+
+        self._run = True
+        results: List[EventResult] = []
+
+        # Invoke the before event handlers
+        if self._prepositions & Preposition.before:
+            for connector in self._connectors:
+                try:
+                    results = await connector.run_event_handlers(
+                        self.event, Preposition.before
+                    )
+
+                except servo.errors.EventCancelledError as error:
+                    # Return an empty result set
+                    servo.logger.warning(f"event cancelled by before event handler on connector \"{connector.name}\": {error}")
+                    return []
+
+        # Invoke the on event handlers and gather results
+        if self._prepositions & Preposition.on:
+            if self._first:
+                # A single responder has been requested
+                for connector in self._connectors:
+                    results = await connector.run_event_handlers(
+                        self.event, Preposition.on, *self._args, return_exceptions=self._return_exceptions, **self._kwargs
+                    )
+                    if results:
+                        break
+            else:
+                group = asyncio.gather(
+                    *list(
+                        map(
+                            lambda c: c.run_event_handlers(
+                                self.event, Preposition.on, return_exceptions=self._return_exceptions, *self._args, **self._kwargs
+                            ),
+                            self._connectors,
+                        )
+                    ),
+                )
+                results = await group
+                results = list(filter(lambda r: r is not None, results))
+                results = functools.reduce(lambda x, y: x + y, results, [])
+
+        # Invoke the after event handlers
+        if self._prepositions & Preposition.after:
+            await asyncio.gather(
+                *list(
+                    map(
+                        lambda c: c.run_event_handlers(
+                            self.event, Preposition.after, results
+                        ),
+                        self._connectors,
+                    )
+                )
+            )
+
+        if self.channel:
+            await self.channel.close()
+
+        return (
+            next(iter(results), None) if self._first
+            else results
+        )
+
+    async def __call__(self) -> Union[Optional[EventResult], List[EventResult]]:
+        self._results = await self.run()
+
+        return (
+            next(iter(self.results), None) if self._first
+            else self.results
+        )
