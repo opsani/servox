@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import signal
 from typing import Any, Dict, List, Optional
 
@@ -313,7 +314,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             r" ___/ /  __/ /   | |/ / /_/ /   |",
             r"/____/\___/_/    |___/\____/_/|_|",
         ])
-        typer.secho(banner, fg=typer.colors.BRIGHT_BLUE, bold=True)
+        colors = ['\033[3{}m{{}}\033[0m'.format(n) for n in range(1,7)]
+        rainbow = itertools.cycle(colors)
+        letters = [next(rainbow).format(L) for L in banner]
+        typer.secho(''.join(letters))
         types = servo.Assembly.all_connector_types()
         types.remove(servo.Servo)
 
