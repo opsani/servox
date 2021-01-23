@@ -848,8 +848,6 @@ class Mixin:
 
 _is_base_class_defined = True
 
-import servo.pubsub
-
 class _DispatchEvent:
     def __init__(
         self,
@@ -885,22 +883,27 @@ class _DispatchEvent:
 
     @property
     def event(self) -> Event:
+        """The Event being dispatched."""
         return self._event
 
     @property
     def channel(self) -> Optional[servo.pubsub.Channel]:
+        """The temporary Channel associated with this Event dispatch."""
         return self._channel
 
     @property
     def results(self) -> Optional[List[EventResult]]:
+        """The results retured by other connectors that responded to the dispatched Event."""
         return self._results
 
     @property
     def done(self) -> bool:
+        """Returns True when the Event dispatch operation has completed."""
         return self._run is True
 
     @property
     def success(self) -> bool:
+        """Returns True when the Event dispatch operation completed successfully."""
         return self.done and self.results is not None
 
     def __repr__(self) -> str:
@@ -914,6 +917,10 @@ class _DispatchEvent:
         self,
         *args
     ):
+        """Subscribe to the Event dispatch operation.
+
+        This method is usable as a callable, context manager, or decorator.
+        """
         subscriber_method = servo.pubsub._SubscriberMethod(
             self._parent,
             selector=self.channel.name,
@@ -934,6 +941,7 @@ class _DispatchEvent:
             self._results = await self.run()
 
     async def run(self) -> List[EventResult]:
+        """Run the Event dispatch operation to completion and return results."""
         if self.done:
             raise RuntimeError(f"Event dispatch has already run")
 

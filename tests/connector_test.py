@@ -1445,16 +1445,22 @@ class TestConnectorEvents:
                 messages.add(f"Decorator Message: {message.text}")
 
             event.subscribe(lambda message, channel: messages.add(f"Lambda Message: {message.text}"))
+
             async def _iterator() -> None:
                 async for message in event.channel:
                     messages.add(f"Iterator Message: {message.text}")
+
+            async def _context_manager() -> None:
+                async with event.subscribe() as subscription:
+                    async for message, channel in subscription:
+                        messages.add(f"Context Manager Message: {message.text}")
 
             async def _poke() -> None:
                 for i in range(5):
                     await event.channel.publish(servo.pubsub.Message(text=f"Message {i}"))
 
             connector.pubsub_exchange.start()
-            await asyncio.gather(_poke(), _iterator(), event())
+            await asyncio.gather(_poke(), _iterator(), event(), _context_manager())
             assert messages == {'Decorator Message: Message 0',
                 'Decorator Message: Message 1',
                 'Decorator Message: Message 2',
@@ -1469,7 +1475,12 @@ class TestConnectorEvents:
                 'Lambda Message: Message 1',
                 'Lambda Message: Message 2',
                 'Lambda Message: Message 3',
-                'Lambda Message: Message 4'
+                'Lambda Message: Message 4',
+                'Context Manager Message: Message 0',
+                'Context Manager Message: Message 1',
+                'Context Manager Message: Message 2',
+                'Context Manager Message: Message 3',
+                'Context Manager Message: Message 4'
             }
 
 
