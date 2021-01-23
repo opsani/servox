@@ -927,6 +927,21 @@ class TestMixin:
             async with host_object.publish('metrics', every="10s") as publisher:
                 ...
 
+    async def test_publisher_callable_await(self, host_object: HostObject) -> None:
+        await host_object.publish(
+            servo.pubsub.Message(json={ 'whatever': ['you', 'want', 'if', 'json', 'serializable'] }),
+            'metrics'
+        )
+        assert len(host_object.pubsub_exchange._publishers) == 0
+        assert host_object.pubsub_exchange._queue.qsize() == 1
+
+    async def test_publisher_callable_direct(self, host_object: HostObject) -> None:
+        value = host_object.publish(
+            servo.pubsub.Message(json={ 'whatever': ['you', 'want', 'if', 'json', 'serializable'] }),
+            'metrics'
+        )
+        assert isinstance(value, servo.pubsub._PublisherMethod)
+
     async def test_subscriber_decorator(self, host_object: HostObject, mocker: pytest_mock.MockFixture) -> None:
         event = asyncio.Event()
         stub = mocker.stub()

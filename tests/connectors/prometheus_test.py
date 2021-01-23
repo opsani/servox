@@ -121,6 +121,7 @@ class TestPrometheusConfiguration:
         assert config.yaml() == (
             "description: Update the base_url and metrics to match your Prometheus configuration\n"
             "base_url: http://prometheus:9090\n"
+            "streaming_interval: null\n"
             "metrics:\n"
             "- name: throughput\n"
             "  unit: rps\n"

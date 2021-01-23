@@ -887,6 +887,14 @@ class _PublisherMethod:
     async def __aexit__(self, exc_type, exc_value, traceback):
         self.pubsub_exchange.remove_publisher(self.publisher)
 
+    def __await__(self):
+        # NOTE: If we are awaited, make the caller wait on publish() instead
+        channel = (
+            self.pubsub_exchange.get_channel(self.channels[1])
+            or self.pubsub_exchange.create_channel(self.channels[1])
+        )
+        return channel.publish(self.channels[0]).__await__()
+
 
 def _random_string() -> str:
     characters = string.ascii_lowercase + string.digits + '-'
@@ -1111,7 +1119,11 @@ class Mixin(pydantic.BaseModel):
     ) -> None:
         """Create a Publisher in the pub/sub Exchange.
 
-        This method can be used as a decorator or as a context manager.
+        This method can be used as an asynchronous callable, decorator, or
+        context manager.
+
+        When awaited, the method will publish a message to a target channel and
+        functions as a convenience alias for `self.pubsub_exchange.publish()`.
 
         When used as a decorator, the Publisher created is persistent and will
         continue executing until cancelled. The `every` argument configures the
