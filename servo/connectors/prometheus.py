@@ -662,6 +662,8 @@ class PrometheusConfiguration(servo.BaseConfiguration):
     are computed as necessary for API requests.
     """
 
+    streaming_interval: Optional[servo.Duration] = None
+
     metrics: List[PrometheusMetric]
     """The metrics to measure from Prometheus.
 
@@ -760,6 +762,29 @@ class PrometheusConnector(servo.BaseConnector):
         config: The configuration of the connector instance.
     """
     config: PrometheusConfiguration
+
+    @servo.on_event()
+    async def startup(self) -> None:
+        # Continuously publish a stream of metrics broadcasting every N seconds
+        streaming_interval = self.config.streaming_interval
+        if streaming_interval is not None:
+            servo.logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
+
+            @self.publish('metrics.prometheus', every=streaming_interval)
+            async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
+                servo.logger.info(f"Publishing {len(self.config.metrics)} metrics every {streaming_interval}...")
+                client = Client(base_url=self.config.base_url)
+                report = []
+
+                for metric in self.config.metrics:
+                    response = await client.query(metric)
+                    if response.data:
+                        result = response.data[0]
+                        timestamp, value = result.value
+                        report.append((metric.name, timestamp.isoformat(), value))
+
+                await publisher(servo.pubsub.Message(json=report))
+                servo.logger.info(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(

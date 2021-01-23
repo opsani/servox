@@ -86,6 +86,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         return servo.connectors.prometheus.PrometheusConfiguration(
             description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
             base_url=PROMETHEUS_SIDECAR_BASE_URL,
+            streaming_interval='10s',
             metrics=[
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_instance_count",
