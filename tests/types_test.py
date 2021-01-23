@@ -213,8 +213,8 @@ class TestDurationProgress:
 
     async def test_async_iterator_updates(self, progress, mocker: pytest_mock.MockFixture) -> None:
         stub = mocker.stub()
-        progress.duration = servo.Duration('0.5ms')
-        async for update in progress.every('0.3ms'):
+        progress.duration = servo.Duration('0.7ms')
+        async for update in progress.every('0.1ms'):
             stub(update.progress)
 
         stub.assert_called()
