@@ -1097,6 +1097,13 @@ class TestMixin:
         assert host_object.pubsub_exchange.get_channel(name) is None
         assert channel_ref.closed
 
+    async def test_exception_handling_in_publisher(self, host_object: HostObject) -> None:
+        @host_object.publish("metrics", every='100ms')
+        async def _failio(publisher: servo.pubsub.Publisher) -> None:
+            raise RuntimeError("boom.")
+
+        await asyncio.sleep(0.001)
+
 
 class CountDownLatch:
     def __init__(self, count=1):

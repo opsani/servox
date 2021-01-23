@@ -875,6 +875,8 @@ class _PublisherMethod:
                     await asyncio.sleep(duration.total_seconds())
 
         task = asyncio.create_task(_repeating_publisher())
+        task.add_done_callback(_error_watcher)
+        task.add_done_callback(lambda _: self._publishers_map.pop(name_))
         self._publishers_map[name_] = (publisher, task)
 
     async def __aenter__(self) -> None:
@@ -1226,3 +1228,18 @@ def _current_iterator() -> Optional[AsyncIterator]:
 
 Channel.update_forward_refs()
 _Iterator.update_forward_refs()
+
+
+def _error_watcher(task: asyncio.Task) -> None:
+    # Ensure that any exceptions from publishers are surfaced
+    if task.done() and not task.cancelled():
+        exception = task.exception()
+        if exception and not isinstance(exception, asyncio.TimeoutError):
+            loop = asyncio.get_event_loop()
+            servo.logger.exception(f"Publisher task failed with exception: {exception}")
+            context = {
+                'future': task,
+                'exception': exception,
+                'message': f"Publisher Task failed with exception: {exception}",
+            }
+            loop.call_exception_handler(context)
