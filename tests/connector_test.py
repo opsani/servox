@@ -1439,12 +1439,11 @@ class TestConnectorEvents:
         messages = set()
 
         async with connector.dispatch_event(_events["example_event"]) as event:
-            # TODO: Eliminate the channel argument
             @event.subscribe
-            async def _subscriber(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            async def _subscriber(message: servo.pubsub.Message) -> None:
                 messages.add(f"Decorator Message: {message.text}")
 
-            event.subscribe(lambda message, channel: messages.add(f"Lambda Message: {message.text}"))
+            event.subscribe(lambda message: messages.add(f"Lambda Message: {message.text}"))
 
             async def _iterator() -> None:
                 async for message in event.channel:
@@ -1452,15 +1451,25 @@ class TestConnectorEvents:
 
             async def _context_manager() -> None:
                 async with event.subscribe() as subscription:
-                    async for message, channel in subscription:
+                    async for message, _ in subscription:
                         messages.add(f"Context Manager Message: {message.text}")
+
+            async def _iterate_event() -> None:
+                async for message in event:
+                    messages.add(f"Iterate Event Message: {message.text}")
 
             async def _poke() -> None:
                 for i in range(5):
                     await event.channel.publish(servo.pubsub.Message(text=f"Message {i}"))
 
             connector.pubsub_exchange.start()
-            await asyncio.gather(_poke(), _iterator(), event(), _context_manager())
+            await asyncio.gather(
+                _poke(),
+                _iterator(),
+                event(),
+                _context_manager(),
+                _iterate_event()
+            )
             assert messages == {'Decorator Message: Message 0',
                 'Decorator Message: Message 1',
                 'Decorator Message: Message 2',
@@ -1480,7 +1489,12 @@ class TestConnectorEvents:
                 'Context Manager Message: Message 1',
                 'Context Manager Message: Message 2',
                 'Context Manager Message: Message 3',
-                'Context Manager Message: Message 4'
+                'Context Manager Message: Message 4',
+                'Iterate Event Message: Message 0',
+                'Iterate Event Message: Message 1',
+                'Iterate Event Message: Message 2',
+                'Iterate Event Message: Message 3',
+                'Iterate Event Message: Message 4'
             }
 
 

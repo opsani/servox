@@ -940,6 +940,10 @@ class _DispatchEvent:
         if not self.done:
             self._results = await self.run()
 
+    def __aiter__(self):  # noqa: D105
+        # Iterate through the channel
+        return self._channel.__aiter__()
+
     async def run(self) -> List[EventResult]:
         """Run the Event dispatch operation to completion and return results."""
         if self.done:

@@ -9,6 +9,7 @@ import codecs
 import datetime
 import fnmatch
 import functools
+import inspect
 import json as json_
 import random
 import string
@@ -600,6 +601,10 @@ class Subscription(BaseSubscription):
 
         return v
 
+    @property
+    def is_pattern(self) -> bool:
+        return isinstance(self.selector, re.Pattern) or not re.match(ChannelName.regex, self.selector)
+
     def matches(self, channel: Channel, message: Optional[Message] = None) -> bool:
         """Return True if the channel and message matches the subscription.
 
@@ -773,10 +778,21 @@ class Subscriber(_ExchangeChildModel):
 
         if self.subscription.matches(channel, message):
             if self.callback:
-                if asyncio.iscoroutinefunction(self.callback):
-                    await self.callback(message, channel)
+                # NOTE: Yield message or message, channel based on callable arity
+                signature = inspect.Signature.from_callable(self.callback)
+                if len(signature.parameters) == 1:
+                    if asyncio.iscoroutinefunction(self.callback):
+                        await self.callback(message)
+                    else:
+                        self.callback(message)
+                elif len(signature.parameters) == 2:
+                    if asyncio.iscoroutinefunction(self.callback):
+                        await self.callback(message, channel)
+                    else:
+                        self.callback(message, channel)
                 else:
-                    self.callback(message, channel)
+                    raise TypeError(f"Incorrect callback")
+
 
             for _, iterator in enumerate(self._iterators):
                 if iterator.stopped:
