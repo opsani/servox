@@ -773,15 +773,16 @@ class PrometheusConnector(servo.BaseConnector):
             @self.publish('metrics.prometheus', every=streaming_interval)
             async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
                 servo.logger.info(f"Publishing {len(self.config.metrics)} metrics every {streaming_interval}...")
-                client = Client(base_url=self.config.base_url)
                 report = []
-
-                for metric in self.config.metrics:
-                    response = await client.query(metric)
+                client = Client(base_url=self.config.base_url)
+                responses = await asyncio.gather(
+                    *list(map(client.query, self.config.metrics))
+                )
+                for response in responses:
                     if response.data:
-                        result = response.data[0]
-                        timestamp, value = result.value
-                        report.append((metric.name, timestamp.isoformat(), value))
+                        # NOTE: Instant queries return a single vector
+                        timestamp, value = response.data[0].value
+                        report.append((response.metric.name, timestamp.isoformat(), value))
 
                 await publisher(servo.pubsub.Message(json=report))
                 servo.logger.info(f"Published {len(report)} metrics.")
