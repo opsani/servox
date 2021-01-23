@@ -122,6 +122,10 @@ jobs:
       run: |
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
+    - uses: actions/setup-go@v1
+      with:
+        go-version: '1.15.7'
+    - run: go get -u github.com/tsenart/vegeta
     - name: Set up cache
       uses: actions/cache@v2.1.1
       id: cached-poetry-dependencies
@@ -130,7 +134,7 @@ jobs:
         key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -146,10 +150,6 @@ jobs:
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - uses: actions/checkout@master
-    - uses: actions/setup-go@v1
-      with:
-        go-version: '1.15.7'
-    - run: go get -u github.com/tsenart/vegeta
     - name: Run integration tests
       run: |
         poetry run pytest -n 6 --dist loadscope \
