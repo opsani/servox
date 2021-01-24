@@ -339,10 +339,11 @@ class VegetaConnector(servo.BaseConnector):
         summary = f"Loading {number_of_urls} URL(s) for {self.config._duration} (delay of {control.delay}, warmup of {control.warmup}) at a rate of {self.config.rate} (reporting every {self.config.reporting_interval})"
         self.logger.info(summary)
 
-        # Run the load generation
-        _, vegeta_reports = await _run_vegeta(
-            config=self.config, warmup_until=warmup_until
-        )
+        # Run the load generator, publishing metrics for interested subscribers
+        async with self.publish('loadgen.vegeta') as publisher:
+            _, vegeta_reports = await _run_vegeta(
+                config=self.config, warmup_until=warmup_until, publisher=publisher
+            )
 
         self.logger.info(
             f"Producing time series readings from {len(vegeta_reports)} Vegeta reports"
@@ -366,7 +367,9 @@ class VegetaConnector(servo.BaseConnector):
 
 
 async def _run_vegeta(
-    config: VegetaConfiguration, warmup_until: Optional[datetime.datetime] = None
+    config: VegetaConfiguration,
+    warmup_until: Optional[datetime.datetime] = None,
+    publisher: Optional[servo.Publisher] = None,
 ) -> Tuple[int, List[VegetaReport]]:
     vegeta_reports: List[VegetaReport] = []
     vegeta_cmd = _build_vegeta_command(config)
@@ -380,6 +383,9 @@ async def _run_vegeta(
         if warmup_until is None or datetime.datetime.now() > warmup_until:
             if not progress.started:
                 progress.start()
+
+            if publisher:
+                await publisher(servo.Message(json=vegeta_report))
 
             vegeta_reports.append(vegeta_report)
             summary = _summarize_report(vegeta_report, config)
@@ -476,17 +482,14 @@ def _time_series_readings_from_vegeta_reports(
         else:
             raise NameError(f'Unexpected metric name "{metric.name}"')
 
-        values: List[Tuple[datetime.datetime, servo.Numeric]] = []
+        data_points: List[servo.DataPoint] = []
         for report in vegeta_reports:
             value = servo.value_for_key_path(report.dict(by_alias=True), key)
-            values.append(
-                (
-                    report.end,
-                    value,
-                )
+            data_points.append(
+                servo.DataPoint(metric, report.end, value)
             )
 
-        readings.append(servo.TimeSeries(metric, values))
+        readings.append(servo.TimeSeries(metric, data_points))
 
     return readings
 

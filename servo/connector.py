@@ -19,6 +19,7 @@ import pydantic
 import servo.api
 import servo.events
 import servo.logging
+import servo.pubsub
 import servo.repeating
 import servo.utilities.associations
 from servo.types import *
@@ -37,6 +38,7 @@ class BaseConnector(
     servo.api.Mixin,
     servo.events.Mixin,
     servo.logging.Mixin,
+    servo.pubsub.Mixin,
     servo.repeating.Mixin,
     pydantic.BaseModel,
     abc.ABC,

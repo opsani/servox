@@ -37,6 +37,7 @@ from .connector import *
 from .errors import *
 from .events import *
 from .logging import *
+from .pubsub import *
 from .servo import *
 from .types import *
 from .utilities import *

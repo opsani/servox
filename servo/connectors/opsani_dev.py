@@ -86,6 +86,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
         return servo.connectors.prometheus.PrometheusConfiguration(
             description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
             base_url=PROMETHEUS_SIDECAR_BASE_URL,
+            streaming_interval='10s',
             metrics=[
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_instance_count",
@@ -459,9 +460,6 @@ class OpsaniDevChecks(servo.BaseChecks):
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         summaries = []
         for metric in metrics:
-            query = servo.connectors.prometheus.InstantQuery(
-                query=metric.query
-            )
             response = await client.query(metric)
             if response.data:
                 assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"

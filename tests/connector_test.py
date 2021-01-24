@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import pytest_mock
 import respx
 import yaml
 from pydantic import Extra, ValidationError
@@ -1432,6 +1433,71 @@ class TestConnectorEvents:
         assert result.connector == connector
         assert result.value == 12345
 
+    async def test_event_dispatch_context_manager(self, mocker: pytest_mock.MockFixture) -> None:
+        config = BaseConfiguration.construct()
+        connector = TestConnectorEvents.FakeConnector(config=config)
+        messages = set()
+
+        async with connector.dispatch_event(_events["example_event"]) as event:
+            @event.subscribe
+            async def _subscriber(message: servo.pubsub.Message) -> None:
+                messages.add(f"Decorator Message: {message.text}")
+
+            event.subscribe(lambda message: messages.add(f"Lambda Message: {message.text}"))
+
+            async def _iterator() -> None:
+                async for message in event.channel:
+                    messages.add(f"Iterator Message: {message.text}")
+
+            async def _context_manager() -> None:
+                async with event.subscribe() as subscription:
+                    async for message, _ in subscription:
+                        messages.add(f"Context Manager Message: {message.text}")
+
+            async def _iterate_event() -> None:
+                async for message in event:
+                    messages.add(f"Iterate Event Message: {message.text}")
+
+            async def _poke() -> None:
+                for i in range(5):
+                    await event.channel.publish(servo.pubsub.Message(text=f"Message {i}"))
+
+            connector.pubsub_exchange.start()
+            await asyncio.gather(
+                _poke(),
+                _iterator(),
+                event(),
+                _context_manager(),
+                _iterate_event()
+            )
+            assert messages == {'Decorator Message: Message 0',
+                'Decorator Message: Message 1',
+                'Decorator Message: Message 2',
+                'Decorator Message: Message 3',
+                'Decorator Message: Message 4',
+                'Iterator Message: Message 0',
+                'Iterator Message: Message 1',
+                'Iterator Message: Message 2',
+                'Iterator Message: Message 3',
+                'Iterator Message: Message 4',
+                'Lambda Message: Message 0',
+                'Lambda Message: Message 1',
+                'Lambda Message: Message 2',
+                'Lambda Message: Message 3',
+                'Lambda Message: Message 4',
+                'Context Manager Message: Message 0',
+                'Context Manager Message: Message 1',
+                'Context Manager Message: Message 2',
+                'Context Manager Message: Message 3',
+                'Context Manager Message: Message 4',
+                'Iterate Event Message: Message 0',
+                'Iterate Event Message: Message 1',
+                'Iterate Event Message: Message 2',
+                'Iterate Event Message: Message 3',
+                'Iterate Event Message: Message 4'
+            }
+
+
     def test_event_context_str_comparison(self) -> None:
         assert _events is not None
         event = _events["example_event"]
@@ -1507,3 +1573,48 @@ def test_logger_binds_connector_name() -> None:
     logger.info("Testing")
     record = messages[0].record
     assert record["extra"]["connector"].name == "measure"
+
+class TestPubSub:
+    class PubSubConnector(MeasureConnector):
+        async def _create_publisher(self, *, name: Optional[str] = None) -> None:
+            @self.publish("metrics", name=name, every="0.1ms")
+            async def _publisher(publisher: servo.pubsub.Publisher) -> None:
+                await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
+
+        async def _create_subscriber(self, callback, *, name: Optional[str] = None) -> None:
+            @self.subscribe("metrics", name=name)
+            async def _subscriber(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+                callback(message, channel)
+
+    @pytest.fixture
+    async def connector(self) -> 'TestPubSub.PubSubConnector':
+        pubsub_connector = TestPubSub.PubSubConnector(
+            optimizer=Optimizer(id="example.com/my-app", token="123456"),
+            config=BaseConfiguration(),
+        )
+        pubsub_connector.pubsub_exchange.start()
+        try:
+            yield pubsub_connector
+        finally:
+            pubsub_connector.cancel_publishers()
+            pubsub_connector.cancel_subscribers()
+            await pubsub_connector.pubsub_exchange.shutdown()
+
+    async def test_pubsub(self, connector: 'TestPubSub.PubSubConnector', mocker: pytest_mock.MockFixture) -> None:
+        notifications = []
+        def _callback(message, channel) -> None:
+            notification = f"Message #{len(notifications)} '{message.text}' (channel: '{channel.name}')"
+            notifications.append(notification)
+
+        await connector._create_publisher()
+        await connector._create_subscriber(_callback)
+
+        await asyncio.sleep(0.2)
+        assert len(notifications) > 10
+        assert notifications[0:5] == [
+            "Message #0 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #1 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #2 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #3 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #4 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+        ]

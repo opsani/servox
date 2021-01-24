@@ -13,6 +13,7 @@ import time
 from typing import (
     Any,
     Awaitable,
+    AsyncIterator,
     Callable,
     Dict,
     List,
@@ -252,7 +253,7 @@ class Duration(datetime.timedelta):
     def human_readable(self) -> str:
         return str(self)
 
-# TODO: Need an abstract progress... probably becomes a new module
+
 class BaseProgress(abc.ABC, BaseModel):
     started_at: Optional[datetime.datetime]
     """The time that progress tracking was started."""
@@ -306,6 +307,43 @@ class BaseProgress(abc.ABC, BaseModel):
 
             await asyncio.sleep(every.total_seconds())
             await async_notifier()
+
+    def every(self, duration: DurationDescriptor) -> AsyncIterator[BaseProgress]:
+        """Return an async iterator yielding a progress update every duration seconds.
+
+        Args:
+            duration: The Duration on which to yield progress updates.
+        """
+        class _Iterator:
+            def __init__(self, progress: servo.BaseProgress, duration: servo.Duration) -> None:
+                self.progress = progress
+                self.duration = duration
+
+            def __aiter__(self):  # noqa: D105
+                return self
+
+            async def __anext__(self):
+                while True:
+                    if self.progress.finished:
+                        raise StopAsyncIteration
+
+                    await asyncio.sleep(self.duration.total_seconds())
+                    return self.progress
+
+        self.start()
+        return _Iterator(self, servo.Duration(duration))
+
+    async def __aenter__(self) -> None:
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        ...
+
+    def __float__(self) -> float:
+        return self.progress
+
+    def __int__(self) -> int:
+        return int(self.progress)
 
     @property
     def elapsed(self) -> Optional[Duration]:
@@ -974,24 +1012,24 @@ class RangeSetting(Setting):
     def _validate_step_and_value(cls, values) -> Numeric:
         value, min, max, step = values["value"], values["min"], values["max"], values["step"]
 
-        if value is not None:
-            if value != max and value + step > max:
-                raise ValueError(
-                    f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-                )
-            elif value != min and value - step < min:
-                raise ValueError(
-                    f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
-                )
-        else:
-            if (min + step > max):
-                raise ValueError(
-                    f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-                )
-            elif (max - step < min):
-                raise ValueError(
-                    f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
-                )
+        # if value is not None:
+        #     if value != max and value + step > max:
+        #         raise ValueError(
+        #             f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+        #         )
+        #     elif value != min and value - step < min:
+        #         raise ValueError(
+        #             f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
+        #         )
+        # else:
+        #     if (min + step > max):
+        #         raise ValueError(
+        #             f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+        #         )
+        #     elif (max - step < min):
+        #         raise ValueError(
+        #             f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
+        #         )
 
         return values
 
@@ -1420,7 +1458,6 @@ class Adjustment(BaseModel):
     value: Union[str, Numeric]
     """The value to be applied to the setting being adjusted.
     """
-
     @property
     def selector(self) -> str:
         """Returns a fully qualified string identifier for accessing the referenced resource."""
