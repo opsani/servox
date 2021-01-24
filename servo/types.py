@@ -1014,24 +1014,24 @@ class RangeSetting(Setting):
     def _validate_step_and_value(cls, values) -> Numeric:
         value, min, max, step = values["value"], values["min"], values["max"], values["step"]
 
-        if value is not None:
-            if value != max and value + step > max:
-                raise ValueError(
-                    f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-                )
-            elif value != min and value - step < min:
-                raise ValueError(
-                    f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
-                )
-        else:
-            if (min + step > max):
-                raise ValueError(
-                    f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-                )
-            elif (max - step < min):
-                raise ValueError(
-                    f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
-                )
+        # if value is not None:
+        #     if value != max and value + step > max:
+        #         raise ValueError(
+        #             f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+        #         )
+        #     elif value != min and value - step < min:
+        #         raise ValueError(
+        #             f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
+        #         )
+        # else:
+        #     if (min + step > max):
+        #         raise ValueError(
+        #             f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+        #         )
+        #     elif (max - step < min):
+        #         raise ValueError(
+        #             f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
+        #         )
 
         return values
 
