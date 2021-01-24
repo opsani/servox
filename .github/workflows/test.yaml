@@ -122,10 +122,11 @@ jobs:
       run: |
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
-    - uses: actions/setup-go@v1
-      with:
-        go-version: '1.15.7'
-    - run: go get -u github.com/tsenart/vegeta
+    - name: Install Vegeta
+      run: |
+        wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
+        tar xfz vegeta-12.8.4-linux-amd64.tar.gz
+        sudo mv vegeta /usr/local/bin/vegeta
     - name: Set up cache
       uses: actions/cache@v2.1.1
       id: cached-poetry-dependencies
