@@ -390,8 +390,6 @@ class DurationProgress(BaseProgress):
     def __init__(self, duration: "Duration" = 0, **kwargs) -> None: # noqa: D107
         super().__init__(duration=duration, **kwargs)
 
-    # TODO: add a to_float, to_int, whatever methods
-
     @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0"""

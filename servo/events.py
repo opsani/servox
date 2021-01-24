@@ -712,7 +712,6 @@ class Mixin:
         Returns:
             A list of event result objects detailing the results returned.
         """
-        # results: List[EventResult] = []
         connectors: List["servo.BaseConnector"] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
