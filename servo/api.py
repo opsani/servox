@@ -6,10 +6,12 @@ import enum
 from typing import Any, Dict, List, Optional, Union
 
 import backoff
+import curlify2
 import devtools
 import httpx
 import pydantic
 
+import servo.logging
 import servo.types
 import servo.utilities
 
@@ -18,6 +20,7 @@ USER_AGENT = "github.com/opsani/servox"
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
     ok = "ok"
+    invalid = "invalid"
     unexpected_event = "unexpected-event"
     cancelled = "cancel"
 
@@ -240,17 +243,19 @@ class Mixin(abc.ABC):
         httpx.HTTPError,
         max_time=lambda: servo.Servo.current() and servo.Servo.current().config.servo.backoff.max_time(),
         max_tries=lambda: servo.Servo.current() and servo.Servo.current().config.servo.backoff.max_tries(),
+        giveup=lambda exception: True,
     )
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
-            self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
+            servo.logging.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
 
             try:
                 response = await client.post("servo", data=event_request.json())
                 response.raise_for_status()
+                servo.logging.logger.trace(f"cURL request via: {curlify2.to_curl(response.request)}")
                 response_json = response.json()
-                self.logger.trace(
+                servo.logging.logger.trace(
                     f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
 
@@ -259,13 +264,15 @@ class Mixin(abc.ABC):
                 )
 
             except httpx.RequestError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
-                self.logger.trace(devtools.pformat(event_request))
+                servo.logging.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
+                servo.logging.logger.trace(devtools.pformat(event_request))
+                servo.logging.logger.trace(f"cURL request via: {curlify2.to_curl(error.request)}")
                 raise
 
             except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
-                self.logger.trace(devtools.pformat(event_request))
+                servo.logging.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
+                servo.logging.logger.trace(devtools.pformat(event_request))
+                servo.logging.logger.trace(f"cURL request via: {curlify2.to_curl(error.request)}")
                 raise
 
     def _post_event_sync(self, event: Events, param) -> Union[CommandResponse, Status]:
@@ -275,10 +282,10 @@ class Mixin(abc.ABC):
                 response = client.post("servo", data=event_request.json())
                 response.raise_for_status()
             except httpx.HTTPError as error:
-                self.logger.error(
+                servo.logging.logger.error(
                     f"HTTP error \"{error.__class__.__name__}\" encountered while posting {event.value} event: {error}"
                 )
-                self.logger.trace(devtools.pformat(event_request))
+                servo.logging.logger.trace(devtools.pformat(event_request))
                 raise
 
         return pydantic.parse_obj_as(Union[CommandResponse, Status], response.json())
