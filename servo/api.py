@@ -18,6 +18,7 @@ USER_AGENT = "github.com/opsani/servox"
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
     ok = "ok"
+    invalid = "invalid"
     unexpected_event = "unexpected-event"
     cancelled = "cancel"
 
