@@ -21,6 +21,7 @@ import servo.utilities
 import servo.utilities.pydantic
 
 _servo_context_var = contextvars.ContextVar("servo.Servo.current", default=None)
+_environment_context_var = contextvars.ContextVar("servo.Environment.current", default=None)
 
 
 class Events(str, enum.Enum):
@@ -33,6 +34,7 @@ class Events(str, enum.Enum):
     # Informational events
     metrics = "metrics"
     components = "components"
+    get_environment = "get_environment"
 
     # Operational events
     check = "check"
@@ -40,6 +42,8 @@ class Events(str, enum.Enum):
     measure = "measure"
     adjust = "adjust"
     promote = "promote"
+    set_environment = "set_environment"
+    update_environment = "update_environment"
 
 
 class _EventDefinitions(Protocol):
@@ -64,6 +68,10 @@ class _EventDefinitions(Protocol):
 
     @servo.events.event(Events.components)
     async def components(self) -> List[servo.types.Component]:
+        ...
+
+    @servo.events.event(Events.get_environment)
+    async def get_environment(self) -> Optional[servo.types.Environment]:
         ...
 
     # Operational events
@@ -104,6 +112,20 @@ class _EventDefinitions(Protocol):
     async def promote(self) -> None:
         ...
 
+    @servo.events.event(Events.set_environment)
+    async def set_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> bool:
+        """Allow subscribers to request updating of the environment
+
+        Returns:
+            Boolean indicating whether update_environment event should be issued
+        """
+        ...
+
+    @servo.events.event(Events.update_environment)
+    async def update_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> None:
+        """Notify subscribers that an environment update has been requested
+        """
+        ...
 
 _servo_context_var = contextvars.ContextVar("servo.servo", default=None)
 
@@ -392,3 +414,15 @@ class Servo(servo.connector.BaseConnector):
                     message=str(error),
                 )
             ]
+
+    @servo.events.on_event()
+    async def get_environment(self) -> Optional[servo.types.Environment]:
+        return _environment_context_var.get(None)
+
+    @servo.events.on_event()
+    async def set_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> bool:
+        if old != new:
+            _environment_context_var.set(new)
+            return True
+
+        return False

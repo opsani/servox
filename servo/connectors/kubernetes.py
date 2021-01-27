@@ -1505,6 +1505,14 @@ class Deployment(KubernetesModel):
         """
         return self.obj.status.observed_generation
 
+    @property
+    def annotations(self) -> dict[str, str]:
+        """
+        Returns the annotations applied to the Deployment.
+        """
+        return self.obj.metadata.annotations
+
+
     async def is_ready(self) -> bool:
         """Check if the Deployment is in the ready state.
 
@@ -1659,11 +1667,23 @@ class Deployment(KubernetesModel):
         await self.patch()
 
     @contextlib.asynccontextmanager
-    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
-        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
+    async def watch(self, timeout: Optional[servo.Duration] = None) -> None:
         # NOTE: The timeout_seconds argument must be an int or the request will fail
         timeout_seconds = int(timeout.total_seconds()) if timeout else None
 
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            async with self.api_client() as dep_api:
+                async with kubernetes_asyncio.watch.Watch().stream(
+                    dep_api.list_namespaced_deployment,
+                    self.namespace,
+                    label_selector=self.label_selector,
+                    timeout_seconds=timeout_seconds,
+                ) as stream:
+                    yield stream
+
+    @contextlib.asynccontextmanager
+    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+        """Asynchronously wait for changes to a deployment to roll out to the cluster."""
         # Resource version lets us track any change. Observed generation only increments
         # when the deployment controller sees a significant change that requires rollout
         resource_version = self.resource_version
@@ -1687,60 +1707,53 @@ class Deployment(KubernetesModel):
             f"watching deployment Using label_selector={self.label_selector}, resource_version={resource_version}"
         )
 
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-            v1 = kubernetes_asyncio.client.AppsV1Api(api)
-            async with kubernetes_asyncio.watch.Watch().stream(
-                v1.list_namespaced_deployment,
-                self.namespace,
-                label_selector=self.label_selector,
-                timeout_seconds=timeout_seconds,
-            ) as stream:
-                async for event in stream:
-                    # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
-                    # TODO: Create an enum...
-                    event_type, deployment = event["type"], event["object"]
-                    status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
+        async with self.watch() as stream:
+            async for event in stream:
+                # NOTE: Event types are ADDED, DELETED, MODIFIED, ERROR
+                # TODO: Create an enum...
+                event_type, deployment = event["type"], event["object"]
+                status:kubernetes_asyncio.client.V1DeploymentStatus = deployment.status
 
+                self.logger.debug(
+                    f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                )
+
+                if event_type == "ERROR":
+                    stream.stop()
+                    # FIXME: Not sure what types we expect here
+                    raise servo.AdjustmentRejectedError(reason=str(deployment))
+
+                # Check that the conditions aren't reporting a failure
+                self._check_conditions(status.conditions)
+                await self._check_pod_conditions()
+
+                # Early events in the watch may be against previous generation
+                if status.observed_generation == observed_generation:
                     self.logger.debug(
-                        f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {status}"
+                        "observed generation has not changed, continuing watch"
                     )
+                    continue
 
-                    if event_type == "ERROR":
-                        stream.stop()
-                        # FIXME: Not sure what types we expect here
-                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+                # Check the replica counts. Once available, updated, and ready match
+                # our expected count and the unavailable count is zero we are rolled out
+                if status.unavailable_replicas:
+                    self.logger.debug(
+                        "found unavailable replicas, continuing watch",
+                        status.unavailable_replicas,
+                    )
+                    continue
 
-                    # Check that the conditions aren't reporting a failure
-                    self._check_conditions(status.conditions)
-                    await self._check_pod_conditions()
-
-                    # Early events in the watch may be against previous generation
-                    if status.observed_generation == observed_generation:
-                        self.logger.debug(
-                            "observed generation has not changed, continuing watch"
-                        )
-                        continue
-
-                    # Check the replica counts. Once available, updated, and ready match
-                    # our expected count and the unavailable count is zero we are rolled out
-                    if status.unavailable_replicas:
-                        self.logger.debug(
-                            "found unavailable replicas, continuing watch",
-                            status.unavailable_replicas,
-                        )
-                        continue
-
-                    replica_counts = [
-                        status.replicas,
-                        status.available_replicas,
-                        status.ready_replicas,
-                        status.updated_replicas,
-                    ]
-                    if replica_counts.count(desired_replicas) == len(replica_counts):
-                        # We are done: all the counts match. Stop the watch and return
-                        self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
-                        stream.stop()
-                        return
+                replica_counts = [
+                    status.replicas,
+                    status.available_replicas,
+                    status.ready_replicas,
+                    status.updated_replicas,
+                ]
+                if replica_counts.count(desired_replicas) == len(replica_counts):
+                    # We are done: all the counts match. Stop the watch and return
+                    self.logger.success(f"adjustments to Deployment '{self.name}' rolled out successfully", status)
+                    stream.stop()
+                    return
 
             # watch doesn't raise a timeoutError when when elapsed so do it as fall through
             raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
@@ -1802,6 +1815,28 @@ class Deployment(KubernetesModel):
 
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
+
+    async def watch_for_annotation(self, annotations: Dict[str, str]) -> None:
+        async with self.watch() as stream:
+            async for event in stream:
+                event_type, deployment = event["type"], event["object"]
+                metadata:kubernetes_asyncio.client.V1ObjectMeta = deployment.metadata
+
+                self.logger.debug(
+                    f"deployment watch yielded event: {event_type} {deployment.kind} {deployment.metadata.name} in {deployment.metadata.namespace}: {metadata}"
+                )
+
+                missing = []
+                for k, v in annotations.items():
+                    if found := metadata.annotations.get(k) != v:
+                        missing.append(f"<{k} expected: {v}, found {found}>")
+
+                if missing:
+                    self.logger.debug(
+                        f"continuing watch for deployment annotations: {', '.join(missing)}"
+                    )
+                else:
+                    return
 
     ##
     # Canary support
@@ -2837,10 +2872,58 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         else:
             self.logger.warning(f"failed to verify readiness: no optimizations")
 
+    @classmethod
+    async def update_environment(cls, config: "KubernetesConfiguration", old: servo.types.Environment, new: servo.types.Environment) -> None:
+        if config.deployments:
+            servo.logging.logger.debug(
+                f"Updating environment for {len(config.deployments)} deployments"
+            )
+            # Timeout handled at event dispatch level, no need to specify here
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    *list(map(lambda d: _update_single_deployment_environment(d, new), config.deployments)),
+                    return_exceptions=True,
+                ),
+            )
+            errs = []
+            for result in results:
+                if isinstance(result, Exception):
+                    errs.append(result)
+
+            if errs:
+                raise RuntimeError(errs)
+        else:
+            servo.logging.logger.warning(f"failed to update environment: no deployments configured")
 
     class Config:
         arbitrary_types_allowed = True
 
+
+OPSANI_ANNOTATION_PREFIX = "servo.opsani.com/"
+
+class K8sModeAnnotations(str, enum.Enum):
+    # TODO: determine new OKO flag to watch for so that current/desired mode can be unified into mode
+    current_mode = "current_mode"
+    desired_mode = "desired_mode"
+
+    def annotation(self) -> str:
+        """Return the prefixed Environment attribute
+        """
+        return f"{OPSANI_ANNOTATION_PREFIX}{self.name}"
+
+async def _update_single_deployment_environment(config: DeploymentConfiguration, new: servo.types.Environment) -> None:
+    # TODO: define iterable enum for environment annotations that do not require watching
+    deployment = await Deployment.read(config.name, config.namespace)
+    ann_mode_val = deployment.annotations.get(K8sModeAnnotations.current_mode.annotation())
+
+    # TODO: legacy spec called for an error here, do we still want it?
+    # if mode_ann_val in [None, '']:
+    #     raise servo.errors.EventError('Missing or empty value for annotation {}: {}'.format(env_name.annotation(), ann_val))
+
+    if new.mode != ann_mode_val:
+        deployment.annotations[K8sModeAnnotations.desired_mode.annotation()] = new.mode
+        await deployment.patch()
+        await deployment.watch_for_annotation({K8sModeAnnotations.current_mode.annotation(): new.mode})
 
 DNSSubdomainName = pydantic.constr(
     strip_whitespace=True,
@@ -3050,6 +3133,10 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
+    annotate: bool = pydantic.Field(
+        description="Enables application of Environment annotations to target deployment for ops coordination with OKO",
+        default=False
+    )
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
@@ -3343,6 +3430,11 @@ class KubernetesConnector(servo.BaseConnector):
 
         """
         raise NotImplementedError("stub out for the moment")
+
+    @servo.events.on_event()
+    async def update_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> None:
+        # Avoid initializing optimizations as the servo.yaml configuration is subject to change during environment updates
+        await KubernetesOptimizations.update_environment(self.config, old, new)
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:

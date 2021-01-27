@@ -16,7 +16,7 @@ import servo.api
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.types import Adjustment, Control, Description, Duration, Measurement
+from servo.types import Adjustment, Control, Description, Duration, Environment, Measurement
 
 
 class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
@@ -90,6 +90,12 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.success(f"Adjustment completed {summary}")
         return aggregate_description
 
+    async def process_environment(self, environment: Environment) -> None:
+        """Always dispatches set_environment event but will only dispatch update_environment if at least one
+        set environment subscriber returns True
+        """
+        pass # TODO
+
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
@@ -100,6 +106,11 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         cmd_response = await self._post_event(servo.api.Events.whats_next, None)
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(devtools.pformat(cmd_response))
+
+        control = Control(**cmd_response.param.get("control", {}))
+        if (cmd_response.command in [servo.api.Commands.describe, servo.api.Commands.measure, servo.api.Commands.adjust]
+        and control.environment is not None):
+            await self.process_environment(control.environment)
 
         if cmd_response.command == servo.api.Commands.describe:
             description = await self.describe()
@@ -122,7 +133,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
         elif cmd_response.command == servo.api.Commands.adjust:
             adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
-            control = Control(**cmd_response.param.get("control", {}))
 
             try:
                 description = await self.adjust(adjustments, control)

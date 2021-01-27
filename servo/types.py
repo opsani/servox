@@ -1268,6 +1268,10 @@ class Control(BaseModel):
     semantics.
     """
 
+    environment: Optional[Environment] = None
+    """An optional model representing environment details to be processed by individual connectors subscribed to the relevant events
+    """
+
     @pydantic.root_validator(pre=True)
     def validate_past_and_delay(cls, values):
         if "past" in values:
@@ -1465,6 +1469,14 @@ class Adjustment(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.component_name}.{self.setting_name}={self.value}"
+
+class Environment(BaseModel):
+    """Model for the state of the optimization environment that is used for reading and updates. How said environment
+    state is maintained is determined by the implementation of specific connectors which respond to the update_environment event
+    """
+    mode: str
+    """Environment mode corresponding to the current OCO workflow stage. Used to coordinate externally driven updates to the optimization target
+    """
 
 
 # Common output formats
