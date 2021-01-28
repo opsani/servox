@@ -113,7 +113,7 @@ class _EventDefinitions(Protocol):
         ...
 
     @servo.events.event(Events.set_environment)
-    async def set_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> bool:
+    async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
         """Allow subscribers to request updating of the environment
 
         Returns:
@@ -122,7 +122,7 @@ class _EventDefinitions(Protocol):
         ...
 
     @servo.events.event(Events.update_environment)
-    async def update_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> None:
+    async def update_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> None:
         """Notify subscribers that an environment update has been requested
         """
         ...
@@ -420,7 +420,7 @@ class Servo(servo.connector.BaseConnector):
         return _environment_context_var.get(None)
 
     @servo.events.on_event()
-    async def set_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> bool:
+    async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
         if old != new:
             _environment_context_var.set(new)
             return True

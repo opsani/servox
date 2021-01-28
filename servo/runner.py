@@ -90,11 +90,46 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.success(f"Adjustment completed {summary}")
         return aggregate_description
 
+    # TODO: move to helpers, define variant for checking gather results
+    def _marshal_errors(self, results: List[servo.EventResult]) -> List[Exception]:
+        return [result.value for result in results if isinstance(result.value, Exception)]
+
+    def _check_environment_event_errors(self, event_name, results: List[servo.EventResult]) -> None:
+        if len(errors := self._marshal_errors(results)) > 0:
+            for err in errors:
+                self.logger.exception(err)
+            raise servo.EnvironmentFailedError(f"Unable to validate/update environment; encountered exception(s) during {event_name}: {', '.join(errors)}")
+
     async def process_environment(self, environment: Environment) -> None:
         """Always dispatches set_environment event but will only dispatch update_environment if at least one
         set environment subscriber returns True
         """
-        pass # TODO
+        self.logger.info(f"Environment payload included, getting current environment...")
+        self.logger.trace(f"new environment: {devtools.pformat(environment)}")
+
+        # raise servo.EnvironmentFailedError('Unable to validate environment: expected one or more responses to the get_environment event')
+        results = await self.servo.dispatch_event(servo.Events.get_environment, return_exceptions=True)
+        self._check_environment_event_errors('get_environment', results)
+        if len(results) < 1:
+            raise servo.EnvironmentFailedError("Unable to validate environment: expected one or more responses to the get_environment event")
+        if len(results) > 1:
+            self.logger.trace(f"multiple results: {devtools.pformat(results)}")
+            raise servo.EnvironmentFailedError(f"Only one get_environment subscriber is currently supported, {len(results)} subscribers responded")
+
+        current_environment = results[0].value
+        self.logger.trace(f"current environment: {devtools.pformat(current_environment)}")
+
+        self.logger.info(f"Setting environment; evaluating if update needed...")
+        results = await self.servo.dispatch_event(servo.Events.set_environment, current_environment, environment, return_exceptions=True)
+        self._check_environment_event_errors('set_environment', results)
+        update_count = sum([result.value for result in results])
+
+        if update_count:
+            self.logger.info(f"{update_count} subscribers requested environment update; updating environment....")
+            results = await self.servo.dispatch_event(servo.Events.update_environment, current_environment, environment, return_exceptions=True)
+            self._check_environment_event_errors('update_environment', results)
+
+
 
     @backoff.on_exception(
         backoff.expo,
@@ -110,8 +145,17 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         control = Control(**cmd_response.param.get("control", {}))
         if (cmd_response.command in [servo.api.Commands.describe, servo.api.Commands.measure, servo.api.Commands.adjust]
         and control.environment is not None):
-            await self.process_environment(control.environment)
+            try:
+                await self.process_environment(control.environment)
+                self.logger.info(f"Environment verified/updated")
+            except servo.BaseError as error:
+                status = servo.api.Status.from_error(error)
+                self.logger.error(
+                    f"Environment failed, cancelling requested {cmd_response.command} command: {error}"
+                )
+                return await self._post_event(servo.api.Events.adjust, status.dict())
 
+        # Switch: command
         if cmd_response.command == servo.api.Commands.describe:
             description = await self.describe()
             self.logger.info(

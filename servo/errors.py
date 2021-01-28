@@ -108,3 +108,12 @@ class AdjustmentRejectedError(AdjustmentFailedError):
     other such definitive error condition is encountered that excludes the
     applied configuration from further consideration by the optimizer.
     """
+
+class EnvironmentFailedError(EventError):
+    """A failure occurred while setting and or updating the target environment.
+
+    Environment failures are potentially recoverable errors in updating
+    and/or orchestrating aspects of the target environment external to servo.
+    Failure to apply such updates may impact the optimization flow and should
+    result in cancellation of Describe/Measure/Adjust commands
+    """

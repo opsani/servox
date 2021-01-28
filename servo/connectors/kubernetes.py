@@ -2888,12 +2888,12 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             errs = []
             for result in results:
                 if isinstance(result, Exception):
+                    servo.logging.logger.exception(result)
                     errs.append(result)
-
             if errs:
-                raise RuntimeError(errs)
+                raise servo.errors.EnvironmentFailedError(f"Failed to update environment for {len(errs)} k8s deployment(s): {', '.join(errs)}")
         else:
-            servo.logging.logger.warning(f"failed to update environment: no deployments configured")
+            servo.logging.logger.warning("failed to update environment: no deployments configured")
 
     class Config:
         arbitrary_types_allowed = True
