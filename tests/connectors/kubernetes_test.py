@@ -5,6 +5,7 @@ from typing import Type
 import kubetest.client
 import pydantic
 import pytest
+import subprocess
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -29,6 +30,8 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirements,
+    Rollout,
+    RolloutConfiguration,
 )
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
@@ -1022,7 +1025,8 @@ class TestKubernetesConnectorIntegration:
             description = await connector.adjust([adjustment])
             debug(description)
 
-        assert "Insufficient memory." in str(rejection_info.value)
+        rej_msg = str(rejection_info.value)
+        assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
 
 
     async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
@@ -1106,6 +1110,7 @@ class TestKubernetesConnectorIntegration:
 ##
 # Rejection Tests using modified deployment
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
@@ -1130,3 +1135,218 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError):
             description = await connector.adjust([adjustment])
             debug(description)
+
+##
+# Tests against an ArgoCD rollout
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesConnectorRolloutIntegration:
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @pytest.fixture(autouse=True, scope="session")
+    def _cleanup_rollouts(self, session_kubeconfig):
+        """
+        Remove rollout installation in case namespace still in place from interrupted test run
+        """
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "delete", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        subprocess.run(rollout_crd_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        ns_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "delete", "namespace", "argo-rollouts" ]
+        subprocess.run(ns_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    @pytest.fixture(autouse=True, scope="session")
+    def _install_rollouts(self, session_kubeconfig):
+        # Setup
+        # Rollouts are picky about installation namespace
+        ns_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "create", "namespace", "argo-rollouts" ]
+        subprocess.check_call(ns_cmd)
+
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        subprocess.check_call(rollout_crd_cmd)
+
+        yield # Tests run
+
+        rollout_crd_cmd[2] = "delete"
+        subprocess.check_call(rollout_crd_cmd)
+
+        ns_cmd[2] = "delete"
+        subprocess.check_call(ns_cmd)
+
+
+    @pytest.fixture(autouse=True)
+    def _manage_rollout(self, namespace, pytestconfig, session_kubeconfig):
+        """
+        Apply manifest of the target rollout being tested against
+        """
+
+        rollout_cmd = ["kubectl", f"--kubeconfig={session_kubeconfig}", "apply", "-n", namespace, "-f", str(pytestconfig.rootpath / "tests/manifests/fiber-http-rollout-opsani-dev.yaml")]
+        subprocess.check_call(rollout_cmd)
+
+        wait_cmd = [ "kubectl", f"--kubeconfig={session_kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
+        subprocess.check_call(wait_cmd)
+
+        yield   # Test runs
+
+        # Teardown
+        rollout_cmd[2] = "delete"
+        subprocess.check_call(rollout_cmd)
+
+    @pytest.fixture()
+    def _rollout_config(self, config: KubernetesConfiguration):
+        config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in config.deployments ]
+        config.deployments = []
+        return config
+
+    @pytest.fixture()
+    def _rollout_canary_config(self, canary_config: KubernetesConfiguration):
+        canary_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in canary_config.deployments ]
+        canary_config.deployments = []
+        return canary_config
+
+    async def test_describe(self, _rollout_config) -> None:
+        connector = KubernetesConnector(config=_rollout_config)
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
+
+    async def test_adjust_cpu(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
+    async def test_adjust_cpu_with_settlement(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 250
+
+    # TODO: uncomment when sidecar support in rollouts
+    # async def test_adjust_cpu_at_non_zero_container_index(self, _rollout_config):
+    #     connector = KubernetesConnector(config=_rollout_config)
+    #     adjustment = Adjustment(
+    #         component_name="fiber-http/fiber-http",
+    #         setting_name="cpu",
+    #         value=".250",
+    #     )
+
+    #     # Inject a sidecar at index zero
+    #     rollout = await servo.connectors.kubernetes.Rollout.read('fiber-http', config.namespace)
+    #     assert rollout, f"failed loading rollout 'fiber-http' in namespace '{config.namespace}'"
+    #     await rollout.inject_sidecar(service="fiber-http", index=0)
+
+    #     control = servo.Control(settlement='1s')
+    #     description = await connector.adjust([adjustment], control)
+    #     assert description is not None
+    #     setting = description.get_setting('fiber-http/fiber-http.cpu')
+    #     assert setting
+    #     assert setting.value == 250
+
+    #     # Describe it again and make sure it matches
+    #     description = await connector.describe()
+    #     assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+
+    async def test_adjust_memory(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="700Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value == 734003200
+
+    async def test_adjust_rollout_insufficient_resources(self, _rollout_config):
+        _rollout_config.timeout = "60s"
+        _rollout_config.rollouts[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=_rollout_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+    async def test_adjust_replicas(self, _rollout_config):
+        connector = KubernetesConnector(config=_rollout_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="replicas",
+            value="2",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.replicas')
+        assert setting
+        assert setting.value == 2
+
+    ##
+    # Canary Tests
+    async def test_create_canary(self, _rollout_canary_config, namespace: str) -> None:
+        connector = KubernetesConnector(config=_rollout_canary_config)
+        rol = await Rollout.read("fiber-http", namespace)
+        debug(rol)
+
+        description = await connector.describe()
+        debug(description)
+
+    async def test_adjust_canary_insufficient_resources(self, _rollout_canary_config, namespace) -> None:
+        canary_config.timeout = "60s"
+        connector = KubernetesConnector(config=_rollout_canary_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="mem",
+            value="128Gi", # impossible right?
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+
+        rej_msg = str(rejection_info.value)
+        assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
+
+
+    async def test_adjust_canary_cpu_with_settlement(self, _rollout_canary_config, namespace):
+        connector = KubernetesConnector(config=_rollout_canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value == 250
