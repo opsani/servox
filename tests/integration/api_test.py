@@ -217,6 +217,7 @@ class APITestClient(pydantic.BaseModel, servo.api.Mixin):
                 "User-Agent": servo.api.USER_AGENT,
                 "Content-Type": "application/json",
             },
+            "timeout": None
         }
 
 
@@ -340,7 +341,7 @@ async def test_describe_with_null_metrics(client: APITestClient) -> None:
     status = await client._post_event(servo.api.Events.describe, status_dict)
     assert status.status == servo.api.OptimizerStatuses.invalid
     assert status.reason == (
-        '1 validation error for RemoteDescriptor\n'
+        '1 validation error for ServoDescriptor\n'
         'measurement -> metrics\n'
         '  none is not an allowed value (type=type_error.none.not_allowed)'
     )
@@ -380,7 +381,7 @@ async def test_describe_component_with_no_settings(client: APITestClient) -> Non
     status = await client._post_event(servo.api.Events.describe, status.dict())
     assert status.status == servo.api.OptimizerStatuses.invalid
     assert status.reason == (
-        '1 validation error for RemoteDescriptor\n'
+        '1 validation error for ServoDescriptor\n'
         'measurement -> metrics\n'
         '  none is not an allowed value (type=type_error.none.not_allowed)'
     )
@@ -414,7 +415,7 @@ async def test_describe_component_setting_incomplete(client: APITestClient) -> N
     status = await client._post_event(servo.api.Events.describe, status.dict())
     assert status.status == servo.api.OptimizerStatuses.invalid
     assert status.reason == (
-        '1 validation error for RemoteDescriptor\n'
+        '1 validation error for ServoDescriptor\n'
         'measurement -> metrics\n'
         '  none is not an allowed value (type=type_error.none.not_allowed)'
     )
