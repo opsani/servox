@@ -3431,7 +3431,7 @@ class KubernetesConnector(servo.BaseConnector):
         """
         raise NotImplementedError("stub out for the moment")
 
-    @servo.events.on_event()
+    @servo.events.on_event(timeout='5m')
     async def update_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> None:
         # Avoid initializing optimizations as the servo.yaml configuration is subject to change during environment updates
         await KubernetesOptimizations.update_environment(self.config, old, new)

@@ -15,7 +15,7 @@ from pydantic import Extra, ValidationError
 import servo as servox
 from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
-from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
+from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, HttpxTimeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.errors import *
@@ -1590,7 +1590,7 @@ def test_backoff_settings() -> None:
 )
 def test_valid_timeouts_input(attr, value, expected) -> None:
     kwargs = {attr: value}
-    timeouts = Timeouts(**kwargs)
+    timeouts = HttpxTimeouts(**kwargs)
     assert getattr(timeouts, attr) == expected
 
 
@@ -1598,7 +1598,7 @@ def test_valid_timeouts_input(attr, value, expected) -> None:
 @pytest.mark.parametrize("value", [[], "not valid", {}])
 def test_invalid_timeouts_input(attr, value) -> None:
     with pytest.raises(ValidationError):
-        Timeouts(**{attr: value})
+        HttpxTimeouts(**{attr: value})
 
 
 @pytest.mark.parametrize(
@@ -1611,17 +1611,18 @@ def test_invalid_timeouts_input(attr, value) -> None:
     ],
 )
 def test_timeouts_parsing(value, expected) -> None:
-    config = ServoConfiguration(timeouts=value)
+    config = ServoConfiguration(HttpxTimeouts(httpx=value))
     if value is None:
-        assert config.timeouts is None
+        assert config.timeouts.httpx is None
     else:
-        assert config.timeouts == Timeouts(
+        assert config.timeouts.httpx == HttpxTimeouts(
             connect=Duration(value),
             read=Duration(value),
             write=Duration(value),
             pool=Duration(value),
         )
 
+# TODO: unit tests for ServoConfiguration config.events timeouts
 
 @pytest.mark.parametrize(
     "proxies",

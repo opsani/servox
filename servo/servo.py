@@ -419,7 +419,7 @@ class Servo(servo.connector.BaseConnector):
     async def get_environment(self) -> Optional[servo.types.Environment]:
         return _environment_context_var.get(None)
 
-    @servo.events.on_event()
+    @servo.events.on_event(timeout='5m')
     async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
         if old != new:
             _environment_context_var.set(new)

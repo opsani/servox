@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import abc
 import asyncio
 import contextlib
 import contextvars
@@ -240,6 +241,7 @@ class EventHandler(pydantic.BaseModel):
     kwargs: Dict[str, Any]
     connector_type: Optional[Type["servo.BaseConnector"]]  # NOTE: Optional due to decorator
     handler: EventCallable
+    timeout: Optional[servo.types.Duration] = None
 
     def __str__(self):
         return f"{self.connector_type}({self.preposition}:{self.event}->{self.handler})"
@@ -405,7 +407,9 @@ def event(
 
 
 def before_event(
-    event: Optional[str] = None, **kwargs
+    event: Optional[str] = None,
+    timeout: servo.types.Duration = None,
+    **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
     """Register a decorated function as an event handler to be run before the specified event.
 
@@ -417,22 +421,26 @@ def before_event(
     :param event: The event or name of the event to run the handler before.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.before, **kwargs)
+    return event_handler(event, Preposition.before, timeout, **kwargs)
 
 
 def on_event(
-    event: Optional[str] = None, **kwargs
+    event: Optional[str] = None,
+    timeout: servo.types.Duration = None,
+    **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
     """Register a decorated function as an event handler to be run on the specified event.
 
     :param event: The event or name of the event to run the handler on.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.on, **kwargs)
+    return event_handler(event, Preposition.on, timeout, **kwargs)
 
 
 def after_event(
-    event: Optional[str] = None, **kwargs
+    event: Optional[str] = None,
+    timeout: servo.types.Duration = None,
+    **kwargs
 ) -> Callable[[EventCallable], EventCallable]:
     """Register a decorated function as an event handler to be run after the specified event.
 
@@ -442,12 +450,13 @@ def after_event(
     :param event: The event or name of the event to run the handler after.
     :param kwargs: An optional dictionary of supplemental arguments to be passed when the handler is called.
     """
-    return event_handler(event, Preposition.after, **kwargs)
+    return event_handler(event, Preposition.after, timeout, **kwargs)
 
 
 def event_handler(
     event_name: Optional[str] = None,
     preposition: Preposition = Preposition.on,
+    timeout: servo.types.Duration = None,
     **kwargs,
 ) -> Callable[[EventCallable], EventCallable]:
     """Register a decorated function as an event handler.
@@ -540,7 +549,7 @@ def event_handler(
 
         # Annotate the function for processing later, see Connector.__init_subclass__
         fn.__event_handler__ = EventHandler(
-            event=event, preposition=preposition, handler=fn, kwargs=kwargs
+            event=event, preposition=preposition, handler=fn, kwargs=kwargs, timeout=timeout
         )
         return fn
 
@@ -589,6 +598,10 @@ class Mixin:
                         f"Unexpected event descriptor of type '{handler.__class__}'"
                     )
 
+                if timeouts := cls.event_timeouts is not None:
+                    context_str = str(EventContext(name=handler.event.name, preposition=handler.preposition))
+                    handler.timeout = timeouts.get(context_str, handler.timeout)
+
                 handler.connector_type = cls
                 cls.__event_handlers__.append(handler)
 
@@ -607,6 +620,11 @@ class Mixin:
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
+
+    @property
+    @abc.abstractmethod
+    def event_timeouts(self) -> Optional[Dict[str, servo.types.Duration]]:
+        ...
 
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:
@@ -782,11 +800,17 @@ class Mixin:
                     method = types.MethodType(event_handler.handler, self)
                     async with event.on_handler_context_manager(self):
                         if asyncio.iscoroutinefunction(method):
-                            value = await asyncio.create_task(
-                                method(*args, **merged_kwargs),
-                                name=f"{preposition}:{event}",
+                            timeout = None if event_handler.timeout is None else event_handler.timeout.total_seconds()
+                            value = await asyncio.wait_for(
+                                asyncio.create_task(
+                                    method(*args, **merged_kwargs),
+                                    name=f"{preposition}:{event}",
+                                ),
+                                timeout=timeout
                             )
                         else:
+                            if event_handler.timeout is not None:
+                                self.logger.warning(f"Unable to enforce timeout of {event_handler.timeout} on blocking/sync handler: '{event_handler}'")
                             value = method(*args, **merged_kwargs)
 
                     result = EventResult(

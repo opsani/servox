@@ -205,9 +205,13 @@ class BaseConnector(
                 "Content-Type": "application/json",
             },
             "proxies": self._servo_config.proxies,
-            "timeout": self._servo_config.timeouts,
+            "timeout": self._servo_config.timeouts.httpx,
             "verify": self._servo_config.ssl_verify,
         }
+
+    @property
+    def event_timeouts(self) -> Optional[Dict[str, servo.types.Duration]]:
+        return self._servo_config.timeouts.events
 
     @property
     def logger(self) -> "loguru.Logger":

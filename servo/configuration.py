@@ -280,6 +280,23 @@ class BackoffSettings(BaseConfiguration):
     """
 
 class Timeouts(BaseConfiguration):
+    httpx: Optional[HttpxTimeouts] = None
+    """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+    """
+
+    events: Optional[Dict[str, servo.types.Duration]] = None
+    """Specifies the maximum amount of time to wait for handlers of event names keyed in this dictionary to finish
+    execution. Defaults are event specific but most have no timeout
+    """
+
+    @pydantic.validator("httpx", pre=True)
+    def parse_httpx_timeouts(cls, v):
+        if isinstance(v, (str, int, float)):
+            return HttpxTimeouts(v)
+        return v
+
+class HttpxTimeouts(BaseConfiguration):
     """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
@@ -393,9 +410,11 @@ class ServoConfiguration(BaseConfiguration):
     See https://www.python-httpx.org/advanced/#http-proxying
     """
 
-    timeouts: Optional[Timeouts] = None
-    """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
-    servo.
+    timeouts: Optional[Timeouts] = pydantic.Field(
+        default_factory=lambda: Timeouts(),
+        description="Global timeout configuration for servox components"
+    )
+    """Global timeout configuration for servox components
     """
 
     ssl_verify: Union[None, bool, pydantic.FilePath] = None
@@ -410,12 +429,6 @@ class ServoConfiguration(BaseConfiguration):
 
     See https://www.python-httpx.org/advanced/#ssl-certificates
     """
-
-    @pydantic.validator("timeouts", pre=True)
-    def parse_timeouts(cls, v):
-        if isinstance(v, (str, int, float)):
-            return Timeouts(v)
-        return v
 
     @classmethod
     def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
