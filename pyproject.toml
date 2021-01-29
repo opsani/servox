@@ -33,6 +33,7 @@ orjson = "^3.3.1"
 uvloop = "^0.14.0"
 statesman = "^1.0.0"
 pytz = "^2020.4"
+curlify2 = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.1.1"
@@ -44,6 +45,7 @@ asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.16.3"
 kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/template-manifests"}
 # kubetest = {path = "../kubetest", develop = true}
+mechanism = {path = "mechanism", develop = true}
 pytest-freezegun = "^0.4.2"
 yamlpath = "^3.2.0"
 isort = "^5.7.0"
@@ -79,6 +81,7 @@ pytest-vscodedebug = "^0.1.0"
 pytest-html = "^3.1.1"
 bandit = "^1.7.0"
 watchgod = "^0.6"
+hypothesis = "^6.0.3"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
