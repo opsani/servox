@@ -1974,7 +1974,10 @@ class Deployment(KubernetesModel):
         self.logger.info(
             f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting {timeout_} for it to become ready..."
         )
-        await canary_pod.wait_until_ready(timeout=timeout_)
+        try:
+            await canary_pod.wait_until_ready(timeout=timeout_)
+        except asyncio.TimeoutError:
+            await canary_pod.raise_for_status()
 
         # TODO: Check for unexpected changes to version, etc.
 
