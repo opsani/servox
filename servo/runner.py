@@ -335,11 +335,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )
 
-        typer.secho(f'{version} "{codename}" {initialized}')
-        typer.secho()
-        typer.secho(f"connectors:  {', '.join(sorted(names))}")
+        typer.secho(f'{version} "{codename}" {initialized}', color=True)
+        typer.secho(reset=True)
+        typer.secho(f"connectors:  {', '.join(sorted(names))}", color=True)
         typer.secho(
-            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
+            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}", color=True
         )
 
         if len(self.assembly.servos) == 1:
@@ -347,12 +347,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             optimizer = servo_.optimizer
 
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"optimizer:   {id}")
+            typer.secho(f"optimizer:   {id}", color=True)
             if optimizer.base_url != "https://api.opsani.com/":
                 base_url = typer.style(
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
-                typer.secho(f"base url: {base_url}")
+                typer.secho(f"base url: {base_url}", color=True)
 
             if servo_.config.servo and servo_.config.servo.proxies:
                 proxies = typer.style(
@@ -360,12 +360,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     bold=True,
                     fg=typer.colors.CYAN,
                 )
-                typer.secho(f"proxies: {proxies}")
+                typer.secho(f"proxies: {proxies}", color=True)
         else:
             servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"servos:   {servo_count}")
+            typer.secho(f"servos:   {servo_count}", color=True)
 
-        typer.secho()
+        typer.secho(reset=True)
 
     async def _shutdown(self, loop, signal=None):
         if signal:
