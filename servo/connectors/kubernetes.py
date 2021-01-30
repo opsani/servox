@@ -6,6 +6,7 @@ import abc
 import asyncio
 import contextlib
 import copy
+import datetime
 import devtools
 import enum
 import itertools
@@ -98,8 +99,8 @@ class Condition(servo.logging.Mixin):
 
 async def wait_for_condition(
     condition: Condition,
-    timeout: int = None,
-    interval: Union[int, float] = 1,
+    timeout: Optional[servo.DurationDescriptor] = None,
+    interval: servo.DurationDescriptor = 1,
     fail_on_api_error: bool = True,
 ) -> None:
     """Wait for a condition to be met.
@@ -121,38 +122,29 @@ async def wait_for_condition(
     """
     servo.logger.debug(f"waiting for condition: {condition}")
 
-    # define the maximum time to wait. once this is met, we should
-    # stop waiting.
-    max_time = None
-    if timeout is not None:
-        max_time = time.time() + timeout
+    started_at = datetime.datetime.now()
+    async def _wait_for_condition() -> None:
+        while True:
+            try:
+                servo.logger.debug(f"checking condition {condition}")
+                if await condition.check():
+                    servo.logger.debug(f"condition passed: {condition}")
+                    break
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                servo.logger.warning(f"encountered API exception while waiting: {e}")
+                if fail_on_api_error:
+                    raise
 
-    # start the wait block
-    start = time.time()
-    while True:
-        if max_time and time.time() >= max_time:
-            raise TimeoutError(
-                f"timed out ({timeout}s) while waiting for condition {condition}"
-            )
+            # if the condition is not met, sleep for the interval
+            # to re-check later
+            servo.logger.debug(f"sleeping for {interval}")
+            await asyncio.sleep(interval)
 
-        # check if the condition is met and break out if it is
-        try:
-            servo.logger.debug(f"checking condition {condition}")
-            if await condition.check():
-                servo.logger.debug(f"condition passed: {condition}")
-                break
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            servo.logger.warning(f"encountered API exception while waiting: {e}")
-            if fail_on_api_error:
-                raise
-
-        # if the condition is not met, sleep for the interval
-        # to re-check later
-        servo.logger.debug(f"sleeping for {interval}")
-        await asyncio.sleep(interval)
-
-    end = time.time()
-    servo.logger.debug(f"wait completed (total={servo.Duration(end-start)}) {condition}")
+    await asyncio.wait_for(
+        _wait_for_condition(),
+        timeout=(timeout and servo.Duration(timeout).total_seconds())
+    )
+    servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
 class ResourceRequirements(enum.Flag):
@@ -405,8 +397,8 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     async def wait_until_ready(
         self,
-        timeout: int = None,
-        interval: Union[int, float] = 1,
+        timeout: Optional[servo.DurationDescriptor] = None,
+        interval: servo.DurationDescriptor = 1,
         fail_on_api_error: bool = False,
     ) -> None:
         """Wait until the resource is in the ready state.
@@ -440,7 +432,9 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         )
 
     async def wait_until_deleted(
-        self, timeout: int = None, interval: Union[int, float] = 1
+        self,
+        timeout: Optional[servo.DurationDescriptor] = None,
+        interval: servo.DurationDescriptor = 1
     ) -> None:
         """Wait until the resource is deleted from the cluster.
 
@@ -1697,10 +1691,10 @@ class Deployment(KubernetesModel):
         await self.patch()
 
     @contextlib.asynccontextmanager
-    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+    async def rollout(self, *, timeout: Optional[servo.DurationDescriptor] = None) -> None:
         """Asynchronously wait for changes to a deployment to roll out to the cluster."""
         # NOTE: The timeout_seconds argument must be an int or the request will fail
-        timeout_seconds = int(timeout.total_seconds()) if timeout else None
+        timeout_seconds = servo.Duration(timeout).total_seconds() if timeout else None
 
         # Resource version lets us track any change. Observed generation only increments
         # when the deployment controller sees a significant change that requires rollout
@@ -1861,7 +1855,7 @@ class Deployment(KubernetesModel):
         return await Pod.read(self.canary_pod_name, self.namespace)
 
     async def delete_canary_pod(
-        self, *, raise_if_not_found: bool = True, timeout: servo.Numeric = 600
+        self, *, raise_if_not_found: bool = True, timeout: servo.DurationDescriptor = '10m'
     ) -> Optional[Pod]:
         """
         Delete the canary Pod.
@@ -1883,7 +1877,7 @@ class Deployment(KubernetesModel):
 
         return None
 
-    async def ensure_canary_pod(self, *, timeout: servo.Numeric = 600) -> Pod:
+    async def ensure_canary_pod(self, *, timeout: servo.DurationDescriptor = '10m') -> Pod:
         """
         Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
 
