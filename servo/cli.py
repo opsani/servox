@@ -1461,7 +1461,7 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    servo.runner.AssemblyRunner(servo.Assembly.current()).run()
+                    servo.runner.AssemblyRunner(context.assembly).run()
                 elif not exit_on_success:
                     return
 
