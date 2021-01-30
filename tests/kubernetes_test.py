@@ -281,7 +281,7 @@ class TestChecks:
         await deployment.patch()
         try:
             await deployment.wait_until_ready(5)
-        except TimeoutError:
+        except asyncio.TimeoutError:
             pass
 
         # Fail because the Pod is stuck in pending
