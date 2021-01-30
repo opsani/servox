@@ -1207,7 +1207,7 @@ class ServoCLI(CLI):
                 help="Execute checks and emit output progressively",
             ),
             wait: Optional[str] = typer.Option(
-                "30m",
+                None,
                 "--wait",
                 "-w",
                 help="Wait for checks to pass",
@@ -1427,7 +1427,7 @@ class ServoCLI(CLI):
                     if ready:
                         return True
                     else:
-                        if delay is not None:
+                        if wait and delay is not None:
                             self.logger.info(
                                 f"waiting for {delay} before rerunning failing checks"
                             )
