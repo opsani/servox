@@ -6,6 +6,7 @@ import abc
 import asyncio
 import contextlib
 import copy
+import devtools
 import enum
 import itertools
 import os
@@ -1937,10 +1938,11 @@ class Deployment(KubernetesModel):
         )
         await canary_pod.create()
 
+        timeout_ = servo.Duration(timeout)
         self.logger.info(
-            f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting for it to become ready..."
+            f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting {timeout_} for it to become ready..."
         )
-        await canary_pod.wait_until_ready(timeout=timeout)
+        await canary_pod.wait_until_ready(timeout=timeout_)
 
         # TODO: Check for unexpected changes to version, etc.
 
@@ -2562,6 +2564,7 @@ class CanaryOptimization(BaseOptimization):
             value=self.target_deployment.replicas,
             pinned=True,
         )
+        servo.logger.info(f"Reporting target replicas of {devtools.pformt(target_replicas)}")
 
         return [
             servo.Component(
