@@ -479,6 +479,10 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             interval=interval,
         )
 
+    async def raise_for_status(self) -> None:
+        """Raise an exception if in an unhealthy state."""
+        pass
+
 
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
@@ -952,8 +956,8 @@ class Pod(KubernetesModel):
 
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
-            if cond.reason == "Unschedulable": # TODO: should we further constrain this check?
-                raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+            if cond.reason == "Unschedulable":
+                return False
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -965,6 +969,39 @@ class Pod(KubernetesModel):
         # Catchall
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
+
+    async def raise_for_status(self) -> None:
+        """Raise an exception if the Pod status is not not ready."""
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.obj.status
+        self.logger.trace(f"current pod status is {status}")
+        if status is None:
+            raise RuntimeError(f'No such pod: {self.name}')
+
+        # check the pod phase to make sure it is running. a pod in
+        # the 'failed' or 'success' state will no longer be running,
+        # so we only care if the pod is in the 'running' state.
+        # phase = status.phase
+        if not status.conditions:
+            raise RuntimeError(f'Pod is not running: {self.name}')
+
+        self.logger.trace(f"checking status conditions {status.conditions}")
+        for cond in status.conditions:
+            if cond.reason == "Unschedulable":
+                # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
+                raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+
+            # we only care about the condition type 'ready'
+            if cond.type.lower() != "ready":
+                continue
+
+            # check that the readiness condition is True
+            if cond.status.lower() == "true":
+                return
+
+        # Catchall
+        self.logger.trace(f"unable to find ready=true, continuing to wait...")
+        raise RuntimeError(f"Unknown Pod status for '{self.name}': {status}")
 
     async def get_status(self) ->kubernetes_asyncio.client.V1PodStatus:
         """Get the status of the Pod.
@@ -1794,9 +1831,10 @@ class Deployment(KubernetesModel):
             pod for pod in pods
             if pod.obj.status.conditions and any(
                 cond.reason == "Unschedulable" for cond in pod.obj.status.conditions
-            )]
+            )
+        ]
         if unschedulable_pods:
-            pod_fmts = [] # [f"{pod.obj.metadata.name} - {', '.join(cond.message for cond)}" for pod in unschedulable_pods]
+            pod_fmts = []
             for pod in unschedulable_pods:
                 cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
                 pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
@@ -2125,6 +2163,11 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         """
         ...
 
+    @abc.abstractmethod
+    async def raise_for_status(self) -> None:
+        """Raise an exception if in an unhealthy state."""
+        ...
+
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
@@ -2414,6 +2457,11 @@ class DeploymentOptimization(BaseOptimization):
         )
         return is_ready and restart_count == 0
 
+    async def raise_for_status(self) -> None:
+        """Raise an exception if in an unhealthy state."""
+        await self.deployment.raise_for_status()
+
+
 class CanaryOptimization(BaseOptimization):
     """CanaryOptimization objects manage the optimization of Containers within a Deployment using
     a canary Pod that is adjusted independently and compared against the performance and cost profile
@@ -2545,6 +2593,7 @@ class CanaryOptimization(BaseOptimization):
             or f"{self.target_deployment_config.name}/{self.target_container_config.name}"
         )
         # implicitly pin the target settings before we return them
+        # TODO: Target container may have changed
         target_cpu = self.target_container_config.cpu.copy(update={"pinned": True})
         if value := self.target_container.get_resource_requirements("cpu", first=True):
             target_cpu.value = value
@@ -2640,6 +2689,10 @@ class CanaryOptimization(BaseOptimization):
             self.canary_pod.get_restart_count()
         )
         return is_ready and restart_count == 0
+
+    async def raise_for_status(self) -> None:
+        """Raise an exception if in an unhealthy state."""
+        await self.canary_pod.raise_for_status()
 
 
     class Config:
@@ -2800,48 +2853,38 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
         # TODO: Run sanity checks to look for out of band changes
 
+    async def raise_for_status(self) -> None:
+        async def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+            if task.done() and not task.cancelled():
+                if exception := task.exception():
+                    await optimization.handle_error(
+                        exception, self.config.on_failure
+                    )
+
+        tasks = []
+        for optimization in self.optimizations:
+            task = asyncio.create_task(optimization.raise_for_status())
+            task.add_done_callback(lambda task: _raise_for_task(optimization, task))
+            tasks.append(task)
+
+        for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
+            result = await future
+            if exception := result.exception():
+                servo.logger.exception(f"Optimization failed with exception: {exception}")
+
     async def is_ready(self):
         if self.optimizations:
             self.logger.debug(
                 f"Checking for readiness of {len(self.optimizations)} optimizations"
             )
-            try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(
-                        *list(map(lambda a: a.is_ready(), self.optimizations)),
-                        return_exceptions=True,
-                    ),
-                    timeout=60, # Should be fairly immediate operation
-                )
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    *list(map(lambda a: a.is_ready(), self.optimizations)),
+                ),
+                timeout=self.config.timeout.total_seconds()
+            )
 
-                # FIXME: This error handling needs to find the right optimization
-                # that raised it
-                for result in results:
-                    if isinstance(result, Exception):
-                        for optimization in self.optimizations:
-                            if await optimization.handle_error(
-                                result, self.config.on_failure
-                            ):
-                                # Getting readiness should not fail; failure should be treated as failed sanity check
-                                raise result
-
-                    if not result:
-                        return False
-
-                return True
-
-            except asyncio.exceptions.TimeoutError as error:
-                self.logger.error(
-                    f"timed out after 60 seconds checking for optimization readiness"
-                )
-                # FIXME: Error handling likely needs to propogate to each
-                # optimization... ?
-                for optimization in self.optimizations:
-                    if await optimization.handle_error(error, self.config.on_failure):
-                        # Stop error propogation once it has been handled
-                        break
-        else:
-            self.logger.warning(f"failed to verify readiness: no optimizations")
+            return all(results)
 
 
     class Config:
@@ -3299,6 +3342,9 @@ class KubernetesConnector(servo.BaseConnector):
             async def readiness_monitor() -> None:
                 while not progress.finished:
                     if not await state.is_ready():
+                        # Raise a specific exception if the optimization defines one
+                        state.raise_for_status()
+
                         raise servo.AdjustmentRejectedError(
                             reason="Optimization target became unready during adjustment settlement period"
                         )
