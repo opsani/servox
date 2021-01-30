@@ -64,8 +64,9 @@ class PrometheusMetric(servo.Metric):
             return self.query + " or on() vector(0)"
         return self.query
 
-    def escaped_query(self, query: str) -> str:
-        return re.sub(r"\{(.*?)\}", r"{{\1}}", query)
+    @property
+    def escaped_query(self) -> str:
+        return re.sub(r"\{(.*?)\}", r"{{\1}}", self.query)
 
     def __check__(self) -> servo.Check:
         """Return a Check representation of the metric."""
@@ -723,7 +724,7 @@ class PrometheusChecks(servo.BaseChecks):
         """Checks that the Prometheus base URL is valid and reachable."""
         await self._client.list_targets()
 
-    @servo.multicheck('Run query "{item.query}"')
+    @servo.multicheck('Run query "{item.escaped_query}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries."""
         async def query_for_metric(metric: PrometheusMetric) -> str:
