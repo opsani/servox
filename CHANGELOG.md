@@ -43,6 +43,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Introduced the `attach` and `detach` lifeycle events for handling setup and
   teardown concerns that need to execute when a Servo or Connector is added or
   removed from am Assembly/Servo.
+- Added automated checks.
+- Introduced pub/sub module.
 
 ### Changed
 
