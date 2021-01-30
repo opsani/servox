@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import itertools
 import signal
 from typing import Any, Dict, List, Optional
@@ -307,6 +308,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             loop.close()
 
     def _display_banner(self) -> None:
+        secho = functools.partial(typer.secho, color=True)
         banner = "\n".join([
             r"   _____                      _  __",
             r"  / ___/___  ______   ______ | |/ /",
@@ -317,7 +319,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         colors = ['\033[3{}m{{}}\033[0m'.format(n) for n in range(1,7)]
         rainbow = itertools.cycle(colors)
         letters = [next(rainbow).format(L) for L in banner]
-        typer.secho(''.join(letters))
+        secho(''.join(letters))
         types = servo.Assembly.all_connector_types()
         types.remove(servo.Servo)
 
@@ -335,11 +337,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )
 
-        typer.secho(f'{version} "{codename}" {initialized}', color=True)
-        typer.secho(reset=True)
-        typer.secho(f"connectors:  {', '.join(sorted(names))}", color=True)
-        typer.secho(
-            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}", color=True
+        secho(f'{version} "{codename}" {initialized}')
+        secho(reset=True)
+        secho(f"connectors:  {', '.join(sorted(names))}")
+        secho(
+            f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
         )
 
         if len(self.assembly.servos) == 1:
@@ -347,12 +349,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             optimizer = servo_.optimizer
 
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"optimizer:   {id}", color=True)
+            secho(f"optimizer:   {id}")
             if optimizer.base_url != "https://api.opsani.com/":
                 base_url = typer.style(
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
-                typer.secho(f"base url: {base_url}", color=True)
+                secho(f"base url: {base_url}")
 
             if servo_.config.servo and servo_.config.servo.proxies:
                 proxies = typer.style(
@@ -360,12 +362,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     bold=True,
                     fg=typer.colors.CYAN,
                 )
-                typer.secho(f"proxies: {proxies}", color=True)
+                secho(f"proxies: {proxies}")
         else:
             servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"servos:   {servo_count}", color=True)
+            secho(f"servos:   {servo_count}")
 
-        typer.secho(reset=True)
+        secho(reset=True)
 
     async def _shutdown(self, loop, signal=None):
         if signal:
