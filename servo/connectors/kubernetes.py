@@ -1626,7 +1626,7 @@ class Deployment(KubernetesModel):
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
             name="opsani-envoy",  # TODO: Put this into a constant or something
-            image="opsani/envoy-proxy:latest",
+            image="opsani/envoy-proxy:latest", # TODO: where should this live
             image_pull_policy="IfNotPresent",
             resources=kubernetes_asyncio.client.V1ResourceRequirements(
                 requests={
@@ -2555,10 +2555,13 @@ class CanaryOptimization(BaseOptimization):
         ):
             target_memory.value = value
 
-        target_replicas = self.target_deployment_config.replicas.copy(
-            update={"pinned": True}
+        # FIXME: Not sure if keeping replicas as a setting makes sense long term
+        target_replicas = servo.Replicas(
+            min=0,
+            max=99999,
+            value=self.target_deployment.replicas,
+            pinned=True,
         )
-        target_replicas.value = self.target_deployment.replicas
 
         return [
             servo.Component(
