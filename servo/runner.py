@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import itertools
+import colorama
+import random
 import signal
 from typing import Any, Dict, List, Optional
 
@@ -316,10 +317,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             r" ___/ /  __/ /   | |/ / /_/ /   |",
             r"/____/\___/_/    |___/\____/_/|_|",
         ])
-        colors = ['\033[3{}m{{}}\033[0m'.format(n) for n in range(1,7)]
-        rainbow = itertools.cycle(colors)
-        letters = [next(rainbow).format(L) for L in banner]
-        secho(''.join(letters))
+        colors = [colorama.Fore.RED, colorama.Fore.GREEN, colorama.Fore.YELLOW,
+                  colorama.Fore.BLUE, colorama.Fore.MAGENTA, colorama.Fore.CYAN]
+        colored_banner = [random.choice(colors) + char for char in banner]
+        typer.echo(''.join(colored_banner), color=True)
         types = servo.Assembly.all_connector_types()
         types.remove(servo.Servo)
 
