@@ -3254,11 +3254,9 @@ class KubernetesConnector(servo.BaseConnector):
     config: KubernetesConfiguration
 
     @servo.on_event()
-    async def startup(self) -> None:
+    async def attach(self, servo_: servo.Servo) -> None:
         # Ensure we are ready to talk to Kubernetes API
         await self.config.load_kubeconfig()
-
-        # TODO: Check that the app meets the configured constraints
 
     @servo.on_event()
     async def describe(self) -> servo.Description:

@@ -12,7 +12,7 @@ import tests.helpers
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 @pytest.fixture()
-def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
+async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "prometheus": servo.connectors.prometheus.PrometheusConnector,
@@ -22,11 +22,12 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config = config_model.generate()
     servo_yaml.write_text(config.yaml())
 
+    # TODO: This needs a real optimizer ID
     optimizer = servo.configuration.Optimizer(
-        id="dev.opsani.com/blake-ignite",
-        token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+        id="dev.opsani.com/servox-integration-tests",
+        token="179eddc9-20e2-4096-b064-824b72a83b7d",
     )
-    assembly_ = servo.assembly.Assembly.assemble(
+    assembly_ = await servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly_

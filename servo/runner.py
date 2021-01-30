@@ -183,7 +183,10 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     async def run(self) -> None:
         self._running = True
+        # TODO: context manager?
         servo.servo.Servo.set_current(self.servo)
+        # self.logger.info("Dispatching startup event...")
+        await self.servo.startup()
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
@@ -206,8 +209,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                 await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
                 self.connected = True
 
-            self.logger.info("Dispatching startup event...")
-            await self.servo.startup()
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()

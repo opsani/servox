@@ -360,9 +360,10 @@ class TestPrometheusChecks:
 @pytest.mark.clusterrolebinding('cluster-admin')
 class TestPrometheusIntegration:
     def optimizer(self) -> servo.Optimizer:
+        # TODO: This needs a real optimizer
         return servo.Optimizer(
-            id="dev.opsani.com/blake-ignite",
-            token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+            id="dev.opsani.com/servox-integration-tests",
+            token="179eddc9-20e2-4096-b064-824b72a83b7d",
         )
 
     @pytest.fixture(autouse=True)
@@ -1124,8 +1125,8 @@ class TestAbsentMetrics:
     @pytest.fixture
     def connector(self) -> servo.connectors.prometheus.PrometheusConnector:
         optimizer = servo.Optimizer(
-            id="dev.opsani.com/blake-ignite",
-            token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+            id="servox.opsani.com/tests",
+            token="00000000-0000-0000-0000-000000000000",
         )
         config = PrometheusConfiguration.generate(base_url='https://localhost:9090')
         return PrometheusConnector(config=config, optimizer=optimizer)

@@ -63,7 +63,7 @@ class Assembly(pydantic.BaseModel):
         _assembly_context_var.set(assembly)
 
     @classmethod
-    def assemble(
+    async def assemble(
         cls,
         *,
         config_file: Optional[pathlib.Path] = None,
@@ -139,6 +139,13 @@ class Assembly(pydantic.BaseModel):
             servos=servos,
         )
 
+        # Attach all connectors to the servo
+        await asyncio.gather(
+            *list(map(lambda s: s.dispatch_event(servo.servo.Events.attach, s), servos))
+        )
+
+        # TODO: Setting these contexts here is a bad idea,,,
+        # TODO: These could be context managers...
         # Set the context vars
         cls.set_current(assembly)
 
@@ -213,7 +220,12 @@ class Assembly(pydantic.BaseModel):
             servo_: The servo to add to the assembly.
         """
         self.servos.append(servo_)
-        await servo.startup()
+
+        # TODO: __assemble__?
+        # TODO: If it's started? dispatch_event?
+        # TODO: start_connectors, stop_connectors...
+        debug("add_servo called")
+        # await servo.startup()
 
     async def remove_servo(self, servo_: servo.servo.Servo) -> None:
         """Remove a servo from the assembly.
@@ -224,7 +236,10 @@ class Assembly(pydantic.BaseModel):
         Args:
             servo_: The servo to remove from the assembly.
         """
-        await servo.shutdown()
+
+        # TODO: __disassemble__?
+        # TODO: If its running?
+        # await servo.shutdown()
         self.servos.remove(servo_)
 
     async def startup(self):

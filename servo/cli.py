@@ -517,11 +517,11 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         # Assemble the Servo
         try:
-            assembly = servo.Assembly.assemble(
+            assembly = run_async(servo.Assembly.assemble(
                 config_file=ctx.config_file,
                 configs=configs,
                 optimizer=optimizer
-            )
+            ))
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error

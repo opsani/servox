@@ -27,6 +27,8 @@ class Events(str, enum.Enum):
     """An enumeration of the names of standard events defined by the servo."""
 
     # Lifecycle events
+    attach = "attach"
+    detach = "detach"
     startup = "startup"
     shutdown = "shutdown"
 
@@ -49,6 +51,14 @@ class _EventDefinitions(Protocol):
     """
 
     # Lifecycle events
+    @servo.events.event(Events.attach)
+    async def attach(self, servo_: Servo) -> None:
+        ...
+
+    @servo.events.event(Events.detach)
+    async def detach(self, servo_: Servo) -> None:
+        ...
+
     @servo.events.event(Events.startup)
     async def startup(self) -> None:
         ...
@@ -163,6 +173,8 @@ class Servo(servo.connector.BaseConnector):
     """The active connectors in the Servo.
     """
 
+    # TODO: Move these to functions...
+    # TODO: context manager? with servox.current_servo(servo): / current_assembly():
     @staticmethod
     def current() -> Optional["Servo"]:
         """Return the active servo for the current execution context.
@@ -268,6 +280,7 @@ class Servo(servo.connector.BaseConnector):
 
         The connector is added to the servo event bus and is initialized with
         the startup event to prepare for execution.
+        TODO: is assembled...
 
         Args:
             name: A unique name for the connector in the servo.
@@ -295,9 +308,13 @@ class Servo(servo.connector.BaseConnector):
         with servo.utilities.pydantic.extra(self.config):
             setattr(self.config, name, connector.config)
 
-        await self.dispatch_event(
-            Events.startup, include=[connector], _prepositions=servo.events.Preposition.on
-        )
+        await self.dispatch_event(Events.attach, self, include=[connector])
+        # TODO: Only do this if we are running?
+        # TODO: Don't run startup here
+        # TODO: Where to do tjis for runtime adds?
+        # await self.dispatch_event(
+        #     Events.startup, include=[connector], _prepositions=servo.events.Preposition.on
+        # )
 
     async def remove_connector(
         self, connector: Union[str, servo.connector.BaseConnector]
@@ -306,6 +323,7 @@ class Servo(servo.connector.BaseConnector):
 
         The connector is removed from the servo event bus and is finalized with
         the shutdown event to prepare for eviction.
+        # TODO: assemble, don't startup
 
         Args:
             connector: The connector or name to remove from the servo.
@@ -324,9 +342,13 @@ class Servo(servo.connector.BaseConnector):
                 f"invalid connector: a connector named '{name}' does not exist in the servo"
             )
 
-        await self.dispatch_event(
-            Events.shutdown, include=[connector_], _prepositions=servo.events.Preposition.on
-        )
+        # TODO: Only do this if we are running
+        # TODO: do this elsewhere
+        # await self.dispatch_event(
+        #     Events.shutdown, include=[connector_], _prepositions=servo.events.Preposition.on
+        # )
+
+        await self.dispatch_event(Events.detach, self, include=[connector])
 
         # Remove from the event bus
         self.connectors.remove(connector_)
