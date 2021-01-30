@@ -60,8 +60,8 @@ async def running_servo(
             connector.optimizer.base_url = fakeapi_url
             connector.api_client_options.update(servo_runner.servo.api_client_options)
         event_loop.create_task(servo_runner.run())
-        servo.Servo.set_current(servo_runner.servo)
-        yield servo_runner
+        async with servo_runner.servo.current():
+            yield servo_runner
 
     finally:
         await servo_runner.shutdown()

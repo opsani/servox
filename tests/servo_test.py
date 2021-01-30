@@ -374,6 +374,7 @@ async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
     await servo.pubsub_exchange.shutdown()
 
 async def test_shutdown_event(mocker, servo: servo) -> None:
+    await servo.startup()
     connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.on)[0]
     on_spy = mocker.spy(on_handler, "handler")
@@ -381,7 +382,7 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     on_spy.assert_called()
 
 async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
-    servo.pubsub_exchange.start()
+    await servo.startup()
     assert servo.pubsub_exchange.running
     await servo.shutdown()
     assert not servo.pubsub_exchange.running

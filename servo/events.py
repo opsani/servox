@@ -25,6 +25,7 @@ __all__ = [
     "EventResult",
     "Preposition",
     "create_event",
+    "current_event",
     "event",
     "before_event",
     "on_event",
@@ -32,9 +33,22 @@ __all__ = [
     "event_handler",
 ]
 
+
 # Context vars for asyncio tasks managed by run_event_handlers
-_event_context_var = contextvars.ContextVar("servo.event", default=None)
-_connector_context_var = contextvars.ContextVar("servo.connector", default=None)
+_current_context_var = contextvars.ContextVar("servox.current_event", default=None)
+
+def current_event() -> Optional[EventContext]:
+    """
+    Returns an object that describes the actively executing event context, if any.
+
+    The event context is helpful in introspecting concurrent runtime state without having to pass
+    around info across methods. The `EventContext` object can be compared to strings for convenience
+    and supports string comparison to both `event_name` and `preposition:event_name` constructs for
+    easily checking current state.
+    """
+    return _current_context_var.get()
+
+
 _connector_event_bus = weakref.WeakKeyDictionary()
 
 _signature_cache: Dict[str, inspect.Signature] = {}
@@ -186,6 +200,17 @@ class EventContext(pydantic.BaseModel):
 
     def is_after(self) -> bool:
         return self.preposition == Preposition.after
+
+    @contextlib.contextmanager
+    def current(self):
+        """A context manager that sets the current connector context."""
+        try:
+          token = _current_context_var.set(self)
+          yield self
+
+        finally:
+            _current_context_var.reset(token)
+
 
     def __str__(self):
         if self.preposition == Preposition.on:
@@ -768,81 +793,61 @@ class Mixin:
         if not event_handlers:
             return None
 
-        results: List[EventResult] = []
-        try:
-            prev_connector_token = _connector_context_var.set(self)
-            prev_event_token = _event_context_var.set(
-                EventContext(event=event, preposition=preposition)
-            )
-            for event_handler in event_handlers:
-                # NOTE: Explicit kwargs take precendence over those defined during handler declaration
-                merged_kwargs = event_handler.kwargs.copy()
-                merged_kwargs.update(kwargs)
-                try:
-                    method = types.MethodType(event_handler.handler, self)
-                    async with event.on_handler_context_manager(self):
-                        if asyncio.iscoroutinefunction(method):
-                            value = await asyncio.create_task(
-                                method(*args, **merged_kwargs),
-                                name=f"{preposition}:{event}",
-                            )
-                        else:
-                            value = method(*args, **merged_kwargs)
+        with self.current():
+            with EventContext(event=event, preposition=preposition).current():
+                results: List[EventResult] = []
+                for event_handler in event_handlers:
+                    # NOTE: Explicit kwargs take precendence over those defined during handler declaration
+                    merged_kwargs = event_handler.kwargs.copy()
+                    merged_kwargs.update(kwargs)
+                    try:
+                        method = types.MethodType(event_handler.handler, self)
+                        async with event.on_handler_context_manager(self):
+                            if asyncio.iscoroutinefunction(method):
+                                value = await asyncio.create_task(
+                                    method(*args, **merged_kwargs),
+                                    name=f"{preposition}:{event}",
+                                )
+                            else:
+                                value = method(*args, **merged_kwargs)
 
-                    result = EventResult(
-                        connector=self,
-                        event=event,
-                        preposition=preposition,
-                        handler=event_handler,
-                        value=value,
-                    )
-                    results.append(result)
+                        result = EventResult(
+                            connector=self,
+                            event=event,
+                            preposition=preposition,
+                            handler=event_handler,
+                            value=value,
+                        )
+                        results.append(result)
 
-                except Exception as error:
-                    if (isinstance(error, servo.errors.EventCancelledError) and
-                        preposition != Preposition.before):
+                    except Exception as error:
+                        if (isinstance(error, servo.errors.EventCancelledError) and
+                            preposition != Preposition.before):
+                            if return_exceptions:
+                                self.logger.warning(f"Cannot cancel an event from an {preposition} handler: event dispatched")
+                            else:
+                                cause = error
+                                error = TypeError(
+                                    f"Cannot cancel an event from an {preposition} handler"
+                                )
+                                error.__cause__ = cause
+
+
+                        # Annotate the exception and reraise to halt execution
+                        error.__event_result__ = EventResult(
+                            connector=self,
+                            event=event,
+                            preposition=preposition,
+                            handler=event_handler,
+                            value=error,
+                        )
+
                         if return_exceptions:
-                            self.logger.warning(f"Cannot cancel an event from an {preposition} handler: event dispatched")
+                            results.append(error.__event_result__)
                         else:
-                            cause = error
-                            error = TypeError(
-                                f"Cannot cancel an event from an {preposition} handler"
-                            )
-                            error.__cause__ = cause
-
-
-                    # Annotate the exception and reraise to halt execution
-                    error.__event_result__ = EventResult(
-                        connector=self,
-                        event=event,
-                        preposition=preposition,
-                        handler=event_handler,
-                        value=error,
-                    )
-
-                    if return_exceptions:
-                        results.append(error.__event_result__)
-                    else:
-                        raise error
-
-        finally:
-            _connector_context_var.reset(prev_connector_token)
-            _event_context_var.reset(prev_event_token)
+                            raise error
 
         return results
-
-    # TODO: This moves to a function
-    @property
-    def current_event(self) -> Optional[EventContext]:
-        """
-        Returns an object that describes the actively executing event context, if any.
-
-        The event context is helpful in introspecting concurrent runtime state without having to pass
-        around info across methods. The `EventContext` object can be compared to strings for convenience
-        and supports string comparison to both `event_name` and `preposition:event_name` constructs for
-        easily checking current state.
-        """
-        return _event_context_var.get()
 
 
 _is_base_class_defined = True

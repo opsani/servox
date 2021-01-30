@@ -95,8 +95,8 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
-        max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
+        max_time=lambda: servo.current_servo().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.current_servo().config.servo.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Events.whats_next, None)
@@ -164,60 +164,59 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         while self._running:
-            try:
-                servo.servo.Servo.set_current(self.servo)
-                status = await self.exec_command()
-                if status.status == servo.api.OptimizerStatuses.unexpected_event:
-                    self.logger.warning(
-                        f"server reported unexpected event: {status.reason}"
-                    )
-            except httpx.TimeoutException as error:
-                self.logger.warning(f"ignoring HTTP timeout error: {error}")
+            with self.servo.current():
+                try:
+                    # servo.servo.Servo.set_current(self.servo)
+                    status = await self.exec_command()
+                    if status.status == servo.api.OptimizerStatuses.unexpected_event:
+                        self.logger.warning(
+                            f"server reported unexpected event: {status.reason}"
+                        )
+                except httpx.TimeoutException as error:
+                    self.logger.warning(f"ignoring HTTP timeout error: {error}")
 
-            except httpx.HTTPStatusError as error:
-                self.logger.warning(f"ignoring HTTP response error: {error}")
+                except httpx.HTTPStatusError as error:
+                    self.logger.warning(f"ignoring HTTP response error: {error}")
 
-            except Exception as error:
-                self.logger.exception(f"failed with unrecoverable error: {error}")
-                raise error
+                except Exception as error:
+                    self.logger.exception(f"failed with unrecoverable error: {error}")
+                    raise error
 
     async def run(self) -> None:
         self._running = True
-        # TODO: context manager?
-        servo.servo.Servo.set_current(self.servo)
-        # self.logger.info("Dispatching startup event...")
-        await self.servo.startup()
-        self.logger.info(
-            f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
-        )
-
-        async def giveup(details) -> None:
-            loop = asyncio.get_event_loop()
-            self.logger.critical("retries exhausted, giving up")
-            asyncio.create_task(self.shutdown(loop))
-
-        try:
-            @backoff.on_exception(
-                backoff.expo,
-                httpx.HTTPError,
-                max_time=lambda: servox.Servo.current().config.servo.backoff.max_time(),
-                max_tries=lambda: servox.Servo.current().config.servo.backoff.max_tries(),
-                on_giveup=giveup,
+        with self.servo.current():
+            await self.servo.startup()
+            self.logger.info(
+                f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
             )
-            async def connect() -> None:
-                self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
-                self.connected = True
+
+            async def giveup(details) -> None:
+                loop = asyncio.get_event_loop()
+                self.logger.critical("retries exhausted, giving up")
+                asyncio.create_task(self.shutdown(loop))
+
+            try:
+                @backoff.on_exception(
+                    backoff.expo,
+                    httpx.HTTPError,
+                    max_time=lambda: servox.current_servo().config.servo.backoff.max_time(),
+                    max_tries=lambda: servox.current_servo().config.servo.backoff.max_tries(),
+                    on_giveup=giveup,
+                )
+                async def connect() -> None:
+                    self.logger.info("Saying HELLO.", end=" ")
+                    await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
+                    self.connected = True
 
 
-            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
-            await connect()
-        except asyncio.CancelledError:
-            pass
-        except:
-            servo.logger.exception("exception encountered during connect")
+                self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
+                await connect()
+            except asyncio.CancelledError:
+                pass
+            except:
+                servo.logger.exception("exception encountered during connect")
 
-        await asyncio.create_task(self.main_loop(), name="main loop")
+            await asyncio.create_task(self.main_loop(), name="main loop")
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
@@ -266,7 +265,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: encapsulate all this shit
         async def _report_progress(**kwargs) -> None:
             # Forward to the active servo...
-            await servo.Servo.current().report_progress(**kwargs)
+            await servo.current_servo().report_progress(**kwargs)
 
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
@@ -288,7 +287,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 [task.cancel() for task in tasks]
 
                 # Restart a fresh main loop
-                runner = self._runner_for_servo(servo.Servo.current())
+                runner = self._runner_for_servo(servo.current_servo())
                 asyncio.create_task(runner.main_loop(), name="main loop")
 
         self.progress_handler = servo.logging.ProgressHandler(
