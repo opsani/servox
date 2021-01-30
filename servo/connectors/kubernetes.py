@@ -2613,7 +2613,7 @@ class CanaryOptimization(BaseOptimization):
             value=self.target_deployment.replicas,
             pinned=True,
         )
-        servo.logger.info(f"Reporting target replicas of {devtools.pformt(target_replicas)}")
+        servo.logger.info(f"Reporting target replicas of {devtools.pformat(target_replicas)}")
 
         return [
             servo.Component(
