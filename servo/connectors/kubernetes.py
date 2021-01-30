@@ -1694,7 +1694,7 @@ class Deployment(KubernetesModel):
     async def rollout(self, *, timeout: Optional[servo.DurationDescriptor] = None) -> None:
         """Asynchronously wait for changes to a deployment to roll out to the cluster."""
         # NOTE: The timeout_seconds argument must be an int or the request will fail
-        timeout_seconds = servo.Duration(timeout).total_seconds() if timeout else None
+        timeout_seconds = int(servo.Duration(timeout).total_seconds()) if timeout else None
 
         # Resource version lets us track any change. Observed generation only increments
         # when the deployment controller sees a significant change that requires rollout
