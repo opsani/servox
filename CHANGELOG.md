@@ -40,11 +40,23 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Connector details for a particular servo instance can now be displayed via the
    `servo show connectors` CLI command.
 - Extensive new development and testing tooling.
+- Introduced `servo.pubsub` module providing publisher/subscriber capabilities.
+- The test suite now runs extensive integration and system tests under CI.
+- All aspects of the Opsani Dev installation experience are now covered by
+  checks.
 - Introduced the `attach` and `detach` lifeycle events for handling setup and
   teardown concerns that need to execute when a Servo or Connector is added or
   removed from am Assembly/Servo.
 - Added automated checks.
 - Introduced pub/sub module.
+
+### Enhanced
+
+- The Kubernetes connector now recovers from and reports on numerous failure
+  modes such as unschedulable configurations.
+- The Prometheus connector now exposes a Prometheus HTTP API client library.
+- The Envoy sidecar can now be automatically injected via the CLI.
+- The Opsani Dev connector now exposes a very simple configuration surface.
 
 ### Changed
 
@@ -114,6 +126,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   characters in interpolated Prometheus queries.
 - Fixed connector lifecycle issue with Opsani Dev connector preventing use in
   several of the CLI commands.
+- Corrected an entry points discovery issue affecting the latest versions of
+  Python.
+
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
