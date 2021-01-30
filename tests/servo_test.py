@@ -30,6 +30,7 @@ def test_version():
 
 
 class FirstTestServoConnector(BaseConnector):
+    attached: bool = False
     started_up: bool = False
 
     @event(handler=True)
@@ -56,6 +57,14 @@ class FirstTestServoConnector(BaseConnector):
     def run_after_promotion(self, results: List[EventResult]) -> None:
         return "promoted!!"
 
+    @on_event(Events.attach)
+    def handle_attach(self, servo_: servox.Servo) -> None:
+        self.attached = True
+
+    @on_event(Events.detach)
+    def handle_detach(self, servo_: servox.Servo) -> None:
+        pass
+
     @on_event(Events.startup)
     def handle_startup(self) -> None:
         self.started_up = True
@@ -80,7 +89,7 @@ class SecondTestServoConnector(BaseConnector):
 
 
 @pytest.fixture()
-def assembly(servo_yaml: Path) -> Assembly:
+async def assembly(servo_yaml: Path) -> Assembly:
     config = {
         "connectors": ["first_test_servo", "second_test_servo"],
         "first_test_servo": {},
@@ -90,7 +99,7 @@ def assembly(servo_yaml: Path) -> Assembly:
 
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly = Assembly.assemble(
+    assembly = await Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly
@@ -365,6 +374,7 @@ async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
     await servo.pubsub_exchange.shutdown()
 
 async def test_shutdown_event(mocker, servo: servo) -> None:
+    await servo.startup()
     connector = servo.get_connector("first_test_servo")
     on_handler = connector.get_event_handlers("shutdown", Preposition.on)[0]
     on_spy = mocker.spy(on_handler, "handler")
@@ -372,7 +382,7 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     on_spy.assert_called()
 
 async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
-    servo.pubsub_exchange.start()
+    await servo.startup()
     assert servo.pubsub_exchange.running
     await servo.shutdown()
     assert not servo.pubsub_exchange.running
@@ -577,7 +587,7 @@ def test_validation_of_after_handlers_ignores_kwargs() -> None:
 
 
 class TestAssembly:
-    def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
+    async def test_assemble_assigns_optimizer_to_connectors(self, servo_yaml: Path):
         config = {
             "connectors": {"vegeta": "vegeta"},
             "vegeta": {"rate": 0, "target": "https://opsani.com/"},
@@ -586,14 +596,14 @@ class TestAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly = Assembly.assemble(
+        assembly = await Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         servo = assembly.servos[0]
         connector = servo.connectors[0]
         assert connector.optimizer == optimizer
 
-    def test_aliased_connectors_produce_schema(self, servo_yaml: Path, mocker) -> None:
+    async def test_aliased_connectors_produce_schema(self, servo_yaml: Path, mocker) -> None:
         mocker.patch.object(Servo, "version", "100.0.0")
         mocker.patch.object(VegetaConnector, "version", "100.0.0")
 
@@ -606,7 +616,7 @@ class TestAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly = Assembly.assemble(
+        assembly = await Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         DynamicServoSettings = assembly.servos[0].config.__class__
@@ -1344,7 +1354,7 @@ class TestAssembly:
         },
     }
 
-    def test_aliased_connectors_get_distinct_env_configuration(
+    async def test_aliased_connectors_get_distinct_env_configuration(
         self, servo_yaml: Path
     ) -> None:
         config = {
@@ -1356,7 +1366,7 @@ class TestAssembly:
 
         optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-        assembly = Assembly.assemble(
+        assembly = await Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
         DynamicServoConfiguration = assembly.servos[0].config.__class__
@@ -1400,12 +1410,12 @@ class TestAssembly:
             assert s.target == "https://opsani.com/servox"
 
 
-def test_generating_schema_with_test_connectors(
+async def test_generating_schema_with_test_connectors(
     optimizer_env: None, servo_yaml: Path
 ) -> None:
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
-    assembly = Assembly.assemble(
+    assembly = await Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     assert len(assembly.servos) == 1, "servo was not assembled"
@@ -1781,11 +1791,11 @@ async def test_add_connector(servo: Servo) -> None:
     assert servo.config.whatever == connector.config
 
 
-async def test_add_connector_sends_startup_event(servo: Servo) -> None:
+async def test_add_connector_sends_attach_event(servo: Servo) -> None:
     connector = FirstTestServoConnector(config=BaseConfiguration())
-    assert connector.started_up is False
+    assert connector.attached is False
     await servo.add_connector("whatever", connector)
-    assert connector.started_up is True
+    assert connector.attached is True
 
 
 async def test_add_connector_can_handle_events(servo: Servo) -> None:
@@ -1834,12 +1844,11 @@ async def test_remove_connector_by_name(servo: Servo) -> None:
     with pytest.raises(AttributeError):
         assert servo.config.first_test_servo
 
-
-async def test_remove_connector_sends_shutdown_event(servo: Servo, mocker) -> None:
+# TODO: shutdown if running
+async def test_remove_connector_sends_detach_event(servo: Servo, mocker) -> None:
     connector = servo.get_connector("first_test_servo")
-    on_handler = connector.get_event_handlers("shutdown", Preposition.on)[0]
+    on_handler = connector.get_event_handlers("detach", Preposition.on)[0]
     on_spy = mocker.spy(on_handler, "handler")
-    assert connector.started_up is False
     await servo.remove_connector(connector)
     on_spy.assert_called()
 

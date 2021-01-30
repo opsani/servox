@@ -19,6 +19,7 @@ import loguru
 import servo.assembly
 import servo.events
 
+
 __all__ = (
     "Mixin",
     "Filter",
@@ -104,7 +105,7 @@ class ProgressHandler:
             return
 
         # Favor explicit connector in extra (see Mixin) else use the context var
-        connector = extra.get("connector", servo.events._connector_context_var.get())
+        connector = extra.get("connector", servo.current_connector())
         if not connector:
             return await self._report_error(
                 "declining request to report progress for record without a connector attribute",
@@ -113,7 +114,7 @@ class ProgressHandler:
 
         event_context: Optional[
             servo.events.EventContext
-        ] = servo.events._event_context_var.get()
+        ] = servo.current_event()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:
@@ -149,8 +150,10 @@ class ProgressHandler:
     async def shutdown(self) -> None:
         """Shutdown the progress handler by emptying the queue and releasing the queue processor."""
         await self._queue.join()
-        self._queue_processor.cancel()
-        await asyncio.gather(self._queue_processor, return_exceptions=True)
+
+        if self._queue_processor:
+            self._queue_processor.cancel()
+            await asyncio.gather(self._queue_processor, return_exceptions=True)
 
     async def _process_queue(self) -> None:
         while True:
@@ -232,21 +235,21 @@ class Formatter:
         if not "component" in record["extra"]:
             # Favor explicit connector from the extra dict or use the context var
             if connector := extra.get(
-                "connector", servo.events._connector_context_var.get()
+                "connector", servo.current_connector()
             ):
                 component = connector.name
             else:
                 component = "servo"
 
             # Append event context if available
-            event_context = servo.events._event_context_var.get()
+            event_context = servo.current_event()
             if event_context:
                 component += f"[{event_context}]"
 
             # If we are running multiservo, annotate that as well
-            assembly = servo.assembly.Assembly.current()
-            if assembly and len(assembly.servos) > 1 and servo.servo.Servo.current():
-                component = f"{servo.servo.Servo.current().config.optimizer.id}({component})"
+            assembly = servo.current_assembly()
+            if assembly and len(assembly.servos) > 1 and servo.current_servo():
+                component = f"{servo.current_servo().config.optimizer.id}({component})"
 
             extra["component"] = component
 

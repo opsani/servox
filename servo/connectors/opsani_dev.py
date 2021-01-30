@@ -579,9 +579,7 @@ class OpsaniDevConnector(servo.BaseConnector):
     config: OpsaniDevConfiguration
 
     @servo.on_event()
-    async def startup(self) -> None:
-        servo_ = servo.Servo.current()  # TODO: should I have self.servo and self.assembly convenience functions??? This could be different than current_servo!
-
+    async def attach(self, servo_: servo.Servo) -> None:
         await servo_.add_connector(
             "opsani-dev:kubernetes",
             servo.connectors.kubernetes.KubernetesConnector(

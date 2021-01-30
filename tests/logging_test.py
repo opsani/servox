@@ -8,7 +8,8 @@ import pytest
 from freezegun import freeze_time
 
 import servo
-from servo.events import EventContext, _connector_context_var, _event_context_var
+import servo.events
+import servo.servo
 from servo.logging import (
     DEFAULT_FILTER,
     DEFAULT_FORMATTER,
@@ -20,13 +21,12 @@ from servo.logging import (
     set_level,
 )
 
-
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:
-    _connector_context_var.set(None)
-    _event_context_var.set(None)
-    servo.Assembly.set_current(None)
-    servo.Servo.set_current(None)
+    servo.connector._current_context_var.set(None)
+    servo.events._current_context_var.set(None)
+    servo.assembly._current_context_var.set(None)
+    # servo.servo._current_context_var.set(None)
     # Remove all handlers during logging tests
     logger.remove(None)
     yield
@@ -111,16 +111,16 @@ class TestFormatting:
         assert attributed_message == "servo - Test"
 
     def test_event_context_included(self, messages):
-        _event_context_var.set(EventContext.from_str("before:adjust"))
-        logger.info("Test", connector=self)
-        message = messages[0]
-        assert message.record["message"] == "Test"
-        attributed_message = message.rsplit(" | ", 1)[1].strip()
-        assert attributed_message == "TestFormatting[before:adjust] - Test"
+        with servo.events.EventContext.from_str("before:adjust").current():
+            logger.info("Test", connector=self)
+            message = messages[0]
+            assert message.record["message"] == "Test"
+            attributed_message = message.rsplit(" | ", 1)[1].strip()
+            assert attributed_message == "TestFormatting[before:adjust] - Test"
 
     def test_connector_context_var(self, messages):
-        _connector_context_var.set(self)
-        _event_context_var.set(EventContext.from_str("before:adjust"))
+        servo.connector._current_context_var.set(self)
+        servo.events._current_context_var.set(servo.events.EventContext.from_str("before:adjust"))
         logger.info("Test")
         message = messages[0]
         assert message.record["message"] == "Test"
@@ -210,12 +210,12 @@ class TestProgressHandler:
     async def test_success_inference_from_context_var(
         self, logger, progress_reporter, error_reporter
     ):
-        event_context = EventContext.from_str("before:measure")
-        _event_context_var.set(event_context)
-        logger.critical("Test...", progress=50, connector="foo")
-        await logger.complete()
-        progress_reporter.assert_called()
-        error_reporter.assert_not_called()
+        event_context = servo.events.EventContext.from_str("before:measure")
+        with event_context.current():
+            logger.critical("Test...", progress=50, connector="foo")
+            await logger.complete()
+            progress_reporter.assert_called()
+            error_reporter.assert_not_called()
 
 
 def test_log_execution() -> None:

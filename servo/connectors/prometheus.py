@@ -17,7 +17,7 @@ import servo
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
-
+CHANNEL = 'metrics.prometheus'
 
 class Absent(str, enum.Enum):
     """An enumeration of behaviors for handling absent metrics.
@@ -64,8 +64,9 @@ class PrometheusMetric(servo.Metric):
             return self.query + " or on() vector(0)"
         return self.query
 
-    def escaped_query(self, query: str) -> str:
-        return re.sub(r"\{(.*?)\}", r"{{\1}}", query)
+    @property
+    def escaped_query(self) -> str:
+        return re.sub(r"\{(.*?)\}", r"{{\1}}", self.query)
 
     def __check__(self) -> servo.Check:
         """Return a Check representation of the metric."""
@@ -723,7 +724,7 @@ class PrometheusChecks(servo.BaseChecks):
         """Checks that the Prometheus base URL is valid and reachable."""
         await self._client.list_targets()
 
-    @servo.multicheck('Run query "{item.query}"')
+    @servo.multicheck('Run query "{item.escaped_query}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries."""
         async def query_for_metric(metric: PrometheusMetric) -> str:
@@ -768,11 +769,11 @@ class PrometheusConnector(servo.BaseConnector):
         # Continuously publish a stream of metrics broadcasting every N seconds
         streaming_interval = self.config.streaming_interval
         if streaming_interval is not None:
-            servo.logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
+            logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
+            logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
 
-            @self.publish('metrics.prometheus', every=streaming_interval)
+            @self.publish(CHANNEL, every=streaming_interval)
             async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
-                servo.logger.info(f"Publishing {len(self.config.metrics)} metrics every {streaming_interval}...")
                 report = []
                 client = Client(base_url=self.config.base_url)
                 responses = await asyncio.gather(
@@ -785,7 +786,7 @@ class PrometheusConnector(servo.BaseConnector):
                         report.append((response.metric.name, timestamp.isoformat(), value))
 
                 await publisher(servo.pubsub.Message(json=report))
-                servo.logger.info(f"Published {len(report)} metrics.")
+                logger.info(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(

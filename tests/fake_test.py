@@ -172,7 +172,7 @@ async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
     await static_optimizer.say_goodbye()
 
 @pytest.fixture()
-def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
+async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     config_model = servo.assembly._create_config_model_from_routes(
         {
             "adjust": tests.helpers.AdjustConnector,
@@ -182,10 +182,10 @@ def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     servo_yaml.write_text(config.yaml())
 
     optimizer = servo.Optimizer(
-        id="dev.opsani.com/blake-ignite",
-        token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+        id="servox.opsani.com/tests",
+        token="00000000-0000-0000-0000-000000000000",
     )
-    assembly_ = servo.assembly.Assembly.assemble(
+    assembly_ = await servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
     return assembly_
