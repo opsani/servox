@@ -21,6 +21,7 @@ from servo.connectors.kubernetes import (
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    KubernetesAdjustment,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -29,6 +30,7 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirements,
+    ShortByteSize,
 )
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
@@ -350,9 +352,9 @@ class TestKubernetesConfiguration:
             ("deployments[0].containers[0].cpu.max", "4"),
             ("deployments[0].containers[0].cpu.step", "125m"),
             # Memory
-            ("deployments[0].containers[0].memory.min", "256.0MiB"),
-            ("deployments[0].containers[0].memory.max", "4.0GiB"),
-            ("deployments[0].containers[0].memory.step", "128.0MiB"),
+            ("deployments[0].containers[0].memory.min", "256.0Mi"),
+            ("deployments[0].containers[0].memory.max", "4.0Gi"),
+            ("deployments[0].containers[0].memory.step", "128.0Mi"),
         ],
     )
     def test_generate_emits_human_readable_values(
@@ -613,18 +615,22 @@ class TestContainer:
         )
 
     @pytest.mark.parametrize(
-        "name, value, requirements, kwargs, resources_dict",
+        "adjustment, requirements, kwargs, resources_dict",
         [
             (
-                "cpu",
-                ("50m", "250m"),
+                KubernetesAdjustment(
+                    component_name="unit-test",
+                    setting_name="cpu",
+                    value=("50m", "250m")),
                 ...,
                 ...,
                 {"limits": {"cpu": "250m"}, "requests": {"cpu": "50m", "memory": "3G"}},
             ),
             (
-                "cpu",
-                "500m",
+                KubernetesAdjustment(
+                    component_name="unit-test",
+                    setting_name="cpu",
+                    value="500m"),
                 ResourceRequirements.limit,
                 dict(clear_others=True),
                 {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
@@ -632,7 +638,7 @@ class TestContainer:
         ],
     )
     def test_set_resource_requirements(
-        self, container, name, value, requirements, kwargs, resources_dict
+        self, container, adjustment, requirements, kwargs, resources_dict
     ) -> None:
         resources = client.V1ResourceRequirements()
         resources.requests = {"cpu": "100m", "memory": "3G"}
@@ -645,16 +651,21 @@ class TestContainer:
         if kwargs == ...:
             kwargs = container.set_resource_requirements.__kwdefaults__
 
-        container.set_resource_requirements(name, value, requirements, **kwargs)
+        container.set_resource_requirements(*adjustment.normalize_adjustment(), requirements, **kwargs)
         assert container.resources.to_dict() == resources_dict
 
     def test_set_resource_requirements_handles_null_requirements_dict(self, container):
         container.resources = client.V1ResourceRequirements()
 
-        container.set_resource_requirements("cpu", "1000m")
+        adjustment = KubernetesAdjustment(
+            component_name="unit-test",
+            setting_name="cpu",
+            value="1000m",
+        )
+        container.set_resource_requirements(*adjustment.normalize_adjustment())
         assert container.resources.to_dict() == {
-            "limits": {"cpu": "1000m"},
-            "requests": {"cpu": "1000m"},
+            "limits": {"cpu": "1"},
+            "requests": {"cpu": "1"},
         }
 
 
@@ -701,6 +712,7 @@ class TestCPU:
             "max": 4000,
             "step": 125,
             "value": None,
+            "limit_min": None,
             "pinned": False,
             "requirements": ResourceRequirements.compute,
         } == cpu.dict()
@@ -781,6 +793,7 @@ class TestMemory:
             "max": 4294967296,
             "step": 268435456,
             "value": None,
+            "limit_min": None,
             "pinned": False,
             "requirements": ResourceRequirements.compute,
         } == memory.dict()
@@ -819,9 +832,9 @@ class TestMemory:
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization["min"] == "128.0MiB"
-        assert serialization["max"] == "4.0GiB"
-        assert serialization["step"] == "256.0MiB"
+        assert serialization["min"] == "128.0Mi"
+        assert serialization["max"] == "4.0Gi"
+        assert serialization["step"] == "256.0Mi"
 
 def test_millicpu():
     class Model(pydantic.BaseModel):
@@ -887,7 +900,7 @@ class TestKubernetesConnectorIntegration:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0Mi"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust_cpu(self, config):
@@ -962,6 +975,80 @@ class TestKubernetesConnectorIntegration:
         # deployment = await Deployment.read("web", "default")
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
+
+    async def test_adjust_memory_limit_min(self, config, kube):
+        config.deployments[0].containers[0].memory = servo.connectors.kubernetes.Memory(
+                                **config.deployments[0].containers[0].memory.dict(exclude_unset=True),
+                                limit_min="128Mi",
+                            )
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="64Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value.human_readable() == "64.0Mi"
+
+        deployments = kube.get_deployments()
+        fiber_deploy = deployments.get("fiber-http")
+        fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["memory"] == "128Mi"
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="256Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value.human_readable() == "256.0Mi"
+
+        deployments = kube.get_deployments()
+        fiber_deploy = deployments.get("fiber-http")
+        fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["memory"] == "256Mi"
+
+    async def test_adjust_cpu_limit_min(self, config, kube):
+        config.deployments[0].containers[0].cpu = CPU(min="50m", max="800m", step="125m", limit_min="100m")
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".05",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value.human_readable() == '50m'
+
+        deployments = kube.get_deployments()
+        fiber_deploy = deployments.get("fiber-http")
+        fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["cpu"] == "100m"
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".175",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value.human_readable() == '175m'
+
+        deployments = kube.get_deployments()
+        fiber_deploy = deployments.get("fiber-http")
+        fiber_container = next(iter(c for c in fiber_deploy.obj.spec.template.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["cpu"] == "175m"
+
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
         config.timeout = "60s"
@@ -1038,6 +1125,78 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
         assert setting
         assert setting.value == 250
+
+
+    async def test_adjust_canary_memory_limit_min(self, canary_config, kube):
+        canary_config.deployments[0].containers[0].memory = servo.connectors.kubernetes.Memory(
+                                **canary_config.deployments[0].containers[0].memory.dict(exclude_unset=True),
+                                limit_min="128Mi",
+                            )
+        connector = KubernetesConnector(config=canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="mem",
+            value="64Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.mem')
+        assert setting
+        assert setting.value.human_readable() == "64.0Mi"
+
+        can_pod = next(iter(pod for name, pod in kube.get_pods().items() if 'canary' in name))
+        fiber_container = next(iter(c for c in can_pod.obj.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["memory"] == "128Mi"
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="mem",
+            value="256Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.mem')
+        assert setting
+        assert setting.value.human_readable() == "256.0Mi"
+
+        can_pod = next(iter(pod for name, pod in kube.get_pods().items() if 'canary' in name))
+        fiber_container = next(iter(c for c in can_pod.obj.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["memory"] == "256Mi"
+
+
+    async def test_adjust_canary_cpu_limit_min(self, canary_config, kube):
+        canary_config.deployments[0].containers[0].cpu = CPU(min="50m", max="800m", step="125m", limit_min="100m")
+        connector = KubernetesConnector(config=canary_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".05",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value.human_readable() == "50m"
+
+        can_pod = next(iter(pod for name, pod in kube.get_pods().items() if 'canary' in name))
+        fiber_container = next(iter(c for c in can_pod.obj.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["cpu"] == "100m"
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-canary",
+            setting_name="cpu",
+            value=".175",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        assert setting
+        assert setting.value.human_readable() == "175m"
+
+        can_pod = next(iter(pod for name, pod in kube.get_pods().items() if 'canary' in name))
+        fiber_container = next(iter(c for c in can_pod.obj.spec.containers if c.name == 'fiber-http'))
+        assert fiber_container.resources.limits["cpu"] == "175m"
+
 
     async def test_apply_no_changes(self):
         # resource_version stays the same and early exits
