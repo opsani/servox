@@ -50,7 +50,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("app_name",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^[a-z\\-\\.0-9]{3,64}$"'
+            == 'string does not match regex "^[a-zA-Z\\-\\.0-9]{3,64}$"'
         )
 
     def test_token_validation(self) -> None:

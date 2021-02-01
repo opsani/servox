@@ -759,7 +759,7 @@ class TestAssembly:
                         'env_names': [
                             'app_name',
                         ],
-                        'pattern': '^[a-z\\-\\.0-9]{3,64}$',
+                        'pattern': '^[a-zA-Z\\-\\.0-9]{3,64}$',
                         'type': 'string',
                     },
                     'token': {
