@@ -376,13 +376,13 @@ class TestIntegration:
                 # Step 7
                 servo.logger.critical("Step 7 - Bring tuning Pod online")
                 # await assert_check_raises(
-                #     checks.run_one(id=f"check_canary_is_running"),
+                #     checks.run_one(id=f"check_tuning_is_running"),
                 #     AssertionError,
                 #     re.escape("could not find tuning pod 'fiber-http-canary'")
                 # )
                 async with change_to_resource(deployment):
-                    await deployment.ensure_canary_pod()
-                await assert_check(checks.run_one(id=f"check_canary_is_running"))
+                    await deployment.ensure_tuning_pod()
+                await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
                 # Step 8
                 servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
@@ -822,11 +822,11 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         async with change_to_resource(service):
             await service.patch()
 
-    elif id == 'check_canary_is_running':
+    elif id == 'check_tuning_is_running':
         servo.logger.critical("Step 7 - Bring tuning Pod online")
         # TODO: This should happen automatically?
         async with change_to_resource(deployment):
-            await deployment.ensure_canary_pod()
+            await deployment.ensure_tuning_pod()
 
     elif id == 'check_traffic_metrics':
         # Step 8

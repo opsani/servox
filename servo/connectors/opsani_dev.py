@@ -525,7 +525,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
 
     @servo.check("Tuning pod is running")
-    async def check_canary_is_running(self) -> None:
+    async def check_tuning_is_running(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
             self.config.namespace
@@ -533,10 +533,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
         try:
-            await deployment.ensure_canary_pod()
+            await deployment.ensure_tuning_pod()
         except Exception as error:
             raise servo.checks.CheckError(
-                f"could not find tuning pod '{deployment.canary_pod_name}''"
+                f"could not find tuning pod '{deployment.tuning_pod_name}''"
             ) from error
 
     @servo.check("Pods are processing traffic")

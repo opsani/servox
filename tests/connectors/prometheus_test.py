@@ -1159,7 +1159,7 @@ class TestAbsentMetrics:
         )
 
 
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
     @respx.mock
     async def test_that_empty_range_query_triggers_absent_check(
         self,
@@ -1216,7 +1216,7 @@ class TestAbsentMetrics:
                 assert False, "unhandled case"
 
 
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
     @respx.mock
     async def test_that_present_metric_returns_empty_results(
         self,

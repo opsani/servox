@@ -1840,35 +1840,35 @@ class Deployment(KubernetesModel):
     # Canary support
 
     @property
-    def canary_pod_name(self) -> str:
+    def tuning_pod_name(self) -> str:
         """
-        Return the name of canary Pod for this Deployment.
+        Return the name of tuning Pod for this Deployment.
         """
-        return f"{self.name}-canary"
+        return f"{self.name}-tuning"
 
-    async def get_canary_pod(self) -> Pod:
+    async def get_tuning_pod(self) -> Pod:
         """
-        Retrieve the canary Pod for this Deployment (if any).
+        Retrieve the tuning Pod for this Deployment (if any).
 
         Will raise a Kubernetes API exception if not found.
         """
-        return await Pod.read(self.canary_pod_name, self.namespace)
+        return await Pod.read(self.tuning_pod_name, self.namespace)
 
-    async def delete_canary_pod(
+    async def delete_tuning_pod(
         self, *, raise_if_not_found: bool = True, timeout: servo.DurationDescriptor = '10m'
     ) -> Optional[Pod]:
         """
-        Delete the canary Pod.
+        Delete the tuning Pod.
         """
         try:
-            canary = await self.get_canary_pod()
+            canary = await self.get_tuning_pod()
             self.logger.warning(
-                f"Deleting canary Pod '{canary.name}' from namespace '{canary.namespace}'..."
+                f"Deleting tuning Pod '{canary.name}' from namespace '{canary.namespace}'..."
             )
             await canary.delete()
             await canary.wait_until_deleted(timeout=timeout)
             self.logger.info(
-                f"Deleted canary Pod '{canary.name}' from namespace '{canary.namespace}'."
+                f"Deleted tuning Pod '{canary.name}' from namespace '{canary.namespace}'."
             )
             return canary
         except kubernetes_asyncio.client.exceptions.ApiException as e:
@@ -1877,35 +1877,33 @@ class Deployment(KubernetesModel):
 
         return None
 
-    async def ensure_canary_pod(self, *, timeout: servo.DurationDescriptor = '10m') -> Pod:
+    async def ensure_tuning_pod(self, *, timeout: servo.DurationDescriptor = '10m') -> Pod:
         """
-        Ensures that a canary Pod exists by deleting and recreating an existing Pod or creating one from scratch.
-
-        TODO: docs...
+        Ensures that a tuning Pod exists by deleting and recreating an existing Pod or creating one from scratch.
         """
-        canary_pod_name = self.canary_pod_name
+        tuning_pod_name = self.tuning_pod_name
         namespace = self.namespace
         self.logger.debug(
-            f"ensuring existence of canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+            f"ensuring existence of tuning pod '{tuning_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
         )
 
         # Look for an existing canary
         try:
-            if canary_pod := await self.get_canary_pod():
+            if tuning_pod := await self.get_tuning_pod():
                 self.logger.debug(
-                    f"found existing canary pod '{canary_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
+                    f"found existing tuning pod '{tuning_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
                 )
-                return canary_pod
+                return tuning_pod
         except kubernetes_asyncio.client.exceptions.ApiException as e:
             if e.status != 404 or e.reason != "Not Found":
                 raise
 
-        # Setup the canary Pod -- our settings are updated on the underlying PodSpec template
-        self.logger.trace(f"building new canary")
+        # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
+        self.logger.trace(f"building new tuning pod")
         pod_obj =kubernetes_asyncio.client.V1Pod(
             metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec
         )
-        pod_obj.metadata.name = canary_pod_name
+        pod_obj.metadata.name = tuning_pod_name
         if pod_obj.metadata.annotations is None:
             pod_obj.metadata.annotations = {}
         pod_obj.metadata.annotations["opsani.com/opsani_tuning_for"] = self.name
@@ -1913,9 +1911,9 @@ class Deployment(KubernetesModel):
             pod_obj.metadata.labels = {}
         pod_obj.metadata.labels["opsani_role"] = "tuning"
 
-        canary_pod = Pod(obj=pod_obj)
-        canary_pod.namespace = namespace
-        self.logger.trace(f"initialized new canary: {canary_pod}")
+        tuning_pod = Pod(obj=pod_obj)
+        tuning_pod.namespace = namespace
+        self.logger.trace(f"initialized new tuning pod: {tuning_pod}")
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get("POD_NAME")
@@ -1953,7 +1951,7 @@ class Deployment(KubernetesModel):
                     )
                 )
 
-            canary_pod.obj.metadata.owner_references = [
+            tuning_pod.obj.metadata.owner_references = [
                kubernetes_asyncio.client.V1OwnerReference(
                     api_version=servo_dep.api_version,
                     block_owner_deletion=True,
@@ -1966,25 +1964,25 @@ class Deployment(KubernetesModel):
 
         # Create the Pod and wait for it to get ready
         self.logger.info(
-            f"Creating canary Pod '{canary_pod_name}' in namespace '{namespace}'"
+            f"Creating tuning Pod '{tuning_pod_name}' in namespace '{namespace}'"
         )
-        await canary_pod.create()
+        await tuning_pod.create()
 
         timeout_ = servo.Duration(timeout)
         self.logger.info(
-            f"Created canary Pod '{canary_pod_name}' in namespace '{namespace}', waiting {timeout_} for it to become ready..."
+            f"Created tuning Pod '{tuning_pod_name}' in namespace '{namespace}', waiting {timeout_} for it to become ready..."
         )
         try:
-            await canary_pod.wait_until_ready(timeout=timeout_)
+            await tuning_pod.wait_until_ready(timeout=timeout_)
         except asyncio.TimeoutError:
-            await canary_pod.raise_for_status()
+            await tuning_pod.raise_for_status()
 
         # TODO: Check for unexpected changes to version, etc.
 
-        await canary_pod.refresh()
-        await canary_pod.get_containers()
+        await tuning_pod.refresh()
+        await tuning_pod.get_containers()
 
-        return canary_pod
+        return tuning_pod
 
     async def get_restart_count(self) -> int:
         count = 0
@@ -2461,7 +2459,7 @@ class DeploymentOptimization(BaseOptimization):
 
 class CanaryOptimization(BaseOptimization):
     """CanaryOptimization objects manage the optimization of Containers within a Deployment using
-    a canary Pod that is adjusted independently and compared against the performance and cost profile
+    a tuning Pod that is adjusted independently and compared against the performance and cost profile
     of its siblings.
     """
 
@@ -2472,8 +2470,8 @@ class CanaryOptimization(BaseOptimization):
     target_container_config: "ContainerConfiguration"
 
     # Canary will be created if it does not yet exist
-    canary_pod: Pod
-    canary_container: Container
+    tuning_pod: Pod
+    tuning_container: Container
 
     @classmethod
     async def create(
@@ -2485,19 +2483,19 @@ class CanaryOptimization(BaseOptimization):
                 f'cannot create CanaryOptimization: target Deployment "{config.name}" does not exist in Namespace "{config.namespace}"'
             )
 
-        # Ensure that we have a canary Pod
-        canary_pod = await deployment.ensure_canary_pod()
+        # Ensure that we have a tuning Pod
+        tuning_pod = await deployment.ensure_tuning_pod()
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
             target_container = deployment.find_container(container_config.name)
-            canary_container = canary_pod.get_container(container_config.name)
+            tuning_container = tuning_pod.get_container(container_config.name)
 
             name = (
                 config.strategy.alias
                 if isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
                 and config.strategy.alias
-                else f"{deployment.name}/{canary_container.name}-canary"
+                else f"{deployment.name}/{tuning_container.name}-canary"
             )
 
             return cls(
@@ -2506,8 +2504,8 @@ class CanaryOptimization(BaseOptimization):
                 target_deployment=deployment,
                 target_container_config=container_config,
                 target_container=target_container,
-                canary_pod=canary_pod,
-                canary_container=canary_container,
+                tuning_pod=tuning_pod,
+                tuning_container=tuning_container,
                 **kwargs,
             )
 
@@ -2523,14 +2521,14 @@ class CanaryOptimization(BaseOptimization):
             requirements = getattr(
                 self.target_container_config, setting
             ).requirements
-            self.canary_container.set_resource_requirements(
+            self.tuning_container.set_resource_requirements(
                 setting, value, requirements, clear_others=True
             )
 
         elif setting == "replicas":
             if value != 1:
                 servo.logger.warning(
-                    f'ignored attempt to set replicas to "{value}" on canary pod "{self.canary_pod.name}"'
+                    f'ignored attempt to set replicas to "{value}" on tuning pod "{self.tuning_pod.name}"'
                 )
 
         else:
@@ -2541,9 +2539,9 @@ class CanaryOptimization(BaseOptimization):
     async def apply(self) -> None:
         """Apply the adjustments to the target."""
         dep_copy = copy.copy(self.target_deployment)
-        dep_copy.set_container(self.canary_container.name, self.canary_container)
-        await dep_copy.delete_canary_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
+        dep_copy.set_container(self.tuning_container.name, self.tuning_container)
+        await dep_copy.delete_tuning_pod(raise_if_not_found=False)
+        self.canary = await dep_copy.ensure_tuning_pod(timeout=self.timeout.total_seconds())
 
     @property
     def cpu(self) -> CPU:
@@ -2551,7 +2549,7 @@ class CanaryOptimization(BaseOptimization):
         Return the current CPU setting for the optimization.
         """
         cpu = self.target_container_config.cpu.copy()
-        cpu.value = self.canary_container.get_resource_requirements("cpu", first=True)
+        cpu.value = self.tuning_container.get_resource_requirements("cpu", first=True)
         return cpu
 
     @property
@@ -2560,7 +2558,7 @@ class CanaryOptimization(BaseOptimization):
         Return the current Memory setting for the optimization.
         """
         memory = self.target_container_config.memory.copy()
-        memory.value = self.canary_container.get_resource_requirements(
+        memory.value = self.tuning_container.get_resource_requirements(
             "memory", first=True
         )
         return memory
@@ -2645,13 +2643,13 @@ class CanaryOptimization(BaseOptimization):
         )
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
-        self.logger.info(f'destroying canary Pod "{self.name}"')
-        await self.canary_pod.delete()
+        self.logger.info(f'destroying tuning Pod "{self.name}"')
+        await self.tuning_pod.delete()
 
-        self.logger.debug(f'awaiting deletion of canary Pod "{self.name}"')
-        await self.canary_pod.wait_until_deleted()
+        self.logger.debug(f'awaiting deletion of tuning Pod "{self.name}"')
+        await self.tuning_pod.wait_until_deleted()
 
-        self.logger.info(f'destroyed canary Pod "{self.name}"')
+        self.logger.info(f'destroyed tuning Pod "{self.name}"')
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
         if mode == FailureMode.rollback or mode == FailureMode.destroy:
@@ -2659,7 +2657,7 @@ class CanaryOptimization(BaseOptimization):
             try:
                 if mode == FailureMode.rollback:
                     self.logger.warning(
-                        f"cannot rollback a canary Pod: falling back to destroy: {error}"
+                        f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
                     self.logger.opt(exception=error).exception("")
 
@@ -2669,7 +2667,7 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.info(
                     "creating new canary against baseline following failed adjust"
                 )
-                self.canary = await self.target_deployment.ensure_canary_pod()
+                self.canary = await self.target_deployment.ensure_tuning_pod()
                 return True
 
             except Exception as handler_error:
@@ -2681,14 +2679,14 @@ class CanaryOptimization(BaseOptimization):
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
-            self.canary_pod.is_ready(),
-            self.canary_pod.get_restart_count()
+            self.tuning_pod.is_ready(),
+            self.tuning_pod.get_restart_count()
         )
         return is_ready and restart_count == 0
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.canary_pod.raise_for_status()
+        await self.tuning_pod.raise_for_status()
 
 
     class Config:
@@ -2976,7 +2974,7 @@ class OptimizationStrategy(str, enum.Enum):
     """
 
     canary = "canary"
-    """The canary strategy creates a servo managed standalone canary Pod based on the target Deployment and makes
+    """The canary strategy creates a servo managed standalone tuning Pod based on the target Deployment and makes
     adjustments to it instead of the Deployment itself.
     """
 
