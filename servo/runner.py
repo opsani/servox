@@ -163,10 +163,9 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
-        while self._running:
-            with self.servo.current():
+        with self.servo.current():
+            while self._running:
                 try:
-                    # servo.servo.Servo.set_current(self.servo)
                     status = await self.exec_command()
                     if status.status == servo.api.OptimizerStatuses.unexpected_event:
                         self.logger.warning(
@@ -184,39 +183,39 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     async def run(self) -> None:
         self._running = True
-        with self.servo.current():
-            await self.servo.startup()
-            self.logger.info(
-                f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
+
+        await self.servo.startup()
+        self.logger.info(
+            f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
+        )
+
+        async def giveup(details) -> None:
+            loop = asyncio.get_event_loop()
+            self.logger.critical("retries exhausted, giving up")
+            asyncio.create_task(self.shutdown(loop))
+
+        try:
+            @backoff.on_exception(
+                backoff.expo,
+                httpx.HTTPError,
+                max_time=lambda: self.config.servo.backoff.max_time(),
+                max_tries=lambda: self.config.servo.backoff.max_tries(),
+                on_giveup=giveup,
             )
-
-            async def giveup(details) -> None:
-                loop = asyncio.get_event_loop()
-                self.logger.critical("retries exhausted, giving up")
-                asyncio.create_task(self.shutdown(loop))
-
-            try:
-                @backoff.on_exception(
-                    backoff.expo,
-                    httpx.HTTPError,
-                    max_time=lambda: servox.current_servo().config.servo.backoff.max_time(),
-                    max_tries=lambda: servox.current_servo().config.servo.backoff.max_tries(),
-                    on_giveup=giveup,
-                )
-                async def connect() -> None:
-                    self.logger.info("Saying HELLO.", end=" ")
-                    await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
-                    self.connected = True
+            async def connect() -> None:
+                self.logger.info("Saying HELLO.", end=" ")
+                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
+                self.connected = True
 
 
-                self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
-                await connect()
-            except asyncio.CancelledError:
-                pass
-            except:
-                servo.logger.exception("exception encountered during connect")
+            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
+            await connect()
+        except asyncio.CancelledError:
+            pass
+        except:
+            servo.logger.exception("exception encountered during connect")
 
-            await asyncio.create_task(self.main_loop(), name="main loop")
+        await asyncio.create_task(self.main_loop(), name="main loop")
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
