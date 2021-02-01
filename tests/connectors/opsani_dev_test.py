@@ -401,7 +401,7 @@ class TestIntegration:
                 assert tuning.pool == "opsani-envoy-sidecars"
                 assert tuning.health == "up"
                 assert tuning.labels["opsani_role"] == "tuning"
-                assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-canary"
+                assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
                 assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
 
                 async with kube_port_forward(f"service/fiber-http", port) as service_url:
