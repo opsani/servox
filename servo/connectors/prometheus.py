@@ -19,7 +19,7 @@ DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
 CHANNEL = 'metrics.prometheus'
 
-class Absent(str, enum.Enum):
+class AbsentMetricPolicy(str, enum.Enum):
     """An enumeration of behaviors for handling absent metrics.
 
     Absent metrics do not exist in Prometheus at query evaluation time.
@@ -52,7 +52,7 @@ class PrometheusMetric(servo.Metric):
     """
     query: str = None
     step: servo.Duration = "1m"
-    absent: Absent = Absent.ignore
+    absent: AbsentMetricPolicy = AbsentMetricPolicy.ignore
     eager: Optional[servo.Duration] = None
 
     def build_query(self) -> str:
@@ -60,7 +60,7 @@ class PrometheusMetric(servo.Metric):
 
         The current implementation handles appending the zero vector suffix.
         """
-        if self.absent == Absent.zero:
+        if self.absent == AbsentMetricPolicy.zero:
             return self.query + " or on() vector(0)"
         return self.query
 
@@ -692,14 +692,14 @@ class PrometheusConfiguration(servo.BaseConfiguration):
                         "throughput",
                         servo.Unit.requests_per_second,
                         query="rate(http_requests_total[5m])",
-                        absent=Absent.ignore,
+                        absent=AbsentMetricPolicy.ignore,
                         step="1m",
                     ),
                     PrometheusMetric(
                         "error_rate",
                         servo.Unit.percentage,
                         query="rate(errors[5m])",
-                        absent=Absent.ignore,
+                        absent=AbsentMetricPolicy.ignore,
                         step="1m",
                     ),
                 ],
@@ -902,16 +902,16 @@ class PrometheusConnector(servo.BaseConnector):
             return response.results()
         else:
             # Handle absent metric cases
-            if metric.absent in {Absent.ignore, Absent.zero}:
+            if metric.absent in {AbsentMetricPolicy.ignore, AbsentMetricPolicy.zero}:
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
                 if await client.check_is_metric_absent(metric):
-                    if metric.absent == Absent.warn:
+                    if metric.absent == AbsentMetricPolicy.warn:
                         servo.logger.warning(
                             f"Found absent metric for query (`{metric.query}`)"
                         )
-                    elif metric.absent == Absent.fail:
+                    elif metric.absent == AbsentMetricPolicy.fail:
                         servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
                         raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
                     else:
@@ -1057,16 +1057,16 @@ class EagerMetricObserver(pydantic.BaseModel):
             return response.results()
         else:
             # Handle absent metric cases
-            if metric.absent in {Absent.ignore, Absent.zero}:
+            if metric.absent in {AbsentMetricPolicy.ignore, AbsentMetricPolicy.zero}:
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
                 if await client.check_is_metric_absent(metric):
-                    if metric.absent == Absent.warn:
+                    if metric.absent == AbsentMetricPolicy.warn:
                         servo.logger.warning(
                             f"Found absent metric for query (`{metric.query}`)"
                         )
-                    elif metric.absent == Absent.fail:
+                    elif metric.absent == AbsentMetricPolicy.fail:
                         servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
                         raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
                     else:
