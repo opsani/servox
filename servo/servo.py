@@ -133,7 +133,7 @@ class _EventDefinitions(Protocol):
     async def promote(self) -> None:
         ...
 
-    @servo.events.event(Events.set_environment)
+    @servo.events.event(Events.set_environment, timeout='5m')
     async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
         """Allow subscribers to request updating of the environment
 
@@ -142,7 +142,7 @@ class _EventDefinitions(Protocol):
         """
         ...
 
-    @servo.events.event(Events.update_environment)
+    @servo.events.event(Events.update_environment, timeout='5m')
     async def update_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> None:
         """Notify subscribers that an environment update has been requested
         """
@@ -444,7 +444,7 @@ class Servo(servo.connector.BaseConnector):
     async def get_environment(self) -> Optional[servo.types.Environment]:
         return self.environment
 
-    @servo.events.on_event(timeout='5m')
+    @servo.events.on_event()
     async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
         if old != new:
             self.environment = new

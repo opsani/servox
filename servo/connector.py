@@ -224,7 +224,7 @@ class BaseConnector(
         }
 
     @property
-    def event_timeouts(self) -> Optional[Dict[str, servo.types.Duration]]:
+    def event_timeouts(self) -> Optional[Dict[str, DurationDescriptor]]:
         return self._servo_config.timeouts.events
 
     @property

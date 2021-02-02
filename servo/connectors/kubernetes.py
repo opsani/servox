@@ -1703,15 +1703,14 @@ class Deployment(KubernetesModel):
         # NOTE: The timeout_seconds argument must be an int or the request will fail
         timeout_seconds = int(servo.Duration(timeout).total_seconds()) if timeout else None
 
-        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-            async with self.api_client() as dep_api:
-                async with kubernetes_asyncio.watch.Watch().stream(
-                    dep_api.list_namespaced_deployment,
-                    self.namespace,
-                    label_selector=self.label_selector,
-                    timeout_seconds=timeout_seconds,
-                ) as stream:
-                    yield stream
+        async with self.api_client() as api:
+            async with kubernetes_asyncio.watch.Watch().stream(
+                api.list_namespaced_deployment,
+                self.namespace,
+                label_selector=self.label_selector,
+                timeout_seconds=timeout_seconds,
+            ) as stream:
+                yield stream
 
     @contextlib.asynccontextmanager
     async def rollout(self, *, timeout: Optional[servo.DurationDescriptor] = None) -> None:
@@ -2916,17 +2915,15 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             return all(results)
 
     @classmethod
-    async def update_environment(cls, config: "KubernetesConfiguration", old: servo.types.Environment, new: servo.types.Environment) -> None:
+    async def update_environment(cls, config: "KubernetesConfiguration", old: servo.Environment, new: servo.Environment) -> None:
         if config.deployments:
             servo.logging.logger.debug(
                 f"Updating environment for {len(config.deployments)} deployments"
             )
             # Timeout handled at event dispatch level, no need to specify here
-            results = await asyncio.wait_for(
-                asyncio.gather(
-                    *list(map(lambda d: _update_single_deployment_environment(d, new), config.deployments)),
-                    return_exceptions=True,
-                ),
+            results = await asyncio.gather(
+                *list(map(lambda d: _update_single_deployment_environment(d, new), config.deployments)),
+                return_exceptions=True,
             )
             errs = []
             for result in results:
@@ -2954,7 +2951,7 @@ class K8sModeAnnotations(str, enum.Enum):
         """
         return f"{OPSANI_ANNOTATION_PREFIX}{self.name}"
 
-async def _update_single_deployment_environment(config: DeploymentConfiguration, new: servo.types.Environment) -> None:
+async def _update_single_deployment_environment(config: DeploymentConfiguration, new: servo.Environment) -> None:
     # TODO: define iterable enum for environment annotations that do not require watching
     deployment = await Deployment.read(config.name, config.namespace)
     ann_mode_val = deployment.annotations.get(K8sModeAnnotations.current_mode.annotation())
@@ -3475,8 +3472,8 @@ class KubernetesConnector(servo.BaseConnector):
         """
         raise NotImplementedError("stub out for the moment")
 
-    @servo.events.on_event(timeout='5m')
-    async def update_environment(self, old: servo.types.Environment, new: servo.types.Environment) -> None:
+    @servo.events.on_event()
+    async def update_environment(self, old: servo.Environment, new: servo.Environment) -> None:
         # Avoid initializing optimizations as the servo.yaml configuration is subject to change during environment updates
         await KubernetesOptimizations.update_environment(self.config, old, new)
 

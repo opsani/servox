@@ -100,7 +100,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         if len(errors := self._marshal_errors(results)) > 0:
             for err in errors:
                 self.logger.exception(err)
-            raise servo.EnvironmentFailedError(f"Unable to validate/update environment; encountered exception(s) during {event_name}: {', '.join(errors)}")
+            raise servox.EnvironmentFailedError(f"Unable to validate/update environment; encountered {len(errors)} exception(s) during {event_name}: {', '.join(errors)}")
 
     async def process_environment(self, environment: Environment) -> None:
         """Always dispatches set_environment event but will only dispatch update_environment if at least one
@@ -109,27 +109,35 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"Environment payload included, getting current environment...")
         self.logger.trace(f"new environment: {devtools.pformat(environment)}")
 
-        # raise servo.EnvironmentFailedError('Unable to validate environment: expected one or more responses to the get_environment event')
-        results = await self.servo.dispatch_event(servo.Events.get_environment, return_exceptions=True)
-        self._check_environment_event_errors('get_environment', results)
-        if len(results) < 1:
-            raise servo.EnvironmentFailedError("Unable to validate environment: expected one or more responses to the get_environment event")
-        if len(results) > 1:
-            self.logger.trace(f"multiple results: {devtools.pformat(results)}")
-            raise servo.EnvironmentFailedError(f"Only one get_environment subscriber is currently supported, {len(results)} subscribers responded")
+        current_event_name = servox.Events.get_environment.value
+        try:
+            results = await self.servo.dispatch_event(servox.Events.get_environment, return_exceptions=True)
+            self._check_environment_event_errors(current_event_name, results)
+            if len(results) < 1:
+                raise servox.EnvironmentFailedError("Unable to validate environment: expected one or more responses to the get_environment event")
+            if len(results) > 1:
+                self.logger.trace(f"multiple results: {devtools.pformat(results)}")
+                raise servox.EnvironmentFailedError(f"Only one get_environment subscriber is currently supported, {len(results)} subscribers responded")
 
-        current_environment = results[0].value
-        self.logger.trace(f"current environment: {devtools.pformat(current_environment)}")
+            current_environment = results[0].value
+            self.logger.trace(f"current environment: {devtools.pformat(current_environment)}")
 
-        self.logger.info(f"Setting environment; evaluating if update needed...")
-        results = await self.servo.dispatch_event(servo.Events.set_environment, current_environment, environment, return_exceptions=True)
-        self._check_environment_event_errors('set_environment', results)
-        update_count = sum([result.value for result in results])
+            self.logger.info(f"Setting environment; evaluating if update needed...")
+            current_event_name = servox.Events.set_environment.value
+            results = await self.servo.dispatch_event(servox.Events.set_environment, current_environment, environment, return_exceptions=True)
+            self._check_environment_event_errors(current_event_name, results)
+            update_count = sum([result.value for result in results]) # sum treats True as 1, False 0
 
-        if update_count:
-            self.logger.info(f"{update_count} subscribers requested environment update; updating environment....")
-            results = await self.servo.dispatch_event(servo.Events.update_environment, current_environment, environment, return_exceptions=True)
-            self._check_environment_event_errors('update_environment', results)
+            if update_count:
+                self.logger.info(f"{update_count} subscribers requested environment update; updating environment....")
+                current_event_name = servox.Events.update_environment.value
+                results = await self.servo.dispatch_event(servox.Events.update_environment, current_environment, environment, return_exceptions=True)
+                self._check_environment_event_errors(current_event_name, results)
+        
+        except asyncio.TimeoutError as error:
+            raise servox.EnvironmentFailedError(
+                reason="timed out waiting for environment event '{current_event_name}'"
+            ) from error
 
 
 

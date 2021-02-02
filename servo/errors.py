@@ -12,6 +12,7 @@ __all__ = (
     "AdjustmentFailedError",
     "AdjustmentRejectedError",
     "UnexpectedEventError",
+    "EnvironmentFailedError",
 )
 
 class BaseError(RuntimeError):
