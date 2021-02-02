@@ -145,14 +145,14 @@ class TestPrometheusConfiguration:
                     "throughput",
                     servo.Unit.requests_per_second,
                     query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
-                    absent=servo.connectors.prometheus.Absent.zero,
+                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
                     step="1m",
                 ),
                 PrometheusMetric(
                     "error_rate",
                     servo.Unit.percentage,
                     query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
-                    absent=servo.connectors.prometheus.Absent.zero,
+                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
                     step="1m",
                 ),
             ],
@@ -360,9 +360,10 @@ class TestPrometheusChecks:
 @pytest.mark.clusterrolebinding('cluster-admin')
 class TestPrometheusIntegration:
     def optimizer(self) -> servo.Optimizer:
+        # TODO: This needs a real optimizer
         return servo.Optimizer(
-            id="dev.opsani.com/blake-ignite",
-            token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+            id="dev.opsani.com/servox-integration-tests",
+            token="179eddc9-20e2-4096-b064-824b72a83b7d",
         )
 
     @pytest.fixture(autouse=True)
@@ -424,7 +425,7 @@ class TestPrometheusIntegration:
                 "invalid_metric",
                 Unit.count,
                 query="invalid_metric",
-                absent=servo.connectors.prometheus.Absent.zero
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
             )
             client = servo.connectors.prometheus.Client(base_url=url)
             response = await client.query(metric)
@@ -1124,8 +1125,8 @@ class TestAbsentMetrics:
     @pytest.fixture
     def connector(self) -> servo.connectors.prometheus.PrometheusConnector:
         optimizer = servo.Optimizer(
-            id="dev.opsani.com/blake-ignite",
-            token="bfcf94a6e302222eed3c73a5594badcfd53fef4b6d6a703ed32604",
+            id="servox.opsani.com/tests",
+            token="00000000-0000-0000-0000-000000000000",
         )
         config = PrometheusConfiguration.generate(base_url='https://localhost:9090')
         return PrometheusConnector(config=config, optimizer=optimizer)
@@ -1158,7 +1159,7 @@ class TestAbsentMetrics:
         )
 
 
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
     @respx.mock
     async def test_that_empty_range_query_triggers_absent_check(
         self,
@@ -1189,14 +1190,14 @@ class TestAbsentMetrics:
         start = datetime.datetime.now()
         end = start + Duration("36h")
 
-        if absent == servo.connectors.prometheus.Absent.fail:
+        if absent == servo.connectors.prometheus.AbsentMetricPolicy.fail:
             with pytest.raises(RuntimeError, match="Required metric 'empty_metric' is absent from Prometheus"):
                 await connector._query_prometheus(metric, start, end)
 
             assert respx.routes["range_query_for_empty_metric"].called
             assert respx.routes["instant_query_for_absent_empty_metric"].called
 
-        elif absent == servo.connectors.prometheus.Absent.zero:
+        elif absent == servo.connectors.prometheus.AbsentMetricPolicy.zero:
             await connector._query_prometheus(metric, start, end)
 
             assert respx.routes["range_query_for_empty_metric_or_zero_vector"].called
@@ -1207,15 +1208,15 @@ class TestAbsentMetrics:
             await connector._query_prometheus(metric, start, end)
             assert respx.routes["range_query_for_empty_metric"].called
 
-            if absent == servo.connectors.prometheus.Absent.ignore:
+            if absent == servo.connectors.prometheus.AbsentMetricPolicy.ignore:
                 assert not respx.routes["instant_query_for_absent_empty_metric"].called
-            elif absent == servo.connectors.prometheus.Absent.warn:
+            elif absent == servo.connectors.prometheus.AbsentMetricPolicy.warn:
                 assert respx.routes["instant_query_for_absent_empty_metric"].called
             else:
                 assert False, "unhandled case"
 
 
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.Absent)))
+    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
     @respx.mock
     async def test_that_present_metric_returns_empty_results(
         self,
@@ -1267,7 +1268,7 @@ class TestAbsentMetrics:
                 "envoy_cluster_upstream_rq_total",
                 Unit.count,
                 query="envoy_cluster_upstream_rq_total",
-                absent=servo.connectors.prometheus.Absent.zero
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
             )
             assert metric.build_query().endswith("or on() vector(0)")
 

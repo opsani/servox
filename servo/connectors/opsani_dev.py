@@ -127,19 +127,19 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
-                    absent=servo.connectors.prometheus.Absent.zero
+                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
-                    absent=servo.connectors.prometheus.Absent.zero
+                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
                     query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
-                    absent=servo.connectors.prometheus.Absent.zero
+                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p99_latency",
@@ -454,7 +454,8 @@ class OpsaniDevChecks(servo.BaseChecks):
                 "main_error_rate",
                 servo.types.Unit.requests_per_second,
                 query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[10s]))',
-                step="10s"
+                step="10s",
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
             )
         ]
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
@@ -524,7 +525,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
 
     @servo.check("Tuning pod is running")
-    async def check_canary_is_running(self) -> None:
+    async def check_tuning_is_running(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
             self.config.namespace
@@ -532,10 +533,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
         try:
-            await deployment.ensure_canary_pod()
+            await deployment.ensure_tuning_pod()
         except Exception as error:
             raise servo.checks.CheckError(
-                f"could not find tuning pod '{deployment.canary_pod_name}''"
+                f"could not find tuning pod '{deployment.tuning_pod_name}''"
             ) from error
 
     @servo.check("Pods are processing traffic")
@@ -579,9 +580,7 @@ class OpsaniDevConnector(servo.BaseConnector):
     config: OpsaniDevConfiguration
 
     @servo.on_event()
-    async def startup(self) -> None:
-        servo_ = servo.Servo.current()  # TODO: should I have self.servo and self.assembly convenience functions??? This could be different than current_servo!
-
+    async def attach(self, servo_: servo.Servo) -> None:
         await servo_.add_connector(
             "opsani-dev:kubernetes",
             servo.connectors.kubernetes.KubernetesConnector(

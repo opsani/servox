@@ -17,9 +17,9 @@ import servo
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
+CHANNEL = 'metrics.prometheus'
 
-
-class Absent(str, enum.Enum):
+class AbsentMetricPolicy(str, enum.Enum):
     """An enumeration of behaviors for handling absent metrics.
 
     Absent metrics do not exist in Prometheus at query evaluation time.
@@ -52,7 +52,7 @@ class PrometheusMetric(servo.Metric):
     """
     query: str = None
     step: servo.Duration = "1m"
-    absent: Absent = Absent.ignore
+    absent: AbsentMetricPolicy = AbsentMetricPolicy.ignore
     eager: Optional[servo.Duration] = None
 
     def build_query(self) -> str:
@@ -60,12 +60,13 @@ class PrometheusMetric(servo.Metric):
 
         The current implementation handles appending the zero vector suffix.
         """
-        if self.absent == Absent.zero:
+        if self.absent == AbsentMetricPolicy.zero:
             return self.query + " or on() vector(0)"
         return self.query
 
-    def escaped_query(self, query: str) -> str:
-        return re.sub(r"\{(.*?)\}", r"{{\1}}", query)
+    @property
+    def escaped_query(self) -> str:
+        return re.sub(r"\{(.*?)\}", r"{{\1}}", self.query)
 
     def __check__(self) -> servo.Check:
         """Return a Check representation of the metric."""
@@ -691,14 +692,14 @@ class PrometheusConfiguration(servo.BaseConfiguration):
                         "throughput",
                         servo.Unit.requests_per_second,
                         query="rate(http_requests_total[5m])",
-                        absent=Absent.ignore,
+                        absent=AbsentMetricPolicy.ignore,
                         step="1m",
                     ),
                     PrometheusMetric(
                         "error_rate",
                         servo.Unit.percentage,
                         query="rate(errors[5m])",
-                        absent=Absent.ignore,
+                        absent=AbsentMetricPolicy.ignore,
                         step="1m",
                     ),
                 ],
@@ -723,7 +724,7 @@ class PrometheusChecks(servo.BaseChecks):
         """Checks that the Prometheus base URL is valid and reachable."""
         await self._client.list_targets()
 
-    @servo.multicheck('Run query "{item.query}"')
+    @servo.multicheck('Run query "{item.escaped_query}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries."""
         async def query_for_metric(metric: PrometheusMetric) -> str:
@@ -768,11 +769,11 @@ class PrometheusConnector(servo.BaseConnector):
         # Continuously publish a stream of metrics broadcasting every N seconds
         streaming_interval = self.config.streaming_interval
         if streaming_interval is not None:
-            servo.logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
+            logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
+            logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
 
-            @self.publish('metrics.prometheus', every=streaming_interval)
+            @self.publish(CHANNEL, every=streaming_interval)
             async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
-                servo.logger.info(f"Publishing {len(self.config.metrics)} metrics every {streaming_interval}...")
                 report = []
                 client = Client(base_url=self.config.base_url)
                 responses = await asyncio.gather(
@@ -785,7 +786,7 @@ class PrometheusConnector(servo.BaseConnector):
                         report.append((response.metric.name, timestamp.isoformat(), value))
 
                 await publisher(servo.pubsub.Message(json=report))
-                servo.logger.info(f"Published {len(report)} metrics.")
+                logger.info(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(
@@ -901,16 +902,16 @@ class PrometheusConnector(servo.BaseConnector):
             return response.results()
         else:
             # Handle absent metric cases
-            if metric.absent in {Absent.ignore, Absent.zero}:
+            if metric.absent in {AbsentMetricPolicy.ignore, AbsentMetricPolicy.zero}:
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
                 if await client.check_is_metric_absent(metric):
-                    if metric.absent == Absent.warn:
+                    if metric.absent == AbsentMetricPolicy.warn:
                         servo.logger.warning(
                             f"Found absent metric for query (`{metric.query}`)"
                         )
-                    elif metric.absent == Absent.fail:
+                    elif metric.absent == AbsentMetricPolicy.fail:
                         servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
                         raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
                     else:
@@ -1056,16 +1057,16 @@ class EagerMetricObserver(pydantic.BaseModel):
             return response.results()
         else:
             # Handle absent metric cases
-            if metric.absent in {Absent.ignore, Absent.zero}:
+            if metric.absent in {AbsentMetricPolicy.ignore, AbsentMetricPolicy.zero}:
                 # NOTE: metric zeroing is handled at the query level
                 pass
             else:
                 if await client.check_is_metric_absent(metric):
-                    if metric.absent == Absent.warn:
+                    if metric.absent == AbsentMetricPolicy.warn:
                         servo.logger.warning(
                             f"Found absent metric for query (`{metric.query}`)"
                         )
-                    elif metric.absent == Absent.fail:
+                    elif metric.absent == AbsentMetricPolicy.fail:
                         servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
                         raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
                     else:

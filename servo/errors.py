@@ -32,8 +32,8 @@ class BaseError(RuntimeError):
         # Use the context vars to infer the assembly, servo, connector, and event
         import servo
         self._reason = reason
-        self._assembly = assembly or servo.Assembly.current()
-        self._servo = servo_ or servo.Servo.current()
+        self._assembly = assembly or servo.current_assembly()
+        self._servo = servo_ or servo.current_servo()
         self._connector = connector or getattr(self._servo, "connector", None)
         self._event = event or getattr(self._servo, "event", None)
         self._created_at = datetime.datetime.now()

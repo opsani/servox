@@ -506,7 +506,7 @@ multi-servo configuration at runtime -- it is a configuration resolution
 concern.
 
 When running multi-servo, logging is changed to provide context about the servo
-that is active and generating the output. The `servo.Servo.current()` method
+that is active and generating the output. The `servo.current_servo()` method
 returns the active servo at runtime.
 
 Because ServoX is based on `asyncio` and functions as an orchestrator, it is
@@ -550,9 +550,10 @@ Servos can be added and removed from the assembly at runtime via methods on the
 ```python
 import servo
 
+assembly = servo.current_assembly()
 new_servo = servo.Servo()
-servo.Assembly.current().add_servo(new_servo)
-servo.Assembly.current().remove_servo(new_servo)
+assembly.add_servo(new_servo)
+assembly.remove_servo(new_servo)
 ```
 
 ### Extending the CLI

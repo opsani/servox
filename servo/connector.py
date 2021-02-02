@@ -8,6 +8,8 @@ integration with arbitrary systems via the connector module.
 from __future__ import annotations
 
 import abc
+import contextlib
+import contextvars
 import importlib
 import re
 from typing import Any, ClassVar, Generator, Iterable, Optional, Set, Tuple, Type, get_type_hints
@@ -26,8 +28,20 @@ from servo.types import *
 
 __all__ = [
     "BaseConnector",
+    "current_connector",
     "metadata",
 ]
+
+
+_current_context_var = contextvars.ContextVar("servox.current_connector", default=None)
+
+def current_connector() -> Optional["BaseConnector"]:
+    """Return the active connector for the current execution context.
+
+    The value is managed by a contextvar and is concurrency safe.
+    """
+    return _current_context_var.get(None)
+
 
 _connector_subclasses: Set[Type["BaseConnector"]] = set()
 
@@ -219,6 +233,16 @@ class BaseConnector(
         # NOTE: We support the explicit connector ref and the context var so
         # that logging is attributable outside of an event whenever possible
         return super().logger.bind(connector=self)
+
+    @contextlib.contextmanager
+    def current(self):
+        """A context manager that sets the current connector context."""
+        try:
+          token = _current_context_var.set(self)
+          yield self
+
+        finally:
+            _current_context_var.reset(token)
 
 
 def metadata(

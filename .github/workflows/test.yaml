@@ -74,15 +74,15 @@ jobs:
       run: |
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
-    - name: Set up cache
-      uses: actions/cache@v2.1.1
-      id: cached-poetry-dependencies
-      with:
-        path: .venv
-        key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
+    # - name: Set up cache
+    #   uses: actions/cache@v2.1.1
+    #   id: cached-poetry-dependencies
+    #   with:
+    #     path: .venv
+    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
         poetry run pytest -T unit -n 6 --dist loadscope \
@@ -127,15 +127,15 @@ jobs:
         wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
-    - name: Set up cache
-      uses: actions/cache@v2.1.1
-      id: cached-poetry-dependencies
-      with:
-        path: .venv
-        key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
+    # - name: Set up cache
+    #   uses: actions/cache@v2.1.1
+    #   id: cached-poetry-dependencies
+    #   with:
+    #     path: .venv
+    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -179,15 +179,15 @@ jobs:
       run: |
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
-    - name: Set up cache
-      uses: actions/cache@v2.1.1
-      id: cached-poetry-dependencies
-      with:
-        path: .venv
-        key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
+    # - name: Set up cache
+    #   uses: actions/cache@v2.1.1
+    #   id: cached-poetry-dependencies
+    #   with:
+    #     path: .venv
+    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       run: poetry install
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:

@@ -17,10 +17,19 @@ import servo.connector
 import servo.pubsub
 import servo.servo
 
-__all__ = ["Assembly"]
+__all__ = ["Assembly", 'current_assembly']
 
 
-_assembly_context_var = contextvars.ContextVar("servo.Assembly.current", default=None)
+_current_context_var = contextvars.ContextVar("servox.current_assembly", default=None)
+
+
+def current_assembly() -> Optional["Assembly"]:
+    """
+    Return the active assembly for the current execution context.
+
+    The value is managed by a contextvar and is concurrency safe.
+    """
+    return _current_context_var.get()
 
 
 class Assembly(pydantic.BaseModel):
@@ -47,23 +56,10 @@ class Assembly(pydantic.BaseModel):
 
     config_file: Optional[pathlib.Path]
     servos: List[servo.servo.Servo]
-
-    @staticmethod
-    def current() -> "Assembly":
-        """
-        Return the active assembly for the current execution context.
-
-        The value is managed by a contextvar and is concurrency safe.
-        """
-        return _assembly_context_var.get()
-
-    @staticmethod
-    def set_current(assembly: "Assembly") -> None:
-        """Set the active assembly for the current execution context."""
-        _assembly_context_var.set(assembly)
+    _context_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
     @classmethod
-    def assemble(
+    async def assemble(
         cls,
         *,
         config_file: Optional[pathlib.Path] = None,
@@ -139,12 +135,10 @@ class Assembly(pydantic.BaseModel):
             servos=servos,
         )
 
-        # Set the context vars
-        cls.set_current(assembly)
-
-        # Activate the servo if we are in the common case single player mode
-        if len(servos) == 1:
-            servo.servo.Servo.set_current(servos[0])
+        # Attach all connectors to the servo
+        await asyncio.gather(
+            *list(map(lambda s: s.dispatch_event(servo.servo.Events.attach, s), servos))
+        )
 
         return assembly
 
@@ -213,18 +207,27 @@ class Assembly(pydantic.BaseModel):
             servo_: The servo to add to the assembly.
         """
         self.servos.append(servo_)
-        await servo.startup()
+
+        await servo.attach()
+
+        if self.is_running:
+            await servo.startup()
 
     async def remove_servo(self, servo_: servo.servo.Servo) -> None:
         """Remove a servo from the assembly.
 
-        Before removal, the servo is sent the shutdown event to prepare for
+        Before removal, the servo is sent the detach event to prepare for
         eviction from the assembly.
 
         Args:
             servo_: The servo to remove from the assembly.
         """
-        await servo.shutdown()
+
+        await servo.detach()
+
+        if self.is_running:
+            await servo.shutdown()
+
         self.servos.remove(servo_)
 
     async def startup(self):
@@ -248,6 +251,7 @@ class Assembly(pydantic.BaseModel):
                     )
                 )
             )
+
 
 def _discover_connectors() -> Set[Type[servo.connector.BaseConnector]]:
     """

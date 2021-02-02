@@ -517,11 +517,11 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
         # Assemble the Servo
         try:
-            assembly = servo.Assembly.assemble(
+            assembly = run_async(servo.Assembly.assemble(
                 config_file=ctx.config_file,
                 configs=configs,
                 optimizer=optimizer
-            )
+            ))
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
@@ -1207,7 +1207,7 @@ class ServoCLI(CLI):
                 help="Execute checks and emit output progressively",
             ),
             wait: Optional[str] = typer.Option(
-                "30m",
+                None,
                 "--wait",
                 "-w",
                 help="Wait for checks to pass",
@@ -1427,7 +1427,7 @@ class ServoCLI(CLI):
                     if ready:
                         return True
                     else:
-                        if delay is not None:
+                        if wait and delay is not None:
                             self.logger.info(
                                 f"waiting for {delay} before rerunning failing checks"
                             )
@@ -1461,7 +1461,7 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    servo.runner.AssemblyRunner(servo.Assembly.current()).run()
+                    servo.runner.AssemblyRunner(context.assembly).run()
                 elif not exit_on_success:
                     return
 

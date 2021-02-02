@@ -467,7 +467,7 @@ class TestDeploymentConfiguration:
         assert isinstance(config.strategy, DefaultOptimizationStrategyConfiguration)
         assert config.strategy.type == OptimizationStrategy.default
 
-    def test_strategy_object_canary_parsing(self) -> None:
+    def test_strategy_object_tuning_parsing(self) -> None:
         config_yaml = (
             "containers: []\n"
             "name: testing\n"
@@ -483,7 +483,7 @@ class TestDeploymentConfiguration:
         assert config.strategy.type == OptimizationStrategy.canary
         assert config.strategy.alias is None
 
-    def test_strategy_object_canary_parsing_with_alias(self) -> None:
+    def test_strategy_object_tuning_parsing_with_alias(self) -> None:
         config_yaml = (
             "containers: []\n"
             "name: testing\n"
@@ -514,7 +514,7 @@ class TestCanaryOptimization:
             optimization.target_name == "fiber-http-deployment/opsani/fiber-http:latest"
         )
         assert (
-            optimization.canary_name
+            optimization.tuning_name
             == "fiber-http-deployment/opsani/fiber-http:latest-canary"
         )
 
@@ -530,7 +530,7 @@ class TestCanaryOptimization:
             target_container_config=config.deployments[0].containers[0],
         )
         assert optimization.target_name == "main"
-        assert optimization.canary_name == "tuning"
+        assert optimization.tuning_name == "tuning"
 
 
 def test_compare_strategy() -> None:
@@ -838,11 +838,11 @@ def test_millicpu():
 
 
 @pytest.fixture
-def canary_config(config) -> KubernetesConfiguration:
-    canary_config = config.copy()
-    for dep in canary_config.deployments:
+def tuning_config(config) -> KubernetesConfiguration:
+    tuning_config = config.copy()
+    for dep in tuning_config.deployments:
         dep.strategy = "canary"
-    return canary_config
+    return tuning_config
 
 @pytest.fixture
 def namespace() -> str:
@@ -1002,16 +1002,16 @@ class TestKubernetesConnectorIntegration:
 
     ##
     # Canary Tests
-    async def test_create_canary(self, canary_config, namespace: str) -> None:
-        connector = KubernetesConnector(config=canary_config)
+    async def test_create_canary(self, tuning_config, namespace: str) -> None:
+        connector = KubernetesConnector(config=tuning_config)
         dep = await Deployment.read("fiber-http", namespace)
         debug(dep)
         # description = await connector.startup()
         # debug(description)
 
-    async def test_adjust_canary_insufficient_resources(self, canary_config, namespace) -> None:
-        canary_config.timeout = "60s"
-        connector = KubernetesConnector(config=canary_config)
+    async def test_adjust_tuning_insufficient_resources(self, tuning_config, namespace) -> None:
+        tuning_config.timeout = "60s"
+        connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-canary",
@@ -1025,8 +1025,8 @@ class TestKubernetesConnectorIntegration:
         assert "Insufficient memory." in str(rejection_info.value)
 
 
-    async def test_adjust_canary_cpu_with_settlement(self, canary_config, namespace):
-        connector = KubernetesConnector(config=canary_config)
+    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace):
+        connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-canary",
             setting_name="cpu",

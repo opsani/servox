@@ -19,7 +19,7 @@ from servo.cli import ServoCLI
 from servo.configuration import BaseConfiguration, BaseServoConfiguration
 from servo.connector import _connector_subclasses
 from servo.connectors.vegeta import TargetFormat, VegetaConfiguration, VegetaConnector
-from servo.events import EventContext, Preposition, _connector_context_var, _events, create_event, event
+from servo.events import EventContext, Preposition, _events, create_event, event
 from servo.logging import ProgressHandler, reset_to_defaults
 from tests.helpers import *
 
@@ -1274,7 +1274,7 @@ class TestConnectorEvents:
 
         @event(handler=True)
         async def get_event_context(self) -> Optional[EventContext]:
-            return self.current_event
+            return servo.current_event()
 
         class Config:
             extra = Extra.allow
@@ -1521,30 +1521,31 @@ async def test_logging() -> None:
     config = servox.configuration.ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
     optimizer = Optimizer("test.com/foo", token="12345")
     servo = servox.Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
-    servox.Servo.set_current(servo)
-    _connector_context_var.set(connector)
-    handler = ProgressHandler(connector.report_progress, lambda m: print(m))
-    connector.logger.add(handler.sink)
-    args = dict(operation="ADJUST", started_at=datetime.datetime.now())
-    connector.logger.info("First", progress=0, **args)
-    await asyncio.sleep(0.00001)
-    connector.logger.info("Second", progress=25.0, **args)
-    await asyncio.sleep(0.00001)
-    connector.logger.info("Third", progress=50, **args)
-    await asyncio.sleep(0.00001)
-    connector.logger.info("Fourth", progress=100.0, **args)
-    await asyncio.sleep(0.00001)
 
-    await connector.logger.complete()
-    await handler.shutdown()
-    reset_to_defaults()
-    assert request.called
-    assert request.calls.call_count == 3
+    with servo.current():
+        with connector.current():
+            handler = ProgressHandler(connector.report_progress, lambda m: print(m))
+            connector.logger.add(handler.sink)
+            args = dict(operation="ADJUST", started_at=datetime.datetime.now())
+            connector.logger.info("First", progress=0, **args)
+            await asyncio.sleep(0.00001)
+            connector.logger.info("Second", progress=25.0, **args)
+            await asyncio.sleep(0.00001)
+            connector.logger.info("Third", progress=50, **args)
+            await asyncio.sleep(0.00001)
+            connector.logger.info("Fourth", progress=100.0, **args)
+            await asyncio.sleep(0.00001)
 
-    # Parse the JSON sent in the request body and verify we hit 100%
-    last_progress_report = json.loads(respx.calls.last.request.content)
-    assert last_progress_report["event"] == "ADJUST"
-    assert last_progress_report["param"]["progress"] == 100.0
+            await connector.logger.complete()
+            await handler.shutdown()
+            reset_to_defaults()
+            assert request.called
+            assert request.calls.call_count == 3
+
+            # Parse the JSON sent in the request body and verify we hit 100%
+            last_progress_report = json.loads(respx.calls.last.request.content)
+            assert last_progress_report["event"] == "ADJUST"
+            assert last_progress_report["param"]["progress"] == 100.0
 
 
 def test_report_progress_numeric() -> None:

@@ -242,8 +242,8 @@ class Mixin(abc.ABC):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.Servo.current() and servo.Servo.current().config.servo.backoff.max_time(),
-        max_tries=lambda: servo.Servo.current() and servo.Servo.current().config.servo.backoff.max_tries(),
+        max_time=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_tries(),
     )
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:

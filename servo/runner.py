@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
+import functools
+import colorama
+import random
 import signal
 from typing import Any, Dict, List, Optional
 
@@ -134,8 +136,8 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.Servo.current().config.servo.backoff.max_time(),
-        max_tries=lambda: servo.Servo.current().config.servo.backoff.max_tries(),
+        max_time=lambda: servo.current_servo().config.servo.backoff.max_time(),
+        max_tries=lambda: servo.current_servo().config.servo.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Events.whats_next, None)
@@ -215,27 +217,28 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
-        while self._running:
-            try:
-                servo.servo.Servo.set_current(self.servo)
-                status = await self.exec_command()
-                if status.status == servo.api.OptimizerStatuses.unexpected_event:
-                    self.logger.warning(
-                        f"server reported unexpected event: {status.reason}"
-                    )
-            except httpx.TimeoutException as error:
-                self.logger.warning(f"ignoring HTTP timeout error: {error}")
+        with self.servo.current():
+            while self._running:
+                try:
+                    status = await self.exec_command()
+                    if status.status == servo.api.OptimizerStatuses.unexpected_event:
+                        self.logger.warning(
+                            f"server reported unexpected event: {status.reason}"
+                        )
+                except httpx.TimeoutException as error:
+                    self.logger.warning(f"ignoring HTTP timeout error: {error}")
 
-            except httpx.HTTPStatusError as error:
-                self.logger.warning(f"ignoring HTTP response error: {error}")
+                except httpx.HTTPStatusError as error:
+                    self.logger.warning(f"ignoring HTTP response error: {error}")
 
-            except Exception as error:
-                self.logger.exception(f"failed with unrecoverable error: {error}")
-                raise error
+                except Exception as error:
+                    self.logger.exception(f"failed with unrecoverable error: {error}")
+                    raise error
 
     async def run(self) -> None:
         self._running = True
-        servo.servo.Servo.set_current(self.servo)
+
+        await self.servo.startup()
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
@@ -249,8 +252,8 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
-                max_time=lambda: servox.Servo.current().config.servo.backoff.max_time(),
-                max_tries=lambda: servox.Servo.current().config.servo.backoff.max_tries(),
+                max_time=lambda: self.config.servo.backoff.max_time(),
+                max_tries=lambda: self.config.servo.backoff.max_tries(),
                 on_giveup=giveup,
             )
             async def connect() -> None:
@@ -258,8 +261,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                 await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
                 self.connected = True
 
-            self.logger.info("Dispatching startup event...")
-            await self.servo.startup()
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
@@ -317,7 +318,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: encapsulate all this shit
         async def _report_progress(**kwargs) -> None:
             # Forward to the active servo...
-            await servo.Servo.current().report_progress(**kwargs)
+            await servo.current_servo().report_progress(**kwargs)
 
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
@@ -339,7 +340,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 [task.cancel() for task in tasks]
 
                 # Restart a fresh main loop
-                runner = self._runner_for_servo(servo.Servo.current())
+                runner = self._runner_for_servo(servo.current_servo())
                 asyncio.create_task(runner.main_loop(), name="main loop")
 
         self.progress_handler = servo.logging.ProgressHandler(
@@ -361,6 +362,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             loop.close()
 
     def _display_banner(self) -> None:
+        secho = functools.partial(typer.secho, color=True)
         banner = "\n".join([
             r"   _____                      _  __",
             r"  / ___/___  ______   ______ | |/ /",
@@ -368,10 +370,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             r" ___/ /  __/ /   | |/ / /_/ /   |",
             r"/____/\___/_/    |___/\____/_/|_|",
         ])
-        colors = ['\033[3{}m{{}}\033[0m'.format(n) for n in range(1,7)]
-        rainbow = itertools.cycle(colors)
-        letters = [next(rainbow).format(L) for L in banner]
-        typer.secho(''.join(letters))
+        colors = [colorama.Fore.RED, colorama.Fore.GREEN, colorama.Fore.YELLOW,
+                  colorama.Fore.BLUE, colorama.Fore.MAGENTA, colorama.Fore.CYAN]
+        colored_banner = [random.choice(colors) + char for char in banner]
+        typer.echo(''.join(colored_banner), color=True)
         types = servo.Assembly.all_connector_types()
         types.remove(servo.Servo)
 
@@ -389,10 +391,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )
 
-        typer.secho(f'{version} "{codename}" {initialized}')
-        typer.secho()
-        typer.secho(f"connectors:  {', '.join(sorted(names))}")
-        typer.secho(
+        secho(f'{version} "{codename}" {initialized}')
+        secho(reset=True)
+        secho(f"connectors:  {', '.join(sorted(names))}")
+        secho(
             f"config file: {typer.style(str(self.assembly.config_file), bold=True, fg=typer.colors.YELLOW)}"
         )
 
@@ -401,12 +403,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             optimizer = servo_.optimizer
 
             id = typer.style(optimizer.id, bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"optimizer:   {id}")
+            secho(f"optimizer:   {id}")
             if optimizer.base_url != "https://api.opsani.com/":
                 base_url = typer.style(
                     f"{optimizer.base_url}", bold=True, fg=typer.colors.RED
                 )
-                typer.secho(f"base url: {base_url}")
+                secho(f"base url: {base_url}")
 
             if servo_.config.servo and servo_.config.servo.proxies:
                 proxies = typer.style(
@@ -414,12 +416,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     bold=True,
                     fg=typer.colors.CYAN,
                 )
-                typer.secho(f"proxies: {proxies}")
+                secho(f"proxies: {proxies}")
         else:
             servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
-            typer.secho(f"servos:   {servo_count}")
+            secho(f"servos:   {servo_count}")
 
-        typer.secho()
+        secho(reset=True)
 
     async def _shutdown(self, loop, signal=None):
         if signal:
