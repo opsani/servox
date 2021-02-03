@@ -321,6 +321,20 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         return f"Service Port: {port.name} {port.port}:{port.target_port}/{port.protocol}"
 
+    @servo.checks.check('Service routes traffic to Deployment Pods')
+    async def check_service_routes_traffic_to_deployment(self) -> None:
+        service = await servo.connectors.kubernetes.Service.read(
+            self.config.service, self.config.namespace
+        )
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment, self.config.namespace
+        )
+
+        # NOTE: The Service labels should be a subset of the deployment labels
+        deployment_labels = deployment.obj.spec.selector.match_labels
+        if not service.selector.items() <= deployment_labels.items():
+            raise RuntimeError(f"Service selector does not match Deployment labels")
+
     ##
     # Prometheus sidecar
 

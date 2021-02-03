@@ -1354,6 +1354,27 @@ class Service(KubernetesModel):
         """
         return await self._proxy_http_request('POST', path, **kwargs)
 
+    @property
+    def selector(self) -> Dict[str, str]:
+        return self.obj.spec.selector
+
+    async def get_pods(self) -> List[Pod]:
+        """Get the pods that the Service is routing traffic to.
+
+        Returns:
+            A list of pods that the service is routing traffic to.
+        """
+        self.logger.debug(f'getting pods for service "{self.name}"')
+
+        async with Pod.preferred_client() as api_client:
+            label_selector = self.obj.spec.selector.match_labels
+            pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
+                namespace=self.namespace, label_selector=selector_string(self.selector)
+            )
+
+        pods = [Pod(p) for p in pod_list.items]
+        return pods
+
 
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
@@ -1666,6 +1687,7 @@ class Deployment(KubernetesModel):
             raise ValueError(f"service and port cannot both be given")
 
         # # lookup the port on the target service
+        # FIXME: We are targeting the zero port here!!!
         if service:
             ser = await Service.read(service, self.namespace)
             port = ser.obj.spec.ports[0].target_port
