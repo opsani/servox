@@ -317,7 +317,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 else:
                     raise RuntimeError(f"unknown port value: {self.config.port}")
         else:
-            port = self.ports[0]
+            port = service.ports[0]
 
         return f"Service Port: {port.name} {port.port}:{port.target_port}/{port.protocol}"
 
