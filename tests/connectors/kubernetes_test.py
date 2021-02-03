@@ -883,8 +883,9 @@ def config(namespace: str) -> KubernetesConfiguration:
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
     @pytest.fixture(autouse=True)
-    def _wait_for_manifests(self, kube):
+    async def _wait_for_manifests(self, kube):
         kube.wait_for_registered(timeout=30)
+        await asyncio.sleep(0.00001)
 
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
