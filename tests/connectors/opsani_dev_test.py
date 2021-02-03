@@ -113,10 +113,24 @@ class TestIntegration:
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
             config.cpu.min = "100m"
+            config.cpu.max = "2000m"
             config.memory.min = "64MiB"
-            # TODO: Should explicity specify the max values as well as the target test values.
+            config.memory.max = "4GiB"
+            # TODO: Should explicity specify the target test values.
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.success
+
+        async def test_target_container_resources_outside_of_limits(
+            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
+        ) -> None:
+            # Set some 
+            config.cpu.min = "4000m"
+            config.cpu.max = "5000m"
+            config.memory.min = "2GiB"
+            config.memory.min = "4GiB"
+            # TODO: Should explicity specify the the target test values.
+            result = await checks.run_one(id=f"check_target_container_resources_within_limits")
+            assert result.exception
 
         async def test_prometheus_configmap_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks

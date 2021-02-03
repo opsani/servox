@@ -200,20 +200,6 @@ class OpsaniDevChecks(servo.BaseChecks):
             container
         ), f"failed reading Container '{self.config.container}' in Deployment '{self.config.deployment}'"
 
-    @servo.checks.require("service")
-    async def check_kubernetes_service(self) -> None:
-        await servo.connectors.kubernetes.Service.read(self.config.service, self.config.namespace)
-
-    @servo.checks.warn("service type")
-    async def check_kubernetes_service_type(self) -> None:
-        service = await servo.connectors.kubernetes.Service.read(
-            self.config.service, self.config.namespace
-        )
-        if not service.obj.spec.type in ("ClusterIP", "LoadBalancer"):
-            raise ValueError(
-                f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
-            )
-
     @servo.checks.require("Target container resource requests are within limits")
     async def check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
@@ -221,14 +207,10 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.deployment,
             self.config.namespace
         )
-        # assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
         # Find the target Container
-        target_container = None
-        for container in deployment.containers:
-            if container.name == self.config.container:
-                target_container = container
-                break
+        target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
 
         assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
 
@@ -248,6 +230,21 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert config_memory_min <= container_memory_request, f"target container requests '{container_memory_request}' memory but config specifies a minimum of '{config_memory_min}'"
         assert container_memory_request <= config_memory_max, f"target container requests '{container_memory_request}' memory but config specifies a maximum of '{config_memory_max}'"
 
+    @servo.checks.require("service")
+    async def check_kubernetes_service(self) -> None:
+        await servo.connectors.kubernetes.Service.read(self.config.service, self.config.namespace)
+
+    @servo.checks.warn("service type")
+    async def check_kubernetes_service_type(self) -> None:
+        service = await servo.connectors.kubernetes.Service.read(
+            self.config.service, self.config.namespace
+        )
+        if not service.obj.spec.type in ("ClusterIP", "LoadBalancer"):
+            raise ValueError(
+                f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
+            )
+
+    
     ##
     # Prometheus sidecar
 
