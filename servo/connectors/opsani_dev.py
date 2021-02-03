@@ -1,9 +1,10 @@
 import json
 import os
 import operator
-from typing import List, Tuple, Optional
+from typing import List, Optional, Union
 
 import kubernetes_asyncio
+import pydantic
 import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
@@ -42,6 +43,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     deployment: str
     container: str
     service: str
+    port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: servo.connectors.kubernetes.CPU
     memory: servo.connectors.kubernetes.Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
@@ -271,7 +273,6 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert container.resources.limits["cpu"]
         assert container.resources.limits["memory"]
 
-
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
@@ -291,6 +292,34 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise ValueError(
                 f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
             )
+
+    @servo.checks.check("service port")
+    async def check_kubernetes_service_port(self) -> None:
+        service = await servo.connectors.kubernetes.Service.read(
+            self.config.service, self.config.namespace
+        )
+        if len(service.ports) > 1:
+            if not self.config.port:
+                raise ValueError(
+                    f"service defines more than one port: a `port` (name or number) must be specified in the configuration"
+                )
+
+            port = service.find_port(self.config.port)
+            if not port:
+                if isinstance(self.config.port, str):
+                    raise LookupError(
+                        f"could not find a port named: {self.config.port}"
+                    )
+                elif isinstance(self.config.port, int):
+                    raise LookupError(
+                        f"could not find a port numbered: {self.config.port}"
+                    )
+                else:
+                    raise RuntimeError(f"unknown port value: {self.config.port}")
+        else:
+            port = self.ports[0]
+
+        return f"Service Port: {port.name} {port.port}:{port.target_port}/{port.protocol}"
 
     ##
     # Prometheus sidecar

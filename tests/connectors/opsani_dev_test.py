@@ -21,6 +21,7 @@ from typing import (
 
 import devtools
 import httpx
+import kubernetes_asyncio
 import pydantic
 import pytest
 import pytz
@@ -108,6 +109,66 @@ class TestIntegration:
         ) -> None:
             result = await checks.run_one(id=f"check_kubernetes_{resource}")
             assert result.success
+
+        class TestServiceMultiport:
+            @pytest.fixture
+            async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:
+                service = await servo.connectors.kubernetes.Service.read(checks.config.service, checks.config.namespace)
+                assert service
+                assert len(service.ports) == 1
+                assert service.find_port('http')
+
+                # Add a port
+                port = kubernetes_asyncio.client.V1ServicePort(name="elite", port=31337)
+                service.obj.spec.ports.append(port)
+
+                await service.patch()
+
+                assert len(service.ports) == 2
+                assert service.find_port('http')
+                assert service.find_port('elite')
+
+                return service
+
+            async def test_requires_port_config_when_multiple_exist(
+                self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
+            ) -> None:
+                result = await checks.run_one(id=f"check_kubernetes_service_port")
+                assert not result.success
+                assert result.exception
+                assert result.message == 'caught exception (ValueError): service defines more than one port: a `port` (name or number) must be specified in the configuration'
+
+            async def test_resolve_port_by_name(
+                self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
+            ) -> None:
+                checks.config.port = 'elite'
+                result = await checks.run_one(id=f"check_kubernetes_service_port")
+                assert result.success
+                assert result.message == 'Service Port: elite 31337:31337/TCP'
+
+            async def test_resolve_port_by_number(
+                self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
+            ) -> None:
+                checks.config.port = 80
+                result = await checks.run_one(id=f"check_kubernetes_service_port")
+                assert result.success
+                assert result.message == 'Service Port: http 80:8480/TCP'
+
+            async def test_cannot_resolve_port_by_name(
+                self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
+            ) -> None:
+                checks.config.port = 'invalid'
+                result = await checks.run_one(id=f"check_kubernetes_service_port")
+                assert not result.success
+                assert result.message == 'caught exception (LookupError): could not find a port named: invalid'
+
+            async def test_cannot_resolve_port_by_number(
+                self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
+            ) -> None:
+                checks.config.port = 187
+                result = await checks.run_one(id=f"check_kubernetes_service_port")
+                assert not result.success
+                assert result.message == 'caught exception (LookupError): could not find a port numbered: 187'
 
         async def test_prometheus_configmap_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks

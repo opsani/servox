@@ -36,6 +36,8 @@ from typing import (
 
 import backoff
 import kubernetes_asyncio
+import kubernetes_asyncio.client
+import kubernetes_asyncio.client.exceptions
 import pydantic
 
 import servo
@@ -1111,7 +1113,7 @@ class Service(KubernetesModel):
 
     @classmethod
     @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
-    async def read(cls, name: str, namespace: str) -> "Pod":
+    async def read(cls, name: str, namespace: str) -> "Service":
         """Read the Service from the cluster under the given namespace.
 
         Args:
@@ -1266,6 +1268,19 @@ class Service(KubernetesModel):
     def ports(self) -> List[kubernetes_asyncio.client.V1ServicePort]:
         """Return the list of ports exposed by the service."""
         return self.obj.spec.ports
+
+    def find_port(self, selector: Union[str, int]) -> Optional[kubernetes_asyncio.client.V1ServicePort]:
+        for port in self.ports:
+            if isinstance(selector, str):
+                if port.name == selector:
+                    return port
+            elif isinstance(selector, int):
+                if port.port == selector:
+                    return port
+            else:
+                raise TypeError(f"Unknown port selector type '{selector.__class__.__name__}': {selector}")
+
+        return None
 
     async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
         """Get the endpoints for the Service.
