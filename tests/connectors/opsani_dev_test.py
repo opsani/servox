@@ -52,7 +52,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'service', 'cpu', 'memory', 'prometheus_base_url']
+        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url']
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -203,6 +203,24 @@ class TestIntegration:
 
     # TODO: Test deployment, pod with init container, test nginx not match,
     # TODO: check namespace affinity only scrapes in current namespace
+
+    async def test_permissions(self) -> None:
+        ...
+
+    async def test_cannot_read_namespace(self) -> None:
+        ...
+
+    async def test_cannot_read_deployment(self) -> None:
+        ...
+
+    async def test_cannot_find_container(self) -> None:
+        ...
+
+    async def test_resource_requirements(self) -> None:
+        ...
+
+    async def test_deployment_ready(self) -> None:
+        ...
 
     @pytest.mark.applymanifests(
         "opsani_dev",
