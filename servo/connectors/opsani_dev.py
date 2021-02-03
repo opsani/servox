@@ -261,7 +261,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.require('Container "{self.config.container}" has resource requirements')
     async def check_resource_requirements(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
-        container = deployment.get_container(self.config.container)
+        container = deployment.find_container(self.config.container)
         assert container
         assert container.resources
         assert container.resources.requests
