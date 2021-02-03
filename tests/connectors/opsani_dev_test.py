@@ -109,6 +109,12 @@ class TestIntegration:
             result = await checks.run_one(id=f"check_kubernetes_{resource}")
             assert result.success
 
+        async def test_target_container_resources_within_limits(
+            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ) -> None:
+            result = await checks.run_one(id=f"check_target_container_resources_within_limits")
+            assert result.success
+
         async def test_prometheus_configmap_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
