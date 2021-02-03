@@ -618,12 +618,17 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_service_proxy(self) -> str:
         proxy_service_port = ENVOY_SIDECAR_DEFAULT_PORT  # TODO: move to configuration
         service = await servo.connectors.kubernetes.Service.read(self.config.service, self.config.namespace)
-        for port in service.ports:
-            if port.target_port == proxy_service_port:
-                return
+        if self.config.port:
+            port = service.find_port(self.config.port)
+        else:
+            port = service.ports[0]
 
-        # TODO: This patch is somewhat naive. We need to allow config of specific port (we just look at the first one)
-        patch = {"spec": { "type": service.obj.spec.type, "ports": [ {"protocol": "TCP", "port": service.ports[0].port, "targetPort": proxy_service_port }]}}
+        # return if we are already proxying to Envoy
+        if port.target_port == proxy_service_port:
+            return
+
+        # patch the target port to pass traffic through Envoy
+        patch = {"spec": { "type": service.obj.spec.type, "ports": [ {"protocol": "TCP", "name": port.name, "port": port.port, "targetPort": proxy_service_port }]}}
         patch_json = json.dumps(patch, indent=None)
         command = f"kubectl --namespace {self.config.namespace} patch service {self.config.service} -p '{patch_json}'"
         raise servo.checks.CheckError(
