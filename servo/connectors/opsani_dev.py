@@ -234,26 +234,15 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Get resource requirements from container
         container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
-        debug(container_cpu_request)
         container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
-        debug(container_memory_request)
-
+        
         # Get config values
         config_cpu_min = self.config.cpu.min
-        debug(config_cpu_min)
         config_cpu_max = self.config.cpu.max
-        debug(config_cpu_max)
         config_memory_min = self.config.memory.min
-        debug(config_memory_min)
         config_memory_max = self.config.memory.min
-        debug(config_memory_max)
-
+        
         # Check values against config.
-        debug(config_cpu_min <= container_cpu_request)
-        debug(container_cpu_request <= config_cpu_max)
-        debug(config_memory_min <= container_memory_request)
-        debug(container_memory_request <= config_memory_max)
-
         assert config_cpu_min <= container_cpu_request, f"target container requests '{container_cpu_request}' cpu but config specifies a minimum of '{config_cpu_min}'"
         assert container_cpu_request <= config_cpu_max, f"target container requests '{container_cpu_request}' cpu but config specifies a maximum of '{config_cpu_max}'"
         assert config_memory_min <= container_memory_request, f"target container requests '{container_memory_request}' memory but config specifies a minimum of '{config_memory_min}'"
