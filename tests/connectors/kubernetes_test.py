@@ -617,10 +617,10 @@ class TestContainer:
         [
             (
                 "cpu",
-                ("50m", "250m"),
+                ("100m", "250m"),
                 ...,
                 ...,
-                {"limits": {"cpu": "250m"}, "requests": {"cpu": "50m", "memory": "3G"}},
+                {"limits": {"cpu": "250m"}, "requests": {"cpu": "100m", "memory": "3G"}},
             ),
             (
                 "cpu",
@@ -729,7 +729,10 @@ class TestCPU:
         assert serialization["min"] == "100m"
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
-        # TODO: Requirements also needs to serialize
+
+    def test_cannot_be_less_than_100m(self) -> None:
+        with pytest.raises(ValueError, match='minimum CPU value allowed is 100m'):
+            CPU(min="50m", max=4.0, step=0.125)
 
 
 class TestMillicore:
@@ -823,6 +826,10 @@ class TestMemory:
         assert serialization["max"] == "4.0GiB"
         assert serialization["step"] == "256.0MiB"
 
+    def test_cannot_be_less_than_64MiB(self) -> None:
+        with pytest.raises(ValueError, match='minimum Memory value allowed is 64MiB'):
+            Memory(min="32 MiB", max=4.0, step=268435456)
+
 def test_millicpu():
     class Model(pydantic.BaseModel):
         cpu: Millicore
@@ -862,7 +869,7 @@ def config(namespace: str) -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="fiber-http",
-                        cpu=CPU(min="50m", max="800m", step="125m"),
+                        cpu=CPU(min="100m", max="800m", step="125m"),
                         memory=Memory(min="64MiB", max="0.8GiB", step="32MiB"),
                     )
                 ],

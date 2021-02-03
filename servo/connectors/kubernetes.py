@@ -2059,6 +2059,12 @@ class CPU(servo.CPU):
     value: Optional[Millicore]
     requirements: ResourceRequirements = ResourceRequirements.compute
 
+    @pydantic.validator('min')
+    def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
+        if value < 100:
+            raise ValueError('minimum CPU value allowed is 100m')
+        return value
+
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
 
@@ -2070,7 +2076,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-GiB = 1024 * 1024 * 1024
+MiB = 2 ** 20
+GiB = 2 ** 30
 
 
 class ShortByteSize(pydantic.ByteSize):
@@ -2099,6 +2106,12 @@ class Memory(servo.Memory):
     max: ShortByteSize
     step: ShortByteSize
     requirements: ResourceRequirements = ResourceRequirements.compute
+
+    @pydantic.validator('min')
+    def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
+        if value < (64 * MiB):
+            raise ValueError('minimum Memory value allowed is 64MiB')
+        return value
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -3369,8 +3382,6 @@ class KubernetesConnector(servo.BaseConnector):
             self.config, matching=matching, halt_on=halt_on
         )
 
-    # TODO: Add support for specifying the container, targeting Pods, etc.
-    # TODO: This needs to be generalized. We also need `has_sidecar` and `remove_sidecar` methods (others?)
     async def inject_sidecar(self, deployment: str, *, service: Optional[str], port: Optional[int]) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service
