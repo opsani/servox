@@ -854,6 +854,60 @@ class TestAssembly:
             'Timeouts': {
                 'title': 'Timeouts Connector Configuration Schema',
                 'description': (
+                    'BaseConfiguration is the base configuration class for Opsani Servo Connectors.\n'
+                    '\n'
+                    'BaseConfiguration subclasses are typically paired 1:1 with a Connector class\n'
+                    'that inherits from `servo.connector.Connector` and implements the business logic\n'
+                    'of the connector. Configuration classes are connector specific and designed\n'
+                    'to be initialized from commandline arguments, environment variables, and defaults.\n'
+                    'Connectors are initialized with a valid settings instance capable of providing necessary\n'
+                    'configuration for the connector to function.'
+                ),
+                'type': 'object',
+                'properties': {
+                    'description': {
+                        'title': 'Description',
+                        'description': 'An optional annotation describing the configuration.',
+                        'env_names': [
+                            'TIMEOUTS_DESCRIPTION',
+                        ],
+                        'type': 'string',
+                    },
+                    'httpx': {
+                        'title': 'Httpx',
+                        'env_names': [
+                            'TIMEOUTS_HTTPX',
+                        ],
+                        'allOf': [
+                            {
+                                '$ref': '#/definitions/HttpxTimeouts',
+                            },
+                        ],
+                    },
+                    'events': {
+                        'title': 'Events',
+                        'env_names': [
+                            'TIMEOUTS_EVENTS',
+                        ],
+                        'type': 'object',
+                        'additionalProperties': {
+                            'type': 'string',
+                            'format': 'duration',
+                            'pattern': '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]+us)?([\\d\\.]+ns)?',
+                            'examples': [
+                                '300ms',
+                                '5m',
+                                '2h45m',
+                                '72h3m0.5s',
+                            ],
+                        },
+                    },
+                },
+                'additionalProperties': False
+            },
+            'HttpxTimeouts': {
+                'title': 'HttpxTimeouts Connector Configuration Schema',
+                'description': (
                     'Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networki'
                     'ng capabilities to the\n'
                     'servo.\n'
@@ -866,14 +920,14 @@ class TestAssembly:
                         'title': 'Description',
                         'description': 'An optional annotation describing the configuration.',
                         'env_names': [
-                            'TIMEOUTS_DESCRIPTION',
+                            'HTTPX_TIMEOUTS_DESCRIPTION',
                         ],
                         'type': 'string',
                     },
                     'connect': {
                         'title': 'Connect',
                         'env_names': [
-                            'TIMEOUTS_CONNECT',
+                            'HTTPX_TIMEOUTS_CONNECT',
                         ],
                         'type': 'string',
                         'format': 'duration',
@@ -891,7 +945,7 @@ class TestAssembly:
                     'read': {
                         'title': 'Read',
                         'env_names': [
-                            'TIMEOUTS_READ',
+                            'HTTPX_TIMEOUTS_READ',
                         ],
                         'type': 'string',
                         'format': 'duration',
@@ -909,7 +963,7 @@ class TestAssembly:
                     'write': {
                         'title': 'Write',
                         'env_names': [
-                            'TIMEOUTS_WRITE',
+                            'HTTPX_TIMEOUTS_WRITE',
                         ],
                         'type': 'string',
                         'format': 'duration',
@@ -927,7 +981,7 @@ class TestAssembly:
                     'pool': {
                         'title': 'Pool',
                         'env_names': [
-                            'TIMEOUTS_POOL',
+                            'HTTPX_TIMEOUTS_POOL',
                         ],
                         'type': 'string',
                         'format': 'duration',
@@ -997,6 +1051,7 @@ class TestAssembly:
                     },
                     'timeouts': {
                         'title': 'Timeouts',
+                        'description': 'Global timeout configuration for servox components',
                         'env_names': [
                             'SERVO_TIMEOUTS',
                         ],

@@ -396,7 +396,7 @@ def create_event(
         localns = inspect.currentframe().f_back.f_locals
         module = localns.get("__module__", None)
 
-    if timeout_duration := timeout is not None: # pass through if none, initialize duration otherwise 
+    if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise 
         timeout_duration = servo.types.Duration(timeout)
 
     event = Event(
@@ -585,7 +585,7 @@ def event_handler(
         else:
             assert "Undefined preposition value"
 
-        if timeout_duration := timeout is not None: # pass through if none, initialize duration otherwise 
+        if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise 
             timeout_duration = servo.types.Duration(timeout)
 
         # Annotate the function for processing later, see Connector.__init_subclass__
@@ -631,6 +631,8 @@ class Mixin:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
+        event_timeouts = timeouts.events if (timeouts := kwargs.get('timeouts')) else None
+
         # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
             if handler := getattr(value, "__event_handler__", None):
@@ -639,9 +641,9 @@ class Mixin:
                         f"Unexpected event descriptor of type '{handler.__class__}'"
                     )
 
-                if timeouts := cls.event_timeouts is not None:
+                if event_timeouts is not None:
                     context_str = str(EventContext(name=handler.event.name, preposition=handler.preposition))
-                    if timeout_descriptor := timeouts.get(context_str) is not None:
+                    if timeout_descriptor := event_timeouts.get(context_str) is not None:
                         handler.timeout = servo.types.Duration(timeout_descriptor)
 
                 # Cascade timeout set at event creation if the higher precedence timeouts from handler definition or servo config are not defined

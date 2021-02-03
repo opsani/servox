@@ -279,23 +279,6 @@ class BackoffSettings(BaseConfiguration):
     The maximum number of retry attempts to make before giving up.
     """
 
-class Timeouts(BaseConfiguration):
-    httpx: Optional[HttpxTimeouts] = None
-    """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
-    servo.
-    """
-
-    events: Optional[Dict[str, servo.types.Duration]] = None
-    """Specifies the maximum amount of time to wait for handlers of event names keyed in this dictionary to finish
-    execution. Defaults are event specific but most have no timeout
-    """
-
-    @pydantic.validator("httpx", pre=True)
-    def parse_httpx_timeouts(cls, v):
-        if isinstance(v, (str, int, float)):
-            return HttpxTimeouts(v)
-        return v
-
 class HttpxTimeouts(BaseConfiguration):
     """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
@@ -333,6 +316,23 @@ class HttpxTimeouts(BaseConfiguration):
             if not attr in kwargs:
                 kwargs[attr] = timeout
         super().__init__(**kwargs)
+
+class Timeouts(BaseConfiguration):
+    httpx: Optional[HttpxTimeouts] = None
+    """Timeout configuration for the HTTPX library, which provides HTTP networking capabilities to the
+    servo.
+    """
+
+    events: Optional[Dict[str, servo.types.Duration]] = None
+    """Specifies the maximum amount of time to wait for handlers of event names keyed in this dictionary to finish
+    execution. Defaults are event specific but most have no timeout
+    """
+
+    @pydantic.validator("httpx", pre=True)
+    def parse_httpx_timeouts(cls, v):
+        if isinstance(v, (str, int, float)):
+            return HttpxTimeouts(v)
+        return v
 
 
 ProxyKey = pydantic.constr(regex=r"^(https?|all)://")

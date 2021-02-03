@@ -10,6 +10,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo.errors
 import servo.types
 import servo.utilities
 
@@ -92,7 +93,7 @@ class Status(pydantic.BaseModel):
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
-        if isinstance(error, servo.errors.EnvironmentFailed):
+        elif isinstance(error, servo.errors.EnvironmentFailedError):
             status = ServoStatuses.environment_failed
         else:
             status = ServoStatuses.failed

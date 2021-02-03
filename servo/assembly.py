@@ -104,6 +104,7 @@ class Assembly(pydantic.BaseModel):
             )
             servo_config = servo_config_model.parse_obj(config)
             servo_optimizer = servo_config.optimizer or optimizer
+            servo_timeouts = servo_config.servo.timeouts
 
             # Initialize all active connectors
             connectors: List[servo.connector.BaseConnector] = []
@@ -116,6 +117,7 @@ class Assembly(pydantic.BaseModel):
                         optimizer=servo_optimizer,
                         __connectors__=connectors,
                         pubsub_exchange=pubsub_exchange,
+                        timeouts=servo_timeouts,
                     )
                     connectors.append(connector)
 
@@ -126,6 +128,7 @@ class Assembly(pydantic.BaseModel):
                 optimizer=servo_optimizer,
                 __connectors__=connectors,
                 pubsub_exchange=pubsub_exchange,
+                timeouts=servo_timeouts,
             )
             connectors.append(servo_)
             servos.append(servo_)
