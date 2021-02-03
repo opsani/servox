@@ -163,23 +163,25 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
 
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
-        with self.servo.current():
-            while self._running:
-                try:
-                    status = await self.exec_command()
-                    if status.status == servo.api.OptimizerStatuses.unexpected_event:
-                        self.logger.warning(
-                            f"server reported unexpected event: {status.reason}"
-                        )
-                except httpx.TimeoutException as error:
-                    self.logger.warning(f"ignoring HTTP timeout error: {error}")
+        # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
+        servo.servo.set_current_servo(self.servo)
 
-                except httpx.HTTPStatusError as error:
-                    self.logger.warning(f"ignoring HTTP response error: {error}")
+        while self._running:
+            try:
+                status = await self.exec_command()
+                if status.status == servo.api.OptimizerStatuses.unexpected_event:
+                    self.logger.warning(
+                        f"server reported unexpected event: {status.reason}"
+                    )
+            except httpx.TimeoutException as error:
+                self.logger.warning(f"ignoring HTTP timeout error: {error}")
 
-                except Exception as error:
-                    self.logger.exception(f"failed with unrecoverable error: {error}")
-                    raise error
+            except httpx.HTTPStatusError as error:
+                self.logger.warning(f"ignoring HTTP response error: {error}")
+
+            except Exception as error:
+                self.logger.exception(f"failed with unrecoverable error: {error}")
+                raise error
 
     async def run(self) -> None:
         self._running = True
