@@ -8,6 +8,7 @@ import asyncio
 import datetime
 import enum
 import inspect
+import math
 import operator
 import time
 from typing import (
@@ -1007,32 +1008,6 @@ class RangeSetting(Setting):
 
         return value
 
-    @pydantic.root_validator(skip_on_failure=True)
-    @classmethod
-    def _validate_step_and_value(cls, values) -> Numeric:
-        value, min, max, step = values["value"], values["min"], values["max"], values["step"]
-
-        # if value is not None:
-        #     if value != max and value + step > max:
-        #         raise ValueError(
-        #             f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-        #         )
-        #     elif value != min and value - step < min:
-        #         raise ValueError(
-        #             f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
-        #         )
-        # else:
-        #     if (min + step > max):
-        #         raise ValueError(
-        #             f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-        #         )
-        #     elif (max - step < min):
-        #         raise ValueError(
-        #             f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
-        #         )
-
-        return values
-
     @pydantic.validator("max")
     @classmethod
     def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:
@@ -1053,24 +1028,49 @@ class RangeSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def warn_if_value_is_not_step_aligned(cls, values: dict) -> dict:
-        name, min_, max_, step, value = (
+    def _min_and_max_must_be_step_aligned(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        name, min_, max_, step = (
             values["name"],
             values["min"],
             values["max"],
             values["step"],
-            values["value"],
         )
 
-        if value is not None and value % step != 0:
-            from servo.logging import logger
-
-            desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
-            logger.warning(
-                f"{desc} value is not step aligned: {cls.human_readable(value)} is not divisible by {cls.human_readable(step)}"
-            )
+        for boundary in ('min', 'max'):
+            value = values[boundary]
+            if value and not _is_step_aligned(value, step):
+                desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
+                raise ValueError(
+                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)}"
+                )
 
         return values
+
+    # @pydantic.root_validator(skip_on_failure=True)
+    # @classmethod
+    # def _validate_step_and_value(cls, values) -> Numeric:
+    #     value, min, max, step = values["value"], values["min"], values["max"], values["step"]
+
+    #     if value is not None:
+    #         if value != max and value + step > max:
+    #             raise ValueError(
+    #                 f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+    #             )
+    #         elif value != min and value - step < min:
+    #             raise ValueError(
+    #                 f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
+    #             )
+    #     else:
+    #         if (min + step > max):
+    #             raise ValueError(
+    #                 f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+    #             )
+    #         elif (max - step < min):
+    #             raise ValueError(
+    #                 f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
+    #             )
+
+    #     return values
 
     def __str__(self) -> str:
         return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"
@@ -1554,3 +1554,10 @@ def isfuturistic(obj: Any) -> bool:
     return (asyncio.isfuture(obj)
             or asyncio.iscoroutine(obj)
             or inspect.isawaitable(obj))
+
+def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
+    # NOTE: Python floating point numbers such as 1.0 % 0.1 return remainders from rounding
+    if value > step:
+        return math.floor(value % step) == 0
+    else:
+        return math.floor(step % value) == 0
