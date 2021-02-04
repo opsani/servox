@@ -34,7 +34,7 @@ def current_servo() -> Optional["Servo"]:
     """
     return _current_context_var.get(None)
 
-def set_current_servo(servo_: Optional["Servo"]) -> None:
+def _set_current_servo(servo_: Optional["Servo"]) -> None:
     """Set the active servo for the current execution context.
 
     The value is managed by a contextvar and is concurrency safe.

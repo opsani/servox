@@ -13,7 +13,7 @@ import httpx
 import pydantic
 import typer
 
-import servo as servox
+import servo
 import servo.api
 import servo.configuration
 import servo.utilities.key_paths
@@ -164,7 +164,8 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
-        servo.servo.set_current_servo(self.servo)
+        from servo.servo import _set_current_servo
+        _set_current_servo(self.servo)
 
         while self._running:
             try:
