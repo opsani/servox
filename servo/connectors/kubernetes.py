@@ -1439,7 +1439,16 @@ class Deployment(KubernetesModel):
             self.obj = await api_client.patch_namespaced_deployment(
                 name=self.name,
                 namespace=self.namespace,
-                body=self.obj,
+                body=self.obj
+            )
+
+    async def replace(self) -> None:
+        """Update the changed attributes of the Deployment."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.replace_namespaced_deployment(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj
             )
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
@@ -1618,6 +1627,17 @@ class Deployment(KubernetesModel):
         self.containers[index] = container
         self.obj.spec.template.spec.containers[index] = container.obj
 
+    def remove_container(self, name: str) -> Optional[Container]:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))), None)
+        if index is not None:
+            return Container(
+                self.obj.spec.template.spec.containers.pop(index),
+                None
+            )
+
+        return None
+
     @property
     def replicas(self) -> int:
         """
@@ -1650,11 +1670,6 @@ class Deployment(KubernetesModel):
         """Return the pod spec for instances of the Deployment."""
         return self.pod_template_spec.spec
 
-    # TODO: annotations/labels getters and setters...
-    # @property
-    # def annotations(self) -> Optional[Dict[str, str]]:
-
-    # TODO: cleanup backoff
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
     async def inject_sidecar(
         self,
@@ -1726,6 +1741,19 @@ class Deployment(KubernetesModel):
 
         # patch the deployment
         await self.patch()
+
+    async def eject_sidecar(self) -> bool:
+        """Eject an Envoy sidecar from the Deployment.
+
+        Returns True if the sidecar was ejected.
+        """
+        await self.refresh()
+        container = self.remove_container('opsani-envoy')
+        if container:
+            await self.replace()
+            return True
+
+        return False
 
     @contextlib.asynccontextmanager
     async def rollout(self, *, timeout: Optional[servo.DurationDescriptor] = None) -> None:
