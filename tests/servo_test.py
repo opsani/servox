@@ -4,7 +4,7 @@ import os
 import ssl
 from inspect import Signature
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import httpcore
 import httpx
@@ -21,7 +21,7 @@ from servo.connectors.vegeta import VegetaConnector
 from servo.errors import *
 from servo.events import EventResult, Preposition, _events, after_event, before_event, create_event, event, on_event
 from servo.servo import Events, Servo
-from servo.types import Control, Description, Measurement
+from servo.types import Control, Description, Environment, Measurement
 from tests.helpers import MeasureConnector, environment_overrides
 
 
@@ -36,6 +36,22 @@ class FirstTestServoConnector(BaseConnector):
     @event(handler=True)
     async def this_is_an_event(self) -> str:
         return "this is the result"
+
+    @event(handler=True, timeout='100ms')
+    async def this_is_a_timeout_event(self) -> None:
+        await asyncio.sleep(.5)
+
+    @event(handler=True)
+    async def this_is_another_timeout_event(self) -> None:
+        await asyncio.sleep(.5)
+
+    @event(timeout='10s')
+    async def this_is_a_timeout_override_event(self) -> None:
+        ...
+
+    @on_event('this_is_a_timeout_override_event', timeout='100ms')
+    async def this_is_an_overriding_handler(self) -> None:
+        await asyncio.sleep(.5)
 
     @after_event(Events.adjust)
     def adjust_handler(self, results: List[EventResult]) -> None:
@@ -73,6 +89,14 @@ class FirstTestServoConnector(BaseConnector):
     def handle_shutdown(self) -> None:
         pass
 
+    @on_event(Events.set_environment)
+    def handle_set_environment(self, old: Optional[Environment], new: Environment) -> bool:
+        return True
+
+    @on_event(Events.update_environment)
+    def handle_update_environment(self,  old: Optional[Environment], new: Environment) -> None:
+        pass
+
     class Config:
         # NOTE: Necessary to utilize mocking
         extra = Extra.allow
@@ -94,6 +118,7 @@ async def assembly(servo_yaml: Path) -> Assembly:
         "connectors": ["first_test_servo", "second_test_servo"],
         "first_test_servo": {},
         "second_test_servo": {},
+        "servo": {"timeouts": {"events": {"this_is_another_timeout_event": "100ms"}}},
     }
     servo_yaml.write_text(yaml.dump(config))
 
@@ -161,6 +186,21 @@ async def test_dispatch_event_include(servo: Servo) -> None:
     assert len(results) == 1
     assert results[0].value == "this is the result"
 
+
+async def test_event_definition_timeout(servo: Servo) -> None:
+    with pytest.raises(EventError) as error:
+        await servo.dispatch_event("this_is_a_timeout_event")
+    assert str(error.value).startswith("Timeout of 100ms elapsed while awaiting the completion of handler <class 'tests.servo_test.FirstTestServoConnector'>(on:this_is_a_timeout_event-><function FirstTestServoConnector.this_is_a_timeout_event at ")
+
+async def test_event_handler_timeout(servo: Servo) -> None:
+    with pytest.raises(EventError) as error:
+        await servo.dispatch_event("this_is_a_timeout_override_event")
+    assert str(error.value).startswith("Timeout of 100ms elapsed while awaiting the completion of handler <class 'tests.servo_test.FirstTestServoConnector'>(on:this_is_a_timeout_override_event-><function FirstTestServoConnector.this_is_an_overriding_handler at ")
+
+async def test_event_servoconfig_timeout(servo: Servo) -> None:
+    with pytest.raises(EventError) as error:
+        await servo.dispatch_event("this_is_another_timeout_event")
+    assert str(error.value).startswith("Timeout of 100ms elapsed while awaiting the completion of handler <class 'tests.servo_test.FirstTestServoConnector'>(on:this_is_another_timeout_event-><function FirstTestServoConnector.this_is_another_timeout_event at ")
 
 async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert len(servo.connectors) == 2
@@ -381,6 +421,25 @@ async def test_shutdown_event(mocker, servo: servo) -> None:
     await servo.shutdown()
     on_spy.assert_called()
 
+async def test_get_environment_event(servo: Servo) -> None:
+    servo.environment = Environment(mode="test")
+    results = await servo.dispatch_event(Events.get_environment)
+    assert len(results) == 1
+    assert servo.environment == Environment(mode="test")
+
+async def test_set_environment_event(servo: Servo) -> None:
+    results = await servo.dispatch_event(Events.set_environment, None, Environment(mode="test"))
+    assert len(results) == 2
+    assert all([r.value for r in results])
+    assert servo.environment.mode == "test"
+
+async def test_update_environment_event(mocker, servo: Servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    on_handler = connector.get_event_handlers(Events.update_environment, Preposition.on)[0]
+    on_spy = mocker.spy(on_handler, "handler")
+    await servo.dispatch_event(Events.update_environment, None, Environment(mode="test"))
+    on_spy.assert_called()
+
 async def test_shutdown_event_stops_pubsub_exchange(mocker, servo: servo) -> None:
     await servo.startup()
     assert servo.pubsub_exchange.running
@@ -527,6 +586,14 @@ def test_registering_before_handlers() -> None:
 
     assert before_measure.__event_handler__.event.name == "measure"
     assert before_measure.__event_handler__.preposition == Preposition.before
+
+
+def test_registering_timeout_handler() -> None:
+    @before_event("measure", timeout='10s')
+    def before_measure(self) -> None:
+        pass
+
+    assert before_measure.__event_handler__.timeout == Duration('10s')
 
 
 def test_registering_before_handler_fails_with_extra_args() -> None:
@@ -1642,6 +1709,33 @@ def test_backoff_settings() -> None:
     BaseServoConfiguration()
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ('measure', 60),
+        ('before:measure', 5.0),
+        ('adjust', '10m'),
+    ]
+)
+def test_valid_event_timeouts_input(name, value):
+    timeouts = Timeouts(events={name: value})
+    assert timeouts.events[name] == value
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        (None, 60),
+        ('before:measure', None),
+        ('adjust', 'not-valid'),
+        ('measure', {}),
+    ]
+)
+def test_invalid_event_timeouts_input(name, value):
+    with pytest.raises(ValidationError):
+        Timeouts(events={name: value})
+
+
 @pytest.mark.parametrize("attr", ["connect", "read", "write", "pool"])
 @pytest.mark.parametrize(
     ("value", "expected"),
@@ -1653,7 +1747,7 @@ def test_backoff_settings() -> None:
         (Duration("3h4m"), Duration("3h4m")),
     ],
 )
-def test_valid_timeouts_input(attr, value, expected) -> None:
+def test_valid_httpx_timeouts_input(attr, value, expected) -> None:
     kwargs = {attr: value}
     timeouts = HttpxTimeouts(**kwargs)
     assert getattr(timeouts, attr) == expected
@@ -1661,7 +1755,7 @@ def test_valid_timeouts_input(attr, value, expected) -> None:
 
 @pytest.mark.parametrize("attr", ["connect", "read", "write", "pool"])
 @pytest.mark.parametrize("value", [[], "not valid", {}])
-def test_invalid_timeouts_input(attr, value) -> None:
+def test_invalid_httpx_timeouts_input(attr, value) -> None:
     with pytest.raises(ValidationError):
         HttpxTimeouts(**{attr: value})
 
@@ -1675,7 +1769,7 @@ def test_invalid_timeouts_input(attr, value) -> None:
         ("30s", 30),
     ],
 )
-def test_timeouts_parsing(value, expected) -> None:
+def test_httpx_timeouts_parsing(value, expected) -> None:
     config = ServoConfiguration(timeouts=Timeouts(httpx=value))
     if value is None:
         assert config.timeouts.httpx is None
@@ -1686,8 +1780,6 @@ def test_timeouts_parsing(value, expected) -> None:
             write=Duration(value),
             pool=Duration(value),
         )
-
-# TODO: unit tests for ServoConfiguration config.events timeouts
 
 @pytest.mark.parametrize(
     "proxies",

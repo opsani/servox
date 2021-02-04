@@ -631,8 +631,6 @@ class Mixin:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        event_timeouts = timeouts.events if (timeouts := kwargs.get('timeouts')) else None
-
         # Register events handlers for all annotated methods (see `event_handler` decorator)
         for key, value in cls.__dict__.items():
             if handler := getattr(value, "__event_handler__", None):
@@ -641,12 +639,7 @@ class Mixin:
                         f"Unexpected event descriptor of type '{handler.__class__}'"
                     )
 
-                if event_timeouts is not None:
-                    context_str = str(EventContext(name=handler.event.name, preposition=handler.preposition))
-                    if timeout_descriptor := event_timeouts.get(context_str) is not None:
-                        handler.timeout = servo.types.Duration(timeout_descriptor)
-
-                # Cascade timeout set at event creation if the higher precedence timeouts from handler definition or servo config are not defined
+                # Cascade event timeout if the higher precedence handler timeout is not defined
                 if handler.timeout is None and handler.event.timeout is not None:
                     handler.timeout = handler.event.timeout
 
@@ -663,6 +656,15 @@ class Mixin:
             *args,
             **kwargs,
         )
+
+        event_timeouts = timeouts.events if (timeouts := kwargs.get('timeouts')) else None
+        if event_timeouts is not None:
+            for event_context_str, duration_descriptor in event_timeouts.items():
+                if context := EventContext.from_str(event_context_str):
+                    for handler in self.get_event_handlers(context.event, context.preposition):
+                        handler.timeout = servo.types.Duration(duration_descriptor)
+                else:
+                    self.logger.warning(f"Unable to derive context of configured event timeout '{event_context_str}'")
 
         # NOTE: Connector references are held off the model so
         # that Pydantic doesn't see additional attributes
@@ -846,13 +848,18 @@ class Mixin:
                         async with event.on_handler_context_manager(self):
                             if asyncio.iscoroutinefunction(method):
                                 timeout = None if event_handler.timeout is None else event_handler.timeout.total_seconds()
-                                value = await asyncio.wait_for(
-                                    asyncio.create_task(
-                                        method(*args, **merged_kwargs),
-                                        name=f"{preposition}:{event}",
-                                    ),
-                                    timeout=timeout
-                                )
+                                try:
+                                    value = await asyncio.wait_for(
+                                        asyncio.create_task(
+                                            method(*args, **merged_kwargs),
+                                            name=f"{preposition}:{event}",
+                                        ),
+                                        timeout=timeout
+                                    )
+                                except asyncio.TimeoutError as toe:
+                                    raise servo.errors.EventError(
+                                        f"Timeout of {event_handler.timeout} elapsed while awaiting the completion of handler {event_handler}"
+                                    ) from toe
                             else:
                                 if event_handler.timeout is not None:
                                     self.logger.warning(f"Unable to enforce timeout of {event_handler.timeout} on blocking/sync handler: '{event_handler}'")
