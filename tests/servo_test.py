@@ -15,7 +15,7 @@ from pydantic import Extra, ValidationError
 import servo as servox
 from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
-from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, HttpxTimeouts
+from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts, HttpxTimeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.errors import *
@@ -468,7 +468,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'\""""
+        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Description'\""""
     )
 
 
@@ -482,7 +482,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'\""""
+        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Measurement'\""""
     )
 
 
@@ -1676,7 +1676,7 @@ def test_invalid_timeouts_input(attr, value) -> None:
     ],
 )
 def test_timeouts_parsing(value, expected) -> None:
-    config = ServoConfiguration(HttpxTimeouts(httpx=value))
+    config = ServoConfiguration(timeouts=Timeouts(httpx=value))
     if value is None:
         assert config.timeouts.httpx is None
     else:
