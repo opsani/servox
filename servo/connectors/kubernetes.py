@@ -2174,8 +2174,8 @@ class Memory(servo.Memory):
 
     @pydantic.validator('min')
     def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
-        if value < (64 * MiB):
-            raise ValueError('minimum Memory value allowed is 64MiB')
+        if value < (128 * MiB):
+            raise ValueError('minimum Memory value allowed is 128MiB')
         return value
 
     def __opsani_repr__(self) -> dict:

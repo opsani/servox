@@ -826,8 +826,8 @@ class TestMemory:
         assert serialization["max"] == "4.0GiB"
         assert serialization["step"] == "256.0MiB"
 
-    def test_cannot_be_less_than_64MiB(self) -> None:
-        with pytest.raises(ValueError, match='minimum Memory value allowed is 64MiB'):
+    def test_cannot_be_less_than_128MiB(self) -> None:
+        with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
             Memory(min="32 MiB", max=4.0, step=268435456)
 
 def test_millicpu():
@@ -870,7 +870,7 @@ def config(namespace: str) -> KubernetesConfiguration:
                     ContainerConfiguration(
                         name="fiber-http",
                         cpu=CPU(min="125m", max="875m", step="125m"),
-                        memory=Memory(min="64MiB", max="0.75GiB", step="32MiB"),
+                        memory=Memory(min="128MiB", max="0.75GiB", step="32MiB"),
                     )
                 ],
             )
