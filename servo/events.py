@@ -396,7 +396,7 @@ def create_event(
         localns = inspect.currentframe().f_back.f_locals
         module = localns.get("__module__", None)
 
-    if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise 
+    if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise
         timeout_duration = servo.types.Duration(timeout)
 
     event = Event(
@@ -585,7 +585,7 @@ def event_handler(
         else:
             assert "Undefined preposition value"
 
-        if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise 
+        if (timeout_duration := timeout) is not None: # pass through if none, initialize duration otherwise
             timeout_duration = servo.types.Duration(timeout)
 
         # Annotate the function for processing later, see Connector.__init_subclass__
