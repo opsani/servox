@@ -1709,8 +1709,8 @@ class ServoCLI(CLI):
             service: Optional[str] = typer.Option(
                 None, "--service", "-s", help="Service to target"
             ),
-            port: Optional[int] = typer.Option(
-                None, "--port", "-p", help="Port to target"
+            port: Optional[str] = typer.Option(
+                None, "--port", "-p", help="Port to target (NAME or NUMBER)"
             )
         ) -> None:
             """
@@ -1720,7 +1720,7 @@ class ServoCLI(CLI):
                 raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
 
             if not service or port:
-                raise typer.MissingParameter("service or port must be given")
+                raise typer.BadParameter("service or port must be given")
 
             # TODO: Dry this up...
             if os.getenv("KUBERNETES_SERVICE_HOST"):
@@ -1744,6 +1744,51 @@ class ServoCLI(CLI):
 
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")
+            else:
+                raise typer.BadParameter(f"unexpected sidecar target: {target}")
+
+        @self.command(section=section)
+        def eject_sidecar(
+            context: Context,
+            target: str = typer.Argument(
+                ..., help="Deployment or Pod to eject the sidecar from (deployment/NAME or pod/NAME)"
+            ),
+            namespace: str = typer.Option(
+                "default", "--namespace", "-n", help="Namespace of the target"
+            ),
+        ) -> None:
+            """
+            Eject an Envoy sidecar
+            """
+            if not target.startswith(("deploy/", "deployment/", "pod/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+
+            # TODO: Dry this up...
+            if os.getenv("KUBERNETES_SERVICE_HOST"):
+                kubernetes_asyncio.config.load_incluster_config()
+            else:
+                kubeconfig = os.getenv("KUBECONFIG") or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
+                kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
+                if kubeconfig_path.exists():
+                    run_async(kubernetes_asyncio.config.load_kube_config(
+                        config_file=os.path.expandvars(kubeconfig_path),
+                    ))
+
+            if target.startswith("deploy"):
+                deployment = run_async(
+                    servo.connectors.kubernetes.Deployment.read(
+                        target.split('/', 1)[1], namespace
+                    )
+                )
+                ejected = run_async(deployment.eject_sidecar())
+                if ejected:
+                    typer.echo(f"Envoy sidecar ejected from Deployment {deployment.name} in {namespace}")
+                else:
+                    typer.echo(f"No Envoy sidecar found in Deployment {deployment.name} in {namespace}", err=True)
+                    raise typer.Exit(code=1)
+
+            elif target.startswith("pod"):
+                raise typer.BadParameter("Pod sidecar ejection is not yet implemented")
             else:
                 raise typer.BadParameter(f"unexpected sidecar target: {target}")
 

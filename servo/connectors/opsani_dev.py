@@ -1,12 +1,31 @@
 import json
 import os
 import operator
-from typing import List, Optional
+from typing import List, Optional, Union
 
+import kubernetes_asyncio
+import pydantic
 import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
 
+KUBERNETES_PERMISSIONS = [
+    servo.connectors.kubernetes.PermissionSet(
+        group="apps",
+        resources=["deployments", "deployments/status", "replicasets"],
+        verbs=["get", "list", "watch", "update", "patch"],
+    ),
+    servo.connectors.kubernetes.PermissionSet(
+        group="",
+        resources=["namespaces"],
+        verbs=["get", "list"],
+    ),
+    servo.connectors.kubernetes.PermissionSet(
+        group="",
+        resources=["pods", "pods/logs", "pods/status", "pods/exec", "pods/portforward", "services"],
+        verbs=["create", "delete", "get", "list", "watch", "update", "patch"],
+    ),
+]
 PROMETHEUS_SIDECAR_BASE_URL = "http://localhost:9090"
 PROMETHEUS_ANNOTATION_DEFAULTS = {
     "prometheus.opsani.com/scrape": "true",
@@ -24,6 +43,7 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     deployment: str
     container: str
     service: str
+    port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: servo.connectors.kubernetes.CPU
     memory: servo.connectors.kubernetes.Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
@@ -182,15 +202,55 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Kubernetes essentials
 
-    @servo.checks.require("namespace")
+    @servo.checks.require("Connectivity to Kubernetes")
+    async def check_connectivity(self) -> None:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.VersionApi(api)
+            await v1.get_code()
+
+    @servo.checks.warn("Kubernetes version")
+    async def check_version(self) -> None:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.VersionApi(api)
+            version = await v1.get_code()
+            assert int(version.major) >= 1
+            # EKS sets minor to "17+"
+            assert int(int("".join(c for c in version.minor if c.isdigit()))) >= 16
+
+    @servo.checks.require("Kubernetes permissions")
+    async def check_permissions(self) -> None:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
+            for permission in KUBERNETES_PERMISSIONS:
+                for resource in permission.resources:
+                    for verb in permission.verbs:
+                        attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
+                            namespace=self.config.namespace,
+                            group=permission.group,
+                            resource=resource,
+                            verb=verb,
+                        )
+
+                        spec = kubernetes_asyncio.client.models.V1SelfSubjectAccessReviewSpec(
+                            resource_attributes=attributes
+                        )
+                        review = kubernetes_asyncio.client.models.V1SelfSubjectAccessReview(spec=spec)
+                        access_review = await v1.create_self_subject_access_review(
+                            body=review
+                        )
+                        assert (
+                            access_review.status.allowed
+                        ), f'Not allowed to "{verb}" resource "{resource}"'
+
+    @servo.checks.require('Namespace "{self.config.namespace}" is readable')
     async def check_kubernetes_namespace(self) -> None:
         await servo.connectors.kubernetes.Namespace.read(self.config.namespace)
 
-    @servo.checks.require("deployment")
+    @servo.checks.require('Deployment "{self.config.deployment}" is readable')
     async def check_kubernetes_deployment(self) -> None:
         await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
 
-    @servo.checks.require("container")
+    @servo.checks.require('Container "{self.config.container}" is readable')
     async def check_kubernetes_container(self) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment, self.config.namespace
@@ -199,6 +259,25 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert (
             container
         ), f"failed reading Container '{self.config.container}' in Deployment '{self.config.deployment}'"
+
+    @servo.require('Container "{self.config.container}" has resource requirements')
+    async def check_resource_requirements(self) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+        container = deployment.find_container(self.config.container)
+        assert container
+        assert container.resources
+        assert container.resources.requests
+        assert container.resources.requests["cpu"]
+        assert container.resources.requests["memory"]
+        assert container.resources.limits
+        assert container.resources.limits["cpu"]
+        assert container.resources.limits["memory"]
+
+    @servo.require('Deployment "{self.config.deployment}" is ready')
+    async def check_deployment(self) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+        if not await deployment.is_ready():
+            raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
     @servo.checks.require("service")
     async def check_kubernetes_service(self) -> None:
@@ -213,6 +292,48 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise ValueError(
                 f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
             )
+
+    @servo.checks.check("service port")
+    async def check_kubernetes_service_port(self) -> None:
+        service = await servo.connectors.kubernetes.Service.read(
+            self.config.service, self.config.namespace
+        )
+        if len(service.ports) > 1:
+            if not self.config.port:
+                raise ValueError(
+                    f"service defines more than one port: a `port` (name or number) must be specified in the configuration"
+                )
+
+            port = service.find_port(self.config.port)
+            if not port:
+                if isinstance(self.config.port, str):
+                    raise LookupError(
+                        f"could not find a port named: {self.config.port}"
+                    )
+                elif isinstance(self.config.port, int):
+                    raise LookupError(
+                        f"could not find a port numbered: {self.config.port}"
+                    )
+                else:
+                    raise RuntimeError(f"unknown port value: {self.config.port}")
+        else:
+            port = service.ports[0]
+
+        return f"Service Port: {port.name} {port.port}:{port.target_port}/{port.protocol}"
+
+    @servo.checks.check('Service routes traffic to Deployment Pods')
+    async def check_service_routes_traffic_to_deployment(self) -> None:
+        service = await servo.connectors.kubernetes.Service.read(
+            self.config.service, self.config.namespace
+        )
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment, self.config.namespace
+        )
+
+        # NOTE: The Service labels should be a subset of the deployment labels
+        deployment_labels = deployment.obj.spec.selector.match_labels
+        if not service.selector.items() <= deployment_labels.items():
+            raise RuntimeError(f"Service selector does not match Deployment labels")
 
     ##
     # Prometheus sidecar
@@ -391,7 +512,6 @@ class OpsaniDevChecks(servo.BaseChecks):
         # Search the containers list for the sidecar
         for container in deployment.containers:
             if container.name == "opsani-envoy":
-                # TODO: Add more heuristics about the image, etc.
                 return
 
         command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
@@ -413,7 +533,6 @@ class OpsaniDevChecks(servo.BaseChecks):
         for pod in await deployment.get_pods():
             # Search the containers list for the sidecar
             if not pod.get_container('opsani-envoy'):
-                # TODO: Add more heuristics about the image, etc.
                 pods_without_sidecars.append(pod)
 
         if pods_without_sidecars:
@@ -443,12 +562,14 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
+        # NOTE: We zero the metrics so we don't have to worry about missing vs. flatlined in this context
         metrics = [
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_rate",
                 servo.types.Unit.requests_per_second,
                 query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
-                step="10s"
+                step="10s",
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "main_error_rate",
@@ -463,14 +584,13 @@ class OpsaniDevChecks(servo.BaseChecks):
         for metric in metrics:
             response = await client.query(metric)
             if response.data:
-                assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {results.data.result_type}"
-                assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(results.data)}"
+                assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+                assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
                 result = response.data[0]
 
                 if metric.name == "main_request_rate":
                     timestamp, value = result.value
                     if not value > 0.0:
-                        # command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & watch -n 0.25 curl -v http://localhost:9980/"
                         command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
@@ -490,19 +610,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 else:
                     raise NotImplementedError(f"unexpected metric: {metric.name}")
             else:
-                # Empty data indicates a potentially absent metric
-                # TODO: Use Client to check for absent metric
-                if metric.name == "main_request_rate":
-                    command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
-                    raise servo.checks.CheckError(
-                        f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
-                        remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
-                    )
-                elif metric.name == "main_error_rate":
-                    # no errors sounds delightful
-                    pass
-                else:
-                    raise NotImplementedError(f"unexpected metric: {metric.name}")
+                raise RuntimeError(f'Encountered unexpected null result value for metric "{metric.name}"')
 
         return ", ".join(summaries)
 
@@ -510,12 +618,17 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_service_proxy(self) -> str:
         proxy_service_port = ENVOY_SIDECAR_DEFAULT_PORT  # TODO: move to configuration
         service = await servo.connectors.kubernetes.Service.read(self.config.service, self.config.namespace)
-        for port in service.ports:
-            if port.target_port == proxy_service_port:
-                return
+        if self.config.port:
+            port = service.find_port(self.config.port)
+        else:
+            port = service.ports[0]
 
-        # TODO: This patch is somewhat naive. We need to allow config of specific port (we just look at the first one)
-        patch = {"spec": { "type": service.obj.spec.type, "ports": [ {"protocol": "TCP", "port": service.ports[0].port, "targetPort": proxy_service_port }]}}
+        # return if we are already proxying to Envoy
+        if port.target_port == proxy_service_port:
+            return
+
+        # patch the target port to pass traffic through Envoy
+        patch = {"spec": { "type": service.obj.spec.type, "ports": [ {"protocol": "TCP", "name": port.name, "port": port.port, "targetPort": proxy_service_port }]}}
         patch_json = json.dumps(patch, indent=None)
         command = f"kubectl --namespace {self.config.namespace} patch service {self.config.service} -p '{patch_json}'"
         raise servo.checks.CheckError(

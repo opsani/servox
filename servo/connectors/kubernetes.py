@@ -36,6 +36,8 @@ from typing import (
 
 import backoff
 import kubernetes_asyncio
+import kubernetes_asyncio.client
+import kubernetes_asyncio.client.exceptions
 import pydantic
 
 import servo
@@ -1111,7 +1113,7 @@ class Service(KubernetesModel):
 
     @classmethod
     @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
-    async def read(cls, name: str, namespace: str) -> "Pod":
+    async def read(cls, name: str, namespace: str) -> "Service":
         """Read the Service from the cluster under the given namespace.
 
         Args:
@@ -1267,6 +1269,19 @@ class Service(KubernetesModel):
         """Return the list of ports exposed by the service."""
         return self.obj.spec.ports
 
+    def find_port(self, selector: Union[str, int]) -> Optional[kubernetes_asyncio.client.V1ServicePort]:
+        for port in self.ports:
+            if isinstance(selector, str):
+                if port.name == selector:
+                    return port
+            elif isinstance(selector, int):
+                if port.port == selector:
+                    return port
+            else:
+                raise TypeError(f"Unknown port selector type '{selector.__class__.__name__}': {selector}")
+
+        return None
+
     async def get_endpoints(self) -> List[kubernetes_asyncio.client.V1Endpoints]:
         """Get the endpoints for the Service.
 
@@ -1339,6 +1354,27 @@ class Service(KubernetesModel):
         """
         return await self._proxy_http_request('POST', path, **kwargs)
 
+    @property
+    def selector(self) -> Dict[str, str]:
+        return self.obj.spec.selector
+
+    async def get_pods(self) -> List[Pod]:
+        """Get the pods that the Service is routing traffic to.
+
+        Returns:
+            A list of pods that the service is routing traffic to.
+        """
+        self.logger.debug(f'getting pods for service "{self.name}"')
+
+        async with Pod.preferred_client() as api_client:
+            label_selector = self.obj.spec.selector.match_labels
+            pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
+                namespace=self.namespace, label_selector=selector_string(self.selector)
+            )
+
+        pods = [Pod(p) for p in pod_list.items]
+        return pods
+
 
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
@@ -1403,7 +1439,16 @@ class Deployment(KubernetesModel):
             self.obj = await api_client.patch_namespaced_deployment(
                 name=self.name,
                 namespace=self.namespace,
-                body=self.obj,
+                body=self.obj
+            )
+
+    async def replace(self) -> None:
+        """Update the changed attributes of the Deployment."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.replace_namespaced_deployment(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj
             )
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
@@ -1590,6 +1635,17 @@ class Deployment(KubernetesModel):
         self.containers[index] = container
         self.obj.spec.template.spec.containers[index] = container.obj
 
+    def remove_container(self, name: str) -> Optional[Container]:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))), None)
+        if index is not None:
+            return Container(
+                self.obj.spec.template.spec.containers.pop(index),
+                None
+            )
+
+        return None
+
     @property
     def replicas(self) -> int:
         """
@@ -1622,11 +1678,6 @@ class Deployment(KubernetesModel):
         """Return the pod spec for instances of the Deployment."""
         return self.pod_template_spec.spec
 
-    # TODO: annotations/labels getters and setters...
-    # @property
-    # def annotations(self) -> Optional[Dict[str, str]]:
-
-    # TODO: cleanup backoff
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
     async def inject_sidecar(
         self,
@@ -1659,6 +1710,7 @@ class Deployment(KubernetesModel):
             raise ValueError(f"service and port cannot both be given")
 
         # # lookup the port on the target service
+        # FIXME: We are targeting the zero port here!!!
         if service:
             ser = await Service.read(service, self.namespace)
             port = ser.obj.spec.ports[0].target_port
@@ -1697,6 +1749,19 @@ class Deployment(KubernetesModel):
 
         # patch the deployment
         await self.patch()
+
+    async def eject_sidecar(self) -> bool:
+        """Eject an Envoy sidecar from the Deployment.
+
+        Returns True if the sidecar was ejected.
+        """
+        await self.refresh()
+        container = self.remove_container('opsani-envoy')
+        if container:
+            await self.replace()
+            return True
+
+        return False
 
     @contextlib.asynccontextmanager
     async def watch(self, timeout: Optional[servo.DurationDescriptor] = None) -> None:
@@ -2093,6 +2158,12 @@ class CPU(servo.CPU):
     value: Optional[Millicore]
     requirements: ResourceRequirements = ResourceRequirements.compute
 
+    @pydantic.validator('min')
+    def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
+        if value < 100:
+            raise ValueError('minimum CPU value allowed is 100m')
+        return value
+
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
 
@@ -2104,7 +2175,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-GiB = 1024 * 1024 * 1024
+MiB = 2 ** 20
+GiB = 2 ** 30
 
 
 class ShortByteSize(pydantic.ByteSize):
@@ -2133,6 +2205,12 @@ class Memory(servo.Memory):
     max: ShortByteSize
     step: ShortByteSize
     requirements: ResourceRequirements = ResourceRequirements.compute
+
+    @pydantic.validator('min')
+    def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
+        if value < (128 * MiB):
+            raise ValueError('minimum Memory value allowed is 128MiB')
+        return value
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -3453,8 +3531,6 @@ class KubernetesConnector(servo.BaseConnector):
             self.config, matching=matching, halt_on=halt_on
         )
 
-    # TODO: Add support for specifying the container, targeting Pods, etc.
-    # TODO: This needs to be generalized. We also need `has_sidecar` and `remove_sidecar` methods (others?)
     async def inject_sidecar(self, deployment: str, *, service: Optional[str], port: Optional[int]) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service

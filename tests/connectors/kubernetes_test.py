@@ -617,10 +617,10 @@ class TestContainer:
         [
             (
                 "cpu",
-                ("50m", "250m"),
+                ("100m", "250m"),
                 ...,
                 ...,
-                {"limits": {"cpu": "250m"}, "requests": {"cpu": "50m", "memory": "3G"}},
+                {"limits": {"cpu": "250m"}, "requests": {"cpu": "100m", "memory": "3G"}},
             ),
             (
                 "cpu",
@@ -691,13 +691,13 @@ class TestReplicas:
 class TestCPU:
     @pytest.fixture
     def cpu(self) -> CPU:
-        return CPU(min="100m", max="4000m", step="125m")
+        return CPU(min="125m", max="4000m", step="125m")
 
     def test_parsing(self, cpu) -> None:
         assert {
             "name": "cpu",
             "type": "range",
-            "min": 100,
+            "min": 125,
             "max": 4000,
             "step": 125,
             "value": None,
@@ -710,7 +710,7 @@ class TestCPU:
         assert cpu.__opsani_repr__() == {
             "cpu": {
                 "max": 4.0,
-                "min": 0.1,
+                "min": 0.125,
                 "step": 0.125,
                 "value": 3.0,
                 "type": "range",
@@ -719,17 +719,20 @@ class TestCPU:
         }
 
     def test_resolving_equivalent_units(self) -> None:
-        cpu = CPU(min="100m", max=4.0, step=0.125)
-        assert cpu.min == 100
+        cpu = CPU(min="125m", max=4.0, step=0.125)
+        assert cpu.min == 125
         assert cpu.max == 4000
         assert cpu.step == 125
 
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
         serialization = json.loads(cpu.json())
-        assert serialization["min"] == "100m"
+        assert serialization["min"] == "125m"
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
-        # TODO: Requirements also needs to serialize
+
+    def test_cannot_be_less_than_100m(self) -> None:
+        with pytest.raises(ValueError, match='minimum CPU value allowed is 100m'):
+            CPU(min="50m", max=4.0, step=0.100)
 
 
 class TestMillicore:
@@ -823,6 +826,10 @@ class TestMemory:
         assert serialization["max"] == "4.0GiB"
         assert serialization["step"] == "256.0MiB"
 
+    def test_cannot_be_less_than_128MiB(self) -> None:
+        with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
+            Memory(min="32 MiB", max=4.0, step=268435456)
+
 def test_millicpu():
     class Model(pydantic.BaseModel):
         cpu: Millicore
@@ -862,8 +869,8 @@ def config(namespace: str) -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="fiber-http",
-                        cpu=CPU(min="50m", max="800m", step="125m"),
-                        memory=Memory(min="64MiB", max="0.8GiB", step="32MiB"),
+                        cpu=CPU(min="125m", max="875m", step="125m"),
+                        memory=Memory(min="128MiB", max="0.75GiB", step="32MiB"),
                     )
                 ],
             )
@@ -876,8 +883,9 @@ def config(namespace: str) -> KubernetesConfiguration:
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
     @pytest.fixture(autouse=True)
-    def _wait_for_manifests(self, kube):
+    async def _wait_for_manifests(self, kube):
         kube.wait_for_registered(timeout=30)
+        await asyncio.sleep(0.00001)
 
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
@@ -886,7 +894,7 @@ class TestKubernetesConnectorIntegration:
     async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 125
         assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 

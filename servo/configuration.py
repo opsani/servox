@@ -41,9 +41,9 @@ class Optimizer(pydantic.BaseSettings):
     deployed under this domain name umbrella for easy access and autocompletion ergonomics.
     """
 
-    app_name: pydantic.constr(regex=r"^[a-z\-\.0-9]{3,64}$")
+    app_name: pydantic.constr(regex=r"^[a-zA-Z\_\-\.0-9]{1,64}$")
     """
-    The symbolic name of the application or service under optimization in a string of URL-safe characters between 3 and 64
+    The symbolic name of the application or service under optimization in a string of URL-safe characters between 1 and 64
     characters in length.
     """
 
