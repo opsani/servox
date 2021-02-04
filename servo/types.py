@@ -6,9 +6,9 @@ from __future__ import annotations
 import abc
 import asyncio
 import datetime
+import decimal
 import enum
 import inspect
-import math
 import operator
 import time
 from typing import (
@@ -1556,8 +1556,9 @@ def isfuturistic(obj: Any) -> bool:
             or inspect.isawaitable(obj))
 
 def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
-    # NOTE: Python floating point numbers such as 1.0 % 0.1 return remainders from rounding
-    if value > step:
-        return math.floor(value % step) == 0
+    if value == step:
+        return True
+    elif value > step:
+        return decimal.Decimal(str(value)) % decimal.Decimal(str(step)) == 0
     else:
-        return math.floor(step % value) == 0
+        return decimal.Decimal(str(step)) % decimal.Decimal(str(value)) == 0

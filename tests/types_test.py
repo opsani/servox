@@ -963,3 +963,28 @@ class TestDataPoint:
 
     def test_repr(self, data_point: DataPoint) -> None:
         assert repr(data_point) == "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))"
+
+
+from servo.types import _is_step_aligned
+
+@pytest.mark.parametrize(
+    "value, step, aligned",
+    [
+        (1.0, 0.1, True),
+        (1.0, 0.2, True),
+        (1.0, 0.125, True),
+        (1.0, 0.3, False),
+        (0.6, 0.5, False),
+        (10, 1, True),
+        (3, 12, True),
+        (12, 3, True),
+        (6, 5, False),
+        (5, 6, False),
+        (0, 0, True),
+        (1, 1, True),
+        (0.1, 0.1, True),
+    ]
+)
+def test_step_alignment(value, step, aligned) -> None:
+    qualifier = "to" if aligned else "not to"
+    assert _is_step_aligned(value, step) == aligned, f"Expected value {value} {qualifier} be aligned with step {step}"
