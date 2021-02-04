@@ -1559,6 +1559,6 @@ def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
     if value == step:
         return True
     elif value > step:
-        return decimal.Decimal(str(value)) % decimal.Decimal(str(step)) == 0
+        return decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
     else:
-        return decimal.Decimal(str(step)) % decimal.Decimal(str(value)) == 0
+        return decimal.Decimal(str(float(step))) % decimal.Decimal(str(float(value))) == 0
