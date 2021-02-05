@@ -903,13 +903,13 @@ class TestKubernetesConnectorIntegration:
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
             setting_name="cpu",
-            value=".250",
+            value=".150",
         )
         description = await connector.adjust([adjustment])
         assert description is not None
         setting = description.get_setting('fiber-http/fiber-http.cpu')
         assert setting
-        assert setting.value == 250
+        assert setting.value == 150
 
         # Describe it again and make sure it matches
         description = await connector.describe()
