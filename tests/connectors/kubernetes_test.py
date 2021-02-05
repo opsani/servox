@@ -913,7 +913,7 @@ class TestKubernetesConnectorIntegration:
 
         # Describe it again and make sure it matches
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 150
 
     async def test_adjust_cpu_with_settlement(self, config):
         connector = KubernetesConnector(config=config)
