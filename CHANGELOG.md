@@ -129,6 +129,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Corrected an entry points discovery issue affecting the latest versions of
   Python.
 
+## [0.8.4] "pass the calamari" - 2021-02-05
+
+### Fixed
+
+- Containers are no longer accessed positionally by index instead of by name at
+  any time. This was resulting in broken adjustments when the Deployment
+  contained an init container, the main container was not the first container,
+  or during installation the Envoy proxy was injected at the beginning of the
+  container list instead of the end.
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 
