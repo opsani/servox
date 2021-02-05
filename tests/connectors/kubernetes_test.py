@@ -21,6 +21,7 @@ from servo.connectors.kubernetes import (
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    K8sModeAnnotations,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -30,8 +31,9 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirements,
 )
-from servo.errors import AdjustmentRejectedError
-from servo.types import Adjustment
+from servo.configuration import Timeouts
+from servo.errors import AdjustmentRejectedError, EventError
+from servo.types import Adjustment, Environment
 from tests.helpers import *
 
 # pytestmark = [
@@ -1087,6 +1089,41 @@ class TestKubernetesConnectorIntegration:
         # .spec.strategy specifies the strategy used to replace old Pods by new ones. .spec.strategy.type can be "Recreate" or "RollingUpdate". "RollingUpdate" is the default value.
         # Recreate Deployment
         ...
+
+
+    async def test_update_environment_succeeds(self, config, kube):
+        connector = KubernetesConnector(config=config, timeouts=Timeouts(events={'update_environment': '10s'}))
+        environment = Environment(mode="test")
+
+        fiber_dep = kube.get_deployments()['fiber-http']
+        async def update_annotation() -> None:
+            await asyncio.sleep(2)
+            fiber_dep.refresh()
+            fiber_dep.obj.metadata.annotations[K8sModeAnnotations.current_mode.annotation] = "test"
+            fiber_dep.api_client.patch_namespaced_deployment('fiber-http', fiber_dep.namespace, fiber_dep.obj)
+
+        await asyncio.gather(
+            update_annotation(),
+            connector.dispatch_event('update_environment', None, environment)
+        )
+
+        fiber_dep.refresh()
+        assert fiber_dep.obj.metadata.annotations.get(K8sModeAnnotations.desired_mode.annotation) == "test"
+        assert fiber_dep.obj.metadata.annotations.get(K8sModeAnnotations.current_mode.annotation) == "test"
+
+
+    async def test_update_environment_times_out(self, config, kube):
+        connector = KubernetesConnector(config=config, timeouts=Timeouts(events={'update_environment': '5s'}))
+        environment = Environment(mode="test")
+
+        with pytest.raises(EventError) as error:
+            await connector.dispatch_event('update_environment', None, environment)
+
+        assert str(error.value).startswith("Timeout of 5s elapsed while awaiting the completion of handler <class 'servo.connectors.kubernetes.KubernetesConnector'>(on:update_environment-><function KubernetesConnector.update_environment at ")
+
+        fiber_dep = kube.get_deployments()['fiber-http']
+        assert fiber_dep.obj.metadata.annotations.get(K8sModeAnnotations.desired_mode.annotation) == "test"
+        assert fiber_dep.obj.metadata.annotations.get(K8sModeAnnotations.current_mode.annotation) == None
 
 
     # TODO: Put a fiber-http deployment live. Create a config and describe it.

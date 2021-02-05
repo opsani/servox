@@ -224,10 +224,6 @@ class BaseConnector(
         }
 
     @property
-    def event_timeouts(self) -> Optional[Dict[str, DurationDescriptor]]:
-        return self._servo_config.timeouts.events
-
-    @property
     def logger(self) -> "loguru.Logger":
         """Return a logger object bound to the connector."""
         # NOTE: We support the explicit connector ref and the context var so

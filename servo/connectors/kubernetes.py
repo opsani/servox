@@ -3024,6 +3024,7 @@ class K8sModeAnnotations(str, enum.Enum):
     current_mode = "current_mode"
     desired_mode = "desired_mode"
 
+    @property
     def annotation(self) -> str:
         """Return the prefixed Environment attribute
         """
@@ -3032,16 +3033,16 @@ class K8sModeAnnotations(str, enum.Enum):
 async def _update_single_deployment_environment(config: DeploymentConfiguration, new: servo.Environment) -> None:
     # TODO: define iterable enum for environment annotations that do not require watching
     deployment = await Deployment.read(config.name, config.namespace)
-    ann_mode_val = deployment.annotations.get(K8sModeAnnotations.current_mode.annotation())
+    ann_mode_val = deployment.annotations.get(K8sModeAnnotations.current_mode.annotation)
 
     # TODO: legacy spec called for an error here, do we still want it?
     # if mode_ann_val in [None, '']:
-    #     raise servo.errors.EventError('Missing or empty value for annotation {}: {}'.format(env_name.annotation(), ann_val))
+    #     raise servo.errors.EventError('Missing or empty value for annotation {}: {}'.format(env_name.annotation, ann_val))
 
     if new.mode != ann_mode_val:
-        deployment.annotations[K8sModeAnnotations.desired_mode.annotation()] = new.mode
+        deployment.annotations[K8sModeAnnotations.desired_mode.annotation] = new.mode
         await deployment.patch()
-        await deployment.watch_for_annotation({K8sModeAnnotations.current_mode.annotation(): new.mode})
+        await deployment.watch_for_annotation({K8sModeAnnotations.current_mode.annotation: new.mode})
 
 DNSSubdomainName = pydantic.constr(
     strip_whitespace=True,

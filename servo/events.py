@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import abc
 import asyncio
 import contextlib
 import contextvars
@@ -664,17 +663,12 @@ class Mixin:
                     for handler in self.get_event_handlers(context.event, context.preposition):
                         handler.timeout = servo.types.Duration(duration_descriptor)
                 else:
-                    self.logger.warning(f"Unable to derive context of configured event timeout '{event_context_str}'")
+                    raise ValueError(f"Event timeouts contained invalid event (context): '{event_context_str}'")
 
         # NOTE: Connector references are held off the model so
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
-
-    @property
-    @abc.abstractmethod
-    def event_timeouts(self) -> Optional[Dict[str, servo.types.DurationDescriptor]]:
-        ...
 
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:
@@ -862,7 +856,8 @@ class Mixin:
                                     ) from toe
                             else:
                                 if event_handler.timeout is not None:
-                                    self.logger.warning(f"Unable to enforce timeout of {event_handler.timeout} on blocking/sync handler: '{event_handler}'")
+                                    # TODO: define events check that will validate this prior to runs
+                                    raise servo.errors.EventError(f"Unable to enforce timeout of {event_handler.timeout} on blocking/sync handler: '{event_handler}'")
                                 value = method(*args, **merged_kwargs)
 
                         result = EventResult(

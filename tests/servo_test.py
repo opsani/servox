@@ -90,11 +90,11 @@ class FirstTestServoConnector(BaseConnector):
         pass
 
     @on_event(Events.set_environment)
-    def handle_set_environment(self, old: Optional[Environment], new: Environment) -> bool:
+    async def handle_set_environment(self, old: Optional[Environment], new: Environment) -> bool:
         return True
 
     @on_event(Events.update_environment)
-    def handle_update_environment(self,  old: Optional[Environment], new: Environment) -> None:
+    async def handle_update_environment(self,  old: Optional[Environment], new: Environment) -> None:
         pass
 
     class Config:
@@ -201,6 +201,23 @@ async def test_event_servoconfig_timeout(servo: Servo) -> None:
     with pytest.raises(EventError) as error:
         await servo.dispatch_event("this_is_another_timeout_event")
     assert str(error.value).startswith("Timeout of 100ms elapsed while awaiting the completion of handler <class 'tests.servo_test.FirstTestServoConnector'>(on:this_is_another_timeout_event-><function FirstTestServoConnector.this_is_another_timeout_event at ")
+
+async def test_sync_event_handler_with_timeout_fails(mocker, servo: servo) -> None:
+    connector = servo.get_connector("first_test_servo")
+    event_handler = connector.get_event_handlers("adjust", Preposition.after)[0]
+    assert not asyncio.iscoroutine(event_handler.handler), "Handler for this test must be sync, test needs rewrite"
+
+    try:
+        event_handler.timeout = Duration('10s')
+
+        with pytest.raises(EventError) as error:
+            await servo.dispatch_event("adjust")
+    finally:
+        # Updating connector without resetting causes downline test failures
+        # TODO: replace this with mocker logic?
+        event_handler.timeout = None
+
+    assert str(error.value).startswith("Unable to enforce timeout of 10s on blocking/sync handler: '<class 'tests.servo_test.FirstTestServoConnector'>(after:adjust-><function FirstTestServoConnector.adjust_handler at ")
 
 async def test_dispatch_event_exclude(servo: Servo) -> None:
     assert len(servo.connectors) == 2
@@ -432,6 +449,10 @@ async def test_set_environment_event(servo: Servo) -> None:
     assert len(results) == 2
     assert all([r.value for r in results])
     assert servo.environment.mode == "test"
+
+    # Verify Servo.set_environment handler evaluates equivalent environments correctly
+    results = await servo.dispatch_event(Events.set_environment, servo.environment, Environment(mode="test"))
+    assert sum([r.value for r in results]) == 1
 
 async def test_update_environment_event(mocker, servo: Servo) -> None:
     connector = servo.get_connector("first_test_servo")
