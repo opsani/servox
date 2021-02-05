@@ -1280,6 +1280,11 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    def set_container(self, name: str, container: Container) -> None:
+        """Set the container with the given name to a new value."""
+        index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
+        self.obj.spec.template.spec.containers[index] = container.obj
+
     @property
     def replicas(self) -> int:
         """
@@ -2042,12 +2047,11 @@ class CanaryOptimization(BaseOptimization):
             )
 
     async def apply(self) -> None:
+        """Apply the adjustments to the target."""
         dep_copy = copy.copy(self.target_deployment)
-        dep_copy.obj.spec.template.spec.containers[
-            0
-        ].resources = self.canary_container.resources
+        dep_copy.set_container(self.canary_container.name, self.canary_container)
         await dep_copy.delete_canary_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_canary_pod()
+        self.canary = await dep_copy.ensure_canary_pod(timeout=self.timeout.total_seconds())
 
     @property
     def cpu(self) -> CPU:
