@@ -3032,6 +3032,10 @@ class K8sModeAnnotations(str, enum.Enum):
 
 async def _update_single_deployment_environment(config: DeploymentConfiguration, new: servo.Environment) -> None:
     # TODO: define iterable enum for environment annotations that do not require watching
+    if not config.annotate:
+        servo.logger.warning(f"Skpping update_environment for deployment {config.name} not opted into annotation")
+        return
+
     deployment = await Deployment.read(config.name, config.namespace)
     ann_mode_val = deployment.annotations.get(K8sModeAnnotations.current_mode.annotation)
 

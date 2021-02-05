@@ -1092,6 +1092,7 @@ class TestKubernetesConnectorIntegration:
 
 
     async def test_update_environment_succeeds(self, config, kube):
+        config.deployments[0].annotate = True
         connector = KubernetesConnector(config=config, timeouts=Timeouts(events={'update_environment': '10s'}))
         environment = Environment(mode="test")
 
@@ -1113,6 +1114,7 @@ class TestKubernetesConnectorIntegration:
 
 
     async def test_update_environment_times_out(self, config, kube):
+        config.deployments[0].annotate = True
         connector = KubernetesConnector(config=config, timeouts=Timeouts(events={'update_environment': '5s'}))
         environment = Environment(mode="test")
 
