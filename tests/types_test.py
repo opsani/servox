@@ -221,9 +221,9 @@ class TestDurationProgress:
         assert progress.progress == 100.0
 
     async def test_context_manager(self, mocker: pytest_mock.MockerFixture) -> None:
-        async with servo.DurationProgress('0.5ms') as progress:
+        async with servo.DurationProgress('0.7ms') as progress:
             stub = mocker.stub()
-            async for update in progress.every('0.3ms'):
+            async for update in progress.every('0.1ms'):
                 stub(update.progress)
 
             stub.assert_called()
