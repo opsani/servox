@@ -388,7 +388,7 @@ class TestIntegration:
                 # servo.logging.set_level("DEBUG")
                 async with change_to_resource(deployment):
                     servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
-                    await deployment.inject_sidecar(service="fiber-http")
+                    await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_deployment_envoy_sidecars"))
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_pod_envoy_sidecars"))
@@ -460,11 +460,6 @@ class TestIntegration:
 
                 # Step 7
                 servo.logger.critical("Step 7 - Bring tuning Pod online")
-                # await assert_check_raises(
-                #     checks.run_one(id=f"check_tuning_is_running"),
-                #     AssertionError,
-                #     re.escape("could not find tuning pod 'fiber-http-canary'")
-                # )
                 async with change_to_resource(deployment):
                     await deployment.ensure_tuning_pod()
                 await assert_check(checks.run_one(id=f"check_tuning_is_running"))
@@ -879,7 +874,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 3 - Inject Envoy sidecar container")
         async with change_to_resource(deployment):
             servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
-            await deployment.inject_sidecar(service="fiber-http")
+            await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
     elif id == 'check_pod_envoy_sidecars':
         pass

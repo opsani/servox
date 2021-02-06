@@ -1541,7 +1541,7 @@ class Deployment(KubernetesModel):
         Returns:
             A list of pods that belong to the latest deployment replicaset.
         """
-        self.logger.info(f'getting replicaset for deployment "{self.name}"')
+        self.logger.trace(f'getting replicaset for deployment "{self.name}"')
         async with self.api_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
             rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
@@ -1687,11 +1687,12 @@ class Deployment(KubernetesModel):
         *,
         service: Optional[str] = None,
         port: Optional[int] = None,
-        index: Optional[int] = None
+        index: Optional[int] = None,
+        service_port: int = 9980
         ) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service
-        or literal TCP port, generating scrapable metrics usable for optimization.
+        or literal TCP port, generating scrapeable metrics usable for optimization.
 
         The service or port argument must be provided to define how traffic is proxied
         between the Envoy sidecar and the container responsible for fulfilling the request.
@@ -1737,8 +1738,8 @@ class Deployment(KubernetesModel):
 
         # check for a port conflict
         container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
-        if port in list(map(operator.attrgetter("container_port"), container_ports)):
-            raise ValueError(f"Deployment already has a container port {port}")
+        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Deployment already has a container port {service_port}")
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
@@ -1756,13 +1757,13 @@ class Deployment(KubernetesModel):
                 }
             ),
             env=[
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(9980)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
-                kubernetes_asyncio.client.V1ContainerPort(name="service", container_port=port),
-                kubernetes_asyncio.client.V1ContainerPort(name="metrics", container_port=9901),
+                kubernetes_asyncio.client.V1ContainerPort(name="opsani-proxy", container_port=service_port),
+                kubernetes_asyncio.client.V1ContainerPort(name="opsani-metrics", container_port=9901),
             ]
         )
 
