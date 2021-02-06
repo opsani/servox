@@ -82,7 +82,7 @@ spec:
       # Opsani Envoy Sidecar
       # Provides metrics for consumption by the Opsani Servo
       - name: envoy
-        image: opsani/envoy-proxy:latest
+        image: ghcr.io/opsani/envoy-proxy:latest
         resources:
             requests:
                 cpu: 125m

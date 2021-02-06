@@ -69,7 +69,7 @@ spec:
       # Opsani Envoy Sidecar
       # Provides metrics for consumption by the Opsani Servo
       - name: opsani-envoy
-        image: opsani/envoy-proxy:latest
+        image: ghcr.io/opsani/envoy-proxy:latest
         imagePullPolicy: IfNotPresent
         resources:
             requests:
