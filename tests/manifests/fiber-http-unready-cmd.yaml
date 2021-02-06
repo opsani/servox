@@ -50,7 +50,7 @@ spec:
       containers:
       # Primary container providing the fiber-http web service
       - name: fiber-http
-        image: opsani/fiber-http:latest
+        image: ghcr.io/opsani/fiber-http:latest
         resources:
           requests:
             cpu: 500m

@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: fiber-http
-        image: opsani/fiber-http:latest
+        image: ghcr.io/opsani/fiber-http:latest
         imagePullPolicy: IfNotPresent
         resources:
           requests:
