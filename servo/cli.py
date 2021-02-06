@@ -35,6 +35,8 @@ import servo.runner
 import servo.utilities.yaml
 
 
+ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:latest'
+
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
     ops = "Operational Commands"
@@ -1739,7 +1741,11 @@ class ServoCLI(CLI):
                         target.split('/', 1)[1], namespace
                     )
                 )
-                run_async(deployment.inject_sidecar(service=service, port=port))
+                run_async(
+                    deployment.inject_sidecar(
+                        ENVOY_SIDECAR_IMAGE_TAG, name="opsani-envoy", service=service, port=port
+                    )
+                )
                 typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
 
             elif target.startswith("pod"):
@@ -1780,7 +1786,7 @@ class ServoCLI(CLI):
                         target.split('/', 1)[1], namespace
                     )
                 )
-                ejected = run_async(deployment.eject_sidecar())
+                ejected = run_async(deployment.eject_sidecar('opsani-envoy'))
                 if ejected:
                     typer.echo(f"Envoy sidecar ejected from Deployment {deployment.name} in {namespace}")
                 else:

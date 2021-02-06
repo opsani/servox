@@ -7,12 +7,11 @@ import asyncio
 import contextlib
 import copy
 import datetime
-import devtools
 import enum
 import itertools
 import os
+import operator
 import pathlib
-import time
 from typing import (
     Any,
     Callable,
@@ -808,6 +807,16 @@ class Container(servo.logging.Mixin):
                 if clear_others:
                     self.logger.debug(f"clearing resource requirement: '{requirement}'")
                     req_dict.pop(name, None)
+
+    @property
+    def ports(self) -> kubernetes_asyncio.client.V1ContainerPort:
+        """
+        Return the ports for the Container.
+
+        Returns:
+            The Container ports.
+        """
+        return self.obj.ports
 
     def __str__(self) -> str:
         return str(self.obj)
@@ -1673,6 +1682,8 @@ class Deployment(KubernetesModel):
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
     async def inject_sidecar(
         self,
+        name: str,
+        image: str,
         *,
         service: Optional[str] = None,
         port: Optional[int] = None,
@@ -1693,24 +1704,46 @@ class Deployment(KubernetesModel):
 
         """
 
-        await self.refresh() # TODO: Need a less crude refresh strategy
+        await self.refresh()
 
-        if not service or port:
+        if not (service or port):
             raise ValueError(f"a service or port must be given")
 
-        if service and port:
-            raise ValueError(f"service and port cannot both be given")
+        if isinstance(port, str) and port.isdigit():
+            port = int(port)
 
-        # # lookup the port on the target service
-        # FIXME: We are targeting the zero port here!!!
+        # lookup the port on the target service
         if service:
-            ser = await Service.read(service, self.namespace)
-            port = ser.obj.spec.ports[0].target_port
+            try:
+                ser = await Service.read(service, self.namespace)
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404:
+                    raise ValueError(f"Unknown Service '{service}'") from error
+                else:
+                    raise error
+            if not port:
+                if len(ser.obj.spec.ports) > 1:
+                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be given")
+                port = ser.obj.spec.ports[0].target_port
+            else:
+                if isinstance(port, int):
+                    if not next(filter(lambda p: p.target_port == port, ser.obj.spec.ports), None):
+                        raise ValueError(f"Port {port} does not exist in the Service '{service}'")
+                else:
+                    _port = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
+                    if not _port:
+                        raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
+                    port = _port.target_port
+
+        # check for a port conflict
+        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+        if port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Deployment already has a container port {port}")
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
-            name="opsani-envoy",  # TODO: Put this into a constant or something
-            image="opsani/envoy-proxy:latest", # TODO: where should this live
+            name=name,
+            image=image,
             image_pull_policy="IfNotPresent",
             resources=kubernetes_asyncio.client.V1ResourceRequirements(
                 requests={
@@ -1742,13 +1775,13 @@ class Deployment(KubernetesModel):
         # patch the deployment
         await self.patch()
 
-    async def eject_sidecar(self) -> bool:
+    async def eject_sidecar(self, name: str) -> bool:
         """Eject an Envoy sidecar from the Deployment.
 
         Returns True if the sidecar was ejected.
         """
         await self.refresh()
-        container = self.remove_container('opsani-envoy')
+        container = self.remove_container(name)
         if container:
             await self.replace()
             return True
