@@ -13,7 +13,9 @@ import pydantic
 import servo.types
 import servo.utilities
 
+
 USER_AGENT = "github.com/opsani/servox"
+
 
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
@@ -298,6 +300,7 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
             adjustments.append(adjustment)
     return adjustments
 
+
 def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
     components = {}
     descriptor = { "state": { "application": { "components": components }}}
@@ -309,3 +312,7 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
         components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
 
     return descriptor
+
+
+def user_agent() -> str:
+    return f"{USER_AGENT} v{servo.__version__}"

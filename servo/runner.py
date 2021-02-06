@@ -207,7 +207,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.USER_AGENT))
+                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.user_agent()))
                 self.connected = True
 
 
