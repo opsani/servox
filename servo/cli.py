@@ -35,7 +35,7 @@ import servo.runner
 import servo.utilities.yaml
 
 
-ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:latest'
+ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
 
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
