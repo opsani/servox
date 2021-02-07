@@ -34,6 +34,14 @@ import servo.connectors.opsani_dev
 import servo.connectors.prometheus
 
 
+pytestmark = [
+    pytest.mark.asyncio,
+    pytest.mark.event_loop_policy("default"),
+    pytest.mark.integration,
+    pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+]
+
+
 @pytest.fixture
 def config() -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
@@ -74,7 +82,6 @@ class TestConfig:
 
 
 @pytest.mark.integration
-@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.clusterrolebinding('cluster-admin')
 class TestIntegration:
 
