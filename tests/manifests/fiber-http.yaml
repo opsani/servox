@@ -36,7 +36,7 @@ spec:
         image: ghcr.io/opsani/fiber-http:latest
         resources:
           requests:
-            cpu: 100m
+            cpu: 125m
             memory: 128Mi
           limits:
             cpu: 500m
