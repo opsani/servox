@@ -972,7 +972,7 @@ class TestKubernetesConnectorIntegration:
         # debug(deployment.obj.spec.template.spec.containers)
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
-        config.timeout = "60s"
+        config.timeout = "3s"
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
 
@@ -1018,7 +1018,7 @@ class TestKubernetesConnectorIntegration:
         # debug(description)
 
     async def test_adjust_tuning_insufficient_resources(self, tuning_config, namespace) -> None:
-        tuning_config.timeout = "5s"
+        tuning_config.timeout = "2s"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1127,7 +1127,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
         # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
-        config.timeout = "45s"
+        config.timeout = "1s"
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
