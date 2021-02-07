@@ -415,13 +415,13 @@ class DurationProgress(BaseProgress):
 class EventProgress(BaseProgress):
     """EventProgress objects track progress against an indeterminate event."""
 
-    timeout: Optional[Duration]
+    timeout: Optional[Duration] = None
     """The maximum amount of time to wait for the event to be triggered.
 
     When None, the event will be awaited forever.
     """
 
-    settlement: Optional[Duration]
+    settlement: Optional[Duration] = None
     """The amount of time to wait for progress to be reset following an event trigger before returning early.
 
     When None, progress is returned immediately upon the event being triggered.

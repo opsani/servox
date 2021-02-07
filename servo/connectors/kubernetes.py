@@ -2541,8 +2541,6 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-
-
         try:
             async with self.deployment.rollout(timeout=self.timeout) as deployment:
                 # Patch the Deployment via the Kubernetes API
@@ -3433,8 +3431,21 @@ class KubernetesConnector(servo.BaseConnector):
         self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
     ) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
-        await state.apply(adjustments)
 
+        # Apply the adjustments and emit indeterminate progress status
+        progress_logger = lambda p: self.logger.info(
+            p.annotate(f"waiting for adjustments to be applied...", False),
+            progress=p.progress,
+        )
+        progress = servo.EventProgress()
+        future = asyncio.ensure_future(state.apply(adjustments))
+        future.add_done_callback(progress.complete)
+        await asyncio.gather(
+            future,
+            progress.watch(progress_logger)
+        )
+
+        # Handle settlement
         settlement = control.settlement or self.config.settlement
         if settlement:
             self.logger.info(
