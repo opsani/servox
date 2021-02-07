@@ -91,7 +91,7 @@ class TestIntegration:
         async def load_manifests(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
-            kube.wait_for_registered(timeout=30)
+            kube.wait_for_registered()
             checks.config.namespace = kube.namespace
 
             # Fake out the servo metadata in the environment
@@ -302,7 +302,7 @@ class TestIntegration:
         async def load_manifests(
             self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
-            kube.wait_for_registered(timeout=30)
+            kube.wait_for_registered()
             checks.config.namespace = kube.namespace
 
             # Fake out the servo metadata in the environment

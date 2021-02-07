@@ -25,7 +25,7 @@ pytestmark = [
 def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
     # to be ready on the cluster
-    kube.wait_for_registered(timeout=30)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     nginx_deploy = deployments.get("nginx-deployment")
@@ -44,7 +44,7 @@ def test_nginx(kube: kubetest.client.TestClient) -> None:
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http-opsani-dev.yaml"])
 def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
-    kube.wait_for_registered(timeout=30)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     web_deploy = deployments.get("fiber-http")
@@ -75,7 +75,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
 @pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
 def test_prometheus(kube: kubetest.client.TestClient) -> None:
-    kube.wait_for_registered(timeout=30)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     prom_deploy = deployments.get("prometheus-core")
@@ -213,7 +213,7 @@ class TestChecks:
 
     @pytest.fixture(autouse=True)
     def wait_for_manifests(self, kube: kubetest.client.TestClient) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
 
     async def test_check_version(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
@@ -359,7 +359,7 @@ class TestChecks:
 class TestService:
     @pytest.fixture(autouse=True)
     async def wait(self, kube) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
         await asyncio.sleep(0.0001)
 
 

@@ -368,7 +368,7 @@ class TestPrometheusIntegration:
 
     @pytest.fixture(autouse=True)
     def _wait_for_cluster(self, kube) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
 
     async def test_targets(
         self,
@@ -394,7 +394,7 @@ class TestPrometheusIntegration:
         kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             query = servo.connectors.prometheus.RangeQuery(
                 query="invalid_metric OR on() vector(0)",
@@ -419,7 +419,7 @@ class TestPrometheusIntegration:
         kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
     ) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
         async with kube_port_forward("deploy/prometheus", 9090) as url:
             metric=PrometheusMetric(
                 "invalid_metric",
@@ -462,7 +462,7 @@ class TestPrometheusIntegration:
         # port forward so we can talk to them, and then spark up the connector.
         # The measurement duration will expire and report flatlined metrics.
         servo.logging.set_level("DEBUG")
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
 
         async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
             async with kube_port_forward("service/fiber-http", 80) as fiber_url:
