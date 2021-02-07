@@ -1399,7 +1399,7 @@ class Measurement(BaseModel):
                 if isinstance(obj, TimeSeries):
                     actual_count = len(obj.data_points)
                     if expected_count and actual_count != expected_count:
-                        logger.warning(
+                        logger.debug(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
                         )
                     else:
