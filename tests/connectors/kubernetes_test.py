@@ -1018,7 +1018,7 @@ class TestKubernetesConnectorIntegration:
         # debug(description)
 
     async def test_adjust_tuning_insufficient_resources(self, tuning_config, namespace) -> None:
-        tuning_config.timeout = "60s"
+        tuning_config.timeout = "5s"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
