@@ -3439,7 +3439,7 @@ class KubernetesConnector(servo.BaseConnector):
         )
         progress = servo.EventProgress()
         future = asyncio.ensure_future(state.apply(adjustments))
-        future.add_done_callback(progress.complete)
+        future.add_done_callback(lambda _: progress.trigger())
         await asyncio.gather(
             future,
             progress.watch(progress_logger)
