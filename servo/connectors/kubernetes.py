@@ -3481,7 +3481,16 @@ class KubernetesConnector(servo.BaseConnector):
             self.config, matching=matching, halt_on=halt_on
         )
 
-    async def inject_sidecar(self, deployment: str, *, service: Optional[str], port: Optional[int]) -> None:
+    async def inject_sidecar(
+        self,
+        name: str,
+        image: str,
+        *,
+        service: Optional[str] = None,
+        port: Optional[int] = None,
+        index: Optional[int] = None,
+        service_port: int = 9980
+    ) -> None:
         """
         Injects an Envoy sidecar into a target Deployment that proxies a service
         or literal TCP port, generating scrapable metrics usable for optimization.

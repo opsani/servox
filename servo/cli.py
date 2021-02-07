@@ -1743,7 +1743,7 @@ class ServoCLI(CLI):
                 )
                 run_async(
                     deployment.inject_sidecar(
-                        ENVOY_SIDECAR_IMAGE_TAG, name="opsani-envoy", service=service, port=port
+                        'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service=service, port=port
                     )
                 )
                 typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
