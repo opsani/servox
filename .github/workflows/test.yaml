@@ -152,7 +152,7 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
       run: |
-        poetry run pytest -n 6 --dist loadscope \
+        poetry run pytest -n 4 --dist loadscope --tx "4*popen//python=python3.8" \
           -T integration --verbose --durations=0 --durations-min=5
 
   system:
