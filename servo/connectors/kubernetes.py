@@ -2918,7 +2918,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 adjustable.adjust(adjustment)
 
             else:
-                self.logger.warning(f'ignoring unrecognized adjustment "{adjustment}"')
+                self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
 
         # Apply the changes to Kubernetes and wait for the results
         timeout = self.config.timeout
