@@ -3441,9 +3441,12 @@ class KubernetesConnector(servo.BaseConnector):
         progress = servo.EventProgress()
         future = asyncio.ensure_future(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
-        await asyncio.gather(
-            future,
-            progress.watch(progress_logger)
+        await asyncio.wait_for(
+            asyncio.gather(
+                future,
+                progress.watch(progress_logger),
+                timeout=(self.config.timeout.total_seconds())
+            )
         )
 
         # Handle settlement
