@@ -809,14 +809,14 @@ class Container(servo.logging.Mixin):
                     req_dict.pop(name, None)
 
     @property
-    def ports(self) -> kubernetes_asyncio.client.V1ContainerPort:
+    def ports(self) -> List[kubernetes_asyncio.client.V1ContainerPort]:
         """
         Return the ports for the Container.
 
         Returns:
             The Container ports.
         """
-        return self.obj.ports
+        return self.obj.ports or []
 
     def __str__(self) -> str:
         return str(self.obj)
@@ -1737,9 +1737,10 @@ class Deployment(KubernetesModel):
                     port = _port.target_port
 
         # check for a port conflict
-        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
-        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
-            raise ValueError(f"Deployment already has a container port {service_port}")
+        if self.containers:
+            container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+            if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+                raise ValueError(f"Deployment already has a container port {service_port}")
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
