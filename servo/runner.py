@@ -271,8 +271,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 await servo_.report_progress(**kwargs)
             else:
                 self.logger.warning(
-                        f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
-                    )
+                    f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
+                )
 
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
