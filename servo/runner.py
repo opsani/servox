@@ -267,7 +267,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # Setup logging
         async def _report_progress(**kwargs) -> None:
             # Forward to the active servo...
-            await servo.current_servo().report_progress(**kwargs)
+            if servo_ := servo.current_servo():
+                await servo_.report_progress(**kwargs)
+            else:
+                self.logger.warning(
+                        f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
+                    )
 
         def handle_progress_exception(error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
