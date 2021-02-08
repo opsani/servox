@@ -39,7 +39,6 @@ pytestmark = [
     pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
     pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config"),
-    pytest.mark.clusterrolebinding('cluster-admin')
 ]
 
 
@@ -91,7 +90,7 @@ class TestConfig:
 )
 class TestIntegration:
     class TestChecksOriginalState:
-        @pytest.fixture(autouse=True)
+        @pytest.fixture
         async def load_manifests(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig
         ) -> None:
@@ -204,6 +203,8 @@ class TestIntegration:
                 assert check.message is not None
                 assert isinstance(check.exception, httpx.HTTPStatusError)
 
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -302,17 +303,8 @@ class TestServiceMultiport:
 
     # async def test_deployment_ready(self) -> None:
     #     ...
-
-    @pytest.mark.applymanifests(
-        "opsani_dev",
-        files=[
-            "deployment.yaml",
-            "service.yaml",
-            "prometheus.yaml",
-        ],
-    )
     class TestInstall:
-        @pytest.fixture(autouse=True)
+        @pytest.fixture
         async def load_manifests(
             self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
