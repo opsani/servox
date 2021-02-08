@@ -3441,13 +3441,19 @@ class KubernetesConnector(servo.BaseConnector):
         progress = servo.EventProgress()
         future = asyncio.ensure_future(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
-        await asyncio.wait_for(
-            asyncio.gather(
-                future,
-                progress.watch(progress_logger),
-            ),
-            timeout=(self.config.timeout.total_seconds())
-        )
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    future,
+                    progress.watch(progress_logger),
+                ),
+                timeout=(self.config.timeout.total_seconds())
+            )
+        except asyncio.TimeoutError as error:
+            raise servo.AdjustmentRejectedError(
+                reason="timed out waiting for adjustment to apply"
+            ) from error
 
         # Handle settlement
         settlement = control.settlement or self.config.settlement

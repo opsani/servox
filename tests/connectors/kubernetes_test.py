@@ -1127,7 +1127,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
         # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
-        config.timeout = "1s"
+        config.timeout = "5s"
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
