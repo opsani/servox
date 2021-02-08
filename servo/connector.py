@@ -219,7 +219,7 @@ class BaseConnector(
                 "Content-Type": "application/json",
             },
             "proxies": self._servo_config.proxies,
-            "timeout": self._servo_config.timeouts,
+            "timeout": self._servo_config.timeouts.httpx,
             "verify": self._servo_config.ssl_verify,
         }
 

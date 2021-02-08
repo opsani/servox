@@ -10,6 +10,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo.errors
 import servo.types
 import servo.utilities
 
@@ -30,6 +31,7 @@ class ServoStatuses(str, enum.Enum):
     failed = "failed"
     rejected = "rejected"
     aborted = "aborted"
+    environment_failed = "environment-failed" # Legacy 'environment-mismatch' did not make sense in new context
 
 
 Statuses = Union[OptimizerStatuses, ServoStatuses]
@@ -93,6 +95,8 @@ class Status(pydantic.BaseModel):
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
+        elif isinstance(error, servo.errors.EnvironmentFailedError):
+            status = ServoStatuses.environment_failed
         else:
             status = ServoStatuses.failed
 

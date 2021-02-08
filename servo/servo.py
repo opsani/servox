@@ -54,6 +54,7 @@ class Events(str, enum.Enum):
     # Informational events
     metrics = "metrics"
     components = "components"
+    get_environment = "get_environment"
 
     # Operational events
     check = "check"
@@ -61,6 +62,8 @@ class Events(str, enum.Enum):
     measure = "measure"
     adjust = "adjust"
     promote = "promote"
+    set_environment = "set_environment"
+    update_environment = "update_environment"
 
 
 class _EventDefinitions(Protocol):
@@ -93,6 +96,10 @@ class _EventDefinitions(Protocol):
 
     @servo.events.event(Events.components)
     async def components(self) -> List[servo.types.Component]:
+        ...
+
+    @servo.events.event(Events.get_environment)
+    async def get_environment(self) -> Optional[servo.types.Environment]:
         ...
 
     # Operational events
@@ -133,6 +140,20 @@ class _EventDefinitions(Protocol):
     async def promote(self) -> None:
         ...
 
+    @servo.events.event(Events.set_environment, timeout='5m')
+    async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
+        """Allow subscribers to request updating of the environment
+
+        Returns:
+            Boolean indicating whether update_environment event should be issued
+        """
+        ...
+
+    @servo.events.event(Events.update_environment, timeout='5m')
+    async def update_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> None:
+        """Notify subscribers that an environment update has been requested
+        """
+        ...
 
 class ServoChecks(servo.checks.BaseChecks):
     """Check that a servo is ready to perform optimization.
@@ -187,6 +208,10 @@ class Servo(servo.connector.BaseConnector):
 
     connectors: List[servo.connector.BaseConnector]
     """The active connectors in the Servo.
+    """
+
+    environment: Optional[servo.types.Environment] = None
+    """Object modeling the state of the optimzation environment managed by the Servo
     """
 
     _running: bool = pydantic.PrivateAttr(False)
@@ -421,6 +446,18 @@ class Servo(servo.connector.BaseConnector):
                     message=str(error),
                 )
             ]
+
+    @servo.events.on_event()
+    async def get_environment(self) -> Optional[servo.types.Environment]:
+        return self.environment
+
+    @servo.events.on_event()
+    async def set_environment(self, old: Optional[servo.types.Environment], new: servo.types.Environment) -> bool:
+        if old != new:
+            self.environment = new
+            return True
+
+        return False
 
     @contextlib.contextmanager
     def current(self):

@@ -147,6 +147,9 @@ async def test_hello(
 # async def test_goodbye() -> None:
 #     pass
 
+# async def test_environment() -> None:
+#     pass
+
 # @pytest.mark.integration
 # @pytest.mark.parametrize(
 #     ("proxies"),

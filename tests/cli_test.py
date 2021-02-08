@@ -295,8 +295,8 @@ class TestShow:
         result = cli_runner.invoke(servo_cli, "show events", catch_exceptions=False)
         assert result.exit_code == 0
         assert re.match("EVENT\\s+CONNECTORS", result.stdout), f"Failed to match with output: {result.stdout}"
-        assert "check    Servo\n" in result.stdout
-        assert len(result.stdout.split("\n")) == 4
+        assert re.search(r"(?m)^check\s+Servo$", result.stdout), f"Failed to match with output: {result.stdout}"
+        assert len(result.stdout.split("\n")) == 6
 
 
     def test_metrics(
