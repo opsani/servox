@@ -19,6 +19,7 @@ import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
 from servo.types import Adjustment, Control, Description, Duration, Measurement
+from servo.servo import _set_current_servo
 
 
 class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
@@ -164,7 +165,6 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
-        from servo.servo import _set_current_servo
         _set_current_servo(self.servo)
 
         while self._running:
@@ -187,6 +187,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
     async def run(self) -> None:
         self._running = True
 
+        _set_current_servo(self.servo)
         await self.servo.startup()
         self.logger.info(
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
@@ -264,7 +265,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         loop.set_exception_handler(self._handle_exception)
 
         # Setup logging
-        # TODO: encapsulate all this shit
         async def _report_progress(**kwargs) -> None:
             # Forward to the active servo...
             await servo.current_servo().report_progress(**kwargs)
