@@ -38,7 +38,7 @@ pytestmark = [
     pytest.mark.asyncio,
     pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
-    pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+    pytest.mark.usefixtures("kubeconfig","kubernetes_asyncio_config")
 ]
 
 
@@ -84,7 +84,6 @@ class TestConfig:
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 class TestIntegration:
-
     @pytest.mark.applymanifests(
         "opsani_dev",
         files=[
@@ -210,6 +209,7 @@ class TestIntegration:
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:
+        kube.wait_for_registered()
         service = await servo.connectors.kubernetes.Service.read(checks.config.service, checks.config.namespace)
         assert service
         assert len(service.ports) == 1

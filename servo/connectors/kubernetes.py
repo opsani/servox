@@ -3445,8 +3445,8 @@ class KubernetesConnector(servo.BaseConnector):
             asyncio.gather(
                 future,
                 progress.watch(progress_logger),
-                timeout=(self.config.timeout.total_seconds())
-            )
+            ),
+            timeout=(self.config.timeout.total_seconds())
         )
 
         # Handle settlement
