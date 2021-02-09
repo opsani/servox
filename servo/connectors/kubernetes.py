@@ -2216,7 +2216,7 @@ class ShortByteSize(pydantic.ByteSize):
 
 
     def __str__(self) -> str:
-        # TODO: "0.1Gi" parses to "0.09999999962747097Gi", should longer strings be converted to smaller units 
+        # TODO: "0.1Gi" parses to "0.09999999962747097Gi", should longer strings be converted to smaller units
         #   and/or truncated? eg. "102.39999961853027Mi" or "102.5Mi"
         return f'{self.to("GiB")}Gi'
 
