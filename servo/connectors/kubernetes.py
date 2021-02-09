@@ -781,13 +781,13 @@ class Container(servo.logging.Mixin):
             clear_others: When True, any requirements not specified in the input arguments are cleared.
         """
 
-        # Ensure str arguments are validated/normalized. 
-        # TODO: would it be more ideal to treat str values as TypeErrors? 
+        # Ensure str arguments are validated/normalized.
+        # TODO: would it be more ideal to treat str values as TypeErrors?
         if isinstance(value, str): # Prevent str values from being recognized as a sequence
             _, value = _normalize_value(name, value)
 
         if isinstance(value, Sequence):
-            # Ensure str arguments are validated/normalized. 
+            # Ensure str arguments are validated/normalized.
             values = list(map( lambda v: _normalize_value(name, v)[1], value)) if isinstance(value[0], str) else list(value)
         else:
             values = [ value ]
