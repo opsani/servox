@@ -876,14 +876,18 @@ class Pod(KubernetesModel):
         if namespace is None:
             namespace = self.namespace
 
-        self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
+        self.logger.info(f'Attempting to create a pod named {self.name} in the namespace {self.namespace}.')
         self.logger.trace(f"pod: {self.obj}")
 
         async with self.preferred_client() as api_client:
             async with kubernetes_asyncio.watch.Watch().stream(api_client.list_pod_for_all_namespaces) as stream:
                 async for event in stream:
-                    evt, obj = event['type'], event['object']
-                    self.logger.info(f'"{evt}" pod "{obj.metadata.name}" in NS "{obj.metadata,namespace}"')
+                    event_type, event_object = event['type'], event['object']
+                    # TODO: Really should find a way to select in the API call so that we aren't registering for all events for all time.
+                    # This will be frowned upon in permissive environments where our API calls will return many more pods.
+                    if event_object.metadata.namespace == self.namespace:
+                        self.logger.info(f'Kubernetes reports that we successfully {event_type.lower()} a pod named {event_object.metadata.name} in the {event_object.metadata.namespace} namespace.')
+                        self.logger.info(f'Kubernetes reports that the {event_object.metadata.name} pod is currently in the {event_object.status.phase.lower()} phase.')
             self.obj = await api_client.create_namespaced_pod(
                 namespace=namespace,
                 body=self.obj,
@@ -2069,7 +2073,7 @@ class Deployment(KubernetesModel):
 
         # Create the Pod and wait for it to get ready
         self.logger.info(
-            f"Creating tuning Pod '{tuning_pod_name}' in namespace '{namespace}'"
+            f"Creating a tuning pod  named {tuning_pod_name} in the namespace {namespace}."
         )
         await tuning_pod.create()
 
