@@ -37,6 +37,7 @@ import backoff
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.watch
 import pydantic
 
 import servo
@@ -879,6 +880,10 @@ class Pod(KubernetesModel):
         self.logger.trace(f"pod: {self.obj}")
 
         async with self.preferred_client() as api_client:
+            async with kubernetes_asyncio.watch.Watch().stream(api_client.list_pod_for_all_namespaces) as stream:
+                async for event in stream:
+                    evt, obj = event['type'], event['object']
+                    self.logger.info(f'"{evt}" pod "{obj.metadata.name}" in NS "{obj.metadata,namespace}"')
             self.obj = await api_client.create_namespaced_pod(
                 namespace=namespace,
                 body=self.obj,
