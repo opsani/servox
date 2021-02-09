@@ -32,7 +32,7 @@ data:
 
     prometheus:
       # NOTE: In a sidecar configuration, Prometheus is colocated with the servo in the Pod
-      base_url: http://localhost:9090
+      base_url: http://localhost:9901
       metrics:
         - name: main_instance_count
           query: sum(envoy_cluster_membership_healthy{opsani_role!="tuning"}) OR ON() vector(0)
