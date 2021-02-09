@@ -653,8 +653,8 @@ class TestContainer:
 
         container.set_resource_requirements("cpu", "1000m")
         assert container.resources.to_dict() == {
-            "limits": {"cpu": "1000m"},
-            "requests": {"cpu": "1000m"},
+            "limits": {"cpu": "1"},
+            "requests": {"cpu": "1"},
         }
 
 

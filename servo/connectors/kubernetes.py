@@ -765,7 +765,7 @@ class Container(servo.logging.Mixin):
     def set_resource_requirements(
         self,
         name: str,
-        value: Union[str, Sequence[str]],
+        value: Union[KuberntesResourceValue, str, Sequence[KuberntesResourceValue], Sequence[str]],
         requirements: ResourceRequirements = ResourceRequirements.compute,
         *,
         clear_others: bool = False,
@@ -781,7 +781,17 @@ class Container(servo.logging.Mixin):
             clear_others: When True, any requirements not specified in the input arguments are cleared.
         """
 
-        values = [value] if isinstance(value, str) else list(value)
+        # Ensure str arguments are validated/normalized. 
+        # TODO: would it be more ideal to treat str values as TypeErrors? 
+        if isinstance(value, str): # Prevent str values from being recognized as a sequence
+            _, value = _normalize_value(name, value)
+
+        if isinstance(value, Sequence):
+            # Ensure str arguments are validated/normalized. 
+            values = list(map( lambda v: _normalize_value(name, v)[1], value)) if isinstance(value[0], str) else list(value)
+        else:
+            values = [ value ]
+
         default = values[0]
         for requirement in list(ResourceRequirements):
             # skip named combinations of flags
@@ -801,7 +811,7 @@ class Container(servo.logging.Mixin):
 
             if requirement & requirements:
                 req_value = values.pop(0) if len(values) else default
-                req_dict[name] = req_value
+                req_dict[name] = str(req_value) # ShortByteSize backed by integer number representing Bytes; __str__ uses shorter Gi float
 
             else:
                 if clear_others:
@@ -2196,6 +2206,16 @@ class ShortByteSize(pydantic.ByteSize):
         return super().validate(v)
 
 
+    @classmethod
+    def parse(cls, v: pydantic.StrIntFloat) -> "ShortByteSize":
+        """The pydantic model's validate method also parses values; define passthrough for clarity"""
+        return cls.validate(v)
+
+
+    def __str__(self) -> str:
+        return f'{self.to("GiB")}Gi'
+
+
 class Memory(servo.Memory):
     """
     The Memory class models a Kubernetes Memory resource.
@@ -2223,20 +2243,30 @@ class Memory(servo.Memory):
         return o_dict
 
 
-def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str, servo.Numeric]]:
+KuberntesResourceValue = Union[Millicore, ShortByteSize]
+KuberntesAdjustmentValue = Union[KuberntesResourceValue, int]
+
+def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, KuberntesAdjustmentValue]:
+    return _normalize_value(adjustment.setting_name, adjustment.value)
+
+def _normalize_value(setting: str, value: Union[str, servo.Numeric]):
     """Normalize an adjustment object into a Kubernetes native setting key/value pair."""
-    setting = "memory" if adjustment.setting_name == "mem" else adjustment.setting_name
-    value = adjustment.value
+    setting = "memory" if setting == "mem" else setting
 
     if setting == "memory":
         # Add GiB suffix to Numerics and Numeric strings
         if (isinstance(value, (int, float)) or
             (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
             value = f"{value}Gi"
+        value = ShortByteSize.parse(value)
     elif setting == "cpu":
-        value = str(Millicore.parse(value))
+        value = Millicore.parse(value)
     elif setting == "replicas":
         value = int(float(value))
+    else:
+        raise NotImplementedError(
+                f"missing error normalization logic for setting '{setting}'"
+            )
 
     return setting, value
 
@@ -2486,10 +2516,7 @@ class DeploymentOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
-            # NOTE: Assign to the config to trigger validations
             setting = getattr(self.container_config, setting_name)
-            setting.value = value
-
             requirements = setting.requirements
             self.container.set_resource_requirements(
                 setting_name, value, requirements, clear_others=True
