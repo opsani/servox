@@ -29,6 +29,7 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirements,
+    ShortByteSize,
 )
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
@@ -629,6 +630,20 @@ class TestContainer:
                 dict(clear_others=True),
                 {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
             ),
+            (
+                "memory",
+                "0.125",
+                ...,
+                ...,
+                {"limits": {"cpu": "15000m", "memory": "0.125Gi"}, "requests": {"cpu": "100m", "memory": "0.125Gi"}},
+            ),
+            (
+                "memory",
+                "512Mi",
+                ResourceRequirements.limit,
+                dict(clear_others=True),
+                {"limits": {"cpu": "15000m", "memory": "0.5Gi"}, "requests": {"cpu": "100m"}},
+            ),
         ],
     )
     def test_set_resource_requirements(
@@ -829,6 +844,43 @@ class TestMemory:
     def test_cannot_be_less_than_128MiB(self) -> None:
         with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
             Memory(min="32 MiB", max=4.0, step=268435456)
+
+class TestShortByteSize:
+    @pytest.mark.parametrize(
+        ("input", "bytes"),
+        [
+            ("128Mi", 134217728),
+            ("1Gi", 1073741824),
+            (1, 1),
+            ("1.0Gi", 1073741824),
+            ("0.1Gi", 107374182),
+            ("0.1", 107374182),
+            (0.1, 107374182),
+            (2.0, 2147483648),
+            ("2.0", 2147483648),
+        ],
+    )
+    def test_parsing(self, input: Union[str, int, float], bytes: int) -> None:
+        assert ShortByteSize.parse(input) == bytes
+
+    @pytest.mark.parametrize(
+        ("input", "output"),
+        [
+            ("128Mi", "0.125Gi"),
+            ("1Gi", "1.0Gi"),
+            ("1.0Gi", "1.0Gi"),
+            ("1.0", "1.0Gi"),
+            (1, "9.313225746154785e-10Gi"),
+            ("0.1", "0.09999999962747097Gi"),
+            (0.1, "0.09999999962747097Gi"),
+            (2.5, "2.5Gi"),
+        ],
+    )
+    def test_string_serialization(
+        self, input: Union[str, int, float], output: str
+    ) -> None:
+        bytes_parsed = ShortByteSize.parse(input)
+        assert str(bytes_parsed) == output
 
 def test_millicpu():
     class Model(pydantic.BaseModel):

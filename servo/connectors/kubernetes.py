@@ -2195,13 +2195,16 @@ class ShortByteSize(pydantic.ByteSize):
 
     @classmethod
     def validate(cls, v: pydantic.StrIntFloat) -> "ShortByteSize":
+        if isinstance(v, str) and v.replace('.', '', 1).isdigit():
+            v = float(v)
+
         if isinstance(v, str):
             try:
                 return super().validate(v)
             except:
                 # Append the byte suffix and retry parsing
                 return super().validate(v + "b")
-        elif isinstance(v, float):
+        elif isinstance(v, float): # TODO: shouldn't this apply to int as well?
             v = v * GiB
         return super().validate(v)
 
@@ -2213,6 +2216,8 @@ class ShortByteSize(pydantic.ByteSize):
 
 
     def __str__(self) -> str:
+        # TODO: "0.1Gi" parses to "0.09999999962747097Gi", should longer strings be converted to smaller units 
+        #   and/or truncated? eg. "102.39999961853027Mi" or "102.5Mi"
         return f'{self.to("GiB")}Gi'
 
 
