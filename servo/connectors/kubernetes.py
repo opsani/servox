@@ -265,11 +265,31 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         self.obj = obj
         self._logger = servo.logger
 
+    def __init_subclass__(cls: KubernetesModel, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.delete = cls._delete_not_found_decorator(cls.delete)
+
     def __str__(self) -> str:
         return str(self.obj)
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    @classmethod
+    def _delete_not_found_decorator(cls, func):
+        """Used to ecapsulate methods deleting resources so that 404 Not Found is caught and considered a no-op
+        """
+        async def _decorator(self: KubernetesModel, *args, **kwargs):
+            try:
+                return await func(self, *args, **kwargs)
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404 and error.reason == "Not Found":
+                    kind = getattr(self.obj, "kind", self.__class__.__name__) 
+                    self.logger.info(f'{kind} "{self.name}" does not exist. no-op')
+                else:
+                    raise error
+
+        return _decorator
 
     @classmethod
     def obj_type(cls) -> Type:
@@ -2304,7 +2324,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         try:
             if mode == FailureMode.ignore:
                 self.logger.warning(f"ignoring runtime error and continuing: {error}")
-                self.logger.opt(exception=error).exception("ignoring Kubernetes error")
+                self.logger.opt(exception=error).error("ignoring Kubernetes error")
                 return True
 
             elif mode == FailureMode.rollback:
@@ -2770,7 +2790,7 @@ class CanaryOptimization(BaseOptimization):
                     self.logger.warning(
                         f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
-                    self.logger.opt(exception=error).exception("")
+                    self.logger.opt(exception=error).error("handled error")
 
                 await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
 
@@ -2975,7 +2995,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
             result = await future
             if exception := result.exception():
-                servo.logger.exception(f"Optimization failed with exception: {exception}")
+                servo.logger.opt(exception=exception).error(f"Optimization failed with exception")
 
     async def is_ready(self):
         if self.optimizations:
