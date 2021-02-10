@@ -284,7 +284,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
                 return await func(self, *args, **kwargs)
             except kubernetes_asyncio.client.exceptions.ApiException as error:
                 if error.status == 404 and error.reason == "Not Found":
-                    kind = getattr(self.obj, "kind", self.__class__.__name__) 
+                    kind = getattr(self.obj, "kind", self.__class__.__name__)
                     self.logger.info(f'{kind} "{self.name}" does not exist. no-op')
                 else:
                     raise error
