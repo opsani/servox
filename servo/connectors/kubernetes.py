@@ -1983,6 +1983,7 @@ class Deployment(KubernetesModel):
         """
         tuning_pod_name = self.tuning_pod_name
         namespace = self.namespace
+        timeout = servo.Duration(timeout)
         self.logger.debug(
             f"ensuring existence of tuning pod '{tuning_pod_name}' based on deployment '{self.name}' in namespace '{namespace}'"
         )
@@ -2000,7 +2001,7 @@ class Deployment(KubernetesModel):
 
         # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new tuning pod")
-        pod_obj =kubernetes_asyncio.client.V1Pod(
+        pod_obj = kubernetes_asyncio.client.V1Pod(
             metadata=self.obj.spec.template.metadata, spec=self.obj.spec.template.spec
         )
         pod_obj.metadata.name = tuning_pod_name
@@ -2031,7 +2032,7 @@ class Deployment(KubernetesModel):
                 )
             )
 
-            # # TODO: Create a ReplicaSet class...
+            # TODO: Create a ReplicaSet class...
             async with kubernetes_asyncio.client.api_client.ApiClient() as api:
                 api_client =kubernetes_asyncio.client.AppsV1Api(api)
 
@@ -2068,16 +2069,26 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
-        timeout_ = servo.Duration(timeout)
-        self.logger.info(
-            f"Created tuning Pod '{tuning_pod_name}' in namespace '{namespace}', waiting {timeout_} for it to become ready..."
+        progress = servo.EventProgress(timeout)
+        progress_logger = lambda p: self.logger.info(
+            p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
+            progress=p.progress,
         )
+        progress.start()
+
         try:
-            await tuning_pod.wait_until_ready(timeout=timeout_)
+            wait_for_pod_task = asyncio.create_task(tuning_pod.wait_until_ready())
+            wait_for_pod_task.add_done_callback(lambda _: progress.complete())
+            await asyncio.wait_for(
+                asyncio.gather(
+                    wait_for_pod_task,
+                    progress.watch(progress_logger)
+                ),
+                timeout=timeout.total_seconds()
+            )
+
         except asyncio.TimeoutError:
             await tuning_pod.raise_for_status()
-
-        # TODO: Check for unexpected changes to version, etc.
 
         await tuning_pod.refresh()
         await tuning_pod.get_containers()
@@ -2595,7 +2606,7 @@ class CanaryOptimization(BaseOptimization):
             )
 
         # Ensure that we have a tuning Pod
-        tuning_pod = await deployment.ensure_tuning_pod()
+        tuning_pod = await deployment.ensure_tuning_pod(timeout=config.timeout)
 
         # FIXME: Currently only supporting one container
         for container_config in config.containers:
@@ -2778,7 +2789,7 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.info(
                     "creating new canary against baseline following failed adjust"
                 )
-                self.canary = await self.target_deployment.ensure_tuning_pod()
+                self.canary = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
                 return True
 
             except Exception as handler_error:
@@ -3424,7 +3435,8 @@ class KubernetesConnector(servo.BaseConnector):
 
     @servo.before_event(servo.Events.measure)
     async def before_measure(self) -> None:
-        # Build state before a measurement to ensure all necessary setup is done (e.g., canary is up)
+        # Build state before a measurement to ensure all necessary setup is done
+        # (e.g., canary is up)
         await KubernetesOptimizations.create(self.config)
 
     @servo.on_event()
