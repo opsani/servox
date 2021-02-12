@@ -121,75 +121,75 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_pod_avg_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "total_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query="sum(rate(envoy_cluster_upstream_rq_total[3m]))",
+                    query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m])',
+                    query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m])',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
+                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[1m])',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
+                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m])',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p99_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p99_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p90_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p50_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p50_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
             ],
             **kwargs,
