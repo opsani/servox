@@ -2465,7 +2465,7 @@ class DeploymentOptimization(BaseOptimization):
         self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
         await asyncio.wait_for(
             asyncio.gather(self.deployment.rollback()),
-            timeout=self.timeout.total_seconds(),
+            timeout=self.deployment_config.timeout.total_seconds(),
         )
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
@@ -2478,7 +2478,7 @@ class DeploymentOptimization(BaseOptimization):
         self.logger.info(f"adjustment failed: destroying deployment...")
         await asyncio.wait_for(
             asyncio.gather(self.deployment.delete()),
-            timeout=self.timeout.total_seconds(),
+            timeout=self.deployment_config.timeout.total_seconds(),
         )
 
     def to_components(self) -> List[servo.Component]:
@@ -2554,7 +2554,7 @@ class DeploymentOptimization(BaseOptimization):
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
         try:
-            async with self.deployment.rollout(timeout=self.timeout) as deployment:
+            async with self.deployment.rollout(timeout=self.deployment_config.timeout) as deployment:
                 # Patch the Deployment via the Kubernetes API
                 await deployment.patch()
 
@@ -2663,7 +2663,7 @@ class CanaryOptimization(BaseOptimization):
         dep_copy = copy.copy(self.target_deployment)
         dep_copy.set_container(self.tuning_container.name, self.tuning_container)
         await dep_copy.delete_tuning_pod(raise_if_not_found=False)
-        self.canary = await dep_copy.ensure_tuning_pod(timeout=self.timeout.total_seconds())
+        self.canary = await dep_copy.ensure_tuning_pod(timeout=self.target_deployment_config.timeout.total_seconds())
 
     @property
     def cpu(self) -> CPU:
@@ -2783,13 +2783,13 @@ class CanaryOptimization(BaseOptimization):
                     )
                     self.logger.opt(exception=error).exception("")
 
-                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+                await asyncio.wait_for(self.destroy(), timeout=self.target_deployment_config.timeout.total_seconds())
 
                 # create a new canary against baseline
                 self.logger.info(
                     "creating new canary against baseline following failed adjust"
                 )
-                self.canary = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
+                self.canary = await self.target_deployment.ensure_tuning_pod(timeout=self.target_deployment_config.timeout)
                 return True
 
             except Exception as handler_error:
@@ -2843,15 +2843,11 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
         for deployment_config in config.deployments:
             if deployment_config.strategy == OptimizationStrategy.default:
-                optimization = await DeploymentOptimization.create(
-                    deployment_config, timeout=config.timeout
-                )
+                optimization = await DeploymentOptimization.create(deployment_config)
                 deployment = optimization.deployment
                 container = optimization.container
             elif deployment_config.strategy == OptimizationStrategy.canary:
-                optimization = await CanaryOptimization.create(
-                    deployment_config, timeout=config.timeout
-                )
+                optimization = await CanaryOptimization.create(deployment_config)
                 deployment = optimization.target_deployment
                 container = optimization.target_container
             else:
