@@ -2425,6 +2425,7 @@ class DeploymentOptimization(BaseOptimization):
                 deployment=deployment,
                 container_config=container_config,
                 container=container,
+                timeout=config.timeout,
                 **kwargs,
             )
 
@@ -2628,6 +2629,7 @@ class CanaryOptimization(BaseOptimization):
                 target_container=target_container,
                 tuning_pod=tuning_pod,
                 tuning_container=tuning_container,
+                timeout=config.timeout,
                 **kwargs,
             )
 
