@@ -3324,6 +3324,8 @@ KubernetesOptimizations.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 
+NODE_MIN_CPU = 500
+NODE_MIN_MEM = 512 * MiB
 
 class KubernetesChecks(servo.BaseChecks):
     """Checks for ensuring that the Kubernetes connector is ready to run."""
@@ -3406,6 +3408,26 @@ class KubernetesChecks(servo.BaseChecks):
                 raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
         return self.config.deployments, check_deployment
+
+
+    @servo.check("Nodes have sufficient capacity and availability")
+    async def check_node_performance(self) ->  None:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            cv1 = kubernetes_asyncio.client.CoreV1Api(api)
+            nodes = (await cv1.list_node(field_selector="spec.unschedulable=false")).items
+            low_nodes = list(filter(
+                lambda n: (
+                    Millicore.parse(n.status.allocatable["cpu"]) < NODE_MIN_CPU
+                    or ShortByteSize.validate(n.status.allocatable["memory"]) < NODE_MIN_MEM # TODO: rename validate to parse once alias class method merged
+                ),nodes
+            ))
+
+            if low_nodes: # Assert output too verbose in this case, raise check error with curated message
+                node_res_info = list(map(
+                    lambda n: ({"name": n.metadata.name, "capacity": n.status.capacity, "allocatable": n.status.allocatable})
+                    ,low_nodes
+                ))
+                raise servo.checks.CheckError(f"{len(low_nodes)} nodes found with sub-optimal allocation: {node_res_info}")
 
 
 @servo.metadata(

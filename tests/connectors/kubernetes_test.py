@@ -30,6 +30,7 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirements,
 )
+from servo.checks import CheckFilter
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
 from tests.helpers import *
@@ -1117,6 +1118,15 @@ class TestKubernetesConnectorIntegration:
 
     async def test_checks(self, config: KubernetesConfiguration):
         await KubernetesChecks.run(config)
+
+    async def test_node_check_fails(self, config: KubernetesConfiguration, mocker):
+        mocker.patch("servo.connectors.kubernetes.NODE_MIN_CPU", 100000)
+        results = await KubernetesChecks.run(config, matching=CheckFilter(id="check_node_performance"))
+        node_check_result = next(iter(filter(lambda r: r.id == "check_node_performance", results)))
+
+        assert node_check_result
+        assert not node_check_result.success
+        assert "nodes found with sub-optimal allocation" in node_check_result.message
 
 
 ##
