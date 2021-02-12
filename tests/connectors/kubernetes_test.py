@@ -1023,7 +1023,7 @@ class TestKubernetesConnectorIntegration:
         namespace
     ) -> None:
         # debug("SETTING TIMEOUT TO 2s")
-        tuning_config.deployments[0].timeout = "2s" # TODO; will likely need to bump this, was too low on local minkube cluster 
+        tuning_config.deployments[0].timeout = "7s"
         # for deployment_config in tuning_config.deployments:
         #     deployment_config.timeout = "2s"
         # debug("SET TIMEOUT TO 2s: ", tuning_config.timeout)
