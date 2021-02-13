@@ -20,8 +20,7 @@ spec:
     spec:
       containers:
       - name: fiber-http
-        image: ghcr.io/opsani/fiber-http:latest
-        imagePullPolicy: IfNotPresent
+        image: opsani/fiber-http:latest
         resources:
           requests:
             cpu: 125m
