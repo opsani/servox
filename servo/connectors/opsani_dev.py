@@ -604,7 +604,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         value = 0
                     else:
                         timestamp, value = result.value
-                        assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
+                        assert int(value) < 20, f"Envoy is reporting an error rate above 20% to Prometheus for metric '{metric.name}' ({metric.query})"
 
                     summaries.append(f"{metric.name}={0}{metric.unit}")
                 else:
