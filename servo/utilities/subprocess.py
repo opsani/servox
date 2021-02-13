@@ -304,19 +304,24 @@ async def stream_subprocess_output(
             )
         )
 
-    if timeout is None:
-        await asyncio.wait([process.wait(), *tasks])
-    else:
-        timeout_in_seconds = (
-            timeout.total_seconds() if isinstance(timeout, datetime.timedelta) else timeout
-        )
-        try:
-            await asyncio.wait_for(process.wait(), timeout=timeout_in_seconds)
-            await asyncio.wait(tasks)
-        except asyncio.TimeoutError as timeout:
-            process.kill()
-            [task.cancel() for task in tasks]
-            raise timeout
+    timeout_in_seconds = (
+        timeout.total_seconds() if isinstance(timeout, datetime.timedelta) else timeout
+    )
+    try:
+        # Await the tasks to start reading from the I/O streams
+        await asyncio.wait(tasks)
+
+        # Run the process under a timeout
+        await asyncio.wait_for(process.wait(), timeout=timeout_in_seconds)
+
+    except Exception as error:
+        process.terminate()
+
+        [task.cancel() for task in tasks]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        if not isinstance(error, asyncio.CancelledError):
+            raise error
 
     return cast(int, process.returncode)
 
