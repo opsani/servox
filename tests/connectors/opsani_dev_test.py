@@ -537,8 +537,9 @@ class TestServiceMultiport:
 
                 await asyncio.wait_for(loop_checks(), timeout=600.0)
 
-                servo.logger.success("🥷 Opsani Dev is now deployed.")
-                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+            servo.logger.success("🥷 Opsani Dev is now deployed.")
+            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+
 
 
 ##
@@ -767,7 +768,6 @@ class LoadGenerator(pydantic.BaseModel):
 
                 duration = servo.Duration(datetime.datetime.now() - started_at)
                 servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
-                self._task = None
 
         self.request_count = 0
         self._event.clear()
@@ -804,22 +804,24 @@ class LoadGenerator(pydantic.BaseModel):
                 condition is met.
         """
         if servo.isfuturistic(condition):
-            future = condition
+            future = asyncio.ensure_future(condition)
         else:
             # create a sleeping coroutine for the desired duration
             duration = servo.Duration(condition)
-            future = asyncio.sleep(duration.total_seconds())
+            future = asyncio.create_task(asyncio.sleep(duration.total_seconds()))
 
-        try:
-            if not self.is_running:
-                self.start()
+        future.add_done_callback(lambda _: self.stop())
 
-            await asyncio.wait_for(
+        if not self.is_running:
+            self.start()
+
+        await asyncio.wait_for(
+            asyncio.gather(
                 future,
-                timeout=servo.Duration(timeout).total_seconds()
-            )
-        finally:
-            self.stop()
+                self._task
+            ),
+            timeout=servo.Duration(timeout).total_seconds()
+        )
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
