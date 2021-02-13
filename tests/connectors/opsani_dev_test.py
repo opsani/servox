@@ -90,7 +90,7 @@ class TestConfig:
 )
 class TestIntegration:
     class TestChecksOriginalState:
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         async def load_manifests(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig
         ) -> None:
@@ -304,7 +304,7 @@ class TestServiceMultiport:
     # async def test_deployment_ready(self) -> None:
     #     ...
     class TestInstall:
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         async def load_manifests(
             self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
@@ -782,6 +782,9 @@ class LoadGenerator(pydantic.BaseModel):
         """Stop sending traffic."""
         self._event.set()
 
+        if self._task and not self._task.done():
+            self._task.cancel()
+
     async def run_until(
         self,
         condition: Union[servo.Futuristic, servo.DurationDescriptor],
@@ -815,13 +818,16 @@ class LoadGenerator(pydantic.BaseModel):
         if not self.is_running:
             self.start()
 
-        await asyncio.wait_for(
-            asyncio.gather(
-                future,
-                self._task
-            ),
-            timeout=servo.Duration(timeout).total_seconds()
-        )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    future,
+                    self._task
+                ),
+                timeout=servo.Duration(timeout).total_seconds()
+            )
+        except asyncio.CancelledError:
+            pass
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
