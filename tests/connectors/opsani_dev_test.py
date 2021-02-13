@@ -515,7 +515,7 @@ class TestServiceMultiport:
             async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
                 # Connect the checks to our port forward interface
                 checks.config.prometheus_base_url = prometheus_base_url
-                servo.logging.set_level("DEBUG")
+                servo.logging.set_level("TRACE")
 
                 deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
                 assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
