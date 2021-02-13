@@ -894,7 +894,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
             servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
             await deployment.inject_sidecar('opsani-envoy', 'ghcr.io/opsani/envoy-proxy:latest', service="fiber-http")
 
-    elif id == 'check_pod_envoy_sidecars':
+    elif id in {'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
         pass
 
     elif id == 'check_prometheus_targets':
