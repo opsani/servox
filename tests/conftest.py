@@ -595,6 +595,7 @@ async def kubectl_ports_forwarded(
         - service/[NAME]
         - svc/[NAME]
     """
+    task = None
     try:
         def _identifier_for_target(target: ForwardingTarget) -> str:
             if isinstance(target, str):
@@ -636,7 +637,8 @@ async def kubectl_ports_forwarded(
             ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
             yield ports_to_urls
     finally:
-        task.cancel()
+        if task is not None:
+            task.cancel()
 
 
 @pytest.fixture()
