@@ -266,6 +266,10 @@ async def stream_subprocess_shell(
             f"Subprocess finished with return code {result} in {duration} (`{cmd}`)"
         )
         return result
+    except asyncio.CancelledError:
+        # when used in asynccontextmanager, the wrapping task is cancelled after yield (aexit), cleanup the subprocess in that case
+        process.terminate()
+        raise
     except asyncio.TimeoutError as error:
         loguru.logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
         raise error
