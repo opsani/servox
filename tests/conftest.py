@@ -431,7 +431,7 @@ def kubeconfig_path_from_config(config) -> pathlib.Path:
     return config_path
 
 @pytest.fixture
-async def kubeconfig(request) -> str:
+def kubeconfig(request) -> str:
     """Return the path to a kubeconfig file to use when running integration tests.
 
     To avoid inadvertantly interacting with clusters not explicitly configured
