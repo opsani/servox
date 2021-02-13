@@ -758,16 +758,20 @@ class LoadGenerator(pydantic.BaseModel):
     def start(self) -> None:
         """Start sending traffic."""
         async def _send_requests() -> None:
-            async with httpx.AsyncClient() as client:
-                servo.logger.info(f"Sending traffic to {self.url}...")
-                started_at = datetime.datetime.now()
-                while not self._event.is_set():
-                    response = await client.send(self.request)
-                    response.raise_for_status()
-                    self.request_count += 1
+            try:
+                async with httpx.AsyncClient() as client:
+                    servo.logger.info(f"Sending traffic to {self.url}...")
+                    started_at = datetime.datetime.now()
 
-                duration = servo.Duration(datetime.datetime.now() - started_at)
-                servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
+                    while not self._event.is_set():
+                        response = await client.send(self.request)
+                        response.raise_for_status()
+                        self.request_count += 1
+
+                    duration = servo.Duration(datetime.datetime.now() - started_at)
+                    servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
+            except asyncio.CancelledError:
+                pass
 
         self.request_count = 0
         self._event.clear()
