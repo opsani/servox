@@ -786,9 +786,6 @@ class LoadGenerator(pydantic.BaseModel):
         """Stop sending traffic."""
         self._event.set()
 
-        if self._task and not self._task.done():
-            self._task.cancel()
-
     async def run_until(
         self,
         condition: Union[servo.Futuristic, servo.DurationDescriptor],
@@ -908,7 +905,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
         async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-            await load_generator(envoy_url).run_until(asyncio.sleep(5))
+            await load_generator(envoy_url).run_until(asyncio.sleep(10))
 
     elif id == 'check_service_proxy':
         # Step 6
