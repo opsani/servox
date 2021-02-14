@@ -814,6 +814,8 @@ class LoadGenerator(pydantic.BaseModel):
         if not self.is_running:
             self.start()
 
+        future.add_done_callback(lambda _: self.stop())
+
         try:
             await asyncio.wait_for(
                 asyncio.gather(
