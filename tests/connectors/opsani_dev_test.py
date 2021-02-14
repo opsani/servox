@@ -810,18 +810,16 @@ class LoadGenerator(pydantic.BaseModel):
             duration = servo.Duration(condition)
             future = asyncio.create_task(asyncio.sleep(duration.total_seconds()))
 
-        future.add_done_callback(lambda _: self.stop())
-
         if not self.is_running:
             self.start()
 
         await asyncio.wait_for(
-            asyncio.gather(
-                self._task,
-                future
-            ),
+            future,
             timeout=servo.Duration(timeout).total_seconds()
         )
+
+        self._task.cancel()
+        asyncio.gather(self._task, return_exceptions=True)
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
