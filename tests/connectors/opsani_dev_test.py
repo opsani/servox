@@ -90,7 +90,7 @@ class TestConfig:
 )
 class TestIntegration:
     class TestChecksOriginalState:
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         async def load_manifests(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig
         ) -> None:
@@ -304,7 +304,7 @@ class TestServiceMultiport:
     # async def test_deployment_ready(self) -> None:
     #     ...
     class TestInstall:
-        @pytest.fixture
+        @pytest.fixture(autouse=True)
         async def load_manifests(
             self, kube, kubeconfig, kubernetes_asyncio_config, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
@@ -394,7 +394,7 @@ class TestServiceMultiport:
                 # servo.logging.set_level("DEBUG")
                 async with change_to_resource(deployment):
                     servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
-                    await deployment.inject_sidecar('opsani-envoy', 'ghcr.io/opsani/envoy-proxy:latest', service="fiber-http")
+                    await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_deployment_envoy_sidecars"))
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_pod_envoy_sidecars"))
@@ -515,7 +515,6 @@ class TestServiceMultiport:
             async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
                 # Connect the checks to our port forward interface
                 checks.config.prometheus_base_url = prometheus_base_url
-                servo.logging.set_level("DEBUG")
 
                 deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
                 assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
@@ -530,15 +529,17 @@ class TestServiceMultiport:
                                 config=checks.config,
                                 deployment=deployment,
                                 kube_port_forward=kube_port_forward,
-                                load_generator=load_generator
+                                load_generator=load_generator,
+                                checks=checks
                             )
                         else:
                             break
 
-                await asyncio.wait_for(loop_checks(), timeout=600.0)
+                await asyncio.wait_for(loop_checks(), timeout=300.0)
 
-                servo.logger.success("🥷 Opsani Dev is now deployed.")
-                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+            servo.logger.success("🥷 Opsani Dev is now deployed.")
+            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+
 
 
 ##
@@ -757,17 +758,16 @@ class LoadGenerator(pydantic.BaseModel):
     def start(self) -> None:
         """Start sending traffic."""
         async def _send_requests() -> None:
-            async with httpx.AsyncClient() as client:
-                servo.logger.info(f"Sending traffic to {self.url}...")
-                started_at = datetime.datetime.now()
-                while not self._event.is_set():
+            started_at = datetime.datetime.now()
+            while not self._event.is_set():
+                async with httpx.AsyncClient() as client:
+                    servo.logger.info(f"Sending traffic to {self.url}...")
                     response = await client.send(self.request)
                     response.raise_for_status()
                     self.request_count += 1
 
-                duration = servo.Duration(datetime.datetime.now() - started_at)
-                servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
-                self._task = None
+            duration = servo.Duration(datetime.datetime.now() - started_at)
+            servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
 
         self.request_count = 0
         self._event.clear()
@@ -804,22 +804,22 @@ class LoadGenerator(pydantic.BaseModel):
                 condition is met.
         """
         if servo.isfuturistic(condition):
-            future = condition
+            future = asyncio.ensure_future(condition)
         else:
             # create a sleeping coroutine for the desired duration
             duration = servo.Duration(condition)
-            future = asyncio.sleep(duration.total_seconds())
+            future = asyncio.create_task(asyncio.sleep(duration.total_seconds()))
 
-        try:
-            if not self.is_running:
-                self.start()
+        if not self.is_running:
+            self.start()
 
-            await asyncio.wait_for(
-                future,
-                timeout=servo.Duration(timeout).total_seconds()
-            )
-        finally:
-            self.stop()
+        await asyncio.wait_for(
+            future,
+            timeout=servo.Duration(timeout).total_seconds()
+        )
+
+        self._task.cancel()
+        asyncio.gather(self._task, return_exceptions=True)
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
@@ -849,7 +849,7 @@ async def wait_for_check_to_pass(
 
     return check
 
-async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_generator) -> None:
+async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_generator, checks) -> None:
     envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
     servo.logger.warning(f"Remedying failing check '{id}'...")
     if id == 'check_deployment_annotations':
@@ -880,9 +880,9 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 3 - Inject Envoy sidecar container")
         async with change_to_resource(deployment):
             servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
-            await deployment.inject_sidecar('opsani-envoy', 'ghcr.io/opsani/envoy-proxy:latest', service="fiber-http")
+            await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
-    elif id == 'check_pod_envoy_sidecars':
+    elif id in {'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
         pass
 
     elif id == 'check_prometheus_targets':
@@ -896,7 +896,12 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
         async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-            await load_generator(envoy_url).run_until(asyncio.sleep(5))
+            await load_generator(envoy_url).run_until(
+                wait_for_check_to_pass(
+                    functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                )
+            )
+
 
     elif id == 'check_service_proxy':
         # Step 6
@@ -918,7 +923,11 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         # Step 8
         servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
         async with kube_port_forward(f"service/fiber-http", 80) as service_url:
-            await load_generator(service_url).run_until(asyncio.sleep(1.0))
+            await load_generator(service_url).run_until(
+                wait_for_check_to_pass(
+                    functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                )
+            )
 
     else:
         raise AssertionError(f"unhandled check: '{id}'")

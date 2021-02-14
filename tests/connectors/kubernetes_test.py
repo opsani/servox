@@ -940,7 +940,7 @@ class TestKubernetesConnectorIntegration:
         # Inject a sidecar at index zero
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
         assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar('opsani-envoy', 'ghcr.io/opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
+        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
 
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
@@ -1022,6 +1022,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration,
         namespace
     ) -> None:
+        await asyncio.sleep(1.0)
         # debug("SETTING TIMEOUT TO 2s")
         tuning_config.deployments[0].timeout = "7s"
         # for deployment_config in tuning_config.deployments:
@@ -1041,7 +1042,8 @@ class TestKubernetesConnectorIntegration:
         assert "Insufficient memory." in str(rejection_info.value)
 
 
-    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace):
+    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
+        await asyncio.sleep(1.0)
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-canary",

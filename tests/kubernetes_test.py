@@ -123,7 +123,7 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', port=8181)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8181)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -131,7 +131,7 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number_string(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', port='8181')
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8181')
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -139,13 +139,13 @@ class TestSidecar:
     async def test_inject_sidecar_port_conflict(self, kube):
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         with pytest.raises(ValueError, match='Deployment already has a container port 8480'):
-            await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', port=8481, service_port=8480)
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8481, service_port=8480)
 
     async def test_inject_sidecar_by_service(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
 
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', service='fiber-http')
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http')
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -154,7 +154,7 @@ class TestSidecar:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
 
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', service='fiber-http', port=8480)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=8480)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -166,7 +166,7 @@ class TestSidecar:
         await deployment.replace()
 
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', service='fiber-http', port='http')
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='http')
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -174,12 +174,12 @@ class TestSidecar:
     async def test_inject_sidecar_invalid_service_name(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         with pytest.raises(ValueError, match="Unknown Service 'invalid'"):
-            await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', service='invalid')
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='invalid')
 
     async def test_inject_sidecar_port_not_in_given_service(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         with pytest.raises(ValueError, match="Port 'invalid' does not exist in the Service 'fiber-http'"):
-            await deployment.inject_sidecar('whatever', 'ghcr.io/opsani/envoy-proxy:latest', service='fiber-http', port='invalid')
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='invalid')
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestChecks:
