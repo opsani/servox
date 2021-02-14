@@ -1022,6 +1022,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration,
         namespace
     ) -> None:
+        await asyncio.sleep(1.0)
         # debug("SETTING TIMEOUT TO 2s")
         tuning_config.timeout = "2s"
         # for deployment_config in tuning_config.deployments:
@@ -1041,7 +1042,8 @@ class TestKubernetesConnectorIntegration:
         assert "Insufficient memory." in str(rejection_info.value)
 
 
-    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace):
+    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
+        await asyncio.sleep(1.0)
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-canary",
