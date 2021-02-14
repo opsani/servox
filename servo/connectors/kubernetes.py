@@ -2087,6 +2087,9 @@ class Deployment(KubernetesModel):
                 timeout=timeout.total_seconds()
             )
 
+        except asyncio.CancelledError:
+            pass
+
         except asyncio.TimeoutError:
             await tuning_pod.raise_for_status()
 

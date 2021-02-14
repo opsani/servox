@@ -515,7 +515,6 @@ class TestServiceMultiport:
             async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
                 # Connect the checks to our port forward interface
                 checks.config.prometheus_base_url = prometheus_base_url
-                servo.logging.set_level("TRACE")
 
                 deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
                 assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
@@ -811,17 +810,14 @@ class LoadGenerator(pydantic.BaseModel):
             duration = servo.Duration(condition)
             future = asyncio.create_task(asyncio.sleep(duration.total_seconds()))
 
+        future.add_done_callback(lambda _: self.stop())
+
         if not self.is_running:
             self.start()
 
-        future.add_done_callback(lambda _: self.stop())
-
         try:
             await asyncio.wait_for(
-                asyncio.gather(
-                    future,
-                    self._task
-                ),
+                future,
                 timeout=servo.Duration(timeout).total_seconds()
             )
         except asyncio.CancelledError:
