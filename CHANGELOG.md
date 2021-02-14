@@ -17,10 +17,11 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] "serenity now" - Unreleased
+## [0.9.0] "serenity now" - 2021-02-17
 
 ### Added
 
+- Opsani Dev v2.0 integrated for rapid service optimization.
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
 - Initial release of Wavefront Connector.
