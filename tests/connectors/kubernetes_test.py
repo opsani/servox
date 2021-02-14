@@ -940,7 +940,7 @@ class TestKubernetesConnectorIntegration:
         # Inject a sidecar at index zero
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
         assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar('opsani-envoy', 'ghcr.io/opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
+        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
 
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
