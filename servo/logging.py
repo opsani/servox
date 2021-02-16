@@ -163,7 +163,7 @@ class ProgressHandler:
                     logger.info(f"retrieved None from progress queue. halting progress reporting")
                     break
 
-                if int(progress['progress']) in (1, 100):
+                if int(progress['progress']) == 100:
                     logger.info(f"eliding 100% progress event: {progress}")
                     continue
 
