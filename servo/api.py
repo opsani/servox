@@ -261,13 +261,8 @@ class Mixin(abc.ABC):
                     Union[CommandResponse, Status], response_json
                 )
 
-            except httpx.RequestError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
-                self.logger.trace(devtools.pformat(event_request))
-                raise
-
-            except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
+            except (httpx.RequestError, httpx.HTTPError) as error:
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}\nResponse body: {response.text}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
