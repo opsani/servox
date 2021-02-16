@@ -892,6 +892,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
             await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
     elif id in {'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
+        servo.logger.warning(f"check failed: {id}")
         pass
 
     elif id == 'check_prometheus_targets':
@@ -905,7 +906,11 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
         async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-            await load_generator(envoy_url).run_until(asyncio.sleep(5.0))
+            await load_generator(envoy_url).run_until(
+                wait_for_check_to_pass(
+                    functools.partial(checks.run_one, id=f"check_envoy_sidecar_metrics")
+                )
+            )
 
 
     elif id == 'check_service_proxy':
