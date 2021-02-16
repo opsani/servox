@@ -1962,7 +1962,7 @@ class Deployment(KubernetesModel):
         """
         try:
             canary = await self.get_tuning_pod()
-            self.logger.warning(
+            self.logger.info(
                 f"Deleting tuning Pod '{canary.name}' from namespace '{canary.namespace}'..."
             )
             await canary.delete()
