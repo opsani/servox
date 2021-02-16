@@ -216,7 +216,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         except:
             servo.logger.exception("exception encountered during connect")
 
-        await asyncio.create_task(self.main_loop(), name="main loop")
+        asyncio.create_task(self.main_loop(), name="main loop")
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
