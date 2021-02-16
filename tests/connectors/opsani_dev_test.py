@@ -757,6 +757,9 @@ class LoadGenerator(pydantic.BaseModel):
 
     def start(self) -> None:
         """Start sending traffic."""
+        if self.is_running:
+            raise RuntimeError("Cannot start a load generator that is already running")
+
         async def _send_requests() -> None:
             started_at = datetime.datetime.now()
             while not self._event.is_set():
@@ -781,6 +784,9 @@ class LoadGenerator(pydantic.BaseModel):
     def stop(self) -> None:
         """Stop sending traffic."""
         self._event.set()
+
+        if self._task:
+            self._task.cancel()
 
     async def run_until(
         self,
@@ -813,12 +819,14 @@ class LoadGenerator(pydantic.BaseModel):
         if not self.is_running:
             self.start()
 
-        await asyncio.wait_for(
-            future,
-            timeout=servo.Duration(timeout).total_seconds()
-        )
+        try:
+            await asyncio.wait_for(
+                future,
+                timeout=servo.Duration(timeout).total_seconds()
+            )
+        finally:
+            self.stop()
 
-        self._task.cancel()
         asyncio.gather(self._task, return_exceptions=True)
 
 @pytest.fixture
