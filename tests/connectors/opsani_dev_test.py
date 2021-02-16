@@ -827,7 +827,7 @@ class LoadGenerator(pydantic.BaseModel):
         finally:
             self.stop()
 
-        asyncio.gather(self._task, return_exceptions=True)
+        await asyncio.gather(self._task, return_exceptions=True)
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
