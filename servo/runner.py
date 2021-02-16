@@ -22,19 +22,34 @@ from servo.types import Adjustment, Control, Description, Duration, Measurement
 from servo.servo import _set_current_servo
 
 
-class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
-    servo: servo.Servo
-    connected: bool = False
-    _running: bool = False
+class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
+    _servo: servo.Servo = pydantic.PrivateAttr(None)
+    _connected: bool = pydantic.PrivateAttr(False)
+    _running: bool = pydantic.PrivateAttr(False)
+    _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
 
-    def __init__(self, servo_: servo) -> None: # noqa: D107
-        self.servo = servo_
+    class Config:
+        arbitrary_types_allowed = True
+
+    def __init__(self, servo_: servo) -> None: # noqa: D10
+        super().__init__()
+        self._servo = servo_
 
         # initialize default servo options if not configured
         if self.config.servo is None:
             self.config.servo = servo.ServoConfiguration()
 
-        super().__init__()
+    @property
+    def servo(self) -> servo.Servo:
+        return self._servo
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
 
     @property
     def optimizer(self) -> servo.Optimizer:
@@ -181,6 +196,12 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error
 
+    def run_main_loop(self) -> None:
+        if self._main_loop_task:
+            self._main_loop_task.cancel()
+
+        self._main_loop_task = asyncio.create_task(self.main_loop(), name="main loop")
+
     async def run(self) -> None:
         self._running = True
 
@@ -206,7 +227,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
                 await self._post_event(servo.api.Events.hello, dict(agent=servo.api.user_agent()))
-                self.connected = True
+                self._connected = True
 
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
@@ -216,7 +237,7 @@ class ServoRunner(servo.logging.Mixin, servo.api.Mixin):
         except:
             servo.logger.exception("exception encountered during connect")
 
-        asyncio.create_task(self.main_loop(), name="main loop")
+        self.run_main_loop()
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
@@ -292,7 +313,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
                 # Restart a fresh main loop
                 runner = self._runner_for_servo(servo.current_servo())
-                asyncio.create_task(runner.main_loop(), name="main loop")
+                runner.run_main_loop()
 
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
