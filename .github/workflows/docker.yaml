@@ -23,7 +23,7 @@ jobs:
         with:
           concurrent_skipping: 'same_content'
           paths_ignore: '["**/README.md", "**/docs/**"]'
-          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule", "release"]'
 
   docker:
     needs: pre_job
