@@ -1540,7 +1540,7 @@ async def test_logging() -> None:
             await handler.shutdown()
             reset_to_defaults()
             assert request.called
-            assert request.calls.call_count == 3
+            assert request.calls.call_count == 2  # 100% is skipped
 
             # Parse the JSON sent in the request body and verify we hit 100%
             last_progress_report = json.loads(respx.calls.last.request.content)
