@@ -17,7 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] "serenity now" - 2021-02-17
+## [0.9.1] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Include toml package in release builds.
+
+## [0.9.0] "serenity now" - 2021-02-16
 
 ### Added
 
