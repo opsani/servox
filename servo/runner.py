@@ -297,6 +297,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
         )
+        # TODO: default level of logger.add is DEBUG which allows us to utilize it for
+        #   backend progress updates without cluttering the INFO level. Should we declare
+        #   the level explicitly/further document this level behavior?
         self.logger.add(self.progress_handler.sink, catch=True)
 
         self._display_banner()

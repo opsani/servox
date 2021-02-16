@@ -2069,8 +2069,9 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
+        self.logger.info(f"Waiting for '{tuning_pod_name}' to become ready...")
         progress = servo.EventProgress(timeout)
-        progress_logger = lambda p: self.logger.info(
+        progress_logger = lambda p: self.logger.debug(
             p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
             progress=p.progress,
         )
@@ -3449,7 +3450,8 @@ class KubernetesConnector(servo.BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
 
         # Apply the adjustments and emit indeterminate progress status
-        progress_logger = lambda p: self.logger.info(
+        self.logger.info(f"waiting for adjustments to be applied...")
+        progress_logger = lambda p: self.logger.debug(
             p.annotate(f"waiting for adjustments to be applied...", False),
             progress=p.progress,
         )
@@ -3469,7 +3471,7 @@ class KubernetesConnector(servo.BaseConnector):
                 f"Settlement duration of {settlement} requested, waiting for pods to settle..."
             )
             progress = servo.DurationProgress(settlement)
-            progress_logger = lambda p: self.logger.info(
+            progress_logger = lambda p: self.logger.debug(
                 p.annotate(f"waiting {settlement} for pods to settle...", False),
                 progress=p.progress,
             )
