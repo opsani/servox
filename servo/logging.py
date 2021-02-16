@@ -164,7 +164,7 @@ class ProgressHandler:
                     break
 
                 if int(progress['progress']) == 100:
-                    logger.info(f"eliding 100% progress event: {progress}")
+                    logger.debug(f"eliding 100% progress event: {progress}")
                     continue
 
                 if asyncio.iscoroutinefunction(self._progress_reporter):
