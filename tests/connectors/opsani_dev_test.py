@@ -904,11 +904,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
         async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-            await load_generator(envoy_url).run_until(
-                wait_for_check_to_pass(
-                    functools.partial(checks.run_one, id=f"check_traffic_metrics")
-                )
-            )
+            await load_generator(envoy_url).run_until(asyncio.sleep(10))
 
 
     elif id == 'check_service_proxy':
@@ -923,7 +919,6 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
 
     elif id == 'check_tuning_is_running':
         servo.logger.critical("Step 7 - Bring tuning Pod online")
-        # TODO: This should happen automatically?
         async with change_to_resource(deployment):
             await deployment.ensure_tuning_pod()
 
