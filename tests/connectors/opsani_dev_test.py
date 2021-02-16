@@ -762,8 +762,8 @@ class LoadGenerator(pydantic.BaseModel):
 
         async def _send_requests() -> None:
             started_at = datetime.datetime.now()
-            while not self._event.is_set():
-                async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient() as client:
+                while not self._event.is_set():
                     servo.logger.info(f"Sending traffic to {self.url}...")
                     response = await client.send(self.request)
                     response.raise_for_status()
@@ -772,7 +772,6 @@ class LoadGenerator(pydantic.BaseModel):
             duration = servo.Duration(datetime.datetime.now() - started_at)
             servo.logger.success(f"Sent {self.request_count} requests to {self.url} over {duration} seconds.")
 
-        self.request_count = 0
         self._event.clear()
         self._task = asyncio.create_task(_send_requests())
 
@@ -904,7 +903,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
         servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
         async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-            await load_generator(envoy_url).run_until(asyncio.sleep(10))
+            await load_generator(envoy_url).run_until(asyncio.sleep(5.0))
 
 
     elif id == 'check_service_proxy':
