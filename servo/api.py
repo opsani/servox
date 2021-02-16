@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import datetime
 import enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import backoff
 import devtools
@@ -204,7 +204,7 @@ class Mixin(abc.ABC):
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
         logs: Optional[List[str]] = None,
-    ) -> None:
+    ) -> Tuple[str, Dict[str, Any]]:
         def set_if(d: Dict, k: str, v: Any):
             if v is not None:
                 d[k] = v

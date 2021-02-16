@@ -160,13 +160,18 @@ class ProgressHandler:
             try:
                 progress = await self._queue.get()
                 if progress is None:
+                    logger.info(f"retrieved None from progress queue. halting progress reporting")
                     break
+
+                if int(progress['progress']) in (1, 100):
+                    logger.info(f"eliding 100% progress event: {progress}")
+                    continue
 
                 if asyncio.iscoroutinefunction(self._progress_reporter):
                     await self._progress_reporter(**progress)
                 else:
                     self._progress_reporter(**progress)
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, servo.errors.EventCancelledError):
                 pass  # Task cancellation should not be logged as an error.
             except Exception as error:  # pylint: disable=broad-except
                 logger.warning(f"encountered exception while processing progress logging: {repr(error)}")
