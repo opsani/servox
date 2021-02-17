@@ -777,9 +777,14 @@ class PrometheusConnector(servo.BaseConnector):
                 report = []
                 client = Client(base_url=self.config.base_url)
                 responses = await asyncio.gather(
-                    *list(map(client.query, self.config.metrics))
+                    *list(map(client.query, self.config.metrics)),
+                    return_exceptions=True
                 )
                 for response in responses:
+                    if isinstance(response, Exception):
+                        servo.logger.error(f"failed querying Prometheus for metrics: {response}")
+                        continue
+
                     if response.data:
                         # NOTE: Instant queries return a single vector
                         timestamp, value = response.data[0].value
