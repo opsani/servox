@@ -22,6 +22,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Fixed an asyncio crash in the `ServoRunner`.
+- Gracefully handle query errors from Prometheus.
+- Support asyncio cancellation within pub/sub publisher decorator.
 
 ## [0.9.2] "serenity now" - 2021-02-16
 
