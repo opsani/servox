@@ -782,7 +782,7 @@ class PrometheusConnector(servo.BaseConnector):
                 )
                 for response in responses:
                     if isinstance(response, Exception):
-                        servo.logger.error(f"failed querying Prometheus for metrics: {response}")
+                        logger.error(f"failed querying Prometheus for metrics: {response}")
                         continue
 
                     if response.data:
