@@ -869,10 +869,13 @@ class _PublisherMethod:
 
         @functools.wraps(fn)
         async def _repeating_publisher() -> None:
-            while True:
-                await fn(publisher)
-                if duration is not None:
-                    await asyncio.sleep(duration.total_seconds())
+            try:
+                while True:
+                    await fn(publisher)
+                    if duration is not None:
+                        await asyncio.sleep(duration.total_seconds())
+            except asyncio.CancelledError:
+                pass
 
         task = asyncio.create_task(_repeating_publisher())
         task.add_done_callback(_error_watcher)
