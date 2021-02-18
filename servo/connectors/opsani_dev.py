@@ -288,9 +288,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         service = await servo.connectors.kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
-        if not service.obj.spec.type in ("ClusterIP", "LoadBalancer"):
+        service_type = service.obj.spec.type
+        if not service_type in ("ClusterIP", "LoadBalancer"):
             raise ValueError(
-                f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
+                f"expected service type of ClusterIP or LoadBalancer but found {service_type}"
             )
 
     @servo.checks.check("service port")
