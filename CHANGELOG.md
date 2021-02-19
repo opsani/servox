@@ -17,6 +17,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] "serenity now" - Unreleased
+
+### Enhanced
+
+- Added support for deploying Opsani Dev on Kubernetes `NodePort` Services.
+
 ## [0.9.4] "serenity now" - 2021-02-17
 
 ### Fixed

@@ -289,9 +289,9 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.service, self.config.namespace
         )
         service_type = service.obj.spec.type
-        if not service_type in ("ClusterIP", "LoadBalancer"):
+        if not service_type in ("ClusterIP", "LoadBalancer", "NodePort"):
             raise ValueError(
-                f"expected service type of ClusterIP or LoadBalancer but found {service_type}"
+                f"expected service type of ClusterIP, LoadBalancer, or NodePort but found {service_type}"
             )
 
     @servo.checks.check("service port")
