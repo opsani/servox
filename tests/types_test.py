@@ -565,13 +565,13 @@ class TestRangeSetting:
                 1.0,
                 11.0,
                 3.0,
-                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0",
+                "RangeSetting('invalid' 1.0-11.0, 3.0) is not step aligned: min max difference 10.0 is not a multiple of 3.0. closest values are min: (0.0 , 2.0) max: (10.0 , 12.0)",
             ),
             (
                 3.0,
                 12.0,
                 2.0,
-                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0",
+                "RangeSetting('invalid' 3.0-12.0, 2.0) min 3.0 is not a multiple of step 2.0 or vice versa",
             ),
         ],
     )
@@ -583,6 +583,7 @@ class TestRangeSetting:
                 RangeSetting(name="invalid", min=min, max=max, step=step)
 
             assert error
+            print(error)
             assert "1 validation error for RangeSetting" in str(error.value)
             assert error.value.errors()[0]["loc"] == ("__root__",)
             assert error.value.errors()[0]["type"] == "value_error"
@@ -594,24 +595,24 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 5, 1, None),
-            (1.0, 6.0, 2.0, None),
+            (2.0, 6.0, 2.0, None),
             (
-                1.0,
                 2,
                 3,
+                1.0,
+                "invalid range: min, max, and step must all be of the same Numeric type (int: min, max. float: step.)",
+            ),
+            (
+                2.0,
+                3,
+                1,
                 "invalid range: min, max, and step must all be of the same Numeric type (float: min. int: max, step.)",
             ),
             (
-                1,
-                2.0,
-                3,
-                "invalid range: min, max, and step must all be of the same Numeric type (int: min, step. float: max.)",
-            ),
-            (
-                1,
                 2,
                 3.0,
-                "invalid range: min, max, and step must all be of the same Numeric type (int: min, max. float: step.)",
+                1,
+                "invalid range: min, max, and step must all be of the same Numeric type (int: min, step. float: max.)",
             ),
         ],
     )

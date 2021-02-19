@@ -774,14 +774,14 @@ class TestMillicore:
 class TestMemory:
     @pytest.fixture
     def memory(self) -> Memory:
-        return Memory(min="128 MiB", max="4.0 GiB", step="0.25 GiB")
+        return Memory(min="128 MiB", max="4.125 GiB", step="0.25 GiB")
 
     def test_parsing(self, memory) -> None:
         assert {
             "name": "mem",
             "type": "range",
             "min": 134217728,
-            "max": 4294967296,
+            "max": 4429185024,
             "step": 268435456,
             "value": None,
             "pinned": False,
@@ -792,7 +792,7 @@ class TestMemory:
         memory.value = "3.0 GiB"
         assert memory.__opsani_repr__() == {
             "mem": {
-                "max": 4.0,
+                "max": 4.125,
                 "min": 0.125,
                 "step": 0.25,
                 "value": 3.0,
@@ -815,15 +815,15 @@ class TestMemory:
         }
 
     def test_resolving_equivalent_units(self) -> None:
-        memory = Memory(min="128 MiB", max=4.0, step=268435456)
+        memory = Memory(min="128 MiB", max=4.125, step=268435456)
         assert memory.min == 134217728
-        assert memory.max == 4294967296
+        assert memory.max == 4429185024
         assert memory.step == 268435456
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
         assert serialization["min"] == "128.0MiB"
-        assert serialization["max"] == "4.0GiB"
+        assert serialization["max"] == "4.1GiB"
         assert serialization["step"] == "256.0MiB"
 
     def test_cannot_be_less_than_128MiB(self) -> None:

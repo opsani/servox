@@ -951,13 +951,13 @@ class RangeSetting(Setting):
         ...,
         description="The inclusive minimum of the adjustable range of values for the setting.",
     )
-    max: Numeric = pydantic.Field(
-        ...,
-        description="The inclusive maximum of the adjustable range of values for the setting.",
-    )
     step: Numeric = pydantic.Field(
         ...,
         description="The step value of adjustments up or down within the range. Adjustments will always be a multiplier of the step. The step defines the size of the adjustable range by constraining the available options to multipliers of the step within the range.",
+    )
+    max: Numeric = pydantic.Field(
+        ...,
+        description="The inclusive maximum of the adjustable range of values for the setting.",
     )
     value: Optional[Numeric] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
@@ -1027,6 +1027,10 @@ class RangeSetting(Setting):
         if min_ > max_:
             raise ValueError(f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})")
 
+        # TODO: should these checks account for negative values?
+        if (step := values.get("step")) != None and step > max_:
+            raise ValueError(f"step cannot be greater than max ({cls.human_readable(step)} > {cls.human_readable(max_)})")
+
         return value
 
     @pydantic.root_validator(skip_on_failure=True)
@@ -1039,13 +1043,25 @@ class RangeSetting(Setting):
             values["step"],
         )
 
-        for boundary in ('min', 'max'):
-            value = values[boundary]
-            if value and not _is_step_aligned(value, step):
-                desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
-                raise ValueError(
-                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)}"
-                )
+        # min_ already validated as numeric, only falsey values are 0 and 0.0 which need no step validation
+        if min_ and not _is_step_aligned(min_, step): 
+            desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
+            raise ValueError(
+                f"{desc} min {cls.human_readable(min_)} is not a multiple of step {cls.human_readable(step)} or vice versa"
+            )
+
+        # _is_step_aligned considers min valid if it fits evenly into step, therefore max should
+        #   be validated using its difference between min to account for a potential min offset != to step or 0
+        max_, min_ = decimal.Decimal(str(float(max_))), decimal.Decimal(str(float(min_)))
+        step_range = max_ - min_
+        misalign_offset = step_range % decimal.Decimal(str(float(step)))
+        if misalign_offset != 0:
+            desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
+            raise ValueError(
+                f"{desc} is not step aligned: min max difference {cls.human_readable(step_range)} is not a multiple of {cls.human_readable(step)}."
+                f" closest values are min: ({cls.human_readable(min_ - misalign_offset)} , {cls.human_readable(min_ + misalign_offset)}) "
+                f"max: ({cls.human_readable(max_ - misalign_offset)} , {cls.human_readable(max_ + misalign_offset)})"
+            )
 
         return values
 

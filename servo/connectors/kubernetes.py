@@ -2197,6 +2197,9 @@ GiB = 2 ** 30
 class ShortByteSize(pydantic.ByteSize):
     """Kubernetes omits the 'B' suffix for some reason"""
 
+    # TODO: ByteSize.human_readable truncates 4.125GiB to 4.1GiB.
+    #   is it worth overriding to get the .125 to show but also have .000 appended to iteger values?
+
     @classmethod
     def validate(cls, v: pydantic.StrIntFloat) -> "ShortByteSize":
         if isinstance(v, str):
