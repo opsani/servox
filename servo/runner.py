@@ -110,7 +110,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
     @backoff.on_exception(
         backoff.expo,
-        httpx.HTTPError,
+        (httpx.HTTPError, pydantic.ValidationError),
         max_time=lambda: servo.current_servo().config.servo.backoff.max_time(),
         max_tries=lambda: servo.current_servo().config.servo.backoff.max_tries(),
     )
