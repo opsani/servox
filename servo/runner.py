@@ -314,6 +314,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 # Restart a fresh main loop
                 runner = self._runner_for_servo(servo.current_servo())
                 runner.run_main_loop()
+            else:
+                self.logger.error(
+                    f"unrecognized exception passed to progress exception handler: {error}"
+                )
 
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
@@ -400,30 +404,46 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.info(f"Received exit signal {signal.name}...")
 
         reason = signal.name if signal else "shutdown"
-        self.logger.info(f"Shutting down {len(self.runners)} running servos...")
-        for runner in self.runners:
-            await runner.shutdown(reason=reason)
 
-        self.logger.info("Dispatching shutdown event...")
-        await self.assembly.shutdown()
-        await self.progress_handler.shutdown()
+        # Shut down the servo runners, breaking active control loops
+        if len(self.runners) == 1:
+            self.logger.info(f"Shutting down servo...")
+        else:
+            self.logger.info(f"Shutting down {len(self.runners)} running servos...")
+        for fut in asyncio.as_completed(list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0):
+            try:
+                await fut
+            except Exception as error:
+                self.logger.critical(f"Failed servo runner shutdown with error: {error}")
 
+        # Shutdown the assembly and the servos it contains
+        self.logger.debug("Dispatching shutdown event...")
+        try:
+            await self.assembly.shutdown()
+        except Exception as error:
+            self.logger.critical(f"Failed assembly shutdown with error: {error}")
+
+        await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
+
+        # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty
+        # The shutdown of the assembly and the servo should clean up its tasks
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        if len(tasks):
+            [task.cancel() for task in tasks]
 
-        [task.cancel() for task in tasks]
-
-        self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
-        await asyncio.gather(*tasks, return_exceptions=True)
+            self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+            self.logger.debug(f"Outstanding tasks: {devtools.pformat(tasks)}")
+            await asyncio.gather(*tasks, return_exceptions=True)
 
         self.logger.info("Servo shutdown complete.")
-        await self.logger.complete()
+        await asyncio.gather(self.logger.complete(), return_exceptions=True)
 
         loop.stop()
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
-        self.logger.error(f"asyncio exception handler triggered with context: {context}")
+        self.logger.critical(f"asyncio exception handler triggered with context: {context}")
 
         self.logger.critical(
             "Shutting down due to unhandled exception in asyncio event loop..."
         )
-        asyncio.create_task(self._shutdown(loop))
+        loop.create_task(self._shutdown(loop))
