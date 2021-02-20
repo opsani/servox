@@ -171,8 +171,10 @@ class ProgressHandler:
                     await self._progress_reporter(**progress)
                 else:
                     self._progress_reporter(**progress)
-            except (asyncio.CancelledError, servo.errors.EventCancelledError):
-                pass  # Task cancellation should not be logged as an error.
+            except servo.errors.EventCancelledError:
+                pass  # Event cancellation should not be logged as an error.
+            except asyncio.CancelledError:
+                raise
             except Exception as error:  # pylint: disable=broad-except
                 logger.warning(f"encountered exception while processing progress logging: {repr(error)}")
                 if self._exception_handler:

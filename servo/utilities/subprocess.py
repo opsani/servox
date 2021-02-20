@@ -320,8 +320,7 @@ async def stream_subprocess_output(
         [task.cancel() for task in tasks]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        if not isinstance(error, asyncio.CancelledError):
-            raise error
+        raise error
 
     return cast(int, process.returncode)
 

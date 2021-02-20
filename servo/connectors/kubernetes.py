@@ -134,7 +134,7 @@ async def wait_for_condition(
 
         except asyncio.CancelledError:
             servo.logger.exception("wait for condition cancelled")
-            pass
+            raise
 
         except kubernetes_asyncio.client.exceptions.ApiException as e:
             servo.logger.warning(f"encountered API exception while waiting: {e}")
@@ -2092,9 +2092,6 @@ class Deployment(KubernetesModel):
                 timeout=timeout.total_seconds()
             )
 
-        except asyncio.CancelledError:
-            pass
-
         except asyncio.TimeoutError:
             await tuning_pod.raise_for_status()
 
@@ -2318,8 +2315,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         error_logger = self.logger.opt(exception=error)
 
         if isinstance(error, asyncio.CancelledError):
-            error_logger.warning(f"discarding unhandled asyncio.CancelledError")
-            return True
+            error_logger.warning(f"reraising intercepted asyncio.CancelledError")
+            raise error
 
         if mode == FailureMode.crash:
             error_logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
@@ -2581,14 +2578,11 @@ class DeploymentOptimization(BaseOptimization):
             raise servo.AdjustmentRejectedError(reason="unstable")
 
     async def is_ready(self) -> bool:
-        try:
-            is_ready, restart_count = await asyncio.gather(
-                self.deployment.is_ready(),
-                self.deployment.get_restart_count()
-            )
-            return is_ready and restart_count == 0
-        except asyncio.CancelledError:
-            return False
+        is_ready, restart_count = await asyncio.gather(
+            self.deployment.is_ready(),
+            self.deployment.get_restart_count()
+        )
+        return is_ready and restart_count == 0
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -2816,14 +2810,11 @@ class CanaryOptimization(BaseOptimization):
 
 
     async def is_ready(self) -> bool:
-        try:
-            is_ready, restart_count = await asyncio.gather(
-                self.tuning_pod.is_ready(),
-                self.tuning_pod.get_restart_count()
-            )
-            return is_ready and restart_count == 0
-        except asyncio.CancelledError:
-            return False
+        is_ready, restart_count = await asyncio.gather(
+            self.tuning_pod.is_ready(),
+            self.tuning_pod.get_restart_count()
+        )
+        return is_ready and restart_count == 0
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -3023,8 +3014,9 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
                 return all(results)
 
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+            except asyncio.TimeoutError:
                 return False
+
         else:
             return True
 
@@ -3459,11 +3451,11 @@ class KubernetesConnector(servo.BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
 
-    @servo.before_event(servo.Events.measure)
-    async def before_measure(self) -> None:
-        # Build state before a measurement to ensure all necessary setup is done
-        # (e.g., canary is up)
-        await KubernetesOptimizations.create(self.config)
+    # @servo.before_event(servo.Events.measure)
+    # async def before_measure(self) -> None:
+    #     # Build state before a measurement to ensure all necessary setup is done
+    #     # (e.g., canary is up)
+    #     await KubernetesOptimizations.create(self.config)
 
     @servo.on_event()
     async def adjust(

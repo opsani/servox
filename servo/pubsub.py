@@ -869,13 +869,10 @@ class _PublisherMethod:
 
         @functools.wraps(fn)
         async def _repeating_publisher() -> None:
-            try:
-                while True:
-                    await fn(publisher)
-                    if duration is not None:
-                        await asyncio.sleep(duration.total_seconds())
-            except asyncio.CancelledError:
-                pass
+            while True:
+                await fn(publisher)
+                if duration is not None:
+                    await asyncio.sleep(duration.total_seconds())
 
         task = asyncio.create_task(_repeating_publisher())
         task.add_done_callback(_error_watcher)
@@ -1220,7 +1217,7 @@ async def _deliver_message_to_subscribers(message: Message, channel: Channel, su
     # Log failures without aborting
     with servo.logger.catch(message="Subscriber raised exception"):
         for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+            if isinstance(result, Exception):
                 raise result
 
     _current_context_var.reset(reset_token)
