@@ -465,7 +465,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         exception = context.get("exception", None)
         logger = self.logger.opt(exception=exception)
 
-        if loop.is_closed:
+        if loop.is_closed():
             logger.critical(
                 "Ignoring exception -- the event loop is closed."
             )
