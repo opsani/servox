@@ -2063,7 +2063,7 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
-        progress = servo.EventProgress(timeout)
+        progress = servo.EventProgress()
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
             progress=p.progress,
@@ -2085,6 +2085,7 @@ class Deployment(KubernetesModel):
             # NOTE: to ensure that the cancelled task is reaped we must await it
             servo.logger.warning(f"caught timeout exception, awaiting: {wait_for_pod_task}")
             await wait_for_pod_task
+            await progress_logger.wait()
             await tuning_pod.raise_for_status()
 
         except asyncio.CancelledError:
