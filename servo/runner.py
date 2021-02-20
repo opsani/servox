@@ -252,6 +252,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     assembly: servo.Assembly
     runners: List[ServoRunner] = []
     progress_handler: Optional[servo.logging.ProgressHandler] = None
+    progress_handler_id: Optional[int] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -322,7 +323,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
         )
-        self.logger.add(self.progress_handler.sink, catch=True)
+        self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
 
         self._display_banner()
 
@@ -424,6 +425,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
 
         await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
+        self.logger.remove(self.progress_handler_id)
 
         # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty
         # The shutdown of the assembly and the servo should clean up its tasks
@@ -443,7 +445,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         self.logger.critical(f"asyncio exception handler triggered with context: {context}")
 
-        self.logger.critical(
+        exception = context.get("exception", None)
+        self.logger.opt(exception=exception).critical(
             "Shutting down due to unhandled exception in asyncio event loop..."
         )
         loop.create_task(self._shutdown(loop))
