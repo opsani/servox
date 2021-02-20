@@ -2082,11 +2082,14 @@ class Deployment(KubernetesModel):
             )
 
         except asyncio.TimeoutError:
+            # NOTE: to ensure that the cancelled task is reaped we must await it
+            servo.logger.warning(f"caught timeout exception, awaiting: {wait_for_pod_task}")
+            await wait_for_pod_task
             await tuning_pod.raise_for_status()
 
         except asyncio.CancelledError:
             # NOTE: to ensure that the cancelled task is reaped we must await it
-            servo.logger.warning("caught cancellation exception")
+            servo.logger.warning(f"caught cancellation exception, awaiting: {wait_for_pod_task}")
             await wait_for_pod_task
 
         await tuning_pod.refresh()
