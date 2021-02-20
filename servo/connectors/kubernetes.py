@@ -2310,15 +2310,20 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
+        error_logger = self.logger.opt(exception=error)
+
+        if isinstance(error, asyncio.CancelledError):
+            error_logger.warning(f"discarding unhandled asyncio.CancelledError")
+            return True
+
         if mode == FailureMode.crash:
-            self.logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
+            error_logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
             raise error
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
             if mode == FailureMode.ignore:
-                self.logger.warning(f"ignoring runtime error and continuing: {error}")
-                self.logger.opt(exception=error).exception("ignoring Kubernetes error")
+                error_logger.warning(f"ignoring Kubernetes runtime error and continuing: {error}")
                 return True
 
             elif mode == FailureMode.rollback:
@@ -2571,11 +2576,14 @@ class DeploymentOptimization(BaseOptimization):
             raise servo.AdjustmentRejectedError(reason="unstable")
 
     async def is_ready(self) -> bool:
-        is_ready, restart_count = await asyncio.gather(
-            self.deployment.is_ready(),
-            self.deployment.get_restart_count()
-        )
-        return is_ready and restart_count == 0
+        try:
+            is_ready, restart_count = await asyncio.gather(
+                self.deployment.is_ready(),
+                self.deployment.get_restart_count()
+            )
+            return is_ready and restart_count == 0
+        except asyncio.CancelledError:
+            return False
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -2803,11 +2811,14 @@ class CanaryOptimization(BaseOptimization):
 
 
     async def is_ready(self) -> bool:
-        is_ready, restart_count = await asyncio.gather(
-            self.tuning_pod.is_ready(),
-            self.tuning_pod.get_restart_count()
-        )
-        return is_ready and restart_count == 0
+        try:
+            is_ready, restart_count = await asyncio.gather(
+                self.tuning_pod.is_ready(),
+                self.tuning_pod.get_restart_count()
+            )
+            return is_ready and restart_count == 0
+        except asyncio.CancelledError:
+            return False
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -2987,23 +2998,30 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             tasks.append(task)
 
         for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
-            result = await future
-            if exception := result.exception():
-                servo.logger.exception(f"Optimization failed with exception: {exception}")
+            try:
+                await future
+            except Exception as error:
+                servo.logger.exception(f"Optimization failed with error: {error}")
 
     async def is_ready(self):
         if self.optimizations:
             self.logger.debug(
                 f"Checking for readiness of {len(self.optimizations)} optimizations"
             )
-            results = await asyncio.wait_for(
-                asyncio.gather(
-                    *list(map(lambda a: a.is_ready(), self.optimizations)),
-                ),
-                timeout=self.config.timeout.total_seconds()
-            )
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(
+                        *list(map(lambda a: a.is_ready(), self.optimizations)),
+                    ),
+                    timeout=self.config.timeout.total_seconds()
+                )
 
-            return all(results)
+                return all(results)
+
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                return False
+        else:
+            return True
 
 
     class Config:
