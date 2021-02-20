@@ -2085,9 +2085,9 @@ class Deployment(KubernetesModel):
             await tuning_pod.raise_for_status()
 
         except asyncio.CancelledError:
-            # NOTE: the above gather is raising a cancellation error that escapes for some reason
-            # await wait_for_pod_task
+            # NOTE: to ensure that the cancelled task is reaped we must await it
             servo.logger.warning("caught cancellation exception")
+            await wait_for_pod_task
 
         await tuning_pod.refresh()
         await tuning_pod.get_containers()
