@@ -139,7 +139,7 @@ async def wait_for_condition(
 
             except asyncio.CancelledError:
                 servo.logger.debug("wait for condition cancelled")
-                break
+                raise
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 servo.logger.warning(f"encountered API exception while waiting: {e}")
@@ -3440,11 +3440,11 @@ class KubernetesConnector(servo.BaseConnector):
         state = await KubernetesOptimizations.create(self.config)
         return state.to_components()
 
-    # @servo.before_event(servo.Events.measure)
-    # async def before_measure(self) -> None:
-    #     # Build state before a measurement to ensure all necessary setup is done
-    #     # (e.g., canary is up)
-    #     await KubernetesOptimizations.create(self.config)
+    @servo.before_event(servo.Events.measure)
+    async def before_measure(self) -> None:
+        # Build state before a measurement to ensure all necessary setup is done
+        # (e.g., canary is up)
+        await KubernetesOptimizations.create(self.config)
 
     @servo.on_event()
     async def adjust(
