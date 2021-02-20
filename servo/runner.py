@@ -150,7 +150,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 settings_count = sum(
                     len(component.settings) for component in description.components
                 )
-                self.logger.info(
+                self.logger.success(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
             except servo.AdjustmentFailedError as error:

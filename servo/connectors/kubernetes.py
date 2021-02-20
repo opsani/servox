@@ -125,16 +125,21 @@ async def wait_for_condition(
 
     started_at = datetime.datetime.now()
     async def _wait_for_condition() -> None:
-        while True:
-            try:
+        try:
+            while True:
                 servo.logger.debug(f"checking condition {condition}")
                 if await condition.check():
                     servo.logger.debug(f"condition passed: {condition}")
                     break
-            except kubernetes_asyncio.client.exceptions.ApiException as e:
-                servo.logger.warning(f"encountered API exception while waiting: {e}")
-                if fail_on_api_error:
-                    raise
+
+        except asyncio.CancelledError:
+            servo.logger.exception("wait for condition cancelled")
+            pass
+
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            servo.logger.warning(f"encountered API exception while waiting: {e}")
+            if fail_on_api_error:
+                raise
 
             # if the condition is not met, sleep for the interval
             # to re-check later
@@ -3472,7 +3477,7 @@ class KubernetesConnector(servo.BaseConnector):
             progress=p.progress,
         )
         progress = servo.EventProgress()
-        future = asyncio.ensure_future(state.apply(adjustments))
+        future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
         await asyncio.gather(
