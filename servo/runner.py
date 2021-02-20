@@ -189,8 +189,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     self.logger.warning(
                         f"server reported unexpected event: {status.reason}"
                     )
+
             except (httpx.TimeoutException, httpx.HTTPStatusError) as error:
-                self.logger.warning(f"ignoring HTTP timeout error: {error}")
+                self.logger.warning(f"command execution failed HTTP client error: {error}")
+
+            except pydantic.ValidationError as error:
+                self.logger.warning(f"command execution failed with model validation error: {error}")
+                self.logger.opt(exception=error).debug("Pydantic model failed validation")
 
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
