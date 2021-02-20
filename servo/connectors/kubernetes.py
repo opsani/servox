@@ -139,7 +139,7 @@ async def wait_for_condition(
 
             except asyncio.CancelledError:
                 servo.logger.debug("wait for condition cancelled")
-                raise
+                break
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 servo.logger.warning(f"encountered API exception while waiting: {e}")
@@ -2063,7 +2063,7 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
-        progress = servo.EventProgress()
+        progress = servo.EventProgress(timeout)
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
             progress=p.progress,
