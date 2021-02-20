@@ -251,6 +251,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     runners: List[ServoRunner] = []
     progress_handler: Optional[servo.logging.ProgressHandler] = None
     progress_handler_id: Optional[int] = None
+    _running: bool = pydantic.PrivateAttr(False)
 
     class Config:
         arbitrary_types_allowed = True
@@ -265,11 +266,19 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         raise KeyError(f"no runner was found for the servo: \"{servo}\"")
 
+    @property
+    def running(self) -> bool:
+        return self._running
+
     def run(self) -> None:
         """Asynchronously run all servos active within the assembly.
 
         Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.
         """
+        if self.running:
+            raise RuntimeError("Cannot run an assembly that is already running")
+
+        self._running = True
         loop = asyncio.get_event_loop()
 
         # Setup signal handling
@@ -399,6 +408,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         secho(reset=True)
 
     async def _shutdown(self, loop, signal=None):
+        if not self.running:
+            raise RuntimeError("Cannot shutdown an assembly that is not running")
+
         if signal:
             self.logger.info(f"Received exit signal {signal.name}...")
 
@@ -438,13 +450,26 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         self.logger.info("Servo shutdown complete.")
         await asyncio.gather(self.logger.complete(), return_exceptions=True)
 
+        self._running = False
+
         loop.stop()
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         self.logger.critical(f"asyncio exception handler triggered with context: {context}")
 
         exception = context.get("exception", None)
-        self.logger.opt(exception=exception).critical(
-            "Shutting down due to unhandled exception in asyncio event loop..."
-        )
-        loop.create_task(self._shutdown(loop))
+        logger = self.logger.opt(exception=exception)
+
+        if loop.is_closed:
+            logger.critical(
+                "Ignoring exception -- the event loop is closed."
+            )
+        elif self.running:
+            logger.critical(
+                "Shutting down due to unhandled exception in asyncio event loop..."
+            )
+            loop.create_task(self._shutdown(loop))
+        else:
+            logger.critical(
+                "Ignoring exception -- the assembly is not running"
+            )
