@@ -125,26 +125,26 @@ async def wait_for_condition(
 
     started_at = datetime.datetime.now()
     async def _wait_for_condition() -> None:
-        try:
-            while True:
+        while True:
+            try:
                 servo.logger.debug(f"checking condition {condition}")
                 if await condition.check():
                     servo.logger.debug(f"condition passed: {condition}")
                     break
 
-        except asyncio.CancelledError:
-            servo.logger.exception("wait for condition cancelled")
-            raise
+                # if the condition is not met, sleep for the interval
+                # to re-check later
+                servo.logger.debug(f"sleeping for {interval}")
+                await asyncio.sleep(interval)
 
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            servo.logger.warning(f"encountered API exception while waiting: {e}")
-            if fail_on_api_error:
-                raise
+            except asyncio.CancelledError:
+                servo.logger.exception("wait for condition cancelled")
+                break
 
-            # if the condition is not met, sleep for the interval
-            # to re-check later
-            servo.logger.debug(f"sleeping for {interval}")
-            await asyncio.sleep(interval)
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                servo.logger.warning(f"encountered API exception while waiting: {e}")
+                if fail_on_api_error:
+                    raise
 
     await asyncio.wait_for(
         _wait_for_condition(),
@@ -851,7 +851,6 @@ class Pod(KubernetesModel):
     }
 
     @classmethod
-    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def read(cls, name: str, namespace: str) -> "Pod":
         """Read the Pod from the cluster under the given namespace.
 
@@ -862,9 +861,7 @@ class Pod(KubernetesModel):
         servo.logger.debug(f'reading pod "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
-            obj = await asyncio.wait_for(
-                api_client.read_namespaced_pod_status(name, namespace), 5.0
-            )
+            obj = await api_client.read_namespaced_pod_status(name, namespace)
             servo.logger.trace("pod: ", obj)
             return Pod(obj)
 
@@ -929,16 +926,12 @@ class Pod(KubernetesModel):
                 body=options,
             )
 
-    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Pod resource."""
         async with self.api_client() as api_client:
-            self.obj = await asyncio.wait_for(
-                api_client.read_namespaced_pod_status(
-                    name=self.name,
-                    namespace=self.namespace,
-                ),
-                5.0,
+            self.obj = await api_client.read_namespaced_pod_status(
+                name=self.name,
+                namespace=self.namespace,
             )
 
     async def is_ready(self) -> bool:
@@ -1126,7 +1119,6 @@ class Service(KubernetesModel):
     }
 
     @classmethod
-    @backoff.on_exception(backoff.expo, asyncio.TimeoutError, max_time=60)
     async def read(cls, name: str, namespace: str) -> "Service":
         """Read the Service from the cluster under the given namespace.
 
@@ -1137,10 +1129,7 @@ class Service(KubernetesModel):
         servo.logger.trace(f'reading service "{name}" in namespace "{namespace}"')
 
         async with cls.preferred_client() as api_client:
-            obj = await asyncio.wait_for(
-                api_client.read_namespaced_service(name, namespace),
-                5.0
-            )
+            obj = await api_client.read_namespaced_service(name, namespace)
             servo.logger.trace("service: ", obj)
             return Service(obj)
 
