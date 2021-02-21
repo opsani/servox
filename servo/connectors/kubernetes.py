@@ -138,7 +138,7 @@ async def wait_for_condition(
 
             except asyncio.CancelledError:
                 servo.logger.debug("wait for condition cancelled")
-                raise
+                break
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 servo.logger.warning(f"encountered API exception while waiting: {e}")
