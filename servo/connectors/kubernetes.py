@@ -2073,7 +2073,7 @@ class Deployment(KubernetesModel):
 
         try:
             await asyncio.wait_for(
-                await asyncio.gather(
+                asyncio.gather(
                     task,
                     asyncio.shield(progress.watch(progress_logger)),
                 ),
