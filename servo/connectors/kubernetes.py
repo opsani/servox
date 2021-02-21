@@ -2068,23 +2068,14 @@ class Deployment(KubernetesModel):
             await asyncio.wait_for(
                 asyncio.gather(
                     wait_for_pod_task,
-                    progress.watch(progress_logger)
+                    asyncio.shield(progress.watch(progress_logger))
                 ),
                 timeout=timeout.total_seconds()
             )
 
         except asyncio.TimeoutError:
-            # NOTE: to ensure that the cancelled task is reaped we must await it
-            servo.logger.warning(f"caught timeout exception, awaiting: {wait_for_pod_task}")
-            await wait_for_pod_task
-            await progress.wait()
             servo.logger.debug("raising status for pod...")
             await tuning_pod.raise_for_status()
-
-        except asyncio.CancelledError:
-            # NOTE: to ensure that the cancelled task is reaped we must await it
-            servo.logger.warning(f"caught cancellation exception, awaiting: {wait_for_pod_task}")
-            await wait_for_pod_task
 
         await tuning_pod.refresh()
         await tuning_pod.get_containers()
@@ -3465,7 +3456,7 @@ class KubernetesConnector(servo.BaseConnector):
 
         await asyncio.gather(
             future,
-            progress.watch(progress_logger),
+            asyncio.shield(progress.watch(progress_logger)),
         )
 
         # Handle settlement
