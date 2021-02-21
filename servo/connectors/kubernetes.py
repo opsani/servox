@@ -100,7 +100,6 @@ class Condition(servo.logging.Mixin):
 
 async def wait_for_condition(
     condition: Condition,
-    timeout: Optional[servo.DurationDescriptor] = None,
     interval: servo.DurationDescriptor = 1,
     fail_on_api_error: bool = True,
 ) -> None:
@@ -139,17 +138,14 @@ async def wait_for_condition(
 
             except asyncio.CancelledError:
                 servo.logger.debug("wait for condition cancelled")
-                break
+                raise
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 servo.logger.warning(f"encountered API exception while waiting: {e}")
                 if fail_on_api_error:
                     raise
 
-    await asyncio.wait_for(
-        _wait_for_condition(),
-        timeout=(timeout and servo.Duration(timeout).total_seconds())
-    )
+    await _wait_for_condition()
     servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
@@ -403,7 +399,6 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     async def wait_until_ready(
         self,
-        timeout: Optional[servo.DurationDescriptor] = None,
         interval: servo.DurationDescriptor = 1,
         fail_on_api_error: bool = False,
     ) -> None:
@@ -432,14 +427,12 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
         await wait_for_condition(
             condition=ready_condition,
-            timeout=timeout,
             interval=interval,
             fail_on_api_error=fail_on_api_error,
         )
 
     async def wait_until_deleted(
         self,
-        timeout: Optional[servo.DurationDescriptor] = None,
         interval: servo.DurationDescriptor = 1
     ) -> None:
         """Wait until the resource is deleted from the cluster.
@@ -475,7 +468,6 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
         await wait_for_condition(
             condition=delete_condition,
-            timeout=timeout,
             interval=interval,
         )
 
@@ -1960,7 +1952,7 @@ class Deployment(KubernetesModel):
                 f"Deleting tuning Pod '{canary.name}' from namespace '{canary.namespace}'..."
             )
             await canary.delete()
-            await canary.wait_until_deleted(timeout=timeout)
+            await canary.wait_until_deleted()
             self.logger.info(
                 f"Deleted tuning Pod '{canary.name}' from namespace '{canary.namespace}'."
             )
@@ -2074,10 +2066,7 @@ class Deployment(KubernetesModel):
             wait_for_pod_task = asyncio.create_task(tuning_pod.wait_until_ready())
             wait_for_pod_task.add_done_callback(lambda _: progress.complete())
             await asyncio.wait_for(
-                asyncio.gather(
-                    wait_for_pod_task,
-                    progress.watch(progress_logger)
-                ),
+                wait_for_pod_task,
                 timeout=timeout.total_seconds()
             )
 
@@ -2472,7 +2461,7 @@ class DeploymentOptimization(BaseOptimization):
         """
         self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
         await asyncio.wait_for(
-            asyncio.gather(self.deployment.rollback()),
+            self.deployment.rollback(),
             timeout=self.timeout.total_seconds(),
         )
 
@@ -2485,7 +2474,7 @@ class DeploymentOptimization(BaseOptimization):
         """
         self.logger.info(f"adjustment failed: destroying deployment...")
         await asyncio.wait_for(
-            asyncio.gather(self.deployment.delete()),
+            self.deployment.delete(),
             timeout=self.timeout.total_seconds(),
         )
 
