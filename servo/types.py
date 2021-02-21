@@ -306,11 +306,8 @@ class BaseProgress(abc.ABC, BaseModel):
             if self.finished:
                 break
 
-            try:
-                await asyncio.sleep(every.total_seconds())
-                await async_notifier()
-            except asyncio.CancelledError:
-                break
+            await asyncio.sleep(every.total_seconds())
+            await async_notifier()
 
     def every(self, duration: DurationDescriptor) -> AsyncIterator[BaseProgress]:
         """Return an async iterator yielding a progress update every duration seconds.

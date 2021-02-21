@@ -2063,12 +2063,14 @@ class Deployment(KubernetesModel):
         progress.start()
 
         try:
-            wait_for_pod_task = asyncio.create_task(tuning_pod.wait_until_ready())
-            wait_for_pod_task.add_done_callback(lambda _: progress.complete())
+            async def _wait_and_complete() -> None:
+                await tuning_pod.wait_until_ready()
+                progress.complete()
+
             await asyncio.wait_for(
                 asyncio.gather(
-                    wait_for_pod_task,
-                    asyncio.shield(progress.watch(progress_logger))
+                    _wait_and_complete(),
+                    progress.watch(progress_logger)
                 ),
                 timeout=timeout.total_seconds()
             )
@@ -2076,6 +2078,9 @@ class Deployment(KubernetesModel):
         except asyncio.TimeoutError:
             servo.logger.debug("raising status for pod...")
             await tuning_pod.raise_for_status()
+
+        finally:
+            progress.complete()
 
         await tuning_pod.refresh()
         await tuning_pod.get_containers()
@@ -2300,7 +2305,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             error_logger.warning(f"reraising intercepted asyncio.CancelledError")
             raise error
 
-        if mode == FailureMode.crash:
+        if mode == FailureMode.exception:
             error_logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
             raise error
 
@@ -3130,7 +3135,7 @@ class FailureMode(str, enum.Enum):
     rollback = "rollback"
     destroy = "destroy"
     ignore = "ignore"
-    crash = "crash"
+    exception = "exception"
 
     @classmethod
     def options(cls) -> List[str]:
@@ -3191,7 +3196,7 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
     on_failure: FailureMode = pydantic.Field(
-        FailureMode.crash,
+        FailureMode.exception,
         description=f"How to handle a failed adjustment. Options are: {servo.utilities.strings.join_to_series(list(FailureMode.__members__.values()))}",
     )
     timeout: Optional[servo.Duration] = pydantic.Field(
