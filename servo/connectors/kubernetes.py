@@ -434,11 +434,20 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             self.is_ready,
         )
 
-        await wait_for_condition(
-            condition=ready_condition,
-            interval=interval,
-            fail_on_api_error=fail_on_api_error,
+        task = asyncio.create_task(
+            wait_for_condition(
+                condition=ready_condition,
+                interval=interval,
+                fail_on_api_error=fail_on_api_error,
+            )
         )
+        try:
+            await task
+        except asyncio.CancelledError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            raise
 
     async def wait_until_deleted(
         self,
@@ -475,10 +484,20 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
         delete_condition = Condition("api object deleted", deleted_fn)
 
-        await wait_for_condition(
-            condition=delete_condition,
-            interval=interval,
+        task = asyncio.create_task(
+            wait_for_condition(
+                condition=delete_condition,
+                interval=interval,
+            )
         )
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            raise
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -2076,16 +2095,21 @@ class Deployment(KubernetesModel):
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(
-                    task,
-                    asyncio.shield(progress.watch(progress_logger)),
+                asyncio.shield(
+                    asyncio.gather(
+                        task,
+                        progress.watch(progress_logger),
+                    ),
                 ),
                 timeout=timeout.total_seconds()
             )
 
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except asyncio.TimeoutError:
+            servo.logger.info(f"Canceling Task: {task}, progress: {progress}")
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+                servo.logger.info(f"Cancelled Task: {task}, progress: {progress}")
 
             servo.logger.exception("raising status for pod...")
             await tuning_pod.raise_for_status()
@@ -3469,7 +3493,7 @@ class KubernetesConnector(servo.BaseConnector):
 
         await asyncio.gather(
             future,
-            asyncio.shield(progress.watch(progress_logger)),
+            progress.watch(progress_logger),
         )
 
         # Handle settlement
