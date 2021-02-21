@@ -2066,7 +2066,10 @@ class Deployment(KubernetesModel):
             wait_for_pod_task = asyncio.create_task(tuning_pod.wait_until_ready())
             wait_for_pod_task.add_done_callback(lambda _: progress.complete())
             await asyncio.wait_for(
-                wait_for_pod_task,
+                asyncio.gather(
+                    wait_for_pod_task,
+                    progress.watch(progress_logger)
+                ),
                 timeout=timeout.total_seconds()
             )
 
@@ -2075,6 +2078,7 @@ class Deployment(KubernetesModel):
             servo.logger.warning(f"caught timeout exception, awaiting: {wait_for_pod_task}")
             await wait_for_pod_task
             await progress.wait()
+            servo.logger.debug("raising status for pod...")
             await tuning_pod.raise_for_status()
 
         except asyncio.CancelledError:
