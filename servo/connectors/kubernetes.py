@@ -150,6 +150,9 @@ async def wait_for_condition(
         await task
     except asyncio.CancelledError:
         task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
         raise
     finally:
         servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
@@ -2081,6 +2084,9 @@ class Deployment(KubernetesModel):
             )
 
         except (asyncio.TimeoutError, asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
             servo.logger.exception("raising status for pod...")
             await tuning_pod.raise_for_status()
 
