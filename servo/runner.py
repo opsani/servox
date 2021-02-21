@@ -121,7 +121,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
         if cmd_response.command == servo.api.Commands.describe:
             description = await self.describe()
-            self.logger.info(
+            self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
             self.logger.trace(devtools.pformat(description))
@@ -131,7 +131,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
         elif cmd_response.command == servo.api.Commands.measure:
             measurement = await self.measure(cmd_response.param)
-            self.logger.info(
+            self.logger.success(
                 f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
             )
             self.logger.trace(devtools.pformat(measurement))
