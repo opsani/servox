@@ -2092,24 +2092,24 @@ class Deployment(KubernetesModel):
 
         task = asyncio.create_task(tuning_pod.wait_until_ready())
         task.add_done_callback(lambda _: progress.complete())
+        gather_task = asyncio.gather(
+            task,
+            progress.watch(progress_logger),
+        )
 
         try:
             await asyncio.wait_for(
-                asyncio.shield(
-                    asyncio.gather(
-                        task,
-                        progress.watch(progress_logger),
-                    ),
-                ),
+                gather_task,
                 timeout=timeout.total_seconds()
             )
 
         except asyncio.TimeoutError:
             servo.logger.info(f"Canceling Task: {task}, progress: {progress}")
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-                servo.logger.info(f"Cancelled Task: {task}, progress: {progress}")
+            for t in {task, gather_task}:
+                t.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
+                    servo.logger.info(f"Cancelled Task: {t}, progress: {progress}")
 
             servo.logger.exception("raising status for pod...")
             await tuning_pod.raise_for_status()
