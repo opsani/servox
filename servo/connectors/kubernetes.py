@@ -138,15 +138,21 @@ async def wait_for_condition(
 
             except asyncio.CancelledError:
                 servo.logger.debug("wait for condition cancelled")
-                break
+                raise
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
                 servo.logger.warning(f"encountered API exception while waiting: {e}")
                 if fail_on_api_error:
                     raise
 
-    await _wait_for_condition()
-    servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
+    task = asyncio.create_task(_wait_for_condition())
+    try:
+        await task
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
+    finally:
+        servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
 class ResourceRequirements(enum.Flag):
@@ -2062,25 +2068,21 @@ class Deployment(KubernetesModel):
         )
         progress.start()
 
-        try:
-            async def _wait_and_complete() -> None:
-                await tuning_pod.wait_until_ready()
-                progress.complete()
+        task = asyncio.create_task(tuning_pod.wait_until_ready())
+        task.add_done_callback(lambda _: progress.complete())
 
+        try:
             await asyncio.wait_for(
-                asyncio.gather(
-                    _wait_and_complete(),
-                    progress.watch(progress_logger)
+                await asyncio.gather(
+                    task,
+                    asyncio.shield(progress.watch(progress_logger)),
                 ),
                 timeout=timeout.total_seconds()
             )
 
-        except asyncio.TimeoutError:
-            servo.logger.debug("raising status for pod...")
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            servo.logger.exception("raising status for pod...")
             await tuning_pod.raise_for_status()
-
-        finally:
-            progress.complete()
 
         await tuning_pod.refresh()
         await tuning_pod.get_containers()
