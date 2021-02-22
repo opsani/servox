@@ -237,6 +237,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
+        except asyncio.CancelledError:
+            pass
         except:
             servo.logger.exception("exception encountered during connect")
 
