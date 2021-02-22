@@ -205,7 +205,18 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         if self._main_loop_task:
             self._main_loop_task.cancel()
 
-        self._main_loop_task = asyncio.create_task(self.main_loop(), name="main loop")
+        def _reraise_if_necessary(task: asyncio.Task) -> None:
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                raise  # Task cancellation should not be logged as an error.
+            except Exception as error:  # pylint: disable=broad-except
+                self.logger.error(f"Exiting from servo main loop do to error: {error} (task={task})")
+                self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
+                raise error  # Ensure that we surface the error for handling
+
+        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
+        self._main_loop_task.add_done_callback(_reraise_if_necessary)
 
     async def run(self) -> None:
         self._running = True
@@ -237,10 +248,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
             self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
             await connect()
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as error:
+            self.logger.opt(exception=error).trace("task cancelled, aborting servo runner")
+            raise error
         except:
-            servo.logger.exception("exception encountered during connect")
+            self.logger.exception("exception encountered during connect")
 
         self.run_main_loop()
 
