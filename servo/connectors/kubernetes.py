@@ -1011,7 +1011,7 @@ class Pod(KubernetesModel):
 
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
-            if cond.reason == "Unschedulable":
+            if cond.reason in {"Unschedulable", "ContainersNotReady"}:
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
                 raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
 
