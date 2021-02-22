@@ -38,14 +38,20 @@ ENVOY_SIDECAR_LABELS = {
 }
 ENVOY_SIDECAR_DEFAULT_PORT = 9980
 
+class CPU(servo.connectors.kubernetes.CPU):
+    step: servo.connectors.kubernetes.Millicore = "125m"
+
+class Memory(servo.connectors.kubernetes.Memory):
+    step: servo.connectors.kubernetes.ShortByteSize = "128 MiB"
+
 class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
     namespace: str
     deployment: str
     container: str
     service: str
     port: Optional[Union[pydantic.StrictInt, str]] = None
-    cpu: servo.connectors.kubernetes.CPU
-    memory: servo.connectors.kubernetes.Memory
+    cpu: CPU
+    memory: Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
 
     @classmethod
@@ -55,8 +61,8 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             deployment="app-deployment",
             container="main",
             service="app",
-            cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
-            memory=servo.connectors.kubernetes.Memory(min="256 MiB", max="4.0 GiB", step="128 MiB"),
+            cpu=CPU(min="250m", max="4000m"),
+            memory=Memory(min="256 MiB", max="4.0 GiB"),
         )
 
     def generate_kubernetes_config(
