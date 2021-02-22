@@ -240,11 +240,21 @@ class Mixin(abc.ABC):
 
         return (operation, params)
 
+    def _is_fatal_status_code(error: Exception) -> bool:
+        if isinstance(error, httpx.HTTPStatusError):
+            if error.response.status_code < 500:
+                servo.logger.warning(f"Giving up on non-retryable HTTP status code {error.response.status_code} while requesting {error.request.url!r}.")
+                servo.logger.debug(f"HTTP request content: {devtools.pformat(error.request.read())}, response content: {devtools.pformat(error.response.content)}")
+                return True
+
+        return False
+
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
         max_time=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_time(),
         max_tries=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_tries(),
+        giveup=_is_fatal_status_code
     )
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
