@@ -2104,14 +2104,13 @@ class Deployment(KubernetesModel):
             )
 
         except asyncio.TimeoutError:
-            servo.logger.info(f"Canceling Task: {task}, progress: {progress}")
+            servo.logger.debug(f"Cancelling Task: {task}, progress: {progress}")
             for t in {task, gather_task}:
                 t.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await t
-                    servo.logger.info(f"Cancelled Task: {t}, progress: {progress}")
+                    servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
 
-            servo.logger.exception("raising status for pod...")
             await tuning_pod.raise_for_status()
 
         await tuning_pod.refresh()
@@ -2818,7 +2817,6 @@ class CanaryOptimization(BaseOptimization):
                     self.logger.warning(
                         f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
-                    self.logger.opt(exception=error).exception("")
 
                 await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
 
