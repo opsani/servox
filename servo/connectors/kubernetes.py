@@ -124,21 +124,23 @@ async def wait_for_condition(
     servo.logger.debug(f"waiting for condition: {condition}")
 
     started_at = datetime.datetime.now()
+    duration = servo.Duration(interval)
     async def _wait_for_condition() -> None:
+        servo.logger.debug(f"wait for condition: {condition}")
         while True:
             try:
-                servo.logger.debug(f"checking condition {condition}")
+                servo.logger.trace(f"checking condition {condition}")
                 if await condition.check():
-                    servo.logger.debug(f"condition passed: {condition}")
+                    servo.logger.trace(f"condition passed: {condition}")
                     break
 
                 # if the condition is not met, sleep for the interval
                 # to re-check later
-                servo.logger.debug(f"sleeping for {interval}")
-                await asyncio.sleep(interval)
+                servo.logger.trace(f"sleeping for {duration}")
+                await asyncio.sleep(duration.total_seconds())
 
             except asyncio.CancelledError:
-                servo.logger.debug("wait for condition cancelled")
+                servo.logger.trace(f"wait for condition cancelled: {condition}")
                 raise
 
             except kubernetes_asyncio.client.exceptions.ApiException as e:
@@ -2331,20 +2333,17 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-        error_logger = self.logger.opt(exception=error)
-
-        if isinstance(error, asyncio.CancelledError):
-            error_logger.warning(f"reraising intercepted asyncio.CancelledError")
-            raise error
-
-        if mode == FailureMode.exception:
-            error_logger.error(f"an unrecoverable failure occurred while interacting with Kubernetes: {error.__class__.__name__} - {str(error)}")
-            raise error
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
-            if mode == FailureMode.ignore:
-                error_logger.warning(f"ignoring Kubernetes runtime error and continuing: {error}")
+            self.logger.error(f"handling error with with failure mode {mode}: {error.__class__.__name__} - {str(error)}")
+            self.logger.opt(exception=error).debug(f"kubernetes error details")
+
+            if mode == FailureMode.exception:
+                raise error
+
+            elif mode == FailureMode.ignore:
+                self.logger.opt(exception=error).warning(f"ignoring exception")
                 return True
 
             elif mode == FailureMode.rollback:
@@ -2357,12 +2356,12 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
                 # Trap any new modes that need to be handled
                 raise NotImplementedError(
                     f"missing error handler for failure mode '{mode}'"
-                ) from error
+                )
 
             raise error # Always communicate errors to backend unless ignored
 
         except Exception as handler_error:
-            raise handler_error from error
+            raise handler_error from error  # reraising an error from itself is safe
 
 
     @abc.abstractmethod

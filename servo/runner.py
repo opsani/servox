@@ -154,10 +154,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
             except servo.AdjustmentFailedError as error:
+                self.logger.info(f"Adjustment failed: {error}")
                 status = servo.api.Status.from_error(error)
-                self.logger.exception(
-                    f"Adjustment failed: {error}"
-                )
+                self.logger.opt(exception=error).debug("Adjust failure details")
 
             return await self._post_event(servo.api.Events.adjust, status.dict())
 
