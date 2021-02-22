@@ -791,7 +791,7 @@ class PrometheusConnector(servo.BaseConnector):
                         report.append((response.metric.name, timestamp.isoformat(), value))
 
                 await publisher(servo.pubsub.Message(json=report))
-                logger.info(f"Published {len(report)} metrics.")
+                logger.debug(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(
@@ -872,7 +872,7 @@ class PrometheusConnector(servo.BaseConnector):
         if eager_metrics:
             servo.logger.info(f"Observing values of {len(eager_metrics)} eager metrics: measurement will return after {eager_settlement} of stability")
         else:
-            servo.logger.info(f"No eager metrics found: measurement will proceed for full duration of {measurement_duration}")
+            servo.logger.debug(f"No eager metrics found: measurement will proceed for full duration of {measurement_duration}")
 
         # Allow the maximum settlement time of eager metrics to elapse before eager return (None runs full duration)
         progress = servo.EventProgress(timeout=measurement_duration, settlement=eager_settlement)
