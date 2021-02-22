@@ -11,6 +11,10 @@ import servo
 import servo.connectors.kubernetes
 import tests.helpers
 
+import pydantic
+import re
+from servo.types import _suggest_step_aligned_values, _is_step_aligned
+
 # NOTE: These tests are brittle when run under uvloop. We run these under the default
 # asyncio event loop policy to avoid exceptions relating to pytest output capture.
 # The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
@@ -380,3 +384,56 @@ class TestService:
         await svc.patch()
         await svc.refresh()
         assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
+
+def test_step_alignment_calculations_cpu() -> None:
+    value, step = servo.connectors.kubernetes.Millicore.parse('4100m'), servo.connectors.kubernetes.Millicore.parse('125m')
+    lower, upper = _suggest_step_aligned_values(value, step, in_repr=servo.connectors.kubernetes.CPU.human_readable)
+    debug("values are ", lower, upper)
+
+@pytest.mark.parametrize(
+    "value, step, expected_lower, expected_upper",
+    [
+        ('1.3GiB', '128MiB', '1.0GiB', '1.5GiB'),
+        ('756MiB', '128MiB', '640.0MiB', '768.0MiB'),
+        ('96MiB', '32MiB', '96.0MiB', '128.0MiB'),
+        ('32MiB', '96MiB', '96.0MiB', '192.0MiB'),
+        ('4.4GiB', '128MiB', '4.0GiB', '4.5GiB'),
+        ('4.5GiB', '128MiB', '4.5GiB', '5.0GiB'),
+        ('128MiB', '128MiB', '128.0MiB', '256.0MiB'),
+    ]
+)
+def test_step_alignment_calculations_memory(value, step, expected_lower, expected_upper) -> None:
+    value_bytes, step_bytes = servo.connectors.kubernetes.ShortByteSize.validate(value), servo.connectors.kubernetes.ShortByteSize.validate(step)
+    lower, upper = _suggest_step_aligned_values(value_bytes, step_bytes, in_repr=servo.connectors.kubernetes.Memory.human_readable)
+    assert lower == expected_lower
+    assert upper == expected_upper
+    assert _is_step_aligned(servo.connectors.kubernetes.ShortByteSize.validate(lower), step_bytes)
+    assert _is_step_aligned(servo.connectors.kubernetes.ShortByteSize.validate(upper), step_bytes)
+
+@pytest.mark.parametrize(
+    "value, step, expected_lower, expected_upper",
+    [
+        ('250m', '64m', '192m', '256m'),
+        ('4100m', '250m', '4', '4250m'),
+        ('3', '100m', '3', '3100m'),
+    ]
+)
+def test_step_alignment_calculations_cpu(value, step, expected_lower, expected_upper) -> None:
+    value_millicores, step_millicores = servo.connectors.kubernetes.Millicore.parse(value), servo.connectors.kubernetes.Millicore.parse(step)
+    lower, upper = _suggest_step_aligned_values(value_millicores, step_millicores, in_repr=servo.connectors.kubernetes.CPU.human_readable)
+    assert lower == expected_lower
+    assert upper == expected_upper
+    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(lower), step_millicores)
+    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(upper), step_millicores)
+
+def test_cpu_not_step_aligned() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):
+        servo.connectors.kubernetes.CPU(
+            min="250m", max="4100m", step="125m"
+        )
+
+def test_memory_not_step_aligned() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):
+        servo.connectors.kubernetes.Memory(
+            min="256.0MiB", max="4.1GiB", step="128.0MiB"
+        )

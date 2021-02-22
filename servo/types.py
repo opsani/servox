@@ -8,6 +8,7 @@ import asyncio
 import datetime
 import decimal
 import enum
+import functools
 import inspect
 import operator
 import time
@@ -21,6 +22,7 @@ from typing import (
     Optional,
     Protocol,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -1041,10 +1043,12 @@ class RangeSetting(Setting):
 
         for boundary in ('min', 'max'):
             value = values[boundary]
+            value_type = value.__class__
             if value and not _is_step_aligned(value, step):
-                desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
+                suggested_lower, suggested_upper = _suggest_step_aligned_values(value, step, in_repr=cls.human_readable)
+                desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
                 raise ValueError(
-                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)}"
+                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)} (consider {suggested_lower} or {suggested_upper})."
                 )
 
         return values
@@ -1565,3 +1569,60 @@ def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
         return decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
     else:
         return decimal.Decimal(str(float(step))) % decimal.Decimal(str(float(value))) == 0
+
+def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[callable[[Numeric], str]] = None) -> Tuple(str, str):
+    if in_repr is None:
+        # return string identity by default
+        in_repr = lambda x: str(x)
+
+    # declare numeric and textual representations
+    parser = functools.partial(pydantic.parse_obj_as, value.__class__)
+    value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(str(float(step)))
+    lower_bound, upper_bound = value_dec, value_dec
+    value_repr, lower_repr, upper_repr = in_repr(parser(value_dec)), None, None
+
+    # Find the values that are closest on either side of the value
+    # Don't recommend anything smaller than step
+    while value_dec < step_dec:
+        value_dec += step_dec
+
+    remainder = value_dec % step_dec
+
+    # lower bound -- align by offseting by remainder
+    lower_bound -= remainder
+    assert lower_bound % step_dec == 0
+    while True:
+        # only decrement after first iteration
+        if lower_repr is not None:
+            lower_bound -= step_dec
+
+        # if we dip below the step, anchor on it as the minimum value
+        if lower_bound <= step_dec:
+            lower_bound = step_dec
+            lower_repr = in_repr(parser(lower_bound))
+            break
+
+        lower_repr = in_repr(parser(lower_bound))
+        # if we are step aligned take the current value as lower bound
+        if remainder != 0 and lower_repr == value_repr:
+            continue
+
+        # round trip the value to make sure its not a lossy representation
+        repr_decimal = decimal.Decimal(str(float(parser(lower_repr))))
+        if repr_decimal % step_dec == 0:
+            break
+
+    # upper bound -- start from the lower bound and find the next value
+    upper_bound = lower_bound
+    while True:
+        upper_bound += step_dec
+        upper_repr = in_repr(parser(upper_bound))
+        if upper_repr == value_repr:
+            continue
+
+        # round trip the value to make sure its not a lossy representation
+        repr_decimal = decimal.Decimal(str(float(parser(upper_repr))))
+        if repr_decimal % step_dec == 0:
+            break
+
+    return (lower_repr, upper_repr)

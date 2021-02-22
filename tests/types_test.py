@@ -556,6 +556,10 @@ class TestRangeSetting:
         assert error.value.errors()[0]["type"] == "value_error.const"
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
+    def test_validate_step_alignment_suggestion(self) -> None:
+        with pytest.raises(pydantic.ValidationError, match='asdasdd'):
+            RangeSetting(name="invalid", min=1.0, max=11.0, step=3.0)
+
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
         [

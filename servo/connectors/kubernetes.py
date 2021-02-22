@@ -7,6 +7,7 @@ import asyncio
 import contextlib
 import copy
 import datetime
+import decimal
 import enum
 import itertools
 import os
@@ -2157,7 +2158,7 @@ class Millicore(int):
                 return cls(int(v[:-1]))
             else:
                 return cls(int(float(v) * 1000))
-        elif isinstance(v, (int, float)):
+        elif isinstance(v, (int, float, decimal.Decimal)):
             return cls(int(v * 1000))
         else:
             raise ValueError("could not parse millicore value")
