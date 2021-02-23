@@ -14,9 +14,6 @@ import servo.types
 import servo.utilities
 
 
-USER_AGENT = "github.com/opsani/servox"
-
-
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
     ok = "ok"
@@ -319,7 +316,3 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
         components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
 
     return descriptor
-
-
-def user_agent() -> str:
-    return f"{USER_AGENT} v{servo.__version__}"

@@ -4,7 +4,9 @@ import abc
 import enum
 import inspect
 import json
+import os
 import pathlib
+import platform
 import re
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
@@ -23,6 +25,7 @@ __all__ = [
     "ServoConfiguration",
 ]
 
+USER_AGENT = "github.com/opsani/servox"
 
 class Optimizer(pydantic.BaseSettings):
     """
@@ -60,6 +63,10 @@ class Optimizer(pydantic.BaseSettings):
     and automated testing to bind the servo to a fixed URL.
     """
 
+    _user_agents_dict: Dict[str, str] = pydantic.PrivateAttr(default_factory=dict)
+    """Backing dictionary of user agent string to facilitate clean removal of information on connector detachment
+    """
+
     def __init__(self, id: str = None, **kwargs):
         if isinstance(id, str):
             org_domain, app_name = id.split("/")
@@ -67,6 +74,13 @@ class Optimizer(pydantic.BaseSettings):
             org_domain = kwargs.pop("org_domain", None)
             app_name = kwargs.pop("app_name", None)
         super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
+
+        ua_comment_dict = {"platform": platform.platform()}
+        if servo_ns := os.environ.get("POD_NAMESPACE"):
+            ua_comment_dict["namespace"] = servo_ns
+
+        ua_comment_str = "; ".join(list(map(lambda k,v: f"{k} {v}", ua_comment_dict.items())))
+        self._user_agents_dict[USER_AGENT] = f"/{servo.__version__} ({ua_comment_str})"
 
     @pydantic.root_validator(pre=True)
     @classmethod
@@ -77,6 +91,18 @@ class Optimizer(pydantic.BaseSettings):
             values["app_name"] = app_name
 
         return values
+
+    def add_user_agent(self, product: str, ver_comment: str):
+        if existing := self._user_agents_dict.get(product):
+            raise ValueError(
+                f"User agent for product {product} already defined on {self.id}: {product}/{existing}"
+            )
+        self._user_agents_dict[product] = ver_comment
+
+    def remove_user_agent(self, product: str):
+        removed = self._user_agents_dict.pop(product, None)
+        if not removed:
+            servo.logging.logger.warning(f"User Agents dict did not contain product {product} for removal")
 
     @property
     def id(self) -> str:
@@ -97,6 +123,16 @@ class Optimizer(pydantic.BaseSettings):
             self.url
             or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
         )
+
+    @property
+    def user_agent(self) -> str:
+        """
+        Returns a formatted user agent containing the servo version and environmental information set by the connectors
+        """
+        return " ".join(list(map(
+            lambda p, vc: f"{p}/{vc}",
+            self._user_agents_dict.items()
+        )))
 
     class Config:
         env_file = ".env"

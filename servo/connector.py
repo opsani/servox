@@ -19,6 +19,7 @@ import pkg_resources
 import pydantic
 
 import servo.api
+import servo.configuration
 import servo.events
 import servo.logging
 import servo.pubsub
@@ -215,7 +216,7 @@ class BaseConnector(
             "base_url": self.optimizer.api_url,
             "headers": {
                 "Authorization": f"Bearer {self.optimizer.token}",
-                "User-Agent": servo.api.user_agent(),
+                "User-Agent": self.optimizer.user_agent,
                 "Content-Type": "application/json",
             },
             "proxies": self._servo_config.proxies,

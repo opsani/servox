@@ -13,6 +13,7 @@ import itertools
 import os
 import operator
 import pathlib
+from servo.configuration import USER_AGENT
 from typing import (
     Any,
     Callable,
@@ -3465,6 +3466,23 @@ class KubernetesConnector(servo.BaseConnector):
     async def attach(self, servo_: servo.Servo) -> None:
         # Ensure we are ready to talk to Kubernetes API
         await self.config.load_kubeconfig()
+
+        # Set K8s version and target namespace for user agent
+        with self.logger.catch(level="DEBUG", message=f"Unable to set User Agent string for connector {self.name}"):
+            version = "UnknownVersion"
+            comment_dict = { "namespace": self.config.namespace }
+            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+                v1 =kubernetes_asyncio.client.VersionApi(api)
+                version_obj = await v1.get_code()
+                version = f"{version_obj.major}.{version_obj.minor}"
+                comment_dict["platform"] = version_obj.platform
+
+            comment_str = "; ".join(list(map(lambda k, v: f"{k} {v}", comment_dict.items())))
+            self.optimizer.add_user_agent(self.name, f"{version} ({comment_str})")
+
+    @servo.on_event()
+    async def detach(self, servo_: servo.Servo) -> None:
+        self.optimizer.remove_user_agent(self.name)
 
     @servo.on_event()
     async def describe(self) -> servo.Description:
