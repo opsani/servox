@@ -385,11 +385,6 @@ class TestService:
         await svc.refresh()
         assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
 
-def test_step_alignment_calculations_cpu() -> None:
-    value, step = servo.connectors.kubernetes.Millicore.parse('4100m'), servo.connectors.kubernetes.Millicore.parse('125m')
-    lower, upper = _suggest_step_aligned_values(value, step, in_repr=servo.connectors.kubernetes.CPU.human_readable)
-    debug("values are ", lower, upper)
-
 @pytest.mark.parametrize(
     "value, step, expected_lower, expected_upper",
     [

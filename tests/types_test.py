@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional, Union
+import re
 
 import freezegun
 import pydantic
@@ -557,7 +558,7 @@ class TestRangeSetting:
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
     def test_validate_step_alignment_suggestion(self) -> None:
-        with pytest.raises(pydantic.ValidationError, match='asdasdd'):
+        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
             RangeSetting(name="invalid", min=1.0, max=11.0, step=3.0)
 
     @pytest.mark.parametrize(
@@ -569,13 +570,13 @@ class TestRangeSetting:
                 1.0,
                 11.0,
                 3.0,
-                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0",
+                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
             ),
             (
                 3.0,
                 12.0,
                 2.0,
-                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0",
+                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0 (consider 2.0 or 4.0).",
             ),
         ],
     )
