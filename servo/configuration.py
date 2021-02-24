@@ -75,12 +75,15 @@ class Optimizer(pydantic.BaseSettings):
             app_name = kwargs.pop("app_name", None)
         super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
 
+        # Initialize User Agent
+        # (NOTE: as of python 3.7, dict insertion order is maintained as a feature of the
+        #   language so the servo UA will always be first unless removed for some reason)
         ua_comment_dict = {"platform": platform.platform()}
         if servo_ns := os.environ.get("POD_NAMESPACE"):
             ua_comment_dict["namespace"] = servo_ns
 
-        ua_comment_str = "; ".join(list(map(lambda k,v: f"{k} {v}", ua_comment_dict.items())))
-        self._user_agents_dict[USER_AGENT] = f"/{servo.__version__} ({ua_comment_str})"
+        ua_comment_str = "; ".join(list(map(lambda tup: f"{tup[0]} {tup[1]}", ua_comment_dict.items())))
+        self._user_agents_dict[USER_AGENT] = f"{servo.__version__} ({ua_comment_str})"
 
     @pydantic.root_validator(pre=True)
     @classmethod
@@ -130,7 +133,7 @@ class Optimizer(pydantic.BaseSettings):
         Returns a formatted user agent containing the servo version and environmental information set by the connectors
         """
         return " ".join(list(map(
-            lambda p, vc: f"{p}/{vc}",
+            lambda tup: f"{tup[0]}/{tup[1]}",
             self._user_agents_dict.items()
         )))
 
