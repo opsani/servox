@@ -1138,7 +1138,7 @@ class TestKubernetesClusterConnectorIntegration:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             version_obj = await v1.get_code()
 
-        expected = f"kubernetes/1.20 (namespace {namespace}; platform {version_obj.platform})"
+        expected = f"kubernetes/{version_obj.major}.{version_obj.minor} (namespace {namespace}; platform {version_obj.platform})"
 
         config_model = servo.assembly._create_config_model_from_routes({ "kubernetes": KubernetesConnector })
         config = config_model.parse_obj({"kubernetes": config})
