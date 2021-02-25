@@ -13,7 +13,6 @@ import itertools
 import os
 import operator
 import pathlib
-from servo.configuration import USER_AGENT
 from typing import (
     Any,
     Callable,

@@ -1,3 +1,4 @@
+import pathlib
 import pytest
 
 pytestmark = pytest.mark.system
@@ -12,7 +13,7 @@ async def test_run_servo_on_docker(servo_image: str, subprocess) -> None:
 
 @pytest.mark.skip(reason="moving away from minikube")
 async def test_run_servo_on_minikube(
-    minikube_servo_image: str, subprocess, kubeconfig: str,
+    minikube_servo_image: str, subprocess, kubeconfig: pathlib.Path,
 ) -> None:
     command = (
         f'kubectl --kubeconfig={kubeconfig} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{minikube_servo_image}" --'
@@ -27,7 +28,7 @@ async def test_run_servo_on_kind(
     kind: str,
     kind_servo_image: str,
     subprocess,
-    kubeconfig: str,
+    kubeconfig: pathlib.Path,
 ) -> None:
     await subprocess(f"kubectl --kubeconfig={kubeconfig} config view", print_output=True)
     command = (

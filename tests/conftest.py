@@ -431,7 +431,7 @@ def kubeconfig_path_from_config(config) -> pathlib.Path:
     return config_path
 
 @pytest.fixture
-def kubeconfig(request) -> str:
+def kubeconfig(request) -> pathlib.Path:
     """Return the path to a kubeconfig file to use when running integration tests.
 
     To avoid inadvertantly interacting with clusters not explicitly configured
@@ -441,7 +441,7 @@ def kubeconfig(request) -> str:
 
 
 @pytest.fixture
-async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optional[str]) -> None:
+async def kubernetes_asyncio_config(request, kubeconfig: pathlib.Path, kubecontext: Optional[str]) -> None:
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import logging
 
@@ -569,7 +569,7 @@ ForwardingTarget = Union[
 async def kubectl_ports_forwarded(
     target: ForwardingTarget,
     *ports: List[Tuple[int, int]],
-    kubeconfig: str,
+    kubeconfig: pathlib.Path,
     context: Optional[str],
     namespace: str,
 ) -> AsyncIterator[Union[str, Dict[int, str]]]:

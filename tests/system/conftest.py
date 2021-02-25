@@ -1,3 +1,4 @@
+import pathlib
 import os
 
 import pytest
@@ -53,7 +54,7 @@ async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> s
     yield servo_image
 
 @pytest.fixture
-async def kind(request, subprocess, kubeconfig: str, kubecontext: str) -> str:
+async def kind(request, subprocess, kubeconfig: pathlib.Path, kubecontext: str) -> str:
     """Run tests within a local kind cluster.
 
     The cluster name is determined using the parametrized `kind_cluster` marker
@@ -89,7 +90,7 @@ async def kind(request, subprocess, kubeconfig: str, kubecontext: str) -> str:
 # TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
 # TODO: add markers for the image, cluster name.
 @pytest.fixture
-async def kind_servo_image(kind: str, servo_image: str, subprocess, kubeconfig: str) -> str:
+async def kind_servo_image(kind: str, servo_image: str, subprocess, kubeconfig: pathlib.Path) -> str:
     """Asynchronously build a Docker image from the current working copy and load it into kind."""
     # TODO: Figure out how to checksum this and skip it if possible
     exit_code, _, _ = await subprocess(f"kind load docker-image --name {kind} {servo_image}", print_output=True)

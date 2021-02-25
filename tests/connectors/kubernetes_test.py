@@ -1132,7 +1132,8 @@ class TestKubernetesClusterConnectorIntegration:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, servo_yaml: pathlib.Path):
+    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, servo_yaml: pathlib.Path, kubeconfig: pathlib.Path):
+        config.kubeconfig = kubeconfig
         async with client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             version_obj = await v1.get_code()
