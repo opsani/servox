@@ -17,11 +17,22 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.5] "serenity now" - Unreleased
+## [0.9.5] "serenity now" - 2021-02-24
 
 ### Enhanced
 
 - Added support for deploying Opsani Dev on Kubernetes `NodePort` Services.
+- Range setting that are out of step alignment now suggest alternative values
+  to consider.
+- Normal operational logging is less verbose.
+
+### Fixed
+
+- Container restarts due to `CancellationError` in response to Kubernetes
+  adjustment failures are now avoided.
+- Kubernetes `ContainersNotReady` status upon timeout are now handled as
+  adjustment failures.
+- HTTP status code 4xx responses are no longer retried.
 
 ## [0.9.4] "serenity now" - 2021-02-17
 

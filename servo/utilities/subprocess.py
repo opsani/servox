@@ -262,9 +262,14 @@ async def stream_subprocess_shell(
         )
         end = time.time()
         duration = Duration(end - start)
-        loguru.logger.info(
-            f"Subprocess finished with return code {result} in {duration} (`{cmd}`)"
-        )
+        if result == 0:
+            loguru.logger.success(
+                f"Subprocess succeeded in {duration} (`{cmd}`)"
+            )
+        else:
+            loguru.logger.error(
+                f"Subprocess failed with return code {result} in {duration} (`{cmd}`)"
+            )
         return result
     except asyncio.TimeoutError as error:
         loguru.logger.warning(f"timeout expired waiting for subprocess to complete: {error}")

@@ -481,7 +481,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
                 hint=f"Patch annotations via: `{command}`",
-                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: _stream_remedy_command(command)
             )
 
     @servo.checks.require("Deployment PodSpec has expected labels")
@@ -505,7 +505,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
-                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: _stream_remedy_command(command)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
@@ -525,7 +525,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
-            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+            remedy=lambda: _stream_remedy_command(command)
         )
 
     @servo.checks.require("Pods have Envoy sidecar containers")
@@ -602,7 +602,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                         raise servo.checks.CheckError(
                             f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                             hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                            remedy=lambda: _stream_remedy_command(command)
                         )
                     summaries.append(f"{metric.name}={value}{metric.unit}")
                 elif metric.name == "main_error_rate":
@@ -641,7 +641,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
             hint=f"Update target port via: `{command}`",
-            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+            remedy=lambda: _stream_remedy_command(command)
         )
 
     @servo.check("Tuning pod is running")
@@ -725,3 +725,10 @@ class OpsaniDevConnector(servo.BaseConnector):
         return await OpsaniDevChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
+
+async def _stream_remedy_command(command: str) -> None:
+    await servo.utilities.subprocess.stream_subprocess_shell(
+        command,
+        stdout_callback=lambda msg: servo.logger.debug(f"[stdout] {msg}"),
+        stderr_callback=lambda msg: servo.logger.warning(f"[stderr] {msg}"),
+    )

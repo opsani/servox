@@ -1336,6 +1336,10 @@ class ServoCLI(CLI):
                             if failure:
                                 servo.logger.warning(f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")#, component=failure.id)
                                 # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
+                                if failure.hint:
+                                    servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
+                                    # typer.echo(f"  Hint: {failure.hint}")
+
                                 if failure.remedy:
                                     if asyncio.iscoroutinefunction(failure.remedy):
                                         task = asyncio.create_task(failure.remedy())
@@ -1356,14 +1360,10 @@ class ServoCLI(CLI):
                                                 task,
                                                 10.0
                                             )
-                                        except asyncio.TimeoutError:
-                                            pass
+                                        except asyncio.TimeoutError as error:
+                                            servo.logger.warning("💡 Remedy attempt timed out after 10s")
                                     else:
                                         task.cancel()
-
-                                if failure.hint:
-                                    servo.logger.info(f"Hint: {failure.hint}")#, component=failure.id)
-                                    # typer.echo(f"  Hint: {failure.hint}")
                             else:
                                 # nothing is left failing, spike the football
                                 servo.logger.info("🔥 All checks passed.")
