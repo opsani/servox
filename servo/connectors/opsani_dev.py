@@ -729,6 +729,6 @@ class OpsaniDevConnector(servo.BaseConnector):
 async def _stream_remedy_command(command: str) -> None:
     await servo.utilities.subprocess.stream_subprocess_shell(
         command,
-        stdout_callback=lambda msg: servo.logger.info(f"[stdout] {msg}"),
+        stdout_callback=lambda msg: servo.logger.debug(f"[stdout] {msg}"),
         stderr_callback=lambda msg: servo.logger.warning(f"[stderr] {msg}"),
     )

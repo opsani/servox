@@ -1361,7 +1361,7 @@ class ServoCLI(CLI):
                                                 10.0
                                             )
                                         except asyncio.TimeoutError as error:
-                                            servo.logger.error("💡 Remedy attempt timed out after 10s")
+                                            servo.logger.warning("💡 Remedy attempt timed out after 10s")
                                     else:
                                         task.cancel()
                             else:
