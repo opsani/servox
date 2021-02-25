@@ -8,8 +8,6 @@ import pytest
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
-import platform
-import respx
 
 from servo.connectors.kubernetes import (
     CPU,
@@ -1134,42 +1132,27 @@ class TestKubernetesClusterConnectorIntegration:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    # TODO: seperate the non-kuberntes bits into their own unit-test including the check invocation and call verification
-    @respx.mock
-    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, servo_yaml: pathlib.Path, monkeypatch):
-        monkeypatch.setenv("POD_NAMESPACE", namespace)
-
+    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, servo_yaml: pathlib.Path):
         async with client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             version_obj = await v1.get_code()
 
-        expected = (
-            f"github.com/opsani/servox/{servo.__version__} (platform {platform.platform()}; namespace {namespace}) "
-            f"kubernetes/1.20 (namespace {namespace}; platform {version_obj.platform})"
-        )
+        expected = f"kubernetes/1.20 (namespace {namespace}; platform {version_obj.platform})"
 
         config_model = servo.assembly._create_config_model_from_routes({ "kubernetes": KubernetesConnector })
         config = config_model.parse_obj({"kubernetes": config})
-        servo_yaml.write_text(config.yaml(exclude_unset=True))
+        servo_yaml.write_text(config.yaml(exclude_none=True))
 
         optimizer = servo.Optimizer(
             id="servox.opsani.com/tests",
             token="00000000-0000-0000-0000-000000000000",
         )
-        assembly_ = await servo.assembly.Assembly.assemble(
+        await servo.assembly.Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
 
         # Validate correct construction
-        assert optimizer.user_agent == expected
-
-        # Validate UA string included in headers
-        request = respx.post("https://api.opsani.com/accounts/servox.opsani.com/applications/tests/servo")
-
-        await assembly_.dispatch_event("check", matching=None, include=["servox.opsani.com/tests"])
-
-        assert request.called
-        assert request.calls.last.request.headers['user-agent'] == expected
+        assert optimizer.user_agent.endswith(expected)
 
 
 ##
