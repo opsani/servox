@@ -1,0 +1,43 @@
+loaders:
+  - type: python
+processors:
+  - type: filter
+  - type: smart
+  - type: crossref
+renderer:
+  type: mkdocs
+  pages:
+    - title: Home
+      name: index
+      source: README.md
+    - title: API Documentation
+      contents:
+        - '*'
+  mkdocs_config:
+    # Project information
+    site_name: Opsani ServoX
+    site_url: https://opsani.github.io/servox/
+    site_author: Blake Watters
+    site_description: >-
+      Optimize your cloud native application.
+    # Repository
+    repo_name: opsani/servox
+    repo_url: https://github.com/opsani/servox
+    edit_uri: ""
+
+    # Copyright
+    copyright: Copyright &copy; 2018 - 2020 Opsani
+
+    theme:
+      name: material
+      palette:
+        scheme: slate
+        primary: indigo
+        accent: blue
+      font:
+        text: Montserrat
+        code: Source Code Pro
+      favicon: images/cropped-Opsaniv2.1_icon-192x192.png
+      icon:
+        # logo: octicons/code-16
+        logo: fontawesome/solid/terminal
