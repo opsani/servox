@@ -636,6 +636,8 @@ async def kubectl_ports_forwarded(
         yield ports_to_urls
 
     task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 @pytest.fixture()
 async def kube_port_forward(
