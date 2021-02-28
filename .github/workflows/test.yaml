@@ -48,7 +48,7 @@ jobs:
           pip install poetry==1.1.*
           poetry config virtualenvs.in-project true
       - name: Set up cache
-        uses: actions/cache@v2.1.1
+        uses: actions/cache@v2.1.4
         id: cached-poetry-dependencies
         with:
           path: .venv
@@ -75,7 +75,7 @@ jobs:
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
     # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
+    #   uses: actions/cache@v2.1.4
     #   id: cached-poetry-dependencies
     #   with:
     #     path: .venv
@@ -128,7 +128,7 @@ jobs:
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
     # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
+    #   uses: actions/cache@v2.1.4
     #   id: cached-poetry-dependencies
     #   with:
     #     path: .venv
@@ -180,7 +180,7 @@ jobs:
         pip install poetry==1.1.*
         poetry config virtualenvs.in-project true
     # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
+    #   uses: actions/cache@v2.1.4
     #   id: cached-poetry-dependencies
     #   with:
     #     path: .venv
