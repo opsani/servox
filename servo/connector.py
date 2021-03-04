@@ -19,6 +19,7 @@ import pkg_resources
 import pydantic
 
 import servo.api
+import servo.configuration
 import servo.events
 import servo.logging
 import servo.pubsub
