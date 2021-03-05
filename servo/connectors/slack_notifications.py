@@ -8,6 +8,8 @@ import abc
 import backoff
 import pydantic
 
+from aiohttp.client_exceptions import ClientError
+
 from slack_sdk.errors import SlackApiError
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.webhook.async_client import AsyncWebhookClient
@@ -15,19 +17,19 @@ from slack_sdk.webhook.async_client import AsyncWebhookClient
 import servo
 from servo.events import EventContext
 
+class SlackBlockText(pydantic.BaseModel):
+    type: str = "mrkdwn"
+    text: str
+
 class SlackBlock(pydantic.BaseModel):
     type: str = "section"
-    text: Union[SlackBlockText, str]
+    text: SlackBlockText
 
     @pydantic.validator("text", pre=True)
     def coerce_str_to_block_text(cls, v):
         if isinstance(v, str):
             return SlackBlockText(text=v)
         return v
-
-class SlackBlockText(pydantic.BaseModel):
-    type: str = "mrkdwn"
-    text: str
 
 class BaseSlackNotifier(servo.BaseConfiguration, abc.ABC):
     name: Optional[str] = None
@@ -43,25 +45,31 @@ class BaseSlackNotifier(servo.BaseConfiguration, abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def send(self, blocks: List[str]) -> None:
+    async def send(self, blocks: List[str], text: str) -> None:
         ...
 
     _client: Union[AsyncWebClient, AsyncWebhookClient] = pydantic.PrivateAttr(None)
 
 
 class SlackIncomingWebhookNotifier(BaseSlackNotifier):
-    incoming_webhook: pydantic.SecretStr
+    """Configuration for sending slack notifications by Incoming Webhook
+    """
+
+    url: pydantic.SecretStr
     """A Slack Incoming Webhook URL used to post messages
     """
 
     def init_client(self) -> None:
-        self._client = AsyncWebhookClient(url=self.incoming_webhook.get_secret_value())
+        self._client = AsyncWebhookClient(url=self.url.get_secret_value())
 
-    async def send(self, blocks: List[str]) -> None:
-        return await self._client.send(blocks=blocks)
+    async def send(self, blocks: List[str], text: str) -> None:
+        return await self._client.send(blocks=blocks, text=text)
 
 
 class SlackWebApiNotifier(BaseSlackNotifier):
+    """Configuration for sending slack notifications by Web API
+    """
+
     channel_id: str
     """ID of slack channel to which notifications should be posted
     """
@@ -75,10 +83,11 @@ class SlackWebApiNotifier(BaseSlackNotifier):
     def init_client(self) -> None:
         self._client = AsyncWebClient(token=self.bot_token.get_secret_value())
 
-    async def send(self, blocks: List[str]) -> None:
+    async def send(self, blocks: List[str], text: str) -> None:
         return await self._client.chat_postMessage(
             blocks=blocks,
             channel=self.channel_id,
+            text=text,
         )
 
 
@@ -93,7 +102,7 @@ class SlackNotificationsConfiguration(servo.AbstractBaseConfiguration):
                     name="Adjust Notify",
                     description="Listens for adjust events and notifies a slack channel on before start and on completion",
                     events=["adjust"],
-                    incoming_webhook="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+                    url="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
                 )
             ]
         )
@@ -109,8 +118,8 @@ def fatal_slack_error(e: SlackApiError):
     return e.response["error"] != "rate_limit"
 
 @backoff.on_exception(backoff.expo, SlackApiError, max_tries=3, giveup=fatal_slack_error)
-async def _send_blocks_with_backoff(notifier: BaseSlackNotifier, blocks: List[SlackBlock]):
-    return await notifier.send(blocks=blocks)
+async def _send_with_backoff(notifier: BaseSlackNotifier, blocks: List[SlackBlock], text: str):
+    return await notifier.send(blocks=blocks, text=text)
 
 @servo.metadata(
     description="Slack notifications integration connector",
@@ -137,42 +146,42 @@ class SlackNotificationsConnector(servo.BaseConnector):
 
                 if event.preposition & servo.Preposition.before:
                     self._add_before_event_slack_notifier(notifier, event)
-                elif event.preposition & servo.Preposition.after:
+                if event.preposition & servo.Preposition.after:
                     self._add_after_event_slack_notifier(notifier, event)
-                else:
+                if not event.preposition & servo.Preposition.all:
                     raise ValueError(f"Unsupported Preposition value given for webhook: '{event.preposition}'")
 
     def _add_before_event_slack_notifier(self, notifier: BaseSlackNotifier, event: EventContext) -> None:
-        text = f"Servo started the {event.event.name} event!"
+        block_text = text = f"Servo started the {event.event.name} event!"
         if self.optimizer:
             console_url = f"https://console.opsani.com/accounts/{self.optimizer.org_domain}/applications/{self.optimizer.app_name}"
-            text = f"{text} Check out its progress on the <{console_url}|Opsani Dashboard>"
+            block_text = f"{block_text} Check out its progress on the <{console_url}|Opsani Dashboard>"
 
         async def __before_handler(self) -> None:
-            blocks = [SlackBlock(text=text).dict()]
+            blocks = [SlackBlock(text=block_text).dict()] 
             try:
-                await _send_blocks_with_backoff(notifier, blocks)
-            except SlackApiError as e:
-                self.logger.opt(exception=e).trace("Unable to send before event notification to slack")
+                await _send_with_backoff(notifier, blocks, text)
+            except (SlackApiError, ClientError) as e:
+                self.logger.opt(exception=e).trace(f"Unable to send before {event.event.name} event notification to slack")
 
-        self.add_event_handler(event.event, event.preposition, __before_handler)
+        self.add_event_handler(event.event, servo.Preposition.before, __before_handler)
 
     def _add_after_event_slack_notifier(self, notifier: BaseSlackNotifier, event: EventContext) -> None:
         if self.optimizer:
             console_url = f"https://console.opsani.com/accounts/{self.optimizer.org_domain}/applications/{self.optimizer.app_name}"
 
         async def __after_handler(self, results: List[servo.EventResult]) -> None:
-            text = f"{len(results)} Servo connectors completed the {event.event.name} event!"
+            block_text = text = f"{len(results)} Servo connectors completed the {event.event.name} event!"
             errors = list(filter(lambda r: isinstance(r.value, Exception), results))
             if errors:
-                text = f"{text} {len(errors)} connectors had an error result." # TODO: emoji
+                block_text = f"{block_text} {len(errors)} connectors had an error result." # TODO: emoji
                 if console_url:
-                    text = f"{text} Check out the <{console_url}/logs|Opsani Console Logs> for more information"
+                    block_text = f"{block_text} Check out the <{console_url}/logs|Opsani Console Logs> for more information"
 
-            blocks = [SlackBlock(text=text).dict()] 
+            blocks = [SlackBlock(text=block_text).dict()] 
             try:
-                await _send_blocks_with_backoff(notifier, blocks)
-            except SlackApiError as e:
-                self.logger.opt(exception=e).trace("Unable to send after event notification to slack")
+                await _send_with_backoff(notifier, blocks, text)
+            except (SlackApiError, ClientError) as e:
+                self.logger.opt(exception=e).trace(f"Unable to send after {event.event.name} event notification to slack")
 
-        self.add_event_handler(event.event, event.preposition, __after_handler)
+        self.add_event_handler(event.event, servo.Preposition.after, __after_handler)
