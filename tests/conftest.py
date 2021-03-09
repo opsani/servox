@@ -564,7 +564,6 @@ ForwardingTarget = Union[
 ]
 
 
-@backoff.on_exception(backoff.expo, (asyncio.TimeoutError, RuntimeError), max_tries=10, max_time=10)
 @contextlib.asynccontextmanager
 async def kubectl_ports_forwarded(
     target: ForwardingTarget,
@@ -627,17 +626,18 @@ async def kubectl_ports_forwarded(
         if a_socket.connect_ex(("localhost", local_port)) != 0:
             raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
 
-    if len(ports) == 1:
-        url = f"http://localhost:{ports[0][0]}"
-        yield url
-    else:
-        # Build a mapping of from target ports to the forwarded URL
-        ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
-        yield ports_to_urls
-
-    task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    try:
+        if len(ports) == 1:
+            url = f"http://localhost:{ports[0][0]}"
+            yield url
+        else:
+            # Build a mapping of from target ports to the forwarded URL
+            ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
+            yield ports_to_urls
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 @pytest.fixture()
 async def kube_port_forward(
