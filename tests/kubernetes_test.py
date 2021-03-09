@@ -165,9 +165,19 @@ class TestSidecar:
 
     async def test_inject_sidecar_by_service_and_port_name(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
-        # change the container port so we don't conflict
-        deployment.obj.spec.template.spec.containers[0].ports[0].container_port = 9999
-        await deployment.replace()
+        # NOTE: This can generate a 409 Conflict failure under CI
+        for _ in range(3):
+            try:
+                # change the container port so we don't conflict
+                deployment.obj.spec.template.spec.containers[0].ports[0].container_port = 9999
+                await deployment.replace()
+                break
+
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status == 409 and e.reason == 'Conflict':
+                    # If we have a conflict, just load the existing object and continue
+                    await deployment.refresh()
+
 
         assert len(deployment.containers) == 1
         await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='http')
