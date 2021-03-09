@@ -29,7 +29,8 @@ jobs:
     needs: pre_job
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
-      github.repository == 'opsani/servox'
+      github.repository == 'opsani/servox' &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       -
