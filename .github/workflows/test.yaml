@@ -117,6 +117,7 @@ jobs:
       - setup_build
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
+      github.actor != 'dependabot[bot]' &&
       (github.ref == 'refs/heads/main' ||
       startsWith(github.ref, 'refs/heads/release/') ||
       startsWith(github.ref, 'refs/heads/bugfix/') ||
@@ -175,6 +176,7 @@ jobs:
       - setup_build
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
+      github.actor != 'dependabot[bot]' &&
       (github.ref == 'refs/heads/main' ||
       startsWith(github.ref, 'refs/heads/release/') ||
       startsWith(github.ref, 'refs/heads/bugfix/') ||
