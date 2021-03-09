@@ -524,6 +524,7 @@ class TestServiceMultiport:
                         results = await checks.run_all()
                         next_failure = next(filter(lambda r: r.success is False, results), None)
                         if next_failure:
+                            servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")
                             await _remedy_check(
                                 next_failure.id,
                                 config=checks.config,
