@@ -346,7 +346,7 @@ class TestChecks:
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": "500"})
         await deployment.patch()
         try:
-            await deployment.wait_until_ready(5)
+            await asyncio.wait_for(deployment.wait_until_ready(), timeout=2.0)
         except asyncio.TimeoutError:
             pass
 
@@ -428,7 +428,7 @@ def test_cpu_not_step_aligned() -> None:
         )
 
 def test_memory_not_step_aligned() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):
+    with pytest.raises(pydantic.ValidationError, match=re.escape("Memory('mem' 256.0MiB-4.1GiB, 128.0MiB) max is not step aligned: 4.1GiB is not a multiple of 128.0MiB (consider 4.0GiB or 4.5GiB).")):
         servo.connectors.kubernetes.Memory(
             min="256.0MiB", max="4.1GiB", step="128.0MiB"
         )
