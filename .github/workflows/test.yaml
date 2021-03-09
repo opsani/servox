@@ -57,6 +57,7 @@ jobs:
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
+      # NOTE: Install our root project into the venv cache without busting it
       - name: Install root project
         run: poetry install --no-interaction
 
@@ -86,8 +87,6 @@ jobs:
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root
-    - name: Install root project
       run: poetry install --no-interaction
     - name: Run tests
       run: |
@@ -142,8 +141,6 @@ jobs:
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root
-    - name: Install root project
       run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -197,8 +194,6 @@ jobs:
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
     - name: Install dependencies
       if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root
-    - name: Install root project
       run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
