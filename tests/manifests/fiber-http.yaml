@@ -34,6 +34,7 @@ spec:
       # Primary container providing the fiber-http web service
       - name: fiber-http
         image: opsani/fiber-http:latest
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             cpu: 125m
