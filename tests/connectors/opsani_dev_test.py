@@ -472,7 +472,6 @@ class TestServiceMultiport:
                 servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
                 async with kube_port_forward(f"service/fiber-http", port) as service_url:
                     await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
-                    await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
 
                 targets = await wait_for_targets_to_be_scraped()
                 assert len(targets) == 2
