@@ -65,6 +65,8 @@ jobs:
           path: .venv
           key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
       - name: Install root project
+        # NOTE: Skipping root project install accelerates cases where only tests have changed
+        if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
   unit:
