@@ -271,13 +271,13 @@ class OpsaniDevChecks(servo.BaseChecks):
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container
-        assert container.resources
-        assert container.resources.requests
-        assert container.resources.requests["cpu"]
-        assert container.resources.requests["memory"]
-        assert container.resources.limits
-        assert container.resources.limits["cpu"]
-        assert container.resources.limits["memory"]
+        assert container.resources, "missing container resources"
+        assert container.resources.requests, "missing requests for container resources"
+        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+        assert container.resources.limits, "missing limits for container resources"
+        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
