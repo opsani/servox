@@ -765,7 +765,7 @@ class LoadGenerator(pydantic.BaseModel):
             async with httpx.AsyncClient() as client:
                 while not self._event.is_set():
                     servo.logger.info(f"Sending traffic to {self.url}...")
-                    response = await client.send(self.request)
+                    response = await client.send(self.request, timeout=1.0)
                     response.raise_for_status()
                     self.request_count += 1
 
@@ -791,7 +791,7 @@ class LoadGenerator(pydantic.BaseModel):
         self,
         condition: Union[servo.Futuristic, servo.DurationDescriptor],
         *,
-        timeout: servo.DurationDescriptor = servo.Duration("5m")
+        timeout: servo.DurationDescriptor = servo.Duration("1m")
     ) -> None:
         """Send traffic until a condition is met or a timeout expires.
 
@@ -819,14 +819,18 @@ class LoadGenerator(pydantic.BaseModel):
             self.start()
 
         try:
+            duration = servo.Duration(timeout)
             await asyncio.wait_for(
                 future,
-                timeout=servo.Duration(timeout).total_seconds()
+                timeout=duration.total_seconds()
             )
+        except asyncio.TimeoutError:
+            servo.logger.error(f"Timed out after {duration} waiting for condition: {condition}")
         finally:
             self.stop()
 
-        await asyncio.gather(self._task, return_exceptions=True)
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
 
 @pytest.fixture
 def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
@@ -835,7 +839,7 @@ def load_generator() -> Callable[[Union[str, httpx.Request]], LoadGenerator]:
 async def wait_for_check_to_pass(
     check: Coroutine[None, None, servo.Check],
     *,
-    timeout: servo.Duration = servo.Duration("45s")
+    timeout: servo.Duration = servo.Duration("15s")
 ) -> servo.Check:
     async def _loop_check() -> servo.Check:
         while True:
@@ -851,7 +855,7 @@ async def wait_for_check_to_pass(
             timeout=timeout.total_seconds()
         )
     except asyncio.TimeoutError as err:
-        devtools.debug("Check timed out. Final state: ", check)
+        servo.logger.error(f"Check timed out after {timeout}. Final state: {devtools.pformat(check)}")
         raise err
 
     return check
