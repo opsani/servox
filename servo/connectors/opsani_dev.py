@@ -337,10 +337,12 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.deployment, self.config.namespace
         )
 
-        # NOTE: The Service labels should be a subset of the deployment labels
+        # NOTE: The Service labels should be a subset of the Deployment labels
         deployment_labels = deployment.obj.spec.selector.match_labels
-        if not service.selector.items() <= deployment_labels.items():
-            raise RuntimeError(f"Service selector does not match Deployment labels")
+        delta = dict(set(service.selector.items()) - set(deployment_labels.items()))
+        if delta:
+            desc = ' '.join(map('='.join, delta.items()))
+            raise RuntimeError(f"Service selector does not match Deployment labels. Missing labels: {desc}")
 
     ##
     # Prometheus sidecar
