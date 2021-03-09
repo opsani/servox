@@ -1127,10 +1127,6 @@ class TestKubernetesConnectorIntegration:
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
-    @pytest.fixture(autouse=True)
-    def _wait_for_manifests(self, kube):
-        kube.wait_for_registered(timeout=3.0)
-
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
