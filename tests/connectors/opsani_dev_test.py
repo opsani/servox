@@ -765,8 +765,11 @@ class LoadGenerator(pydantic.BaseModel):
             async with httpx.AsyncClient() as client:
                 while not self._event.is_set():
                     servo.logger.info(f"Sending traffic to {self.url}...")
-                    response = await client.send(self.request, timeout=1.0)
-                    response.raise_for_status()
+                    try:
+                        await client.send(self.request, timeout=1.0)
+                    except httpx.TimeoutException as err:
+                        servo.logger.warning(f"httpx.TimeoutException encountered sending request {self.request}: {err}")
+                        pass
                     self.request_count += 1
 
             duration = servo.Duration(datetime.datetime.now() - started_at)

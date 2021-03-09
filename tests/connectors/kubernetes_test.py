@@ -1141,6 +1141,14 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
+        # NOTE: This can generate a 409 Conflict failure under CI
         with pytest.raises(AdjustmentRejectedError):
-            description = await connector.adjust([adjustment])
-            debug(description)
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e
