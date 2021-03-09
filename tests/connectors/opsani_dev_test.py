@@ -764,7 +764,7 @@ class LoadGenerator(pydantic.BaseModel):
             started_at = datetime.datetime.now()
             async with httpx.AsyncClient() as client:
                 while not self._event.is_set():
-                    servo.logger.info(f"Sending traffic to {self.url}...")
+                    servo.logger.trace(f"Sending traffic to {self.url}...")
                     try:
                         await client.send(self.request, timeout=1.0)
                     except httpx.TimeoutException as err:
@@ -896,7 +896,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
             servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
             await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
-    elif id in {'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
+    elif id in {'check_prometheus_sidecar_exists', 'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
         servo.logger.warning(f"check failed: {id}")
         pass
 

@@ -101,7 +101,7 @@ class Condition(servo.logging.Mixin):
 
 async def wait_for_condition(
     condition: Condition,
-    interval: servo.DurationDescriptor = 1,
+    interval: servo.DurationDescriptor = 0.25,
     fail_on_api_error: bool = True,
 ) -> None:
     """Wait for a condition to be met.
@@ -2645,7 +2645,7 @@ class CanaryOptimization(BaseOptimization):
                 config.strategy.alias
                 if isinstance(config.strategy, CanaryOptimizationStrategyConfiguration)
                 and config.strategy.alias
-                else f"{deployment.name}/{tuning_container.name}-canary"
+                else f"{deployment.name}/{tuning_container.name}-tuning"
             )
 
             return cls(
@@ -3522,7 +3522,7 @@ class KubernetesConnector(servo.BaseConnector):
                         raise servo.AdjustmentRejectedError(
                             reason="Optimization target became unready during adjustment settlement period"
                         )
-                    await asyncio.sleep(servo.Duration('5s').total_seconds())
+                    await asyncio.sleep(servo.Duration('1s').total_seconds())
 
             await asyncio.gather(
                 progress.watch(progress_logger),

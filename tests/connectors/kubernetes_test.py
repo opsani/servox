@@ -1022,16 +1022,11 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration,
         namespace
     ) -> None:
-        await asyncio.sleep(1.0)
-        # debug("SETTING TIMEOUT TO 2s")
-        tuning_config.timeout = "2s"
-        # for deployment_config in tuning_config.deployments:
-        #     deployment_config.timeout = "2s"
-        # debug("SET TIMEOUT TO 2s: ", tuning_config.timeout)
+        tuning_config.timeout = "10s"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-canary",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
             value="128Gi", # impossible right?
         )
@@ -1043,17 +1038,17 @@ class TestKubernetesConnectorIntegration:
 
 
     async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
-        await asyncio.sleep(1.0)
+        tuning_config.timeout = "10s"
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-canary",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="cpu",
             value=".250",
         )
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
         assert description is not None
-        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert setting
         assert setting.value == 250
 
