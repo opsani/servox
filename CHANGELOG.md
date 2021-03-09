@@ -17,6 +17,21 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] "serenity now" - Unreleased
+
+### Enhanced
+
+- Opsani Dev checks for traffic flows are faster.
+- Service check errors now include the missing labels.
+
+### Fixed
+
+- Traffic checks no longer require a 2xx status code to pass.
+- Load testing hints using Vegeta now include `kubectl exec` stanza to run
+  remotely rather than on the local workstation.
+- Resource requirements now output a sensible error message rather than raising
+  a `KeyError` when `cpu` or `memory` are not defined.
+
 ## [0.9.5] "serenity now" - 2021-02-24
 
 ### Enhanced
