@@ -271,13 +271,13 @@ class OpsaniDevChecks(servo.BaseChecks):
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container
-        assert container.resources
-        assert container.resources.requests
-        assert container.resources.requests["cpu"]
-        assert container.resources.requests["memory"]
-        assert container.resources.limits
-        assert container.resources.limits["cpu"]
-        assert container.resources.limits["memory"]
+        assert container.resources, "missing container resources"
+        assert container.resources.requests, "missing requests for container resources"
+        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+        assert container.resources.limits, "missing limits for container resources"
+        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
@@ -337,10 +337,12 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.deployment, self.config.namespace
         )
 
-        # NOTE: The Service labels should be a subset of the deployment labels
+        # NOTE: The Service labels should be a subset of the Deployment labels
         deployment_labels = deployment.obj.spec.selector.match_labels
-        if not service.selector.items() <= deployment_labels.items():
-            raise RuntimeError(f"Service selector does not match Deployment labels")
+        delta = dict(set(service.selector.items()) - set(deployment_labels.items()))
+        if delta:
+            desc = ' '.join(map('='.join, delta.items()))
+            raise RuntimeError(f"Service selector does not match Deployment labels. Missing labels: {desc}")
 
     ##
     # Prometheus sidecar
@@ -521,7 +523,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             if container.name == "opsani-envoy":
                 return
 
-        command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
+        command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
@@ -569,57 +571,28 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
-        # NOTE: We zero the metrics so we don't have to worry about missing vs. flatlined in this context
-        metrics = [
-            servo.connectors.prometheus.PrometheusMetric(
-                "main_request_rate",
-                servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
-                step="10s",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
-            ),
-            servo.connectors.prometheus.PrometheusMetric(
-                "main_error_rate",
-                servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[10s]))',
-                step="10s",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
-            )
-        ]
+        # NOTE: We don't care about the response status code, we don't want to zero the metric so that we can tell if its reporting
+        metric = servo.connectors.prometheus.PrometheusMetric(
+            "tuning_request_rate",
+            servo.types.Unit.requests_per_second,
+            query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
+            step="1s"
+        )
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
-        summaries = []
-        for metric in metrics:
-            response = await client.query(metric)
-            if response.data:
-                assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
-                assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
-                result = response.data[0]
-
-                if metric.name == "main_request_rate":
-                    timestamp, value = result.value
-                    if not value > 0.0:
-                        command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
-                        raise servo.checks.CheckError(
-                            f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
-                            hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=lambda: _stream_remedy_command(command)
-                        )
-                    summaries.append(f"{metric.name}={value}{metric.unit}")
-                elif metric.name == "main_error_rate":
-                    if result.value is None:
-                        # NOTE: if no errors are occurring this can legitimately be None
-                        value = 0
-                    else:
-                        timestamp, value = result.value
-                        assert int(value) < 20, f"Envoy is reporting an error rate above 20% to Prometheus for metric '{metric.name}' ({metric.query})"
-
-                    summaries.append(f"{metric.name}={0}{metric.unit}")
-                else:
-                    raise NotImplementedError(f"unexpected metric: {metric.name}")
-            else:
-                raise RuntimeError(f'Encountered unexpected null result value for metric "{metric.name}"')
-
-        return ", ".join(summaries)
+        response = await client.query(metric)
+        if response.data:
+            assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+            assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
+            result = response.data[0]
+            timestamp, value = result.value
+            if value in {None, 0.0}:
+                command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
+                raise servo.checks.CheckError(
+                    f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
+                    hint=f"Send traffic to your application on port 9980. Try `{command}`",
+                    remedy=lambda: _stream_remedy_command(command)
+                )
+            return f"{metric.name}={value}{metric.unit}"
 
     @servo.check("Traffic is proxied through Envoy")
     async def check_service_proxy(self) -> str:
