@@ -576,7 +576,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             "tuning_request_rate",
             servo.types.Unit.requests_per_second,
             query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
-            step="1s"
+            step="10s"
         )
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         response = await client.query(metric)
