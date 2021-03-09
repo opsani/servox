@@ -521,7 +521,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             if container.name == "opsani-envoy":
                 return
 
-        command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
+        command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
