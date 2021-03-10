@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional, Union
+import re
 
 import freezegun
 import pydantic
@@ -221,9 +222,9 @@ class TestDurationProgress:
         assert progress.progress == 100.0
 
     async def test_context_manager(self, mocker: pytest_mock.MockerFixture) -> None:
-        async with servo.DurationProgress('0.5ms') as progress:
+        async with servo.DurationProgress('5ms') as progress:
             stub = mocker.stub()
-            async for update in progress.every('0.3ms'):
+            async for update in progress.every('0.1ms'):
                 stub(update.progress)
 
             stub.assert_called()
@@ -556,11 +557,49 @@ class TestRangeSetting:
         assert error.value.errors()[0]["type"] == "value_error.const"
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
+    def test_validate_step_alignment_suggestion(self) -> None:
+        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
+            RangeSetting(name="invalid", min=1.0, max=11.0, step=3.0)
+
+    @pytest.mark.parametrize(
+        ("min", "max", "step", "error_message"),
+        [
+            (0, 5, 1, None),
+            (2.0, 3.0, 1.0, None),
+            (
+                1.0,
+                11.0,
+                3.0,
+                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
+            ),
+            (
+                3.0,
+                12.0,
+                2.0,
+                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0 (consider 2.0 or 4.0).",
+            ),
+        ],
+    )
+    def test_validate_step_alignment(
+        self, min: Numeric, max: Numeric, step: Numeric, error_message: str
+    ) -> None:
+        if error_message is not None:
+            with pytest.raises(pydantic.ValidationError) as error:
+                RangeSetting(name="invalid", min=min, max=max, step=step)
+
+            assert error
+            assert "1 validation error for RangeSetting" in str(error.value)
+            assert error.value.errors()[0]["loc"] == ("__root__",)
+            assert error.value.errors()[0]["type"] == "value_error"
+            assert error.value.errors()[0]["msg"] == error_message
+        else:
+            RangeSetting(name="valid", min=min, max=max, step=step)
+
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
         [
             (1, 5, 1, None),
-            (1.0, 5.0, 2.0, None),
+            (1.0, 6.0, 2.0, None),
             (
                 1.0,
                 2,
@@ -733,24 +772,10 @@ class TestRangeSetting:
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
 
-    # TODO: Step can't be zero
+    def test_step_cannot_be_zero(self) -> None:
+        with pytest.raises(ValueError, match='step cannot be zero') as error:
+            RangeSetting(name="range", min=0, max=10, step=0)
 
-    def test_warning_if_not_multiple_of_step(self) -> None:
-        from servo.logging import logger, reset_to_defaults
-
-        try:
-            messages = []
-            logger.remove(None)
-            logger.add(lambda m: messages.append(m), level=0)
-            RangeSetting(name="misaligned", min=0.0, max=25.0, step=5.0, value=16.0)
-            assert len(messages) == 1
-            assert "WARNING" in messages[0]
-            assert (
-                "RangeSetting('misaligned' 0.0-25.0, 5.0) value is not step aligned: 16.0 is not divisible by 5.0"
-                in messages[0]
-            )
-        finally:
-            reset_to_defaults()
 
 
 class TestCPU:
@@ -943,3 +968,28 @@ class TestDataPoint:
 
     def test_repr(self, data_point: DataPoint) -> None:
         assert repr(data_point) == "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))"
+
+
+from servo.types import _is_step_aligned
+
+@pytest.mark.parametrize(
+    "value, step, aligned",
+    [
+        (1.0, 0.1, True),
+        (1.0, 0.2, True),
+        (1.0, 0.125, True),
+        (1.0, 0.3, False),
+        (0.6, 0.5, False),
+        (10, 1, True),
+        (3, 12, True),
+        (12, 3, True),
+        (6, 5, False),
+        (5, 6, False),
+        (0, 0, True),
+        (1, 1, True),
+        (0.1, 0.1, True),
+    ]
+)
+def test_step_alignment(value, step, aligned) -> None:
+    qualifier = "to" if aligned else "not to"
+    assert _is_step_aligned(value, step) == aligned, f"Expected value {value} {qualifier} be aligned with step {step}"

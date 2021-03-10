@@ -1533,19 +1533,19 @@ async def test_logging() -> None:
             await asyncio.sleep(0.00001)
             connector.logger.info("Third", progress=50, **args)
             await asyncio.sleep(0.00001)
-            connector.logger.info("Fourth", progress=100.0, **args)
+            connector.logger.info("Fourth", progress=99.9, **args)
             await asyncio.sleep(0.00001)
 
             await connector.logger.complete()
             await handler.shutdown()
             reset_to_defaults()
             assert request.called
-            assert request.calls.call_count == 3
+            assert request.calls.call_count == 3  # 100% is skipped
 
             # Parse the JSON sent in the request body and verify we hit 100%
             last_progress_report = json.loads(respx.calls.last.request.content)
             assert last_progress_report["event"] == "ADJUST"
-            assert last_progress_report["param"]["progress"] == 100.0
+            assert last_progress_report["param"]["progress"] == 99.9
 
 
 def test_report_progress_numeric() -> None:

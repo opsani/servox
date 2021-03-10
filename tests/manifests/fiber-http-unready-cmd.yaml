@@ -51,6 +51,7 @@ spec:
       # Primary container providing the fiber-http web service
       - name: fiber-http
         image: opsani/fiber-http:latest
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             cpu: 500m
@@ -145,8 +146,7 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-internal: "true"
 
 spec:
-  type: LoadBalancer
-  externalTrafficPolicy: Cluster
+  type: ClusterIP
   sessionAffinity: None
   selector:
     app.kubernetes.io/name: fiber-http

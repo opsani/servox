@@ -1217,7 +1217,7 @@ async def _deliver_message_to_subscribers(message: Message, channel: Channel, su
     # Log failures without aborting
     with servo.logger.catch(message="Subscriber raised exception"):
         for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+            if isinstance(result, Exception):
                 raise result
 
     _current_context_var.reset(reset_token)

@@ -34,7 +34,7 @@ def current_servo() -> Optional["Servo"]:
     """
     return _current_context_var.get(None)
 
-def set_current_servo(servo_: Optional["Servo"]) -> None:
+def _set_current_servo(servo_: Optional["Servo"]) -> None:
     """Set the active servo for the current execution context.
 
     The value is managed by a contextvar and is concurrency safe.
@@ -245,7 +245,8 @@ class Servo(servo.connector.BaseConnector):
         if not self.is_running:
             raise RuntimeError("Cannot shut down a servo that is not running")
 
-        await self.dispatch_event(Events.shutdown, _prepositions=servo.events.Preposition.on)
+        # Remove all the connectors (dispatches shutdown event)
+        await asyncio.gather(*list(map(self.remove_connector, self.connectors)))
 
         # Shut down the pub/sub exchange
         if self.pubsub_exchange.running:

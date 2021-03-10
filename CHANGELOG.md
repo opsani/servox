@@ -17,10 +17,75 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] "serenity now" - Unreleased
+## [0.9.6] "serenity now" - Unreleased
+
+### Enhanced
+
+- Opsani Dev checks for traffic flows are faster.
+- Service check errors now include the missing labels.
+
+### Fixed
+
+- Traffic checks no longer require a 2xx status code to pass.
+- Load testing hints using Vegeta now include `kubectl exec` stanza to run
+  remotely rather than on the local workstation.
+- Resource requirements now output a sensible error message rather than raising
+  a `KeyError` when `cpu` or `memory` are not defined.
+
+### Changed
+
+- Updated to httpx v0.17.0
+- Updated uvloop to v0.15.2
+
+## [0.9.5] "serenity now" - 2021-02-24
+
+### Enhanced
+
+- Added support for deploying Opsani Dev on Kubernetes `NodePort` Services.
+- Range setting that are out of step alignment now suggest alternative values
+  to consider.
+- Normal operational logging is less verbose.
+
+### Fixed
+
+- Container restarts due to `CancellationError` in response to Kubernetes
+  adjustment failures are now avoided.
+- Kubernetes `ContainersNotReady` status upon timeout are now handled as
+  adjustment failures.
+- HTTP status code 4xx responses are no longer retried.
+
+## [0.9.4] "serenity now" - 2021-02-17
+
+### Fixed
+
+- Use the bound logger for reporting Prometheus query errors in publisher. refs
+  SOL-238
+
+## [0.9.3] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Fixed an asyncio crash in the `ServoRunner`.
+- Gracefully handle query errors from Prometheus.
+- Support asyncio cancellation within pub/sub publisher decorator.
+
+## [0.9.2] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Include colorama package in release builds.
+
+## [0.9.1] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Include toml package in release builds.
+
+## [0.9.0] "serenity now" - 2021-02-16
 
 ### Added
 
+- Opsani Dev v2.0 integrated for rapid service optimization.
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
 - Initial release of Wavefront Connector.
@@ -129,6 +194,15 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Corrected an entry points discovery issue affecting the latest versions of
   Python.
 
+## [0.8.4] "pass the calamari" - 2021-02-05
+
+### Fixed
+
+- Containers are no longer accessed positionally by index instead of by name at
+  any time. This was resulting in broken adjustments when the Deployment
+  contained an init container, the main container was not the first container,
+  or during installation the Envoy proxy was injected at the beginning of the
+  container list instead of the end.
 
 ## [0.8.3] "pass the calamari" - 2020-10-21
 

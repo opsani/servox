@@ -188,7 +188,7 @@ class Subprocess:
         def create_output_callback(
             name: str, output: List[str]
         ) -> Callable[[str], Awaitable[None]]:
-            async def output_callback(msg: str) -> None:
+            def output_callback(msg: str) -> None:
                 output.append(msg)
                 m = f"[{name}] {msg}"
                 if print_output:

@@ -246,7 +246,7 @@ class Assembly(pydantic.BaseModel):
         await asyncio.gather(
                 *list(
                     map(
-                        lambda s: s.shutdown(),
+                        lambda s: s.is_running and s.shutdown(),
                         self.servos,
                     )
                 )

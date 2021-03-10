@@ -44,18 +44,30 @@ jobs:
           python-version: '3.8'
           architecture: x64
       - name: Install and configure Poetry
-        run: |
-          pip install poetry==1.1.*
-          poetry config virtualenvs.in-project true
-      - name: Set up cache
-        uses: actions/cache@v2.1.1
+        uses: snok/install-poetry@v1.1.2
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+      - name: Set up dependencies cache
+        uses: actions/cache@v2
         id: cached-poetry-dependencies
         with:
           path: .venv
-          key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
+          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
-        run: poetry install
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+      # NOTE: Install our root project into the venv cache without busting it
+      - name: Set up root + dependencies cache
+        uses: actions/cache@v2
+        id: cached-project
+        with:
+          path: .venv
+          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+      - name: Install root project
+        # NOTE: Skipping root project install accelerates cases where only tests have changed
+        if: steps.cached-project.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction
 
   unit:
     needs:
@@ -71,18 +83,19 @@ jobs:
         python-version: '3.8'
         architecture: x64
     - name: Install and configure Poetry
-      run: |
-        pip install poetry==1.1.*
-        poetry config virtualenvs.in-project true
-    # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
-    #   id: cached-poetry-dependencies
-    #   with:
-    #     path: .venv
-    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
-    - name: Install dependencies
-      run: poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      uses: snok/install-poetry@v1.1.2
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    - name: Set up root + dependencies cache
+      uses: actions/cache@v2
+      id: cached-project
+      with:
+        path: .venv
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+    - name: Install root project
+      if: steps.cached-project.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction
     - name: Run tests
       run: |
         poetry run pytest -T unit -n 6 --dist loadscope \
@@ -106,6 +119,7 @@ jobs:
       - setup_build
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
+      github.actor != 'dependabot[bot]' &&
       (github.ref == 'refs/heads/main' ||
       startsWith(github.ref, 'refs/heads/release/') ||
       startsWith(github.ref, 'refs/heads/bugfix/') ||
@@ -119,23 +133,24 @@ jobs:
         python-version: '3.8'
         architecture: x64
     - name: Install and configure Poetry
-      run: |
-        pip install poetry==1.1.*
-        poetry config virtualenvs.in-project true
+      uses: snok/install-poetry@v1.1.2
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
     - name: Install Vegeta
       run: |
         wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
-    # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
-    #   id: cached-poetry-dependencies
-    #   with:
-    #     path: .venv
-    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
-    - name: Install dependencies
-      run: poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+    - name: Set up root + dependencies cache
+      uses: actions/cache@v2
+      id: cached-project
+      with:
+        path: .venv
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+    - name: Install root project
+      if: steps.cached-project.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -152,8 +167,12 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
       run: |
-        poetry run pytest -n 6 --dist loadscope \
+        poetry run pytest -n 4 --dist loadscope --tx "4*popen//python=python3.8" \
           -T integration --verbose --durations=0 --durations-min=5
+    - uses: actions/upload-artifact@v2
+      with:
+        name: integration-test-logs
+        path: logs/
 
   system:
     name: Run System Tests
@@ -163,6 +182,7 @@ jobs:
       - setup_build
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
+      github.actor != 'dependabot[bot]' &&
       (github.ref == 'refs/heads/main' ||
       startsWith(github.ref, 'refs/heads/release/') ||
       startsWith(github.ref, 'refs/heads/bugfix/') ||
@@ -176,18 +196,19 @@ jobs:
         python-version: '3.8'
         architecture: x64
     - name: Install and configure Poetry
-      run: |
-        pip install poetry==1.1.*
-        poetry config virtualenvs.in-project true
-    # - name: Set up cache
-    #   uses: actions/cache@v2.1.1
-    #   id: cached-poetry-dependencies
-    #   with:
-    #     path: .venv
-    #     key: .venv-${{ runner.os }}-tests-${{ hashFiles('**/poetry.lock') }}
-    - name: Install dependencies
-      run: poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      uses: snok/install-poetry@v1.1.2
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    - name: Set up root + dependencies cache
+      uses: actions/cache@v2
+      id: cached-project
+      with:
+        path: .venv
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+    - name: Install root project
+      if: steps.cached-project.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -227,3 +248,7 @@ jobs:
       run: |
         poetry run pytest -n 6 --dist loadscope \
           -T system --verbose --durations=0 --durations-min=5
+    - uses: actions/upload-artifact@v2
+      with:
+        name: system-test-logs
+        path: logs/

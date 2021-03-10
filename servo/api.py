@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import datetime
 import enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import backoff
 import devtools
@@ -13,7 +13,9 @@ import pydantic
 import servo.types
 import servo.utilities
 
+
 USER_AGENT = "github.com/opsani/servox"
+
 
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
@@ -186,6 +188,8 @@ class Mixin(abc.ABC):
         elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
             raise servo.errors.EventCancelledError(status.reason)
+        elif status.status == OptimizerStatuses.invalid:
+            servo.logger.warning(f"progress report was rejected as invalid")
         else:
             raise ValueError(f"unknown error status: \"{status.status}\"")
 
@@ -202,7 +206,7 @@ class Mixin(abc.ABC):
             Union[servo.types.Numeric, servo.types.Duration]
         ] = None,
         logs: Optional[List[str]] = None,
-    ) -> None:
+    ) -> Tuple[str, Dict[str, Any]]:
         def set_if(d: Dict, k: str, v: Any):
             if v is not None:
                 d[k] = v
@@ -236,11 +240,21 @@ class Mixin(abc.ABC):
 
         return (operation, params)
 
+    def _is_fatal_status_code(error: Exception) -> bool:
+        if isinstance(error, httpx.HTTPStatusError):
+            if error.response.status_code < 500:
+                servo.logger.warning(f"Giving up on non-retryable HTTP status code {error.response.status_code} while requesting {error.request.url!r}.")
+                servo.logger.debug(f"HTTP request content: {devtools.pformat(error.request.read())}, response content: {devtools.pformat(error.response.content)}")
+                return True
+
+        return False
+
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
         max_time=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_time(),
         max_tries=lambda: servo.current_servo() and servo.current_servo().config.servo.backoff.max_tries(),
+        giveup=_is_fatal_status_code
     )
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
@@ -259,13 +273,8 @@ class Mixin(abc.ABC):
                     Union[CommandResponse, Status], response_json
                 )
 
-            except httpx.RequestError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
-                self.logger.trace(devtools.pformat(event_request))
-                raise
-
-            except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event (response.status_code={error.response.status_code}, response.headers={error.response.headers}): {error}")
+            except (httpx.RequestError, httpx.HTTPError) as error:
+                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}\nResponse body: {response.text}")
                 self.logger.trace(devtools.pformat(event_request))
                 raise
 
@@ -298,6 +307,7 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
             adjustments.append(adjustment)
     return adjustments
 
+
 def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
     components = {}
     descriptor = { "state": { "application": { "components": components }}}
@@ -309,3 +319,7 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
         components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
 
     return descriptor
+
+
+def user_agent() -> str:
+    return f"{USER_AGENT} v{servo.__version__}"

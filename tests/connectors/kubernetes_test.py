@@ -691,13 +691,13 @@ class TestReplicas:
 class TestCPU:
     @pytest.fixture
     def cpu(self) -> CPU:
-        return CPU(min="100m", max="4000m", step="125m")
+        return CPU(min="125m", max="4000m", step="125m")
 
     def test_parsing(self, cpu) -> None:
         assert {
             "name": "cpu",
             "type": "range",
-            "min": 100,
+            "min": 125,
             "max": 4000,
             "step": 125,
             "value": None,
@@ -710,7 +710,7 @@ class TestCPU:
         assert cpu.__opsani_repr__() == {
             "cpu": {
                 "max": 4.0,
-                "min": 0.1,
+                "min": 0.125,
                 "step": 0.125,
                 "value": 3.0,
                 "type": "range",
@@ -719,20 +719,20 @@ class TestCPU:
         }
 
     def test_resolving_equivalent_units(self) -> None:
-        cpu = CPU(min="100m", max=4.0, step=0.125)
-        assert cpu.min == 100
+        cpu = CPU(min="125m", max=4.0, step=0.125)
+        assert cpu.min == 125
         assert cpu.max == 4000
         assert cpu.step == 125
 
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
         serialization = json.loads(cpu.json())
-        assert serialization["min"] == "100m"
+        assert serialization["min"] == "125m"
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
 
     def test_cannot_be_less_than_100m(self) -> None:
         with pytest.raises(ValueError, match='minimum CPU value allowed is 100m'):
-            CPU(min="50m", max=4.0, step=0.125)
+            CPU(min="50m", max=4.0, step=0.100)
 
 
 class TestMillicore:
@@ -826,8 +826,8 @@ class TestMemory:
         assert serialization["max"] == "4.0GiB"
         assert serialization["step"] == "256.0MiB"
 
-    def test_cannot_be_less_than_64MiB(self) -> None:
-        with pytest.raises(ValueError, match='minimum Memory value allowed is 64MiB'):
+    def test_cannot_be_less_than_128MiB(self) -> None:
+        with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
             Memory(min="32 MiB", max=4.0, step=268435456)
 
 def test_millicpu():
@@ -869,8 +869,8 @@ def config(namespace: str) -> KubernetesConfiguration:
                 containers=[
                     ContainerConfiguration(
                         name="fiber-http",
-                        cpu=CPU(min="100m", max="800m", step="125m"),
-                        memory=Memory(min="64MiB", max="0.8GiB", step="32MiB"),
+                        cpu=CPU(min="125m", max="875m", step="125m"),
+                        memory=Memory(min="128MiB", max="0.75GiB", step="32MiB"),
                     )
                 ],
             )
@@ -883,8 +883,9 @@ def config(namespace: str) -> KubernetesConfiguration:
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
     @pytest.fixture(autouse=True)
-    def _wait_for_manifests(self, kube):
-        kube.wait_for_registered(timeout=30)
+    async def _wait_for_manifests(self, kube):
+        kube.wait_for_registered(timeout=30.0)
+        await asyncio.sleep(0.1)
 
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
@@ -893,8 +894,8 @@ class TestKubernetesConnectorIntegration:
     async def test_describe(self, config) -> None:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 50
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "64.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 125
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "128.0MiB"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust_cpu(self, config):
@@ -902,17 +903,17 @@ class TestKubernetesConnectorIntegration:
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
             setting_name="cpu",
-            value=".250",
+            value=".150",
         )
         description = await connector.adjust([adjustment])
         assert description is not None
         setting = description.get_setting('fiber-http/fiber-http.cpu')
         assert setting
-        assert setting.value == 250
+        assert setting.value == 150
 
         # Describe it again and make sure it matches
         description = await connector.describe()
-        assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 150
 
     async def test_adjust_cpu_with_settlement(self, config):
         connector = KubernetesConnector(config=config)
@@ -939,7 +940,7 @@ class TestKubernetesConnectorIntegration:
         # Inject a sidecar at index zero
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
         assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar(service="fiber-http", index=0)
+        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
 
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
@@ -971,7 +972,7 @@ class TestKubernetesConnectorIntegration:
         # debug(deployment.obj.spec.template.spec.containers)
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
-        config.timeout = "60s"
+        config.timeout = "3s"
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
 
@@ -1016,12 +1017,16 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
-    async def test_adjust_tuning_insufficient_resources(self, tuning_config, namespace) -> None:
-        tuning_config.timeout = "60s"
+    async def test_adjust_tuning_insufficient_resources(
+        self,
+        tuning_config: KubernetesConfiguration,
+        namespace
+    ) -> None:
+        tuning_config.timeout = "10s"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-canary",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
             value="128Gi", # impossible right?
         )
@@ -1032,17 +1037,18 @@ class TestKubernetesConnectorIntegration:
         assert "Insufficient memory." in str(rejection_info.value)
 
 
-    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace):
+    async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
+        tuning_config.timeout = "10s"
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http-canary",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="cpu",
             value=".250",
         )
-        control = servo.Control(settlement='1s')
+        control = servo.Control(settlement='5s')
         description = await connector.adjust([adjustment], control)
         assert description is not None
-        setting = description.get_setting('fiber-http/fiber-http-canary.cpu')
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert setting
         assert setting.value == 250
 
@@ -1116,17 +1122,13 @@ class TestKubernetesConnectorIntegration:
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
-    @pytest.fixture(autouse=True)
-    def _wait_for_manifests(self, kube):
-        kube.wait_for_registered(timeout=30)
-
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
     async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
         # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
-        config.timeout = "45s"
+        config.timeout = "5s"
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1134,6 +1136,14 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
+        # NOTE: This can generate a 409 Conflict failure under CI
         with pytest.raises(AdjustmentRejectedError):
-            description = await connector.adjust([adjustment])
-            debug(description)
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e

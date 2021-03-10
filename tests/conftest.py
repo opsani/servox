@@ -62,12 +62,7 @@ def event_loop_policy(request) -> str:
         assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
         event_loop_policy = marker.args[0]
     else:
-        # NOTE: integration and system tests tend to run subprocesses that trigger
-        # MagicStack/uvloop#136 io.UnsupportedOperation("redirected stdin is pseudofile, has no fileno()")
-        if "integration" in request.node.keywords or "system" in request.node.keywords:
-            event_loop_policy = "default"
-        else:
-            event_loop_policy = "uvloop"
+        event_loop_policy = "uvloop"
 
     valid_policies = ("default", "uvloop")
     assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
@@ -431,7 +426,7 @@ def kubeconfig_path_from_config(config) -> pathlib.Path:
     return config_path
 
 @pytest.fixture
-async def kubeconfig(request) -> str:
+def kubeconfig(request) -> str:
     """Return the path to a kubeconfig file to use when running integration tests.
 
     To avoid inadvertantly interacting with clusters not explicitly configured
@@ -564,7 +559,6 @@ ForwardingTarget = Union[
 ]
 
 
-@backoff.on_exception(backoff.expo, (asyncio.TimeoutError, RuntimeError), max_tries=10, max_time=10)
 @contextlib.asynccontextmanager
 async def kubectl_ports_forwarded(
     target: ForwardingTarget,
@@ -595,39 +589,39 @@ async def kubectl_ports_forwarded(
         - service/[NAME]
         - svc/[NAME]
     """
-    try:
-        def _identifier_for_target(target: ForwardingTarget) -> str:
-            if isinstance(target, str):
-                return target
-            elif isinstance(target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)):
-                return f"pod/{target.name}"
-            elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
-                return f"deployment/{target.name}"
-            elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
-                return f"service/{target.name}"
-            else:
-                raise TypeError(f"unknown target: {repr(target)}")
+    def _identifier_for_target(target: ForwardingTarget) -> str:
+        if isinstance(target, str):
+            return target
+        elif isinstance(target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)):
+            return f"pod/{target.name}"
+        elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
+            return f"deployment/{target.name}"
+        elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
+            return f"service/{target.name}"
+        else:
+            raise TypeError(f"unknown target: {repr(target)}")
 
-        identifier = _identifier_for_target(target)
-        ports_arg = " ".join(list(map(lambda pair: f"{pair[0]}:{pair[1]}", ports)))
-        context_arg = f"--context {context}" if context else ""
-        event = asyncio.Event()
-        task = asyncio.create_task(
-            tests.helpers.Subprocess.shell(
-                f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
-                event=event,
-                print_output=True
-            )
+    identifier = _identifier_for_target(target)
+    ports_arg = " ".join(list(map(lambda pair: f"{pair[0]}:{pair[1]}", ports)))
+    context_arg = f"--context {context}" if context else ""
+    event = asyncio.Event()
+    task = asyncio.create_task(
+        tests.helpers.Subprocess.shell(
+            f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
+            event=event,
+            print_output=True
         )
+    )
 
-        await event.wait()
+    await event.wait()
 
-        # Check if the sockets are open
-        for local_port, _ in ports:
-            a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            if a_socket.connect_ex(("localhost", local_port)) != 0:
-                raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
+    # Check if the sockets are open
+    for local_port, _ in ports:
+        a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if a_socket.connect_ex(("localhost", local_port)) != 0:
+            raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
 
+    try:
         if len(ports) == 1:
             url = f"http://localhost:{ports[0][0]}"
             yield url
@@ -637,7 +631,8 @@ async def kubectl_ports_forwarded(
             yield ports_to_urls
     finally:
         task.cancel()
-
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 @pytest.fixture()
 async def kube_port_forward(

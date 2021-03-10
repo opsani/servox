@@ -11,12 +11,13 @@ import servo
 import servo.connectors.kubernetes
 import tests.helpers
 
-# NOTE: These tests are brittle when run under uvloop. We run these under the default
-# asyncio event loop policy to avoid exceptions relating to pytest output capture.
-# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
+import pydantic
+import re
+from servo.types import _suggest_step_aligned_values, _is_step_aligned
+
+
 pytestmark = [
     pytest.mark.asyncio,
-    pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
     pytest.mark.usefixtures("kubernetes_asyncio_config")
 ]
@@ -25,7 +26,7 @@ pytestmark = [
 def test_nginx(kube: kubetest.client.TestClient) -> None:
     # wait for the manifests loaded by the 'applymanifests' marker
     # to be ready on the cluster
-    kube.wait_for_registered(timeout=30)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     nginx_deploy = deployments.get("nginx-deployment")
@@ -44,7 +45,7 @@ def test_nginx(kube: kubetest.client.TestClient) -> None:
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http-opsani-dev.yaml"])
 def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
-    kube.wait_for_registered(timeout=60)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     web_deploy = deployments.get("fiber-http")
@@ -75,7 +76,7 @@ def test_fiber_http_and_envoy(kube: kubetest.client.TestClient) -> None:
 @pytest.mark.applymanifests("manifests", files=["prometheus.yaml"])
 @pytest.mark.xfail(reason="kubetest doesn't support the ClusterRole yet")
 def test_prometheus(kube: kubetest.client.TestClient) -> None:
-    kube.wait_for_registered(timeout=30)
+    kube.wait_for_registered()
 
     deployments = kube.get_deployments()
     prom_deploy = deployments.get("prometheus-core")
@@ -118,6 +119,78 @@ def test_generate_outputs_human_readable_config() -> None:
 def test_supports_nil_container_name() -> None:
     ...
 
+@pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
+class TestSidecar:
+    async def test_inject_sidecar_by_port_number(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment.containers) == 1
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8181)
+
+        deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment_.containers) == 2
+
+    async def test_inject_sidecar_by_port_number_string(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment.containers) == 1
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8181')
+
+        deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment_.containers) == 2
+
+    async def test_inject_sidecar_port_conflict(self, kube):
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        with pytest.raises(ValueError, match='Deployment already has a container port 8480'):
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8481, service_port=8480)
+
+    async def test_inject_sidecar_by_service(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+
+        assert len(deployment.containers) == 1
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http')
+
+        deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment_.containers) == 2
+
+    async def test_inject_sidecar_by_service_and_port_number(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+
+        assert len(deployment.containers) == 1
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=8480)
+
+        deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment_.containers) == 2
+
+    async def test_inject_sidecar_by_service_and_port_name(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        # NOTE: This can generate a 409 Conflict failure under CI
+        for _ in range(3):
+            try:
+                # change the container port so we don't conflict
+                deployment.obj.spec.template.spec.containers[0].ports[0].container_port = 9999
+                await deployment.replace()
+                break
+
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status == 409 and e.reason == 'Conflict':
+                    # If we have a conflict, just load the existing object and continue
+                    await deployment.refresh()
+
+
+        assert len(deployment.containers) == 1
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='http')
+
+        deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert len(deployment_.containers) == 2
+
+    async def test_inject_sidecar_invalid_service_name(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        with pytest.raises(ValueError, match="Unknown Service 'invalid'"):
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='invalid')
+
+    async def test_inject_sidecar_port_not_in_given_service(self, kube) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        with pytest.raises(ValueError, match="Port 'invalid' does not exist in the Service 'fiber-http'"):
+            await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='invalid')
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestChecks:
@@ -140,7 +213,7 @@ class TestChecks:
                                 min="250m", max="4000m", step="125m"
                             ),
                             memory=servo.connectors.kubernetes.Memory(
-                                min="64MiB", max="4.0GiB", step="128MiB"
+                                min="128MiB", max="4.0GiB", step="128MiB"
                             ),
                         )
                     ],
@@ -151,7 +224,7 @@ class TestChecks:
 
     @pytest.fixture(autouse=True)
     def wait_for_manifests(self, kube: kubetest.client.TestClient) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
 
     async def test_check_version(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
@@ -280,7 +353,7 @@ class TestChecks:
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": "500"})
         await deployment.patch()
         try:
-            await deployment.wait_until_ready(5)
+            await asyncio.wait_for(deployment.wait_until_ready(), timeout=2.0)
         except asyncio.TimeoutError:
             pass
 
@@ -297,7 +370,7 @@ class TestChecks:
 class TestService:
     @pytest.fixture(autouse=True)
     async def wait(self, kube) -> None:
-        kube.wait_for_registered(timeout=30)
+        kube.wait_for_registered()
         await asyncio.sleep(0.0001)
 
 
@@ -318,3 +391,51 @@ class TestService:
         await svc.patch()
         await svc.refresh()
         assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
+
+@pytest.mark.parametrize(
+    "value, step, expected_lower, expected_upper",
+    [
+        ('1.3GiB', '128MiB', '1.0GiB', '1.5GiB'),
+        ('756MiB', '128MiB', '640.0MiB', '768.0MiB'),
+        ('96MiB', '32MiB', '96.0MiB', '128.0MiB'),
+        ('32MiB', '96MiB', '96.0MiB', '192.0MiB'),
+        ('4.4GiB', '128MiB', '4.0GiB', '4.5GiB'),
+        ('4.5GiB', '128MiB', '4.5GiB', '5.0GiB'),
+        ('128MiB', '128MiB', '128.0MiB', '256.0MiB'),
+    ]
+)
+def test_step_alignment_calculations_memory(value, step, expected_lower, expected_upper) -> None:
+    value_bytes, step_bytes = servo.connectors.kubernetes.ShortByteSize.validate(value), servo.connectors.kubernetes.ShortByteSize.validate(step)
+    lower, upper = _suggest_step_aligned_values(value_bytes, step_bytes, in_repr=servo.connectors.kubernetes.Memory.human_readable)
+    assert lower == expected_lower
+    assert upper == expected_upper
+    assert _is_step_aligned(servo.connectors.kubernetes.ShortByteSize.validate(lower), step_bytes)
+    assert _is_step_aligned(servo.connectors.kubernetes.ShortByteSize.validate(upper), step_bytes)
+
+@pytest.mark.parametrize(
+    "value, step, expected_lower, expected_upper",
+    [
+        ('250m', '64m', '192m', '256m'),
+        ('4100m', '250m', '4', '4250m'),
+        ('3', '100m', '3', '3100m'),
+    ]
+)
+def test_step_alignment_calculations_cpu(value, step, expected_lower, expected_upper) -> None:
+    value_millicores, step_millicores = servo.connectors.kubernetes.Millicore.parse(value), servo.connectors.kubernetes.Millicore.parse(step)
+    lower, upper = _suggest_step_aligned_values(value_millicores, step_millicores, in_repr=servo.connectors.kubernetes.CPU.human_readable)
+    assert lower == expected_lower
+    assert upper == expected_upper
+    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(lower), step_millicores)
+    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(upper), step_millicores)
+
+def test_cpu_not_step_aligned() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):
+        servo.connectors.kubernetes.CPU(
+            min="250m", max="4100m", step="125m"
+        )
+
+def test_memory_not_step_aligned() -> None:
+    with pytest.raises(pydantic.ValidationError, match=re.escape("Memory('mem' 256.0MiB-4.1GiB, 128.0MiB) max is not step aligned: 4.1GiB is not a multiple of 128.0MiB (consider 4.0GiB or 4.5GiB).")):
+        servo.connectors.kubernetes.Memory(
+            min="256.0MiB", max="4.1GiB", step="128.0MiB"
+        )

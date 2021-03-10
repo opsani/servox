@@ -6,7 +6,9 @@ from __future__ import annotations
 import abc
 import asyncio
 import datetime
+import decimal
 import enum
+import functools
 import inspect
 import operator
 import time
@@ -20,6 +22,7 @@ from typing import (
     Optional,
     Protocol,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -414,13 +417,13 @@ class DurationProgress(BaseProgress):
 class EventProgress(BaseProgress):
     """EventProgress objects track progress against an indeterminate event."""
 
-    timeout: Optional[Duration]
+    timeout: Optional[Duration] = None
     """The maximum amount of time to wait for the event to be triggered.
 
     When None, the event will be awaited forever.
     """
 
-    settlement: Optional[Duration]
+    settlement: Optional[Duration] = None
     """The amount of time to wait for progress to be reset following an event trigger before returning early.
 
     When None, progress is returned immediately upon the event being triggered.
@@ -553,7 +556,10 @@ class EventProgress(BaseProgress):
     ) -> None:
         # NOTE: Handle the case where reporting interval < timeout (matters mostly for tests)
         if every is None:
-            every = min(Duration("5s"), self.timeout)
+            if self.timeout is None:
+                every = Duration("5s")
+            else:
+                every = min(Duration("5s"), self.timeout)
 
         return await super().watch(notify, every)
 
@@ -1007,32 +1013,6 @@ class RangeSetting(Setting):
 
         return value
 
-    @pydantic.root_validator(skip_on_failure=True)
-    @classmethod
-    def _validate_step_and_value(cls, values) -> Numeric:
-        value, min, max, step = values["value"], values["min"], values["max"], values["step"]
-
-        # if value is not None:
-        #     if value != max and value + step > max:
-        #         raise ValueError(
-        #             f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-        #         )
-        #     elif value != min and value - step < min:
-        #         raise ValueError(
-        #             f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
-        #         )
-        # else:
-        #     if (min + step > max):
-        #         raise ValueError(
-        #             f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-        #         )
-        #     elif (max - step < min):
-        #         raise ValueError(
-        #             f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
-        #         )
-
-        return values
-
     @pydantic.validator("max")
     @classmethod
     def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:
@@ -1053,24 +1033,51 @@ class RangeSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def warn_if_value_is_not_step_aligned(cls, values: dict) -> dict:
-        name, min_, max_, step, value = (
+    def _min_and_max_must_be_step_aligned(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        name, min_, max_, step = (
             values["name"],
             values["min"],
             values["max"],
             values["step"],
-            values["value"],
         )
 
-        if value is not None and value % step != 0:
-            from servo.logging import logger
-
-            desc = f"{cls.__name__}({repr(name)} {min_}-{max_}, {step})"
-            logger.warning(
-                f"{desc} value is not step aligned: {cls.human_readable(value)} is not divisible by {cls.human_readable(step)}"
-            )
+        for boundary in ('min', 'max'):
+            value = values[boundary]
+            value_type = value.__class__
+            if value and not _is_step_aligned(value, step):
+                suggested_lower, suggested_upper = _suggest_step_aligned_values(value, step, in_repr=cls.human_readable)
+                desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
+                raise ValueError(
+                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)} (consider {suggested_lower} or {suggested_upper})."
+                )
 
         return values
+
+    # @pydantic.root_validator(skip_on_failure=True)
+    # @classmethod
+    # def _validate_step_and_value(cls, values) -> Numeric:
+    #     value, min, max, step = values["value"], values["min"], values["max"], values["step"]
+
+    #     if value is not None:
+    #         if value != max and value + step > max:
+    #             raise ValueError(
+    #                 f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+    #             )
+    #         elif value != min and value - step < min:
+    #             raise ValueError(
+    #                 f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
+    #             )
+    #     else:
+    #         if (min + step > max):
+    #             raise ValueError(
+    #                 f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
+    #             )
+    #         elif (max - step < min):
+    #             raise ValueError(
+    #                 f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
+    #             )
+
+    #     return values
 
     def __str__(self) -> str:
         return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"
@@ -1396,7 +1403,7 @@ class Measurement(BaseModel):
                 if isinstance(obj, TimeSeries):
                     actual_count = len(obj.data_points)
                     if expected_count and actual_count != expected_count:
-                        logger.warning(
+                        logger.debug(
                             f'all TimeSeries readings must contain the same number of values: expected {expected_count} values but found {actual_count} on TimeSeries id "{obj.id}"'
                         )
                     else:
@@ -1554,3 +1561,68 @@ def isfuturistic(obj: Any) -> bool:
     return (asyncio.isfuture(obj)
             or asyncio.iscoroutine(obj)
             or inspect.isawaitable(obj))
+
+def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
+    if value == step:
+        return True
+    elif value > step:
+        return decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
+    else:
+        return decimal.Decimal(str(float(step))) % decimal.Decimal(str(float(value))) == 0
+
+def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[callable[[Numeric], str]] = None) -> Tuple(str, str):
+    if in_repr is None:
+        # return string identity by default
+        in_repr = lambda x: str(x)
+
+    # declare numeric and textual representations
+    parser = functools.partial(pydantic.parse_obj_as, value.__class__)
+    value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(str(float(step)))
+    lower_bound, upper_bound = value_dec, value_dec
+    value_repr, lower_repr, upper_repr = in_repr(parser(value_dec)), None, None
+
+    # Find the values that are closest on either side of the value
+    # Don't recommend anything smaller than step
+    while value_dec < step_dec:
+        value_dec += step_dec
+
+    remainder = value_dec % step_dec
+
+    # lower bound -- align by offseting by remainder
+    lower_bound -= remainder
+    assert lower_bound % step_dec == 0
+    while True:
+        # only decrement after first iteration
+        if lower_repr is not None:
+            lower_bound -= step_dec
+
+        # if we dip below the step, anchor on it as the minimum value
+        if lower_bound <= step_dec:
+            lower_bound = step_dec
+            lower_repr = in_repr(parser(lower_bound))
+            break
+
+        lower_repr = in_repr(parser(lower_bound))
+        # if we are step aligned take the current value as lower bound
+        if remainder != 0 and lower_repr == value_repr:
+            continue
+
+        # round trip the value to make sure its not a lossy representation
+        repr_decimal = decimal.Decimal(str(float(parser(lower_repr))))
+        if repr_decimal % step_dec == 0:
+            break
+
+    # upper bound -- start from the lower bound and find the next value
+    upper_bound = lower_bound
+    while True:
+        upper_bound += step_dec
+        upper_repr = in_repr(parser(upper_bound))
+        if upper_repr == value_repr:
+            continue
+
+        # round trip the value to make sure its not a lossy representation
+        repr_decimal = decimal.Decimal(str(float(parser(upper_repr))))
+        if repr_decimal % step_dec == 0:
+            break
+
+    return (lower_repr, upper_repr)

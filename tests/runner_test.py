@@ -77,7 +77,7 @@ async def running_servo(
 async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
+        servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     debug(response)
     assert response.status == "ok"
@@ -120,7 +120,7 @@ async def test_hello(
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.USER_AGENT)
+        servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     assert response.status == "ok"
 

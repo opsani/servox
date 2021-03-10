@@ -1720,10 +1720,10 @@ async def test_httpx_client_config() -> None:
 
     for c in [servo, connector]:
         async with c.api_client() as client:
-            for k, v in client._proxies.items():
+            for k, v in client._mounts.items():
                 assert k == URLPattern("all://")
-            assert client._transport._ssl_context.verify_mode == ssl.CERT_NONE
-            assert client._transport._ssl_context.check_hostname == False
+            assert client._transport._pool._ssl_context.verify_mode == ssl.CERT_NONE
+            assert client._transport._pool._ssl_context.check_hostname == False
 
 
 def test_backoff_defaults() -> None:
@@ -1775,8 +1775,8 @@ async def test_proxy_utilization(proxies) -> None:
     servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
     async with servo.api_client() as client:
         transport = client._transport_for_url(httpx.URL(optimizer.base_url))
-        assert isinstance(transport, httpcore.AsyncHTTPProxy)
-        assert transport.proxy_origin == (b'http', b'localhost', 1234)
+        assert isinstance(transport, httpx.AsyncHTTPTransport)
+        assert transport._pool.proxy_origin == (b'http', b'localhost', 1234)
 
 
 def test_codename() -> None:
