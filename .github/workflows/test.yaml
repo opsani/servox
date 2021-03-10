@@ -169,6 +169,10 @@ jobs:
       run: |
         poetry run pytest -n 6 --dist loadscope --tx "4*popen//python=python3.8" \
           -T integration --verbose --durations=0 --durations-min=5
+    - uses: actions/upload-artifact@v2
+      with:
+        name: integration-test-logs
+        path: logs/
 
   system:
     name: Run System Tests
@@ -244,3 +248,7 @@ jobs:
       run: |
         poetry run pytest -n 6 --dist loadscope \
           -T system --verbose --durations=0 --durations-min=5
+    - uses: actions/upload-artifact@v2
+      with:
+        name: system-test-logs
+        path: logs/
