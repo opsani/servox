@@ -49,7 +49,7 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
         deployment="fiber-http",
         container="fiber-http",
         service="fiber-http",
-        cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
+        cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
         memory=servo.connectors.kubernetes.Memory(min="256 MiB", max="4.0 GiB", step="128 MiB"),
     )
 
