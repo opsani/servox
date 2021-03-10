@@ -114,7 +114,7 @@ class TestIntegration:
         async def test_target_container_resources_within_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            config.cpu.min = "100m"
+            config.cpu.min = "250m"
             config.cpu.max = "2000m"
             config.memory.min = "64MiB"
             config.memory.max = "4GiB"
