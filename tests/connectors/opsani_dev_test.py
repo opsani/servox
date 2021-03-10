@@ -114,23 +114,20 @@ class TestIntegration:
         async def test_target_container_resources_within_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            config.cpu.min = "250m"
+            config.cpu.min = "125m"
             config.cpu.max = "2000m"
-            config.memory.min = "64MiB"
+            config.memory.min = "128MiB"
             config.memory.max = "4GiB"
-            # TODO: Should explicity specify the target test values.
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
-            assert result.success
+            assert result.success, f"Expected success but got: {result}"
 
         async def test_target_container_resources_outside_of_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            # Set some
             config.cpu.min = "4000m"
             config.cpu.max = "5000m"
             config.memory.min = "2GiB"
             config.memory.min = "4GiB"
-            # TODO: Should explicity specify the the target test values.
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 
