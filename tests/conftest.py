@@ -62,12 +62,7 @@ def event_loop_policy(request) -> str:
         assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
         event_loop_policy = marker.args[0]
     else:
-        # NOTE: integration and system tests tend to run subprocesses that trigger
-        # MagicStack/uvloop#136 io.UnsupportedOperation("redirected stdin is pseudofile, has no fileno()")
-        if "integration" in request.node.keywords or "system" in request.node.keywords:
-            event_loop_policy = "default"
-        else:
-            event_loop_policy = "uvloop"
+        event_loop_policy = "uvloop"
 
     valid_policies = ("default", "uvloop")
     assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"

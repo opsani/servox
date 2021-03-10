@@ -15,12 +15,9 @@ import pydantic
 import re
 from servo.types import _suggest_step_aligned_values, _is_step_aligned
 
-# NOTE: These tests are brittle when run under uvloop. We run these under the default
-# asyncio event loop policy to avoid exceptions relating to pytest output capture.
-# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
+
 pytestmark = [
     pytest.mark.asyncio,
-    pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
     pytest.mark.usefixtures("kubernetes_asyncio_config")
 ]

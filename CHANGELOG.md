@@ -32,6 +32,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Resource requirements now output a sensible error message rather than raising
   a `KeyError` when `cpu` or `memory` are not defined.
 
+### Changed
+
+- Updated to httpx v0.17.0
+- Updated uvloop to v0.15.2
+
 ## [0.9.5] "serenity now" - 2021-02-24
 
 ### Enhanced
