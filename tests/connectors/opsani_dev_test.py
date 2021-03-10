@@ -50,7 +50,7 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
         container="fiber-http",
         service="fiber-http",
         cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
-        memory=servo.connectors.kubernetes.Memory(min="256 MiB", max="4.0 GiB", step="128 MiB"),
+        memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
     )
 
 
@@ -125,7 +125,7 @@ class TestIntegration:
         async def test_target_container_resources_outside_of_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            # Set some 
+            # Set some
             config.cpu.min = "4000m"
             config.cpu.max = "5000m"
             config.memory.min = "2GiB"
@@ -133,7 +133,7 @@ class TestIntegration:
             # TODO: Should explicity specify the the target test values.
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
-            
+
         async def test_service_routes_traffic_to_deployment(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:

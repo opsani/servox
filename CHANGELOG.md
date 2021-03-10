@@ -23,6 +23,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Opsani Dev checks for traffic flows are faster.
 - Service check errors now include the missing labels.
+- Container resources are now checked against the optimizable range before
+  optimization begins.
 
 ### Fixed
 

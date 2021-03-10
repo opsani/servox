@@ -279,12 +279,6 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
         assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
-    @servo.require('Deployment "{self.config.deployment}" is ready')
-    async def check_deployment(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
-        if not await deployment.is_ready():
-            raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
-
     @servo.checks.require("Target container resource requests are within limits")
     async def check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
@@ -302,18 +296,24 @@ class OpsaniDevChecks(servo.BaseChecks):
         # Get resource requirements from container
         container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
         container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
-        
+
         # Get config values
         config_cpu_min = self.config.cpu.min
         config_cpu_max = self.config.cpu.max
         config_memory_min = self.config.memory.min
         config_memory_max = self.config.memory.max
-        
+
         # Check values against config.
-        assert config_cpu_min <= container_cpu_request, f"target container requests '{container_cpu_request}' cpu but config specifies a minimum of '{config_cpu_min}'"
-        assert container_cpu_request <= config_cpu_max, f"target container requests '{container_cpu_request}' cpu but config specifies a maximum of '{config_cpu_max}'"
-        assert config_memory_min <= container_memory_request, f"target container requests '{container_memory_request}' memory but config specifies a minimum of '{config_memory_min}'"
-        assert container_memory_request <= config_memory_max, f"target container requests '{container_memory_request}' memory but config specifies a maximum of '{config_memory_max}'"
+        assert container_cpu_request >= config_cpu_min, f"target container CPU request {container_cpu_request.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+        assert container_cpu_request <= config_cpu_max, f"target container CPU request {container_cpu_request.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
+        assert container_memory_request >= config_memory_min, f"target container Memory request {container_memory_request.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+        assert container_memory_request <= config_memory_max, f"target container Memory request {container_memory_request.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
+
+    @servo.require('Deployment "{self.config.deployment}" is ready')
+    async def check_deployment(self) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+        if not await deployment.is_ready():
+            raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
     @servo.checks.require("service")
     async def check_kubernetes_service(self) -> None:
