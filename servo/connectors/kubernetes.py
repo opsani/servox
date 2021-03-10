@@ -2161,7 +2161,7 @@ class Millicore(int):
             else:
                 return cls(int(float(v) * 1000))
         elif isinstance(v, (int, float, decimal.Decimal)):
-            return cls(int(v * 1000))
+            return cls(int(float(v) * 1000))
         else:
             raise ValueError("could not parse millicore value")
 
