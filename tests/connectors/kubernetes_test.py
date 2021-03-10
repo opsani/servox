@@ -885,7 +885,7 @@ class TestKubernetesConnectorIntegration:
     @pytest.fixture(autouse=True)
     async def _wait_for_manifests(self, kube):
         kube.wait_for_registered(timeout=30.0)
-        await asyncio.sleep(0.00001)
+        await asyncio.sleep(0.1)
 
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
@@ -1045,7 +1045,7 @@ class TestKubernetesConnectorIntegration:
             setting_name="cpu",
             value=".250",
         )
-        control = servo.Control(settlement='1s')
+        control = servo.Control(settlement='5s')
         description = await connector.adjust([adjustment], control)
         assert description is not None
         setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')

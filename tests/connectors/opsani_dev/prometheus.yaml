@@ -22,7 +22,7 @@ data:
           - name: fiber-http
             alias: main
             cpu:
-              min: 500m
+              min: 125m
               max: 2.0
               step: 0.125
             memory:
