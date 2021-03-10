@@ -36,7 +36,6 @@ import servo.connectors.prometheus
 
 pytestmark = [
     pytest.mark.asyncio,
-    pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
     pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config"),
 ]

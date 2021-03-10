@@ -338,8 +338,7 @@ def test_decorating_invalid_signatures() -> None:
 
 
 @pytest.mark.freeze_time("2020-08-25", auto_tick_seconds=15)
-@pytest.mark.event_loop_policy("default")
-async def test_check_timer() -> None:
+def test_check_timer() -> None:
     @check("Check timer")
     def check_test() -> None:
         ...
@@ -347,12 +346,11 @@ async def test_check_timer() -> None:
     check_ = check_test()
     assert check_
     assert isinstance(check_, Check)
-    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 30)
+    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
     assert check_.runtime == "15s"
 
 
 @pytest.mark.freeze_time("2020-08-25", auto_tick_seconds=15)
-@pytest.mark.event_loop_policy("default")
 async def test_decorate_async() -> None:
     @check("Check async")
     async def check_test() -> None:
@@ -361,7 +359,7 @@ async def test_decorate_async() -> None:
     check_ = await check_test()
     assert check_
     assert isinstance(check_, Check)
-    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 30)
+    assert check_.run_at == datetime(2020, 8, 25, 0, 0, 15)
     assert check_.runtime == "15s"
 
 

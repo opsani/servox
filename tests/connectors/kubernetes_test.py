@@ -34,10 +34,6 @@ from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
 from tests.helpers import *
 
-# pytestmark = [
-#     pytest.mark.asyncio,
-#     pytest.mark.event_loop_policy("uvloop"),
-# ]
 
 class TestDNSSubdomainName:
     @pytest.fixture
