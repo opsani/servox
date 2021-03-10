@@ -43,9 +43,9 @@ class TestMessage:
         # NOTE: Use Pydantic's json() method support
         channel = servo.pubsub.Channel.construct(name="whatever", created_at=datetime.datetime.now())
         message = servo.pubsub.Message(json=channel)
-        assert message.text == '{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
+        assert message.text == '{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
         assert message.content_type == 'application/json'
-        assert message.content == b'{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
+        assert message.content == b'{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
 
     def test_yaml_message(self) -> None:
         message = servo.pubsub.Message(yaml={"key": "value"})
