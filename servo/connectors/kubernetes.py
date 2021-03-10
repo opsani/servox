@@ -2160,11 +2160,8 @@ class Millicore(int):
                 return cls(int(v[:-1]))
             else:
                 return cls(int(float(v) * 1000))
-        elif isinstance(v, (float, decimal.Decimal)) and v <= 1.0:
-            # NOTE: 0.125 notation is interpreted as 125m
-            return cls(int(v * 1000))
         elif isinstance(v, (int, float, decimal.Decimal)):
-            return cls(int(v))
+            return cls(int(float(v) * 1000))
         else:
             raise ValueError("could not parse millicore value")
 
