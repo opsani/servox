@@ -643,7 +643,7 @@ async def kube_port_forward(
 ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
-        kube.wait_for_registered(timeout=10)
+        kube.wait_for_registered()
         ports = list(map(lambda port: (unused_tcp_port_factory(), port), remote_ports))
         return kubectl_ports_forwarded(
             target,
@@ -660,7 +660,7 @@ async def kube_port_forward(
 def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.objects.Pod]:
     """A pytest fixture that returns a callable for loading a kubernetes pod reference."""
     def _pod_loader(deployment: str) -> kubetest.objects.Pod:
-        kube.wait_for_registered(timeout=10)
+        kube.wait_for_registered()
 
         deployments = kube.get_deployments()
         prometheus = deployments.get(deployment)

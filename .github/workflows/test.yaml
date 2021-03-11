@@ -98,7 +98,7 @@ jobs:
       run: poetry install --no-interaction
     - name: Run tests
       run: |
-        poetry run pytest -T unit -n 6 --dist loadscope \
+        poetry run pytest -T unit -n 6 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered \
           --cov-report=xml:artifacts/coverage.xml --cov-report=html:artifacts/coverage-html \
@@ -167,7 +167,7 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
       run: |
-        poetry run pytest -n 4 --dist loadscope --tx "4*popen//python=python3.8" \
+        poetry run pytest -n 8 \
           -T integration --verbose --durations=0 --durations-min=5
     - uses: actions/upload-artifact@v2
       with:
@@ -246,7 +246,7 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run system tests
       run: |
-        poetry run pytest -n 6 --dist loadscope \
+        poetry run pytest -n 6 \
           -T system --verbose --durations=0 --durations-min=5
     - uses: actions/upload-artifact@v2
       with:

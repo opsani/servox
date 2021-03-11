@@ -98,8 +98,16 @@ class TestIntegration:
             # These env vars are set by our manifests
             pods = kube.get_pods(labels={ "app.kubernetes.io/name": "servo"})
             assert pods, "servo is not deployed"
-            os.environ['POD_NAME'] = list(pods.keys())[0]
-            os.environ["POD_NAMESPACE"] = kube.namespace
+            try:
+                os.environ['POD_NAME'] = list(pods.keys())[0]
+                os.environ["POD_NAMESPACE"] = kube.namespace
+
+                yield
+
+            finally:
+                os.environ.pop('POD_NAME', None)
+                os.environ.pop('POD_NAMESPACE', None)
+
 
         @pytest.mark.parametrize(
             "resource", ["namespace", "deployment", "container", "service"]

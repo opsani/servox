@@ -121,8 +121,8 @@ test-unit:
 
 .PHONY: test-integration
 test-integration:
-	poetry run pytest -T integration -n auto --dist loadscope
+	poetry run pytest -T integration -n auto --durations=0 --durations-min=5
 
 .PHONY: test-system
 test-system:
-	poetry run pytest -T system -n auto --dist loadscope
+	poetry run pytest -T system -n auto --durations=0 --durations-min=5
