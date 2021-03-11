@@ -440,8 +440,6 @@ class TestServiceMultiport:
                                 # case there are other things running in the cluster
                                 return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets.active))
 
-                        await asyncio.sleep(0.25)
-
                 await wait_for_targets_to_be_scraped()
                 await assert_check(checks.run_one(id=f"check_prometheus_targets"))
 
@@ -746,7 +744,6 @@ async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesMod
 
     if hasattr(status, "observed_generation"):
         while status.observed_generation == resource.status.observed_generation:
-            await asyncio.sleep(0.05)
             await resource.refresh()
 
     # wait for the change to roll out
@@ -931,7 +928,6 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         # Step 4
         servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
         servo.logger.info("waiting for Prometheus to scrape our Pods")
-        await asyncio.sleep(0.25)
 
     elif id == 'check_envoy_sidecar_metrics':
         # Step 5
