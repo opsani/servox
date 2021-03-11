@@ -233,6 +233,7 @@ class TestIntegration:
 )
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+@pytest.mark.clusterrolebinding('cluster-admin')
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:

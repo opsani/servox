@@ -101,7 +101,7 @@ class Condition(servo.logging.Mixin):
 
 async def wait_for_condition(
     condition: Condition,
-    interval: servo.DurationDescriptor = 0.25,
+    interval: servo.DurationDescriptor = 0.05,
     fail_on_api_error: bool = True,
 ) -> None:
     """Wait for a condition to be met.
@@ -3526,7 +3526,7 @@ class KubernetesConnector(servo.BaseConnector):
                         raise servo.AdjustmentRejectedError(
                             reason="Optimization target became unready during adjustment settlement period"
                         )
-                    await asyncio.sleep(servo.Duration('1s').total_seconds())
+                    await asyncio.sleep(servo.Duration('50ms').total_seconds())
 
             await asyncio.gather(
                 progress.watch(progress_logger),

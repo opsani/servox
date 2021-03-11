@@ -1042,7 +1042,7 @@ class TestKubernetesConnectorIntegration:
             value=".250",
         )
 
-        control = servo.Control(settlement='5s')
+        control = servo.Control(settlement='50ms')
         description = await connector.adjust([adjustment], control)
         assert description is not None
         setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
