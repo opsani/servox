@@ -517,15 +517,6 @@ class TestPrometheusIntegration:
         # set of readings that includes the traffic burst, the zero readings on either side of the
         # burst, and will early return once the metrics stabilize without waiting for the full
         # measurement duration as prescribed by the control structure (13 minutes).
-
-        metric = PrometheusMetric(
-            "error_rate",
-            servo.Unit.percentage,
-            query=f'sum(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s])',
-            absent="ignore"
-        )
-        debug("metric is: ", metric)
-        return
         servo.logging.set_level("TRACE")
         async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
             async with kube_port_forward("service/fiber-http", 80) as fiber_url:
@@ -535,14 +526,16 @@ class TestPrometheusIntegration:
                         PrometheusMetric(
                             "throughput",
                             servo.Unit.requests_per_second,
-                            query='envoy_cluster_upstream_rq_total',
+                            query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
+                            step="5s",
                             absent="ignore",
-                            eager="5s"
+                            eager="20s"
                         ),
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.percentage,
-                            query=f'sum(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s])',
+                            query=f'sum(rate(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s]))',
+                            step="5s",
                             absent="ignore"
                         ),
                     ],
@@ -550,19 +543,19 @@ class TestPrometheusIntegration:
 
                 # TODO: Replace this with the load tester fixture
                 async def burst_traffic() -> None:
-                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=3)
+                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=15)
                     async with httpx.AsyncClient(base_url=fiber_url) as client:
-                        servo.logger.info(f"Bursting traffic to {fiber_url} for 3 seconds...")
+                        servo.logger.info(f"Bursting traffic to {fiber_url} for 15 seconds...")
                         count = 0
                         while datetime.datetime.now() < burst_until:
                             response = await client.get("/")
                             response.raise_for_status()
                             count += 1
-                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 3 seconds.")
+                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 15 seconds.")
 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
                 event_loop.call_later(
-                    1,
+                    15,
                     asyncio.create_task,
                     burst_traffic()
                 )

@@ -90,7 +90,7 @@ class BaseModel(pydantic.BaseModel):
     """
 
     class Config(BaseModelConfig):
-        ...
+        validate_all = True
 
 
 class License(enum.Enum):
