@@ -1019,7 +1019,7 @@ class TestKubernetesConnectorIntegration:
         namespace,
         kube
     ) -> None:
-        tuning_config.timeout = "5s"
+        tuning_config.timeout = "3s"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1035,7 +1035,6 @@ class TestKubernetesConnectorIntegration:
 
 
     async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
-        tuning_config.timeout = "5s"
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -1126,7 +1125,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
         # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
-        config.timeout = "5s"
+        config.timeout = "3s"
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
