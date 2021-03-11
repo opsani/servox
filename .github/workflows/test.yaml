@@ -200,10 +200,11 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
     - name: Create tests/kubeconfig
-      run: 'echo "$KUBE_CONFIG_DATA" | base64 --decode > tests/kubeconfig'
-      shell: bash
+      uses: actions-hub/kubectl@master
       env:
-        KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        KUBE_CONFIG: ${{ secrets.KUBE_CONFIG_DATA }}
+      with:
+        args: config view --minify --flatten > tests/kubeconfig
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
