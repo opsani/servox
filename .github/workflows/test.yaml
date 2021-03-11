@@ -284,7 +284,7 @@ jobs:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
     - name: Fix permissions
       run: |
-        if [ -f /home/runner/.kube ]; then
+        if [ -d /home/runner/.kube ]; then
           sudo chown -R runner:docker /home/runner/.kube
         else
           mkdir /home/runner/.kube
