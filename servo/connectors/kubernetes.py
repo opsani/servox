@@ -586,7 +586,7 @@ class Namespace(KubernetesModel):
                 body=self.obj,
             )
 
-    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) -> kubernetes_asyncio.client.V1Status:
         """Delete the Namespace.
 
         Args:
@@ -916,6 +916,7 @@ class Pod(KubernetesModel):
         self.logger.info(f'patching pod "{self.name}"')
         self.logger.trace(f"pod: {self.obj}")
         async with self.api_client() as api_client:
+            api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
             await api_client.patch_namespaced_pod(
                 name=self.name,
                 namespace=self.namespace,
@@ -1182,6 +1183,7 @@ class Service(KubernetesModel):
         TODO: Add docs....
         """
         async with self.api_client() as api_client:
+            api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
             await api_client.patch_namespaced_service(
                 name=self.name,
                 namespace=self.namespace,
@@ -1462,6 +1464,7 @@ class Deployment(KubernetesModel):
     async def patch(self) -> None:
         """Update the changed attributes of the Deployment."""
         async with self.api_client() as api_client:
+            api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
             self.obj = await api_client.patch_namespaced_deployment(
                 name=self.name,
                 namespace=self.namespace,
