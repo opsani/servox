@@ -1863,8 +1863,9 @@ class Deployment(KubernetesModel):
                         raise servo.AdjustmentRejectedError(reason=str(deployment))
 
                     # Check that the conditions aren't reporting a failure
-                    self._check_conditions(status.conditions)
-                    await self._check_pod_conditions()
+                    if status.conditions:
+                        self._check_conditions(status.conditions)
+                        await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
                     if status.observed_generation == observed_generation:

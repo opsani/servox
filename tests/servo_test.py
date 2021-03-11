@@ -1757,8 +1757,6 @@ def test_backoff_context() -> None:
     assert config.backoff["__default__"].max_time == Duration("10m")
     assert config.backoff["__default__"].max_tries is None
 
-
-@pytest.mark.integration
 @pytest.mark.parametrize(
     ("proxies"),
     [
