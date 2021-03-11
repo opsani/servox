@@ -34,13 +34,6 @@ import servo.connectors.opsani_dev
 import servo.connectors.prometheus
 
 
-pytestmark = [
-    pytest.mark.asyncio,
-    pytest.mark.integration,
-    pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config"),
-]
-
-
 @pytest.fixture
 def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
@@ -85,6 +78,8 @@ class TestConfig:
         "prometheus.yaml",
     ],
 )
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestIntegration:
     class TestChecksOriginalState:
         @pytest.fixture(autouse=True)
@@ -228,8 +223,6 @@ class TestIntegration:
                 assert check.message is not None
                 assert isinstance(check.exception, httpx.HTTPStatusError)
 
-@pytest.mark.clusterrolebinding('cluster-admin')
-@pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[
@@ -238,6 +231,8 @@ class TestIntegration:
         "prometheus.yaml",
     ],
 )
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:
