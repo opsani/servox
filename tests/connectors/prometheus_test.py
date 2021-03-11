@@ -543,15 +543,15 @@ class TestPrometheusIntegration:
 
                 # TODO: Replace this with the load tester fixture
                 async def burst_traffic() -> None:
-                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=15)
+                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=3)
                     async with httpx.AsyncClient(base_url=fiber_url) as client:
-                        servo.logger.info(f"Bursting traffic to {fiber_url} for 15 seconds...")
+                        servo.logger.info(f"Bursting traffic to {fiber_url} for 3 seconds...")
                         count = 0
                         while datetime.datetime.now() < burst_until:
                             response = await client.get("/")
                             response.raise_for_status()
                             count += 1
-                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 15 seconds.")
+                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 3 seconds.")
 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
                 event_loop.call_later(
