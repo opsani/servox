@@ -47,8 +47,8 @@ jobs:
         uses: actions/cache@v2
         id: cached-poetry
         with:
-          path: .poetry
-          key: .poetry-${{ runner.os }}-1.1.5
+          path: ~/.poetry
+          key: poetry-${{ runner.os }}-1.1.5
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1.1.2
         if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -99,8 +99,8 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: .poetry
-        key: .poetry-${{ runner.os }}-1.1.5
+        path: ~/.poetry
+        key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.2
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -162,8 +162,8 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: .poetry
-        key: .poetry-${{ runner.os }}-1.1.5
+        path: ~/.poetry
+        key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.2
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -237,8 +237,8 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: .poetry
-        key: .poetry-${{ runner.os }}-1.1.5
+        path: ~/.poetry
+        key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.2
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -246,6 +246,11 @@ jobs:
         version: 1.1.5
         virtualenvs-create: true
         virtualenvs-in-project: true
+    - name: Source Poetry env
+      run: |
+        source "$HOME"/.poetry/env
+        poetry config virtualenvs.create true
+        poetry config virtualenvs.in-project true
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
