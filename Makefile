@@ -117,7 +117,7 @@ test: test-unit test-integration test-system
 
 .PHONY: test-unit
 test-unit:
-	poetry run pytest -T unit -n auto --dist loadscope
+	poetry run pytest -T unit -n 6
 
 .PHONY: test-integration
 test-integration:
