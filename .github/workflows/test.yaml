@@ -201,6 +201,7 @@ jobs:
         aws-region: us-west-2
     - name: Create tests/kubeconfig
       run: |
+        mkdir ~/.kube
         echo "$KUBE_CONFIG_DATA" | base64 --decode > $HOME/.kube/config
         kubectl config view --minify --flatten > tests/kubeconfig
       shell: bash
