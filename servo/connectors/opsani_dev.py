@@ -607,7 +607,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         result = response.data[0]
         timestamp, value = result.value
         if value in {None, 0.0}:
-            command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s"
+            command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- sh -c \"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
             raise servo.checks.CheckError(
                 f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                 hint=f"Send traffic to your application on port 9980. Try `{command}`",
