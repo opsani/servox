@@ -377,14 +377,6 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Prometheus sidecar
 
-    @servo.checks.require("Prometheus ConfigMap exists")
-    async def check_prometheus_config_map(self) -> None:
-        config = await servo.connectors.kubernetes.ConfigMap.read(
-            "prometheus-config", self.config.namespace
-        )
-        self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
-        assert config, "failed: no config map named 'prometheus-config'"
-
     @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
         pod = await self._read_servo_pod()
