@@ -139,12 +139,6 @@ class TestIntegration:
             result = await checks.run_one(id=f"check_service_routes_traffic_to_deployment")
             assert result.success, f"Failed with message: {result.message}"
 
-        async def test_prometheus_configmap_exists(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        ) -> None:
-            result = await checks.run_one(id=f"check_prometheus_config_map")
-            assert result.success
-
         async def test_prometheus_sidecar_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
