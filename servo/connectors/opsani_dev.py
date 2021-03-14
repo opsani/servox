@@ -545,7 +545,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             if container.name == "opsani-envoy":
                 return
 
-        command = f"kubectl exec -n {self.config.namespace} -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
+        command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
@@ -607,7 +607,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         result = response.data[0]
         timestamp, value = result.value
         if value in {None, 0.0}:
-            command = f"kubectl exec -n {self.config.namespace} -c servo {self._port_forward_target} -- sh -c \"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
+            command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- sh -c \"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
             raise servo.checks.CheckError(
                 f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                 hint=f"Send traffic to your application on port 9980. Try `{command}`",
@@ -682,7 +682,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             return ", ".join(summaries)
 
     @property
-    def _port_forward_target(self) -> str:
+    def _servo_resource_target(self) -> str:
         if pod_name := os.environ.get('POD_NAME'):
             return f"pods/{pod_name}"
         else:
