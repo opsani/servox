@@ -53,7 +53,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url']
+        assert list(config.dict().keys()) == ['description', 'namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url']
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -69,6 +69,11 @@ class TestConfig:
             "  min: 256.0MiB\n"
             "  max: 4.0GiB\n"
         )
+
+    def test_assign_optimizer(self) -> None:
+        config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
+        config.__optimizer__ = None
+
 
 @pytest.mark.applymanifests(
     "opsani_dev",

@@ -15,7 +15,7 @@ from pydantic import Extra, ValidationError
 import servo as servox
 from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
-from servo.configuration import BaseConfiguration, Optimizer, ServoConfiguration, Timeouts
+from servo.configuration import BaseConfiguration, Optimizer, CommonConfiguration, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.errors import *
@@ -99,6 +99,7 @@ async def assembly(servo_yaml: Path) -> Assembly:
 
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
+    # TODO: Can't pass in like this, needs to be fixed
     assembly = await Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
@@ -222,6 +223,8 @@ async def test_after_event(mocker, servo: servo) -> None:
 
 async def test_on_event(mocker, servo: servo) -> None:
     connector = servo.get_connector("first_test_servo")
+    assert connector
+    assert servo.connectors
     event_handler = connector.get_event_handlers("promote", Preposition.on)[0]
     spy = mocker.spy(event_handler, "handler")
     await servo.dispatch_event("promote")
@@ -599,9 +602,15 @@ class TestAssembly:
         assembly = await Assembly.assemble(
             config_file=servo_yaml, optimizer=optimizer
         )
+
+        assert len(assembly.servos) == 1
+        assert len(assembly.servos[0].connectors) == 1
         servo = assembly.servos[0]
+
+        assert servo.config.optimizer, "optimizer should not be null"
+        assert servo.config.optimizer == optimizer
         connector = servo.connectors[0]
-        assert connector.optimizer == optimizer
+        assert connector.config.optimizer == optimizer
 
     async def test_aliased_connectors_produce_schema(self, servo_yaml: Path, mocker) -> None:
         mocker.patch.object(Servo, "version", "100.0.0")
@@ -630,13 +639,6 @@ class TestAssembly:
         'description': 'Schema for configuration of Servo v100.0.0 with Vegeta Connector v100.0.0',
         'type': 'object',
         'properties': {
-            'description': {
-                'title': 'Description',
-                'env_names': [
-                    'SERVO_DESCRIPTION',
-                ],
-                'type': 'string',
-            },
             'name': {
                 'title': 'Name',
                 'env_names': [
@@ -644,9 +646,15 @@ class TestAssembly:
                 ],
                 'type': 'string',
             },
+            'description': {
+                'title': 'Description',
+                'env_names': [
+                    'SERVO_DESCRIPTION',
+                ],
+                'type': 'string',
+            },
             'optimizer': {
                 'title': 'Optimizer',
-                'description': 'Configuration of the Servo connector',
                 'env_names': [
                     'SERVO_OPTIMIZER',
                 ],
@@ -693,15 +701,15 @@ class TestAssembly:
                     },
                 ],
             },
-            'servo': {
-                'title': 'Servo',
+            'settings': {
+                'title': 'Settings',
                 'description': 'Configuration of the Servo connector',
                 'env_names': [
-                    'SERVO_SERVO',
+                    'SERVO_SETTINGS',
                 ],
                 'allOf': [
                     {
-                        '$ref': '#/definitions/servo__configuration__ServoConfiguration',
+                        '$ref': '#/definitions/CommonConfiguration',
                     },
                 ],
             },
@@ -807,14 +815,6 @@ class TestAssembly:
                 ),
                 'type': 'object',
                 'properties': {
-                    'description': {
-                        'title': 'Description',
-                        'description': 'An optional annotation describing the configuration.',
-                        'env_names': [
-                            'BACKOFF_SETTINGS_DESCRIPTION',
-                        ],
-                        'type': 'string',
-                    },
                     'max_time': {
                         'title': 'Max Time',
                         'env_names': [
@@ -862,14 +862,6 @@ class TestAssembly:
                 ),
                 'type': 'object',
                 'properties': {
-                    'description': {
-                        'title': 'Description',
-                        'description': 'An optional annotation describing the configuration.',
-                        'env_names': [
-                            'TIMEOUTS_DESCRIPTION',
-                        ],
-                        'type': 'string',
-                    },
                     'connect': {
                         'title': 'Connect',
                         'env_names': [
@@ -945,26 +937,18 @@ class TestAssembly:
                 },
                 'additionalProperties': False,
             },
-            'servo__configuration__ServoConfiguration': {
-                'title': 'Servo Connector Configuration Schema',
+            'CommonConfiguration': {
+                'title': 'Common Connector Configuration Schema',
                 'description': (
-                    'ServoConfiguration models configuration for the Servo connector and establishes default\n'
+                    'CommonConfiguration models configuration for the Servo connector and establishes default\n'
                     'settings for shared services such as networking and logging.'
                 ),
                 'type': 'object',
                 'properties': {
-                    'description': {
-                        'title': 'Description',
-                        'description': 'An optional annotation describing the configuration.',
-                        'env_names': [
-                            'SERVO_DESCRIPTION',
-                        ],
-                        'type': 'string',
-                    },
                     'backoff': {
                         'title': 'Backoff',
                         'env_names': [
-                            'SERVO_BACKOFF',
+                            'COMMON_BACKOFF',
                         ],
                         'allOf': [
                             {
@@ -975,7 +959,7 @@ class TestAssembly:
                     'proxies': {
                         'title': 'Proxies',
                         'env_names': [
-                            'SERVO_PROXIES',
+                            'COMMON_PROXIES',
                         ],
                         'anyOf': [
                             {
@@ -998,7 +982,7 @@ class TestAssembly:
                     'timeouts': {
                         'title': 'Timeouts',
                         'env_names': [
-                            'SERVO_TIMEOUTS',
+                            'COMMON_TIMEOUTS',
                         ],
                         'allOf': [
                             {
@@ -1009,7 +993,7 @@ class TestAssembly:
                     'ssl_verify': {
                         'title': 'Ssl Verify',
                         'env_names': [
-                            'SERVO_SSL_VERIFY',
+                            'COMMON_SSL_VERIFY',
                         ],
                         'anyOf': [
                             {
@@ -1621,7 +1605,7 @@ def test_invalid_timeouts_input(attr, value) -> None:
     ],
 )
 def test_timeouts_parsing(value, expected) -> None:
-    config = ServoConfiguration(timeouts=value)
+    config = CommonConfiguration(timeouts=value)
     if value is None:
         assert config.timeouts is None
     else:
@@ -1687,20 +1671,30 @@ def test_timeouts_parsing(value, expected) -> None:
     ],
 )
 def test_valid_proxies(proxies) -> None:
-    ServoConfiguration(proxies=proxies)
+    CommonConfiguration(proxies=proxies)
 
 
 @pytest.mark.parametrize("proxies", [0.5, "not valid", 1234])
 def test_invalid_proxies(proxies) -> None:
     with pytest.raises(ValidationError):
-        ServoConfiguration(proxies=proxies)
+        CommonConfiguration(proxies=proxies)
 
 
 def test_api_client_options() -> None:
-    config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
-
     optimizer = Optimizer("test.com/foo", token="12345")
-    servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    settings = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+
+    # NOTE: SETTINGS AND OPTIMIZER NOT TOGETHER!!!
+    servo = Servo(config={"settings": settings, "optimizer": optimizer}, connectors=[])
+    assert servo.config.optimizer, "expected config to have an optimizer"
+    assert servo.optimizer, "expected to have an optimizer"
+    assert servo.optimizer == optimizer
+
+    assert servo.config.settings, "expected settings"
+    assert servo.config.settings == settings, "expected settings"
+
+    assert servo.config.settings.proxies
+    assert servo.api_client_options['proxies']
 
     assert {
         "proxies": "http://localhost:1234",
@@ -1708,15 +1702,26 @@ def test_api_client_options() -> None:
         "verify": False,
     }.items() <= servo.api_client_options.items()
 
+async def test_models() -> None:
+    optimizer = Optimizer("test.com/foo", token="12345")
+    config = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    assert MeasureConnector(config={"__settings__": config, "__optimizer__": optimizer})
 
 async def test_httpx_client_config() -> None:
-    config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    optimizer = Optimizer("test.com/foo", token="12345")
+    common = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
 
+    # TODO: get rid of this...
     from httpx._utils import URLPattern
 
-    optimizer = Optimizer("test.com/foo", token="12345")
-    connector = MeasureConnector(config=BaseConfiguration(), optimizer=optimizer)
-    servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[connector])
+    # TODO: init with config that has optimizer, use optimizer + config? allow optimizer=UUU only on Servo class?
+    connector = MeasureConnector(config={"__settings__": common, "__optimizer__": optimizer})
+    assert connector.config.optimizer == optimizer
+    assert connector.optimizer == optimizer
+    assert connector.config.settings
+    assert connector.config.settings == common
+
+    servo = Servo(config={"settings": common, "optimizer": optimizer}, connectors=[connector])
 
     for c in [servo, connector]:
         async with c.api_client() as client:
@@ -1727,7 +1732,7 @@ async def test_httpx_client_config() -> None:
 
 
 def test_backoff_defaults() -> None:
-    config = ServoConfiguration()
+    config = CommonConfiguration()
     assert config.backoff
     assert config.backoff["__default__"]
     assert config.backoff["__default__"].max_time is not None
@@ -1740,17 +1745,16 @@ def test_backoff_contexts() -> None:
             "__default__": {"max_time": "10m", "max_tries": None},
             "connect": {"max_time": "1h", "max_tries": None},
         })
-    debug(contexts)
+    assert contexts
 
-    config = servox.configuration.ServoConfiguration(backoff=contexts)
-    debug(config)
+    config = servox.configuration.CommonConfiguration(backoff=contexts)
+    assert config
 
 def test_backoff_context() -> None:
-    config = ServoConfiguration()
+    config = CommonConfiguration()
     assert config.backoff
-    debug(config)
-    # assert config.backoff.max_time()
-    # assert config.backoff.max_time("whatever")
+    assert config.backoff.max_time()
+    assert config.backoff.max_time("whatever")
 
 
     assert config.backoff["__default__"].max_time is not None
@@ -1768,9 +1772,9 @@ def test_backoff_context() -> None:
     ],
 )
 async def test_proxy_utilization(proxies) -> None:
-    config = ServoConfiguration(proxies=proxies)
     optimizer = Optimizer("test.com/foo", token="12345")
-    servo = Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    config = CommonConfiguration(proxies=proxies)
+    servo = Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
     async with servo.api_client() as client:
         transport = client._transport_for_url(httpx.URL(optimizer.base_url))
         assert isinstance(transport, httpx.AsyncHTTPTransport)
@@ -1872,7 +1876,7 @@ async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> N
     )
 
 async def test_backoff() -> None:
-    config = ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    config = CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
     assert config.backoff
     assert config.backoff.max_time() == Duration('10m').total_seconds()
     assert config.backoff.max_time('connect') == Duration('1h').total_seconds()
@@ -1887,4 +1891,5 @@ def test_servo_name_from_config() -> None:
     assert servo.name == "archibald"
 
 def test_servo_name_falls_back_to_optimizer_id(servo: Servo) -> None:
+    debug("SERVO IS: ", servo)
     assert servo.name == "dev.opsani.com/servox"

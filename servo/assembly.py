@@ -103,19 +103,24 @@ class Assembly(pydantic.BaseModel):
                 config=config, env=env
             )
             servo_config = servo_config_model.parse_obj(config)
+            if not servo_config.optimizer:
+                servo_config.optimizer = optimizer
             servo_optimizer = servo_config.optimizer or optimizer
+
 
             # Initialize all active connectors
             connectors: List[servo.connector.BaseConnector] = []
             for name, connector_type in routes.items():
                 connector_config = getattr(servo_config, name)
                 if connector_config is not None:
+                    connector_config.__optimizer__ = servo_optimizer
                     connector = connector_type(
                         name=name,
                         config=connector_config,
                         optimizer=servo_optimizer,
-                        __connectors__=connectors,
                         pubsub_exchange=pubsub_exchange,
+                        __optimizer__=servo_optimizer,
+                        __connectors__=connectors,
                     )
                     connectors.append(connector)
 

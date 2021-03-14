@@ -20,7 +20,7 @@ __all__ = [
     "BaseConfiguration",
     "BaseServoConfiguration",
     "Optimizer",
-    "ServoConfiguration",
+    "CommonConfiguration",
 ]
 
 
@@ -163,7 +163,7 @@ class AbstractBaseConfiguration(pydantic.BaseSettings, servo.logging.Mixin):
 
         This is an abstract method that needs to be implemented in subclasses in order to support config generation.
         """
-        return cls()
+        return cls(**kwargs)
 
     # Automatically uppercase env names upon subclassing
     def __init_subclass__(cls, **kwargs):
@@ -245,13 +245,37 @@ class BaseConfiguration(AbstractBaseConfiguration):
     Connectors are initialized with a valid settings instance capable of providing necessary
     configuration for the connector to function.
     """
-
+    # name: Optional[str] = pydantic.Field(
+    #     None, description="A descriptive name of the configuration."
+    # )
     description: Optional[str] = pydantic.Field(
         None, description="An optional annotation describing the configuration."
     )
     """An optional textual description of the configuration stanza useful for differentiating
     between configurations within assemblies.
     """
+
+    __optimizer__: Optional[Optimizer] = pydantic.PrivateAttr(None)
+
+    __settings__: Optional[CommonConfiguration] = pydantic.PrivateAttr(
+        default_factory=lambda: CommonConfiguration(),
+    )
+
+    def __init__(self, __optimizer__: Optional[Optimizer] = None, __settings__: Optional[CommonConfiguration] = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.__optimizer__ = __optimizer__
+        if __settings__:
+            self.__settings__ = __settings__
+
+    @property
+    def optimizer(self) -> Optional[Optimizer]:
+        """Returns the Optimizer this configuration is bound to."""
+        return self.__optimizer__
+
+    @property
+    def settings(self) -> Optional[Optimizer]:
+        """Returns the Optimizer this configuration is bound to."""
+        return self.__settings__
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
@@ -262,7 +286,7 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
 
-class BackoffSettings(BaseConfiguration):
+class BackoffSettings(AbstractBaseConfiguration):
     """
     BackoffSettings objects model configuration of backoff and retry policies.
 
@@ -279,7 +303,7 @@ class BackoffSettings(BaseConfiguration):
     The maximum number of retry attempts to make before giving up.
     """
 
-class Timeouts(BaseConfiguration):
+class Timeouts(AbstractBaseConfiguration):
     """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
     servo.
 
@@ -367,8 +391,12 @@ class BackoffConfigurations(pydantic.BaseModel):
         ).max_tries
 
 
-class ServoConfiguration(BaseConfiguration):
-    """ServoConfiguration models configuration for the Servo connector and establishes default
+# FIXME: this needs a better name -- maybe call it "CommonConfiguration" or maybe the options need to be pulled up to top level
+# FIXME: can we factor the shared config up?
+# TODO: This is probably called a Settings class of some kind
+# TODO: CommonSettings? BaseSettings? SharedSettings? Just Settings?
+class CommonConfiguration(AbstractBaseConfiguration):
+    """CommonConfiguration models configuration for the Servo connector and establishes default
     settings for shared services such as networking and logging.
     """
 
@@ -418,31 +446,28 @@ class ServoConfiguration(BaseConfiguration):
         return v
 
     @classmethod
-    def generate(cls, **kwargs) -> Optional["ServoConfiguration"]:
+    def generate(cls, **kwargs) -> Optional["CommonConfiguration"]:
         return None
 
     class Config(servo.types.BaseModelConfig):
         validate_assignment = True
 
 
-class BaseServoConfiguration(BaseConfiguration, abc.ABC):
+class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     """
     Abstract base class for Servo instances.
 
     Note that the concrete BaseServoConfiguration class is built dynamically at runtime
-    based on the avilable connectors and configuration in effect.
+    based on the available connectors and configuration in effect.
 
     See `Assembly` for details on how the concrete model is built.
+
+    NOTE: Inherits from AbstractBaseConfiguration because of optimizer property
     """
 
-    name: Optional[str]
-    description: Optional[str]
-
-    optimizer: Optional[Optimizer] = pydantic.Field(
-        None, description="Configuration of the Servo connector"
-    )
-    """The Opsani optimizer backend to collaborate with."""
-
+    name: Optional[str] = None
+    description: Optional[str] = None
+    optimizer: Optional[Optimizer] = None
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
         description=(
@@ -460,9 +485,10 @@ class BaseServoConfiguration(BaseConfiguration, abc.ABC):
     An optional list of connector names or a mapping of connector names to connector class names
     """
 
-    servo: Optional[ServoConfiguration] = pydantic.Field(
-        default_factory=lambda: ServoConfiguration(),
-        description="Configuration of the Servo connector"
+    # TODO: This needs a better name... maybe options? settings?
+    settings: Optional[CommonConfiguration] = pydantic.Field(
+        default_factory=lambda: CommonConfiguration(),
+        description="Configuration of the Servo connector",
     )
     """Configuration of the Servo itself.
 

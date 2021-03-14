@@ -13,6 +13,7 @@ import itertools
 import os
 import operator
 import pathlib
+import re
 from typing import (
     Any,
     Callable,
@@ -2852,7 +2853,7 @@ class CanaryOptimization(BaseOptimization):
 
     class Config:
         arbitrary_types_allowed = True
-        extra = pydantic.Extra.allow
+        extra = pydantic.Extra.forbid
 
 
 class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
@@ -3733,3 +3734,38 @@ class ConfigMap(KubernetesModel):
             return False
 
         return True
+
+
+def labelize(name: str) -> str:
+    """
+    Transform a string into a valid Kubernetes label value.
+
+    Valid Kubernetes label values:
+        * must be 63 characters or less (cannot be empty)
+        * must begin and end with an alphanumeric character ([a-z0-9A-Z])
+        * may contain dashes (-), underscores (_), dots (.), and alphanumerics between
+    """
+
+
+    # replace slashes with underscores
+    name = re.sub(r'\/', '_')
+
+    # replace whitespace with hyphens
+    name = name.replace(r'\s', '-')
+
+    # strip any remaining disallowed characters
+    name = name.replace(r'[^a-z0-9A-Z\.\-_]+', '')
+
+    # truncate to our maximum length
+    name = name[:63]
+
+    # ensure starts with an alphanumeric by prefixing with `0-`
+    boundaryRegex = re.compile('[a-z0-9A-Z]')
+    if not boundaryRegex.match(name[0]):
+        name = ('0-' + name)[:63]
+
+    # ensure ends with an alphanumeric by suffixing with `-1`
+    if not boundaryRegex.match(name[-1]):
+        name = name[:61] + '-1'
+
+    return name

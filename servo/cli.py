@@ -453,6 +453,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 CLI.assemble_from_context(ctx)
 
             except (ValueError, pydantic.ValidationError) as error:
+                raise error
                 typer.echo(f"fatal: invalid configuration: {error}", err=True)
                 raise typer.Exit(2)
 
@@ -525,6 +526,8 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 optimizer=optimizer
             ))
         except pydantic.ValidationError as error:
+            raise error
+
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
 

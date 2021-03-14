@@ -437,6 +437,7 @@ def test_run_with_empty_config_file(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert result.exit_code == 0, f"RESULT: {result.stderr}"
+    # TODO: This should just be optimizer: dev.opsani.com/sdadas
     assert "{}" in result.stdout
 
 
@@ -501,6 +502,8 @@ def test_config_configmap_file(
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     assert result.exit_code == 0
+
+    # TODO: Fixme -- this should just be optimizer: and token:
     assert path.read_text() == (
         "---\n"
         "apiVersion: v1\n"

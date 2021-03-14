@@ -326,7 +326,7 @@ def servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return the path to a servo config file set up for running stub connectors from the test helpers."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
-    settings = tests.helpers.StubBaseConfiguration(name="stub")
+    settings = servo.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(
@@ -343,7 +343,7 @@ def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return the path to a servo config file set up for multi-servo execution."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
-    settings = tests.helpers.StubBaseConfiguration(name="stub")
+    settings = tests.helpers.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(

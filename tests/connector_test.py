@@ -701,6 +701,14 @@ def test_vegeta_cli_schema_json(
         'description': 'Configuration of the Vegeta connector',
         'type': 'object',
         'properties': {
+            'name': {
+                'title': 'Name',
+                'description': 'A descriptive name of the configuration.',
+                'env_names': [
+                    'VEGETA_NAME',
+                ],
+                'type': 'string',
+            },
             'description': {
                 'title': 'Description',
                 'description': 'An optional annotation describing the configuration.',
@@ -1022,6 +1030,8 @@ def test_vegeta_cli_generate_with_defaults(
     assert "Generated vegeta.yaml" in result.stdout
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
+    debug("sadsadas", config)
+    return
     assert config == {
         "vegeta": {
             "connections": 10000,
@@ -1513,14 +1523,18 @@ async def test_logging() -> None:
     request = respx.post(
         "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
     ).mock(httpx.Response(200, json={"status": "ok"}))
-    connector = MeasureConnector(
-        optimizer=Optimizer(id="example.com/my-app", token="123456"),
-        config=BaseConfiguration(),
-    )
+    config = BaseConfiguration(__optimizer__=Optimizer(id="example.com/my-app", token="123456"))
+    assert config.__optimizer__, "expected to have config.__optimizer__"
+    assert config.optimizer, "expected to have config.__optimizer__"
+    connector = MeasureConnector(config=config)
 
-    config = servox.configuration.ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    assert connector.config
+    assert connector.config.__optimizer__, "expected to have config.__optimizer__"
+    assert connector.optimizer, "expected to have config.__optimizer__"
+
+    config = servox.configuration.CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
     optimizer = Optimizer("test.com/foo", token="12345")
-    servo = servox.Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    servo = servox.Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
 
     with servo.current():
         with connector.current():
