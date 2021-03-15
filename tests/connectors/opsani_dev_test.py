@@ -163,6 +163,12 @@ class TestIntegration:
             result = await checks.run_one(id=f"check_prometheus_container_port")
             assert result.success
 
+        async def test_check_podspec_requirements_not_at_lowest_level(
+            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ) -> None:
+            result = await checks.run_one(id=f"check_podspec_requirements_not_at_lowest_level")
+            assert result.success
+
         @pytest.fixture
         def go_memstats_gc_sys_bytes(self) -> dict:
             return {

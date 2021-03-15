@@ -427,6 +427,41 @@ class OpsaniDevChecks(servo.BaseChecks):
             port == 9090
         ), f"expected Prometheus container port on 9090 but found {port}"
 
+    @servo.checks.require("Podspec requrements are not at the lowest level")
+    async def check_podspec_requirements_not_at_lowest_level(self) -> None:
+        """
+        We have this container with resource requirements.
+        And we have an experimental range.
+
+        The ideal situation is:
+
+        <bottom of range>-------|room to move down|-----<container resource requirements>-----|room to move up|-----<top of range>
+        What we are trying to make sure is that container resource requirements are greater than the bottom of the range.
+        """
+        
+        # Load the Deployment
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment,
+            self.config.namespace
+        )
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+
+        # Find the target Container
+        target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
+        assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
+        
+        # Get resource requirements from container
+        container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
+        container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
+
+        # Get the minimum values.
+        config_cpu_min = self.config.cpu.min
+        config_memory_min = self.config.memory.min
+
+        # Make sure that the resource requirement values are greater than the minimum.
+        assert container_cpu_request >= config_cpu_min, f"target container CPU request {container_cpu_request.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+        assert container_memory_request >= config_memory_min, f"target container Memory request {container_memory_request.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+
     @servo.checks.require("Prometheus is accessible")
     async def check_prometheus_is_accessible(self) -> str:
         pod = await self._read_servo_pod()
