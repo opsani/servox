@@ -39,6 +39,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Updated to httpx v0.17.0
 - Updated uvloop to v0.15.2
 
+### Fixed
+
+- HTTP connection errors could result in unbound references to `response` in the
+  `servo.api` module. (SOL-292)
+
 ## [0.9.5] "serenity now" - 2021-02-24
 
 ### Enhanced
