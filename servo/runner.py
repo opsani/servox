@@ -241,7 +241,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.user_agent()))
+                await self._post_event(servo.api.Events.hello, dict(agent=self.optimizer.user_agent))
                 self._connected = True
 
 

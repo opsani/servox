@@ -1113,6 +1113,41 @@ class TestKubernetesConnectorIntegration:
         await KubernetesChecks.run(config)
 
 
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesClusterConnectorIntegration:
+    """Tests not requiring manifests setup, just an active cluster
+    """
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, servo_yaml: pathlib.Path, kubeconfig: pathlib.Path):
+        config.kubeconfig = kubeconfig
+        async with client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.VersionApi(api)
+            version_obj = await v1.get_code()
+
+        expected = f"kubernetes/{version_obj.major}.{version_obj.minor} (namespace {namespace}; platform {version_obj.platform})"
+
+        config_model = servo.assembly._create_config_model_from_routes({ "kubernetes": KubernetesConnector })
+        config = config_model.parse_obj({"kubernetes": config})
+        servo_yaml.write_text(config.yaml(exclude_none=True))
+
+        optimizer = servo.Optimizer(
+            id="servox.opsani.com/tests",
+            token="00000000-0000-0000-0000-000000000000",
+        )
+        await servo.assembly.Assembly.assemble(
+            config_file=servo_yaml, optimizer=optimizer
+        )
+
+        # Validate correct construction
+        assert optimizer.user_agent.endswith(expected)
+
+
 ##
 # Rejection Tests using modified deployment
 @pytest.mark.integration

@@ -158,7 +158,7 @@ class Assembly(pydantic.BaseModel):
         first: bool = False,
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
-        prepositions: servo.events.Preposition = (
+        _prepositions: servo.events.Preposition = (
             servo.events.Preposition.before | servo.events.Preposition.on | servo.events.Preposition.after
         ),
         return_exceptions: bool = False,
@@ -175,7 +175,7 @@ class Assembly(pydantic.BaseModel):
                         first=first,
                         include=include,
                         exclude=exclude,
-                        prepositions=prepositions,
+                        _prepositions=_prepositions,
                         **kwargs
                     ),
                     self.servos,

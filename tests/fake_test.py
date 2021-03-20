@@ -99,11 +99,11 @@ async def test_hello_and_describe(
     servo_runner.servo.optimizer.base_url = fakeapi_url
 
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
-    await static_optimizer.say_hello(dict(agent=servo.api.user_agent()))
+    await static_optimizer.say_hello(dict(agent=servo_runner.optimizer.user_agent))
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
 
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+        servo.api.Events.hello, dict(agent=servo_runner.optimizer.user_agent)
     )
     assert response.status == "ok"
 
