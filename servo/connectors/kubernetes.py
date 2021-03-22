@@ -2090,6 +2090,9 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
+        # TODO: driver adjust handler calls ensure_tuning_pod but also defines its own top level progress reporter
+        #   that will cause web UI progress to thrash between 0 and the percent that this EventProgress timeout
+        #   has elapsed. Determine sane method of eliminating the behavior
         progress = servo.EventProgress(timeout)
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
@@ -3492,53 +3495,34 @@ class KubernetesConnector(servo.BaseConnector):
     ) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
 
-        # Apply the adjustments and emit indeterminate progress status
-        progress_logger = lambda p: self.logger.info(
-            p.annotate(f"waiting for adjustments to be applied...", False),
-            progress=p.progress,
-        )
-        progress = servo.EventProgress()
+        settlement = control.settlement or self.config.settlement
+        progress = servo.EventProgress(settlement=settlement)
+
+        # Apply the adjustments and emit indeterminate or settlement progress status
+        async def progress_handler(p: servo.EventProgress):
+            if p.settling:
+                # When settlement is defined, ensure optimization target remains ready for the duration
+                if not await state.is_ready():
+                    # Raise a specific exception if the optimization defines one
+                    state.raise_for_status()
+
+                    raise servo.AdjustmentRejectedError(
+                        reason="Optimization target became unready during adjustment settlement period"
+                    )
+
+                p_info = f"waiting {settlement} for adjustments settlement..."
+            else:
+                p_info = "waiting for adjustments to be applied..."
+
+            self.logger.info(p.annotate(p_info, False),  progress=p.progress)
+
         future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
         await asyncio.gather(
             future,
-            progress.watch(progress_logger),
+            progress.watch(progress_handler),
         )
-
-        # Handle settlement
-        settlement = control.settlement or self.config.settlement
-        if settlement:
-            self.logger.info(
-                f"Settlement duration of {settlement} requested, waiting for pods to settle..."
-            )
-            progress = servo.DurationProgress(settlement)
-            progress_logger = lambda p: self.logger.info(
-                p.annotate(f"waiting {settlement} for pods to settle...", False),
-                progress=p.progress,
-            )
-            async def readiness_monitor() -> None:
-                while not progress.finished:
-                    if not await state.is_ready():
-                        # Raise a specific exception if the optimization defines one
-                        state.raise_for_status()
-
-                        raise servo.AdjustmentRejectedError(
-                            reason="Optimization target became unready during adjustment settlement period"
-                        )
-                    await asyncio.sleep(servo.Duration('50ms').total_seconds())
-
-            await asyncio.gather(
-                progress.watch(progress_logger),
-                readiness_monitor()
-            )
-            if not await state.is_ready():
-                raise servo.AdjustmentRejectedError(
-                    reason="Optimization target became unready after adjustment settlement period"
-                )
-            self.logger.info(
-                f"Settlement duration of {settlement} has elapsed, resuming optimization."
-            )
 
         description = state.to_description()
         return description

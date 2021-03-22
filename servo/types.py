@@ -521,7 +521,6 @@ class EventProgress(BaseProgress):
         else:
             return None
 
-    # TODO: Figure out how to make sure this can't go backward sanely...
     @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0
@@ -531,20 +530,26 @@ class EventProgress(BaseProgress):
         the configuration of a timeout and/or settlement time.
 
         When settlement is in effect, progress is relative to the amount of time remaining in the
-        settlement duration. This can result in progress that goes backward as the finish moves
-        forward based on the event condition being triggered.
+        settlement duration scaled and adjusted to be reported within the range
+        of 50.0 to 100.0 (i.e. the second half of the total progress).
+
+        If timeout is closer to completion than settlement, the progress is relative to it
+        instead to prevent progress from going backwards
         """
         if self._event.is_set():
             return 100.0
         elif self.started:
+            prog = 0.0
             if self.settling:
-                return (
-                    min(100.0, 100.0 * (Duration.since(self._settlement_started_at) / self.settlement))
+                prog = min(100.0, 50.0 + 50.0 * (Duration.since(self._settlement_started_at) / self.settlement))
+
+            if self.timeout:
+                # Ensure progress does not go backward if settlement progress is lower than timeout progress
+                prog = max(
+                    prog, min(100.0, 100.0 * (self.elapsed / self.timeout))
                 )
-            elif self.timeout:
-                return (
-                    min(100.0, 100.0 * (self.elapsed / self.timeout))
-                )
+
+            return prog
 
         # NOTE: Without a timeout or settlement duration we advance from 0 to 100. Like a true gangsta
         return 0.0
