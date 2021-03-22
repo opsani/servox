@@ -2698,7 +2698,7 @@ class CanaryOptimization(BaseOptimization):
         await dep_copy.delete_tuning_pod(raise_if_not_found=False)
         task = asyncio.create_task(dep_copy.ensure_tuning_pod(timeout=self.timeout.total_seconds()))
         try:
-            self.canary = await task
+            self.tuning_pod = await task
         except asyncio.CancelledError:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -2827,9 +2827,9 @@ class CanaryOptimization(BaseOptimization):
 
                 # create a new canary against baseline
                 self.logger.info(
-                    "creating new canary against baseline following failed adjust"
+                    "creating new tuning pod against baseline following failed adjust"
                 )
-                self.canary = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
+                self.tuning_pod = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
                 return True
 
             except Exception as handler_error:
