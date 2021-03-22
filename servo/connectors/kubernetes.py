@@ -3748,13 +3748,13 @@ def labelize(name: str) -> str:
 
 
     # replace slashes with underscores
-    name = re.sub(r'\/', '_')
+    name = re.sub(r'\/', '_', name)
 
     # replace whitespace with hyphens
-    name = name.replace(r'\s', '-')
+    name = re.sub(r'\s', '-', name)
 
     # strip any remaining disallowed characters
-    name = name.replace(r'[^a-z0-9A-Z\.\-_]+', '')
+    name = re.sub(r'[^a-z0-9A-Z\.\-_]+', '', name)
 
     # truncate to our maximum length
     name = name[:63]
