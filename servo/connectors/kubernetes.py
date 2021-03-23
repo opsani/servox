@@ -1860,7 +1860,7 @@ class Deployment(KubernetesModel):
                     if event_type == "ERROR":
                         stream.stop()
                         # FIXME: Not sure what types we expect here
-                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+                        raise servo.AdjustmentRejectedError(message=str(deployment), reason="start-failed")
 
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
@@ -1896,7 +1896,10 @@ class Deployment(KubernetesModel):
                         return
 
             # watch doesn't raise a timeoutError when when elapsed so do it as fall through
-            raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
+            raise servo.AdjustmentRejectedError(
+                message="timed out waiting for Deployment to apply adjustment",
+                reason="start-failed"
+            )
 
 
 
@@ -1919,8 +1922,7 @@ class Deployment(KubernetesModel):
             elif condition.type == "ReplicaFailure":
                 # TODO: Check what this error looks like
                 raise servo.AdjustmentRejectedError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                    condition.status.message,
+                    message="ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                     reason=condition.status.reason
                 )
 
@@ -1931,8 +1933,7 @@ class Deployment(KubernetesModel):
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                        condition.status.message,
+                        message="ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                         reason=condition.status.reason
                     )
                 else:
@@ -2292,6 +2293,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     name: str
     timeout: servo.Duration
 
+    _handle_error_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+
     @abc.abstractclassmethod
     async def create(
         cls, config: "BaseKubernetesConfiguration", *args, **kwargs
@@ -2595,12 +2598,13 @@ class DeploymentOptimization(BaseOptimization):
 
         except asyncio.TimeoutError as error:
             raise servo.AdjustmentRejectedError(
-                reason="timed out waiting for Deployment to apply adjustment"
+                message="timed out waiting for Deployment to apply adjustment",
+                reason="start-failed"
             ) from error
 
         if await self.deployment.get_restart_count() > 0:
             # TODO: Return a string summary about the restarts (which pods bounced)
-            raise servo.AdjustmentRejectedError(reason="unstable")
+            raise servo.AdjustmentRejectedError(message="crash restart detected", reason="unstable")
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -3012,11 +3016,13 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: Run sanity checks to look for out of band changes
 
     async def raise_for_status(self) -> None:
-        async def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+        def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
-                    await optimization.handle_error(
-                        exception, self.config.on_failure
+                    optimization._handle_error_task = asyncio.create_task(
+                        optimization.handle_error(
+                            exception, self.config.on_failure
+                        )
                     )
 
         tasks = []
@@ -3025,11 +3031,14 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             task.add_done_callback(lambda task: _raise_for_task(optimization, task))
             tasks.append(task)
 
-        for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
+        for future in asyncio.as_completed(tasks, timeout=self.config.timeout.total_seconds()):
             try:
                 await future
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
+
+        if error_opts := list(filter(lambda o: o._handle_error_task is not None, self.optimizations)):
+            await asyncio.gather(*map(lambda o: o._handle_error_task, error_opts))
 
     async def is_ready(self):
         if self.optimizations:
@@ -3504,10 +3513,11 @@ class KubernetesConnector(servo.BaseConnector):
                 # When settlement is defined, ensure optimization target remains ready for the duration
                 if not await state.is_ready():
                     # Raise a specific exception if the optimization defines one
-                    state.raise_for_status()
+                    await state.raise_for_status()
 
                     raise servo.AdjustmentRejectedError(
-                        reason="Optimization target became unready during adjustment settlement period"
+                        message="Optimization target became unready during adjustment settlement period",
+                        reason="unstable"
                     )
 
                 p_info = f"waiting {settlement} for adjustments settlement..."

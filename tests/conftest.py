@@ -416,6 +416,10 @@ def random_string() -> str:
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
 
+@pytest.fixture
+def rootpath(pytestconfig) -> pathlib.Path:
+    return pytestconfig.rootpath
+
 def kubeconfig_path_from_config(config) -> pathlib.Path:
     config_opt = config.getoption('kube_config') or "tests/kubeconfig"
     path = pathlib.Path(config_opt).expanduser()

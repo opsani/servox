@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Type
 
 import kubetest.client
+from kubernetes.client.models import V1HTTPGetAction, V1Probe
 import pydantic
 import pytest
 from kubernetes_asyncio import client
@@ -1114,17 +1115,42 @@ class TestKubernetesConnectorIntegration:
 
 
 ##
-# Rejection Tests using modified deployment
+# Rejection Tests using modified deployment, skips the standard manifest application
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
-@pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
-        # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
+    async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> None:
+        new_dep = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        fib_cont = new_dep.obj.spec.template.spec.containers[0]
+        fib_cont.command = [ "/bin/sh" ]
+        fib_cont.args = [
+            "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
+        ]
+        fib_cont.resources.requests['memory'] = '256Mi'
+        fib_cont.resources.limits['memory'] = '256Mi'
+        fib_cont.readiness_probe = V1Probe(
+            failure_threshold= 3,
+            http_get=V1HTTPGetAction(
+              path= "/",
+              port= 9980,
+              scheme="HTTP",
+            ),
+            initial_delay_seconds=1,
+            period_seconds= 10,
+            success_threshold= 1,
+            timeout_seconds= 5,
+        )
+
+        new_dep.create()
+        new_dep.wait_until_ready(timeout=10)
+
+        import servo.logging
+        servo.logging.set_level("TRACE")
         config.timeout = "3s"
         connector = KubernetesConnector(config=config)
 
@@ -1134,7 +1160,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             value="128Mi",
         )
         # NOTE: This can generate a 409 Conflict failure under CI
-        with pytest.raises(AdjustmentRejectedError):
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
             for _ in range(3):
                 try:
                     description = await connector.adjust([adjustment])
@@ -1144,3 +1170,59 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                         pass
                     else:
                         raise e
+
+        assert str(rejection_info.value) == 'timed out waiting for Deployment to apply adjustment'
+
+
+    async def test_adjust_settlement_failed(self, config, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> None:
+        new_dep = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        fib_cont = new_dep.obj.spec.template.spec.containers[0]
+        fib_cont.command = [ "/bin/sh" ]
+        fib_cont.args = [ "-c", (
+            "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
+                "then /bin/fiber-http; "
+                "else (/bin/fiber-http &); sleep 10s; kill %1; "
+            "fi"
+        )]
+        fib_cont.resources.requests['memory'] = '256Mi'
+        fib_cont.resources.limits['memory'] = '256Mi'
+        fib_cont.readiness_probe = V1Probe(
+            failure_threshold= 3,
+            http_get=V1HTTPGetAction(
+              path= "/",
+              port= 9980,
+              scheme="HTTP",
+            ),
+            initial_delay_seconds=1,
+            period_seconds= 10,
+            success_threshold= 1,
+            timeout_seconds= 5,
+        )
+
+        new_dep.create()
+        new_dep.wait_until_ready(timeout=15)
+
+        import servo.logging
+        servo.logging.set_level("TRACE")
+        config.timeout = "15s"
+        config.settlement = "15s"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        # NOTE: This can generate a 409 Conflict failure under CI
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e
+
+        assert str(rejection_info.value) == 'Optimization target became unready during adjustment settlement period'
