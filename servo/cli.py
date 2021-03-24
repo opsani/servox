@@ -503,7 +503,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                     raise typer.BadParameter("token cannot be blank")
 
                 optimizer = servo.Optimizer(
-                    ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
+                    id=ctx.optimizer, token=ctx.token, base_url=ctx.base_url, __url__=ctx.url
                 )
         else:
             if ctx.optimizer:
@@ -524,6 +524,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 configs=configs,
                 optimizer=optimizer
             ))
+
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
@@ -1887,7 +1888,7 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            export_options = dict(exclude_unset=True, include=include, indent=2)
+            export_options = dict(exclude_unset=True, exclude_defaults=True, include=include, indent=2)
 
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
@@ -1939,7 +1940,7 @@ class ServoCLI(CLI):
                             "data": {
                                 "servo.yaml": servo.utilities.yaml.PreservedScalarString(
                                     servo_.config.yaml(
-                                        sort_keys=True, **export_options
+                                        sort_keys=True, exclude={'optimizer'}, **export_options
                                     )
                                 )
                             },

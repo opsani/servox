@@ -13,6 +13,7 @@ import itertools
 import os
 import operator
 import pathlib
+import re
 from typing import (
     Any,
     Callable,
@@ -2697,7 +2698,7 @@ class CanaryOptimization(BaseOptimization):
         await dep_copy.delete_tuning_pod(raise_if_not_found=False)
         task = asyncio.create_task(dep_copy.ensure_tuning_pod(timeout=self.timeout.total_seconds()))
         try:
-            self.canary = await task
+            self.tuning_pod = await task
         except asyncio.CancelledError:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -2826,9 +2827,9 @@ class CanaryOptimization(BaseOptimization):
 
                 # create a new canary against baseline
                 self.logger.info(
-                    "creating new canary against baseline following failed adjust"
+                    "creating new tuning pod against baseline following failed adjust"
                 )
-                self.canary = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
+                self.tuning_pod = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
                 return True
 
             except Exception as handler_error:
@@ -2852,7 +2853,7 @@ class CanaryOptimization(BaseOptimization):
 
     class Config:
         arbitrary_types_allowed = True
-        extra = pydantic.Extra.allow
+        extra = pydantic.Extra.forbid
 
 
 class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
@@ -3733,3 +3734,38 @@ class ConfigMap(KubernetesModel):
             return False
 
         return True
+
+
+def labelize(name: str) -> str:
+    """
+    Transform a string into a valid Kubernetes label value.
+
+    Valid Kubernetes label values:
+        * must be 63 characters or less (cannot be empty)
+        * must begin and end with an alphanumeric character ([a-z0-9A-Z])
+        * may contain dashes (-), underscores (_), dots (.), and alphanumerics between
+    """
+
+
+    # replace slashes with underscores
+    name = re.sub(r'\/', '_', name)
+
+    # replace whitespace with hyphens
+    name = re.sub(r'\s', '-', name)
+
+    # strip any remaining disallowed characters
+    name = re.sub(r'[^a-z0-9A-Z\.\-_]+', '', name)
+
+    # truncate to our maximum length
+    name = name[:63]
+
+    # ensure starts with an alphanumeric by prefixing with `0-`
+    boundaryRegex = re.compile('[a-z0-9A-Z]')
+    if not boundaryRegex.match(name[0]):
+        name = ('0-' + name)[:63]
+
+    # ensure ends with an alphanumeric by suffixing with `-1`
+    if not boundaryRegex.match(name[-1]):
+        name = name[:61] + '-1'
+
+    return name

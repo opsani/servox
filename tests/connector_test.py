@@ -25,32 +25,32 @@ from tests.helpers import *
 
 
 class TestOptimizer:
-    def test_org_domain_valid(self) -> None:
+    def test_organization_valid(self) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456")
-        assert optimizer.org_domain == "example.com"
+        assert optimizer.organization == "example.com"
 
-    def test_org_domain_invalid(self) -> None:
+    def test_organization_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
             Optimizer(id="invalid/my-app", token="123456")
         assert "1 validation error for Optimizer" in str(e.value)
-        assert e.value.errors()[0]["loc"] == ("org_domain",)
+        assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "(([\\da-zA-Z])([_\\w-]{,62})\\.){,127}(([\\da-zA-Z])[_\\w-]{,61})?([\\da-zA-Z]\\.((xn\\-\\-[a-zA-Z\\d]+)|([a-zA-Z\\d]{2,})))"'
+            == 'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
-    def test_app_name_valid(self) -> None:
+    def test_name_valid(self) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456")
-        assert optimizer.app_name == "my-app"
+        assert optimizer.name == "my-app"
 
-    def test_app_name_invalid(self) -> None:
+    def test_name_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
             Optimizer(id="example.com/$$$invalid$$$", token="123456")
         assert "1 validation error for Optimizer" in str(e.value)
-        assert e.value.errors()[0]["loc"] == ("app_name",)
+        assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^[a-zA-Z\\_\\-\\.0-9]{1,64}$"'
+            == 'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_token_validation(self) -> None:
@@ -76,8 +76,8 @@ class TestOptimizer:
         ids=(f"target-{i}" for i in itertools.count())
     )
     def test_api_url(self, url, expected_api_url) -> None:
-        optimizer = Optimizer(id="example.com/my-app", token="123456", url=url)
-        assert optimizer.api_url == expected_api_url
+        optimizer = Optimizer(id="example.com/my-app", token="123456", __url__=url)
+        assert optimizer.url == expected_api_url
 
 
 class TestLicense:
@@ -703,7 +703,7 @@ def test_vegeta_cli_schema_json(
         'properties': {
             'description': {
                 'title': 'Description',
-                'description': 'An optional annotation describing the configuration.',
+                'description': 'An optional description of the configuration.',
                 'env_names': [
                     'VEGETA_DESCRIPTION',
                 ],
@@ -1022,6 +1022,8 @@ def test_vegeta_cli_generate_with_defaults(
     assert "Generated vegeta.yaml" in result.stdout
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
+    debug("sadsadas", config)
+    return
     assert config == {
         "vegeta": {
             "connections": 10000,
@@ -1513,14 +1515,18 @@ async def test_logging() -> None:
     request = respx.post(
         "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
     ).mock(httpx.Response(200, json={"status": "ok"}))
-    connector = MeasureConnector(
-        optimizer=Optimizer(id="example.com/my-app", token="123456"),
-        config=BaseConfiguration(),
-    )
+    config = BaseConfiguration(__optimizer__=Optimizer(id="example.com/my-app", token="123456"))
+    assert config.__optimizer__, "expected to have config.__optimizer__"
+    assert config.optimizer, "expected to have config.__optimizer__"
+    connector = MeasureConnector(config=config)
 
-    config = servox.configuration.ServoConfiguration(proxies="http://localhost:1234", ssl_verify=False)
-    optimizer = Optimizer("test.com/foo", token="12345")
-    servo = servox.Servo(config={"servo": config}, optimizer=optimizer, connectors=[])
+    assert connector.config
+    assert connector.config.__optimizer__, "expected to have config.__optimizer__"
+    assert connector.optimizer, "expected to have config.__optimizer__"
+
+    config = servox.configuration.CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    optimizer = Optimizer(id="test.com/foo", token="12345")
+    servo = servox.Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
 
     with servo.current():
         with connector.current():

@@ -70,7 +70,9 @@ def _orjson_dumps(
         raise err
 
 
-DEFAULT_JSON_ENCODERS = {}
+DEFAULT_JSON_ENCODERS = {
+    pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
+}
 
 
 class BaseModelConfig:

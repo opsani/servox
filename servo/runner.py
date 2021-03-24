@@ -36,8 +36,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self._servo = servo_
 
         # initialize default servo options if not configured
-        if self.config.servo is None:
-            self.config.servo = servo.ServoConfiguration()
+        if self.config.settings is None:
+            self.config.settings = servo.CommonConfiguration()
 
     @property
     def servo(self) -> servo.Servo:
@@ -111,8 +111,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     @backoff.on_exception(
         backoff.expo,
         (httpx.HTTPError, pydantic.ValidationError),
-        max_time=lambda: servo.current_servo().config.servo.backoff.max_time(),
-        max_tries=lambda: servo.current_servo().config.servo.backoff.max_tries(),
+        max_time=lambda: servo.current_servo().config.settings.backoff.max_time(),
+        max_tries=lambda: servo.current_servo().config.settings.backoff.max_tries(),
     )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Events.whats_next, None)
@@ -235,8 +235,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
-                max_time=lambda: self.config.servo.backoff.max_time(),
-                max_tries=lambda: self.config.servo.backoff.max_tries(),
+                max_time=lambda: self.config.settings.backoff.max_time(),
+                max_tries=lambda: self.config.settings.backoff.max_tries(),
                 on_giveup=giveup,
             )
             async def connect() -> None:
@@ -245,7 +245,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self._connected = True
 
 
-            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.api_url}...")
+            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.url}...")
             await connect()
         except asyncio.CancelledError as error:
             self.logger.opt(exception=error).trace("task cancelled, aborting servo runner")
@@ -412,9 +412,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 )
                 secho(f"base url: {base_url}")
 
-            if servo_.config.servo and servo_.config.servo.proxies:
+            if servo_.config.settings and servo_.config.settings.proxies:
                 proxies = typer.style(
-                    f"{devtools.pformat(servo_.config.servo.proxies)}",
+                    f"{devtools.pformat(servo_.config.settings.proxies)}",
                     bold=True,
                     fg=typer.colors.CYAN,
                 )

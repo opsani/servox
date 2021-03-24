@@ -1,4 +1,5 @@
 import pathlib
+import json
 
 import servo
 import tests
@@ -23,16 +24,34 @@ async def test_config(servo_yaml: pathlib.Path) -> None:
     )
 
 @pytest.mark.parametrize(
-    ('app_name'),
+    ('name'),
     [
         'a',
         '1234',
         'app-name',
         'APP-NAME',
-        'app_name',
+        'name',
         'this.that.the.other'
     ]
 )
-def test_validate_app_name(app_name: str):
+def test_validate_name(name: str):
     # will raise on failure
-    servo.configuration.Optimizer(org_domain='test.com', token='foo', app_name=app_name)
+    servo.configuration.Optimizer(id=f'test.com/{name}', token='foo')
+
+def test_optimizer_from_string() -> None:
+    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    assert isinstance(optimizer, servo.configuration.Optimizer)
+    assert optimizer.organization == 'dev.opsani.com'
+    assert optimizer.name == 'awesome-app'
+
+def test_setting_url() -> None:
+    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    assert isinstance(optimizer, servo.configuration.Optimizer)
+    assert optimizer.organization == 'dev.opsani.com'
+    assert optimizer.name == 'awesome-app'
+
+def test_token_exports_to_json() -> None:
+    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    assert isinstance(optimizer, servo.configuration.Optimizer)
+    parsed_optimizer = json.loads(optimizer.json())
+    assert parsed_optimizer['token'] == '8675309'

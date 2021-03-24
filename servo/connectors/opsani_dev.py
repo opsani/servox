@@ -32,6 +32,7 @@ PROMETHEUS_ANNOTATION_DEFAULTS = {
     "prometheus.opsani.com/scheme": "http",
     "prometheus.opsani.com/path": "/stats/prometheus",
     "prometheus.opsani.com/port": "9901",
+
 }
 ENVOY_SIDECAR_LABELS = {
     "sidecar.opsani.com/type": "envoy"
@@ -44,7 +45,7 @@ class CPU(servo.connectors.kubernetes.CPU):
 class Memory(servo.connectors.kubernetes.Memory):
     step: servo.connectors.kubernetes.ShortByteSize = "128 MiB"
 
-class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
+class OpsaniDevConfiguration(servo.BaseConfiguration):
     namespace: str
     deployment: str
     container: str
@@ -492,12 +493,16 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
+        # Add optimizer annotation to the static Prometheus values
+        required_annotations = PROMETHEUS_ANNOTATION_DEFAULTS.copy()
+        required_annotations['servo.opsani.com/optimizer'] = self.config.optimizer.id
+
         # NOTE: Only check for annotation keys
         annotations = deployment.pod_template_spec.metadata.annotations or dict()
         actual_annotations = set(annotations.keys())
-        delta = set(PROMETHEUS_ANNOTATION_DEFAULTS.keys()).difference(actual_annotations)
+        delta = set(required_annotations.keys()).difference(actual_annotations)
         if delta:
-            annotations = dict(map(lambda k: (k, PROMETHEUS_ANNOTATION_DEFAULTS[k]), delta))
+            annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
@@ -519,8 +524,12 @@ class OpsaniDevChecks(servo.BaseChecks):
         labels = deployment.pod_template_spec.metadata.labels
         assert labels, f"deployment '{deployment.name}' does not have any labels"
 
+        # Add optimizer label to the static values
+        required_labels = ENVOY_SIDECAR_LABELS.copy()
+        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.labelize(self.config.optimizer.id)
+
         # NOTE: Check for exact labels as this isn't configurable
-        delta = dict(set(ENVOY_SIDECAR_LABELS.items()) - set(labels.items()))
+        delta = dict(set(required_labels.items()) - set(labels.items()))
         if delta:
             desc = ' '.join(map('='.join, delta.items()))
             patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
