@@ -390,11 +390,16 @@ class TestServiceMultiport:
                 await assert_check(checks.run_one(id=f"check_deployment_annotations"))
 
                 # Step 2: Verify the labels are set on the Deployment pod spec
+                # TODO: label order is not guaranteed. The following bandaid should be replaced with a more scalable solution
+                label_matcher = re.escape("deployment 'fiber-http' is missing labels: ")
+                type_label_esc = re.escape("sidecar.opsani.com/type=envoy")
+                optimizer_label_esc = re.escape("servo.opsani.com/optimizer=test.com_foo")
+                label_matcher = f"{label_matcher}(?:{type_label_esc}\ {optimizer_label_esc}|{optimizer_label_esc}\ {type_label_esc})"
                 servo.logger.critical("Step 2 - Label the Deployment PodSpec")
                 await assert_check_raises(
                     checks.run_one(id=f"check_deployment_labels"),
                     servo.checks.CheckError,
-                    re.escape("deployment 'fiber-http' is missing labels: sidecar.opsani.com/type=envoy")
+                    label_matcher
                 )
 
                 async with change_to_resource(deployment):
