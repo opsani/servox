@@ -235,7 +235,7 @@ class KubernetesObj(Protocol):
         ...
 
     @property
-    def metadata(self) ->kubernetes_asyncio.client.V1ObjectMeta:
+    def metadata(self) -> kubernetes_asyncio.client.V1ObjectMeta:
         ...
 
 

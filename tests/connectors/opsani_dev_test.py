@@ -394,7 +394,7 @@ class TestServiceMultiport:
                 await assert_check_raises(
                     checks.run_one(id=f"check_deployment_labels"),
                     servo.checks.CheckError,
-                    re.escape("deployment 'fiber-http' is missing labels: sidecar.opsani.com/type=envoy")
+                    re.escape("deployment 'fiber-http' is missing labels: servo.opsani.com/optimizer=test.com_foo, sidecar.opsani.com/type=envoy")
                 )
 
                 async with change_to_resource(deployment):
