@@ -502,7 +502,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         actual_annotations = set(annotations.keys())
         delta = set(required_annotations.keys()).difference(actual_annotations)
         if delta:
-            annotations = dict(map(lambda k: (k, PROMETHEUS_ANNOTATION_DEFAULTS[k]), delta))
+            annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
