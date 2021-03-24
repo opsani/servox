@@ -370,6 +370,7 @@ class TestServiceMultiport:
                         {
                             "prometheus.opsani.com/path": "/stats/prometheus",
                             "prometheus.opsani.com/port": "9901",
+                            "servo.opsani.com/optimizer": checks.config.optimizer.id,
                         }
                     )
                 await assert_check_raises(
@@ -399,7 +400,8 @@ class TestServiceMultiport:
                 async with change_to_resource(deployment):
                     await add_labels_to_podspec_of_deployment(deployment,
                         {
-                            "sidecar.opsani.com/type": "envoy"
+                            "sidecar.opsani.com/type": "envoy",
+                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(checks.config.optimizer.id),
                         }
                     )
                 await assert_check(checks.run_one(id=f"check_deployment_labels"))
