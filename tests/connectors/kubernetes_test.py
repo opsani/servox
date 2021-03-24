@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Type
 
 import kubetest.client
+from kubetest.objects import Deployment as KubetestDeployment
 from kubernetes.client.models import V1HTTPGetAction, V1Probe
 import pydantic
 import pytest
@@ -1124,33 +1125,37 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> None:
-        new_dep = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
-        fib_cont = new_dep.obj.spec.template.spec.containers[0]
-        fib_cont.command = [ "/bin/sh" ]
-        fib_cont.args = [
-            "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
-        ]
-        fib_cont.resources.requests['memory'] = '256Mi'
-        fib_cont.resources.limits['memory'] = '256Mi'
-        fib_cont.readiness_probe = V1Probe(
-            failure_threshold= 3,
+    @pytest.fixture
+    def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
+        deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        fiber_container = deployment.obj.spec.template.spec.containers[0]
+        fiber_container.resources.requests['memory'] = '256Mi'
+        fiber_container.resources.limits['memory'] = '256Mi'
+        fiber_container.readiness_probe = V1Probe(
+            failure_threshold=3,
             http_get=V1HTTPGetAction(
               path= "/",
               port= 9980,
               scheme="HTTP",
             ),
             initial_delay_seconds=1,
-            period_seconds= 10,
-            success_threshold= 1,
-            timeout_seconds= 5,
+            period_seconds=5,
+            success_threshold=1,
+            timeout_seconds=1,
         )
 
-        new_dep.create()
-        new_dep.wait_until_ready(timeout=10)
+        return deployment
 
-        import servo.logging
-        servo.logging.set_level("TRACE")
+    async def test_adjust_never_ready(self, config: KubernetesConfiguration, kubetest_deployment: KubetestDeployment) -> None:
+        fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_conter.command = [ "/bin/sh" ]
+        fiber_conter.args = [
+            "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
+        ]
+
+        kubetest_deployment.create()
+        kubetest_deployment.wait_until_ready(timeout=10)
+
         config.timeout = "3s"
         connector = KubernetesConnector(config=config)
 
@@ -1174,36 +1179,19 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert str(rejection_info.value) == 'timed out waiting for Deployment to apply adjustment'
 
 
-    async def test_adjust_settlement_failed(self, config, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> None:
-        new_dep = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
-        fib_cont = new_dep.obj.spec.template.spec.containers[0]
-        fib_cont.command = [ "/bin/sh" ]
-        fib_cont.args = [ "-c", (
+    async def test_adjust_settlement_failed(self, config: KubernetesConfiguration, kubetest_deployment: KubetestDeployment) -> None:
+        fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_conter.command = [ "/bin/sh" ]
+        fiber_conter.args = [ "-c", (
             "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
                 "then /bin/fiber-http; "
                 "else (/bin/fiber-http &); sleep 10s; kill %1; "
             "fi"
         )]
-        fib_cont.resources.requests['memory'] = '256Mi'
-        fib_cont.resources.limits['memory'] = '256Mi'
-        fib_cont.readiness_probe = V1Probe(
-            failure_threshold= 3,
-            http_get=V1HTTPGetAction(
-              path= "/",
-              port= 9980,
-              scheme="HTTP",
-            ),
-            initial_delay_seconds=1,
-            period_seconds= 10,
-            success_threshold= 1,
-            timeout_seconds= 5,
-        )
 
-        new_dep.create()
-        new_dep.wait_until_ready(timeout=15)
+        kubetest_deployment.create()
+        kubetest_deployment.wait_until_ready(timeout=15)
 
-        import servo.logging
-        servo.logging.set_level("TRACE")
         config.timeout = "15s"
         config.settlement = "15s"
         connector = KubernetesConnector(config=config)
