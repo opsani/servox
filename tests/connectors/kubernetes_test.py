@@ -1154,7 +1154,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         ]
 
         kubetest_deployment.create()
-        kubetest_deployment.wait_until_ready(timeout=10)
+        kubetest_deployment.wait_until_ready(timeout=30)
 
         config.timeout = "3s"
         connector = KubernetesConnector(config=config)
@@ -1190,7 +1190,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         )]
 
         kubetest_deployment.create()
-        kubetest_deployment.wait_until_ready(timeout=15)
+        kubetest_deployment.wait_until_ready(timeout=30)
 
         config.timeout = "15s"
         config.settlement = "15s"
