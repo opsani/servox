@@ -17,7 +17,7 @@ from pydantic.json import pydantic_encoder
 
 import servo.events
 import servo.types
-from servo.configuration import BaseConfiguration
+from servo.configuration import BaseConfiguration, CommonConfiguration
 from servo.connector import BaseConnector
 from servo.events import after_event, before_event, on_event
 from servo.logging import logger
@@ -25,18 +25,7 @@ from servo.servo import Events
 from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
-
-class StubBaseConfiguration(BaseConfiguration):
-    name: Optional[str]
-
-    @classmethod
-    def generate(cls, **kwargs) -> "StubBaseConfiguration":
-        return cls(**kwargs)
-
-
 class MeasureConnector(BaseConnector):
-    config: StubBaseConfiguration
-
     @on_event()
     async def metrics(self) -> List[Metric]:
         return [
@@ -84,8 +73,6 @@ class MeasureConnector(BaseConnector):
 
 
 class AdjustConnector(BaseConnector):
-    config: StubBaseConfiguration
-
     @on_event()
     async def describe(self) -> Description:
         components = await self.components()

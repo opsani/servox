@@ -38,6 +38,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Updated to httpx v0.17.0
 - Updated uvloop to v0.15.2
+- Optimizer is now a member of the Configuration object.
 
 ### Fixed
 

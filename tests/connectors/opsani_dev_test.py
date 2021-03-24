@@ -43,6 +43,7 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
         service="fiber-http",
         cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
         memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
+        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
     )
 
 
@@ -53,7 +54,7 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url']
+        assert list(config.dict().keys()) == ['description', 'namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url']
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -69,6 +70,11 @@ class TestConfig:
             "  min: 256.0MiB\n"
             "  max: 4.0GiB\n"
         )
+
+    def test_assign_optimizer(self) -> None:
+        config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
+        config.__optimizer__ = None
+
 
 @pytest.mark.applymanifests(
     "opsani_dev",
@@ -364,6 +370,7 @@ class TestServiceMultiport:
                         {
                             "prometheus.opsani.com/path": "/stats/prometheus",
                             "prometheus.opsani.com/port": "9901",
+                            "servo.opsani.com/optimizer": checks.config.optimizer.id,
                         }
                     )
                 await assert_check_raises(
@@ -393,7 +400,8 @@ class TestServiceMultiport:
                 async with change_to_resource(deployment):
                     await add_labels_to_podspec_of_deployment(deployment,
                         {
-                            "sidecar.opsani.com/type": "envoy"
+                            "sidecar.opsani.com/type": "envoy",
+                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(checks.config.optimizer.id),
                         }
                     )
                 await assert_check(checks.run_one(id=f"check_deployment_labels"))
@@ -538,7 +546,7 @@ class TestServiceMultiport:
                         results = await checks.run_all()
                         next_failure = next(filter(lambda r: r.success is False, results), None)
                         if next_failure:
-                            servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")
+                            servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
                             await _remedy_check(
                                 next_failure.id,
                                 config=checks.config,
@@ -890,6 +898,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
                     "prometheus.opsani.com/port": "9901",
                     "prometheus.opsani.com/scrape": "true",
                     "prometheus.opsani.com/scheme": "http",
+                    "servo.opsani.com/optimizer": config.optimizer.id,
                 }
             )
 
@@ -899,7 +908,8 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         async with change_to_resource(deployment):
             await add_labels_to_podspec_of_deployment(deployment,
                 {
-                    "sidecar.opsani.com/type": "envoy"
+                    "sidecar.opsani.com/type": "envoy",
+                    "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(config.optimizer.id),
                 }
             )
 

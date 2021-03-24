@@ -1284,7 +1284,7 @@ class TestClient:
             base_url="http://prometheus.default.svc.cluster.local:9090"
         )
         assert (
-            client.api_url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
+            client.url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
         )
 
 class TestInstantQuery:
