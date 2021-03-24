@@ -32,6 +32,7 @@ import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
+from tests.helpers import environment_overrides
 
 
 @pytest.fixture
@@ -99,16 +100,12 @@ class TestIntegration:
             # These env vars are set by our manifests
             pods = kube.get_pods(labels={ "app.kubernetes.io/name": "servo"})
             assert pods, "servo is not deployed"
-            try:
-                os.environ['POD_NAME'] = list(pods.keys())[0]
-                os.environ["POD_NAMESPACE"] = kube.namespace
-
+            overrides = {
+                "POD_NAME": list(pods.keys())[0],
+                "POD_NAMESPACE": kube.namespace,
+            }
+            with environment_overrides(env=overrides):
                 yield
-
-            finally:
-                os.environ.pop('POD_NAME', None)
-                os.environ.pop('POD_NAMESPACE', None)
-
 
         @pytest.mark.parametrize(
             "resource", ["namespace", "deployment", "container", "service"]
@@ -336,8 +333,12 @@ class TestServiceMultiport:
             # These env vars are set by our manifests
             deployment = kube.get_deployments()["servo"]
             pod = deployment.get_pods()[0]
-            os.environ['POD_NAME'] = pod.name
-            os.environ["POD_NAMESPACE"] = kube.namespace
+            overrides = {
+                "POD_NAME": pod.name,
+                "POD_NAMESPACE": kube.namespace,
+            }
+            with environment_overrides(env=overrides):
+                yield
 
         async def test_process(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
