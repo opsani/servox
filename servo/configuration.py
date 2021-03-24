@@ -462,7 +462,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     name: Optional[str] = None
     description: Optional[str] = None
-    optimizer: Optimizer
+    optimizer: Optional[Optimizer] = None
     connectors: Optional[Union[List[str], Dict[str, str]]] = pydantic.Field(
         None,
         description=(
