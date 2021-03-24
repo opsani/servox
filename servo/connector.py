@@ -212,7 +212,7 @@ class BaseConnector(
                 f"cannot construct API client: optimizer is not configured"
             )
         return {
-            "base_url": self.optimizer.api_url,
+            "base_url": self.optimizer.url,
             "headers": {
                 "Authorization": f"Bearer {self.optimizer.token}",
                 "User-Agent": servo.api.user_agent(),

@@ -24,84 +24,81 @@ __all__ = [
 ]
 
 
+ORGANIZATION_REGEX = r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
+NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
+OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
+
+
 class Optimizer(pydantic.BaseSettings):
     """
     An Optimizer models an Opsani optimization engines that the Servo can connect to
     in order to access the Opsani machine learning technology for optimizing system infrastructure
     and application workloads.
+
+    Attributes:
+        id: A friendly identifier formed by joining the `organization` and the `name` with a slash character
+            of the form `example.com/my-app` or `another.com/app-2`.
+        token: An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication.
+        base_url: The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
+            of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
+        __url__: An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
+            and automated testing to bind the servo to a fixed URL.
     """
 
-    org_domain: pydantic.constr(
-        regex=r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
-    )
-    """
-    The domain name of the Organization tha the optimizer belongs to.
-
-    For example, a domain name of `awesome.com` might belong to Awesome, Inc and all optimizers would be
-    deployed under this domain name umbrella for easy access and autocompletion ergonomics.
-    """
-
-    app_name: pydantic.constr(regex=r"^[a-zA-Z\_\-\.0-9]{1,64}$")
-    """
-    The symbolic name of the application or service under optimization in a string of URL-safe characters between 1 and 64
-    characters in length.
-    """
-
-    token: str
-    """An opaque access token for interacting with the Optimizer via HTTP Bearer Token authentication."""
-
+    id: pydantic.constr(regex=OPTIMIZER_ID_REGEX)
+    token: pydantic.SecretStr
     base_url: pydantic.AnyHttpUrl = "https://api.opsani.com/"
-    """The base URL for accessing the Opsani API. This field is typically only useful to Opsani developers or in the context
-    of deployments with specific contractual, firewall, or security mandates that preclude access to the primary API.
-    """
+    _organization: str
+    _name: str
+    __url__: Optional[pydantic.AnyHttpUrl] = None
 
-    url: Optional[pydantic.AnyHttpUrl]
-    """An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
-    and automated testing to bind the servo to a fixed URL.
-    """
+    def __init__(self, *, __url__: Optional[str] = None, **kwargs) -> None:
+        super().__init__(**kwargs)
 
-    def __init__(self, id: str = None, **kwargs):
-        if isinstance(id, str):
-            org_domain, app_name = id.split("/")
-        else:
-            org_domain = kwargs.pop("org_domain", None)
-            app_name = kwargs.pop("app_name", None)
-        super().__init__(org_domain=org_domain, app_name=app_name, **kwargs)
-
-    @pydantic.root_validator(pre=True)
-    @classmethod
-    def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if id := values.pop("id", None):
-            org_domain, app_name = id.split("/")
-            values["org_domain"] = org_domain
-            values["app_name"] = app_name
-
-        return values
+        organization, name = self.id.split("/")
+        self._organization = organization
+        self._name = name
+        self.__url__ = __url__
 
     @property
-    def id(self) -> str:
-        """
-        Returns the primary identifier of the optimizer.
+    def organization(self) -> str:
+        """Returns the organization component of the optimizer ID.
 
-        A friendly identifier formed by joining the `org_domain` and the `app_name` with a slash character
-        of the form `example.com/my-app` or `another.com/app-2`.
+        The domain name of the Organization tha the optimizer belongs to.
+
+        For example, a domain name of `awesome.com` might belong to Awesome, Inc and all optimizers would be
+        deployed under this domain name umbrella for easy access and autocompletion ergonomics.
+
         """
-        return f"{self.org_domain}/{self.app_name}"
+        return self._organization
 
     @property
-    def api_url(self) -> str:
+    def name(self) -> str:
+        """Returns the name component of the optimizer ID.
+
+        The symbolic name of the application or service under optimization in a string of URL-safe characters
+        between 1 and 64 characters in length.
+        """
+        return self._name
+
+    @property
+    def url(self) -> str:
         """
         Returns a complete URL for interacting with the optimizer API.
+
+        An optional URL that overrides the computed URL for accessing the Opsani API. This option is utilized during development
+        and automated testing to bind the servo to a fixed URL.
         """
         return (
-            self.url
-            or f"{self.base_url}accounts/{self.org_domain}/applications/{self.app_name}/"
+            self.__url__
+            or f"{self.base_url}accounts/{self.organization}/applications/{self.name}/"
         )
 
     class Config:
         env_file = ".env"
         case_sensitive = True
         extra = pydantic.Extra.forbid
+        underscore_attrs_are_private = True
         fields = {
             "token": {
                 "env": "OPSANI_TOKEN",
@@ -109,6 +106,9 @@ class Optimizer(pydantic.BaseSettings):
             "base_url": {
                 "env": "OPSANI_BASE_URL",
             },
+        }
+        json_encoders = {
+            pydantic.SecretStr: lambda v: v.get_secret_value() if v else None,
         }
 
 
@@ -244,19 +244,14 @@ class BaseConfiguration(AbstractBaseConfiguration):
     to be initialized from commandline arguments, environment variables, and defaults.
     Connectors are initialized with a valid settings instance capable of providing necessary
     configuration for the connector to function.
-    """
-    # name: Optional[str] = pydantic.Field(
-    #     None, description="A descriptive name of the configuration."
-    # )
-    description: Optional[str] = pydantic.Field(
-        None, description="An optional annotation describing the configuration."
-    )
-    """An optional textual description of the configuration stanza useful for differentiating
+
+    An optional textual description of the configuration stanza useful for differentiating
     between configurations within assemblies.
     """
-
+    description: Optional[str] = pydantic.Field(
+        None, description="An optional description of the configuration."
+    )
     __optimizer__: Optional[Optimizer] = pydantic.PrivateAttr(None)
-
     __settings__: Optional[CommonConfiguration] = pydantic.PrivateAttr(
         default_factory=lambda: CommonConfiguration(),
     )
@@ -485,7 +480,6 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     An optional list of connector names or a mapping of connector names to connector class names
     """
 
-    # TODO: This needs a better name... maybe options? settings?
     settings: Optional[CommonConfiguration] = pydantic.Field(
         default_factory=lambda: CommonConfiguration(),
         description="Configuration of the Servo connector",
