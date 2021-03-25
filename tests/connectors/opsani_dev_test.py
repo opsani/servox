@@ -32,7 +32,7 @@ import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
-from tests.helpers import environment_overrides
+import tests.helpers
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ class TestIntegration:
                 "POD_NAME": list(pods.keys())[0],
                 "POD_NAMESPACE": kube.namespace,
             }
-            with environment_overrides(env=overrides):
+            with tests.helpers.environment_overrides(env=overrides):
                 yield
 
         @pytest.mark.parametrize(
@@ -337,7 +337,7 @@ class TestServiceMultiport:
                 "POD_NAME": pod.name,
                 "POD_NAMESPACE": kube.namespace,
             }
-            with environment_overrides(env=overrides):
+            with tests.helpers.environment_overrides(env=overrides):
                 yield
 
         async def test_process(
