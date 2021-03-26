@@ -1182,6 +1182,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     async def test_adjust_settlement_failed(self, config: KubernetesConfiguration, kubetest_deployment: KubetestDeployment) -> None:
         fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
         fiber_conter.command = [ "/bin/sh" ]
+        # Simulate a deployment which passes initial readiness checks then fails them a short time later
         fiber_conter.args = [ "-c", (
             "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
                 "then /bin/fiber-http; "
@@ -1213,4 +1214,5 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                     else:
                         raise e
 
-        assert str(rejection_info.value) == 'Optimization target became unready during adjustment settlement period'
+        assert str(rejection_info.value).startswith("Deployment fiber-http pod(s) crash restart detected: Pod fiber-http-")
+        assert rejection_info.value.reason == "unstable"
