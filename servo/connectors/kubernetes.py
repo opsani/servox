@@ -1721,7 +1721,7 @@ class Deployment(KubernetesModel):
             raise servo.ConnectorError(f'Unable to locate replicaset(s) for deployment "{self.name}"')
         latest_rs = sorted(owned_rs_items, key= lambda rs: rs.resource_version, reverse=True)[0]
 
-        return list(filter(lambda pod: latest_rs.is_owner(pod), self.get_pods()))
+        return list(filter(lambda pod: latest_rs.is_owner(pod), await self.get_pods()))
 
     @property
     def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
@@ -2125,14 +2125,7 @@ class Deployment(KubernetesModel):
     async def get_restart_count(self) -> int:
         count = 0
         for pod in await self.get_latest_pods():
-            try:
-                count += await pod.get_restart_count(refresh=False)
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
-                if error.status == 404:
-                    # Pod no longer exists, move on
-                    pass
-                else:
-                    raise error
+            count += await pod.get_restart_count(refresh=False)
 
         return count
 
@@ -2148,12 +2141,9 @@ class Deployment(KubernetesModel):
 
         # Check for restarts
         if await self.get_restart_count() > 0:
-            restarted_pods = []
-            try:
-                restarted_pods = list(filter(lambda pod: await pod.get_restart_count(refresh=False) > 0 , await self.get_latest_pods()))
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
-                if error.status != 404:
-                    raise
+            # NOTE: Have to use a comprehension here becuase get_restart_count is async
+            # restarted_pods = list(filter(lambda pod: await pod.get_restart_count(refresh=False) > 0 , await self.get_latest_pods()))
+            restarted_pods = [ pod for pod in await self.get_latest_pods() if await pod.get_restart_count(refresh=False) > 0 ]
             if not restarted_pods:
                 raise servo.AdjustmentRejectedError(
                     "Deployment {self.name} pod(s) crash restart detected (restarted pods could not be found after refresh)",
