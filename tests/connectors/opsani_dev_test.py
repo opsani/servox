@@ -391,7 +391,6 @@ class TestServiceMultiport:
                 await assert_check(checks.run_one(id=f"check_deployment_annotations"))
 
                 # Step 2: Verify the labels are set on the Deployment pod spec
-                # TODO: label order is not guaranteed. The following bandaid should be replaced with a more scalable solution
                 servo.logger.critical("Step 2 - Label the Deployment PodSpec")
                 await assert_check_raises(
                     checks.run_one(id=f"check_deployment_labels"),
