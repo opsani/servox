@@ -232,7 +232,8 @@ class KubernetesObj(Protocol):
         ...
 
     @property
-    def kind(self) -> str:
+    # set to None on list ops https://github.com/kubernetes-client/python/issues/429
+    def kind(self) -> Optional[str]:
         ...
 
     @property
@@ -295,6 +296,11 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
     def api_version(self) -> str:
         """The API version of the Kubernetes object (`obj.apiVersion``)."""
         return self.obj.api_version
+
+    @property
+    def kind(self) -> Optional[str]:
+        # set to None on list ops, should be overriden https://github.com/kubernetes-client/python/issues/429
+        return self.obj.kind
 
     @property
     def name(self) -> str:
@@ -418,7 +424,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             return False
         return any(map(
             lambda oor:
-                oor.kind == self.obj.kind
+                oor.kind == self.kind
                 and oor.uid == self.obj.metadata.uid,
             other_own_refs
         ))
@@ -900,6 +906,11 @@ class Pod(KubernetesModel):
         "v1":kubernetes_asyncio.client.CoreV1Api,
     }
 
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "Pod"
+
     @classmethod
     async def read(cls, name: str, namespace: str) -> "Pod":
         """Read the Pod from the cluster under the given namespace.
@@ -1208,6 +1219,11 @@ class ReplicaSet(KubernetesModel):
     """
 
     obj: kubernetes_asyncio.client.V1ReplicaSet
+
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "ReplicaSet"
 
     async def read(cls, name: str, namespace: str) -> "KubernetesModel":
         """Read the underlying Kubernetes resource from the cluster and
@@ -1571,6 +1587,11 @@ class Deployment(KubernetesModel):
         "apps/v1beta1":kubernetes_asyncio.client.AppsV1beta1Api,
         "apps/v1beta2":kubernetes_asyncio.client.AppsV1beta2Api,
     }
+
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "Deployment"
 
     async def create(self, namespace: str = None) -> None:
         """Create the Deployment under the given namespace.
@@ -2449,7 +2470,7 @@ class Memory(servo.Memory):
     requirements: ResourceRequirements = ResourceRequirements.compute
 
     @pydantic.validator('min')
-    def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
+    def _validate_mem_floor(cls, value: ShortByteSize) -> ShortByteSize:
         if value < (128 * MiB):
             raise ValueError('minimum Memory value allowed is 128MiB')
         return value
@@ -3045,7 +3066,10 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.info(f'destroyed tuning Pod "{self.name}"')
 
-    async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
+    async def handle_error(self, error: Exception, mode: "FailureMode" = None) -> bool:
+        if mode is None:
+            mode = self.on_failure
+
         if mode == FailureMode.rollback or mode == FailureMode.destroy:
             # Ensure that we chain any underlying exceptions that may occur
             try:
@@ -3228,10 +3252,12 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         before aggregating and reporting errors to the backend
 
         Args:
-            optimizations (List[BaseOptimization]): List of the optimizations one which the to call the supplied selector
+            optimizations (List[BaseOptimization]): List of the optimizations on which the to call the supplied selector
             coroutine_selector (Callable[[BaseOptimization], Coroutine]): Takes in a single optimization and returns the coroutine to be scheduled with error handling
+            timeout_seconds (float): How long optimizer tasks are waited for before raising a timeout error. NOTE: Its recommended to ensure
+                this timeout is longer than that used by the optimization operation to be run so that the sub-operations will timeout first
         """
-        def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+        def _handle_error_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
                     optimization._handle_error_task = asyncio.create_task(
@@ -3241,18 +3267,23 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         tasks = []
         for optimization in optimizations:
             task = asyncio.create_task(coroutine_selector(optimization))
-            task.add_done_callback(lambda task: _raise_for_task(optimization, task))
+            task.add_done_callback(lambda task: _handle_error_for_task(optimization, task))
             tasks.append(task)
 
         for future in asyncio.as_completed(tasks, timeout=timeout_seconds):
             try:
                 await future
             except asyncio.TimeoutError as timeout_error:
-                # TODO: cancel tasks to prevent unretrieved exceptions
-                for optimization in optimizations:
-                    optimization._handle_error_task = asyncio.create_task(
-                        optimization.handle_error(timeout_error)
-                    )
+                # cancel tasks to prevent unretrieved exceptions
+                for task in tasks:
+                    if not task.done():
+                        try:
+                            task.cancel()
+                            await task
+                        except asyncio.CancelledError as ce:
+                            self.logger.opt(exception=ce).debug("Optimizer task cancelled due to timeout")
+                            pass
+
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
 
