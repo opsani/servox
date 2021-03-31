@@ -1148,7 +1148,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         return deployment
 
     @pytest.fixture
-    def kubetest_deployment_never_ready(kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
+    def kubetest_deployment_never_ready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
         fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
         fiber_conter.command = [ "/bin/sh" ]
         fiber_conter.args = [
@@ -1160,7 +1160,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         return kubetest_deployment
 
     @pytest.fixture
-    def kubetest_deployment_becomes_unready(kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
+    def kubetest_deployment_becomes_unready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
         fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
         fiber_conter.command = [ "/bin/sh" ]
         # Simulate a deployment which passes initial readiness checks then fails them a short time later
