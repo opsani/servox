@@ -1151,7 +1151,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     def kubetest_deployment_never_ready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
         fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
         fiber_container.command = [ "/bin/sh" ]
-        # Simulate a deployment which fails to start when memory adjusted to < 192Mi 
+        # Simulate a deployment which fails to start when memory adjusted to < 192Mi
         fiber_container.args = [
             "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
         ]

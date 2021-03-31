@@ -2065,8 +2065,6 @@ class Deployment(KubernetesModel):
                     # Check restart counts and reject early instead of waiting for timeout
                     if await self.get_restart_count() > 0:
                         await self.raise_for_status()
-                        # Method above is expected to raise an adjustment error with the relevant details
-                        raise RuntimeError(f"Failed to retrieve error message(s) for crash restart during rollout of deployment {self.name}")
 
                     # Check the replica counts. Once available, updated, and ready match
                     # our expected count and the unavailable count is zero we are rolled out
@@ -3259,17 +3257,20 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             timeout_seconds (float): How long optimizer tasks are waited for before raising a timeout error. NOTE: Its recommended to ensure
                 this timeout is longer than that used by the optimization operation to be run so that the sub-operations will timeout first
         """
+        handle_error_tasks = [] # Keep track of created tasks to cancel if needed
         def _handle_error_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
                     optimization._handle_error_task = asyncio.create_task(
                         optimization.handle_error(exception)
                     )
+                    handle_error_tasks.append(optimization._handle_error_task)
 
+        done_callback = lambda task: _handle_error_for_task(optimization, task)
         tasks = []
         for optimization in optimizations:
             task = asyncio.create_task(coroutine_selector(optimization))
-            task.add_done_callback(lambda task: _handle_error_for_task(optimization, task))
+            task.add_done_callback(done_callback)
             tasks.append(task)
 
         for future in asyncio.as_completed(tasks, timeout=timeout_seconds):
@@ -3280,6 +3281,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 # cancel tasks to prevent unretrieved exceptions and loop closed while task pending
                 for task in tasks:
                     if not task.done():
+                        if isinstance(aio_error, asyncio.CancelledError):
+                            task.remove_done_callback(done_callback) # If cancelling, don't enqueue more tasks
                         try:
                             task.cancel()
                             await task
@@ -3288,6 +3291,14 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                             pass
 
                 if isinstance(aio_error, asyncio.CancelledError):
+                    for task in handle_error_tasks:
+                        if not task.done():
+                            try:
+                                task.cancel()
+                                await task
+                            except asyncio.CancelledError as ce:
+                                self.logger.opt(exception=ce).debug(f"Optimizer handle_error task cancelled due to {cause}")
+                                pass
                     raise aio_error
 
             except Exception as error:
@@ -3790,6 +3801,7 @@ class KubernetesConnector(servo.BaseConnector):
         async def progress_handler(p: servo.EventProgress):
             if p.settling:
                 # When settlement is defined, ensure optimization target remains ready for the duration
+                # TODO: refactor to get_unready_optimizations so raise_for_status not called on healthy opts
                 if not await state.is_ready():
                     # Raise a specific exception if the optimization defines one
                     await state.raise_for_status(settling=True)
