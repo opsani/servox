@@ -3699,7 +3699,7 @@ class ConfigMap(KubernetesModel):
             The status of the delete operation.
         """
         if options is None:
-            options =kubernetes_asyncio.client.V1DeleteOptions()
+            options = kubernetes_asyncio.client.V1DeleteOptions()
 
         servo.logger.info(f'deleting configmap "{self.name}"')
         servo.logger.debug(f"delete options: {options}")
@@ -3735,8 +3735,44 @@ class ConfigMap(KubernetesModel):
 
         return True
 
+def dns_subdomainify(name: str) -> str:
+    """
+    Valid DNS Subdomain Names conform to [RFC 1123](https://tools.ietf.org/html/rfc1123) and must:
+        * contain no more than 253 characters
+        * contain only lowercase alphanumeric characters, '-' or '.'
+        * start with an alphanumeric character
+        * end with an alphanumeric character
 
-def labelize(name: str) -> str:
+    See https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names
+    """
+
+    # lowercase alphanumerics
+    name = name.lower()
+
+    # replace slashes with dots
+    name = re.sub(r'\/', '.', name)
+
+    # replace whitespace with hyphens
+    name = re.sub(r'\s', '-', name)
+
+    # strip any remaining disallowed characters
+    name = re.sub(r'/[^a-z0-9\.\-]+/g', '')
+
+    # truncate to our maximum length
+    name = name[:253]
+
+    # ensure starts with an alphanumeric by prefixing with `0-`
+    boundaryRegex = re.compile('[a-z0-9]')
+    if not boundaryRegex.test(name.slice(0, 1)):
+        name = ('0-' + name).substring(0, 253)
+
+    # ensure ends with an alphanumeric by suffixing with `-1`
+    if not boundaryRegex.test(name.slice(-1)):
+        name = name.substring(0, 251) + '-1'
+
+    return name
+
+def dns_labelize(name: str) -> str:
     """
     Transform a string into a valid Kubernetes label value.
 
@@ -3745,7 +3781,6 @@ def labelize(name: str) -> str:
         * must begin and end with an alphanumeric character ([a-z0-9A-Z])
         * may contain dashes (-), underscores (_), dots (.), and alphanumerics between
     """
-
 
     # replace slashes with underscores
     name = re.sub(r'\/', '_', name)

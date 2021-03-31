@@ -526,7 +526,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Add optimizer label to the static values
         required_labels = ENVOY_SIDECAR_LABELS.copy()
-        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.labelize(self.config.optimizer.id)
+        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
 
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(required_labels.items()) - set(labels.items()))

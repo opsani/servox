@@ -401,7 +401,7 @@ class TestServiceMultiport:
                     await add_labels_to_podspec_of_deployment(deployment,
                         {
                             "sidecar.opsani.com/type": "envoy",
-                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(checks.config.optimizer.id),
+                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(checks.config.optimizer.id),
                         }
                     )
                 await assert_check(checks.run_one(id=f"check_deployment_labels"))
@@ -909,7 +909,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
             await add_labels_to_podspec_of_deployment(deployment,
                 {
                     "sidecar.opsani.com/type": "envoy",
-                    "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(config.optimizer.id),
+                    "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(config.optimizer.id),
                 }
             )
 
