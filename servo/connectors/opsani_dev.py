@@ -378,6 +378,23 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Prometheus sidecar
 
+    @servo.checks.require("Prometheus ConfigMap exists")
+    async def check_prometheus_config_map(self) -> None:
+        namespace = os.getenv("POD_NAMESPACE", self.config.namespace)
+        optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(self.config.optimizer.id)
+
+        # Read optimizer namespaced resources
+        names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
+        for name in names:
+            config = await servo.connectors.kubernetes.ConfigMap.read(
+                "prometheus-config", namespace
+            )
+            if config:
+                break
+
+        self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
+        assert config, f"failed: no ConfigMap named 'prometheus-config' found in namespace '{namespace}'"
+
     @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
         pod = await self._read_servo_pod()
