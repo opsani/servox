@@ -1616,7 +1616,7 @@ class TestPubSub:
         await connector._create_publisher()
         await connector._create_subscriber(_callback)
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(1)
         assert len(notifications) > 10
         assert notifications[0:5] == [
             "Message #0 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",

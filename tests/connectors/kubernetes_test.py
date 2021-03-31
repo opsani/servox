@@ -1149,9 +1149,10 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     @pytest.fixture
     def kubetest_deployment_never_ready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
-        fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
-        fiber_conter.command = [ "/bin/sh" ]
-        fiber_conter.args = [
+        fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_container.command = [ "/bin/sh" ]
+        # Simulate a deployment which fails to start when memory adjusted to < 192Mi 
+        fiber_container.args = [
             "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
         ]
 
@@ -1161,10 +1162,10 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     @pytest.fixture
     def kubetest_deployment_becomes_unready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
-        fiber_conter = kubetest_deployment.obj.spec.template.spec.containers[0]
-        fiber_conter.command = [ "/bin/sh" ]
-        # Simulate a deployment which passes initial readiness checks then fails them a short time later
-        fiber_conter.args = [ "-c", (
+        fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_container.command = [ "/bin/sh" ]
+        # Simulate a deployment which passes initial readiness checks when memory adjusted to < 192Mi then fails them a short time later
+        fiber_container.args = [ "-c", (
             "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
                 "then /bin/fiber-http; "
                 "else (/bin/fiber-http &); sleep 10s; kill %1; "
@@ -1199,6 +1200,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                         raise e
 
         assert str(rejection_info.value) == 'timed out waiting for Deployment to apply adjustment'
+        assert rejection_info.value.reason == "start-failed"
 
 
     async def test_adjust_deployment_settlement_failed(self, config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
@@ -1231,7 +1233,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
             value="128Mi",
         )
@@ -1247,7 +1249,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                     else:
                         raise e
 
-        assert str(rejection_info.value) == 'timed out waiting for Deployment to apply adjustment'
+        assert str(rejection_info.value) == 'Timed out waiting for Pod fiber-http-tuning to become ready. Message: containers with unready status: [fiber-http]'
+        assert rejection_info.value.reason == "start-failed"
 
 
     async def test_adjust_tuning_settlement_failed(self, tuning_config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
@@ -1256,7 +1259,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
             value="128Mi",
         )
@@ -1272,5 +1275,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                     else:
                         raise e
 
-        assert str(rejection_info.value).startswith("Deployment fiber-http pod(s) crash restart detected: Pod fiber-http-")
+        assert (
+            str(rejection_info.value).startswith("Pod fiber-http-tuning container(s) crash restart detected: <fiber-http (id ")
+            or str(rejection_info.value) == "Optimization tuning pod fiber-http-tuning became unready during adjustment settlement period. Message containers with unready status: [fiber-http]"
+        )
         assert rejection_info.value.reason == "unstable"

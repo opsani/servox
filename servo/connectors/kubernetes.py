@@ -1057,11 +1057,23 @@ class Pod(KubernetesModel):
         if not status.conditions:
             raise RuntimeError(f'Pod is not running: {self.name}')
 
+        if await self.get_restart_count(refresh=False) > 0:
+            raise servo.AdjustmentRejectedError(message=await self.get_restart_error_message(), reason="unstable")
+
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
-            if cond.reason in {"Unschedulable", "ContainersNotReady"}:
+            if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
                 raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+
+            if cond.reason == "ContainersNotReady":
+                if settling:
+                    reason="unstable"
+                    message=f"Optimization tuning pod {self.name} became unready during adjustment settlement period. Message {cond.message}"
+                else:
+                    reason="start-failed"
+                    message=f"Timed out waiting for Pod {self.name} to become ready. Message: {cond.message}"
+                raise servo.AdjustmentRejectedError(message=message, reason=reason)
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -1070,9 +1082,6 @@ class Pod(KubernetesModel):
             # check that the readiness condition is True
             if cond.status.lower() == "true":
                 return
-
-        if await self.get_restart_count() > 0:
-            raise servo.AdjustmentRejectedError(message=await self.get_restart_error_message(), reason="unstable")
 
         # Catchalls
         if settling:
@@ -2080,7 +2089,7 @@ class Deployment(KubernetesModel):
                         stream.stop()
                         return
 
-            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
+            # watch doesn't raise a timeoutError when when elapsed, treat fall through as timeout instead
             raise servo.AdjustmentRejectedError(
                 message="timed out waiting for Deployment to apply adjustment",
                 reason="start-failed"
@@ -2833,16 +2842,9 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        try:
-            async with self.deployment.rollout(timeout=self.timeout) as deployment:
-                # Patch the Deployment via the Kubernetes API
-                await deployment.patch()
-
-        except asyncio.TimeoutError as error:
-            raise servo.AdjustmentRejectedError(
-                message="timed out waiting for Deployment to apply adjustment",
-                reason="start-failed"
-            ) from error
+        async with self.deployment.rollout(timeout=self.timeout) as deployment:
+            # Patch the Deployment via the Kubernetes API
+            await deployment.patch()
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -3273,16 +3275,20 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for future in asyncio.as_completed(tasks, timeout=timeout_seconds):
             try:
                 await future
-            except asyncio.TimeoutError as timeout_error:
-                # cancel tasks to prevent unretrieved exceptions
+            except (asyncio.TimeoutError, asyncio.CancelledError) as aio_error:
+                cause = 'timeout' if isinstance(aio_error, asyncio.TimeoutError) else 'outer task cancellation'
+                # cancel tasks to prevent unretrieved exceptions and loop closed while task pending
                 for task in tasks:
                     if not task.done():
                         try:
                             task.cancel()
                             await task
                         except asyncio.CancelledError as ce:
-                            self.logger.opt(exception=ce).debug("Optimizer task cancelled due to timeout")
+                            self.logger.opt(exception=ce).debug(f"Optimizer task cancelled due to {cause}")
                             pass
+
+                if isinstance(aio_error, asyncio.CancelledError):
+                    raise aio_error
 
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
