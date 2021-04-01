@@ -1249,7 +1249,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                     else:
                         raise e
 
-        assert str(rejection_info.value) == 'Timed out waiting for Pod fiber-http-tuning to become ready. Message: containers with unready status: [fiber-http]'
+        assert str(rejection_info.value).startswith('Timed out waiting for Pod fiber-http-tuning to become ready. Message: containers with unready status: [fiber-http')
         assert rejection_info.value.reason == "start-failed"
 
 
