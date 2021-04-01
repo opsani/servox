@@ -3238,8 +3238,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
         # TODO: Run sanity checks to look for out of band changes
 
-    async def raise_for_status(self, settling=False) -> None:
-        await self.run_with_handle_error(self.optimizations, lambda o: o.raise_for_status(settling), self.config.timeout.total_seconds())
+    async def raise_for_status(self, optimizations=None, settling=False) -> None:
+        await self.run_with_handle_error(optimizations or self.optimizations, lambda o: o.raise_for_status(settling), self.config.timeout.total_seconds())
 
     async def run_with_handle_error(
         self,
@@ -3346,10 +3346,26 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 return all(results)
 
             except asyncio.TimeoutError:
+                self.logger.exception("Timed out getting readiness of optimizations, defaulting to ready = False")
                 return False
 
         else:
             return True
+
+    async def get_unready_optimizations(self) -> List[BaseOptimization]:
+        results = []
+        async def unready_closure(opt: BaseOptimization) -> None:
+            if not await opt.is_ready():
+                results.append(opt)
+
+        await asyncio.wait_for(
+            asyncio.gather(
+                *list(map(lambda a: unready_closure(a), self.optimizations)),
+            ),
+            timeout=self.config.timeout.total_seconds()
+        )
+
+        return results
 
 
     class Config:
@@ -3801,10 +3817,9 @@ class KubernetesConnector(servo.BaseConnector):
         async def progress_handler(p: servo.EventProgress):
             if p.settling:
                 # When settlement is defined, ensure optimization target remains ready for the duration
-                # TODO: refactor to get_unready_optimizations so raise_for_status not called on healthy opts
-                if not await state.is_ready():
+                if unready_opts := await state.get_unready_optimizations():
                     # Raise a specific exception if the optimization defines one
-                    await state.raise_for_status(settling=True)
+                    await state.raise_for_status(optimizations=unready_opts, settling=True)
 
                     # Exception should raise from above before getting here. If not, we were unable to pinpoint the failing optimization for some reason
                     self.logger.warning("Rejection error raised outside of optimization, handle_error logic was not executed")
