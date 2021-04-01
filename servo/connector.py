@@ -214,7 +214,7 @@ class BaseConnector(
         return {
             "base_url": self.optimizer.url,
             "headers": {
-                "Authorization": f"Bearer {self.optimizer.token}",
+                "Authorization": f"Bearer {self.optimizer.token.get_secret_value()}",
                 "User-Agent": servo.api.user_agent(),
                 "Content-Type": "application/json",
             },
