@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opsani-servo-config
+  labels:
+    app.kubernetes.io/name: servo
+    app.kubernetes.io/version: 0.9.6
+  annotations:
+    servo.opsani.com/configured_at: '2021-04-01T19:02:09.382117+00:00'
+    servo.opsani.com/connectors: '[{"name": "adjust", "type": "Adjust Connector",
+      "description": null, "version": "0.0.0", "url": "None"}, {"name": "prometheus",
+      "type": "Prometheus Connector", "description": "Prometheus Connector for Opsani",
+      "version": "1.5.0", "url": "https://github.com/opsani/prometheus-connector"}]'
+data:
+  servo.yaml: |
+    adjust: {}
+    prometheus:
+      description: Update the base_url and metrics to match your Prometheus configuration
+      metrics:
+      - name: throughput
+        query: rate(http_requests_total[5m])
+        unit: rps
+      - name: error_rate
+        query: rate(errors[5m])
+        unit: '%'

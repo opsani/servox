@@ -39,6 +39,7 @@ import backoff
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.watch
 import pydantic
 
 import servo
@@ -366,6 +367,24 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             name: The name of the resource to read.
             namespace: The namespace to read the resource from.
         """
+
+    async def try_read(cls, name: str, namespace: str) -> Optional["KubernetesModel"]:
+        """Read the underlying Kubernetes resource from the cluster and
+        return a model instance or None if it is not found
+
+        Args:
+            name: The name of the resource to read.
+            namespace: The namespace to read the resource from.
+        """
+        try:
+            result = cls.read(name=name, namespace=namespace)
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status == 404 and e.reason == "Not Found":
+                result = None
+            else:
+                raise
+
+        return result
 
     @abc.abstractmethod
     async def create(self, namespace: str = None) -> None:
@@ -3734,6 +3753,35 @@ class ConfigMap(KubernetesModel):
             return False
 
         return True
+
+    async def watch(self, timeout: Optional[servo.DurationDescriptor] = None) -> kubernetes_asyncio.watch.Watch:
+        timeout_seconds = int(servo.Duration(timeout).total_seconds()) if timeout else None
+        async with self.api_client() as client:
+            async with kubernetes_asyncio.watch.Watch().stream(
+                client.list_namespaced_config_map,
+                self.namespace,
+                field_selector=self.field_selector,
+                label_selector=self.label_selector,
+                timeout_seconds=timeout_seconds,
+            ) as stream:
+                yield stream
+
+    @property
+    def field_selector(self) -> str:
+        """
+        Return a string for matching the ConfigMap fields in Kubernetes API calls.
+        """
+        selector_fields = {
+            "metadata.name": self.name,
+        }
+        return selector_string(selector_fields)
+
+    @property
+    def label_selector(self) -> str:
+        """
+        Return a string for matching the ConfigMap labels in Kubernetes API calls.
+        """
+        return selector_string(self.obj.metadata.labels)
 
 
 def labelize(name: str) -> str:

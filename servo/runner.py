@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import colorama
+import os
 import random
 import signal
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,7 @@ import servo.api
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
+from servo.connectors.kubernetes import ConfigMap
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 from servo.servo import _set_current_servo
 
@@ -349,6 +351,25 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             _report_progress, self.logger.warning, handle_progress_exception
         )
         self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
+
+        # If the servo is running inside Kubernetes, register a watch on its configmap to detect changes and reload
+         # TODO: move to k8s util in case kubernetes connector not included in assembly?
+        SERVO_POD_NAMESPACE = os.environ.get("POD_NAMESPACE")
+        if SERVO_POD_NAMESPACE is not None:
+            # verify expected configmap exists. If not, the config may have come from a volume mount
+            configmap: ConfigMap = loop.run_until_complete(ConfigMap.try_read(name='opsani-servo-config', namespace=SERVO_POD_NAMESPACE))
+            if configmap:
+                # establish watch
+                async def _configmap_watch():
+                    async with configmap.watch() as stream:
+                        async for event in stream:
+                            self.logger.critical(f"Config map change detected (type {event['type']}), shutting down active Servo(s) for config reload")
+                            self.logger.trace(f"Configmap watch event: {event}")
+
+                            loop.create_task(self._shutdown(loop))
+                            break
+
+                loop.create_task(_configmap_watch())
 
         self._display_banner()
 

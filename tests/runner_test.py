@@ -2,10 +2,12 @@
 import asyncio
 import pathlib
 
+import kubetest.client
 import pytest
 
 import servo
 import servo.connectors.prometheus
+import servo.runner
 import tests.fake
 import tests.helpers
 
@@ -37,6 +39,24 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
+
+@pytest.fixture
+def running_assembly(
+    event_loop: asyncio.AbstractEventLoop,
+    assembly_runner: servo.runner.AssemblyRunner,
+    fakeapi_url: str
+) -> servo.runner.AssemblyRunner:
+    try:
+        servo_runner = assembly_runner.runners[0]
+        servo_runner.servo.optimizer.base_url = fakeapi_url
+        for connector in servo_runner.servo.connectors:
+            connector.optimizer.base_url = fakeapi_url
+            connector.api_client_options.update(servo_runner.servo.api_client_options)
+        event_loop.create_task(assembly_runner.run())
+        yield assembly_runner
+    finally:
+        pass
+        # await assembly_runner._shutdown() # Should this be exposed or is there a better means of cleanup?
 
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
@@ -173,3 +193,27 @@ async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunne
         await servo_runner.servo.startup()
         with pytest.raises(servo.errors.AdjustmentRejectedError):
             await servo_runner.adjust([], servo.Control())
+
+
+# Must be registered as fixture so the env is in place when servo is instantiated
+@pytest.fixture()
+async def pod_namespace_env_kube(kube: kubetest.client.TestClient):
+    kube.wait_for_registered()
+    with tests.helpers.environment_overrides({"POD_NAMESPACE": kube.namespace}):
+        yield
+
+# Simulate the updating of the assembly/runner's config map as though servo were running as a kubernetes deployment
+# DISABLED, WIP
+# @pytest.mark.applymanifests("manifests", files=["servo-configmap.yaml"])
+# async def test_configmap_update(kube: kubetest.client.TestClient, pod_namespace_env_kube, running_assembly: servo.runner.AssemblyRunner) -> None:
+#     # Catch logs
+#     messages = []
+#     running_assembly.logger.add(lambda m: messages.append(m), level=0)
+
+#     config_map = kube.get_configmaps()['opsani-servo-config']
+#     config_map.obj.data['servo.yaml'] = f"{config_map.obj.data['servo.yaml']}\nmeasure: {{}}"
+#     config_map.api_client.patch_namespaced_config_map(config_map.name, config_map.namespace, config_map.obj)
+
+#     await asyncio.sleep(1)
+#     assert running_assembly.running == False
+#     assert "Config map change detected (type UPDATE), shutting down active Servo(s) for config reload" in messages
