@@ -208,7 +208,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             try:
                 task.result()
             except asyncio.CancelledError:
-                raise  # Don't log cancellation errors, just propogate.
+                raise  # Don't log cancellation errors, just propagate.
             except Exception as error:  # pylint: disable=broad-except
                 self.logger.error(f"Exiting from servo main loop do to error: {error} (task={task})")
                 self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
