@@ -162,7 +162,8 @@ async def wait_for_condition(
         servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
-class ResourceRequirements(enum.Flag):
+# kubectl set resources deployment nginx --limits=cpu=200m,memory=512Mi --requests=cpu=100m,memory=256Mi
+class ResourceRequirements(enum.Enum):
     """
     The ResourceRequirement enumeration determines how optimization values are submitted to the
     Kubernetes scheduler to allocate core compute resources. Requests establish the lower bounds
@@ -173,28 +174,8 @@ class ResourceRequirements(enum.Flag):
     on further resourcing.
     """
 
-    request = enum.auto()
-    limit = enum.auto()
-    compute = request | limit
-
-    @property
-    def flag(self) -> bool:
-        """
-        Return a boolean value that indicates if the requirements are an individual flag value.
-
-        The implementation relies on the Python `enum.Flag` modeling of individual members of
-        the flag enumeration as values that are powers of two (1, 2, 4, 8, …), while combinations
-        of flags are not.
-        """
-        value = self.value
-        return bool((value & (value - 1) == 0) and value != 0)
-
-    @property
-    def flags(self) -> bool:
-        """
-        Return a boolean value that indicates if the requirements are a compound set of flag values.
-        """
-        return self.flag is False
+    request = 'request'
+    limit = 'limit'
 
     @property
     def resources_key(self) -> str:
@@ -207,16 +188,8 @@ class ResourceRequirements(enum.Flag):
             return "limits"
         else:
             raise NotImplementedError(
-                f'missing key implementation for resource requirement "{self}"'
+                f'missing resources_key implementation for resource requirement "{self}"'
             )
-
-    def human_readable(self) -> str:
-        flags_set = []
-        for flag in ResourceRequirements:
-            if self.value & flag.value:
-                flags_set.append(flag.name)
-
-        return ", ".join(flags_set) if flags_set else "-"
 
 
 @runtime_checkable
@@ -689,7 +662,7 @@ class Container(servo.logging.Mixin):
         raise RuntimeError(f"Unable to determine container status for {container_name}")
 
     @property
-    def resources(self) ->kubernetes_asyncio.client.V1ResourceRequirements:
+    def resources(self) -> kubernetes_asyncio.client.V1ResourceRequirements:
         """
         Return the resource requirements for the Container.
 
@@ -708,134 +681,181 @@ class Container(servo.logging.Mixin):
         """
         self.obj.resources = resources
 
-    def get_resource_requirements(
-        self,
-        name: str,
-        requirements: ResourceRequirements = ResourceRequirements.compute,
-        *,
-        first: bool = False,
-        reverse: bool = False,
-        default: Optional[str] = None,
-    ) -> Union[str, Tuple[str], None]:
-        """
-        Retrieve resource requirement values for the Container.
+    def get_resource_requirements(self, name: str) -> Dict[ResourceRequirements, Optional[str]]:
+        """Return a dictionary mapping resource requirements to values for a given resource (e.g., cpu or memory).
 
-        This method retrieves one or more resource requirement values with a non-exceptional,
-        cascading fallback behavior. It is useful for retrieving available requirements from a
-        resource that you do not know the configuration of. Requirements are read and returned in
-        declaration order in the `ResourceRequirements` enumeration. Values can be retrieved as a
-        tuple collection or a single value can be returned by setting the `first` argument to `True`.
-        Values are evaluated in `ResourceRequirements` declaration order and the first requirement
-        that contains a string value is returned. Evaluation order can be reversed via the
-        `reverse=True` argument. This is useful is you want to retrieve the limit if one exists or
-        else fallback to the request value.
+        This method is safe to call for containers that do not define any resource requirements (e.g., the `resources` property is None).
+
+        Requirements that are not defined for the named resource are returned as None. For example, a container
+        that defines CPU requests but does not define limits would return a dict with a `None` value for
+        the `ResourceRequirement.limit` key.
 
         Args:
-            name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
-            requirements: A `ResourceRequirements` flag enumeration specifying the requirements to retrieve.
-                Multiple values can be retrieved by using a bitwise or (`|`) operator. Defaults to
-                `ResourceRequirements.compute` which is equal to `ResourceRequirements.request | ResourceRequirements.limit`.
-            first: When True, a single value is returned for the first requirement to return a value.
-            reverse: When True, the `ResourceRequirements` enumeration evaluated in reverse order.
-            default: A default value to return when a resource requirement could not be found.
+            name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
 
         Returns:
-            A tuple of resource requirement strings or `None` values in input order or a singular, optional string
-            value when `first` is True.
+            A dictionary mapping ResourceRequirement enum members to optional string values.
         """
-        values: List[Union[str, None]] = []
-        found_requirements = False
-        members = (
-            reversed(ResourceRequirements) if reverse else list(ResourceRequirements)
-        )
+        resources: kubernetes_asyncio.client.V1ResourceRequirements = getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
+        requirements = {}
+        for requirement in ResourceRequirements:
+            # Get the 'requests' or 'limits' nested structure
+            resource_to_values = getattr(resources, requirement.resources_key, {})
+            requirements[requirement] = resource_to_values.get(name)
 
-        # iterate all members of the enumeration to support bitwise combinations
-        for member in members:
-            # skip named combinations of flags
-            if member.flags:
-                continue
+        return requirements
 
-            if requirements & member:
-                if not hasattr(self.resources, member.resources_key):
-                    raise ValueError(f"unknown resource requirement '{member}'")
+    def set_resource_requirements(self, name: str, requirements: Dict[ResourceRequirements, Optional[str]]) -> None:
+        """Sets resource requirements on the container for the values in the given dictionary.
 
-                requirement_dict: Dict[str, str] = getattr(
-                    self.resources, member.resources_key
-                )
-                if requirement_dict and name in requirement_dict:
-                    value = requirement_dict[name]
-                    found_requirements = True
-
-                    if first:
-                        return value
-                    else:
-                        values.append(value)
-
-                else:
-                    servo.logger.warning(
-                        f"requirement '{member}' is not set for resource '{name}'"
-                    )
-                    values.append(default)
-
-        if not found_requirements:
-            if first:
-                # code path only accessible on nothing found due to early exit
-                servo.logger.debug(
-                    f"no resource requirements found. returning default value: {default}"
-                )
-                return default
-            else:
-                servo.logger.debug(
-                    f"no resource requirements found. returning default values: {values}"
-                )
-
-        return tuple(values)
-
-    def set_resource_requirements(
-        self,
-        name: str,
-        value: Union[str, Sequence[str]],
-        requirements: ResourceRequirements = ResourceRequirements.compute,
-        *,
-        clear_others: bool = False,
-    ) -> None:
-        """
-        Set the value for one or more resource requirements on the underlying Container.
+        If no resources have been defined yet, a resources model is provisioned.
+        If no requirements have been defined for the given resource name, a requirements dictionary is defined.
+        Values of None are removed from the target requirements.
 
         Args:
-            name: The resource to set requirements for (e.g. "cpu" or "memory").
-            value: The string value or tuple of string values to assign to the resources. Values are
-                assigned in declaration order of members of the `ResourceRequirements` enumeration. If a
-                single value is provided, it is assigned to all requirements.
-            clear_others: When True, any requirements not specified in the input arguments are cleared.
+            name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
+            requirements: A dict mapping requirements to target values (e.g., `{ResourceRequirement.request: '500m', ResourceRequirement.limit: '2000m'})
         """
+        resources: kubernetes_asyncio.client.V1ResourceRequirements = getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
 
-        values = [value] if isinstance(value, str) else list(value)
-        default = values[0]
-        for requirement in list(ResourceRequirements):
-            # skip named combinations of flags
-            if requirement.flags:
-                continue
-
-            if not hasattr(self.resources, requirement.resources_key):
-                raise ValueError(f"unknown resource requirement '{requirement}'")
-
-            req_dict: Optional[Dict[str, Union[str, None]]] = getattr(
-                self.resources, requirement.resources_key
-            )
-            if req_dict is None:
-                # we are establishing the first requirements for this resource, hydrate the model
-                req_dict = {}
-                setattr(self.resources, requirement.resources_key, req_dict)
-
-            if requirement & requirements:
-                req_value = values.pop(0) if len(values) else default
-                req_dict[name] = req_value
-
+        for requirement, value in requirements:
+            resource_to_values = getattr(resources, requirement.resources_key, {})
+            if value is not None:
+                resource_to_values[name] = value
             else:
-                if clear_others:
-                    self.logger.debug(f"clearing resource requirement: '{requirement}'")
-                    req_dict.pop(name, None)
+                resource_to_values.pop(name, None)
+            setattr(resources, requirement.resources_key, resource_to_values)
+
+        self.resources = resources
+
+    # def get_resource_requirements(
+    #     self,
+    #     name: str,
+    #     requirements: ResourceRequirements = ResourceRequirements.compute,
+    #     *,
+    #     first: bool = False,
+    #     reverse: bool = False,
+    #     default: Optional[str] = None,
+    # ) -> Union[str, Tuple[str], None]:
+    #     """
+    #     Retrieve resource requirement values for the Container.
+
+    #     This method retrieves one or more resource requirement values with a non-exceptional,
+    #     cascading fallback behavior. It is useful for retrieving available requirements from a
+    #     resource that you do not know the configuration of. Requirements are read and returned in
+    #     declaration order in the `ResourceRequirements` enumeration. Values can be retrieved as a
+    #     tuple collection or a single value can be returned by setting the `first` argument to `True`.
+    #     Values are evaluated in `ResourceRequirements` declaration order and the first requirement
+    #     that contains a string value is returned. Evaluation order can be reversed via the
+    #     `reverse=True` argument. This is useful is you want to retrieve the limit if one exists or
+    #     else fallback to the request value.
+
+    #     Args:
+    #         name: The name of the resource to retrieve the requirements of (e.g. "cpu" or "memory").
+    #         requirements: A `ResourceRequirements` flag enumeration specifying the requirements to retrieve.
+    #             Multiple values can be retrieved by using a bitwise or (`|`) operator. Defaults to
+    #             `ResourceRequirements.compute` which is equal to `ResourceRequirements.request | ResourceRequirements.limit`.
+    #         first: When True, a single value is returned for the first requirement to return a value.
+    #         reverse: When True, the `ResourceRequirements` enumeration evaluated in reverse order.
+    #         default: A default value to return when a resource requirement could not be found.
+
+    #     Returns:
+    #         A tuple of resource requirement strings or `None` values in input order or a singular, optional string
+    #         value when `first` is True.
+    #     """
+    #     values: List[Union[str, None]] = []
+    #     found_requirements = False
+    #     members = (
+    #         reversed(ResourceRequirements) if reverse else list(ResourceRequirements)
+    #     )
+
+    #     # iterate all members of the enumeration to support bitwise combinations
+    #     for member in members:
+    #         # skip named combinations of flags
+    #         if member.flags:
+    #             continue
+
+    #         if requirements & member:
+    #             if not hasattr(self.resources, member.resources_key):
+    #                 raise ValueError(f"unknown resource requirement '{member}'")
+
+    #             requirement_dict: Dict[str, str] = getattr(
+    #                 self.resources, member.resources_key
+    #             )
+    #             if requirement_dict and name in requirement_dict:
+    #                 value = requirement_dict[name]
+    #                 found_requirements = True
+
+    #                 if first:
+    #                     return value
+    #                 else:
+    #                     values.append(value)
+
+    #             else:
+    #                 servo.logger.warning(
+    #                     f"requirement '{member}' is not set for resource '{name}'"
+    #                 )
+    #                 values.append(default)
+
+    #     if not found_requirements:
+    #         if first:
+    #             # code path only accessible on nothing found due to early exit
+    #             servo.logger.debug(
+    #                 f"no resource requirements found. returning default value: {default}"
+    #             )
+    #             return default
+    #         else:
+    #             servo.logger.debug(
+    #                 f"no resource requirements found. returning default values: {values}"
+    #             )
+
+    #     return tuple(values)
+
+    # def set_resource_requirements(
+    #     self,
+    #     name: str,
+    #     value: Union[str, Sequence[str]],
+    #     requirements: ResourceRequirements = ResourceRequirements.compute,
+    #     *,
+    #     clear_others: bool = False,
+    # ) -> None:
+    #     """
+    #     Set the value for one or more resource requirements on the underlying Container.
+
+    #     Args:
+    #         name: The resource to set requirements for (e.g. "cpu" or "memory").
+    #         value: The string value or tuple of string values to assign to the resources. Values are
+    #             assigned in declaration order of members of the `ResourceRequirements` enumeration. If a
+    #             single value is provided, it is assigned to all requirements.
+    #         clear_others: When True, any requirements not specified in the input arguments are cleared.
+    #     """
+
+    #     values = [value] if isinstance(value, str) else list(value)
+    #     default = values[0]
+    #     for requirement in list(ResourceRequirements):
+    #         # skip named combinations of flags
+    #         if requirement.flags:
+    #             continue
+
+    #         if not hasattr(self.resources, requirement.resources_key):
+    #             raise ValueError(f"unknown resource requirement '{requirement}'")
+
+    #         req_dict: Optional[Dict[str, Union[str, None]]] = getattr(
+    #             self.resources, requirement.resources_key
+    #         )
+    #         if req_dict is None:
+    #             # we are establishing the first requirements for this resource, hydrate the model
+    #             req_dict = {}
+    #             setattr(self.resources, requirement.resources_key, req_dict)
+
+    #         if requirement & requirements:
+    #             req_value = values.pop(0) if len(values) else default
+    #             req_dict[name] = req_value
+
+    #         else:
+    #             if clear_others:
+    #                 self.logger.debug(f"clearing resource requirement: '{requirement}'")
+    #                 req_dict.pop(name, None)
 
     @property
     def ports(self) -> List[kubernetes_asyncio.client.V1ContainerPort]:
@@ -2199,7 +2219,12 @@ class CPU(servo.CPU):
     max: Millicore
     step: Millicore
     value: Optional[Millicore]
-    requirements: ResourceRequirements = ResourceRequirements.compute
+
+    # Kubernetes resource requirements
+    request: Optional[Millicore]
+    limit: Optional[Millicore]
+    get: pydantic.conlist(ResourceRequirements, min_items=1) = [ResourceRequirements.request, ResourceRequirements.limit]
+    set: pydantic.conlist(ResourceRequirements, min_items=1) = [ResourceRequirements.request, ResourceRequirements.limit]
 
     @pydantic.validator('min')
     def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
@@ -2243,11 +2268,16 @@ class Memory(servo.Memory):
     The Memory class models a Kubernetes Memory resource.
     """
 
-    value: Optional[ShortByteSize]
     min: ShortByteSize
     max: ShortByteSize
     step: ShortByteSize
-    requirements: ResourceRequirements = ResourceRequirements.compute
+    value: Optional[ShortByteSize]
+
+    # Kubernetes resource requirements
+    request: Optional[ShortByteSize]
+    limit: Optional[ShortByteSize]
+    get: pydantic.conlist(ResourceRequirements, min_items=1) = [ResourceRequirements.request, ResourceRequirements.limit]
+    set: pydantic.conlist(ResourceRequirements, min_items=1) = [ResourceRequirements.request, ResourceRequirements.limit]
 
     @pydantic.validator('min')
     def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
@@ -2467,7 +2497,13 @@ class DeploymentOptimization(BaseOptimization):
         Return the current CPU setting for the optimization.
         """
         cpu = self.container_config.cpu.copy()
-        cpu.value = self.container.get_resource_requirements("cpu", first=True)
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.container.get_resource_requirements('cpu')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        cpu.value = value
+        cpu.request = resource_requirements.get(ResourceRequirements.request)
+        cpu.limit = resource_requirements.get(ResourceRequirements.limit)
         return cpu
 
     @property
@@ -2476,7 +2512,13 @@ class DeploymentOptimization(BaseOptimization):
         Return the current Memory setting for the optimization.
         """
         memory = self.container_config.memory.copy()
-        memory.value = self.container.get_resource_requirements("memory", first=True)
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.container.get_resource_requirements('memory')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        memory.value = value
+        memory.request = resource_requirements.get(ResourceRequirements.request)
+        memory.limit = resource_requirements.get(ResourceRequirements.limit)
         return memory
 
     @property
@@ -2531,13 +2573,16 @@ class DeploymentOptimization(BaseOptimization):
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config to trigger validations
+            # TODO: Should this be conditional?
             setting = getattr(self.container_config, setting_name)
             setting.value = value
 
-            requirements = setting.requirements
-            self.container.set_resource_requirements(
-                setting_name, value, requirements, clear_others=True
-            )
+            # Set only the requirements defined in the config
+            requirements: Dict[ResourceRequirements, Optional[str]] = {}
+            for requirement in setting.set:
+                requirements[requirement] = value
+
+            self.container.set_resource_requirements(setting_name, requirements)
 
         elif setting_name == "replicas":
             # NOTE: Assign to the config to trigger validations
@@ -2618,13 +2663,18 @@ class CanaryOptimization(BaseOptimization):
     of its siblings.
     """
 
-    target_deployment: Deployment
+    # TODO: rename to deployment_config, container_config
     target_deployment_config: "DeploymentConfiguration"
-
-    target_container: Container
     target_container_config: "ContainerConfiguration"
 
+    # TODO: rename to main_deployment, main_container
+    # State for mainline resources
+    target_deployment: Deployment
+    target_container: Container
+
+    # TODO: Eliminate this implicit creation
     # Canary will be created if it does not yet exist
+    # State for tuning resources
     tuning_pod: Pod
     tuning_container: Container
 
@@ -2673,12 +2723,25 @@ class CanaryOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting} to {value}")
 
         if setting in ("cpu", "memory"):
+            # TODO: How the fuck does this work???
             requirements = getattr(
                 self.target_container_config, setting
             ).requirements
             self.tuning_container.set_resource_requirements(
                 setting, value, requirements, clear_others=True
             )
+
+            # NOTE: Assign to the config to trigger validations
+            # TODO: Should this be conditional?
+            # setting = getattr(self.container_config, setting_name)
+            # setting.value = value
+
+            # # Set only the requirements defined in the config
+            # requirements: Dict[ResourceRequirements, Optional[str]] = {}
+            # for requirement in setting.set:
+            #     requirements[requirement] = value
+
+            # self.container.set_resource_requirements(setting_name, requirements)
 
         elif setting == "replicas":
             if value != 1:
@@ -2712,7 +2775,13 @@ class CanaryOptimization(BaseOptimization):
         Return the current CPU setting for the optimization.
         """
         cpu = self.target_container_config.cpu.copy()
-        cpu.value = self.tuning_container.get_resource_requirements("cpu", first=True)
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.tuning_container.get_resource_requirements('cpu')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.target_container_config.cpu.get), None)
+        cpu.value = value
+        cpu.request = resource_requirements.get(ResourceRequirements.request)
+        cpu.limit = resource_requirements.get(ResourceRequirements.limit)
         return cpu
 
     @property
@@ -2721,9 +2790,13 @@ class CanaryOptimization(BaseOptimization):
         Return the current Memory setting for the optimization.
         """
         memory = self.target_container_config.memory.copy()
-        memory.value = self.tuning_container.get_resource_requirements(
-            "memory", first=True
-        )
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.tuning_container.get_resource_requirements('memory')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.target_container_config.memory.get), None)
+        memory.value = value
+        memory.request = resource_requirements.get(ResourceRequirements.request)
+        memory.limit = resource_requirements.get(ResourceRequirements.limit)
         return memory
 
     @property
@@ -2738,6 +2811,63 @@ class CanaryOptimization(BaseOptimization):
             pinned=True,
         )
 
+    @property
+    def main_cpu(self) -> CPU:
+        """
+        Return the current CPU setting for the main containers.
+        """
+        cpu = self.target_container_config.cpu.copy(update={"pinned": True})
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.target_container.get_resource_requirements('cpu')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.target_container_config.cpu.get), None)
+        cpu.value = value
+        cpu.request = resource_requirements.get(ResourceRequirements.request)
+        cpu.limit = resource_requirements.get(ResourceRequirements.limit)
+        return cpu
+
+    @property
+    def main_memory(self) -> Memory:
+        """
+        Return the current Memory setting for the main containers.
+        """
+        memory = self.target_container_config.memory.copy(update={"pinned": True})
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.target_container.get_resource_requirements('memory')
+        value = next(filter(lambda r: resource_requirements[r] is not None, self.target_container_config.memory.get), None)
+        memory.value = value
+        memory.request = resource_requirements.get(ResourceRequirements.request)
+        memory.limit = resource_requirements.get(ResourceRequirements.limit)
+        return memory
+
+    @property
+    def main_replicas(self) -> servo.Replicas:
+        """
+        Return the current Replicas setting for the main Pods Deployment.
+
+        NOTE: This is a synthetic setting because the replica count of the main Deployment is not
+        under out control. The min, max, and value are aligned on each synthetic read.
+        """
+        return servo.Replicas(
+            min=self.target_deployment.replicas,
+            max=self.target_deployment.replicas,
+            value=self.target_deployment.replicas,
+            pinned=True,
+        )
+
+    @property
+    def main_name(self) -> str:
+        """Return the name for identifying the main instance settings & metrics.
+
+        The name respects the alias defined in the config or else synthesizes a name from the Deployment
+        and Container names.
+        """
+        return (
+            self.target_container_config.alias
+            or f"{self.target_deployment_config.name}/{self.target_container_config.name}"
+        )
+
     def to_components(self) -> List[servo.Component]:
         """
         Return a Component representation of the canary and its reference target.
@@ -2746,39 +2876,44 @@ class CanaryOptimization(BaseOptimization):
         is to be modified during optimization.
         """
 
-        target_name = (
-            self.target_container_config.alias
-            or f"{self.target_deployment_config.name}/{self.target_container_config.name}"
-        )
+        # target_name = (
+        #     self.target_container_config.alias
+        #     or f"{self.target_deployment_config.name}/{self.target_container_config.name}"
+        # )
         # implicitly pin the target settings before we return them
-        # TODO: Target container may have changed
-        target_cpu = self.target_container_config.cpu.copy(update={"pinned": True})
-        if value := self.target_container.get_resource_requirements("cpu", first=True):
-            target_cpu.value = value
+        # # TODO: Target container may have changed
+        # target_cpu = self.cpu.copy(update={"pinned": True})
+        # target_memory = self.memory.copy(update={"pinned": True})
 
-        target_memory = self.target_container_config.memory.copy(
-            update={"pinned": True}
-        )
-        if value := self.target_container.get_resource_requirements(
-            "memory", first=True
-        ):
-            target_memory.value = value
+        # target_cpu = self.target_container_config.cpu.copy(update={"pinned": True})
+        # target_cpu.value = self.cpu.value
+        # if value := self.target_container.get_resource_requirements("cpu", first=True):
+        #     target_cpu.value = value
+
+        # target_memory = self.target_container_config.memory.copy(
+        #     update={"pinned": True}
+        # )
+        # target_memory.value = self.memory.value
+        # if value := self.target_container.get_resource_requirements(
+        #     "memory", first=True
+        # ):
+        #     target_memory.value = value
 
         # FIXME: Not sure if keeping replicas as a setting makes sense long term
-        target_replicas = servo.Replicas(
-            min=0,
-            max=99999,
-            value=self.target_deployment.replicas,
-            pinned=True,
-        )
+        # target_replicas = servo.Replicas(
+        #     min=0,
+        #     max=99999,
+        #     value=self.target_deployment.replicas,
+        #     pinned=True,
+        # )
 
         return [
             servo.Component(
-                name=target_name,
+                name=self.main_name,
                 settings=[
-                    target_cpu,
-                    target_memory,
-                    target_replicas,
+                    self.main_cpu,
+                    self.main_memory,
+                    self.main_replicas,
                 ],
             ),
             servo.Component(
@@ -3123,7 +3258,7 @@ class CommandConfiguration(servo.BaseConfiguration):
 
 class ContainerConfiguration(servo.BaseConfiguration):
     """
-    The ContainerConfiguration class models the configuration of an optimizable container within a Kubernetes Deployment.
+    The ContainerConfiguration class models the configuration of an optimizeable container within a Kubernetes Deployment.
     """
 
     name: ContainerTagName
@@ -3132,6 +3267,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     cpu: CPU
     memory: Memory
     env: Optional[List[str]]  # TODO: create model...
+
 
 
 class OptimizationStrategy(str, enum.Enum):
