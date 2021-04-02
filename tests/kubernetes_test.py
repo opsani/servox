@@ -439,3 +439,17 @@ def test_memory_not_step_aligned() -> None:
         servo.connectors.kubernetes.Memory(
             min="256.0MiB", max="4.1GiB", step="128.0MiB"
         )
+
+
+def test_copying_cpu_with_invalid_value_does_not_raise() -> None:
+    cpu = servo.connectors.kubernetes.CPU(
+        min="250m", max="4", step="125m", value=None
+    )
+
+    # Trigger an error
+    with pytest.raises(pydantic.ValidationError, match=re.escape("5 is outside of the range 250m-4")):
+        cpu.value = '5'
+
+    # Use copy + update to hydrate the value
+    cpu_copy = cpu.copy(update={'value': '5'})
+    assert cpu_copy.value == '5'

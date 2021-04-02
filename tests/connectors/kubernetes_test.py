@@ -28,7 +28,7 @@ from servo.connectors.kubernetes import (
     Millicore,
     OptimizationStrategy,
     Pod,
-    ResourceRequirements,
+    ResourceRequirement,
 )
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
@@ -701,12 +701,12 @@ class TestCPU:
             'request': None,
             'limit': None,
             'get': [
-                ResourceRequirements.request,
-                ResourceRequirements.limit,
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
             ],
             'set': [
-                ResourceRequirements.request,
-                ResourceRequirements.limit,
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
             ]
         } == cpu.dict()
 
@@ -793,12 +793,12 @@ class TestMemory:
             'request': None,
             'limit': None,
             'get': [
-                ResourceRequirements.request,
-                ResourceRequirements.limit,
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
             ],
             'set': [
-                ResourceRequirements.request,
-                ResourceRequirements.limit,
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
             ],
         } == memory.dict()
 
