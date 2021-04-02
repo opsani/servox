@@ -2204,7 +2204,9 @@ class DeploymentOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.container.get_resource_requirements('cpu')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        )
         cpu.value = value
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)
@@ -2219,7 +2221,9 @@ class DeploymentOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.container.get_resource_requirements('memory')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        )
         memory.value = value
         memory.request = resource_requirements.get(ResourceRequirement.request)
         memory.limit = resource_requirements.get(ResourceRequirement.limit)
