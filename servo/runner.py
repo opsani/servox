@@ -473,12 +473,15 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         loop.stop()
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
-        self.logger.critical(f"asyncio exception handler triggered with context: {context}")
+        self.logger.debug(f"asyncio exception handler triggered with context: {context}")
 
         exception = context.get("exception", None)
         logger = self.logger.opt(exception=exception)
 
-        if loop.is_closed():
+        if isinstance(exception, asyncio.CancelledError):
+            logger.warning(f"ignoring asyncio.CancelledError exception")
+            pass
+        elif loop.is_closed():
             logger.critical(
                 "Ignoring exception -- the event loop is closed."
             )
