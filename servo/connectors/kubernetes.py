@@ -719,7 +719,7 @@ class Container(servo.logging.Mixin):
         """
         resources: kubernetes_asyncio.client.V1ResourceRequirements = getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
 
-        for requirement, value in requirements:
+        for requirement, value in requirements.items():
             resource_to_values = getattr(resources, requirement.resources_key, {})
             if value is not None:
                 resource_to_values[name] = value
@@ -2509,7 +2509,7 @@ class CanaryOptimization(BaseOptimization):
 
     async def _configure_tuning_resources(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
-        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = self.deployment.pod_template_spec.copy()
+        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.copy(self.deployment.pod_template_spec)
         pod_template_spec.metadata.name = self.tuning_pod_name
 
         if pod_template_spec.metadata.annotations is None:
@@ -2675,7 +2675,10 @@ class CanaryOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.tuning_container.get_resource_requirements('cpu')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        )
+
         cpu.value = value
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)
@@ -2693,7 +2696,9 @@ class CanaryOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.tuning_container.get_resource_requirements('memory')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        )
         memory.value = value
         memory.request = resource_requirements.get(ResourceRequirement.request)
         memory.limit = resource_requirements.get(ResourceRequirement.limit)
@@ -2719,10 +2724,13 @@ class CanaryOptimization(BaseOptimization):
         """
         # Determine the value in priority order from the config
         resource_requirements = self.main_container.get_resource_requirements('cpu')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
+        )
+        millicores = Millicore.parse(value)
 
         # NOTE: use copy + update to accept values from mainline outside of our range
-        cpu = self.container_config.cpu.copy(update={"pinned": True, "value": value})
+        cpu = self.container_config.cpu.copy(update={"pinned": True, "value": millicores})
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)
         return cpu
@@ -2734,10 +2742,13 @@ class CanaryOptimization(BaseOptimization):
         """
         # Determine the value in priority order from the config
         resource_requirements = self.main_container.get_resource_requirements('memory')
-        value = next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        value = resource_requirements.get(
+            next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
+        )
+        short_byte_size = ShortByteSize.validate(value)
 
         # NOTE: use copy + update to accept values from mainline outside of our range
-        memory = self.container_config.memory.copy(update={"pinned": True, "value": value})
+        memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
         memory.request = resource_requirements.get(ResourceRequirement.request)
         memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
@@ -2751,7 +2762,7 @@ class CanaryOptimization(BaseOptimization):
         under out control. The min, max, and value are aligned on each synthetic read.
         """
         return servo.Replicas(
-            min=self.deployment.replicas,
+            min=0,
             max=self.deployment.replicas,
             value=self.deployment.replicas,
             pinned=True,
