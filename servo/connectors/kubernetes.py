@@ -368,6 +368,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             namespace: The namespace to read the resource from.
         """
 
+    @classmethod
     async def try_read(cls, name: str, namespace: str) -> Optional["KubernetesModel"]:
         """Read the underlying Kubernetes resource from the cluster and
         return a model instance or None if it is not found
