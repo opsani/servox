@@ -68,21 +68,34 @@ class Mixin(pydantic.BaseModel):
         self._repeating_tasks[name] = asyncio_task
         return asyncio_task
 
-    def cancel_repeating_task(self, name: str) -> Optional[bool]:
+    def cancel_repeating_task(self, name: str) -> Optional[asyncio.Task]:
         """Cancel a repeating task with the given name.
 
-        Returns True if the task was cancelled, False if it was found but could not be cancelled, or None if
-        no task with the given name could be found.
+        Returns the asyncio task if one was found else None.
 
         Note that cancellation is not guaranteed (see asyncio.Task docs: https://docs.python.org/3/library/asyncio-task.html#asyncio.Task.cancel)
         """
         if task := self.repeating_tasks.get(name):
-            if task.cancelled():
-                return False
-            task.cancel()
-            return True
+            if not task.done():
+                task.cancel()
+
+            return task
 
         return None
+
+    def cancel_repeating_tasks(self) -> Dict[str, asyncio.Task]:
+        """Cancel a repeating task with the given name.
+
+        Returns a Dictionary of repeating task names to asyncio.Task objects.
+
+        Note that cancellation is not guaranteed (see asyncio.Task docs: https://docs.python.org/3/library/asyncio-task.html#asyncio.Task.cancel)
+        """
+        repeating_tasks: Dict[str, asyncio.Task] = self.repeating_tasks.copy()
+        for task in repeating_tasks.values():
+            if not task.done():
+                task.cancel()
+
+        return repeating_tasks
 
     @property
     def repeating_tasks(self) -> Dict[str, asyncio.Task]:
