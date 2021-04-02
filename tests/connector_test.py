@@ -36,7 +36,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_name_valid(self) -> None:
@@ -50,7 +50,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == 'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_token_validation(self) -> None:
@@ -1022,9 +1022,12 @@ def test_vegeta_cli_generate_with_defaults(
     assert "Generated vegeta.yaml" in result.stdout
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
-    debug("sadsadas", config)
-    return
     assert config == {
+        'settings': {
+            'backoff': {
+                '__default__': {'max_time': '10m'},'connect': {'max_time': '1h'}
+            }
+        },
         "vegeta": {
             "connections": 10000,
             "description": "Update the rate and target/targets to match your load profile",

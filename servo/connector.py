@@ -207,7 +207,6 @@ class BaseConnector(
     @property
     def api_client_options(self) -> Dict[str, Any]: # noqa: D105
         if not self.optimizer:
-            debug("WTF: self", self, self.config, self.optimizer)
             raise RuntimeError(
                 f"cannot construct API client: optimizer is not configured"
             )
