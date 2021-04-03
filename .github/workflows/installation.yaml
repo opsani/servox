@@ -21,8 +21,8 @@ jobs:
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v7
       with:
-        versions: 3.8.5, 3.9.0
-        default: 3.8.6
+        versions: 3.8.6, 3.9.0
+        default: 3.8.8
     - name: Install Poetry
       run: |
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python

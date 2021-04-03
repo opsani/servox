@@ -752,6 +752,10 @@ The project is bound to a local Python version via the `.python-version` file.
 Tell Poetry to bind against the locally selected environment via:
 ``poetry env use `cat .python-version` ``
 
+When upgrading between point releases of the Python interpreter, you may need
+to tear down and recreate your venv:
+``poetry env remove `cat .python-version` && poetry install``
+
 ## Testing
 
 Tests are implemented using [pytest](https://docs.pytest.org/en/stable/) and
