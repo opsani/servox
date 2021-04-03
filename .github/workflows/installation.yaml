@@ -12,12 +12,12 @@ jobs:
     - uses: actions/checkout@v2
       with:
           fetch-depth: 1
-    - name: Cache pyenv versions
-      uses: actions/cache@v2.1.1
-      id: cached-pyenvs
-      with:
-        path: .
-        key: ${{ runner.os }}-pyenv
+    # - name: Cache pyenv versions
+    #   uses: actions/cache@v2.1.1
+    #   id: cached-pyenvs
+    #   with:
+    #     path: .
+    #     key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v7
       with:
