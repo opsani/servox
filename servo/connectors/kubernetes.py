@@ -19,6 +19,7 @@ from typing import (
     Callable,
     ClassVar,
     Collection,
+    Coroutine,
     Dict,
     Generator,
     Iterable,
@@ -231,7 +232,8 @@ class KubernetesObj(Protocol):
         ...
 
     @property
-    def kind(self) -> str:
+    # set to None on list ops https://github.com/kubernetes-client/python/issues/429
+    def kind(self) -> Optional[str]:
         ...
 
     @property
@@ -294,6 +296,11 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
     def api_version(self) -> str:
         """The API version of the Kubernetes object (`obj.apiVersion``)."""
         return self.obj.api_version
+
+    @property
+    def kind(self) -> Optional[str]:
+        # set to None on list ops, should be overriden https://github.com/kubernetes-client/python/issues/429
+        return self.obj.kind
 
     @property
     def name(self) -> str:
@@ -410,6 +417,18 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
             True if in the ready state; False otherwise.
         """
 
+    def is_owner(self, other: KubernetesModel) -> bool:
+        """Return True if this resource is the owner of another resource
+        """
+        if not (other_own_refs := other.obj.metadata.owner_references):
+            return False
+        return any(map(
+            lambda oor:
+                oor.kind == self.kind
+                and oor.uid == self.obj.metadata.uid,
+            other_own_refs
+        ))
+
     async def wait_until_ready(
         self,
         interval: servo.DurationDescriptor = 1,
@@ -503,8 +522,16 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
                 await task
             raise
 
-    async def raise_for_status(self) -> None:
-        """Raise an exception if in an unhealthy state."""
+    async def raise_for_status(self, settling=False) -> None:
+        """
+        Raise an exception if in an unhealthy state.
+
+        Args:
+            settling (bool): Whether the target resource became unhealthy during settlement. Note that
+                if we are settling, the target *was* healthy at one point and that information is enough
+                to form a rejection error when a more detailed status condition cannot be found
+        """
+        self.logger.warning(f"raise_for_status not implemented on {self.__class__.__name__}")
         pass
 
 
@@ -688,8 +715,13 @@ class Container(servo.logging.Mixin):
 
         raise RuntimeError(f"Unable to determine container status for {container_name}")
 
+    @classmethod
+    def format_status_error_message(cls, status: kubernetes_asyncio.client.V1ContainerStatus) -> str:
+        id_str = f" (id {status.container_id})" if status.container_id else ""
+        return f"<{status.name}{id_str} ready {status.ready}, restarted x{status.restart_count}>"
+
     @property
-    def resources(self) ->kubernetes_asyncio.client.V1ResourceRequirements:
+    def resources(self) -> kubernetes_asyncio.client.V1ResourceRequirements:
         """
         Return the resource requirements for the Container.
 
@@ -874,6 +906,11 @@ class Pod(KubernetesModel):
         "v1":kubernetes_asyncio.client.CoreV1Api,
     }
 
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "Pod"
+
     @classmethod
     async def read(cls, name: str, namespace: str) -> "Pod":
         """Read the Pod from the cluster under the given namespace.
@@ -998,8 +1035,15 @@ class Pod(KubernetesModel):
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
-    async def raise_for_status(self) -> None:
-        """Raise an exception if the Pod status is not not ready."""
+    async def raise_for_status(self, settling=False) -> None:
+        """
+        Raise an exception if the Pod status is not not ready.
+
+        Args:
+            settling (bool): Whether the target resource became unhealthy during settlement. Note that
+                if we are settling, the target *was* healthy at one point and that information is enough
+                to form a rejection error when a more detailed status condition cannot be found
+        """
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
         self.logger.trace(f"current pod status is {status}")
@@ -1013,11 +1057,23 @@ class Pod(KubernetesModel):
         if not status.conditions:
             raise RuntimeError(f'Pod is not running: {self.name}')
 
+        if await self.get_restart_count(refresh=False) > 0:
+            raise servo.AdjustmentRejectedError(message=await self.get_restart_error_message(), reason="unstable")
+
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
-            if cond.reason in {"Unschedulable", "ContainersNotReady"}:
+            if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
                 raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+
+            if cond.reason == "ContainersNotReady":
+                if settling:
+                    reason="unstable"
+                    message=f"Optimization tuning pod {self.name} became unready during adjustment settlement period. Message {cond.message}"
+                else:
+                    reason="start-failed"
+                    message=f"Timed out waiting for Pod {self.name} to become ready. Message: {cond.message}"
+                raise servo.AdjustmentRejectedError(message=message, reason=reason)
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -1027,21 +1083,42 @@ class Pod(KubernetesModel):
             if cond.status.lower() == "true":
                 return
 
-        # Catchall
-        self.logger.trace(f"unable to find ready=true, continuing to wait...")
+        # Catchalls
+        if settling:
+            raise servo.AdjustmentRejectedError(
+                message=f"Optimization tuning pod {self.name} became unready during adjustment settlement period",
+                reason="unstable"
+            )
+
+        self.logger.trace(f"unable to map pod status to exception. Pod: {self.obj}")
         raise RuntimeError(f"Unknown Pod status for '{self.name}': {status}")
 
-    async def get_status(self) ->kubernetes_asyncio.client.V1PodStatus:
+    async def get_status(self, refresh=True) -> kubernetes_asyncio.client.V1PodStatus:
         """Get the status of the Pod.
+
+        Args:
+            refresh (bool): Whether to refresh the underlying API object while getting status
 
         Returns:
             The status of the Pod.
         """
         # first, refresh the pod state to ensure latest status
-        await self.refresh()
+        if refresh:
+            await self.refresh()
 
         # return the status of the pod
         return cast(kubernetes_asyncio.client.V1PodStatus, self.obj.status)
+
+    async def get_container_statuses(self, refresh=True) -> List[kubernetes_asyncio.client.V1ContainerStatus]:
+        """Get the status of the Pod's containers.
+
+        Args:
+            refresh (bool): Whether to refresh the underlying API object while getting status
+
+        Returns:
+            The Pod container statuses
+        """
+        return (await self.get_status(refresh)).container_statuses
 
     @property
     def containers(self) -> List[Container]:
@@ -1073,21 +1150,30 @@ class Pod(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
-    async def get_restart_count(self) -> int:
+    async def get_restart_count(self, refresh=True) -> int:
         """Get the total number of Container restarts for the Pod.
 
         Returns:
             The total number of Container restarts.
         """
-        status = await self.get_status()
-        if status.container_statuses is None:
+        if not (statuses := await self.get_container_statuses(refresh)):
             return 0
 
         total = 0
-        for container_status in status.container_statuses:
+        for container_status in statuses:
             total += container_status.restart_count
 
         return total
+
+    async def get_restart_error_message(self) -> str:
+        """
+        Formats an error message containing information to identify the optimization and details about the individual failing containers.
+        Note this assumes the counts were recently checked which eliminates the need to refresh the underlying object and statuses
+        """
+        restarted_container_statuses = list(filter(lambda s: s.restart_count > 0, await self.get_container_statuses(refresh=False)))
+        self.logger.trace(f"Restarted container statuses for pod {self.name}: {restarted_container_statuses}")
+        container_restart_messages = " ".join(map(Container.format_status_error_message, restarted_container_statuses))
+        return f"Pod {self.name} container(s) crash restart detected: {container_restart_messages}"
 
     async def containers_started(self) -> bool:
         """Check if the Pod's Containers have all started.
@@ -1121,6 +1207,92 @@ class Pod(KubernetesModel):
         UID is the unique in time and space value for this object. It is typically generated by the server on successful creation of a resource and is not allowed to change on PUT operations.  Populated by the system. Read-only. More info: http://kubernetes.io/docs/user-guide/identifiers#uids  # noqa: E501
         """
         return self.obj.metadata.uid
+
+
+
+class ReplicaSet(KubernetesModel):
+    """ServoX wrapper around a Kubernetes `ReplicaSet`_ API Object.
+
+    The actual ``kubernetes.client.V1ReplicaSet`` instance that this
+    wraps can be accessed via the ``obj`` instance member.
+
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `ReplicaSet`_.
+
+    NOTE: there is little to no need for direct interaction with ReplicaSets,
+    this wrapper merely provides support for operations involving other resources
+    that create or are managed by ReplicaSets
+
+    .. _ReplicaSet:
+        https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#replicaset-v1-apps
+    """
+
+    obj: kubernetes_asyncio.client.V1ReplicaSet
+
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "ReplicaSet"
+
+    async def read(cls, name: str, namespace: str) -> "KubernetesModel":
+        """Read the underlying Kubernetes resource from the cluster and
+        return a model instance.
+
+        Args:
+            name: The name of the resource to read.
+            namespace: The namespace to read the resource from.
+        """
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the underlying Kubernetes resource in the cluster
+        under the given namespace.
+
+        Args:
+            namespace: The namespace to create the resource under.
+                If no namespace is provided, it will use the instance's
+                namespace member, which is set when the object is created
+                via the kubetestkubernetes_asyncio.client.
+        """
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    async def patch(self) -> None:
+        """Partially update the underlying Kubernetes resource in the cluster."""
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions) ->kubernetes_asyncio.client.V1Status:
+        """Delete the underlying Kubernetes resource from the cluster.
+
+        This method expects the resource to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+
+        Args:
+            options: Options for resource deletion.
+        """
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    async def refresh(self) -> None:
+        """Refresh the local state (``obj``) of the underlying Kubernetes resource."""
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    async def is_ready(self) -> bool:
+        """Check if the resource is in the ready state.
+
+        It is up to the wrapper subclass to define what "ready" means for
+        that particular resource.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        raise NotImplementedError("Replicasets do not currently support direct interaction")
+
+    @property
+    def resource_version(self) -> str:
+        """
+        Returns the resource version of the ReplicaSet.
+        """
+        return self.obj.metadata.resource_version
 
 
 class Service(KubernetesModel):
@@ -1396,7 +1568,6 @@ class Service(KubernetesModel):
         self.logger.debug(f'getting pods for service "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
                 namespace=self.namespace, label_selector=selector_string(self.selector)
             )
@@ -1425,6 +1596,11 @@ class Deployment(KubernetesModel):
         "apps/v1beta1":kubernetes_asyncio.client.AppsV1beta1Api,
         "apps/v1beta2":kubernetes_asyncio.client.AppsV1beta2Api,
     }
+
+    @property
+    def kind(self) -> str:
+        # listing returns kind of None on obj https://github.com/kubernetes-client/python/issues/429
+        return super().kind or "Deployment"
 
     async def create(self, namespace: str = None) -> None:
         """Create the Deployment under the given namespace.
@@ -1548,9 +1724,8 @@ class Deployment(KubernetesModel):
         self.logger.debug(f'getting pods for deployment "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
-                namespace=self.namespace, label_selector=selector_string(label_selector)
+                namespace=self.namespace, label_selector=self.match_label_selector
             )
 
         pods = [Pod(p) for p in pod_list.items]
@@ -1564,28 +1739,19 @@ class Deployment(KubernetesModel):
         """
         self.logger.trace(f'getting replicaset for deployment "{self.name}"')
         async with self.api_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
-            rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
-                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
+            # NOTE: deployment selector match_labels are applied as labels to the RS metadata
+            # https://github.com/kubernetes/kubernetes/blob/5ab4b580de915cffd901c7a1304aca5fdcca88e7/pkg/controller/deployment/util/deployment_util.go#L935-L940
+            rs_list:kubernetes_asyncio.client.V1ReplicaSetList = await api_client.list_namespaced_replica_set(
+                namespace=self.namespace, label_selector=self.match_label_selector
             )
 
-        # Verify all returned RS have this deployment as an owner
-        rs_list = [
-            rs for rs in rs_list.items if rs.metadata.owner_references and any(
-                ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
-                for ownRef in rs.metadata.owner_references)]
-        if not rs_list:
-            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
-        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+        # Verify at least one returned RS have this deployment as an owner
+        owned_rs_items: List[ReplicaSet] = list(filter(lambda rs: self.is_owner(rs), map(ReplicaSet, rs_list.items)))
+        if not owned_rs_items:
+            raise servo.ConnectorError(f'Unable to locate replicaset(s) for deployment "{self.name}"')
+        latest_rs = sorted(owned_rs_items, key= lambda rs: rs.resource_version, reverse=True)[0]
 
-        return [
-            pod for pod in await self.get_pods()
-            if any(
-                ownRef.kind == "ReplicaSet" and ownRef.uid == latest_rs.metadata.uid
-                for ownRef in pod.obj.metadata.owner_references
-            )]
-
-
+        return list(filter(lambda pod: latest_rs.is_owner(pod), await self.get_pods()))
 
     @property
     def status(self) ->kubernetes_asyncio.client.V1DeploymentStatus:
@@ -1628,6 +1794,9 @@ class Deployment(KubernetesModel):
         # check the status for the number of total replicas and compare
         # it to the number of ready replicas. if the numbers are
         # equal, the deployment is ready; otherwise it is not ready.
+        # NOTE: a deployment with maxUnavailable set to 0 is still considered ready
+        # in the midst of a rolling update. Check updated_replicas to ensure the deployment
+        # is not transitioning
         total = status.replicas
         ready = status.ready_replicas
 
@@ -1683,9 +1852,26 @@ class Deployment(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
+    def field_selector(self) -> str:
+        """
+        Return a string for matching the Deployment fields in Kubernetes API calls.
+        """
+        selector_fields = {
+            "metadata.name": self.name,
+        }
+        return selector_string(selector_fields)
+
+    @property
     def label_selector(self) -> str:
         """
-        Return a string for matching the Deployment in Kubernetes API calls.
+        Return a string for matching the Deployment labels in Kubernetes API calls.
+        """
+        return selector_string(self.obj.metadata.labels)
+
+    @property
+    def match_label_selector(self) -> str:
+        """
+        Return a string for matching the Replicasets and Pods managed by this Deployment in Kubernetes API calls.
         """
         return selector_string(self.obj.spec.selector.match_labels)
 
@@ -1845,6 +2031,7 @@ class Deployment(KubernetesModel):
             async with kubernetes_asyncio.watch.Watch().stream(
                 v1.list_namespaced_deployment,
                 self.namespace,
+                field_selector=self.field_selector,
                 label_selector=self.label_selector,
                 timeout_seconds=timeout_seconds,
             ) as stream:
@@ -1861,7 +2048,7 @@ class Deployment(KubernetesModel):
                     if event_type == "ERROR":
                         stream.stop()
                         # FIXME: Not sure what types we expect here
-                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+                        raise servo.AdjustmentRejectedError(message=str(deployment), reason="start-failed")
 
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
@@ -1874,6 +2061,10 @@ class Deployment(KubernetesModel):
                             "observed generation has not changed, continuing watch"
                         )
                         continue
+
+                    # Check restart counts and reject early instead of waiting for timeout
+                    if await self.get_restart_count() > 0:
+                        await self.raise_for_status()
 
                     # Check the replica counts. Once available, updated, and ready match
                     # our expected count and the unavailable count is zero we are rolled out
@@ -1896,8 +2087,11 @@ class Deployment(KubernetesModel):
                         stream.stop()
                         return
 
-            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
-            raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
+            # watch doesn't raise a timeoutError when when elapsed, treat fall through as timeout instead
+            raise servo.AdjustmentRejectedError(
+                message="timed out waiting for Deployment to apply adjustment",
+                reason="start-failed"
+            )
 
 
 
@@ -1920,9 +2114,8 @@ class Deployment(KubernetesModel):
             elif condition.type == "ReplicaFailure":
                 # TODO: Check what this error looks like
                 raise servo.AdjustmentRejectedError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                    condition.status.message,
-                    reason=condition.status.reason
+                    message=f"ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    reason=condition.status.type
                 )
 
             elif condition.type == "Progressing":
@@ -1932,9 +2125,8 @@ class Deployment(KubernetesModel):
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                        condition.status.message,
-                        reason=condition.status.reason
+                        message=f"ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        reason=condition.status.type
                     )
                 else:
                     raise servo.AdjustmentFailure(
@@ -1957,6 +2149,52 @@ class Deployment(KubernetesModel):
 
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
+
+    async def get_restart_count(self) -> int:
+        count = 0
+        for pod in await self.get_latest_pods():
+            count += await pod.get_restart_count(refresh=False)
+
+        return count
+
+    async def raise_for_status(self, settling=False) -> None:
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.obj.status
+        self.logger.trace(f"current deployment status is {status}")
+        if status is None:
+            raise RuntimeError(f'No such deployment: {self.name}')
+
+        if not status.conditions:
+            raise RuntimeError(f'Deployment is not running: {self.name}')
+
+        # Check for restarts
+        if await self.get_restart_count() > 0:
+            # NOTE: Have to use a comprehension here becuase get_restart_count is async
+            # restarted_pods = list(filter(lambda pod: await pod.get_restart_count(refresh=False) > 0 , await self.get_latest_pods()))
+            restarted_pods = [ pod for pod in await self.get_latest_pods() if await pod.get_restart_count(refresh=False) > 0 ]
+            if not restarted_pods:
+                raise servo.AdjustmentRejectedError(
+                    "Deployment {self.name} pod(s) crash restart detected (restarted pods could not be found after refresh)",
+                    reason="unstable"
+                )
+
+            pod_restart_messages = "|".join(await asyncio.gather(*map(lambda p: p.get_restart_error_message(), restarted_pods)))
+            message = f"Deployment {self.name} pod(s) crash restart detected: {pod_restart_messages}"
+            raise servo.AdjustmentRejectedError(message=message, reason="unstable")
+
+        # Check for failure conditions
+        self._check_conditions(status.conditions)
+        await self._check_pod_conditions()
+
+        # Catchalls
+        if settling:
+            raise servo.AdjustmentRejectedError(
+                message=f"Optimization target Deployment {self.name} became unready during adjustment settlement period",
+                reason="unstable"
+            )
+
+        self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
+        raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
 
     ##
     # Canary support
@@ -2091,6 +2329,9 @@ class Deployment(KubernetesModel):
         )
         await tuning_pod.create()
 
+        # TODO: driver adjust handler calls ensure_tuning_pod but also defines its own top level progress reporter
+        #   that will cause web UI progress to thrash between 0 and the percent that this EventProgress timeout
+        #   has elapsed. Determine sane method of eliminating the behavior
         progress = servo.EventProgress(timeout)
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"Waiting for '{tuning_pod_name}' to become ready...", False),
@@ -2125,20 +2366,6 @@ class Deployment(KubernetesModel):
         await tuning_pod.get_containers()
 
         return tuning_pod
-
-    async def get_restart_count(self) -> int:
-        count = 0
-        for pod in await self.get_pods():
-            try:
-                count += await pod.get_restart_count()
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
-                if error.status == 404:
-                    # Pod no longer exists, move on
-                    pass
-                else:
-                    raise error
-
-        return count
 
 class Millicore(int):
     """
@@ -2250,7 +2477,7 @@ class Memory(servo.Memory):
     requirements: ResourceRequirements = ResourceRequirements.compute
 
     @pydantic.validator('min')
-    def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
+    def _validate_mem_floor(cls, value: ShortByteSize) -> ShortByteSize:
         if value < (128 * MiB):
             raise ValueError('minimum Memory value allowed is 128MiB')
         return value
@@ -2290,6 +2517,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     name: str
     timeout: servo.Duration
 
+    _handle_error_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+
     @abc.abstractclassmethod
     async def create(
         cls, config: "BaseKubernetesConfiguration", *args, **kwargs
@@ -2313,12 +2542,27 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         """
         ...
 
+    @property
     @abc.abstractmethod
-    async def raise_for_status(self) -> None:
-        """Raise an exception if in an unhealthy state."""
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior.
+        """
         ...
 
-    async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
+    @abc.abstractmethod
+    async def raise_for_status(self, settling=False) -> None:
+        """
+        Raise an exception if in an unhealthy state.
+
+        Args:
+            settling (bool): Whether the target resource became unhealthy during settlement. Note that
+                if we are settling, the target *was* healthy at one point and that information is enough
+                to form a rejection error when a more detailed status condition cannot be found
+        """
+        ...
+
+    async def handle_error(self, error: Exception, mode: "FailureMode" = None) -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
 
@@ -2338,6 +2582,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
+        if mode is None:
+            mode = self.on_failure
 
         # Ensure that we chain any underlying exceptions that may occur
         try:
@@ -2488,6 +2734,14 @@ class DeploymentOptimization(BaseOptimization):
         replicas.value = self.deployment.replicas
         return replicas
 
+    @property
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior. If not set explicitly, this will be cascaded
+        from the base kubernetes configuration (or its default)
+        """
+        return self.deployment_config.on_failure
+
     async def rollback(self, error: Optional[Exception] = None) -> None:
         """
         Initiates an asynchronous rollback to a previous version of the Deployment.
@@ -2586,19 +2840,9 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        try:
-            async with self.deployment.rollout(timeout=self.timeout) as deployment:
-                # Patch the Deployment via the Kubernetes API
-                await deployment.patch()
-
-        except asyncio.TimeoutError as error:
-            raise servo.AdjustmentRejectedError(
-                reason="timed out waiting for Deployment to apply adjustment"
-            ) from error
-
-        if await self.deployment.get_restart_count() > 0:
-            # TODO: Return a string summary about the restarts (which pods bounced)
-            raise servo.AdjustmentRejectedError(reason="unstable")
+        async with self.deployment.rollout(timeout=self.timeout) as deployment:
+            # Patch the Deployment via the Kubernetes API
+            await deployment.patch()
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -2607,9 +2851,9 @@ class DeploymentOptimization(BaseOptimization):
         )
         return is_ready and restart_count == 0
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, settling=False) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.deployment.raise_for_status()
+        await self.deployment.raise_for_status(settling)
 
 
 class CanaryOptimization(BaseOptimization):
@@ -2738,6 +2982,14 @@ class CanaryOptimization(BaseOptimization):
             pinned=True,
         )
 
+    @property
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior. If not set explicitly, this will be cascaded
+        from the base kubernetes configuration (or its default)
+        """
+        return self.target_deployment_config.on_failure
+
     def to_components(self) -> List[servo.Component]:
         """
         Return a Component representation of the canary and its reference target.
@@ -2814,7 +3066,10 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.info(f'destroyed tuning Pod "{self.name}"')
 
-    async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
+    async def handle_error(self, error: Exception, mode: "FailureMode" = None) -> bool:
+        if mode is None:
+            mode = self.on_failure
+
         if mode == FailureMode.rollback or mode == FailureMode.destroy:
             # Ensure that we chain any underlying exceptions that may occur
             try:
@@ -2846,9 +3101,9 @@ class CanaryOptimization(BaseOptimization):
         )
         return is_ready and restart_count == 0
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, settling=False) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.tuning_pod.raise_for_status()
+        await self.tuning_pod.raise_for_status(settling)
 
 
     class Config:
@@ -2973,61 +3228,107 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.debug(f'ignoring unrecognized adjustment "{adjustment}"')
 
         # Apply the changes to Kubernetes and wait for the results
-        timeout = self.config.timeout
         if self.optimizations:
             self.logger.debug(
                 f"waiting for adjustments to take effect on {len(self.optimizations)} optimizations"
             )
-            try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(
-                        *list(map(lambda a: a.apply(), self.optimizations)),
-                        return_exceptions=True,
-                    ),
-                    timeout=timeout.total_seconds() + 60, # allow sub-optimization timeouts to expire first
-                )
-
-                for result in results:
-                    if isinstance(result, Exception):
-                        for optimization in self.optimizations:
-                            if await optimization.handle_error(
-                                result, self.config.on_failure
-                            ):
-                                # Stop error propogation once it has been handled
-                                break
-
-            except asyncio.exceptions.TimeoutError as error:
-                self.logger.error(
-                    f"timed out after {timeout} + 60s waiting for adjustments to apply"
-                )
-                for optimization in self.optimizations:
-                    if await optimization.handle_error(error, self.config.on_failure):
-                        # Stop error propogation once it has been handled
-                        break
+            await self.run_with_handle_error(self.optimizations, lambda o: o.apply(), self.config.timeout.total_seconds() + 60)
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
         # TODO: Run sanity checks to look for out of band changes
 
-    async def raise_for_status(self) -> None:
-        async def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+    async def raise_for_status(self, optimizations=None, settling=False) -> None:
+        await self.run_with_handle_error(optimizations or self.optimizations, lambda o: o.raise_for_status(settling), self.config.timeout.total_seconds())
+
+    async def run_with_handle_error(
+        self,
+        optimizations: List[BaseOptimization],
+        coroutine_selector: Callable[[BaseOptimization], Coroutine],
+        timeout_seconds: float
+    ) -> None:
+        """
+        Execute optimizer coroutines as selected by callable argument. Handle errors ASAP but allow all ops to finish (including error handling)
+        before aggregating and reporting errors to the backend
+
+        Args:
+            optimizations (List[BaseOptimization]): List of the optimizations on which the to call the supplied selector
+            coroutine_selector (Callable[[BaseOptimization], Coroutine]): Takes in a single optimization and returns the coroutine to be scheduled with error handling
+            timeout_seconds (float): How long optimizer tasks are waited for before raising a timeout error. NOTE: Its recommended to ensure
+                this timeout is longer than that used by the optimization operation to be run so that the sub-operations will timeout first
+        """
+        handle_error_tasks = [] # Keep track of created tasks to cancel if needed
+        def _handle_error_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
-                    await optimization.handle_error(
-                        exception, self.config.on_failure
+                    optimization._handle_error_task = asyncio.create_task(
+                        optimization.handle_error(exception)
                     )
+                    handle_error_tasks.append(optimization._handle_error_task)
 
+        done_callback = lambda task: _handle_error_for_task(optimization, task)
         tasks = []
-        for optimization in self.optimizations:
-            task = asyncio.create_task(optimization.raise_for_status())
-            task.add_done_callback(lambda task: _raise_for_task(optimization, task))
+        for optimization in optimizations:
+            task = asyncio.create_task(coroutine_selector(optimization))
+            task.add_done_callback(done_callback)
             tasks.append(task)
 
-        for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
+        for future in asyncio.as_completed(tasks, timeout=timeout_seconds):
             try:
                 await future
+            except (asyncio.TimeoutError, asyncio.CancelledError) as aio_error:
+                cause = 'timeout' if isinstance(aio_error, asyncio.TimeoutError) else 'outer task cancellation'
+                # cancel tasks to prevent unretrieved exceptions and loop closed while task pending
+                for task in tasks:
+                    if not task.done():
+                        if isinstance(aio_error, asyncio.CancelledError):
+                            task.remove_done_callback(done_callback) # If cancelling, don't enqueue more tasks
+                        try:
+                            task.cancel()
+                            await task
+                        except asyncio.CancelledError as ce:
+                            self.logger.opt(exception=ce).debug(f"Optimizer task cancelled due to {cause}")
+                            pass
+
+                if isinstance(aio_error, asyncio.CancelledError):
+                    for task in handle_error_tasks:
+                        if not task.done():
+                            try:
+                                task.cancel()
+                                await task
+                            except asyncio.CancelledError as ce:
+                                self.logger.opt(exception=ce).debug(f"Optimizer handle_error task cancelled due to {cause}")
+                                pass
+                    raise aio_error
+
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
+
+        if error_opts := list(filter(lambda o: o._handle_error_task is not None, self.optimizations)):
+            # let all handlers set up by done_callbacks finish before reraising to send to backend
+            handle_error_results = await asyncio.gather(*map(lambda o: o._handle_error_task, error_opts), return_exceptions=True)
+            not_ignored = list(filter(lambda r: isinstance(r, Exception), handle_error_results))
+
+            if not_ignored:
+                if len(not_ignored) == 1:
+                    raise not_ignored[0]
+
+                # Multiple errors, traces already logged locally in handle_error. Join into single error for reporting to backend
+                if rejections := list(filter(lambda r: isinstance(r, servo.errors.AdjustmentRejectedError), not_ignored)):
+                    other_failures = ", ".join(map(str, filter(lambda f: f not in rejections, not_ignored)))
+                    if len(rejections) == 1:
+                        to_raise = rejections[0]
+                        to_raise.message = f"{to_raise.message} (Other failures: {other_failures})"
+                        raise to_raise
+
+                    rejection_messages = ", ".join(map(str, rejections))
+                    message = f"Rejections occurred on multiple optimizations: {rejection_messages}. (Other failures: {other_failures})"
+                    raise servo.errors.AdjustmentRejectedError(message=message, reason=rejections[0].reason)
+
+                # TODO: determine hierarchy of reasons to be reported or allow multiple in response to backend
+                failure_messages = ", ".join(map(str, not_ignored))
+                raise servo.errors.AdjustmentFailedError(message=f"Failures occurred on multiple optimizations: {failure_messages}", reason=not_ignored[0].reason)
+
 
     async def is_ready(self):
         if self.optimizations:
@@ -3045,10 +3346,26 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 return all(results)
 
             except asyncio.TimeoutError:
+                self.logger.exception("Timed out getting readiness of optimizations, defaulting to ready = False")
                 return False
 
         else:
             return True
+
+    async def get_unready_optimizations(self) -> List[BaseOptimization]:
+        results = []
+        async def unready_closure(opt: BaseOptimization) -> None:
+            if not await opt.is_ready():
+                results.append(opt)
+
+        await asyncio.wait_for(
+            asyncio.gather(
+                *list(map(lambda a: unready_closure(a), self.optimizations)),
+            ),
+            timeout=self.config.timeout.total_seconds()
+        )
+
+        return results
 
 
     class Config:
@@ -3450,7 +3767,7 @@ class KubernetesChecks(servo.BaseChecks):
     async def check_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_deployment(dep_config: DeploymentConfiguration) -> None:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            if not deployment.is_ready:
+            if not await deployment.is_ready():
                 raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
         return self.config.deployments, check_deployment
@@ -3493,53 +3810,37 @@ class KubernetesConnector(servo.BaseConnector):
     ) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
 
-        # Apply the adjustments and emit indeterminate progress status
-        progress_logger = lambda p: self.logger.info(
-            p.annotate(f"waiting for adjustments to be applied...", False),
-            progress=p.progress,
-        )
-        progress = servo.EventProgress()
+        settlement = control.settlement or self.config.settlement
+        progress = servo.EventProgress(settlement=settlement)
+
+        # Apply the adjustments and emit indeterminate or settlement progress status
+        async def progress_handler(p: servo.EventProgress):
+            if p.settling:
+                # When settlement is defined, ensure optimization target remains ready for the duration
+                if unready_opts := await state.get_unready_optimizations():
+                    # Raise a specific exception if the optimization defines one
+                    await state.raise_for_status(optimizations=unready_opts, settling=True)
+
+                    # Exception should raise from above before getting here. If not, we were unable to pinpoint the failing optimization for some reason
+                    self.logger.warning("Rejection error raised outside of optimization, handle_error logic was not executed")
+                    raise servo.AdjustmentRejectedError(
+                        message="Optimization target became unready during adjustment settlement period (WARNING: handle_error not executed)",
+                        reason="unstable"
+                    )
+
+                p_info = f"waiting {settlement} for adjustments settlement..."
+            else:
+                p_info = "waiting for adjustments to be applied..."
+
+            self.logger.info(p.annotate(p_info, False),  progress=p.progress)
+
         future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
         await asyncio.gather(
             future,
-            progress.watch(progress_logger),
+            progress.watch(progress_handler),
         )
-
-        # Handle settlement
-        settlement = control.settlement or self.config.settlement
-        if settlement:
-            self.logger.info(
-                f"Settlement duration of {settlement} requested, waiting for pods to settle..."
-            )
-            progress = servo.DurationProgress(settlement)
-            progress_logger = lambda p: self.logger.info(
-                p.annotate(f"waiting {settlement} for pods to settle...", False),
-                progress=p.progress,
-            )
-            async def readiness_monitor() -> None:
-                while not progress.finished:
-                    if not await state.is_ready():
-                        # Raise a specific exception if the optimization defines one
-                        state.raise_for_status()
-
-                        raise servo.AdjustmentRejectedError(
-                            reason="Optimization target became unready during adjustment settlement period"
-                        )
-                    await asyncio.sleep(servo.Duration('50ms').total_seconds())
-
-            await asyncio.gather(
-                progress.watch(progress_logger),
-                readiness_monitor()
-            )
-            if not await state.is_ready():
-                raise servo.AdjustmentRejectedError(
-                    reason="Optimization target became unready after adjustment settlement period"
-                )
-            self.logger.info(
-                f"Settlement duration of {settlement} has elapsed, resuming optimization."
-            )
 
         description = state.to_description()
         return description

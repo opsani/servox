@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Type
 
 import kubetest.client
+from kubetest.objects import Deployment as KubetestDeployment
+from kubernetes.client.models import V1HTTPGetAction, V1Probe
 import pydantic
 import pytest
 from kubernetes_asyncio import client
@@ -1020,6 +1022,7 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "3s"
+        tuning_config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1114,17 +1117,68 @@ class TestKubernetesConnectorIntegration:
 
 
 ##
-# Rejection Tests using modified deployment
+# Rejection Tests using modified deployment, skips the standard manifest application
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
-@pytest.mark.applymanifests("../manifests", files=["fiber-http-unready-cmd.yaml"])
 class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    async def test_adjust_never_ready(self, config, kube: kubetest.client.TestClient) -> None:
-        # new_dep = kube.load_deployment(abspath("../manifests/fiber-http-opsani-dev.yaml")) Why doesn't this work???? Had to use apply_manifests instead
+    @pytest.fixture
+    def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
+        deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        fiber_container = deployment.obj.spec.template.spec.containers[0]
+        fiber_container.resources.requests['memory'] = '256Mi'
+        fiber_container.resources.limits['memory'] = '256Mi'
+        fiber_container.readiness_probe = V1Probe(
+            failure_threshold=3,
+            http_get=V1HTTPGetAction(
+              path= "/",
+              port= 9980,
+              scheme="HTTP",
+            ),
+            initial_delay_seconds=1,
+            period_seconds=5,
+            success_threshold=1,
+            timeout_seconds=1,
+        )
+
+        return deployment
+
+    @pytest.fixture
+    def kubetest_deployment_never_ready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
+        fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_container.command = [ "/bin/sh" ]
+        # Simulate a deployment which fails to start when memory adjusted to < 192Mi
+        fiber_container.args = [
+            "-c", "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; then /bin/fiber-http; else sleep 1d; fi"
+        ]
+
+        kubetest_deployment.create()
+        kubetest_deployment.wait_until_ready(timeout=30)
+        return kubetest_deployment
+
+    @pytest.fixture
+    def kubetest_deployment_becomes_unready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
+        fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_container.command = [ "/bin/sh" ]
+        # Simulate a deployment which passes initial readiness checks when memory adjusted to < 192Mi then fails them a short time later
+        fiber_container.args = [ "-c", (
+            "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
+                "then /bin/fiber-http; "
+                "else (/bin/fiber-http &); sleep 10s; kill %1; "
+            "fi"
+        )]
+
+        kubetest_deployment.create()
+        kubetest_deployment.wait_until_ready(timeout=30)
+        return kubetest_deployment
+
+
+
+    async def test_adjust_deployment_never_ready(self, config: KubernetesConfiguration, kubetest_deployment_never_ready: KubetestDeployment) -> None:
         config.timeout = "3s"
         connector = KubernetesConnector(config=config)
 
@@ -1134,7 +1188,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             value="128Mi",
         )
         # NOTE: This can generate a 409 Conflict failure under CI
-        with pytest.raises(AdjustmentRejectedError):
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
             for _ in range(3):
                 try:
                     description = await connector.adjust([adjustment])
@@ -1144,3 +1198,85 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                         pass
                     else:
                         raise e
+
+        assert str(rejection_info.value) == 'timed out waiting for Deployment to apply adjustment'
+        assert rejection_info.value.reason == "start-failed"
+
+
+    async def test_adjust_deployment_settlement_failed(self, config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
+        config.timeout = "15s"
+        config.settlement = "15s"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        # NOTE: This can generate a 409 Conflict failure under CI
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e
+
+        assert str(rejection_info.value).startswith("Deployment fiber-http pod(s) crash restart detected: Pod fiber-http-")
+        assert rejection_info.value.reason == "unstable"
+
+    async def test_adjust_tuning_never_ready(self, tuning_config: KubernetesConfiguration, kubetest_deployment_never_ready: KubetestDeployment) -> None:
+        tuning_config.timeout = "3s"
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Mi",
+        )
+        # NOTE: This can generate a 409 Conflict failure under CI
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e
+
+        assert str(rejection_info.value).startswith('Timed out waiting for Pod fiber-http-tuning to become ready. Message: containers with unready status: [fiber-http')
+        assert rejection_info.value.reason == "start-failed"
+
+
+    async def test_adjust_tuning_settlement_failed(self, tuning_config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
+        tuning_config.timeout = "15s"
+        tuning_config.settlement = "15s"
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Mi",
+        )
+        # NOTE: This can generate a 409 Conflict failure under CI
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            for _ in range(3):
+                try:
+                    description = await connector.adjust([adjustment])
+
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 409 and e.reason == 'Conflict':
+                        pass
+                    else:
+                        raise e
+
+        assert (
+            str(rejection_info.value).startswith("Pod fiber-http-tuning container(s) crash restart detected: <fiber-http (id ")
+            or str(rejection_info.value) == "Optimization tuning pod fiber-http-tuning became unready during adjustment settlement period. Message containers with unready status: [fiber-http]"
+        )
+        assert rejection_info.value.reason == "unstable"
