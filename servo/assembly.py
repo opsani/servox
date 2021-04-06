@@ -117,9 +117,9 @@ class Assembly(pydantic.BaseModel):
                     connector = connector_type(
                         name=name,
                         config=connector_config,
-                        optimizer=servo_optimizer,
+                        optimizer=servo_optimizer, # TODO: this goes nowhere
                         pubsub_exchange=pubsub_exchange,
-                        __optimizer__=servo_optimizer,
+                        __optimizer__=servo_optimizer, # TODO: this goes nowhere
                         __connectors__=connectors,
                     )
                     connectors.append(connector)
@@ -151,6 +151,8 @@ class Assembly(pydantic.BaseModel):
         super().__init__(*args, servos=servos, **kwargs)
 
         # Ensure object is shared by identity
+        # TODO?: fix this workaround by setting Config.copy_on_model_validation = False
+        #   https://github.com/samuelcolvin/pydantic/commit/f11b3ae31347793742121ebc669f17724bd33813
         self.servos = servos
 
     ##
@@ -251,8 +253,11 @@ class Assembly(pydantic.BaseModel):
         await asyncio.gather(
                 *list(
                     map(
-                        lambda s: s.is_running and s.shutdown(),
-                        self.servos,
+                        lambda s: s.shutdown(),
+                        filter(
+                            lambda s: s.is_running,
+                            self.servos,
+                        )
                     )
                 )
             )

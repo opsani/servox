@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import functools
 import colorama
-import os
 import random
 import signal
 from typing import Any, Dict, List, Optional
+import watchgod
 
 import backoff
 import devtools
@@ -19,7 +19,6 @@ import servo.api
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.connectors.kubernetes import ConfigMap
 from servo.types import Adjustment, Control, Description, Duration, Measurement
 from servo.servo import _set_current_servo
 
@@ -352,24 +351,26 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         )
         self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
 
-        # If the servo is running inside Kubernetes, register a watch on its configmap to detect changes and reload
-         # TODO: move to k8s util in case kubernetes connector not included in assembly?
-        SERVO_POD_NAMESPACE = os.environ.get("POD_NAMESPACE")
-        if SERVO_POD_NAMESPACE is not None:
-            # verify expected configmap exists. If not, the config may have come from a volume mount
-            configmap: ConfigMap = loop.run_until_complete(ConfigMap.try_read(name='opsani-servo-config', namespace=SERVO_POD_NAMESPACE))
-            if configmap:
-                # establish watch
-                async def _configmap_watch():
-                    async with configmap.watch() as stream:
-                        async for event in stream:
-                            self.logger.critical(f"Config map change detected (type {event['type']}), shutting down active Servo(s) for config reload")
-                            self.logger.trace(f"Configmap watch event: {event}")
+        # Establish watch on the config file and shutdown when updated
+        # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
+        async def _config_file_watch():
+            async for changes in watchgod.awatch(self.assembly.config_file):
+                # Only watching one file, should only ever get one change
+                if len(changes) > 1:
+                    self.logger.warning(f"servo.yaml config watch yielded multiple file changes: {changes}")
+                    change = next(filter(lambda c: c[1] == str(self.assembly.config_file), changes), None)
+                    if not change:
+                        continue
+                else:
+                    change = changes.pop()
 
-                            loop.create_task(self._shutdown(loop))
-                            break
+                self.logger.critical(f"Config file change detected ({changes[0]}), shutting down active Servo(s) for config reload")
+                self.logger.trace(f"Config file watch change: {change}")
 
-                loop.create_task(_configmap_watch())
+                loop.create_task(self._shutdown(loop))
+                break
+
+        loop.create_task(_config_file_watch())
 
         self._display_banner()
 
@@ -472,6 +473,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             await self.assembly.shutdown()
         except Exception as error:
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
+            self.logger.opt(exception=error).debug("Failed assembly shutdown with error")
 
         await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
         self.logger.remove(self.progress_handler_id)
