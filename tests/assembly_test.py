@@ -32,7 +32,7 @@ def isolated_fakeapi_url(event_loop: asyncio.AbstractEventLoop, fastapi_app: fas
     def run_server_in_thread():
         asyncio.set_event_loop(asyncio.new_event_loop())
         server.run()
-    
+
     thread = threading.Thread(target=run_server_in_thread)
     thread.start()
 
@@ -86,7 +86,7 @@ def test_file_config_update(
         servo_yaml.write_text("test update, won't be loaded")
 
     event_loop.create_task(update_config())
-    
+
     # Blocks until servo shutdown is triggered by above coro. Test marked with aggressive timeout accordingly
     assembly_runner.run()
 
