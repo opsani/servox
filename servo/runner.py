@@ -354,7 +354,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # Establish watch on the config file and shutdown when updated
         # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
         async def _config_file_watch():
-            async for changes in watchgod.awatch(self.assembly.config_file):
+            async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
                 # Only watching one file, should only ever get one change
                 if len(changes) > 1:
                     self.logger.warning(f"servo.yaml config watch yielded multiple file changes: {changes}")
@@ -364,7 +364,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 else:
                     change = changes.pop()
 
-                self.logger.critical(f"Config file change detected ({changes[0]}), shutting down active Servo(s) for config reload")
+                self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
                 self.logger.trace(f"Config file watch change: {change}")
 
                 loop.create_task(self._shutdown(loop))
@@ -480,6 +480,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty
         # The shutdown of the assembly and the servo should clean up its tasks
+        # TODO: ServoRunner.shutdown() does not clean up tasks, only sets its main_loop LCV to false
+        #   but the loops, in most cases, won't complete another iteration before the logic below shuts it down forcefully
+        self._running = False
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         if len(tasks):
             [task.cancel() for task in tasks]
@@ -490,8 +493,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         self.logger.info("Servo shutdown complete.")
         await asyncio.gather(self.logger.complete(), return_exceptions=True)
-
-        self._running = False
 
         loop.stop()
 

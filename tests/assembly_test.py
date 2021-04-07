@@ -1,15 +1,12 @@
 
 import asyncio
 import fastapi
-import multiprocessing
 import pathlib
 import threading
-import time
-from typing import AsyncGenerator
-
-import kubetest.client
-import pytest
+from typing import Generator
 import uvicorn
+
+import pytest
 
 import servo
 import servo.connectors.prometheus
@@ -22,23 +19,27 @@ test_optimizer_config = {
     "token": "179eddc9-20e2-4096-b064-824b72a83b7d",
 }
 
-tests.fake.api.optimizer = tests.fake.SequencedOptimizer(**test_optimizer_config)
-
 @pytest.fixture
-def isolated_fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncGenerator[str, None]:
+def isolated_fakeapi_url(event_loop: asyncio.AbstractEventLoop, fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> Generator[str, None, None]:
     """Run a fake OpsaniApi uvicorn server as a pytest fixture and yield the base URL for accessing it.
-    Unlike the base definition in conftest, this override runs in its own process to eliminate the need for a running
-    event loop as assembly expects to start and close its own loop
+    Unlike the definition in conftest, this override runs in its own thread with its own
+    event loop as assembly expects to start and close the loop its being run on
     """
-    server = uvicorn.Server(config=uvicorn.Config(fastapi_app, host="127.0.0.1", port=unused_tcp_port))
-    proc = multiprocessing.Process(target=server.serve)
-    proc.start()
+    fastapi_app.optimizer = tests.fake.SequencedOptimizer(**test_optimizer_config)
+    event_loop.run_until_complete(fastapi_app.optimizer.request_description())
+    # Note: config of loop=none is necessary to prevent 'No event loop for Thread' errors. Server still runs on uvloop
+    server = uvicorn.Server(config=uvicorn.Config(fastapi_app, host="127.0.0.1", loop="none", port=unused_tcp_port))
+    def run_server_in_thread():
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        server.run()
     
-    yield server.base_url
+    thread = threading.Thread(target=run_server_in_thread)
+    thread.start()
 
-    # teardown
-    proc.kill()
-    # join process?
+    yield f"http://{server.config.host}:{server.config.port}/"
+
+    server.should_exit = True
+    thread.join()
 
 @pytest.fixture()
 def assembly(event_loop: asyncio.AbstractEventLoop, servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
@@ -58,39 +59,36 @@ def assembly(event_loop: asyncio.AbstractEventLoop, servo_yaml: pathlib.Path) ->
     ))
     return assembly_
 
-# Expose private shutdown method for test teardown
-class TestAssemblyRunner(servo.runner.AssemblyRunner):
-    async def shutdown(self) -> None:
-        await self._shutdown(loop=asyncio.get_event_loop())
-
 @pytest.fixture
-def assembly_runner(assembly: servo.Assembly) -> TestAssemblyRunner:
+def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
-    return TestAssemblyRunner(assembly)
+    return servo.runner.AssemblyRunner(assembly)
 
+@pytest.mark.timeout(10)
 def test_file_config_update(
     event_loop: asyncio.AbstractEventLoop,
-    assembly_runner: TestAssemblyRunner,
-    fakeapi_url: str,
+    assembly_runner: servo.runner.AssemblyRunner,
+    isolated_fakeapi_url: str,
     servo_yaml: pathlib.Path
 ) -> None:
-    servo.logging.set_level("DEBUG")
     asyncio.set_event_loop(event_loop)
     servo_ = assembly_runner.assembly.servos[0]
-    servo_.optimizer.base_url = fakeapi_url
+    servo_.optimizer.base_url = isolated_fakeapi_url
     for connector in servo_.connectors:
-        connector.optimizer.base_url = fakeapi_url
-        # below is nop due to api_client_options being a @property decorator. An anonymous dict is being updated but is not stored anywhere
-        # connector.api_client_options.update(servo_.api_client_options)
+        connector.optimizer.base_url = isolated_fakeapi_url
+
+    # Capture critical logs
     messages = []
-    assembly_runner.logger.add(lambda m: messages.append(m), level=0)
+    assembly_runner.logger.add(lambda m: messages.append(m), level=50)
 
     async def update_config():
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
         servo_yaml.write_text("test update, won't be loaded")
 
     event_loop.create_task(update_config())
+    
+    # Blocks until servo shutdown is triggered by above coro. Test marked with aggressive timeout accordingly
     assembly_runner.run()
 
     assert assembly_runner.running == False
-    assert "Config file change detected (Change.modified), shutting down active Servo(s) for config reload" in messages
+    assert "Config file change detected (Change.modified), shutting down active Servo(s) for config reload" in messages[0]
