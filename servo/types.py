@@ -1549,6 +1549,20 @@ class ErrorSeverity(str, enum.Enum):
     that you get a single failure that identifies the root cause.
     """
 
+class ConfigurationFileChangedStrategy(str, enum.Enum):
+    """ConfigurationFileChangedStrategy is an enumeration that describes how the assmembly runner
+    should respond when it detects a change to its configuration file."""
+
+    none = "none"
+    """Take no action"""
+
+    shutdown = "shutdown"
+    """Shutdown the running assembly under the assumption that an external mechanism
+    such as a k8s pod will relaunch Servo after it exits"""
+
+    reload = "reload"
+    """Shutdown the running assembly and restart it again"""
+
 # An `asyncio.Future` or an object that can be wrapped into an `asyncio.Future`
 # via `asyncio.ensure_future()`. See `isfuturistic()`.
 Futuristic = Union[asyncio.Future, Awaitable]

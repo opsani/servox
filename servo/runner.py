@@ -19,7 +19,7 @@ import servo.api
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.types import Adjustment, Control, Description, Duration, Measurement
+from servo.types import Adjustment, ConfigurationFileChangedStrategy, Control, Description, Duration, Measurement
 from servo.servo import _set_current_servo
 
 
@@ -353,24 +353,46 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         # Establish watch on the config file and shutdown when updated
         # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
-        async def _config_file_watch():
-            async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
-                # Only watching one file, should only ever get one change
-                if len(changes) > 1:
-                    self.logger.warning(f"servo.yaml config watch yielded multiple file changes: {changes}")
-                    change = next(filter(lambda c: c[1] == str(self.assembly.config_file), changes), None)
-                    if not change:
-                        continue
-                else:
-                    change = changes.pop()
+        if self.assembly.config_change_strategy != ConfigurationFileChangedStrategy.none:
+            async def _config_file_watch():
+                async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
+                    # Only watching one file, should only ever get one change
+                    if len(changes) > 1:
+                        self.logger.warning(f"servo.yaml config watch yielded multiple file changes: {changes}")
+                        change = next(filter(lambda c: c[1] == str(self.assembly.config_file), changes), None)
+                        if not change:
+                            continue
+                    else:
+                        change = changes.pop()
 
-                self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
-                self.logger.trace(f"Config file watch change: {change}")
+                    if self.assembly.config_change_strategy == ConfigurationFileChangedStrategy.shutdown:
+                        self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down Servox for config reload")
+                        self.logger.trace(f"Config file watch change: {change}")
 
-                loop.create_task(self._shutdown(loop))
-                break
+                        loop.create_task(self._shutdown(loop))
+                        break
 
-        loop.create_task(_config_file_watch())
+                    self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
+                    await self._shutdown_assembly_and_runners(loop, "config reload")
+
+                    self.logger.info(f"Reassembling Servos from new configuration")
+                    self.assembly = await servo.Assembly.assemble(
+                        config_file=self.assembly.config_file,
+                        config_change_strategy=self.assembly.config_change_strategy,
+                        configs=None,
+                        # Pass in CLI constructed single optimizer in case config update switched to multiple servos
+                        optimizer=self.assembly.single_optimizer
+                    )
+                    self.runners = []
+                    self._running = True
+
+                    self.logger.info(f"Starting runners for updated assembly")
+                    for servo_ in self.assembly.servos:
+                        servo_runner = ServoRunner(servo_)
+                        loop.create_task(servo_runner.run())
+                        self.runners.append(servo_runner)
+
+            loop.create_task(_config_file_watch())
 
         self._display_banner()
 
@@ -456,24 +478,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         reason = signal.name if signal else "shutdown"
 
-        # Shut down the servo runners, breaking active control loops
-        if len(self.runners) == 1:
-            self.logger.info(f"Shutting down servo...")
-        else:
-            self.logger.info(f"Shutting down {len(self.runners)} running servos...")
-        for fut in asyncio.as_completed(list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0):
-            try:
-                await fut
-            except Exception as error:
-                self.logger.critical(f"Failed servo runner shutdown with error: {error}")
-
-        # Shutdown the assembly and the servos it contains
-        self.logger.debug("Dispatching shutdown event...")
-        try:
-            await self.assembly.shutdown()
-        except Exception as error:
-            self.logger.critical(f"Failed assembly shutdown with error: {error}")
-            self.logger.opt(exception=error).debug("Failed assembly shutdown with error")
+        await self._shutdown_assembly_and_runners(loop, reason)
 
         await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
         self.logger.remove(self.progress_handler_id)
@@ -495,6 +500,45 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         await asyncio.gather(self.logger.complete(), return_exceptions=True)
 
         loop.stop()
+
+    async def _shutdown_assembly_and_runners(self, loop, reason) -> None:
+        # Shut down the servo runners, breaking active control loops
+        if len(self.runners) == 1:
+            self.logger.info(f"Shutting down servo...")
+        else:
+            self.logger.info(f"Shutting down {len(self.runners)} running servos...")
+        for fut in asyncio.as_completed(list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0):
+            try:
+                await fut
+            except Exception as error:
+                self.logger.critical(f"Failed servo runner shutdown with error: {error}")
+
+        # Shutdown the assembly and the servos it contains
+        self.logger.debug("Dispatching assembly shutdown event...")
+        try:
+            await self.assembly.shutdown()
+        except Exception as error:
+            self.logger.critical(f"Failed assembly shutdown with error: {error}")
+            self.logger.opt(exception=error).debug("Failed assembly shutdown with error")
+
+        # Cancel any outstanding runner tasks except for current task and progress handler -- under a clean, graceful shutdown this list will be empty
+        # The shutdown of the assembly and the servo should clean up its tasks
+        # TODO: ServoRunner.shutdown() does not clean up tasks, only sets its main_loop LCV to false
+        #   but the loops, in most cases, won't complete another iteration before the logic below shuts it down forcefully
+        self._running = False
+        tasks = [
+            t for t in asyncio.all_tasks() if t not in [
+                asyncio.current_task(),
+                self.progress_handler.queue_processor
+            ]
+        ]
+        if len(tasks):
+            self.logger.info(f"Cancelling {len(tasks)} outstanding runner tasks")
+            self.logger.debug(f"Outstanding runner tasks: {devtools.pformat(tasks)}")
+
+            [task.cancel() for task in tasks]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
         self.logger.critical(f"asyncio exception handler triggered with context: {context}")

@@ -88,6 +88,10 @@ class ProgressHandler:
         self._queue = asyncio.Queue()
         self._queue_processor = None
 
+    @property
+    def queue_processor(self) -> Optional[asyncio.tasks.Task]:
+        return self._queue_processor
+
     async def sink(self, message: loguru.Message) -> None:
         """Enqueue asynchronous tasks for reporting status of operations in progress.
 

@@ -100,6 +100,9 @@ class Optimizer(pydantic.BaseSettings):
         extra = pydantic.Extra.forbid
         underscore_attrs_are_private = True
         fields = {
+            "id": {
+                "env": "OPSANI_OPTIMIZER",
+            },
             "token": {
                 "env": "OPSANI_TOKEN",
             },

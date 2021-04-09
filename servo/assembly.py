@@ -15,6 +15,7 @@ import yaml
 import servo.configuration
 import servo.connector
 import servo.pubsub
+import servo.types
 import servo.servo
 
 __all__ = ["Assembly", 'current_assembly']
@@ -55,7 +56,11 @@ class Assembly(pydantic.BaseModel):
     """
 
     config_file: Optional[pathlib.Path]
+    config_change_strategy: servo.types.ConfigurationFileChangedStrategy
     servos: List[servo.servo.Servo]
+
+    # Contains optimizer constructed by CLI or tests, is not compatible with multiple servos
+    single_optimizer: Optional[servo.configuration.Optimizer] = None
     _context_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
     @classmethod
@@ -63,6 +68,7 @@ class Assembly(pydantic.BaseModel):
         cls,
         *,
         config_file: Optional[pathlib.Path] = None,
+        config_change_strategy: Optional[str] = "none",
         configs: Optional[List[Dict[str, Any]]] = None,
         optimizer: Optional[servo.configuration.Optimizer] = None,
         env: Optional[Dict[str, str]] = os.environ,
@@ -91,7 +97,8 @@ class Assembly(pydantic.BaseModel):
                 configs.append({})
 
         if len(configs) > 1 and optimizer is not None:
-            raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
+            raise ValueError("Cannot configure a multi-servo assembly with a single optimizer."
+                " Each servo should define its own optimizer in its configuration")
 
         # Set up the event bus and pub/sub exchange
         pubsub_exchange = servo.pubsub.Exchange()
@@ -137,8 +144,12 @@ class Assembly(pydantic.BaseModel):
 
         assembly = cls(
             config_file=config_file,
+            config_change_strategy=config_change_strategy,
             servos=servos,
+            single_optimizer=optimizer,
         )
+
+        assembly._context_token = _current_context_var.set(assembly)
 
         # Attach all connectors to the servo
         await asyncio.gather(
@@ -215,10 +226,10 @@ class Assembly(pydantic.BaseModel):
         """
         self.servos.append(servo_)
 
-        await servo.attach()
+        await servo_.attach()
 
         if self.is_running:
-            await servo.startup()
+            await servo_.startup()
 
     async def remove_servo(self, servo_: servo.servo.Servo) -> None:
         """Remove a servo from the assembly.
@@ -230,10 +241,10 @@ class Assembly(pydantic.BaseModel):
             servo_: The servo to remove from the assembly.
         """
 
-        await servo.detach()
+        await servo_.detach()
 
         if self.is_running:
-            await servo.shutdown()
+            await servo_.shutdown()
 
         self.servos.remove(servo_)
 

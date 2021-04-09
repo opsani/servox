@@ -86,6 +86,7 @@ class Context(typer.Context):
 
     # Basic configuration
     config_file: Optional[pathlib.Path] = None
+    config_change_strategy: str = None
     optimizer: Optional[servo.Optimizer] = None
     name: Optional[str] = None
 
@@ -132,6 +133,7 @@ class Context(typer.Context):
         command: "Command",
         *args,
         config_file: Optional[pathlib.Path] = None,
+        config_change_strategy: Optional[str] = None,
         name: Optional[str] = None,
         optimizer: Optional[servo.Optimizer] = None,
         assembly: Optional[servo.Assembly] = None,
@@ -146,6 +148,7 @@ class Context(typer.Context):
         **kwargs,
     ) -> None: # noqa: D107
         self.config_file = config_file
+        self.config_change_strategy = config_change_strategy
         self.name = name
         self.optimizer = optimizer
         self.assembly = assembly
@@ -401,6 +404,12 @@ class CLI(typer.Typer, servo.logging.Mixin):
             resolve_path=True,
             help="Servo configuration file",
         ),
+        config_change_strategy: str = typer.Option(
+            "none",
+            "--config-change-strategy",
+            envvar="SERVO_CONFIG_CHANGE_STRATEGY",
+            help="Action to be taken when a change to the config file is detected",
+        ),
         name: Optional[str] = typer.Option(
             None,
             "--name",
@@ -430,6 +439,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         ),
     ):
         ctx.config_file = config_file
+        ctx.config_change_strategy = config_change_strategy
         ctx.name = name
         ctx.optimizer = optimizer
         ctx.token = token
@@ -521,6 +531,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         try:
             assembly = run_async(servo.Assembly.assemble(
                 config_file=ctx.config_file,
+                config_change_strategy=ctx.config_change_strategy,
                 configs=configs,
                 optimizer=optimizer
             ))
