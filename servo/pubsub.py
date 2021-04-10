@@ -302,6 +302,8 @@ class Exchange(pydantic.BaseModel):
         await self._queue.join()
         self._queue_processor.cancel()
         await asyncio.gather(self._queue_processor, return_exceptions=True)
+        for transformer in self._transformers:
+            transformer.cancel()
         self.clear()
 
     def stop(self) -> None:
@@ -931,6 +933,11 @@ class Transformer(abc.ABC, pydantic.BaseModel):
     """
 
     def cancel(self) -> None:
+        """Cancel the transformer, cleaning up any state.
+
+        The default implementation does nothing as in most cases transformers are
+        stateless.
+        """
         ...
 
     @abc.abstractmethod
@@ -1046,6 +1053,44 @@ AggregatorCallback = Callable[['Aggregator', Message, Channel], Awaitable[None]]
 
 
 class Aggregator(Transformer):
+    """An Aggregator accumulates Messages sent to a set of Channels and publishes
+    a new aggregate Message combining the data.
+
+    Aggregators can be used to pull data from multiple sources together into a new
+    canonical format, abstracting away the underlying source details and normalizing
+    the data format.
+
+    Aggregator publication can be triggered programmatically, automatically once all
+    source channels have published one or more messages, or on a fixed time interval.
+    Fixed time window publication trades off consistency for availability and requires
+    care to be taken when designing the aggregate data format as it may be incomplete
+    in arbitrary ways.
+
+    Attributes:
+        from_channels: The list of Channels to aggregate.
+        to_channel: The Channel to publish the aggregated Message to.
+        callback: A callback that performs the aggregation. Must accept
+            the Aggregator instance, Message, and Channel positional arguments and
+            return None.
+        every: An optional time interval specifying how often to publish regardless
+            of whether or not all source Channels have sent a Message.
+        message: The current aggregate Message state. Modified by the callback as
+            new Messages are processed.
+
+    Usage:
+            ```
+            # Aggregate text messages by concatenating the text, publishing every 30s
+            async def _aggregate_text(aggregator: Aggregator, message: Message, channel: Channel) -> None:
+                if aggregator.message is None:
+                    aggregator.message = message.copy()
+                else:
+                    text = "\n".join([aggregator.message.text, message.text])
+                    aggregator.message = servo.pubsub.Message(text=text)
+
+            aggregator = Aggregator(from_channels=[cbs, abc, fox, msnbc], to_channel=output_channel, callback=_aggregate_text, every='30s')
+            exchange.add_transformer(aggregator)
+            ```
+    """
     from_channels: pydantic.conlist(Channel, min_items=2)
     to_channel: Channel
     callback: AggregatorCallback
@@ -1077,11 +1122,13 @@ class Aggregator(Transformer):
             self._channel_state[channel] = 0
 
     def cancel(self) -> None:
+        """Cancels the repeating task publisher (if any)."""
         if self._repeating_task:
             self._repeating_task.cancel()
 
     @property
     def message(self) -> Optional[Message]:
+        """The current aggregate Message."""
         return self._message
 
     @message.setter
@@ -1091,9 +1138,11 @@ class Aggregator(Transformer):
 
     @property
     def last_published_at(self) -> Optional[datetime.datetime]:
+        """Returns the last time the Aggregator published a Message."""
         return self._last_published_at
 
     async def publish(self) -> None:
+        """Publish the current aggregate Message state to the output Channel."""
         if self.message is not None:
             servo.logger.trace(f"Publishing message to channel {self.to_channel.name}: {self.message}")
             await self.to_channel.publish(self.message)
@@ -1110,8 +1159,6 @@ class Aggregator(Transformer):
         return super().__setattr__(name, value)
 
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
-        """Transforms a published Message before delivery to Subscribers.
-        """
         if channel not in self.from_channels:
             servo.logger.trace(f"Ignoring Aggregator call: {channel.name} is not being aggregated")
             return message
