@@ -7,6 +7,7 @@ import contextlib
 import contextvars
 import codecs
 import datetime
+import enum
 import fnmatch
 import functools
 import inspect
@@ -43,6 +44,12 @@ __all__ = [
 Metadata = Dict[str, str]
 ByteStream = Union[Iterable[bytes], AsyncIterable[bytes]]
 MessageContent = Union[str, bytes, ByteStream]
+
+
+class MimeTypes(str, enum.Enum):
+    text = 'text/plain'
+    json = 'application/json'
+    yaml = 'application/x-yaml'
 
 
 class Message(pydantic.BaseModel):
@@ -107,11 +114,11 @@ class Message(pydantic.BaseModel):
 
         if content_type is None:
             if text is not None:
-                content_type = "text/plain"
+                content_type = MimeTypes.text
             elif json is not None:
-                content_type = "application/json"
+                content_type = MimeTypes.json
             elif yaml is not None:
-                content_type = "application/x-yaml"
+                content_type = MimeTypes.yaml
 
         super().__init__(content=content, content_type=content_type, metadata=metadata)
 
@@ -923,6 +930,9 @@ class Transformer(abc.ABC, pydantic.BaseModel):
     Message to the downstream Transformers and Subscribers.
     """
 
+    def cancel(self) -> None:
+        ...
+
     @abc.abstractmethod
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
         """Transforms a published Message before delivery to Subscribers.
@@ -1032,9 +1042,121 @@ class Splitter(Transformer):
         return next(filter(lambda m: m.name == name, self._channels))
 
 
+AggregatorCallback = Callable[['Aggregator', Message, Channel], Awaitable[None]]
+
+async def _default_aggregator_callback(aggregator: 'Aggregator', message: Message, Channel: Channel) -> None:
+    ...
+    # if aggregator.message is None:
+    #     aggregator.message = message.copy()
+    # else:
+    #     # TODO: Raise if the MIME Types don't match
+    #     if message.content_type == MimeTypes.text:
+    #         text = "\n".join(aggregator.message.text, message.text)
+    #         aggregator.message = Message(text=text)
+    #     elif message.content_type == MimeTypes.json:
+    #         ...
+    #     elif message.content_type == MimeTypes.yaml:
+    # # TODO: if text append, if YAML/JSON merge
+    # # TODO: pass in aggregate message?
+    # ...
+
 class Aggregator(Transformer):
     # TODO: channels, output channel, timeout, every, strategy/duration
-    pass
+    # channels: List[Channel] # from_channels? sources?
+    # # subscription:
+    # # subscriptions: List[Subscription]
+    # channel: Channel # to_channel? destination?
+    # callback: AggregatorCallback
+
+    from_channels: pydantic.conlist(Channel, min_items=2)
+    to_channel: Channel
+    callback: AggregatorCallback
+    every: Optional[servo.types.DurationDescriptor] = None
+
+    # TODO: current state being composed
+    _message: Optional[Message] = pydantic.PrivateAttr(None)
+    _last_published_at: Optional[datetime.datetime] = pydantic.PrivateAttr(None)
+    _channel_state: Dict[Channel, int] = pydantic.PrivateAttr({})
+    _repeating_task: Optional[Message] = pydantic.PrivateAttr(None)
+
+    def __init__(self, from_channels: List[Channel], to_channel: Channel, callback: AggregatorCallback, every: Optional[servo.types.DurationDescriptor] = None, **kwargs) -> None:
+        super().__init__(from_channels=from_channels, to_channel=to_channel, callback=callback, every=every, **kwargs)
+        self._reset()
+
+        if every is not None:
+            async def repeating_async_fn() -> None:
+                while True:
+                    debug("Publishing")
+                    await self.publish()
+                    debug("sleeping for ", every)
+                    await asyncio.sleep(every.total_seconds())
+
+            self._repeating_task = asyncio.create_task(repeating_async_fn())
+
+    def _reset(self) -> None:
+        self._message = None
+        for channel in self.from_channels:
+            self._channel_state[channel] = 0
+
+    def cancel(self) -> None:
+        if self._repeating_task:
+            self._repeating_task.cancel()
+
+    @property
+    def message(self) -> Optional[Message]:
+        return self._message
+
+    @message.setter
+    def set_message(self, message: Optional[Message]):
+        self._message = message
+
+    @property
+    def last_published_at(self) -> Optional[datetime.datetime]:
+        return self._last_published_at
+
+    async def publish(self) -> None:
+        if self.message is not None:
+            debug("PUBLISHING MESSAGE: ", self.message)
+            await self.to_channel.publish(self.message)
+            self._last_published_at = datetime.datetime.now()
+            self._reset()
+        else:
+            debug("Declining to publish message: None", self.message)
+
+    async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
+        """Transforms a published Message before delivery to Subscribers.
+        """
+        debug("CALLED ", message, channel, self)
+        if channel not in self.from_channels:
+            return message
+
+        # Increment the message counter
+        if channel in self._channel_state:
+            self._channel_state[channel] += 1
+
+        await self.callback(self, message, channel)
+
+        debug("Channel state is now: ", self._channel_state)
+
+        if 0 not in self._channel_state.values():
+            debug("Publishing because channel state has no zeros")
+            await self.publish()
+
+        return message
+
+    def __repr_args__(self) -> pydantic.ReprArgs:
+        return [
+            ('from_channels', list(map(lambda c: c.name, self.from_channels))),
+            ('to_channel', self.to_channel.name),
+            ('every', self.every),
+            ('message', self.message),
+            ('last_published_at', self.last_published_at),
+            ('state', dict(map(lambda i: (i[0].name, i[1]), self._channel_state.items()))),
+        ]
+
+    class Config:
+        arbitrary_types_allowed = True
+        allow_mutation = False
 
 
 class _PublisherMethod:

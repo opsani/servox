@@ -737,7 +737,46 @@ class TestSplitter:
         }
 
 class TestAggregator:
-    pass
+    # When message is None
+    # MIME Type mismatch
+    # Too few channels
+    # Test the repr
+    # Test on a timer
+    # Test with one channel never reporting
+    async def test_aggregating_two_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator._message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator._message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(from_channels=[prometheus_metrics, cloudwatch_metrics], to_channel=scaling_metrics, callback=_aggregate_metrics)
+        exchange.add_transformer(aggregator)
+
+        exchange.start()
+        prometheus_message = servo.pubsub.Message(text='This message is from Prometheus')
+        cloudwatch_message = servo.pubsub.Message(text='This message is from Cloudwatch')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(scaling_metrics.name)
+        subscriber.callback = callback
+
+        await exchange.publish(prometheus_message, prometheus_metrics)
+        await exchange.publish(cloudwatch_message, cloudwatch_metrics)
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        aggregate_message = callback.await_args.args[0]
+        assert aggregate_message
+        assert isinstance(aggregate_message, servo.pubsub.Message)
+        assert aggregate_message.text == "This message is from Prometheus\nThis message is from Cloudwatch"
+        assert callback.await_args.args[1] == scaling_metrics
 
 class TestExchange:
     def test_starts_not_running(self, exchange: servo.pubsub.Exchange) -> None:
