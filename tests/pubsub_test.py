@@ -660,9 +660,81 @@ class TestFilter:
         assert callback.await_args.args[1] == channel
 
 class TestSplitter:
-    # TODO: mirror to multiple channels
-    # TODO: modify message and dispatch to multiple channels
-    pass
+    async def test_mirror_to_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        metrics_channel = exchange.create_channel("metrics")
+        one_channel = exchange.create_channel("one")
+        two_channel = exchange.create_channel("two")
+        three_channel = exchange.create_channel("three")
+        remainder_channel = exchange.create_channel("remainder")
+
+        async def _mirror_message(splitter: servo.pubsub.Splitter, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if channel == metrics_channel:
+                for channel in splitter.channels:
+                    await channel.publish(message)
+
+        splitter = servo.pubsub.Splitter(_mirror_message, one_channel, two_channel, three_channel, remainder_channel)
+        exchange.add_transformer(splitter)
+
+        exchange.start()
+        message = servo.pubsub.Message(text='Testing')
+
+        latch = CountDownLatch(5)
+        async def _called(*args) -> None:
+            await latch.decrement()
+        callback = mocker.AsyncMock(side_effect=_called)
+        subscriber = exchange.create_subscriber('*')
+        subscriber.callback = callback
+
+        await exchange.publish(message, metrics_channel)
+        await latch.wait()
+
+        calls = [mocker.call(message, metrics_channel),
+                 mocker.call(message, one_channel),
+                 mocker.call(message, two_channel),
+                 mocker.call(message, three_channel),
+                 mocker.call(message, remainder_channel)]
+        callback.assert_has_awaits(calls)
+
+    async def test_split_across_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        metrics_channel = exchange.create_channel("metrics")
+        one_channel = exchange.create_channel("one")
+        two_channel = exchange.create_channel("two")
+        three_channel = exchange.create_channel("three")
+        remainder_channel = exchange.create_channel("remainder")
+
+        async def _split_message(splitter: servo.pubsub.Splitter, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if channel == metrics_channel:
+                words = message.text.split(None, 4)
+                words_to_channel = dict(zip(words, [one_channel, two_channel, three_channel, remainder_channel]))
+                for words, channel in words_to_channel.items():
+                    await channel.publish(servo.pubsub.Message(text=words))
+
+        splitter = servo.pubsub.Splitter(_split_message, one_channel, two_channel, three_channel, remainder_channel)
+        exchange.add_transformer(splitter)
+
+        exchange.start()
+        message = servo.pubsub.Message(text='First second third everything else')
+
+        # Use an ordered dict and a side-effect to accumulate the results
+        results = {}
+        latch = CountDownLatch(5)
+        async def _called(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            results[channel.name] = message.text
+            await latch.decrement()
+        callback = mocker.AsyncMock(side_effect=_called)
+        subscriber = exchange.create_subscriber('*')
+        subscriber.callback = callback
+
+        await exchange.publish(message, metrics_channel)
+        await latch.wait()
+
+        assert results == {
+            'metrics': 'First second third everything else',
+            'one': 'First',
+            'two': 'second',
+            'three': 'third',
+            'remainder': 'everything',
+        }
 
 class TestAggregator:
     pass

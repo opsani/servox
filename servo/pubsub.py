@@ -34,6 +34,10 @@ __all__ = [
     'Publisher',
     'Subscriber',
     'Subscription',
+    'Transformer',
+    'Filter',
+    'Splitter',
+    'Aggregator'
 ]
 
 Metadata = Dict[str, str]
@@ -927,8 +931,8 @@ class Transformer(abc.ABC, pydantic.BaseModel):
 
 
 class Filter(Transformer):
-    """A Filter intercepts Messages before delivery to Subscribers and cancel or
-    modify the Message.
+    """A Filter intercepts Messages before delivery to Subscribers and cancels or
+    modifies the Message.
 
     Filters utilize a callback that takes a Message and Channel input arguments
     and return an optional Message. When None is returned, the Message is
@@ -978,10 +982,54 @@ class Filter(Transformer):
         arbitrary_types_allowed = True
 
 
+SplitterCallback = Callable[['Splitter', Message, Channel], Awaitable[None]]
+
+
 class Splitter(Transformer):
-    # Takes a Message and either repeats it across multiple channels or breaks it into smaller Messages and publishes those onto other channels
-    # TODO: needs stack of subscriptions? channels?
-    pass
+    """A Splitter intercepts Messages before delivery to Subscribers and splits
+    the Message content across a number of other channels.
+
+    Splitters are useful for decomposing aggregated Messages into more specific
+    Messages. For example, given a message reporting a number of metrics
+    retrieved from a system such as Prometheus, it may be useful to extract a
+    subset of the metrics and report them on a more specific channel.
+
+    Spliters utilize a callback that takes a Splitter, Message, and Channel
+    input arguments and return None.
+
+    Attributes: callback: A callback that performs the filtering. Must accept
+        the Splitter instance, Message and Channel positional arguments and
+        return None.
+
+    Usage:
+            ```
+            # Split a large message into smaller messages
+            async def _split_message(splitter: Splitter, message: Message, channel: Channel) -> None:
+                partition_len = 128
+                if message.content_type == 'text/plain' and len(message.text) > partition_len:
+                    for index in range(0, len(message.text), partition_len):
+                        substring = message.text[index : index + partition_len]
+                        await splitter.channels[0].publish(text=substring)
+
+            splitter = Splitter(_split_message, target_channel)
+            exchange.add_transformer(splitter)
+            ```
+    """
+    callback: SplitterCallback
+    channels: pydantic.conlist(Channel, min_items=1)
+
+    def __init__(self, callback: SplitterCallback, *channels: List[Channel], **kwargs) -> None:
+        super().__init__(callback=callback, channels=channels, **kwargs)
+
+    async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
+        """Called to transform Message
+        """
+        await self.callback(self, message, channel)
+        return message
+
+    def get_channel(self, name: str) -> Channel:
+        """Return a Channel by name."""
+        return next(filter(lambda m: m.name == name, self._channels))
 
 
 class Aggregator(Transformer):
