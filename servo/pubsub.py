@@ -911,21 +911,56 @@ TransformerCallback = Callable[[Message, Channel], Union[Optional[Message], Awai
 
 
 class Transformer(abc.ABC, pydantic.BaseModel):
-    """A Transformer intercepts Messages published to an Exchange and transforms them before delivery.
+    """A Transformer intercepts Messages published to an Exchange and transforms
+    them before delivery.
 
-    Attributes:
-        exchange: The pub/sub Exchange that the Transformer belongs to.
+    Transformers are callable objects that accept a Message and a Channel as positional
+    arguments and return an optional Message. Returning None cancels propagation of the
+    Message to the downstream Transformers and Subscribers.
     """
 
     @abc.abstractmethod
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
-        """Called to transform Message
+        """Transforms a published Message before delivery to Subscribers.
         """
         pass
 
 
 class Filter(Transformer):
-    # Takes a Message and either rejects it or changes its content before passing it on
+    """A Filter intercepts Messages before delivery to Subscribers and cancel or
+    modify the Message.
+
+    Filters utilize a callback that takes a Message and Channel input arguments
+    and return an optional Message. When None is returned, the Message is
+    cancelled and is not delivered to Subscribers. When a Message object is
+    returned, it is passed as the input into subsequent transformers and the
+    final transformed Message is delivered to Subscribers.
+
+    Attributes:
+        callback: A callback that performs the filtering. Must accept Message and
+            Channel positional arguments and return an optional Message.
+
+    Usage:
+            ```
+            # Cancel any Message with a text/xml MIME Type
+            async def _filter_xml_messages(message: Message, channel: Channel) -> Optional[Message]:
+                if message.content_type == 'text/xml':
+                    return None
+                else:
+                    return Message
+
+            xml_filter = Fitler(_filter_xml_messages)
+            exchange.add_transformer(xml_filter)
+
+
+            # Uppercase the text of all Message text
+            async def _uppercase_message_text(message: Message, channel: Channel) -> Optional[Message]:
+                return Message(text=message.text.upper(), content_type=message.content_type)
+
+            upper_filter = Fitler(_uppercase_message_text)
+            exchange.add_transformer(upper_filter)
+            ```
+    """
     callback: TransformerCallback
 
     def __init__(self, callback: TransformerCallback, *args, **kwargs) -> None:
