@@ -25,6 +25,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Service check errors now include the missing labels.
 - Container resources are now checked against the optimizable range before
   optimization begins.
+- Introduced pub/sub transformers for filtering, splitting, and aggregating
+  messages across channels. [#191](https://github.com/opsani/servox/pull/191)
 
 ### Fixed
 
