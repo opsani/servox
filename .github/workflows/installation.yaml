@@ -12,16 +12,17 @@ jobs:
     - uses: actions/checkout@v2
       with:
           fetch-depth: 1
-    # - name: Cache pyenv versions
-    #   uses: actions/cache@v2.1.1
-    #   id: cached-pyenvs
-    #   with:
-    #     path: .
-    #     key: ${{ runner.os }}-pyenv
+    - name: Cache pyenv versions
+      uses: actions/cache@v2.1.1
+      id: cached-pyenvs
+      with:
+        path: /opt/hostedtoolcache/pyenv_root
+        key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v7
       with:
         default: 3.8.6
+      if: steps.cached-pyenvs.outputs.cache-hit != 'true'
     - name: Install Poetry
       run: |
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
@@ -40,7 +41,7 @@ jobs:
       run: |
         source $HOME/.poetry/env
         poetry install
-      # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
     - name: Run tests
       run: |
         source $HOME/.poetry/env
