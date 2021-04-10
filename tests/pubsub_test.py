@@ -737,12 +737,21 @@ class TestSplitter:
         }
 
 class TestAggregator:
-    # When message is None
-    # MIME Type mismatch
-    # Too few channels
-    # Test the repr
-    # Test on a timer
-    # Test with one channel never reporting
+    async def test_repr(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator.message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator.message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(from_channels=[prometheus_metrics, cloudwatch_metrics], to_channel=scaling_metrics, callback=_aggregate_metrics)
+        assert repr(aggregator) == "Aggregator(from_channels=['prometheus', 'cloudwatch'], to_channel='scaling', every=None, message=None, last_published_at=None, channel_message_count={'prometheus': 0, 'cloudwatch': 0})"
+
     async def test_aggregating_two_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         prometheus_metrics = exchange.create_channel("prometheus")
         cloudwatch_metrics = exchange.create_channel("cloudwatch")
@@ -750,10 +759,10 @@ class TestAggregator:
 
         async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
             if aggregator.message is None:
-                aggregator._message = message.copy()
+                aggregator.message = message.copy()
             else:
                 text = "\n".join([aggregator.message.text, message.text])
-                aggregator._message = servo.pubsub.Message(text=text)
+                aggregator.message = servo.pubsub.Message(text=text)
 
         aggregator = servo.pubsub.Aggregator(from_channels=[prometheus_metrics, cloudwatch_metrics], to_channel=scaling_metrics, callback=_aggregate_metrics)
         exchange.add_transformer(aggregator)
@@ -777,6 +786,82 @@ class TestAggregator:
         assert isinstance(aggregate_message, servo.pubsub.Message)
         assert aggregate_message.text == "This message is from Prometheus\nThis message is from Cloudwatch"
         assert callback.await_args.args[1] == scaling_metrics
+
+    async def test_aggregating_two_channels_on_timer(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        # Don't publish a message for the second channel and let it fire with current state
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator.message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator.message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(
+            from_channels=[prometheus_metrics, cloudwatch_metrics],
+            to_channel=scaling_metrics,
+            callback=_aggregate_metrics,
+            every='10ms'
+        )
+        exchange.add_transformer(aggregator)
+
+        exchange.start()
+        prometheus_message = servo.pubsub.Message(text='This message is from Prometheus')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(scaling_metrics.name)
+        subscriber.callback = callback
+
+        await exchange.publish(prometheus_message, prometheus_metrics)
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        aggregate_message = callback.await_args.args[0]
+        assert aggregate_message
+        assert isinstance(aggregate_message, servo.pubsub.Message)
+        assert aggregate_message.text == "This message is from Prometheus"
+        assert callback.await_args.args[1] == scaling_metrics
+
+        aggregator.cancel()
+
+    async def test_timer_fires_repeatedly(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        # Don't publish a message for the second channel and let it fire with current state
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            ...
+
+        aggregator = servo.pubsub.Aggregator(
+            from_channels=[prometheus_metrics, cloudwatch_metrics],
+            to_channel=scaling_metrics,
+            callback=_aggregate_metrics,
+            every='10ms'
+        )
+        exchange.add_transformer(aggregator)
+
+        with servo.utilities.pydantic.extra(aggregator):
+            with servo.utilities.pydantic.allow_mutation(aggregator):
+                spy = mocker.spy(aggregator, "publish")
+
+        counter = 0
+        def _increment_counter():
+            nonlocal counter
+            counter += 1
+        spy.side_effect = _increment_counter
+
+        exchange.start()
+
+        await asyncio.sleep(servo.Duration('500ms').total_seconds())
+
+        assert counter > 1
+
+        aggregator.cancel()
 
 class TestExchange:
     def test_starts_not_running(self, exchange: servo.pubsub.Exchange) -> None:

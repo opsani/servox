@@ -18,7 +18,7 @@ import re
 import yaml as yaml_
 import weakref
 
-from typing import Any, AsyncIterable, AsyncContextManager, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union
+from typing import Any, AsyncIterable, AsyncContextManager, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union, no_type_check
 
 import pydantic
 import servo.types
@@ -1044,51 +1044,29 @@ class Splitter(Transformer):
 
 AggregatorCallback = Callable[['Aggregator', Message, Channel], Awaitable[None]]
 
-async def _default_aggregator_callback(aggregator: 'Aggregator', message: Message, Channel: Channel) -> None:
-    ...
-    # if aggregator.message is None:
-    #     aggregator.message = message.copy()
-    # else:
-    #     # TODO: Raise if the MIME Types don't match
-    #     if message.content_type == MimeTypes.text:
-    #         text = "\n".join(aggregator.message.text, message.text)
-    #         aggregator.message = Message(text=text)
-    #     elif message.content_type == MimeTypes.json:
-    #         ...
-    #     elif message.content_type == MimeTypes.yaml:
-    # # TODO: if text append, if YAML/JSON merge
-    # # TODO: pass in aggregate message?
-    # ...
 
 class Aggregator(Transformer):
-    # TODO: channels, output channel, timeout, every, strategy/duration
-    # channels: List[Channel] # from_channels? sources?
-    # # subscription:
-    # # subscriptions: List[Subscription]
-    # channel: Channel # to_channel? destination?
-    # callback: AggregatorCallback
-
     from_channels: pydantic.conlist(Channel, min_items=2)
     to_channel: Channel
     callback: AggregatorCallback
-    every: Optional[servo.types.DurationDescriptor] = None
+    every: Optional[servo.types.Duration] = None
 
-    # TODO: current state being composed
+    # Private attributes
     _message: Optional[Message] = pydantic.PrivateAttr(None)
     _last_published_at: Optional[datetime.datetime] = pydantic.PrivateAttr(None)
     _channel_state: Dict[Channel, int] = pydantic.PrivateAttr({})
     _repeating_task: Optional[Message] = pydantic.PrivateAttr(None)
 
     def __init__(self, from_channels: List[Channel], to_channel: Channel, callback: AggregatorCallback, every: Optional[servo.types.DurationDescriptor] = None, **kwargs) -> None:
+        every = (servo.Duration(every) if every is not None else None)
         super().__init__(from_channels=from_channels, to_channel=to_channel, callback=callback, every=every, **kwargs)
         self._reset()
 
         if every is not None:
             async def repeating_async_fn() -> None:
                 while True:
-                    debug("Publishing")
                     await self.publish()
-                    debug("sleeping for ", every)
+                    servo.logger.trace(f"Aggregator sleeping for {every}: {self}")
                     await asyncio.sleep(every.total_seconds())
 
             self._repeating_task = asyncio.create_task(repeating_async_fn())
@@ -1107,8 +1085,9 @@ class Aggregator(Transformer):
         return self._message
 
     @message.setter
-    def set_message(self, message: Optional[Message]):
-        self._message = message
+    def message(self, message: Optional[Message]) -> None:
+        # NOTE: handled in __setattr__
+        ...
 
     @property
     def last_published_at(self) -> Optional[datetime.datetime]:
@@ -1116,18 +1095,25 @@ class Aggregator(Transformer):
 
     async def publish(self) -> None:
         if self.message is not None:
-            debug("PUBLISHING MESSAGE: ", self.message)
+            servo.logger.trace(f"Publishing message to channel {self.to_channel.name}: {self.message}")
             await self.to_channel.publish(self.message)
             self._last_published_at = datetime.datetime.now()
             self._reset()
         else:
-            debug("Declining to publish message: None", self.message)
+            servo.logger.trace("Declining to publish message: None")
+
+    @no_type_check
+    def __setattr__(self, name, value):  # noqa: C901 (ignore complexity)
+        if name == 'message':
+            return object.__setattr__(self, '_message', value)
+
+        return super().__setattr__(name, value)
 
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
         """Transforms a published Message before delivery to Subscribers.
         """
-        debug("CALLED ", message, channel, self)
         if channel not in self.from_channels:
+            servo.logger.trace(f"Ignoring Aggregator call: {channel.name} is not being aggregated")
             return message
 
         # Increment the message counter
@@ -1136,10 +1122,10 @@ class Aggregator(Transformer):
 
         await self.callback(self, message, channel)
 
-        debug("Channel state is now: ", self._channel_state)
+        servo.logger.debug(f"Aggregated message to channel {channel.name}. Channel message counter state is now {self._channel_state}")
 
         if 0 not in self._channel_state.values():
-            debug("Publishing because channel state has no zeros")
+            servo.logger.debug(f"Publishing aggregated message because all aggregation channel have sent at least one message: {self._channel_state}")
             await self.publish()
 
         return message
@@ -1151,11 +1137,10 @@ class Aggregator(Transformer):
             ('every', self.every),
             ('message', self.message),
             ('last_published_at', self.last_published_at),
-            ('state', dict(map(lambda i: (i[0].name, i[1]), self._channel_state.items()))),
+            ('channel_message_count', dict(map(lambda i: (i[0].name, i[1]), self._channel_state.items()))),
         ]
 
     class Config:
-        arbitrary_types_allowed = True
         allow_mutation = False
 
 
