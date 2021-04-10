@@ -23,7 +23,7 @@ jobs:
         uses: fkirc/skip-duplicate-actions@master
         with:
           concurrent_skipping: 'same_content'
-          paths_ignore: '["**/README.md", "**/docs/**"]'
+          paths_ignore: '["**/README.md", "**/docs/**", "CHANGELOG.md"]'
           do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
 
   setup_build:
@@ -36,7 +36,7 @@ jobs:
         uses: fkirc/skip-duplicate-actions@master
         with:
           concurrent_skipping: 'same_content'
-          paths_ignore: '["**/README.md", "**/docs/**"]'
+          paths_ignore: '["**/README.md", "**/docs/**", "CHANGELOG.md"]'
           do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
       - uses: actions/checkout@master
       - uses: actions/setup-python@v2.1.3
