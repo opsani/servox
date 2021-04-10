@@ -266,6 +266,7 @@ class Exchange(pydantic.BaseModel):
     _channels: Set[Channel] = pydantic.PrivateAttr(set())
     _publishers: List[Publisher] = pydantic.PrivateAttr([])
     _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
+    _transformers: List[Transformer] = pydantic.PrivateAttr([])
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _queue_processor: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     __slots__ = ('__weakref__')  # NOTE: Pydantic and weakref both use __slots__
@@ -277,10 +278,11 @@ class Exchange(pydantic.BaseModel):
         self._queue_processor = asyncio.create_task(self._process_queue())
 
     def clear(self) -> None:
-        """Clear the Exchange by discarding all channels, publishers, and subscribers."""
+        """Clear the Exchange by discarding all channels, publishers, subscribers, and transformers."""
         self._channels.clear()
         self._publishers.clear()
         self._subscribers.clear()
+        self._transformers.clear()
 
     async def shutdown(self) -> None:
         """Shutdown the Exchange by processing all Messages and clearing all child objects."""
@@ -325,9 +327,42 @@ class Exchange(pydantic.BaseModel):
                 break
 
             # Notify subscribers in a new task to avoid blocking the queue
-            asyncio.create_task(_deliver_message_to_subscribers(message, channel, self._subscribers))
+            asyncio.create_task(self._deliver_message(message, channel))
 
             self._queue.task_done()
+
+    async def _deliver_message(self, message: Message, channel: Channel) -> None:
+        try:
+            reset_token = _current_context_var.set((message, channel))
+
+            # Process all transformers serially
+            servo.logger.debug(f"Processing message with {len(self._transformers)} transformers: {message}")
+            for transformer in self._transformers:
+                message = await transformer(message, channel)
+                servo.logger.debug(f"Transfomer {transformer} returned transformed message: {message}")
+                if message is None:
+                    servo.logger.warning(f"Transfomer {transformer} cancelled delivery of message")
+                    return
+
+            # Broadcast to all subscribers
+            results = await asyncio.gather(
+                *list(
+                    map(
+                        lambda subscriber: subscriber(message, channel),
+                        self._subscribers
+                    )
+                ),
+                return_exceptions=True
+            )
+
+            # Log failures without aborting
+            with servo.logger.catch(message="Subscriber raised exception"):
+                for result in results:
+                    if isinstance(result, Exception):
+                        raise result
+
+        finally:
+            _current_context_var.reset(reset_token)
 
     @property
     def running(self) -> bool:
@@ -519,6 +554,25 @@ class Exchange(pydantic.BaseModel):
         """
         self._subscribers.remove(subscriber)
 
+    def add_transformer(self, transformer: Transformer) -> None:
+        """Add a Transformer to the Exchange.
+
+        Args:
+            transformer: The Transformer to add.
+        """
+        self._transformers.append(transformer)
+
+    def remove_transformer(self, transformer: Transformer) -> None:
+        """Remove a Transformer from the Exchange.
+
+        Args:
+            transformer: The Transformer to remove.
+
+        Raises:
+            ValueError: Raised if the given transformer is not in the Exchange.
+        """
+        self._transformers.remove(transformer)
+
     def _subscribers_to_channel(self, channel: Channel, *, exclusive: bool = False) -> List[Subscriber]:
         if exclusive:
             return list(filter(lambda s: s.subscription.selector == channel.name, self._subscribers))
@@ -531,6 +585,7 @@ class Exchange(pydantic.BaseModel):
             ('channel_names', list(map(lambda c: c.name, self._channels))),
             ('publisher_count', len(self._publishers)),
             ('subscriber_count', len(self._subscribers)),
+            ('transformer_count', len(self._transformers)),
             ('queue_size', self._queue.qsize()),
         ]
 
@@ -811,6 +866,7 @@ class Subscriber(_ExchangeChildModel):
             return id(self) == id(other)
 
         return False
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -835,6 +891,53 @@ class Publisher(_ExchangeChildModel):
 
     def _find_channel(self, channel: Union[Channel, str]) -> Optional[Channel]:
         return next(filter(lambda c: c == channel, self.channels), None)
+
+
+TransformerCallback = Callable[[Message, Channel], Union[Optional[Message], Awaitable[Optional[Message]]]]
+
+
+class Transformer(abc.ABC, pydantic.BaseModel):
+    """A Transformer intercepts Messages published to an Exchange and transforms them before delivery.
+
+    Attributes:
+        exchange: The pub/sub Exchange that the Transformer belongs to.
+    """
+
+    @abc.abstractmethod
+    async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
+        """Called to transform Message
+        """
+        pass
+
+
+class Filter(Transformer):
+    # Takes a Message and either rejects it or changes its content before passing it on
+    callback: TransformerCallback
+
+    def __init__(self, callback: TransformerCallback, *args, **kwargs) -> None:
+        super().__init__(callback=callback, *args, **kwargs)
+
+    async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
+        """Called to transform Message
+        """
+        if asyncio.iscoroutinefunction(self.callback):
+            return await self.callback(message, channel)
+        else:
+            return self.callback(message, channel)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class Splitter(Transformer):
+    # Takes a Message and either repeats it across multiple channels or breaks it into smaller Messages and publishes those onto other channels
+    # TODO: needs stack of subscriptions? channels?
+    pass
+
+
+class Aggregator(Transformer):
+    # TODO: channels, output channel, timeout, every, strategy/duration
+    pass
 
 
 class _PublisherMethod:
@@ -1200,27 +1303,6 @@ class Mixin(pydantic.BaseModel):
         self._publishers_map = dict(
             filter(lambda i: i[1] not in publisher_tuples, self._publishers_map.items())
         )
-
-
-async def _deliver_message_to_subscribers(message: Message, channel: Channel, subscribers: List[Subscriber]) -> None:
-    reset_token = _current_context_var.set((message, channel))
-    results = await asyncio.gather(
-        *list(
-            map(
-                lambda subscriber: subscriber(message, channel),
-                subscribers
-            )
-        ),
-        return_exceptions=True
-    )
-
-    # Log failures without aborting
-    with servo.logger.catch(message="Subscriber raised exception"):
-        for result in results:
-            if isinstance(result, Exception):
-                raise result
-
-    _current_context_var.reset(reset_token)
 
 
 def _current_iterator() -> Optional[AsyncIterator]:
