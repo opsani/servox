@@ -554,6 +554,11 @@ class Exchange(pydantic.BaseModel):
         """
         self._subscribers.remove(subscriber)
 
+    @property
+    def transformers(self) -> List[Transformer]:
+        """Return the list of Transformers in the Exchange."""
+        return self._transformers.copy()
+
     def add_transformer(self, transformer: Transformer) -> None:
         """Add a Transformer to the Exchange.
 
@@ -561,6 +566,15 @@ class Exchange(pydantic.BaseModel):
             transformer: The Transformer to add.
         """
         self._transformers.append(transformer)
+
+    def insert_transformer(self, index: int, transformer: Transformer) -> None:
+        """Insert a Transformer at a particular index in the Exchange.
+
+        Args:
+            index: The index to insert the Transformer at.
+            transformer: The Transformer to add.
+        """
+        self._transformers.insert(index, transformer)
 
     def remove_transformer(self, transformer: Transformer) -> None:
         """Remove a Transformer from the Exchange.

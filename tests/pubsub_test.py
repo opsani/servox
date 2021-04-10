@@ -834,13 +834,30 @@ class TestExchange:
         assert subscriber not in exchange._subscribers
 
     async def test_add_transformer(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange._transformers
 
     async def test_remove_transformer(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange._transformers
+        exchange.remove_transformer(transformer)
+        assert transformer not in exchange._transformers
 
     async def test_transformers(self, exchange: servo.pubsub.Exchange) -> None:
-        ...
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange.transformers
+
+    async def test_insert_transformers(self, exchange: servo.pubsub.Exchange) -> None:
+        transformer1 = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer1)
+        assert transformer1 in exchange.transformers
+
+        transformer2 = servo.pubsub.Filter(lambda m, c: None)
+        exchange.insert_transformer(0, transformer2)
+        assert [transformer2, transformer1] == exchange.transformers
 
     async def test_publisher_to_subscriber(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
