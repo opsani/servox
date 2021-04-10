@@ -19,10 +19,9 @@ jobs:
     #     path: .
     #     key: ${{ runner.os }}-pyenv
     - name: Install pyenv versions
-      uses: opsani/pyenv-action@master
+      uses: gabrielfalcao/pyenv-action@v7
       with:
-        versions: 3.8.6, 3.8.8, 3.9.0
-        default: 3.8.8
+        default: 3.8.6
     - name: Install Poetry
       run: |
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
