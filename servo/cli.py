@@ -1148,6 +1148,17 @@ class ServoCLI(CLI):
                 help="Verify all checks pass before running",
                 envvar="SERVO_RUN_CHECK",
             ),
+            no_poll: Optional[bool] = typer.Option(
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
+            ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),
         ) -> None:
             """
             Run the servo
@@ -1159,7 +1170,8 @@ class ServoCLI(CLI):
                 )
 
             if context.assembly:
-                servo.runner.AssemblyRunner(context.assembly).run()
+                poll = not no_poll
+                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
             else:
                 raise typer.Abort("failed to assemble servo")
 
