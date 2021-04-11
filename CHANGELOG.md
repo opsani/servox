@@ -29,6 +29,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   messages across channels. [#191](https://github.com/opsani/servox/pull/191)
 - Added `--no-poll` and `--interactive` options to the `servo run` command.
   [#192](https://github.com/opsani/servox/pull/192)
+- Enjoy a random start-up banner in a random color palette.
+  [#193](https://github.com/opsani/servox/pull/193)
 
 ### Fixed
 
