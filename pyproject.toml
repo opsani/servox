@@ -44,10 +44,8 @@ pytest-asyncio = "^0.14.0"
 pytest-cov = "^2.10.0"
 pytest-mock = "^3.5.1"
 freezegun = "^1.1.0"
-asynctest = {git = "https://github.com/Martiusweb/asynctest.git", rev = "py3.8"}
 respx = "^0.16.3"
 kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/template-manifests"}
-# kubetest = {path = "../kubetest", develop = true}
 pytest-freezegun = "^0.4.2"
 yamlpath = "^3.2.0"
 isort = "^5.7.0"
