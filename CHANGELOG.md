@@ -31,6 +31,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   [#192](https://github.com/opsani/servox/pull/192)
 - Enjoy a random start-up banner in a random color palette.
   [#193](https://github.com/opsani/servox/pull/193)
+- `TRACE` logging from the `servo.api` module now includes cURL commands.
+  [#194](https://github.com/opsani/servox/pull/194)
 
 ### Fixed
 

@@ -263,7 +263,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             servo.logger.warning("Operation aborted. Use Control-C to exit")
             pass
         except asyncio.CancelledError as error:
-            self.logger.opt(exception=error).trace("task cancelled, aborting servo runner")
+            self.logger.trace("task cancelled, aborting servo runner")
             raise error
         except:
             self.logger.exception("exception encountered during connect")
