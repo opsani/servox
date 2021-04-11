@@ -10,8 +10,8 @@ import datetime
 import decimal
 import enum
 import itertools
-import os
 import operator
+import os
 import pathlib
 import re
 from typing import (
@@ -505,7 +505,6 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        pass
 
 
 class Namespace(KubernetesModel):
@@ -977,7 +976,7 @@ class Pod(KubernetesModel):
         # check the pod phase to make sure it is running. a pod in
         # the 'failed' or 'success' state will no longer be running,
         # so we only care if the pod is in the 'running' state.
-        phase = status.phase
+        status.phase
         self.logger.trace(f"current pod phase is {status}")
         if not status.conditions:
             return False
@@ -1396,7 +1395,7 @@ class Service(KubernetesModel):
         self.logger.debug(f'getting pods for service "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
+            self.obj.spec.selector.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
                 namespace=self.namespace, label_selector=selector_string(self.selector)
             )

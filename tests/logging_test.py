@@ -21,6 +21,7 @@ from servo.logging import (
     set_level,
 )
 
+
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:
     servo.connector._current_context_var.set(None)

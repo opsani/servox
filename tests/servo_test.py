@@ -6,7 +6,6 @@ from inspect import Signature
 from pathlib import Path
 from typing import List
 
-import httpcore
 import httpx
 import pytest
 import yaml
@@ -15,7 +14,7 @@ from pydantic import Extra, ValidationError
 import servo as servox
 from servo import BaseServoConfiguration, Duration, __cryptonym__, __version__
 from servo.assembly import Assembly
-from servo.configuration import BaseConfiguration, Optimizer, CommonConfiguration, Timeouts
+from servo.configuration import BaseConfiguration, CommonConfiguration, Optimizer, Timeouts
 from servo.connector import BaseConnector
 from servo.connectors.vegeta import VegetaConnector
 from servo.errors import *
@@ -370,7 +369,7 @@ async def test_startup_event(mocker, servo: servo) -> None:
     assert connector.started_up == True
 
 async def test_startup_starts_pubsub_exchange(mocker, servo: servo) -> None:
-    connector = servo.get_connector("first_test_servo")
+    servo.get_connector("first_test_servo")
     assert not servo.pubsub_exchange.running
     await servo.startup()
     assert servo.pubsub_exchange.running

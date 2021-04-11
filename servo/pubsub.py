@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import codecs
 import contextlib
 import contextvars
-import codecs
 import datetime
 import enum
 import fnmatch
@@ -13,16 +13,31 @@ import functools
 import inspect
 import json as json_
 import random
-import string
 import re
-import yaml as yaml_
+import string
 import weakref
-
-from typing import Any, AsyncIterable, AsyncContextManager, AsyncIterator, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Union, no_type_check
+from typing import (
+    Any,
+    AsyncContextManager,
+    AsyncIterable,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Pattern,
+    Set,
+    Tuple,
+    Union,
+    no_type_check,
+)
 
 import pydantic
-import servo.types
+import yaml as yaml_
 
+import servo.types
 
 __all__ = [
     'BaseSubscription',
@@ -131,7 +146,7 @@ class Message(pydantic.BaseModel):
                 self._text = ""
             else:
                 decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
-                text = decoder.decode(content)
+                decoder.decode(content)
                 self._text = "".join([decoder.decode(self.content), decoder.decode(b"", True)])
 
         return self._text
@@ -944,7 +959,6 @@ class Transformer(abc.ABC, pydantic.BaseModel):
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
         """Transforms a published Message before delivery to Subscribers.
         """
-        pass
 
 
 class Filter(Transformer):

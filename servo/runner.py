@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import colorama
+import os
 import random
 import signal
-import os
 from typing import Any, Dict, List, Optional
 
 import backoff
+import colorama
 import devtools
 import httpx
 import pydantic
@@ -20,8 +20,8 @@ import servo.api
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
-from servo.types import Adjustment, Control, Description, Duration, Measurement
 from servo.servo import _set_current_servo
+from servo.types import Adjustment, Control, Description, Duration, Measurement
 
 
 class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
@@ -261,7 +261,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         except typer.Abort:
             # Rescue abort and notify user
             servo.logger.warning("Operation aborted. Use Control-C to exit")
-            pass
         except asyncio.CancelledError as error:
             self.logger.trace("task cancelled, aborting servo runner")
             raise error

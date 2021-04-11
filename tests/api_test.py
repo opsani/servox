@@ -1,6 +1,7 @@
 import servo
 import servo.api
 
+
 class TestStatus:
     def test_from_error(self) -> None:
         error = servo.errors.AdjustmentRejectedError("foo")

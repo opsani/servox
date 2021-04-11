@@ -1,9 +1,10 @@
-import pathlib
 import json
+import pathlib
+
+import pytest
 
 import servo
 import tests
-import pytest
 
 
 async def test_config(servo_yaml: pathlib.Path) -> None:

@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
-from typing import Optional, Union
 import re
+from datetime import datetime, timedelta
+from typing import Union
 
 import freezegun
 import pydantic
@@ -971,6 +971,7 @@ class TestDataPoint:
 
 
 from servo.types import _is_step_aligned
+
 
 @pytest.mark.parametrize(
     "value, step, aligned",

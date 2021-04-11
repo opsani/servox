@@ -1,18 +1,19 @@
 import asyncio
 import datetime
-import freezegun
 import itertools
 import operator
+import re
+import weakref
+from typing import Callable, List, Optional
+
+import freezegun
+import pydantic
 import pytest
 import pytest_mock
-import pydantic
-import re
+
 import servo
 import servo.pubsub
 import servo.utilities.pydantic
-import weakref
-
-from typing import Callable, List, Optional
 
 
 class TestMessage:

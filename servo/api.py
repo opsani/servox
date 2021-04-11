@@ -14,7 +14,6 @@ import pydantic
 import servo.types
 import servo.utilities
 
-
 USER_AGENT = "github.com/opsani/servox"
 
 

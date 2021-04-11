@@ -12,8 +12,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
-import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Literal, Optional, Pattern, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click
@@ -33,7 +32,6 @@ from timeago import format as timeago
 import servo
 import servo.runner
 import servo.utilities.yaml
-
 
 ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
 
