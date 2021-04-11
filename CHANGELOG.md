@@ -27,6 +27,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   optimization begins.
 - Introduced pub/sub transformers for filtering, splitting, and aggregating
   messages across channels. [#191](https://github.com/opsani/servox/pull/191)
+- Added `--no-poll` and `--interactive` options to the `servo run` command.
+  [#192](https://github.com/opsani/servox/pull/192)
 
 ### Fixed
 
