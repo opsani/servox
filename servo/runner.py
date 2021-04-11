@@ -5,12 +5,14 @@ import functools
 import colorama
 import random
 import signal
+import os
 from typing import Any, Dict, List, Optional
 
 import backoff
 import devtools
 import httpx
 import pydantic
+import pyfiglet
 import typer
 
 import servo
@@ -364,18 +366,26 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             loop.close()
 
     def _display_banner(self) -> None:
-        secho = functools.partial(typer.secho, color=True)
-        banner = "\n".join([
-            r"   _____                      _  __",
-            r"  / ___/___  ______   ______ | |/ /",
-            r"  \__ \/ _ \/ ___/ | / / __ \|   /",
-            r" ___/ /  __/ /   | |/ / /_/ /   |",
-            r"/____/\___/_/    |___/\____/_/|_|",
-        ])
+        fonts = ['slant', 'banner3', 'bigchief', 'cosmic', 'speed', 'nancyj', 'fourtops', 'contessa', 'doom', 'broadway', 'acrobatic', 'trek', 'eftirobot', 'roman']
         colors = [colorama.Fore.RED, colorama.Fore.GREEN, colorama.Fore.YELLOW,
-                  colorama.Fore.BLUE, colorama.Fore.MAGENTA, colorama.Fore.CYAN]
-        colored_banner = [random.choice(colors) + char for char in banner]
-        typer.echo(''.join(colored_banner), color=True)
+                    colorama.Fore.BLUE, colorama.Fore.MAGENTA, colorama.Fore.CYAN]
+
+        terminal_size = os.get_terminal_size()
+        width = max(terminal_size.columns, 80)
+
+        # Generate an awesome banner for this launch
+        figlet = pyfiglet.Figlet(font=random.choice(fonts), width=width)
+        banner = figlet.renderText('ServoX').rstrip()
+
+        if bool(random.getrandbits(1)):
+            # Rainbow it
+            colored_banner = [random.choice(colors) + char for char in banner]
+            typer.echo(''.join(colored_banner), color=True)
+        else:
+            # Flat single color
+            typer.echo(f'{random.choice(colors)}{banner}', color=True)
+
+        secho = functools.partial(typer.secho, color=True)
         types = servo.Assembly.all_connector_types()
         types.remove(servo.Servo)
 
