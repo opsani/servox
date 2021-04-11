@@ -6,6 +6,7 @@ import enum
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import backoff
+import curlify2
 import devtools
 import httpx
 import pydantic
@@ -243,8 +244,7 @@ class Mixin(abc.ABC):
     def _is_fatal_status_code(error: Exception) -> bool:
         if isinstance(error, httpx.HTTPStatusError):
             if error.response.status_code < 500:
-                servo.logger.warning(f"Giving up on non-retryable HTTP status code {error.response.status_code} while requesting {error.request.url!r}.")
-                servo.logger.debug(f"HTTP request content: {devtools.pformat(error.request.read())}, response content: {devtools.pformat(error.response.content)}")
+                servo.logger.warning(f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}")
                 return True
 
         return False
@@ -259,7 +259,7 @@ class Mixin(abc.ABC):
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
-            self.logger.trace(f"POST event request: {devtools.pformat(event_request)}")
+            self.logger.trace(f"POST event request: {devtools.pformat(event_request.json())}")
 
             try:
                 response = await client.post("servo", data=event_request.json())
@@ -268,14 +268,15 @@ class Mixin(abc.ABC):
                 self.logger.trace(
                     f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
+                self.logger.trace(curlify2.to_curl(response.request))
 
                 return pydantic.parse_obj_as(
                     Union[CommandResponse, Status], response_json
                 )
 
-            except (httpx.RequestError, httpx.HTTPError) as error:
+            except httpx.HTTPError as error:
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
-                self.logger.trace(devtools.pformat(event_request))
+                self.logger.trace(curlify2.to_curl(error.request))
                 raise
 
 
