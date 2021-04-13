@@ -8,6 +8,7 @@ import pytest
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
+import sys
 
 from servo.connectors.kubernetes import (
     CPU,
@@ -1047,6 +1048,38 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert setting
         assert setting.value == 250
+
+    async def test_baseline_is_not_updated_by_canary_apply(self, tuning_config: KubernetesConfiguration, mocker) -> None:
+        """Verify the Deployment object storing the baseline deployment is not being modified on adjustments to the canary"""
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="256Mi",
+        )
+
+        # NOTE: returned description doesn't work for this validation because its sourced from the CanaryOptimization.target_container
+        #   which is stored during init and whose reference is replaced on the target_deployment object by Deployment.set_container
+        # TODO: move this to decorator
+        # Capture function scoped KubernetesOptimizations object variable named `state`
+        # https://stackoverflow.com/questions/4214936/how-can-i-get-the-values-of-the-locals-of-a-function-after-it-has-been-executed
+        frame = None
+        trace = sys.gettrace()
+        def trace_adjust_state(_frame, name, arg):
+            nonlocal frame
+            if name == "call" and _frame.f_code.co_name == "adjust" and isinstance(_frame.f_locals.get('self'), KubernetesConnector):
+                frame = _frame
+                sys.settrace(trace)
+            return trace
+
+        sys.settrace(trace_adjust_state)
+        try:
+            await connector.adjust([adjustment])
+        finally:
+            sys.settrace(trace)
+
+        assert frame.f_locals['state'].optimizations[0].target_deployment.find_container(name="fiber-http").get_resource_requirements(name="memory") == ('128Mi', '128Mi')
+
 
     # async def test_apply_no_changes(self):
 #         # resource_version stays the same and early exits
