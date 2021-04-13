@@ -382,24 +382,36 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             loop.close()
 
     def _display_banner(self) -> None:
-        fonts = ['slant', 'banner3', 'bigchief', 'cosmic', 'speed', 'nancyj', 'fourtops', 'contessa', 'doom', 'broadway', 'acrobatic', 'trek', 'eftirobot', 'roman']
-        colors = [colorama.Fore.RED, colorama.Fore.GREEN, colorama.Fore.YELLOW,
-                    colorama.Fore.BLUE, colorama.Fore.MAGENTA, colorama.Fore.CYAN]
+        fonts = ['slant', 'banner3', 'bigchief', 'cosmic', 'speed', 'nancyj', 'fourtops',
+                 'contessa', 'doom', 'broadway', 'acrobatic', 'trek', 'eftirobot', 'roman']
+        color_map = {'RED': colorama.Fore.RED, 'GREEN': colorama.Fore.GREEN,
+                     'YELLOW': colorama.Fore.YELLOW, 'BLUE': colorama.Fore.BLUE,
+                     'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
+                     'RAINBOW': colorama.Fore.MAGENTA}
 
         terminal_size = os.get_terminal_size()
         width = max(terminal_size.columns, 80)
 
         # Generate an awesome banner for this launch
-        figlet = pyfiglet.Figlet(font=random.choice(fonts), width=width)
+        font = os.getenv('SERVO_BANNER_FONT', random.choice(fonts))
+        color_name = os.getenv('SERVO_BANNER_COLOR')
+        # coinflip unless we have been directly configured from the env
+        rainbow = (
+            bool(random.getrandbits(1)) if color_name is None
+            else (color_name.upper() == 'RAINBOW')
+        )
+
+        figlet = pyfiglet.Figlet(font=font, width=width)
         banner = figlet.renderText('ServoX').rstrip()
 
-        if bool(random.getrandbits(1)):
+        if rainbow:
             # Rainbow it
-            colored_banner = [random.choice(colors) + char for char in banner]
+            colored_banner = [random.choice(list(color_map.values())) + char for char in banner]
             typer.echo(''.join(colored_banner), color=True)
         else:
             # Flat single color
-            typer.echo(f'{random.choice(colors)}{banner}', color=True)
+            color = (color_map[color_name.upper()] if color_name else random.choice(list(color_map.values())))
+            typer.echo(f'{color}{banner}', color=True)
 
         secho = functools.partial(typer.secho, color=True)
         types = servo.Assembly.all_connector_types()
@@ -418,6 +430,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         initialized = typer.style(
             "initialized", fg=typer.colors.BRIGHT_GREEN, bold=True
         )
+        version = typer.style(f"v{servo.__version__}", fg=typer.colors.WHITE, bold=True)
 
         secho(f'{version} "{codename}" {initialized}')
         secho(reset=True)
