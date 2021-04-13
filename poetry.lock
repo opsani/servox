@@ -42,21 +42,6 @@ optional = false
 python-versions = ">=3.5.3"
 
 [[package]]
-name = "asynctest"
-version = "0.13.0"
-description = "Enhance the standard unittest package with features for testing asyncio libraries"
-category = "dev"
-optional = false
-python-versions = ">=3.5"
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/Martiusweb/asynctest.git"
-reference = "py3.8"
-resolved_reference = "9aefec8dd301bf8c4a4e03a22fb4ec64c2b479cf"
-
-[[package]]
 name = "atomicwrites"
 version = "1.4.0"
 description = "Atomic file writes."
@@ -1714,14 +1699,14 @@ dev = ["pytest (>=4.6.2)", "black (>=19.3b0)"]
 
 [[package]]
 name = "yamlpath"
-version = "3.4.0"
+version = "3.4.1"
 description = "Command-line get/set/merge/validate/scan/convert/diff processors for YAML/JSON/Compatible data using powerful, intuitive, command-line friendly syntax"
 category = "dev"
 optional = false
 python-versions = ">3.6.0"
 
 [package.dependencies]
-"ruamel.yaml" = ">=0.15.96"
+"ruamel.yaml" = ">=0.15.96,<0.17.0 || >0.17.0,<0.17.1 || >0.17.1,<0.17.2 || >0.17.2,<=0.17.4"
 
 [[package]]
 name = "yarl"
@@ -1738,7 +1723,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "b4cc05b960a4906cafa074e9b0d25232fc36fd150dc804aaadacb18b3c24c537"
+content-hash = "a4caba2aeb602d041e5ee89350f770542f768804f6b9fd16c080246c5e5acbac"
 
 [metadata.files]
 aiohttp = [
@@ -1792,7 +1777,6 @@ async-timeout = [
     {file = "async-timeout-3.0.1.tar.gz", hash = "sha256:0c3c816a028d47f659d6ff5c745cb2acf1f966da1fe5c19c77a70282b25f4c5f"},
     {file = "async_timeout-3.0.1-py3-none-any.whl", hash = "sha256:4291ca197d287d274d0b6cb5d6f8f8f82d434ed288f962539ff18cc9012f9ea3"},
 ]
-asynctest = []
 atomicwrites = [
     {file = "atomicwrites-1.4.0-py2.py3-none-any.whl", hash = "sha256:6d1784dea7c0c8d4a5172b6c620f40b6e4cbfdf96d783691f2e1302a7b88e197"},
     {file = "atomicwrites-1.4.0.tar.gz", hash = "sha256:ae70396ad1a434f9c7046fd2dd196fc04b12f9e91ffb859164193be8b6168a7a"},
@@ -2668,7 +2652,7 @@ win32-setctime = [
     {file = "win32_setctime-1.0.3.tar.gz", hash = "sha256:4e88556c32fdf47f64165a2180ba4552f8bb32c1103a2fafd05723a0bd42bd4b"},
 ]
 yamlpath = [
-    {file = "yamlpath-3.4.0.tar.gz", hash = "sha256:741e9a8b98e84e36876b1ffccce7c2cb9483cc1a7089bf9c34317a43e7a916fd"},
+    {file = "yamlpath-3.4.1.tar.gz", hash = "sha256:8a73b7d7e32c91f32e3d64cc777dc4e07001e0d8ddedb127c6b73ddef83deda4"},
 ]
 yarl = [
     {file = "yarl-1.6.3-cp36-cp36m-macosx_10_14_x86_64.whl", hash = "sha256:0355a701b3998dcd832d0dc47cc5dedf3874f966ac7f870e0f3a6788d802d434"},
