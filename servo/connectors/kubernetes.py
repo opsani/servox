@@ -9,6 +9,7 @@ import copy
 import datetime
 import decimal
 import enum
+import functools
 import itertools
 import operator
 import os
@@ -3009,24 +3010,29 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: Run sanity checks to look for out of band changes
 
     async def raise_for_status(self) -> None:
-        async def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+        handle_error_tasks = []
+        def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
-                    await optimization.handle_error(
+                    handle_error_tasks.append(asyncio.create_task(optimization.handle_error(
                         exception, self.config.on_failure
-                    )
+                    )))
 
         tasks = []
         for optimization in self.optimizations:
             task = asyncio.create_task(optimization.raise_for_status())
-            task.add_done_callback(lambda task: _raise_for_task(optimization, task))
+            task.add_done_callback(functools.partial(_raise_for_task, optimization=optimization))
             tasks.append(task)
 
-        for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
+        for future in asyncio.as_completed(tasks, timeout=self.config.timeout.total_seconds()):
             try:
                 await future
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
+
+        # TODO: first handler to raise will likely interrupt other tasks.
+        #   Gather with return_exceptions=True and aggregate resulting exceptions before raising
+        await asyncio.gather(*handle_error_tasks)
 
     async def is_ready(self):
         if self.optimizations:
@@ -3521,7 +3527,7 @@ class KubernetesConnector(servo.BaseConnector):
                 while not progress.finished:
                     if not await state.is_ready():
                         # Raise a specific exception if the optimization defines one
-                        state.raise_for_status()
+                        await state.raise_for_status()
 
                         raise servo.AdjustmentRejectedError(
                             reason="Optimization target became unready during adjustment settlement period"
