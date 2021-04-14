@@ -14,7 +14,6 @@ from servo.connectors.olas import ast_formula
 from servo.connectors.olas import client
 from servo.connectors.olas import configuration
 from servo.connectors.olas import envoy_stats
-from servo.connectors.olas import eventqueue
 from servo.connectors.olas import kube
 from servo.connectors.olas import prometheus
 from servo.connectors.olas import server_classes
@@ -95,9 +94,8 @@ class OLASController:
                                         backend_dict['auth_token'])
         self.base_ts = self.ts = time.time()
 
-    def boot(self, upload_cfg=True):
-        servo.logger.info(f"olas boot cfg {self.config_dict}")
-        self.upload_cfg = upload_cfg
+    async def boot(self, upload_cfg=True):
+        servo.logger.info(f"OLAS boot cfg {self.config_dict}")
 
         self.cfg = cfg = configuration.OLASConfiguration.parse_obj(self.config_dict)
 
@@ -119,8 +117,6 @@ class OLASController:
 
         self.model_id = 0
         self.ps = None
-        if self.cfg.config.devel:
-            self.logfd = open("olas.txt", "a")
         self.output_array = []
         self.count: int = 0
         self.last_control_ts = 0.0
@@ -152,6 +148,7 @@ class OLASController:
         if upload_cfg:
             self.db = plyvel.DB("metrics", create_if_missing=True)
             self.cached_key = self.get_last_cached_key()
+            await self.cached_upload("config", self.cfg.dict())
         self.traffic_history = defaultdict(list)
         if self.cfg.config.resolution < 5:
             self.fastpath_resolution = self.cfg.config.resolution
@@ -809,10 +806,6 @@ class OLASController:
                  f" target {self.target:.1f} pods {numpods} request replicas {self.replicas}"
                  )
         servo.logger.info(stats)
-        if self.cfg.config.devel:
-            self.logfd.write(f"{self.ts-self.base_ts:.0f} {self.cpu:.1%} {self.pod_rate/self.cpu if self.cpu else math.nan:.1f} {self.total_rate:.1f} {self.pod_rate:.1f} {self.total_predict/self.replicas if self.total_predict else 0:.1f}"
-                             f" {self.target:.1f} {self.p50:.1f} {self.rq_time:.1f} {numpods} {self.replicas}\n")
-            self.logfd.flush()
 
         fn = self.mode_table[self.mode]
         if asyncio.iscoroutinefunction(fn):
@@ -829,52 +822,8 @@ class OLASController:
             await self.output_scale_with_constrain(replicas, raw)
         self.last_control_ts = self.ts
 
-    async def process_event_task(self):
-        queue = self.eventqueue
-        while 1:
-            event_type, metrics = await queue.get()
-            servo.logger.info("Process event {metrics}")
-            await self.control_with_metrics(metrics)
-
     async def control_task(self):
-
-        self.boot()
-        self.eventqueue = eventqueue.eventQueue.subscribe_event("OLASMetrics")
-        asyncio.create_task(self.process_event_task())
-
-        if self.upload_cfg:
-            await self.cached_upload("config", self.cfg.dict())
-
-        if self.cfg.config.devel:
-            text = "ts cpu cpucap total-qps pod-qps prediction target p50 p90 n replicas"
-            print(text, file=self.logfd)
-
+        await self.sleep_loop_interval()
         pods = await self.get_pods()
-        await self.collect_metrics(pods)
-
-        while 1:
-            await self.sleep_loop_interval()
-            if self.cfg.config.devel:
-                self.try_reload()
-            pods = await self.get_pods()
-            metrics = await self.collect_metrics(pods)
-            eventqueue.eventQueue.put_event("OLASMetrics", metrics)
-
-    def try_reload(self):
-        import importlib
-        import os
-        import sys
-        mtime = os.path.getmtime("olas/controller.py")
-        if self.reload_mtime and mtime != self.reload_mtime:
-            servo.logger.info(f"=====Reloading module controller classid: {id(self.__class__)} =======")
-            module = sys.modules['controller']
-            ctl = importlib.reload(module)
-            self.__class__ = ctl.OLASController
-            self.mode_table[mode.CPU_PREDICT] = getattr(self, "scale_by_cpu_predict")
-            servo.logger.info(f"{module} new classid: {id(self.__class__)}")
-
-            importlib.reload(prometheus)
-            importlib.reload(envoy_stats)
-            importlib.reload(client)
-            importlib.reload(kube)
-        self.reload_mtime = mtime
+        metrics = await self.collect_metrics(pods)
+        await self.control_with_metrics(metrics)
