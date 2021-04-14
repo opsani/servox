@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Type
 
 import kubetest.client
+import kubernetes.client.models
 import pydantic
 import pytest
 from kubernetes_asyncio import client
@@ -1110,6 +1111,29 @@ class TestKubernetesConnectorIntegration:
 
     async def test_checks(self, config: KubernetesConfiguration):
         await KubernetesChecks.run(config)
+
+    # Deployment readiness check was returning false positives, guard against regression
+    async def test_check_deployment_readiness_failure(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
+        deployments = kube.get_deployments()
+        target_deploy = deployments.get("fiber-http")
+        assert target_deploy is not None
+
+        target_container = next(filter(lambda c: c.name == "fiber-http", target_deploy.obj.spec.template.spec.containers))
+        assert target_container is not None
+
+        # Update to put deployment in unready state
+        target_container.readiness_probe = kubernetes.client.models.V1Probe(
+            _exec=kubernetes.client.models.V1ExecAction(command=["exit", "1"]),
+            failure_threshold=1
+        )
+        target_deploy.obj.spec.strategy.rolling_update.max_surge = '0%'
+        target_deploy.api_client.patch_namespaced_deployment(target_deploy.name, target_deploy.namespace, target_deploy.obj)
+
+        while target_deploy.is_ready():
+            await asyncio.sleep(0.1)
+
+        result = await KubernetesChecks(config).run_one(id="check_deployments_are_ready_item_0")
+        assert result.success == False and result.message == "caught exception (RuntimeError): Deployment \"fiber-http\" is not ready"
 
 
 ##
