@@ -34,7 +34,7 @@ async def get_pod_envoy_stats(p):
     return await envoy_stats.get_envoy_stats(url)
 
 
-class mode(enum.Enum):
+class Mode(enum.Enum):
     CPU_DETECT  = enum.auto()
     CAP_MONITOR = enum.auto()
     CPU_PREDICT = enum.auto()
@@ -132,17 +132,17 @@ class OLASController:
         self.cpu_window_size = self.cfg.config.sloWindow  # window size
         self.cpu_target = 0   # cpu_target is a value between 0 - 1
         servo.logger.info(f"mode: {self.cfg.config.mode}")
-        self.mode = getattr(mode, self.cfg.config.mode.upper())
+        self.mode = getattr(Mode, self.cfg.config.mode.upper())
         self.exlabels = kube.parse_selector(self.cfg.scaleTargetRef.exclude)
         self.last_violation = None
         self.mode_table = {
-            mode.CPU_DETECT: self.scale_by_cpu_slo,
-            mode.CAP_MONITOR: self.scale_by_capacity_monitor,
-            mode.CPU_PREDICT: self.scale_by_cpu_predict,
-            mode.CPU_TARGET: self.scale_by_cpu,
-            mode.RATE_TARGET: self.scale_by_rate,
-            mode.HPA: self.scale_by_hpa_observe_only,
-            mode.NOOP: self.scale_by_noop,
+            Mode.CPU_DETECT: self.scale_by_cpu_slo,
+            Mode.CAP_MONITOR: self.scale_by_capacity_monitor,
+            Mode.CPU_PREDICT: self.scale_by_cpu_predict,
+            Mode.CPU_TARGET: self.scale_by_cpu,
+            Mode.RATE_TARGET: self.scale_by_rate,
+            Mode.HPA: self.scale_by_hpa_observe_only,
+            Mode.NOOP: self.scale_by_noop,
         }
         self.cached_result = {}
         if upload_cfg:
@@ -166,9 +166,11 @@ class OLASController:
         self.excluded_dps = []
         self.pod_cost = 0
 
-    async def get_deployment_name(self):
-        ref = self.cfg.scaleTargetRef
-        return ref.name if not ref.service else await self.get_deployment_by_service(ref.service, ref.namespace)
+    ##################################################################
+    #                                                                #
+    #                  Metadata from Kubernetes                      #
+    #                                                                #
+    ##################################################################
 
     async def get_service_label_selector(self, service, ns):
         svc = await kube.get_service(service, ns)
@@ -182,7 +184,7 @@ class OLASController:
         return ",".join([f'{k}={v}' for k, v in selector.items()])
 
     async def get_deployment_by_service(self, service, namespace):
-        # lookup deployment from service spec.
+        # lookup deployment from service spec
         self.service_selector = selector = await self.get_service_label_selector(service, namespace)
         if not selector:
             servo.logger.error(f"Service {service} has no selector")
@@ -207,6 +209,10 @@ class OLASController:
             servo.logger.error(f"Service {service} has {len(self.deployments)} deployments, expect 1")
             return ''
         return self.deployments[0]
+
+    async def get_deployment_name(self):
+        ref = self.cfg.scaleTargetRef
+        return ref.name if not ref.service else await self.get_deployment_by_service(ref.service, ref.namespace)
 
     async def get_pods(self):
         pods = []
@@ -234,6 +240,12 @@ class OLASController:
             self.replicas = len(pods)
         return pods
 
+    ##################################################################
+    #                                                                #
+    #                      Helper Functions                          #
+    #                                                                #
+    ##################################################################
+
     def get_last_cached_key(self):
         with self.db.iterator(reverse=True, include_value=False) as it:
             for k in it:
@@ -254,31 +266,11 @@ class OLASController:
                 return
                 self.contour = ContourPlugin(plugin)
 
-    async def get_kube_node_metrics(self, pods):
-        count = 0
-        nodes = set(p.spec.node_name for p in pods)
-        nodes = [n for n in nodes if n]
-        while 1:
-            nm_cache = {}
-            nms = [await kube.get_node_metrics(n, nm_cache) for n in nodes]
-            ts_list = [kube.parse_node_timestamp(nm.timestamp) for nm in nms if nm]
-            if ts_list and min(ts_list) > self.last_node_ts:
-                last_ts = max(ts_list)
-                if count:
-                    # Observe the update just happen. Update the time sync value
-                    ts = time.time()
-                    self.ms_sync_gap = ts - last_ts
-                    servo.logger.info(f'Update metric server time sync gap {self.ms_sync_gap}')
-                self.last_node_ts = last_ts
-                return nm_cache
-            count += 1
-
-    async def sleep_loop_interval(self):
-        sleep = self.last_node_ts + 60 + self.ms_sync_gap - time.time()
-        if sleep > 0 and sleep < 65:
-            servo.logger.info(f'sleeping {sleep} sync {self.ms_sync_gap:.1f}')
-            await asyncio.sleep(sleep)
-        self.ts = time.time()
+    ##################################################################
+    #                                                                #
+    #                      Metrics Gathering                         #
+    #                                                                #
+    ##################################################################
 
     def stats_get_rate(self, stats, name, default_interval):
         prev_ts, prev_total = self.stats_pod_rate.get(name, (0, 0))
@@ -351,12 +343,49 @@ class OLASController:
         m.metrics.update(syms)
         return syms
 
+    async def collect_envoy_sidecar(p, self, m, pod_metrics):
+        name = p.metadata.name
+        stats, err = await get_pod_envoy_stats(p)
+        if err:
+            servo.logger.error("Error fetcthing pod %s envoy metric: %s", name, err)
+            return
+        # servo.logger.info(f'{name} {stats}')
+        rate = self.stats_get_rate(stats, name, self.ts - self.last_control_ts)
+        his = self.stats_get_hist(stats, name)
+        p90 = his.get_pn(90) if his else 0
+        p50 = his.get_pn(50) if his else 0
+        syms = dict(rate=rate, p90=p90, p50=p50, rq_time=p90)
+        pod_metrics.metrics.update(syms)
+        return syms
+
+    async def get_kube_node_metrics(self, pods):
+        count = 0
+        nodes = set(p.spec.node_name for p in pods)
+        nodes = [n for n in nodes if n]
+        # A loop to ensure all nodes have been updated with new metrics. It is determined
+        # by comparing the earlist timestamp of node metrics that are being collected in
+        # this cycle with the successful timestamp of all nodes' update of last cycle.
+        while 1:
+            nm_cache = {}
+            nms = [await kube.get_node_metrics(n, nm_cache) for n in nodes]
+            ts_list = [kube.parse_node_timestamp(nm.timestamp) for nm in nms if nm]
+            if ts_list and min(ts_list) > self.last_node_ts:
+                last_ts = max(ts_list)
+                if count:
+                    # Observe the update just happen. Update the time sync value
+                    ts = time.time()
+                    self.ms_sync_gap = ts - last_ts
+                    servo.logger.info(f'Update metric server time sync gap {self.ms_sync_gap}')
+                self.last_node_ts = last_ts
+                return nm_cache
+            count += 1
+
     def is_pod_warmup(self, name):
         ts = self.pod_ts.get(name, self.ts)
         return self.ts - ts < self.cfg.config.warmUpDelay * 60
 
     def has_node_metrics(self):
-        return self.mode in [mode.CAP_MONITOR]
+        return self.mode in [Mode.CAP_MONITOR]
 
     async def collect_pod_metrics(self, p, m, nm_cache, allocation_map, nodetype_map, node_map, cpus):
         if not kube.is_pod_ready(p):
@@ -400,21 +429,6 @@ class OLASController:
 
         return server_classes.PodMetrics(name=name, metrics=podusage,
                                          allocation=alloc_index, node=node_index)
-
-    async def collect_envoy_sidecar(p, self, m, pod_metrics):
-        name = p.metadata.name
-        stats, err = await get_pod_envoy_stats(p)
-        if err:
-            servo.logger.error("Error fetcthing pod %s envoy metric: %s", name, err)
-            return
-        # servo.logger.info(f'{name} {stats}')
-        rate = self.stats_get_rate(stats, name, self.ts - self.last_control_ts)
-        his = self.stats_get_hist(stats, name)
-        p90 = his.get_pn(90) if his else 0
-        p50 = his.get_pn(50) if his else 0
-        syms = dict(rate=rate, p90=p90, p50=p50, rq_time=p90)
-        pod_metrics.metrics.update(syms)
-        return syms
 
     async def collect_metrics(self, pods):
         m = server_classes.Metrics(ts=self.ts, deployments=self.deployments,
@@ -476,7 +490,141 @@ class OLASController:
         if not self.mem_request:
             servo.logger.error("Please define memory request in target deployment.")
 
-    def caculate_pod_cost(self, metrics):
+    ##################################################################
+    #                                                                #
+    #                      Scaling Functions                         #
+    #                                                                #
+    ##################################################################
+
+    def get_predict(self, predict, current):
+        if self.cfg.config.enablePrediction and predict and predict > current:
+            return predict
+        return current
+
+    def add_scale_request(self, desired, reason, raw=False):
+        self.scale_request.append((desired, raw, reason))
+
+    def scale_pods_by_ratio(self, scale, reason):
+        desired = scale * self.replicas
+        reason = f"{reason} scale {scale:.3f} desired {desired:.2f} roundup {math.ceil(desired)}"
+        if scale < 1 + self.cfg.config.tolerance and scale > 1 - self.cfg.config.tolerance:
+            reason += f" skip by tolerance {self.cfg.config.tolerance:.1%}"
+            desired = self.replicas
+        self.add_scale_request(desired, reason)
+
+    def scale_by_capacity_monitor(self, metrics):
+        if math.isnan(self.cpu):
+            return
+        if self.ps is None:
+            return self.scale_by_cpu_slo(metrics)
+        cap, err = self.ps.detect(metrics, self)
+        if err and not self.cap:
+            servo.logger.info("Unable to detect pod capacity. PodSensor Exception: %s", err)
+            return self.scale_by_cpu_slo(metrics)
+        elif err:
+            servo.logger.info("Use prior detected pod capacity. PodSensor Exception: %s", err)
+        else:
+            self.cap = cap
+        self.target = self.cap * .85
+        servo.logger.info(f"cap-qps {self.cap:.1f} new target {self.target}")
+        if not self.check_slo_violation():
+            self.scale_by_rate(metrics)
+
+    def scale_by_cpu_predict(self, metrics):
+        if math.isnan(self.cpu) or not self.cpu_request:
+            return
+        self.check_slo_violation()
+
+        if not self.cfg.config.enablePrediction:
+            return self.scale_by_cpu_slo(metrics)
+
+        total_cpu = self.get_predict(self.total_predict, self.total_cpu)
+        if self.total_predict:
+            self.target = 0.75 * self.cpu_request
+        else:
+            self.target = 0.6 * self.cpu_request
+        cpu = total_cpu / self.replicas
+        scale = cpu / self.target
+        reason = f"cpu_p: cpu {cpu :.3f} target {self.target:.3f}"
+        self.scale_pods_by_ratio(scale, reason)
+
+    def scale_by_cpu(self, metrics):
+        if math.isnan(self.cpu) or not self.cpu_request:
+            return
+        scale = (self.cpu / self.cpu_request) / self.cpu_target
+        reason = f"cpu: {self.cpu:.1%} target {self.target:.1f}"
+        self.scale_pods_by_ratio(scale, reason)
+
+    def scale_by_rate(self, metrics):
+        total = self.get_predict(self.total_predict, self.total_rate)
+        rate = total / self.replicas
+        scale = rate / self.target
+        reason = f"rate: {rate:.1f} target {self.target:.1f}"
+        self.scale_pods_by_ratio(scale, reason)
+
+    async def scale_by_hpa_observe_only(self, metrics):
+        if not self.deployment:
+            servo.logger.info("deployment not found, abort hpa observe")
+            return
+
+        status = await kube.read_autoscaler_status(self.deployment, self.cfg.scaleTargetRef.namespace)
+        hpacpu = status and status.status and status.status.current_cpu_utilization_percentage
+        servo.logger.info(f"HPA cpu {hpacpu}")
+
+    def scale_by_noop(self, metrics):
+        pass
+
+    def scale_by_cpu_slo(self, metrics):
+        # cpu, p90, pod_rate:
+        if math.isnan(self.cpu):
+            return
+        servo.logger.info(f"scale_by_cpu_slo, cpu {self.cpu:.1%} p90 {self.rq_time}, pod_rate {self.pod_rate}"
+                          f" mode {self.mode} cpu_target {self.cpu_target} {self.cpu_history[-2:]}")
+
+        violation = self.check_slo_violation()
+        if not violation:
+
+            level = self.cpu_history[-1][0] if self.cpu_history else 0
+            better = [(cpu, p90, rate) for cpu, p90, rate in self.cpu_window
+                      if p90 < self.time_slo / 3 and cpu > level]
+            servo.logger.info(f"level {level} better {better}")
+            if len(better) == self.cpu_window_size:
+                better.sort()
+                self.cpu_history.append(better[0])
+                servo.logger.info(f"Adding good cpu sample {better[0]}")
+
+            if self.last_violation != violation:
+                servo.logger.info("SLO recovered.")
+                if self.cpu_history and self.cpu_request:
+                    self.cpu_target = self.cpu_history[-1][0] * .85 / self.cpu_request
+                    servo.logger.info(f"Detect cpu target {self.cpu_target}")
+        self.last_violation = violation
+
+        if self.cpu_target:
+            self.scale_by_cpu(metrics)
+        else:
+            servo.logger.info(f"No cpu_target. Pass this round, mode {self.mode} cpu_target {self.cpu_target}")
+
+    def check_slo_violation(self):
+        self.cpu_window.append((self.cpu, self.rq_time, self.pod_rate))
+        while len(self.cpu_window) > self.cpu_window_size:
+            self.cpu_window.pop(0)
+
+        violations = [p90 for cpu, p90, rate in self.cpu_window if p90 > self.time_slo]
+
+        reason = ''
+        if len(violations) >= self.cpu_window_size:
+            reason += " slo window"
+        if self.rq_time > self.time_slo * 10:
+            reason += f" 10x {self.rq_time/self.time_slo:.1f}"
+        if self.cpu_request and self.cpu > self.cpu_slo * self.cpu_request:
+            reason += f" cpu > {self.cpu_slo}"
+        if reason:
+            scale_num = self.replicas * 1.15
+            self.add_scale_request(scale_num, reason)
+            return True
+
+    def calculate_pod_cost(self, metrics):
         expr = self.cfg.config.costFormula
         if not expr:
             expr = 'cpu * DEFAULT_CPU_COST + mem * DEFAULT_MEM_COST'
@@ -497,17 +645,6 @@ class OLASController:
 
         servo.logger.info(f"Calculated pod cost: {cost} using '{expr}' with '{syms}'")
         return cost
-
-    def add_scale_request(self, desired, reason, raw=False):
-        self.scale_request.append((desired, raw, reason))
-
-    def scale_pods_by_ratio(self, scale, reason):
-        desired = scale * self.replicas
-        reason = f"{reason} scale {scale:.3f} desired {desired:.2f} roundup {math.ceil(desired)}"
-        if scale < 1 + self.cfg.config.tolerance and scale > 1 - self.cfg.config.tolerance:
-            reason += f" skip by tolerance {self.cfg.config.tolerance:.1%}"
-            desired = self.replicas
-        self.add_scale_request(desired, reason)
 
     def constrain_desired_scale(self, desired):
         if self.pod_cost and self.cfg.objectives.maxCost:
@@ -573,122 +710,11 @@ class OLASController:
         res = await kube.patch_namespaced_custom_object_scale(*self.target_api, target.namespace, target.kind.lower() + 's', self.deployment, obj)
         # servo.logger.info(f"Patch output scale res {res}")
 
-    def scale_by_cpu(self, metrics):
-        if math.isnan(self.cpu) or not self.cpu_request:
-            return
-        scale = (self.cpu / self.cpu_request) / self.cpu_target
-        reason = f"cpu: {self.cpu:.1%} target {self.target:.1f}"
-        self.scale_pods_by_ratio(scale, reason)
-
-    def get_predict(self, predict, current):
-        if self.cfg.config.enablePrediction and predict and predict > current:
-            return predict
-        return current
-
-    def scale_by_rate(self, metrics):
-        total = self.get_predict(self.total_predict, self.total_rate)
-        rate = total / self.replicas
-        scale = rate / self.target
-        reason = f"rate: {rate:.1f} target {self.target:.1f}"
-        self.scale_pods_by_ratio(scale, reason)
-
-    def scale_by_cpu_predict(self, metrics):
-        if math.isnan(self.cpu) or not self.cpu_request:
-            return
-        self.check_slo_violation()
-
-        if not self.cfg.config.enablePrediction:
-            return self.scale_by_cpu_slo(metrics)
-
-        total_cpu = self.get_predict(self.total_predict, self.total_cpu)
-        if self.total_predict:
-            self.target = 0.75 * self.cpu_request
-        else:
-            self.target = 0.6 * self.cpu_request
-        cpu = total_cpu / self.replicas
-        scale = cpu / self.target
-        reason = f"cpu_p: cpu {cpu :.3f} target {self.target:.3f}"
-        self.scale_pods_by_ratio(scale, reason)
-
-    def scale_by_capacity_monitor(self, metrics):
-        if math.isnan(self.cpu):
-            return
-        if self.ps is None:
-            return self.scale_by_cpu_slo(metrics)
-        cap, err = self.ps.detect(metrics, self)
-        if err and not self.cap:
-            servo.logger.info("Unable to detect pod capacity. PodSensor Exception: %s", err)
-            return self.scale_by_cpu_slo(metrics)
-        elif err:
-            servo.logger.info("Use prior detected pod capacity. PodSensor Exception: %s", err)
-        else:
-            self.cap = cap
-        self.target = self.cap * .85
-        servo.logger.info(f"cap-qps {self.cap:.1f} new target {self.target}")
-        if not self.check_slo_violation():
-            self.scale_by_rate(metrics)
-
-    def scale_by_cpu_slo(self, metrics):
-        # cpu, p90, pod_rate):
-        if math.isnan(self.cpu):
-            return
-        servo.logger.info(f"scale_by_cpu_slo, cpu {self.cpu:.1%} p90 {self.rq_time}, pod_rate {self.pod_rate}"
-                          f" mode {self.mode} cpu_target {self.cpu_target} {self.cpu_history[-2:]}")
-
-        violation = self.check_slo_violation()
-        if not violation:
-
-            level = self.cpu_history[-1][0] if self.cpu_history else 0
-            better = [(cpu, p90, rate) for cpu, p90, rate in self.cpu_window
-                      if p90 < self.time_slo / 3 and cpu > level]
-            servo.logger.info(f"level {level} better {better}")
-            if len(better) == self.cpu_window_size:
-                better.sort()
-                self.cpu_history.append(better[0])
-                servo.logger.info(f"Adding good cpu sample {better[0]}")
-
-            if self.last_violation != violation:
-                servo.logger.info("SLO recovered.")
-                if self.cpu_history and self.cpu_request:
-                    self.cpu_target = self.cpu_history[-1][0] * .85 / self.cpu_request
-                    servo.logger.info(f"Detect cpu target {self.cpu_target}")
-        self.last_violation = violation
-
-        if self.cpu_target:
-            self.scale_by_cpu(metrics)
-        else:
-            servo.logger.info(f"No cpu_target. Pass this round, mode {self.mode} cpu_target {self.cpu_target}")
-
-    async def scale_by_hpa_observe_only(self, metrics):
-        if not self.deployment:
-            servo.logger.info("deployment not found, abort hpa observe")
-            return
-
-        status = await kube.read_autoscaler_status(self.deployment, self.cfg.scaleTargetRef.namespace)
-        hpacpu = status and status.status and status.status.current_cpu_utilization_percentage
-        servo.logger.info(f"HPA cpu {hpacpu}")
-
-    def scale_by_noop(self, metrics):
-        pass
-
-    def check_slo_violation(self):
-        self.cpu_window.append((self.cpu, self.rq_time, self.pod_rate))
-        while len(self.cpu_window) > self.cpu_window_size:
-            self.cpu_window.pop(0)
-
-        violations = [p90 for cpu, p90, rate in self.cpu_window if p90 > self.time_slo]
-
-        reason = ''
-        if len(violations) >= self.cpu_window_size:
-            reason += " slo window"
-        if self.rq_time > self.time_slo * 10:
-            reason += f" 10x {self.rq_time/self.time_slo:.1f}"
-        if self.cpu_request and self.cpu > self.cpu_slo * self.cpu_request:
-            reason += f" cpu > {self.cpu_slo}"
-        if reason:
-            scale_num = self.replicas * 1.15
-            self.add_scale_request(scale_num, reason)
-            return True
+    ##################################################################
+    #                                                                #
+    #                      Control Functions                         #
+    #                                                                #
+    ##################################################################
 
     async def cached_upload(self, name, obj):
         '''self.cached_upload(name,obj).
@@ -716,7 +742,7 @@ class OLASController:
         return self.cached_result.get(name)
 
     async def upload_metrics(self, metrics):
-        # input metrics are dict() type.
+        # input metrics are dict() type
         model_id = await self.cached_upload("metrics", metrics)
         # TODO: enable CAP_MONITOR mode
         # if self.mode.name == 'CAP_MONITOR' and model_id and model_id.id > self.model_id:
@@ -733,7 +759,7 @@ class OLASController:
         #             self.model_id = model.model_id
 
     async def try_disable_hpa(self):
-        if self.mode in (mode.HPA, mode.NOOP) or not self.deployment:
+        if self.mode in (Mode.HPA, Mode.NOOP) or not self.deployment:
             return
         try:
             hpa = await kube.read_autoscaler(self.deployment, self.cfg.scaleTargetRef.namespace)
@@ -769,6 +795,13 @@ class OLASController:
                 except Exception as err:
                     servo.logger.info("Fastpath is not invoked.")
                     servo.logger.error(err)
+            # self.traffic_history is a traffic data buffer that is being used to facilitate
+            # fastpath prediction. In order to enable fastpath, traffic data quantity needs
+            # to meet the requirement explained at L27 ~ L37 of fastpath.py. Thus the below
+            # logic is to restrain buffer size from increasing infinitely when fastpath was
+            # not invoked (determine whether data quantity is sufficient for fastpath by
+            # comparing the timestamp of earliest datum and latest datum). 4.5 is different
+            # from 4 used at L34 of fastpath.py since the extra 0.5 intends to be headroom.
             elif ((self.traffic_history[source][-1]['ts'] - self.traffic_history[source][0]['ts'])
                     >= 4.5 * self.cfg.config.fastpathWindow * (60 * self.fastpath_resolution)):
                 # discard the earliest record in traffic buffer
@@ -814,13 +847,20 @@ class OLASController:
             fn(metrics)
 
         if self.cfg.objectives.maxCost:
-            self.pod_cost = self.caculate_pod_cost(metrics)
+            self.pod_cost = self.calculate_pod_cost(metrics)
         servo.logger.info(f"scaler action {self.scale_request}")
         if self.scale_request:
             self.scale_request.sort()
             replicas, raw, reason = self.scale_request[-1]
             await self.output_scale_with_constrain(replicas, raw)
         self.last_control_ts = self.ts
+
+    async def sleep_loop_interval(self):
+        sleep = self.last_node_ts + 60 + self.ms_sync_gap - time.time()
+        if sleep > 0 and sleep < 65:
+            servo.logger.info(f'sleeping {sleep} sync {self.ms_sync_gap:.1f}')
+            await asyncio.sleep(sleep)
+        self.ts = time.time()
 
     async def control_task(self):
         await self.sleep_loop_interval()
