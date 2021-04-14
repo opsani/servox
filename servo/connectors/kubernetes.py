@@ -2830,7 +2830,7 @@ class CanaryOptimization(BaseOptimization):
                     "creating new tuning pod against baseline following failed adjust"
                 )
                 self.tuning_pod = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
-                
+
                 raise error # Always communicate errors to backend unless ignored
 
             except Exception as handler_error:
