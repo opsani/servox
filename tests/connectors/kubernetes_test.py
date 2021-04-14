@@ -948,6 +948,33 @@ class TestKubernetesConnectorIntegration:
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 250
 
+    async def test_adjust_cpu_matchlabels_dont_match_metadata_labels(self, config, kube: kubetest.client.TestClient):
+        deployments = kube.get_deployments()
+        target_deploy = deployments.get("fiber-http")
+        assert target_deploy is not None
+
+        # Update metadata labels so they don't match the match_labels selector
+        target_deploy.obj.metadata.labels["app.kubernetes.io/name"] = "web"
+        target_deploy.api_client.patch_namespaced_deployment(target_deploy.name, target_deploy.namespace, target_deploy.obj)
+        kube.wait_for_registered()
+
+        config.timeout = "15s"
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".150",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 150
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 150
+
     async def test_adjust_memory(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
