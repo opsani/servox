@@ -3449,7 +3449,7 @@ class KubernetesChecks(servo.BaseChecks):
     async def check_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_deployment(dep_config: DeploymentConfiguration) -> None:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            if not deployment.is_ready:
+            if not await deployment.is_ready():
                 raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
         return self.config.deployments, check_deployment

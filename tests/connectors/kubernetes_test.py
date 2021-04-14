@@ -1113,6 +1113,7 @@ class TestKubernetesConnectorIntegration:
         await KubernetesChecks.run(config)
 
     # Deployment readiness check was returning false positives, guard against regression
+    @pytest.mark.timeout(10)
     async def test_check_deployment_readiness_failure(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
         deployments = kube.get_deployments()
         target_deploy = deployments.get("fiber-http")
