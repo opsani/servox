@@ -1049,7 +1049,7 @@ class TestKubernetesConnectorIntegration:
         assert setting
         assert setting.value == 250
 
-    async def test_baseline_is_not_updated_by_canary_apply(self, tuning_config: KubernetesConfiguration, mocker) -> None:
+    async def test_baseline_is_not_updated_by_canary_apply(self, tuning_config: KubernetesConfiguration) -> None:
         """Verify the Deployment object storing the baseline deployment is not being modified on adjustments to the canary"""
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
