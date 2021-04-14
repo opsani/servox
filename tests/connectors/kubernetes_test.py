@@ -20,6 +20,7 @@ from servo.connectors.kubernetes import (
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    FailureMode,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -1019,6 +1020,8 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "3s"
+        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
