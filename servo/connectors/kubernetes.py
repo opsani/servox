@@ -1958,6 +1958,46 @@ class Deployment(KubernetesModel):
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
 
+
+    async def get_restart_count(self) -> int:
+        count = 0
+        for pod in await self.get_latest_pods():
+            try:
+                count += await pod.get_restart_count()
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404:
+                    # Pod no longer exists, move on
+                    pass
+                else:
+                    raise error
+
+        return count
+
+    async def raise_for_status(self) -> None:
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.obj.status
+        self.logger.trace(f"current deployment status is {status}")
+        if status is None:
+            raise RuntimeError(f'No such deployment: {self.name}')
+
+        if not status.conditions:
+            raise RuntimeError(f'Deployment is not running: {self.name}')
+
+        # Check for restarts
+        if await self.get_restart_count() > 0:
+            raise servo.AdjustmentRejectedError(
+                "Deployment {self.name} pod(s) crash restart detected",
+                reason="unstable"
+            )
+
+        # Check for failure conditions
+        self._check_conditions(status.conditions)
+        await self._check_pod_conditions()
+
+        # Catchall
+        self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
+        raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
+
     ##
     # Canary support
 
@@ -2125,20 +2165,6 @@ class Deployment(KubernetesModel):
         await tuning_pod.get_containers()
 
         return tuning_pod
-
-    async def get_restart_count(self) -> int:
-        count = 0
-        for pod in await self.get_pods():
-            try:
-                count += await pod.get_restart_count()
-            except kubernetes_asyncio.client.exceptions.ApiException as error:
-                if error.status == 404:
-                    # Pod no longer exists, move on
-                    pass
-                else:
-                    raise error
-
-        return count
 
 class Millicore(int):
     """

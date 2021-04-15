@@ -1206,3 +1206,24 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             await connector.adjust([adjustment])
 
         assert rejection_info.value.reason == "Optimization target became unready during adjustment settlement period"
+
+    async def test_deployment_settlement_failed_triggers_handle_error(self, config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
+        config.timeout = "15s"
+        config.settlement = "15s"
+        config.on_failure = FailureMode.rollback
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        assert rejection_info.value.reason == "Optimization target became unready during adjustment settlement period"
+
+        kubetest_deployment_becomes_unready.refresh()
+        fiber_container = next(filter(lambda c: c.name == "fiber-http", kubetest_deployment_becomes_unready.obj.spec.template.spec.containers))
+        assert fiber_container.resources.requests["memory"] == "256Mi"
+        assert fiber_container.resources.limits["memory"] == "256Mi"
