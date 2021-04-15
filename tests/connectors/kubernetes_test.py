@@ -1186,7 +1186,6 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
-        # NOTE: This can generate a 409 Conflict failure under CI
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
@@ -1203,7 +1202,6 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
-        # NOTE: This can generate a 409 Conflict failure under CI
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
