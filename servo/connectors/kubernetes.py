@@ -3011,7 +3011,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
     async def raise_for_status(self) -> None:
         handle_error_tasks = []
-        def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+        def _raise_for_task(task: asyncio.Task, optimization: BaseOptimization) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
                     handle_error_tasks.append(asyncio.create_task(optimization.handle_error(
