@@ -17,9 +17,11 @@ from servo.connectors.kubernetes import (
     ContainerConfiguration,
     ContainerTagName,
     DefaultOptimizationStrategyConfiguration,
+    Deployment,
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    FailureMode,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -1047,6 +1049,26 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert setting
         assert setting.value == 250
+
+    async def test_adjust_handle_error_respects_nested_config(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
+        config.timeout = "3s"
+        config.on_failure = FailureMode.destroy
+        config.deployments[0].on_failure = FailureMode.exception
+        config.deployments[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+        await Deployment.read("fiber-http", kube.namespace)
 
     # async def test_apply_no_changes(self):
 #         # resource_version stays the same and early exits
