@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import autobahn.asyncio.wamp
 import autobahn.asyncio.component
@@ -34,6 +34,19 @@ class WampConfiguration(servo.BaseConfiguration):
             ],
             "realm": self.realm,
         }
+
+class WampChecks(servo.BaseChecks):
+    config: WampConfiguration
+    publisher: servo.Publisher
+
+    @servo.check("Report aggregation")
+    async def check_with_progress(self) -> Tuple[bool, str]:
+        progress = servo.DurationProgress('10s')
+
+        async for update in progress.every('0.500ms'):
+            await self.publisher(servo.Message(json=dict(progress=update.progress)))
+
+        return (True, "Fuhgeddaboudit")
 
 class WampConnector(servo.BaseConnector):
     config: WampConfiguration
@@ -84,7 +97,6 @@ class WampConnector(servo.BaseConnector):
         self._server_task = self.component.start(loop=asyncio.get_event_loop())
         await asyncio.wait_for(server_event.wait(), timeout=5.0)
 
-
         # Subscribe to all messages traversing the exchange
         @self.subscribe('*')
         async def _message_received(message: servo.Message, channel: servo.Channel) -> None:
@@ -103,6 +115,16 @@ class WampConnector(servo.BaseConnector):
 
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(self._router_task, self._server_task)
+
+    @servo.on_event()
+    async def check(
+        self,
+        matching: Optional[servo.CheckFilter] = None,
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
+    ) -> List[servo.Check]:
+        channel = self.pubsub_exchange.create_channel('checks')
+        publisher = self.pubsub_exchange.create_publisher(channel)
+        return await WampChecks(config=self.config, publisher=publisher).run_all(matching=matching, halt_on=halt_on)
 
     class Config:
         arbitrary_types_allowed = True
@@ -280,6 +302,45 @@ async def test_servo_to_client_rpc(wamp_connector: WampConnector, event_loop: as
     await event.wait()
     result = await wamp_connector._session.call("client.whats_the_magic_number")
     assert result == 31337
+
+async def test_observing_checks(wamp_connector: WampConnector, event_loop: asyncio.AbstractEventLoop) -> None:
+    # Run a check that emits progress and render it as a progress bar
+    from alive_progress import alive_bar
+
+    servo.logging.set_level("CRITICAL")
+    client_component = _create_client_component(wamp_connector.config)
+    reports = []
+    queue = asyncio.Queue()
+
+    async def _progress_bar() -> None:
+        with alive_bar(manual=True, bar='classic') as bar:
+            while True:
+                progress = await queue.get()
+                if progress is None:
+                    break
+
+                bar(progress)
+                queue.task_done()
+
+    queue_processor = asyncio.create_task(_progress_bar())
+
+    @client_component.subscribe(
+        "checks",
+        options=autobahn.wamp.types.SubscribeOptions(match='prefix', details_arg='details'),
+    )
+    async def _record_progress(message_json: str, **kwargs):
+        message = servo.Message(json=message_json)
+        progress = message.json()['progress']
+        servo.logger.success(f"Recording Message: {message}")
+        reports.append(progress)
+
+        fraction = progress / 100.0
+        await queue.put(fraction)
+
+    # Run the whole apparatus
+    client_task = client_component.start(loop=event_loop)
+    await wamp_connector.dispatch_event(servo.Events.check)
+    await client_component.stop()
 
 def _create_client_component(config: WampConfiguration, main = None) -> autobahn.asyncio.component.Component:
     component = autobahn.asyncio.component.Component(
