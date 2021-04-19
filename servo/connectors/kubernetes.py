@@ -2712,7 +2712,7 @@ class CanaryOptimization(BaseOptimization):
 
     async def apply(self) -> None:
         """Apply the adjustments to the target."""
-        dep_copy = Deployment(copy.deepcopy(self.target_deployment.obj))
+        dep_copy = copy.copy(self.target_deployment)
         dep_copy.set_container(self.tuning_container.name, self.tuning_container)
         await dep_copy.delete_tuning_pod(raise_if_not_found=False)
         task = asyncio.create_task(dep_copy.ensure_tuning_pod(timeout=self.timeout.total_seconds()))
@@ -2850,7 +2850,7 @@ class CanaryOptimization(BaseOptimization):
                     "creating new tuning pod against baseline following failed adjust"
                 )
                 self.tuning_pod = await self.target_deployment.ensure_tuning_pod(timeout=self.timeout)
-                raise error # Always communicate errors to backend unless ignored
+                return True
 
             except Exception as handler_error:
                 raise handler_error from error
