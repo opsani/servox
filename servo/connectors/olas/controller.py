@@ -97,7 +97,7 @@ class OLASController:
     async def boot(self, upload_cfg=True):
         servo.logger.info(f"OLAS boot cfg {self.config_dict}")
 
-        self.cfg = cfg = configuration.OLASConfig.parse_obj(self.config_dict)
+        self.cfg = cfg = configuration.OLASConfiguration.parse_obj(self.config_dict)
 
         self.time_slo = self.find_name_in_values("rq_time", self.cfg.objectives.metrics)
         cpu_slo_percent = self.find_name_in_values("cpu", self.cfg.objectives.metrics)
