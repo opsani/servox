@@ -168,6 +168,7 @@ class OLASConfiguration(servo.BaseConfiguration):
                 minReplicas=1,
                 maxReplicas=0,            # 0 denotes no replicas limit
                 minScaleCPU=20.0,         # percentage
+                maxCPU=0.0,               # 0 denotes no CPU cap
                 maxCost=0.0,              # 0 denotes no cost constrain
                 metrics=[
                     Value(
@@ -179,7 +180,6 @@ class OLASConfiguration(servo.BaseConfiguration):
                         value=90          # more than 90% average CPU usage denotes SLO violation
                     ),
                 ],
-                maxCPU=0.0,               # 0 denotes no CPU cap
             ),
             metricSource=[
                 Plugin(
