@@ -298,11 +298,15 @@ def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
         if not name:
             continue
         name = re.sub(r"Connector$", "", name)
-        name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        if re.match(r"^[A-Z]+$", name):
+            # Handle case where the name is an acronym (e.g. 'OLAS') => 'olas'
+            name = name.lower()
+        else:
+            # Handle case where the name is CamelCase (e.g., 'DataDog') => 'data_dog'
+            name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
         if name != "":
             return name
     return None
-
 
 #####
 
