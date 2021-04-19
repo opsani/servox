@@ -1628,3 +1628,15 @@ class TestPubSub:
             "Message #3 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
             "Message #4 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
         ]
+
+def test_name_for_connector_class() -> None:
+    name = servo.connector._name_for_connector_class(servo.connectors.kubernetes.KubernetesConnector)
+    assert name == 'kubernetes'
+
+    camel_case_class = type('CamelCaseConnector', (servo.connector.BaseConnector,), {})
+    name = servo.connector._name_for_connector_class(camel_case_class)
+    assert name == 'camel_case'
+
+    acronym_class = type('ACRONYMConnector', (servo.connector.BaseConnector,), {})
+    name = servo.connector._name_for_connector_class(acronym_class)
+    assert name == 'acronym'
