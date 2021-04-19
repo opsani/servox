@@ -971,6 +971,29 @@ A context dictionary is provided to the template that includes references to all
 Kubernetes resources that have been loaded at render time. The `namespace` and
 `objs` are likely to be the most interesting.
 
+### Startup Banner
+
+Just for fun, ServoX generates an ASCII art banner at startup. The font is
+randomized from a painstakingly selected set of style that represent the ServoX
+vibe. The output color is then randomized and has a 50/50 shot of being rendered
+as a rainbow or a randomly selected flat output color.
+
+Don't like serendipity?
+
+You can take control of the banner output with two environment variables:
+
+* `SERVO_BANNER_FONT`: Name of the [Figlet](http://www.figlet.org/fontdb.cgi)
+  font to render the banner in.
+* `SERVO_BANNER_COLOR`: The color to use when rendering the banner. Valid
+  options are:
+  * `RED`
+  * `GREEN`
+  * `YELLOW`
+  * `BLUE`
+  * `MAGENTA`
+  * `CYAN`
+  * `RAINBOW`
+
 ## License
 
 ServoX is distributed under the terms of the Apache 2.0 Open Source license.
