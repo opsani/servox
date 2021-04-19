@@ -368,7 +368,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         )
         self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
 
-        self._display_banner()
+        # self._display_banner()
 
         try:
             for servo_ in self.assembly.servos:
