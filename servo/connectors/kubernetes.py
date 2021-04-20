@@ -3786,13 +3786,13 @@ def dns_subdomainify(name: str) -> str:
     name = name[:253]
 
     # ensure starts with an alphanumeric by prefixing with `0-`
-    boundaryRegex = re.compile('[a-z0-9]')
-    if not boundaryRegex.test(name.slice(0, 1)):
-        name = ('0-' + name).substring(0, 253)
+    boundaryRegex = re.compile('^[a-z0-9]')
+    if not boundaryRegex.match(name):
+        name = ('0-' + name)[:253]
 
     # ensure ends with an alphanumeric by suffixing with `-1`
-    if not boundaryRegex.test(name.slice(-1)):
-        name = name.substring(0, 251) + '-1'
+    if not boundaryRegex.match(name[-1]):
+        name = name[:251] + '-1'
 
     return name
 
