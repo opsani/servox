@@ -157,7 +157,7 @@ class Message(pydantic.BaseModel):
 
     def yaml(self) -> Any:
         """Return a representation of the message content deserialized as YAML."""
-        return yaml_.load(self.content)
+        return yaml_.load(self.content, Loader=yaml_.FullLoader)
 
 
 ChannelName = pydantic.constr(
