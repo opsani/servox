@@ -2429,7 +2429,7 @@ class CanaryOptimization(BaseOptimization):
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
             for requirement in setting.set:
                 requirements[requirement] = value
-                servo.logger.debug(f"Assigning {requirement}={value}")
+                servo.logger.debug(f"Assigning {setting_name}.{requirement}={value}")
 
             servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on {self.tuning_container}")
             self.tuning_container.set_resource_requirements(setting_name, requirements)
@@ -2553,11 +2553,14 @@ class CanaryOptimization(BaseOptimization):
             # NOTE: cpu/memory stanza in container config
             resource_config = getattr(self.container_config, resource)
             requirements = container.get_resource_requirements(resource)
+            # TODO: Update this logging -- dumping an object
             servo.logger.debug(f"Loaded resource requirements for '{resource}': {requirements}")
             for requirement in ResourceRequirement:
                 if requirements.get(requirement) is None:
                     # Use the request/limit from the container.[cpu|memory].[request|limit] as default
-                    requirements[requirement] = getattr(resource_config, requirement.name)
+                    value = getattr(resource_config, requirement.name)
+                    servo.logger.debug(f"Setting default value for '{requirement} to: {value}")
+                    requirements[requirement] = value
 
             servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
             container.set_resource_requirements(resource, requirements)
