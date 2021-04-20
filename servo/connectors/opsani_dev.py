@@ -273,13 +273,14 @@ class OpsaniDevChecks(servo.BaseChecks):
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container
+        # TODO: Need to initialize this from the config defaults to avoid tripping the blanket cases
         assert container.resources, "missing container resources"
         assert container.resources.requests, "missing requests for container resources"
-        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
-        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+        assert container.resources.requests.get("cpu", self.config.cpu.request), "missing request for resource 'cpu'"
+        assert container.resources.requests.get("memory", self.config.memory.request), "missing request for resource 'memory'"
         assert container.resources.limits, "missing limits for container resources"
-        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
-        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+        assert container.resources.limits.get("cpu", self.config.cpu.limit), "missing limit for resource 'cpu'"
+        assert container.resources.limits.get("memory", self.config.memory.limit), "missing limit for resource 'memory'"
 
     @servo.checks.require("Target container resource requests are within limits")
     async def check_target_container_resources_within_limits(self) -> None:
