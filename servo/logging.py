@@ -19,7 +19,6 @@ import loguru
 import servo.assembly
 import servo.events
 
-
 __all__ = (
     "Mixin",
     "Filter",

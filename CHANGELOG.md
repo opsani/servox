@@ -17,7 +17,7 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.6] "serenity now" - Unreleased
+## [0.10.0] "baseless allegation" - Unreleased
 
 ### Enhanced
 
@@ -25,6 +25,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Service check errors now include the missing labels.
 - Container resources are now checked against the optimizable range before
   optimization begins.
+- Introduced pub/sub transformers for filtering, splitting, and aggregating
+  messages across channels. [#191](https://github.com/opsani/servox/pull/191)
+- Added `--no-poll` and `--interactive` options to the `servo run` command.
+  [#192](https://github.com/opsani/servox/pull/192)
+- Enjoy a random start-up banner in a random color palette.
+  [#193](https://github.com/opsani/servox/pull/193)
+- `TRACE` logging from the `servo.api` module now includes cURL commands.
+  [#194](https://github.com/opsani/servox/pull/194)
 
 ### Fixed
 

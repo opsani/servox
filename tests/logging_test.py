@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import asynctest
 import loguru
 import pytest
+import pytest_mock
 from freezegun import freeze_time
 
 import servo
@@ -20,6 +20,7 @@ from servo.logging import (
     reset_to_defaults,
     set_level,
 )
+
 
 @pytest.fixture(autouse=True)
 def reset_logging() -> None:
@@ -138,12 +139,12 @@ class TestFormatting:
 
 class TestProgressHandler:
     @pytest.fixture()
-    def progress_reporter(self, mocker):
-        return asynctest.Mock(name="progress reporter")
+    def progress_reporter(self, mocker: pytest_mock.MockFixture):
+        return mocker.Mock(name="progress reporter")
 
     @pytest.fixture()
-    def error_reporter(self, mocker):
-        return asynctest.Mock(name="error reporter")
+    def error_reporter(self, mocker: pytest_mock.MockFixture):
+        return mocker.Mock(name="error reporter")
 
     @pytest.fixture()
     async def handler(

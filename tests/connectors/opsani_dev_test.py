@@ -289,7 +289,6 @@ class TestServiceMultiport:
         self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, multiport_service
     ) -> None:
         kube.wait_for_registered()
-        pass
         # checks.config.port = 'invalid'
         # result = await checks.run_one(id=f"check_kubernetes_service_port")
         # assert not result.success
@@ -797,7 +796,6 @@ class LoadGenerator(pydantic.BaseModel):
                         await client.send(self.request, timeout=1.0)
                     except httpx.TimeoutException as err:
                         servo.logger.warning(f"httpx.TimeoutException encountered sending request {self.request}: {err}")
-                        pass
                     self.request_count += 1
 
             duration = servo.Duration(datetime.datetime.now() - started_at)
@@ -928,7 +926,6 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
 
     elif id in {'check_prometheus_sidecar_exists', 'check_pod_envoy_sidecars', 'check_prometheus_is_accessible'}:
         servo.logger.warning(f"check failed: {id}")
-        pass
 
     elif id == 'check_prometheus_targets':
         # Step 4

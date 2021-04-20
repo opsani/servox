@@ -1,20 +1,18 @@
 import asyncio
 import datetime
 import hashlib
+import re
 
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import kubetest.client
+import pydantic
 import pytest
 
 import servo
 import servo.connectors.kubernetes
 import tests.helpers
-
-import pydantic
-import re
-from servo.types import _suggest_step_aligned_values, _is_step_aligned
-
+from servo.types import _is_step_aligned, _suggest_step_aligned_values
 
 pytestmark = [
     pytest.mark.asyncio,

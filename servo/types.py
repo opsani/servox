@@ -14,15 +14,14 @@ import operator
 import time
 from typing import (
     Any,
-    Awaitable,
     AsyncIterator,
+    Awaitable,
     Callable,
     Dict,
     List,
     Optional,
     Protocol,
     Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -1045,7 +1044,6 @@ class RangeSetting(Setting):
 
         for boundary in ('min', 'max'):
             value = values[boundary]
-            value_type = value.__class__
             if value and not _is_step_aligned(value, step):
                 suggested_lower, suggested_upper = _suggest_step_aligned_values(value, step, in_repr=cls.human_readable)
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"

@@ -21,7 +21,6 @@ import servo.types
 import servo.utilities
 import servo.utilities.pydantic
 
-
 __all__ = ['Servo', 'Events', 'current_servo']
 
 
