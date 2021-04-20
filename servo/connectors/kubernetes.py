@@ -2531,16 +2531,19 @@ class CanaryOptimization(BaseOptimization):
         pod_template_spec.metadata.labels["opsani_role"] = "tuning"
 
         # FIXME: This logic should be factored out of this method.
-        tuning_pod = await self.get_tuning_pod()
-        if tuning_pod:
-            servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
-            container = tuning_pod.get_container(self.container_config.name)
-            servo.logger.debug(f"Found existing tuning Pod target container: {container}")
-        else:
-            # Build a container from the raw podspec
-            container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
-            container = Container(container_obj, None)
-            servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container}")
+        try:
+            if tuning_pod := await self.get_tuning_pod():
+                servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
+                container = tuning_pod.get_container(self.container_config.name)
+                servo.logger.debug(f"Found existing tuning Pod target container: {container}")
+            else:
+                # Build a container from the raw podspec
+                container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
+                container = Container(container_obj, None)
+                servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container}")
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != "Not Found":
+                raise
 
         # Apply default resource requirements to the container if they aren't defined
         for resource in {'cpu', 'memory'}:
