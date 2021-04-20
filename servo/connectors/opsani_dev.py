@@ -282,7 +282,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert container.resources.limits.get("cpu", self.config.cpu.limit), "missing limit for resource 'cpu'"
         assert container.resources.limits.get("memory", self.config.memory.limit), "missing limit for resource 'memory'"
 
-    @servo.checks.require("Target container resource requests are within limits")
+    @servo.checks.require("Target container resources fall within optimization range")
     async def check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
         deployment = await servo.connectors.kubernetes.Deployment.read(
@@ -400,13 +400,13 @@ class OpsaniDevChecks(servo.BaseChecks):
         names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
         for name in names:
             config = await servo.connectors.kubernetes.ConfigMap.read(
-                "prometheus-config", namespace
+                name, namespace
             )
             if config:
                 break
 
         self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
-        assert config, f"failed: no ConfigMap named 'prometheus-config' found in namespace '{namespace}'"
+        assert config, f"failed: no ConfigMap named '{names}' found in namespace '{namespace}'"
 
     @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
