@@ -2532,18 +2532,21 @@ class CanaryOptimization(BaseOptimization):
 
         # FIXME: This logic should be factored out of this method.
         try:
-            if tuning_pod := await self.get_tuning_pod():
-                servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
-                container = tuning_pod.get_container(self.container_config.name)
-                servo.logger.debug(f"Found existing tuning Pod target container: {container}")
+            tuning_pod = await self.get_tuning_pod()
+            servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
+            container = tuning_pod.get_container(self.container_config.name)
+            servo.logger.debug(f"Found existing tuning Pod target container: {container}")
+
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != "Not Found":
+                servo.logger.trace(f"Failed reading tuning pod: {e}")
+                raise
             else:
                 # Build a container from the raw podspec
                 container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
                 container = Container(container_obj, None)
                 servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container}")
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != "Not Found":
-                raise
+
 
         # Apply default resource requirements to the container if they aren't defined
         for resource in {'cpu', 'memory'}:
@@ -2632,6 +2635,7 @@ class CanaryOptimization(BaseOptimization):
                 return tuning_pod
         except kubernetes_asyncio.client.exceptions.ApiException as e:
             if e.status != 404 or e.reason != "Not Found":
+                servo.logger.trace(f"Failed reading tuning pod: {e}")
                 raise
 
         # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
