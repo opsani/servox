@@ -394,7 +394,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.checks.require("Prometheus ConfigMap exists")
     async def check_prometheus_config_map(self) -> None:
         namespace = os.getenv("POD_NAMESPACE", self.config.namespace)
-        optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(self.config.optimizer.id)
+        optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(self.config.optimizer.name)
 
         # Read optimizer namespaced resources
         names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
