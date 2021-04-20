@@ -62,7 +62,10 @@ class Mixin(pydantic.BaseModel):
 
         async def repeating_async_fn() -> None:
             while True:
-                callable()
+                if asyncio.iscoroutinefunction(callable):
+                    await asyncio.gather(callable(), return_exceptions=False)
+                else:
+                    callable()
                 await asyncio.sleep(every.total_seconds())
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
