@@ -777,7 +777,7 @@ class Pod(KubernetesModel):
 
         async with cls.preferred_client() as api_client:
             obj = await api_client.read_namespaced_pod_status(name, namespace)
-            servo.logger.trace("pod: ", obj)
+            servo.logger.trace(f"pod: {obj}")
             return Pod(obj)
 
     async def create(self, namespace: str = None) -> None:
@@ -2522,9 +2522,16 @@ class CanaryOptimization(BaseOptimization):
             pod_template_spec.metadata.labels = {}
         pod_template_spec.metadata.labels["opsani_role"] = "tuning"
 
+        # FIXME: This logic should be factored out of this method.
+        tuning_pod = await self.get_tuning_pod()
+        if tuning_pod:
+            container = tuning_pod.get_container(self.container_config.name)
+        else:
+            # Build a container from the raw podspec
+            container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
+            container = Container(container_obj, None)
+
         # Apply default resource requirements to the container if they aren't defined
-        container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
-        container = Container(container_obj, None)
         for resource in {'cpu', 'memory'}:
             # NOTE: cpu/memory stanza in container config
             resource_config = getattr(self.container_config, resource)
