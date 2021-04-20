@@ -297,8 +297,19 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
 
         # Get resource requirements from container
-        container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
-        container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
+        # TODO: This needs to reuse the logic from Canary Optimization
+        cpu_resource_requirements = target_container.get_resource_requirements('cpu')
+        cpu_resource_value = cpu_resource_requirements.get(
+            next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
+        )
+        container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+        memory_resource_requirements = target_container.get_resource_requirements('memory')
+        memory_resource_value = memory_resource_requirements.get(
+            next(filter(lambda r: memory_resource_requirements[r] is not None, self.config.memory.get), None)
+        )
+        container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(memory_resource_value)
+        # container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
+        # container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
 
         # Get config values
         config_cpu_min = self.config.cpu.min
@@ -307,10 +318,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         config_memory_max = self.config.memory.max
 
         # Check values against config.
-        assert container_cpu_request >= config_cpu_min, f"target container CPU request {container_cpu_request.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
-        assert container_cpu_request <= config_cpu_max, f"target container CPU request {container_cpu_request.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
-        assert container_memory_request >= config_memory_min, f"target container Memory request {container_memory_request.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
-        assert container_memory_request <= config_memory_max, f"target container Memory request {container_memory_request.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
+        assert container_cpu_value >= config_cpu_min, f"target container CPU value {container_cpu_value.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+        assert container_cpu_value <= config_cpu_max, f"target container CPU value {container_cpu_value.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
+        assert container_memory_value >= config_memory_min, f"target container Memory value {container_memory_value.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+        assert container_memory_value <= config_memory_max, f"target container Memory value {container_memory_value.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
