@@ -3780,7 +3780,7 @@ def dns_subdomainify(name: str) -> str:
     name = re.sub(r'\s', '-', name)
 
     # strip any remaining disallowed characters
-    name = re.sub(r'/[^a-z0-9\.\-]+/g', '')
+    name = re.sub(r'/[^a-z0-9\.\-]+/g', '', name)
 
     # truncate to our maximum length
     name = name[:253]
