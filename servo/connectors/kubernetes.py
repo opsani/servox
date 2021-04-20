@@ -1931,8 +1931,9 @@ class CPU(servo.CPU):
 
     @pydantic.validator('min')
     def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
-        if value < 100:
-            raise ValueError('minimum CPU value allowed is 100m')
+        # disallow any values below 125m (default step value)
+        if value < 125:
+            raise ValueError('minimum CPU value allowed is 125m')
         return value
 
     def __opsani_repr__(self) -> dict:

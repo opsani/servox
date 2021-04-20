@@ -735,8 +735,8 @@ class TestCPU:
         assert serialization["step"] == "125m"
 
     def test_cannot_be_less_than_100m(self) -> None:
-        with pytest.raises(ValueError, match='minimum CPU value allowed is 100m'):
-            CPU(min="50m", max=4.0, step=0.100)
+        with pytest.raises(ValueError, match='minimum CPU value allowed is 125m'):
+            CPU(min="50m", max=4.0, step=0.125)
 
 
 class TestMillicore:
