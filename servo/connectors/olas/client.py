@@ -2,6 +2,7 @@ import aiohttp
 from pydantic import parse_obj_as
 
 import servo
+from servo.connectors.olas import configuration
 from servo.connectors.olas import server_classes as sc
 
 
@@ -34,7 +35,8 @@ class OLASClient:
         msg = sc.Message(ts=float(ts), msg=msg)
         return await self.jsoncall(f"{self.url}/{self.base}/upload_message", msg, sc.Id)
 
-    async def upload_config(self, cfg):
+    async def upload_config(self, cfgdict):
+        cfg = configuration.OLASConfiguration.parse_obj(cfgdict)
         return await self.jsoncall(f"{self.url}/{self.base}/upload_config", cfg, sc.Id)
 
     async def predict(self, source):
