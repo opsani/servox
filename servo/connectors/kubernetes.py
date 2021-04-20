@@ -2422,13 +2422,16 @@ class CanaryOptimization(BaseOptimization):
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
             setting = getattr(self.container_config, setting_name)
+            servo.logger.debug(f"Adjusting {setting_name}={value}")
             setting.value = value
 
             # Set only the requirements defined in the config
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
             for requirement in setting.set:
                 requirements[requirement] = value
+                servo.logger.debug(f"Assigning {requirement}={value}")
 
+            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on {self.tuning_container}")
             self.tuning_container.set_resource_requirements(setting_name, requirements)
 
         elif setting_name == "replicas":
@@ -2444,7 +2447,10 @@ class CanaryOptimization(BaseOptimization):
 
     async def apply(self) -> None:
         """Apply the adjustments to the target."""
+        servo.logger.info("Applying configuration changes to tuning pod")
+        servo.logger.info("Deleting existing tuning pod (if any)")
         await self.delete_tuning_pod(raise_if_not_found=False)
+        servo.logger.info("Creating new tuning pod")
         task = asyncio.create_task(self.ensure_tuning_pod())
         try:
             self.tuning_pod = await task
@@ -2454,6 +2460,8 @@ class CanaryOptimization(BaseOptimization):
                 await task
 
             raise
+
+        servo.logger.success(f"Built new tuning pod with resources: {self.tuning_pod.resources}")
 
     @property
     def namespace(self) -> str:
@@ -2525,22 +2533,27 @@ class CanaryOptimization(BaseOptimization):
         # FIXME: This logic should be factored out of this method.
         tuning_pod = await self.get_tuning_pod()
         if tuning_pod:
+            servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
             container = tuning_pod.get_container(self.container_config.name)
+            servo.logger.debug(f"Found existing tuning Pod target container: {container}")
         else:
             # Build a container from the raw podspec
             container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
             container = Container(container_obj, None)
+            servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container}")
 
         # Apply default resource requirements to the container if they aren't defined
         for resource in {'cpu', 'memory'}:
             # NOTE: cpu/memory stanza in container config
             resource_config = getattr(self.container_config, resource)
             requirements = container.get_resource_requirements(resource)
+            servo.logger.debug(f"Loaded resource requirements for '{resource}': {requirements}")
             for requirement in ResourceRequirement:
                 if requirements.get(requirement) is None:
                     # Use the request/limit from the container.[cpu|memory].[request|limit] as default
                     requirements[requirement] = getattr(resource_config, requirement.name)
 
+            servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
             container.set_resource_requirements(resource, requirements)
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
