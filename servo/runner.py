@@ -389,8 +389,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                      'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
                      'RAINBOW': colorama.Fore.MAGENTA}
 
-        terminal_size = os.get_terminal_size()
-        width = max(terminal_size.columns, 80)
+        try:
+            terminal_size = os.get_terminal_size()
+            width = max(terminal_size.columns, 80)
+        except OSError:
+            width = 80
 
         # Generate an awesome banner for this launch
         font = os.getenv('SERVO_BANNER_FONT', random.choice(fonts))
