@@ -792,7 +792,7 @@ class Pod(KubernetesModel):
         if namespace is None:
             namespace = self.namespace
 
-        self.logger.info(f'creating pod "{self.name}" in namespace "{self.namespace}"')
+        self.logger.info(f'creating pod "{self.name}" in namespace "{namespace}"')
         self.logger.trace(f"pod: {self.obj}")
 
         async with self.preferred_client() as api_client:
