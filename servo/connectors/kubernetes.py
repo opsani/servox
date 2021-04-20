@@ -2461,7 +2461,7 @@ class CanaryOptimization(BaseOptimization):
 
             raise
 
-        servo.logger.success(f"Built new tuning pod with resources: {self.tuning_pod.resources}")
+        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
 
     @property
     def namespace(self) -> str:
