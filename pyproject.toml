@@ -81,6 +81,7 @@ pytest-xdist = "^2.2.0"
 pytest-vscodedebug = "^0.1.0"
 pytest-html = "^3.1.1"
 bandit = "^1.7.0"
+pytest-timeout = "^1.4.2"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
