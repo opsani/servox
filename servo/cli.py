@@ -12,8 +12,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
-import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Literal, Optional, Pattern, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click
@@ -33,7 +32,6 @@ from timeago import format as timeago
 import servo
 import servo.runner
 import servo.utilities.yaml
-
 
 ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
 
@@ -1148,6 +1146,17 @@ class ServoCLI(CLI):
                 help="Verify all checks pass before running",
                 envvar="SERVO_RUN_CHECK",
             ),
+            no_poll: Optional[bool] = typer.Option(
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
+            ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),
         ) -> None:
             """
             Run the servo
@@ -1159,7 +1168,8 @@ class ServoCLI(CLI):
                 )
 
             if context.assembly:
-                servo.runner.AssemblyRunner(context.assembly).run()
+                poll = not no_poll
+                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
             else:
                 raise typer.Abort("failed to assemble servo")
 

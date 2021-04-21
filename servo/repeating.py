@@ -7,6 +7,7 @@ import asyncio
 from typing import Callable, Dict, Optional, Union
 
 import pydantic
+
 from servo.types import Duration, NoneCallable, Numeric
 
 __all__ = ["Every", "Mixin", "repeating"]

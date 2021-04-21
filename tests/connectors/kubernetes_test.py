@@ -17,7 +17,6 @@ from servo.connectors.kubernetes import (
     ContainerConfiguration,
     ContainerTagName,
     DefaultOptimizationStrategyConfiguration,
-    Deployment,
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
@@ -1137,7 +1136,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError):
             for _ in range(3):
                 try:
-                    description = await connector.adjust([adjustment])
+                    await connector.adjust([adjustment])
 
                 except kubernetes_asyncio.client.exceptions.ApiException as e:
                     if e.status == 409 and e.reason == 'Conflict':

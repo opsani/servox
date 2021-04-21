@@ -46,3 +46,16 @@ def extra(
         yield obj
     finally:
         obj.__config__.extra = original
+
+
+@contextlib.contextmanager
+def allow_mutation(
+    obj: pydantic.BaseModel, allow_mutation: bool = True
+) -> Generator[pydantic.BaseModel, None, None]:
+    """Temporarily override the value of the `allow_mutation` setting on a Pydantic model."""
+    original = obj.__config__.allow_mutation
+    obj.__config__.allow_mutation = allow_mutation
+    try:
+        yield obj
+    finally:
+        obj.__config__.allow_mutation = original

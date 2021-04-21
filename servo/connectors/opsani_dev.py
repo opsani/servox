@@ -1,10 +1,11 @@
 import json
-import os
 import operator
+import os
 from typing import List, Optional, Union
 
 import kubernetes_asyncio
 import pydantic
+
 import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
