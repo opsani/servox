@@ -20,7 +20,9 @@ class OLASConnector(servo.BaseConnector):
     @servo.on_event()
     async def startup(self) -> None:
         cfg_dict = self.config
-        backend_dict = {'url': self.config.optimizer.url,
+        backend_dict = {'url': self.config.optimizer.base_url.rstrip("/")
+                        if self.config.optimizer.base_url.endswith('/')
+                        else self.config.optimizer.base_url,
                         'account': self.config.optimizer.organization,
                         'app_id': self.config.optimizer.name,
                         }
