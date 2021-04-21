@@ -28,8 +28,10 @@ class OLASClient:
                     if out_class:
                         obj = parse_obj_as(out_class, obj)
                     return obj
-        servo.logger.info(f"jsoncall {path} error")
-        return None
+                else:
+                    err = await res.text()
+                    servo.logger.info(f"jsoncall {path} error {res.status}, {err}")
+                    return None
 
     async def upload_message(self, ts, msg):
         msg = sc.Message(ts=float(ts), msg=msg)
