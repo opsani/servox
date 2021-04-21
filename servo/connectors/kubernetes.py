@@ -2557,11 +2557,13 @@ class CanaryOptimization(BaseOptimization):
             # TODO: Update this logging -- dumping an object
             servo.logger.debug(f"Loaded resource requirements for '{resource}': {requirements}")
             for requirement in ResourceRequirement:
-                if requirements.get(requirement) is None:
-                    # Use the request/limit from the container.[cpu|memory].[request|limit] as default
-                    value = getattr(resource_config, requirement.name)
-                    servo.logger.debug(f"Setting default value for '{requirement} to: {value}")
-                    requirements[requirement] = value
+                # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
+                if resource_value := getattr(resource_config, requirement.name):
+                    if existing_resource_value := requirements.get(requirement) is None:
+                        servo.logger.debug(f"Setting default value for '{requirement} to: {resource_value}")
+                    else:
+                        servo.logger.debug(f"Overriding existing value for '{requirement} ({existing_resource_value}) to: {resource_value}")
+                    requirements[requirement] = resource_value
 
             servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
             container.set_resource_requirements(resource, requirements)
