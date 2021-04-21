@@ -522,7 +522,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         # The shutdown of the assembly and the servo should clean up its tasks
         # TODO: ServoRunner.shutdown() does not clean up tasks, only sets its main_loop LCV to false
         #   but the loops, in most cases, won't complete another iteration before the logic below shuts it down forcefully
-        self._running = False
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         if len(tasks):
             [task.cancel() for task in tasks]
@@ -533,6 +532,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         self.logger.info("Servo shutdown complete.")
         await asyncio.gather(self.logger.complete(), return_exceptions=True)
+
+        self._running = False
 
         loop.stop()
 
