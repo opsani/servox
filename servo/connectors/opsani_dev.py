@@ -700,6 +700,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         try:
             await optimization.ensure_tuning_pod()
         except Exception as error:
+            servo.logger.exception("Failed creating tuning Pod: {error}")
             raise servo.checks.CheckError(
                 f"could not find tuning pod '{optimization.tuning_pod_name}''"
             ) from error

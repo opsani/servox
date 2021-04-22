@@ -2664,8 +2664,10 @@ class CanaryOptimization(BaseOptimization):
             f"Creating tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'"
         )
         await tuning_pod.create(self.namespace)
+        servo.logger.success("Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
         # TODO: This double progress can go away soon
+        servo.logger.info(f"Waiting up to {self.timeout} for Tuning Pod to become ready...")
         progress = servo.EventProgress(self.timeout)
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"Waiting for '{self.tuning_pod_name}' to become ready...", False),
@@ -2687,6 +2689,7 @@ class CanaryOptimization(BaseOptimization):
             )
 
         except asyncio.TimeoutError:
+            servo.logger.error(f"Timed out waitin for Tuning Pod to become ready...")
             servo.logger.debug(f"Cancelling Task: {task}, progress: {progress}")
             for t in {task, gather_task}:
                 t.cancel()
@@ -2703,6 +2706,7 @@ class CanaryOptimization(BaseOptimization):
         # Hydrate local state
         self.tuning_pod = tuning_pod
 
+        servo.logger.info(f"Tuning Pod successfully created")
         return tuning_pod
 
     @property
