@@ -4,6 +4,7 @@ import asyncio
 import functools
 import os
 import random
+import shutil
 import signal
 from typing import Any, Dict, List, Optional
 
@@ -389,7 +390,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                      'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
                      'RAINBOW': colorama.Fore.MAGENTA}
 
-        terminal_size = os.get_terminal_size()
+        # TODO: conflicts with branch for SOL-324
+        terminal_size = shutil.get_terminal_size()
         width = max(terminal_size.columns, 80)
 
         # Generate an awesome banner for this launch
