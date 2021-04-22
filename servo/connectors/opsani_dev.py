@@ -399,11 +399,15 @@ class OpsaniDevChecks(servo.BaseChecks):
         # Read optimizer namespaced resources
         names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
         for name in names:
-            config = await servo.connectors.kubernetes.ConfigMap.read(
-                name, namespace
-            )
-            if config:
-                break
+            try:
+                config = await servo.connectors.kubernetes.ConfigMap.read(
+                    name, namespace
+                )
+                if config:
+                    break
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status != 404 or e.reason != "Not Found":
+                    raise
 
         self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
         assert config, f"failed: no ConfigMap named '{names}' found in namespace '{namespace}'"

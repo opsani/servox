@@ -85,6 +85,7 @@ class TestConfig:
     ],
 )
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestIntegration:
     class TestChecksOriginalState:
