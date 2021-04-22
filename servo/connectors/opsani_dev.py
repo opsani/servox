@@ -282,8 +282,9 @@ class OpsaniDevChecks(servo.BaseChecks):
         assert container.resources.limits.get("cpu", self.config.cpu.limit), "missing limit for resource 'cpu'"
         assert container.resources.limits.get("memory", self.config.memory.limit), "missing limit for resource 'memory'"
 
-    @servo.checks.require("Target container resources fall within optimization range")
-    async def check_target_container_resources_within_limits(self) -> None:
+    # TODO: This one needs to respect the defaults set up elsewhere
+    # @servo.checks.require("Target container resources fall within optimization range")
+    async def _check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
