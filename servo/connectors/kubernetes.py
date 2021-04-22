@@ -1935,11 +1935,14 @@ class CPU(servo.CPU):
     get: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
     set: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
 
+    # TODO: Switch this over to comparing against the step instead of an absolute floor value
     @pydantic.validator('min')
     def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
         # disallow any values below 125m (default step value)
-        if value < 125:
-            raise ValueError('minimum CPU value allowed is 125m')
+        # if value < 125:
+        if value < 50:
+            raise ValueError('minimum CPU value allowed is 50m')
+            # raise ValueError('minimum CPU value allowed is 125m')
         return value
 
     def __opsani_repr__(self) -> dict:
@@ -2670,8 +2673,7 @@ class CanaryOptimization(BaseOptimization):
             f"Creating tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'"
         )
         await tuning_pod.create(self.namespace)
-        # TODO:
-        servo.logger.success("Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
+        servo.logger.success(f"Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
         # TODO: This double progress can go away soon
         servo.logger.info(f"Waiting up to {self.timeout} for Tuning Pod to become ready...")
