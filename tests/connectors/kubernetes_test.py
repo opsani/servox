@@ -17,6 +17,7 @@ from servo.connectors.kubernetes import (
     ContainerConfiguration,
     ContainerTagName,
     DefaultOptimizationStrategyConfiguration,
+    Deployment,
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
@@ -994,11 +995,8 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
-            description = await connector.adjust([adjustment])
-            debug(description)
-
-        assert "Insufficient memory." in str(rejection_info.value)
+        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.'):
+            await connector.adjust([adjustment])
 
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
@@ -1044,11 +1042,8 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi", # impossible right?
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
-            description = await connector.adjust([adjustment])
-            debug(description)
-
-        assert "Insufficient memory." in str(rejection_info.value)
+        with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
+            await connector.adjust([adjustment])
 
 
     async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):
@@ -1161,3 +1156,150 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                         pass
                     else:
                         raise e
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesResourceRequirementsIntegration:
+    @pytest.fixture(autouse=True)
+    async def _wait_for_manifests(self, kube, config):
+        kube.wait_for_registered()
+        config.timeout = "5m"
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_get_resource_requirements_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        await deployment.wait_until_ready()
+
+        pods = await deployment.get_pods()
+        assert len(pods) == 1, "expected a fiber-http pod"
+        pod = pods[0]
+        container = pod.get_container('fiber-http')
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_set_resource_requirements_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        await deployment.wait_until_ready()
+
+        pods = await deployment.get_pods()
+        assert len(pods) == 1, "expected a fiber-http pod"
+        pod = pods[0]
+        container = pod.get_container('fiber-http')
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+        # Set request and limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        })
+        container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        }
+
+        # Set limit, leaving request alone
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.limit: '750m'
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '750m'
+        }
+
+        # Set request, clearing limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+        # Clear request and limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: None,
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: None,
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_initialize_tuning_pod_set_defaults_for_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        container_config = tuning_config.deployments[0].containers[0]
+        container_config.cpu.limit = '1000m'
+        container_config.memory.limit = '1GiB'
+
+        # NOTE: Create the optimizations class to bring up the canary
+        await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+
+        # Read the Tuning Pod and check resources
+        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        container = pod.get_container('fiber-http')
+        cpu_requirements = container.get_resource_requirements('cpu')
+        memory_requirements = container.get_resource_requirements('memory')
+
+        # FIXME: Unit values are wonky...
+        assert cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1k'
+        assert memory_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1073741824'
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_cpu_limit.yaml"])
+    async def test_no_cpu_limit(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        tuning_config.deployments[0].containers[0].cpu.limit = '1000m'
+        tuning_config.deployments[0].containers[0].cpu.set = ['request']
+
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Read the Tuning Pod and check resources
+        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        container = pod.get_container('fiber-http')
+
+        # CPU picks up the 1000m default and then gets adjust to 250m
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '1k'
+        }
+
+        # Memory is untouched from the mainfest
+        assert container.get_resource_requirements('memory') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '128Mi',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '128Mi'
+        }
