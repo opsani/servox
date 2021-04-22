@@ -724,8 +724,12 @@ class OpsaniDevChecks(servo.BaseChecks):
         for metric in metrics:
             response = await client.query(metric)
             assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
-            assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
 
+            # TODO: These may need to be aggregated or each result examined??
+            assert len(response.data) > 0, f"expected Prometheus API to return at least one result for metric '{metric.name}' but found {len(response.data)}"
+            # assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
+
+            # TODO: Iterate and process all of these
             result = response.data[0]
             value = result.value[1]
             assert value is not None and value > 0.0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
