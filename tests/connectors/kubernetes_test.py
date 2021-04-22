@@ -1035,6 +1035,7 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "3s"
+        tuning_config.deployments[0].containers[0].memory.max = '128Gi'
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
