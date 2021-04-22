@@ -2568,9 +2568,15 @@ class CanaryOptimization(BaseOptimization):
                     if existing_resource_value := requirements.get(requirement) is None:
                         servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
                     else:
+                        # TODO:
                         servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
-                    requirements[requirement] = resource_value
 
+                    # TODO: How is this turning into a number???
+                    # TODO: What is forcing this to be evaluated as a number instead of a string?
+                    servo.logger.debug("SETTING `requirements[requirement] = str(resource_value)` = ", str(resource_value))
+                    requirements[requirement] = str(resource_value)
+
+            # DEBUG: How is this winding up as a number?
             servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
             container.set_resource_requirements(resource, requirements)
 
@@ -2664,6 +2670,7 @@ class CanaryOptimization(BaseOptimization):
             f"Creating tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'"
         )
         await tuning_pod.create(self.namespace)
+        # TODO:
         servo.logger.success("Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
         # TODO: This double progress can go away soon
