@@ -1332,13 +1332,13 @@ class TestKubernetesResourceRequirementsIntegration:
         assert canary_optimization.tuning_replicas.pinned is True
 
         # Validate Main
-        assert canary_optimization.main_cpu, "Expected Tuning CPU"
+        assert canary_optimization.main_cpu, "Expected Main CPU"
         assert canary_optimization.main_cpu.value == 125
         assert canary_optimization.main_cpu.request == 125
         assert canary_optimization.main_cpu.limit is None
         assert canary_optimization.main_cpu.pinned is True
 
-        assert canary_optimization.main_memory, "Expected Tuning Memory"
+        assert canary_optimization.main_memory, "Expected Main Memory"
         assert canary_optimization.main_memory.value == 134217728
         assert canary_optimization.main_memory.value.human_readable() == '128.0MiB'
         assert canary_optimization.main_memory.request == 134217728
@@ -1379,3 +1379,20 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.tuning_replicas.value == 1
         assert canary_optimization.tuning_replicas.pinned is True
+
+        # Validate Main
+        assert canary_optimization.main_cpu, "Expected Main CPU"
+        assert canary_optimization.main_cpu.value == 250
+        assert canary_optimization.main_cpu.request == 125
+        assert canary_optimization.main_cpu.limit == 250
+        assert canary_optimization.main_cpu.pinned is True
+
+        assert canary_optimization.main_memory, "Expected Main Memory"
+        assert canary_optimization.main_memory.value == 2147483648
+        assert canary_optimization.main_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.main_memory.request == 134217728
+        assert canary_optimization.main_memory.limit == 2147483648
+        assert canary_optimization.main_memory.pinned is True
+
+        assert canary_optimization.main_replicas.value == 2
+        assert canary_optimization.main_replicas.pinned is True
