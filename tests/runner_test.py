@@ -43,10 +43,6 @@ async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     """Return an unstarted servo runner."""
     return servo.runner.ServoRunner(assembly.servos[0])
 
-async def test_assembly_shutdown_with_non_running_servo():
-    # NOTE: this stub was added to attempt reproducing a particular test order with a static pytest-randomly seed
-    pass
-
 @pytest.fixture
 async def running_servo(
     event_loop: asyncio.AbstractEventLoop,
