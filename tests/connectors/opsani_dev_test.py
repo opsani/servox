@@ -32,6 +32,7 @@ import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
+import tests.helpers
 
 
 @pytest.fixture
@@ -335,8 +336,12 @@ class TestServiceMultiport:
             # These env vars are set by our manifests
             deployment = kube.get_deployments()["servo"]
             pod = deployment.get_pods()[0]
-            os.environ['POD_NAME'] = pod.name
-            os.environ["POD_NAMESPACE"] = kube.namespace
+            overrides = {
+                "POD_NAME": pod.name,
+                "POD_NAMESPACE": kube.namespace,
+            }
+            with tests.helpers.environment_overrides(env=overrides):
+                yield
 
         async def test_process(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
