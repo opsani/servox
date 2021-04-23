@@ -2526,7 +2526,7 @@ class CanaryOptimization(BaseOptimization):
         # FIXME: This logic should be factored out of this method.
         try:
             tuning_pod = await self.get_tuning_pod()
-            servo.logger.debug(f"Found existing tuning Pod: {tuning_pod}")
+            servo.logger.debug(f"Found existing tuning Pod: {tuning_pod.name}")
             container = tuning_pod.get_container(self.container_config.name)
             servo.logger.debug(f"Found existing tuning Pod target container: {container}")
 
