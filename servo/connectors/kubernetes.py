@@ -2430,7 +2430,7 @@ class CanaryOptimization(BaseOptimization):
         # TODO: Factor into a new class?
         self.tuning_pod = tuning_pod
         self.tuning_container = tuning_container
-        self._tuning_pod_template_spec = await self._configure_tuning_resources()
+        await self._configure_tuning_pod_template_spec()
 
     @property
     def pod_template_spec_container(self) -> Container:
@@ -2504,7 +2504,7 @@ class CanaryOptimization(BaseOptimization):
         Delete the tuning Pod.
         """
         try:
-            # TODO: Provide context manager or standard read option that handle not found? Lots of duplication on this...
+            # TODO: Provide context manager or standard read option that handle not found? Lots of duplication on not found/conflict handling...
             tuning_pod = await Pod.read(self.tuning_pod_name, self.namespace)
             self.logger.info(
                 f"Deleting tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'..."
@@ -2536,8 +2536,8 @@ class CanaryOptimization(BaseOptimization):
     def container_name(self) -> str:
         return self.container_config.name
 
-    # TODO: Factor into another class
-    async def _configure_tuning_resources(self) -> None:
+    # TODO: Factor into another class?
+    async def _configure_tuning_pod_template_spec(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
         pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.copy(self.deployment.pod_template_spec)
         pod_template_spec.metadata.name = self.tuning_pod_name
@@ -2562,26 +2562,6 @@ class CanaryOptimization(BaseOptimization):
         else:
             servo.logger.info(f"No existing tuning pod container found, initializing resource requirement defaults")
             set_container_resource_defaults_from_config(container, self.container_config)
-
-        # try:
-        #     tuning_pod = await self.get_tuning_pod()
-        #     servo.logger.debug(f"Found existing tuning Pod: {tuning_pod.name}")
-        #     container = tuning_pod.get_container(self.container_config.name)
-        #     servo.logger.debug(f"Found existing tuning Pod target container: {container.name}")
-        #     servo.logger.trace(f"Container: {devtools.pformat(container)}")
-
-        # except kubernetes_asyncio.client.exceptions.ApiException as e:
-        #     if e.status != 404 or e.reason != "Not Found":
-        #         servo.logger.trace(f"Failed reading tuning pod: {e}")
-        #         raise
-        #     else:
-        #         # Build a container from the raw podspec
-        #         container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers), None)
-        #         container = Container(container_obj, None)
-        #         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
-        #         servo.logger.trace(f"Container: {devtools.pformat(container)}")
-        # Apply default/override resource requirements to the container
-        # set_container_resource_defaults_from_config(container, self.container_config)
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         servo_pod_name = os.environ.get("POD_NAME")
@@ -2630,7 +2610,7 @@ class CanaryOptimization(BaseOptimization):
                 )
             ]
 
-        return pod_template_spec
+        self._tuning_pod_template_spec = pod_template_spec
 
     async def create_or_recreate_tuning_pod(self) -> Pod:
         """
@@ -2892,7 +2872,7 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.info(
                     "creating new tuning pod against baseline following failed adjust"
                 )
-                await self._configure_tuning_resources()  # reset the setting
+                await self._configure_tuning_pod_template_spec()  # reset to baseline from the Deployment
                 self.tuning_pod = await self.create_or_recreate_tuning_pod()
                 return True
 
