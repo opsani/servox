@@ -36,7 +36,6 @@ from typing import (
 )
 
 import backoff
-import devtools
 import kubernetes_asyncio
 import kubernetes_asyncio.client.models
 import kubernetes_asyncio.client
@@ -785,7 +784,6 @@ class Pod(KubernetesModel):
 
         async with cls.preferred_client() as api_client:
             obj = await api_client.read_namespaced_pod_status(name, namespace)
-            servo.logger.trace(f"pod: {obj}")
             return Pod(obj)
 
     async def create(self, namespace: str = None) -> None:
@@ -801,7 +799,6 @@ class Pod(KubernetesModel):
             namespace = self.namespace
 
         self.logger.info(f'creating pod "{self.name}" in namespace "{namespace}"')
-        self.logger.trace(f"pod: {self.obj}")
 
         async with self.preferred_client() as api_client:
             self.obj = await api_client.create_namespaced_pod(
@@ -814,7 +811,6 @@ class Pod(KubernetesModel):
         Patches a Pod, applying spec changes to the cluster.
         """
         self.logger.info(f'patching pod "{self.name}"')
-        self.logger.trace(f"pod: {self.obj}")
         async with self.api_client() as api_client:
             api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
             await api_client.patch_namespaced_pod(
@@ -841,7 +837,6 @@ class Pod(KubernetesModel):
 
         self.logger.info(f'deleting pod "{self.name}"')
         self.logger.trace(f"delete options: {options}")
-        self.logger.trace(f"pod: {self.obj}")
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_pod(
@@ -2553,7 +2548,6 @@ class CanaryOptimization(BaseOptimization):
         container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers))
         container = Container(container_obj, None)
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
-        servo.logger.trace(f"Container: {devtools.pformat(container)}")
 
         if self.tuning_container:
             servo.logger.info(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
@@ -2638,7 +2632,6 @@ class CanaryOptimization(BaseOptimization):
         )
 
         tuning_pod = Pod(obj=pod_obj)
-        self.logger.trace(f"initialized new tuning pod: {tuning_pod}")
 
         # Create the Pod and wait for it to get ready
         self.logger.info(
