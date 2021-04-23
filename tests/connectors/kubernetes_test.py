@@ -1409,16 +1409,17 @@ class TestKubernetesResourceRequirementsIntegration:
 
         connector = KubernetesConnector(config=tuning_config)
 
-        # TODO: Describe to get our baseline
+        # Describe to get our baseline
         baseline_description = await connector.describe()
         baseline_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert baseline_cpu_setting
         assert baseline_cpu_setting.value == 250
 
-        # debug("GOT baseline description: ", baseline_description)
-        # return
+        baseline_memory_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert baseline_memory_setting
+        assert baseline_memory_setting.value.human_readable() == '2.0GiB'
 
-        # TODO: Adjust CPU and Memory
+        # Adjust CPU and Memory
         cpu_adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
             setting_name="cpu",
@@ -1430,14 +1431,11 @@ class TestKubernetesResourceRequirementsIntegration:
             value="1.0",
         )
 
-        # TODO: This adjustment is bricking
         adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
         assert adjusted_description is not None
         adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert adjusted_cpu_setting
         assert adjusted_cpu_setting.value == 500
-
-        return
 
         # Run another describe
         adjusted_description = await connector.describe()

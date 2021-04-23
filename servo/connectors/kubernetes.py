@@ -2516,17 +2516,6 @@ class CanaryOptimization(BaseOptimization):
         """
         return f"{self.deployment_config.name}-tuning"
 
-    # TODO: Make this private??? Eliminate?
-    # async def get_tuning_pod(self) -> Optional[Pod]:
-    #     """
-    #     Retrieve the tuning Pod for this optimization (if any).
-
-    #     Will raise a Kubernetes API exception if not found.
-    #     """
-    #     pod = await Pod.read(self.tuning_pod_name, self.namespace)
-    #     self.tuning_pod = pod
-    #     return pod
-
     async def delete_tuning_pod(
         self, *, raise_if_not_found: bool = True, timeout: servo.DurationDescriptor = '10m'
     ) -> Optional[Pod]:
@@ -2535,7 +2524,7 @@ class CanaryOptimization(BaseOptimization):
         """
         try:
             # TODO: Eliminate this and just use the property?
-            # tuning_pod = await self.get_tuning_pod()
+            # TODO: Provide context manager or standard read option that handle not found?
             tuning_pod = await Pod.read(self.tuning_pod_name, self.namespace)
             self.logger.info(
                 f"Deleting tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'..."
@@ -2546,7 +2535,6 @@ class CanaryOptimization(BaseOptimization):
                 f"Deleted tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'."
             )
 
-            # TODO: Zero out the container also
             self.tuning_pod = None
             self.tuning_container = None
             return tuning_pod
