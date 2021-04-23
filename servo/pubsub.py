@@ -364,7 +364,7 @@ class Exchange(pydantic.BaseModel):
             reset_token = _current_context_var.set((message, channel))
 
             # Process all transformers serially
-            servo.logger.debug(f"Processing message with {len(self._transformers)} transformers: {message}")
+            servo.logger.trace(f"Processing message with {len(self._transformers)} transformers: {message}")
             for transformer in self._transformers:
                 message = await transformer(message, channel)
                 servo.logger.trace(f"Transfomer {transformer} returned transformed message: {message}")
