@@ -5,6 +5,7 @@ from typing import Type
 import kubetest.client
 import pydantic
 import pytest
+import re
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -735,9 +736,9 @@ class TestCPU:
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
 
-    def test_cannot_be_less_than_100m(self) -> None:
-        with pytest.raises(ValueError, match='minimum CPU value allowed is 125m'):
-            CPU(min="50m", max=4.0, step=0.125)
+    def test_min_cannot_be_less_than_step(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (125m < 250m)')):
+            CPU(min="125m", max=4.0, step=0.250)
 
 
 class TestMillicore:
@@ -840,8 +841,8 @@ class TestMemory:
         assert serialization["max"] == "4.0GiB"
         assert serialization["step"] == "256.0MiB"
 
-    def test_cannot_be_less_than_128MiB(self) -> None:
-        with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
+    def test_min_cannot_be_less_than_step(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (33554432 < 268435456)')):
             Memory(min="32 MiB", max=4.0, step=268435456)
 
 def test_millicpu():
@@ -1263,8 +1264,7 @@ class TestKubernetesResourceRequirementsIntegration:
         cpu_requirements = container.get_resource_requirements('cpu')
         memory_requirements = container.get_resource_requirements('memory')
 
-        # FIXME: Unit values are wonky...
-        assert cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1k'
+        assert cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1'
         assert memory_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1073741824'
 
     @pytest.mark.applymanifests("../manifests/resource_requirements",
@@ -1296,7 +1296,7 @@ class TestKubernetesResourceRequirementsIntegration:
         # CPU picks up the 1000m default and then gets adjust to 250m
         assert container.get_resource_requirements('cpu') == {
             servo.connectors.kubernetes.ResourceRequirement.request: '250m',
-            servo.connectors.kubernetes.ResourceRequirement.limit: '1k'
+            servo.connectors.kubernetes.ResourceRequirement.limit: '1'
         }
 
         # Memory is untouched from the mainfest
@@ -1304,3 +1304,78 @@ class TestKubernetesResourceRequirementsIntegration:
             servo.connectors.kubernetes.ResourceRequirement.request: '128Mi',
             servo.connectors.kubernetes.ResourceRequirement.limit: '128Mi'
         }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_reading_values_from_optimization_class_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # NOTE: Create the optimizations class to bring up the canary
+        kubernetes_optimizations = await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+        canary_optimization = kubernetes_optimizations.optimizations[0]
+
+        # Validate Tuning
+        assert canary_optimization.tuning_cpu, "Expected Tuning CPU"
+        assert canary_optimization.tuning_cpu.value == 125
+        assert canary_optimization.tuning_cpu.request == 125
+        assert canary_optimization.tuning_cpu.limit is None
+        assert canary_optimization.tuning_cpu.pinned is False
+
+        assert canary_optimization.tuning_memory, "Expected Tuning Memory"
+        assert canary_optimization.tuning_memory.value == 134217728
+        assert canary_optimization.tuning_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.tuning_memory.request == 134217728
+        assert canary_optimization.tuning_memory.limit is None
+        assert canary_optimization.tuning_memory.pinned is False
+
+        assert canary_optimization.tuning_replicas.value == 1
+        assert canary_optimization.tuning_replicas.pinned is True
+
+        # Validate Main
+        assert canary_optimization.main_cpu, "Expected Tuning CPU"
+        assert canary_optimization.main_cpu.value == 125
+        assert canary_optimization.main_cpu.request == 125
+        assert canary_optimization.main_cpu.limit is None
+        assert canary_optimization.main_cpu.pinned is True
+
+        assert canary_optimization.main_memory, "Expected Tuning Memory"
+        assert canary_optimization.main_memory.value == 134217728
+        assert canary_optimization.main_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.main_memory.request == 134217728
+        assert canary_optimization.main_memory.limit is None
+        assert canary_optimization.main_memory.pinned is True
+
+        assert canary_optimization.main_replicas.value == 1
+        assert canary_optimization.main_replicas.pinned is True
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_bursty_memory.yaml"])
+    async def test_reading_values_from_optimization_class_bursty_memory(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to read limits instead of requests
+        container_config = tuning_config.deployments[0].containers[0]
+        container_config.cpu.get = ['limit']
+        container_config.memory.get = ['limit']
+        container_config.memory.max = '3.0GiB'  # Raise max so we validate
+
+        # NOTE: Create the optimizations class to bring up the canary
+        kubernetes_optimizations = await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+        canary_optimization = kubernetes_optimizations.optimizations[0]
+
+        # Validate Tuning
+        assert canary_optimization.tuning_cpu, "Expected Tuning CPU"
+        assert canary_optimization.tuning_cpu.value == 250
+        assert canary_optimization.tuning_cpu.request == 125
+        assert canary_optimization.tuning_cpu.limit == 250
+        assert canary_optimization.tuning_cpu.pinned is False
+
+        assert canary_optimization.tuning_memory, "Expected Tuning Memory"
+        assert canary_optimization.tuning_memory.value == 2147483648
+        assert canary_optimization.tuning_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.tuning_memory.request == 134217728
+        assert canary_optimization.tuning_memory.limit == 2147483648
+        assert canary_optimization.tuning_memory.pinned is False
+
+        assert canary_optimization.tuning_replicas.value == 1
+        assert canary_optimization.tuning_replicas.pinned is True

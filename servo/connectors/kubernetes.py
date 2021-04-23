@@ -727,7 +727,8 @@ class Container(servo.logging.Mixin):
                 resource_to_values = {}
 
             if value is not None:
-                resource_to_values[name] = value
+                # NOTE: Coerce to string as values are headed into Kubernetes resource model
+                resource_to_values[name] = str(value)
             else:
                 resource_to_values.pop(name, None)
             setattr(resources, requirement.resources_key, resource_to_values)
@@ -1935,16 +1936,6 @@ class CPU(servo.CPU):
     get: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
     set: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
 
-    # TODO: Switch this over to comparing against the step instead of an absolute floor value
-    @pydantic.validator('min')
-    def _validate_cpu_floor(cls, value: Millicore) -> Millicore:
-        # disallow any values below 125m (default step value)
-        # if value < 125:
-        if value < 50:
-            raise ValueError('minimum CPU value allowed is 50m')
-            # raise ValueError('minimum CPU value allowed is 125m')
-        return value
-
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
 
@@ -1991,12 +1982,6 @@ class Memory(servo.Memory):
     limit: Optional[ShortByteSize]
     get: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
     set: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
-
-    @pydantic.validator('min')
-    def _validate_cpu_floor(cls, value: ShortByteSize) -> ShortByteSize:
-        if value < (128 * MiB):
-            raise ValueError('minimum Memory value allowed is 128MiB')
-        return value
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
@@ -2424,14 +2409,11 @@ class CanaryOptimization(BaseOptimization):
         )
 
     def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
-        # TODO: Raise if no canary?
-
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
-            # TODO: What happens if outside of bounds?
             setting = getattr(self.container_config, setting_name)
             servo.logger.debug(f"Adjusting {setting_name}={value}")
             setting.value = value
@@ -2442,7 +2424,7 @@ class CanaryOptimization(BaseOptimization):
                 requirements[requirement] = value
                 servo.logger.debug(f"Assigning {setting_name}.{requirement}={value}")
 
-            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on {self.tuning_container}")
+            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on {self.tuning_container.name}")
             self.tuning_container.set_resource_requirements(setting_name, requirements)
 
         elif setting_name == "replicas":
@@ -2571,15 +2553,10 @@ class CanaryOptimization(BaseOptimization):
                     if existing_resource_value := requirements.get(requirement) is None:
                         servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
                     else:
-                        # TODO:
                         servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
 
-                    # TODO: How is this turning into a number???
-                    # TODO: What is forcing this to be evaluated as a number instead of a string?
-                    servo.logger.debug("SETTING `requirements[requirement] = str(resource_value)` = ", str(resource_value))
-                    requirements[requirement] = str(resource_value)
+                    requirements[requirement] = resource_value
 
-            # DEBUG: How is this winding up as a number?
             servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
             container.set_resource_requirements(resource, requirements)
 
