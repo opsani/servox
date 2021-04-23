@@ -494,7 +494,7 @@ class TestServiceMultiport:
                 # Step 7
                 servo.logger.critical("Step 7 - Bring tuning Pod online")
                 async with change_to_resource(deployment):
-                    await deployment.ensure_tuning_pod()
+                    await deployment.create_or_recreate_tuning_pod()
                 await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
                 # Step 8
@@ -958,7 +958,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
     elif id == 'check_tuning_is_running':
         servo.logger.critical("Step 7 - Bring tuning Pod online")
         async with change_to_resource(deployment):
-            await deployment.ensure_tuning_pod()
+            await deployment.create_or_recreate_tuning_pod()
 
     elif id == 'check_traffic_metrics':
         # Step 8

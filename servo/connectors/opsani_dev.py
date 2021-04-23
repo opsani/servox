@@ -697,7 +697,8 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Ensure the canary is available
         try:
-            await optimization.ensure_tuning_pod()
+            await optimization.create_or_recreate_tuning_pod()
+
         except Exception as error:
             servo.logger.exception("Failed creating tuning Pod: {error}")
             raise servo.checks.CheckError(
