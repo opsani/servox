@@ -1396,3 +1396,70 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.main_replicas.value == 2
         assert canary_optimization.main_replicas.pinned is True
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_bursty_memory.yaml"])
+    async def test_preflight_cycle(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        tuning_config.deployments[0].containers[0].cpu.get = ['limit']
+        tuning_config.deployments[0].containers[0].memory.max = '2.0GiB'
+        tuning_config.deployments[0].containers[0].memory.get = ['limit']
+
+        connector = KubernetesConnector(config=tuning_config)
+
+        # TODO: Describe to get our baseline
+        baseline_description = await connector.describe()
+        baseline_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert baseline_cpu_setting
+        assert baseline_cpu_setting.value == 250
+
+        debug("GOT baseline description: ", baseline_description)
+        return
+
+        # TODO: Adjust CPU and Memory
+        cpu_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".500",
+        )
+        memory_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="memory",
+            value="1.0",
+        )
+
+        adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
+        assert adjusted_description is not None
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 500
+
+        # Run another describe
+        adjusted_description = await connector.describe()
+        assert adjusted_description is not None
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 500
+
+        return
+
+        # Read the Tuning Pod and check resources
+        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        container = pod.get_container('fiber-http')
+
+        # CPU picks up the 1000m default and then gets adjust to 250m
+        # assert container.get_resource_requirements('cpu') == {
+        #     servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+        #     servo.connectors.kubernetes.ResourceRequirement.limit: '1'
+        # }
+
+        # # Memory is untouched from the mainfest
+        # assert container.get_resource_requirements('memory') == {
+        #     servo.connectors.kubernetes.ResourceRequirement.request: '128Mi',
+        #     servo.connectors.kubernetes.ResourceRequirement.limit: '128Mi'
+        # }
+
+        # TODO: Describe to do it again
+        # TODO: Adjust back to baseline
