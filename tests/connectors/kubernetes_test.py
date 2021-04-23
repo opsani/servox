@@ -1411,14 +1411,26 @@ class TestKubernetesResourceRequirementsIntegration:
 
         # Describe to get our baseline
         baseline_description = await connector.describe()
-        baseline_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
-        assert baseline_cpu_setting
-        assert baseline_cpu_setting.value == 250
+        baseline_main_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http.cpu')
+        assert baseline_main_cpu_setting
+        assert baseline_main_cpu_setting.value == 250
 
-        baseline_memory_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.mem')
-        assert baseline_memory_setting
-        assert baseline_memory_setting.value.human_readable() == '2.0GiB'
+        baseline_main_memory_setting = baseline_description.get_setting('fiber-http/fiber-http.mem')
+        assert baseline_main_memory_setting
+        assert baseline_main_memory_setting.value.human_readable() == '2.0GiB'
 
+        ## Tuning settings
+        baseline_tuning_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert baseline_tuning_cpu_setting
+        assert baseline_tuning_cpu_setting.value == 250
+
+        baseline_tuning_memory_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert baseline_tuning_memory_setting
+        assert baseline_tuning_memory_setting.value.human_readable() == '2.0GiB'
+
+        # return
+
+        ##
         # Adjust CPU and Memory
         cpu_adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -1433,14 +1445,28 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
         assert adjusted_description is not None
+        debug("adjusted_description=", adjusted_description)
 
-        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
-        assert adjusted_cpu_setting
-        assert adjusted_cpu_setting.value == 500
+        ## Main settings
+        adjusted_main_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http.cpu')
+        assert adjusted_main_cpu_setting
+        debug("adjusted_main_cpu_setting=", adjusted_main_cpu_setting)
+        assert adjusted_main_cpu_setting.value == 250  # TODO: WITH ADJUST FAILS HERE
 
-        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
-        assert adjusted_mem_setting
-        assert adjusted_mem_setting.value.human_readable() == "1.0GiB"
+        adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
+        assert adjusted_main_mem_setting
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
+
+        ## Tuning settings
+        adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_tuning_cpu_setting
+        assert adjusted_tuning_cpu_setting.value == 500  # TODO: FAILS HERE WITH EARLY EXIT at 2443 in adjust
+
+        adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_tuning_mem_setting
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+
+        return
 
         ## Run another describe
         adjusted_description = await connector.describe()

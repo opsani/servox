@@ -671,14 +671,14 @@ class Container(servo.logging.Mixin):
         return self.obj.resources
 
     @resources.setter
-    def resources(self, resources:kubernetes_asyncio.client.V1ResourceRequirements) -> None:
+    def resources(self, resources: kubernetes_asyncio.client.V1ResourceRequirements) -> None:
         """
         Set the resource requirements for the Container.
 
         Args:
             resources: The resource requirements to set.
         """
-        self.obj.resources = resources
+        self.obj.resources = copy.copy(resources)
 
     def get_resource_requirements(self, name: str) -> Dict[ResourceRequirement, Optional[str]]:
         """Return a dictionary mapping resource requirements to values for a given resource (e.g., cpu or memory).
@@ -719,10 +719,14 @@ class Container(servo.logging.Mixin):
             name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
             requirements: A dict mapping requirements to target values (e.g., `{ResourceRequirement.request: '500m', ResourceRequirement.limit: '2000m'})
         """
-        resources: kubernetes_asyncio.client.V1ResourceRequirements = getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
+        resources: kubernetes_asyncio.client.V1ResourceRequirements = copy.deepcopy(
+            getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
+        )
 
         for requirement, value in requirements.items():
-            resource_to_values = getattr(resources, requirement.resources_key, {})
+            resource_to_values = copy.deepcopy(
+                getattr(resources, requirement.resources_key, {})
+            )
             if not resource_to_values:
                 resource_to_values = {}
 
@@ -733,6 +737,7 @@ class Container(servo.logging.Mixin):
                 resource_to_values.pop(name, None)
             setattr(resources, requirement.resources_key, resource_to_values)
 
+        debug("\n\n\n\nASSIGNING RESOURCES TO", self.name, resources)
         self.resources = resources
 
     @property
@@ -2388,7 +2393,9 @@ class CanaryOptimization(BaseOptimization):
         # NOTE: Currently only supporting one container
         assert len(deployment_config.containers) == 1, "CanaryOptimization currently only supports a single container"
         container_config = deployment_config.containers[0]
+        debug("FINDING MAIN CONTAINER NAMED: ", container_config.name)
         main_container = deployment.find_container(container_config.name)
+        # TODO: Copy here?
         name = (
             deployment_config.strategy.alias
             if isinstance(deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
@@ -2438,6 +2445,7 @@ class CanaryOptimization(BaseOptimization):
 
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
+        # return
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
@@ -2451,7 +2459,7 @@ class CanaryOptimization(BaseOptimization):
                 requirements[requirement] = value
                 servo.logger.debug(f"Assigning {setting_name}.{requirement}={value}")
 
-            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} PodTemplateSpec")
+            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on PodTemplateSpec")
             self.pod_template_spec_container.set_resource_requirements(setting_name, requirements)
 
         elif setting_name == "replicas":
@@ -2481,6 +2489,7 @@ class CanaryOptimization(BaseOptimization):
 
             raise
 
+        # TODO: logging the wrong values -- should becoming from the podtemplatespec?
         servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
 
     @property
@@ -2534,7 +2543,7 @@ class CanaryOptimization(BaseOptimization):
     # TODO: Factor into another class?
     async def _configure_tuning_pod_template_spec(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
-        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.copy(self.deployment.pod_template_spec)
+        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.deepcopy(self.deployment.pod_template_spec)
         pod_template_spec.metadata.name = self.tuning_pod_name
 
         if pod_template_spec.metadata.annotations is None:
@@ -2770,8 +2779,8 @@ class CanaryOptimization(BaseOptimization):
 
         # NOTE: use copy + update to accept values from mainline outside of our range
         memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
-        memory.request = resource_requirements.get(ResourceRequirement.request)
-        memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        # memory.request = resource_requirements.get(ResourceRequirement.request)
+        # memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
 
     @property
