@@ -2479,7 +2479,6 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_container, "Tuning Container not loaded"
 
         servo.logger.info("Applying configuration changes to tuning pod")
-        # TODO: Just goes away since we use the podspectemplate
         servo.logger.info("Deleting existing tuning pod (if any)")
         await self.delete_tuning_pod(raise_if_not_found=False)
 
@@ -2711,7 +2710,6 @@ class CanaryOptimization(BaseOptimization):
         await tuning_pod.get_containers()
 
         # Hydrate local state
-        # TODO: DO we want to do this here?
         self.tuning_pod = tuning_pod
         self.tuning_container = tuning_pod.get_container(self.container_config.name)
 

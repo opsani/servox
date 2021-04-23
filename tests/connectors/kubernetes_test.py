@@ -1433,34 +1433,76 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
         assert adjusted_description is not None
+
         adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert adjusted_cpu_setting
         assert adjusted_cpu_setting.value == 500
 
-        # Run another describe
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == "1.0GiB"
+
+        ## Run another describe
         adjusted_description = await connector.describe()
         assert adjusted_description is not None
+
         adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert adjusted_cpu_setting
         assert adjusted_cpu_setting.value == 500
 
-        return
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == "1.0GiB"
 
-        # Read the Tuning Pod and check resources
+        ## Read the Tuning Pod and check resources
         pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
         container = pod.get_container('fiber-http')
 
-        # CPU picks up the 1000m default and then gets adjust to 250m
-        # assert container.get_resource_requirements('cpu') == {
-        #     servo.connectors.kubernetes.ResourceRequirement.request: '250m',
-        #     servo.connectors.kubernetes.ResourceRequirement.limit: '1'
-        # }
+        ## CPU is set to 500m on both requirements
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '500m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '500m'
+        }
 
-        # # Memory is untouched from the mainfest
-        # assert container.get_resource_requirements('memory') == {
-        #     servo.connectors.kubernetes.ResourceRequirement.request: '128Mi',
-        #     servo.connectors.kubernetes.ResourceRequirement.limit: '128Mi'
-        # }
+        ## Memory is set to 1Gi on both requirements
+        assert container.get_resource_requirements('memory') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '1Gi',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '1Gi'
+        }
 
-        # TODO: Describe to do it again
-        # TODO: Adjust back to baseline
+        ##
+        # Adjust back to baseline
+
+        cpu_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+        memory_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="memory",
+            value="2.0",
+        )
+
+        adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
+        assert adjusted_description is not None
+
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 250
+
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
+
+        ## Run another describe
+        adjusted_description = await connector.describe()
+        assert adjusted_description is not None
+
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 250
+
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
