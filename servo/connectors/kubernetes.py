@@ -2374,14 +2374,11 @@ class CanaryOptimization(BaseOptimization):
     deployment: Deployment
     main_container: Container
 
-    # Canary will be created if it does not yet exist
     # State for tuning resources
     tuning_pod: Optional[Pod]
     tuning_container: Optional[Container]
 
-    # TODO: This probably just goes away
-    tuning_pod_template_spec: Optional[kubernetes_asyncio.client.models.V1PodTemplateSpec]
-
+    _tuning_pod_template_spec: Optional[kubernetes_asyncio.client.models.V1PodTemplateSpec] = pydantic.PrivateAttr()
 
     @classmethod
     async def create(
@@ -2410,39 +2407,34 @@ class CanaryOptimization(BaseOptimization):
             container_config=container_config,
             deployment=deployment,
             main_container=main_container,
-            # tuning_pod=tuning_pod,
-            # tuning_container=tuning_container,
             **kwargs,
         )
+        await optimization._load_tuning_state()
 
-        # TODO: This init pattern sucks
+        return optimization
+
+    async def _load_tuning_state(self) -> None:
         # Find an existing tuning Pod/Container if available
         try:
-            # TODO: WRONG FUCKING NAME FOR THE CONTAINER
-            debug("\n\n\n\n------READ TUNING POD", optimization.tuning_pod_name, deployment_config.namespace)
-            tuning_pod = await Pod.read(optimization.tuning_pod_name, cast(str, deployment_config.namespace))
-            debug("\n\n\n\n------READ TUNING POD", tuning_pod.name)
-            tuning_container = tuning_pod.get_container(container_config.name)
+            tuning_pod = await Pod.read(self.tuning_pod_name, cast(str, self.deployment_config.namespace))
+            tuning_container = tuning_pod.get_container(self.container_config.name)
 
         except kubernetes_asyncio.client.exceptions.ApiException as e:
             if e.status != 404 or e.reason != "Not Found":
                 servo.logger.trace(f"Failed reading tuning pod: {e}")
                 raise
             else:
-                debug("\n\n\n\n------RESETTING STATE")
                 tuning_pod = None
                 tuning_container = None
 
-        # Setup all the state
-        optimization.tuning_pod = tuning_pod
-        optimization.tuning_container = tuning_container
-        optimization.tuning_pod_template_spec = await optimization._configure_tuning_resources()
-        # debug("Setup tuning pod template spec!", optimization.tuning_pod_template_spec)
-        return optimization
+        # TODO: Factor into a new class
+        self.tuning_pod = tuning_pod
+        self.tuning_container = tuning_container
+        self._tuning_pod_template_spec = await self._configure_tuning_resources()
 
     @property
     def pod_template_spec_container(self) -> Container:
-        container_obj = next(filter(lambda c: c.name == self.container_config.name, self.tuning_pod_template_spec.spec.containers))
+        container_obj = next(filter(lambda c: c.name == self.container_config.name, self._tuning_pod_template_spec.spec.containers))
         return Container(container_obj, None)
 
     def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
@@ -2556,6 +2548,7 @@ class CanaryOptimization(BaseOptimization):
     def container_name(self) -> str:
         return self.container_config.name
 
+    # TODO: Factor into another class
     async def _configure_tuning_resources(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
         pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.copy(self.deployment.pod_template_spec)
@@ -2568,16 +2561,11 @@ class CanaryOptimization(BaseOptimization):
             pod_template_spec.metadata.labels = {}
         pod_template_spec.metadata.labels["opsani_role"] = "tuning"
 
-        # FIXME: This logic should be factored out of this method.
-        # TODO: What we actually want to do here is create a new container. Then copy the resource requirements over it if there's an existing Pod
         # Build a container from the raw podspec
         container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers))
         container = Container(container_obj, None)
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
         servo.logger.trace(f"Container: {devtools.pformat(container)}")
-
-        if (bool(self.tuning_pod) != bool(self.tuning_container)):
-            raise RuntimeError("FALJFLSAKJFLA:SFK", self.tuning_pod, self.tuning_container)
 
         if self.tuning_container:
             servo.logger.info(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
@@ -2654,9 +2642,6 @@ class CanaryOptimization(BaseOptimization):
                 )
             ]
 
-        # TODO: BOOKMARK
-        # self.tuning_pod_template_spec = pod_template_spec
-        # self.tuning_container = container  # TODO: Do I want to assign this here? I'm really only setting up the pod template spec.
         return pod_template_spec
 
     # TODO: Ensure is not a great name. rebuild_tuning_pod? ensure_tuning_pod() old name
@@ -2664,7 +2649,7 @@ class CanaryOptimization(BaseOptimization):
         """
         Ensures that a tuning Pod exists by deleting and recreating an existing Pod or creating one from scratch.
         """
-        assert self.tuning_pod_template_spec, "Must have tuning pod template spec"
+        assert self._tuning_pod_template_spec, "Must have tuning pod template spec"
         self.logger.debug(
             f"creating tuning pod '{self.tuning_pod_name}' based on deployment '{self.deployment_name}' in namespace '{self.namespace}'"
         )
@@ -2675,7 +2660,7 @@ class CanaryOptimization(BaseOptimization):
         # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new tuning pod")
         pod_obj = kubernetes_asyncio.client.V1Pod(
-            metadata=self.tuning_pod_template_spec.metadata, spec=self.tuning_pod_template_spec.spec
+            metadata=self._tuning_pod_template_spec.metadata, spec=self._tuning_pod_template_spec.spec
         )
 
         tuning_pod = Pod(obj=pod_obj)
@@ -2983,9 +2968,8 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
 
                 # Ensure the canary is available
                 # TODO: We don't want to do this implicitly but this is a first step
-                # TODO: Eliminate this (maybe a start? ready event?)
                 if not optimization.tuning_pod:
-                    debug("CREATING TUNING POD!!! DOESNT EXIST")
+                    servo.logger.info("Creating new tuning pod...")
                     await optimization.create_tuning_pod()
             else:
                 raise ValueError(
