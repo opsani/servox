@@ -2542,23 +2542,7 @@ class CanaryOptimization(BaseOptimization):
 
 
         # Apply default/override resource requirements to the container
-        for resource in {'cpu', 'memory'}:
-            # NOTE: cpu/memory stanza in container config
-            resource_config = getattr(self.container_config, resource)
-            requirements = container.get_resource_requirements(resource)
-            servo.logger.debug(f"Loaded resource requirements for '{resource}': {requirements}")
-            for requirement in ResourceRequirement:
-                # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
-                if resource_value := getattr(resource_config, requirement.name):
-                    if existing_resource_value := requirements.get(requirement) is None:
-                        servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
-                    else:
-                        servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
-
-                    requirements[requirement] = resource_value
-
-            servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
-            container.set_resource_requirements(resource, requirements)
+        set_container_resource_defaults_from_config(container, self.container_config)
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
         SERVO_POD_NAME = os.environ.get("POD_NAME")
@@ -3857,3 +3841,23 @@ def dns_labelize(name: str) -> str:
         name = name[:61] + '-1'
 
     return name
+
+
+def set_container_resource_defaults_from_config(container: Container, config: ContainerConfiguration) -> None:
+    for resource in {'cpu', 'memory'}:
+        # NOTE: cpu/memory stanza in container config
+        resource_config = getattr(config, resource)
+        requirements = container.get_resource_requirements(resource)
+        servo.logger.debug(f"Loaded resource requirements for '{resource}': {requirements}")
+        for requirement in ResourceRequirement:
+            # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
+            if resource_value := getattr(resource_config, requirement.name):
+                if existing_resource_value := requirements.get(requirement) is None:
+                    servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
+                else:
+                    servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
+
+                requirements[requirement] = resource_value
+
+        servo.logger.debug(f"Setting resource requirements for '{resource}' to: {requirements}")
+        container.set_resource_requirements(resource, requirements)

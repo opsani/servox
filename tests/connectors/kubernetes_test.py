@@ -830,10 +830,10 @@ class TestMemory:
         }
 
     def test_resolving_equivalent_units(self) -> None:
-        memory = Memory(min="128 MiB", max=4.0, step=268435456)
-        assert memory.min == 134217728
+        memory = Memory(min=268435456, max=4.0, step="128 MiB")
+        assert memory.min == 268435456
         assert memory.max == 4294967296
-        assert memory.step == 268435456
+        assert memory.step == 134217728
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())

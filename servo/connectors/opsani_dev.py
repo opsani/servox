@@ -273,20 +273,21 @@ class OpsaniDevChecks(servo.BaseChecks):
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container
-        # TODO: Need to initialize this from the config defaults to avoid tripping the blanket cases
         assert container.resources, "missing container resources"
-        assert container.resources.requests, "missing requests for container resources"
-        assert container.resources.requests.get("cpu", self.config.cpu.request), "missing request for resource 'cpu'"
-        assert container.resources.requests.get("memory", self.config.memory.request), "missing request for resource 'memory'"
-        assert container.resources.limits, "missing limits for container resources"
-        assert container.resources.limits.get("cpu", self.config.cpu.limit), "missing limit for resource 'cpu'"
-        assert container.resources.limits.get("memory", self.config.memory.limit), "missing limit for resource 'memory'"
 
-    # TODO: This one needs to respect the defaults set up elsewhere
-    # FIXME: Under canary mode, we need to validate the resources after applying the defaults for the tuning pod.
-    # We only want to show a warning for the mainline (since we aren't going to modify it)
-    # @servo.checks.require("Target container resources fall within optimization range")
-    async def _check_target_container_resources_within_limits(self) -> None:
+        # Apply any defaults/overrides for requests/limits from config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
+
+        assert container.resources.requests, "missing requests for container resources"
+        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+
+        assert container.resources.limits, "missing limits for container resources"
+        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+
+    @servo.checks.require("Target container resources fall within optimization range")
+    async def check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
         deployment = await servo.connectors.kubernetes.Deployment.read(
             self.config.deployment,
@@ -296,23 +297,24 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Find the target Container
         target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
-
         assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
 
+        # Apply any defaults/overrides from the config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(target_container, self.config)
+
         # Get resource requirements from container
-        # TODO: This needs to reuse the logic from Canary Optimization
+        # TODO: This needs to reuse the logic from CanaryOptimization class (tuning_cpu, tuning_memory, etc properties)
         cpu_resource_requirements = target_container.get_resource_requirements('cpu')
         cpu_resource_value = cpu_resource_requirements.get(
             next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
         )
         container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+
         memory_resource_requirements = target_container.get_resource_requirements('memory')
         memory_resource_value = memory_resource_requirements.get(
             next(filter(lambda r: memory_resource_requirements[r] is not None, self.config.memory.get), None)
         )
         container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(memory_resource_value)
-        # container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
-        # container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
 
         # Get config values
         config_cpu_min = self.config.cpu.min
@@ -640,19 +642,16 @@ class OpsaniDevChecks(servo.BaseChecks):
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
         # NOTE: We don't care about the response status code, we just want to see that traffic is being metered by Envoy
-        # TODO: This should be using a sum(rate()) or checking each returned instant vector
         metric = servo.connectors.prometheus.PrometheusMetric(
             "main_request_total",
             servo.types.Unit.requests_per_second,
-            query=f'envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}',
+            query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
         )
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         response = await client.query(metric)
         assert response.data, f"query returned no response data: '{metric.query}'"
         assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
-        # TODO: FIXME. Why is this count off? Maybe it needs to be aggregated? How did this break?
-        # assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
-        assert len(response.data) > 0, f"expected Prometheus API to return at least one result for metric '{metric.name}' but found {len(response.data)}"
+        assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
         result = response.data[0]
         timestamp, value = result.value
         if value in {None, 0.0}:
@@ -711,12 +710,12 @@ class OpsaniDevChecks(servo.BaseChecks):
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}',
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "tuning_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}'
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}})'
             ),
         ]
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
@@ -725,11 +724,8 @@ class OpsaniDevChecks(servo.BaseChecks):
             response = await client.query(metric)
             assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
 
-            # TODO: These may need to be aggregated or each result examined??
-            assert len(response.data) > 0, f"expected Prometheus API to return at least one result for metric '{metric.name}' but found {len(response.data)}"
-            # assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
+            assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
 
-            # TODO: Iterate and process all of these
             result = response.data[0]
             value = result.value[1]
             assert value is not None and value > 0.0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
