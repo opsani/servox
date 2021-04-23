@@ -780,7 +780,7 @@ class TestMillicore:
 class TestMemory:
     @pytest.fixture
     def memory(self) -> Memory:
-        return Memory(min="128 MiB", max="4.0 GiB", step="0.25 GiB")
+        return Memory(min="0.25 GiB", max="4.0 GiB", step="128 MiB")
 
     def test_parsing(self, memory) -> None:
         assert {
@@ -788,9 +788,9 @@ class TestMemory:
             'type': 'range',
             'pinned': False,
             'value': None,
-            'min': 134217728,
+            'min': 268435456,
             'max': 4294967296,
-            'step': 268435456,
+            'step': 134217728,
             'request': None,
             'limit': None,
             'get': [
@@ -808,8 +808,8 @@ class TestMemory:
         assert memory.__opsani_repr__() == {
             "mem": {
                 "max": 4.0,
-                "min": 0.125,
-                "step": 0.25,
+                "min": 0.25,
+                "step": 0.125,
                 "value": 3.0,
                 "type": "range",
                 "pinned": False,
@@ -837,9 +837,9 @@ class TestMemory:
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization["min"] == "128.0MiB"
+        assert serialization["min"] == "256.0MiB"
         assert serialization["max"] == "4.0GiB"
-        assert serialization["step"] == "256.0MiB"
+        assert serialization["step"] == "128.0MiB"
 
     def test_min_cannot_be_less_than_step(self) -> None:
         with pytest.raises(ValueError, match=re.escape('min cannot be less than step (33554432 < 268435456)')):
