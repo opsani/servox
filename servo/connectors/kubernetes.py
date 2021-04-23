@@ -2427,7 +2427,7 @@ class CanaryOptimization(BaseOptimization):
                 tuning_pod = None
                 tuning_container = None
 
-        # TODO: Factor into a new class
+        # TODO: Factor into a new class?
         self.tuning_pod = tuning_pod
         self.tuning_container = tuning_container
         self._tuning_pod_template_spec = await self._configure_tuning_resources()
@@ -2456,16 +2456,13 @@ class CanaryOptimization(BaseOptimization):
                 requirements[requirement] = value
                 servo.logger.debug(f"Assigning {setting_name}.{requirement}={value}")
 
-            # TODO: Move this all onto the PodTemplateSpec?
-            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} on {self.tuning_container.name}")
-            # self.tuning_container.set_resource_requirements(setting_name, requirements)
-            # pod_template_spec_container.set_resource_requirements(setting_name, requirements)
+            servo.logger.debug(f"Setting resource requirements for {setting_name} to {requirements} PodTemplateSpec")
             self.pod_template_spec_container.set_resource_requirements(setting_name, requirements)
 
         elif setting_name == "replicas":
             if value != 1:
                 servo.logger.warning(
-                    f'ignored attempt to set replicas to "{value}" on tuning pod "{self.tuning_pod.name}"'
+                    f'ignored attempt to set replicas to "{value}"'
                 )
 
         else:
@@ -2478,15 +2475,10 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod, "Tuning Pod not loaded"
         assert self.tuning_container, "Tuning Container not loaded"
 
-        servo.logger.info("Applying configuration changes to tuning pod")
-        servo.logger.info("Deleting existing tuning pod (if any)")
-        await self.delete_tuning_pod(raise_if_not_found=False)
-
-        servo.logger.info("Creating new tuning pod")  # TODO: Recreating
-        task = asyncio.create_task(self.create_tuning_pod())
+        servo.logger.info("Applying adjustmenting to Tuning Pod")
+        task = asyncio.create_task(self.create_or_recreate_tuning_pod())
         try:
-            # self.tuning_pod = await task
-            await task  # TODO: Ensure assigns tuning pod and container
+            await task
         except asyncio.CancelledError:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -2507,15 +2499,12 @@ class CanaryOptimization(BaseOptimization):
         """
         return f"{self.deployment_config.name}-tuning"
 
-    async def delete_tuning_pod(
-        self, *, raise_if_not_found: bool = True, timeout: servo.DurationDescriptor = '10m'
-    ) -> Optional[Pod]:
+    async def delete_tuning_pod(self, *, raise_if_not_found: bool = True) -> Optional[Pod]:
         """
         Delete the tuning Pod.
         """
         try:
-            # TODO: Eliminate this and just use the property?
-            # TODO: Provide context manager or standard read option that handle not found?
+            # TODO: Provide context manager or standard read option that handle not found? Lots of duplication on this...
             tuning_pod = await Pod.read(self.tuning_pod_name, self.namespace)
             self.logger.info(
                 f"Deleting tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'..."
@@ -2643,18 +2632,24 @@ class CanaryOptimization(BaseOptimization):
 
         return pod_template_spec
 
-    # TODO: Ensure is not a great name. rebuild_tuning_pod? ensure_tuning_pod() old name
+    async def create_or_recreate_tuning_pod(self) -> Pod:
+        """
+        Creates a new Tuning Pod or deletes and recreates one from the current optimization state.
+        """
+        servo.logger.info("Deleting existing tuning pod (if any)")
+        await self.delete_tuning_pod(raise_if_not_found=False)
+        return await self.create_tuning_pod()
+
     async def create_tuning_pod(self) -> Pod:
         """
-        Ensures that a tuning Pod exists by deleting and recreating an existing Pod or creating one from scratch.
+        Creates a new Tuning Pod from the current optimization state.
         """
         assert self._tuning_pod_template_spec, "Must have tuning pod template spec"
+        assert self.tuning_pod is None, "Tuning Pod already exists"
+        assert self.tuning_container is None, "Tuning Pod Container already exists"
         self.logger.debug(
             f"creating tuning pod '{self.tuning_pod_name}' based on deployment '{self.deployment_name}' in namespace '{self.namespace}'"
         )
-
-        # debug("DELETING EXISTING TUNING POD (if any)")
-        # await self.delete_tuning_pod(raise_if_not_found=False)
 
         # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
         self.logger.trace(f"building new tuning pod")
@@ -2880,7 +2875,7 @@ class CanaryOptimization(BaseOptimization):
         self.logger.debug(f'awaiting deletion of tuning Pod "{self.name}"')
         await self.tuning_pod.wait_until_deleted()
 
-        self.logger.info(f'destroyed tuning Pod "{self.name}"')
+        self.logger.success(f'destroyed tuning Pod "{self.name}"')
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
         if mode == FailureMode.rollback or mode == FailureMode.destroy:
@@ -2897,8 +2892,8 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.info(
                     "creating new tuning pod against baseline following failed adjust"
                 )
-                # TODO: FIX THIS
-                # self.tuning_pod = await self.ensure_tuning_pod()
+                await self._configure_tuning_resources()  # reset the setting
+                self.tuning_pod = await self.create_or_recreate_tuning_pod()
                 return True
 
             except Exception as handler_error:
