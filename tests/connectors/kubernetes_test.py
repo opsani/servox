@@ -1428,8 +1428,6 @@ class TestKubernetesResourceRequirementsIntegration:
         assert baseline_tuning_memory_setting
         assert baseline_tuning_memory_setting.value.human_readable() == '2.0GiB'
 
-        # return
-
         ##
         # Adjust CPU and Memory
         cpu_adjustment = Adjustment(
@@ -1445,13 +1443,11 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
         assert adjusted_description is not None
-        debug("adjusted_description=", adjusted_description)
 
         ## Main settings
         adjusted_main_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http.cpu')
         assert adjusted_main_cpu_setting
-        debug("adjusted_main_cpu_setting=", adjusted_main_cpu_setting)
-        assert adjusted_main_cpu_setting.value == 250  # TODO: WITH ADJUST FAILS HERE
+        assert adjusted_main_cpu_setting.value == 250
 
         adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
         assert adjusted_main_mem_setting
@@ -1460,38 +1456,57 @@ class TestKubernetesResourceRequirementsIntegration:
         ## Tuning settings
         adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert adjusted_tuning_cpu_setting
-        assert adjusted_tuning_cpu_setting.value == 500  # TODO: FAILS HERE WITH EARLY EXIT at 2443 in adjust
+        assert adjusted_tuning_cpu_setting.value == 500
 
         adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_tuning_mem_setting
         assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
 
-        return
-
         ## Run another describe
         adjusted_description = await connector.describe()
         assert adjusted_description is not None
 
-        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
-        assert adjusted_cpu_setting
-        assert adjusted_cpu_setting.value == 500
+        ## Main settings
+        adjusted_main_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http.cpu')
+        assert adjusted_main_cpu_setting
+        assert adjusted_main_cpu_setting.value == 250
 
-        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
-        assert adjusted_mem_setting
-        assert adjusted_mem_setting.value.human_readable() == "1.0GiB"
+        adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
+        assert adjusted_main_mem_setting
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
 
-        ## Read the Tuning Pod and check resources
-        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
-        container = pod.get_container('fiber-http')
+        ## Tuning settings
+        adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_tuning_cpu_setting
+        assert adjusted_tuning_cpu_setting.value == 500
+
+        adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_tuning_mem_setting
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+
+        ## Read the Main Pod and check resources
+        main_deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        main_pods = await main_deployment.get_pods()
+        main_pod_container = main_pods[0].get_container('fiber-http')
 
         ## CPU is set to 500m on both requirements
-        assert container.get_resource_requirements('cpu') == {
+        assert main_pod_container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        }
+
+        ## Read the Tuning Pod and check resources
+        tuning_pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        tuning_pod_container = tuning_pod.get_container('fiber-http')
+
+        ## CPU is set to 500m on both requirements
+        assert tuning_pod_container.get_resource_requirements('cpu') == {
             servo.connectors.kubernetes.ResourceRequirement.request: '500m',
             servo.connectors.kubernetes.ResourceRequirement.limit: '500m'
         }
 
         ## Memory is set to 1Gi on both requirements
-        assert container.get_resource_requirements('memory') == {
+        assert tuning_pod_container.get_resource_requirements('memory') == {
             servo.connectors.kubernetes.ResourceRequirement.request: '1Gi',
             servo.connectors.kubernetes.ResourceRequirement.limit: '1Gi'
         }

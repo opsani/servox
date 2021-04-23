@@ -542,7 +542,6 @@ class Namespace(KubernetesModel):
             self.name = name
 
         self.logger.info(f'creating namespace "{self.name}"')
-        self.logger.debug(f"namespace: {self.obj}")
 
         async with self.api_client() as api_client:
             self.obj = await api_client.create_namespace(
@@ -573,7 +572,6 @@ class Namespace(KubernetesModel):
 
         self.logger.info(f'deleting namespace "{self.name}"')
         self.logger.debug(f"delete options: {options}")
-        self.logger.debug(f"namespace: {self.obj}")
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespace(
@@ -678,7 +676,7 @@ class Container(servo.logging.Mixin):
         Args:
             resources: The resource requirements to set.
         """
-        self.obj.resources = copy.copy(resources)
+        self.obj.resources = resources
 
     def get_resource_requirements(self, name: str) -> Dict[ResourceRequirement, Optional[str]]:
         """Return a dictionary mapping resource requirements to values for a given resource (e.g., cpu or memory).
@@ -719,14 +717,12 @@ class Container(servo.logging.Mixin):
             name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
             requirements: A dict mapping requirements to target values (e.g., `{ResourceRequirement.request: '500m', ResourceRequirement.limit: '2000m'})
         """
-        resources: kubernetes_asyncio.client.V1ResourceRequirements = copy.deepcopy(
+        resources: kubernetes_asyncio.client.V1ResourceRequirements = copy.copy(
             getattr(self, 'resources', kubernetes_asyncio.client.V1ResourceRequirements())
         )
 
         for requirement, value in requirements.items():
-            resource_to_values = copy.deepcopy(
-                getattr(resources, requirement.resources_key, {})
-            )
+            resource_to_values = getattr(resources, requirement.resources_key, {})
             if not resource_to_values:
                 resource_to_values = {}
 
@@ -737,7 +733,6 @@ class Container(servo.logging.Mixin):
                 resource_to_values.pop(name, None)
             setattr(resources, requirement.resources_key, resource_to_values)
 
-        debug("\n\n\n\nASSIGNING RESOURCES TO", self.name, resources)
         self.resources = resources
 
     @property
@@ -1070,7 +1065,6 @@ class Service(KubernetesModel):
             namespace = self.namespace
 
         self.logger.info(f'creating service "{self.name}" in namespace "{self.namespace}"')
-        self.logger.debug(f'service: {self.obj}')
 
         async with self.api_client() as api_client:
             self.obj = await api_client.create_namespaced_service(
@@ -1108,7 +1102,6 @@ class Service(KubernetesModel):
 
         self.logger.info(f'deleting service "{self.name}"')
         self.logger.debug(f'delete options: {options}')
-        self.logger.debug(f'service: {self.obj}')
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_service(
@@ -1340,7 +1333,6 @@ class Deployment(KubernetesModel):
         self.logger.info(
             f'creating deployment "{self.name}" in namespace "{self.namespace}"'
         )
-        self.logger.debug(f"deployment: {self.obj}")
 
         async with self.api_client() as api_client:
             self.obj = await api_client.create_namespaced_deployment(
@@ -1398,7 +1390,6 @@ class Deployment(KubernetesModel):
 
         self.logger.info(f'deleting deployment "{self.name}"')
         self.logger.debug(f"delete options: {options}")
-        self.logger.trace(f"deployment: {self.obj}")
 
         async with self.api_client() as api_client:
             return await api_client.delete_namespaced_deployment(
@@ -2393,9 +2384,7 @@ class CanaryOptimization(BaseOptimization):
         # NOTE: Currently only supporting one container
         assert len(deployment_config.containers) == 1, "CanaryOptimization currently only supports a single container"
         container_config = deployment_config.containers[0]
-        debug("FINDING MAIN CONTAINER NAMED: ", container_config.name)
         main_container = deployment.find_container(container_config.name)
-        # TODO: Copy here?
         name = (
             deployment_config.strategy.alias
             if isinstance(deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
