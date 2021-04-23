@@ -367,7 +367,7 @@ class Exchange(pydantic.BaseModel):
             servo.logger.debug(f"Processing message with {len(self._transformers)} transformers: {message}")
             for transformer in self._transformers:
                 message = await transformer(message, channel)
-                servo.logger.debug(f"Transfomer {transformer} returned transformed message: {message}")
+                servo.logger.trace(f"Transfomer {transformer} returned transformed message: {message}")
                 if message is None:
                     servo.logger.warning(f"Transfomer {transformer} cancelled delivery of message")
                     return

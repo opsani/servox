@@ -127,7 +127,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
-            self.logger.trace(devtools.pformat(description))
+            self.logger.debug(devtools.pformat(description))
 
             status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
             return await self._post_event(servo.api.Events.describe, status.dict())
