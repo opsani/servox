@@ -278,13 +278,14 @@ class OpsaniDevChecks(servo.BaseChecks):
         # Apply any defaults/overrides for requests/limits from config
         servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
 
-        assert container.resources.requests, "missing requests for container resources"
-        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
-        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+        # TODO: How do we handle when you just don't have any requests?
+        # assert container.resources.requests, "missing requests for container resources"
+        # assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        # assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
 
-        assert container.resources.limits, "missing limits for container resources"
-        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
-        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+        # assert container.resources.limits, "missing limits for container resources"
+        # assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        # assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
     @servo.checks.require("Target container resources fall within optimization range")
     async def check_target_container_resources_within_limits(self) -> None:
