@@ -3586,7 +3586,7 @@ class KubernetesConnector(servo.BaseConnector):
                 while not progress.finished:
                     if not await state.is_ready():
                         # Raise a specific exception if the optimization defines one
-                        state.raise_for_status()
+                        await state.raise_for_status()
 
                         raise servo.AdjustmentRejectedError(
                             reason="Optimization target became unready during adjustment settlement period"
