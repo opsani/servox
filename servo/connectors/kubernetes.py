@@ -2795,8 +2795,8 @@ class CanaryOptimization(BaseOptimization):
 
         # NOTE: use copy + update to accept values from mainline outside of our range
         memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
-        # memory.request = resource_requirements.get(ResourceRequirement.request)
-        # memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        memory.request = resource_requirements.get(ResourceRequirement.request)
+        memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
 
     @property

@@ -912,7 +912,7 @@ class TestKubernetesConnectorIntegration:
         connector = KubernetesConnector(config=config)
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 125
-        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "128.0MiB"
+        assert description.get_setting("fiber-http/fiber-http.mem").human_readable_value == "128.0Mi"
         assert description.get_setting("fiber-http/fiber-http.replicas").value == 1
 
     async def test_adjust_cpu(self, config):
@@ -1082,7 +1082,7 @@ class TestKubernetesConnectorIntegration:
         """Verify a failure to create a pod is not poorly handled in the handle_error destroy logic"""
 
         tuning_config.on_failure = FailureMode.rollback
-        mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","96.0MiBGi"))
+        mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","96.0Mi"))
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -1402,7 +1402,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.tuning_memory, "Expected Tuning Memory"
         assert canary_optimization.tuning_memory.value == 134217728
-        assert canary_optimization.tuning_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.tuning_memory.value.human_readable() == '128.0Mi'
         assert canary_optimization.tuning_memory.request == 134217728
         assert canary_optimization.tuning_memory.limit is None
         assert canary_optimization.tuning_memory.pinned is False
@@ -1419,7 +1419,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.main_memory, "Expected Main Memory"
         assert canary_optimization.main_memory.value == 134217728
-        assert canary_optimization.main_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.main_memory.value.human_readable() == '128.0Mi'
         assert canary_optimization.main_memory.request == 134217728
         assert canary_optimization.main_memory.limit is None
         assert canary_optimization.main_memory.pinned is True
@@ -1451,7 +1451,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.tuning_memory, "Expected Tuning Memory"
         assert canary_optimization.tuning_memory.value == 2147483648
-        assert canary_optimization.tuning_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.tuning_memory.value.human_readable() == '2.0Gi'
         assert canary_optimization.tuning_memory.request == 134217728
         assert canary_optimization.tuning_memory.limit == 2147483648
         assert canary_optimization.tuning_memory.pinned is False
@@ -1468,7 +1468,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         assert canary_optimization.main_memory, "Expected Main Memory"
         assert canary_optimization.main_memory.value == 2147483648
-        assert canary_optimization.main_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.main_memory.value.human_readable() == '2.0Gi'
         assert canary_optimization.main_memory.request == 134217728
         assert canary_optimization.main_memory.limit == 2147483648
         assert canary_optimization.main_memory.pinned is True
@@ -1496,7 +1496,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         baseline_main_memory_setting = baseline_description.get_setting('fiber-http/fiber-http.mem')
         assert baseline_main_memory_setting
-        assert baseline_main_memory_setting.value.human_readable() == '2.0GiB'
+        assert baseline_main_memory_setting.value.human_readable() == '2.0Gi'
 
         ## Tuning settings
         baseline_tuning_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
@@ -1505,7 +1505,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         baseline_tuning_memory_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert baseline_tuning_memory_setting
-        assert baseline_tuning_memory_setting.value.human_readable() == '2.0GiB'
+        assert baseline_tuning_memory_setting.value.human_readable() == '2.0Gi'
 
         ##
         # Adjust CPU and Memory
@@ -1530,7 +1530,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
         assert adjusted_main_mem_setting
-        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0Gi"
 
         ## Tuning settings
         adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
@@ -1539,7 +1539,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_tuning_mem_setting
-        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0Gi"
 
         ## Run another describe
         adjusted_description = await connector.describe()
@@ -1552,7 +1552,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
         assert adjusted_main_mem_setting
-        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0Gi"
 
         ## Tuning settings
         adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
@@ -1561,7 +1561,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_tuning_mem_setting
-        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0Gi"
 
         ## Read the Main Pod and check resources
         main_deployment = await Deployment.read('fiber-http', tuning_config.namespace)
@@ -1613,7 +1613,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_mem_setting
-        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
+        assert adjusted_mem_setting.value.human_readable() == '2.0Gi'
 
         ## Run another describe
         adjusted_description = await connector.describe()
@@ -1625,4 +1625,4 @@ class TestKubernetesResourceRequirementsIntegration:
 
         adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_mem_setting
-        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
+        assert adjusted_mem_setting.value.human_readable() == '2.0Gi'
