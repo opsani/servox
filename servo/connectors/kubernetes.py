@@ -2886,7 +2886,8 @@ class CanaryOptimization(BaseOptimization):
                 )
                 await self._configure_tuning_pod_template_spec()  # reset to baseline from the Deployment
                 self.tuning_pod = await self.create_or_recreate_tuning_pod()
-                return True
+                
+                raise error # Always communicate errors to backend unless ignored
 
             except Exception as handler_error:
                 raise handler_error from error
