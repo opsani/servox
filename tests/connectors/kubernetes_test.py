@@ -23,6 +23,7 @@ from servo.connectors.kubernetes import (
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
+    FailureMode,
     KubernetesChecks,
     KubernetesConfiguration,
     KubernetesConnector,
@@ -1047,6 +1048,32 @@ class TestKubernetesConnectorIntegration:
         )
         with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
             await connector.adjust([adjustment])
+
+
+    async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker) -> None:
+        """Verify a failure to create a pod is not poorly handled in the handle_error destroy logic"""
+
+        tuning_config.on_failure = FailureMode.rollback
+        mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","96.0MiBGi"))
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="96Mi",
+        )
+
+        # Catch info log messages
+        messages = []
+        connector.logger.add(lambda m: messages.append(m.record['message']), level=20)
+
+        with pytest.raises(kubernetes_asyncio.client.exceptions.ApiException) as error:
+            await connector.adjust([adjustment])
+
+        # Check logs
+        assert 'Pod "fiber-http-tuning" does not exist. no-op' in messages[-10:]
+        # Check error
+        assert 'quantities must match the regular expression' in str(error.value)
+        assert error.value.status == 400
 
 
     async def test_adjust_tuning_cpu_with_settlement(self, tuning_config, namespace, kube):

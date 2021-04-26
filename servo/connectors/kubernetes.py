@@ -479,6 +479,26 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
 
+async def _try_delete_model(model: KubernetesModel, options: kubernetes_asyncio.client.V1DeleteOptions = None) -> Optional[kubernetes_asyncio.client.V1Status]:
+    """Try to delete the underlying kubernetes resource; catch and log 404 Not Found as a no-op
+
+    Args:
+        model (KubernetesModel): Model representing kubernetes object to be deleted
+        options (V1DeleteOptions): Options for resource deletion.
+
+    Returns:
+        V1Status returned from API or None if the object was not found
+    """
+    try:
+        return await model.delete(options)
+    except kubernetes_asyncio.client.exceptions.ApiException as error:
+        if error.status == 404 and error.reason == "Not Found":
+            kind = getattr(model.obj, "kind", model.__class__.__name__)
+            model.logger.info(f'{kind} "{model.name}" does not exist. no-op')
+            return None
+        else:
+            raise error
+
 
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
@@ -2841,10 +2861,11 @@ class CanaryOptimization(BaseOptimization):
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
         self.logger.info(f'destroying tuning Pod "{self.name}"')
-        await self.tuning_pod.delete()
+        status = await _try_delete_model(self.tuning_pod)
 
-        self.logger.debug(f'awaiting deletion of tuning Pod "{self.name}"')
-        await self.tuning_pod.wait_until_deleted()
+        if status is not None:
+            self.logger.debug(f'awaiting deletion of tuning Pod "{self.name}"')
+            await self.tuning_pod.wait_until_deleted()
 
         self.logger.success(f'destroyed tuning Pod "{self.name}"')
 
