@@ -127,7 +127,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
-            self.logger.trace(devtools.pformat(description))
+            self.logger.debug(devtools.pformat(description))
 
             status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
             return await self._post_event(servo.api.Events.describe, status.dict())
@@ -389,8 +389,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                      'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
                      'RAINBOW': colorama.Fore.MAGENTA}
 
-        terminal_size = os.get_terminal_size()
-        width = max(terminal_size.columns, 80)
+        try:
+            terminal_size = os.get_terminal_size()
+            width = max(terminal_size.columns, 80)
+        except OSError:
+            width = 80
 
         # Generate an awesome banner for this launch
         font = os.getenv('SERVO_BANNER_FONT', random.choice(fonts))
@@ -512,12 +515,15 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         loop.stop()
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
-        self.logger.critical(f"asyncio exception handler triggered with context: {context}")
+        self.logger.debug(f"asyncio exception handler triggered with context: {context}")
 
         exception = context.get("exception", None)
         logger = self.logger.opt(exception=exception)
 
-        if loop.is_closed():
+        if isinstance(exception, asyncio.CancelledError):
+            logger.warning(f"ignoring asyncio.CancelledError exception")
+            pass
+        elif loop.is_closed():
             logger.critical(
                 "Ignoring exception -- the event loop is closed."
             )
