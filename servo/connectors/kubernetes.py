@@ -1803,7 +1803,7 @@ class Deployment(KubernetesModel):
                         f"Condition({condition.type}).status == '{condition.status}' ({condition.reason}): {condition.message}"
                     )
                 else:
-                    raise servo.AdjustmentFailure(
+                    raise servo.AdjustmentFailedError(
                         f"encountered unexpected Condition status '{condition.status}'"
                     )
 
@@ -1827,7 +1827,7 @@ class Deployment(KubernetesModel):
                         reason=condition.status.reason
                     )
                 else:
-                    raise servo.AdjustmentFailure(
+                    raise servo.AdjustmentFailedError(
                         f"unknown deployment status condition: {condition.status}"
                     )
 
@@ -2458,7 +2458,7 @@ class CanaryOptimization(BaseOptimization):
                 )
 
         else:
-            raise servo.AdjustmentFailure(
+            raise servo.AdjustmentFailedError(
                 f"failed adjustment of unsupported Kubernetes setting '{setting_name}'"
             )
 
