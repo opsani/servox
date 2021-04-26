@@ -2867,6 +2867,10 @@ class CanaryOptimization(BaseOptimization):
         )
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
+        if not self.tuning_pod:
+            self.logger.debug(f'no tuning pod exists, ignoring destroy')
+            return
+
         self.logger.info(f'destroying tuning Pod "{self.name}"')
         status = await _try_delete_model(self.tuning_pod)
 
