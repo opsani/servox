@@ -21,7 +21,6 @@ import servo.types
 import servo.utilities
 import servo.utilities.pydantic
 
-
 __all__ = ['Servo', 'Events', 'current_servo']
 
 
@@ -175,6 +174,10 @@ class Servo(servo.connector.BaseConnector):
     Servo objects are configured with a dynamically created class that is built by
     the `servo.Assembly` class. Servo objects are typically not created directly
     and are instead built through the `Assembly.assemble` method.
+
+    Attributes:
+        connectors...
+        config...
     """
 
     config: servo.configuration.BaseServoConfiguration
@@ -205,12 +208,15 @@ class Servo(servo.connector.BaseConnector):
 
         # associate shared config with our children
         for connector in (connectors + [self]):
-            connector._servo_config = self.config.servo
+            connector._global_config = self.config.settings
 
     @pydantic.root_validator()
     def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if values["name"] == "servo":
-            values["name"] = values["config"].name or values["optimizer"].id
+        if values["name"] == "servo" and values.get('config'):
+            values["name"] = (
+                values["config"].name
+                or getattr(values["config"].optimizer, 'id', 'servo')
+            )
 
         return values
 
@@ -303,7 +309,7 @@ class Servo(servo.connector.BaseConnector):
             )
 
         connector.name = name
-        connector._servo_config = self.config.servo
+        connector._global_config = self.config.settings
 
         # Add to the event bus
         self.connectors.append(connector)

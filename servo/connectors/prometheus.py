@@ -517,7 +517,7 @@ class Client(pydantic.BaseModel):
     _normalize_base_url = pydantic.validator('base_url', allow_reuse=True)(_rstrip_slash)
 
     @property
-    def api_url(self) -> str:
+    def url(self) -> str:
         """Return the full URL for accessing the Prometheus API."""
         return f"{self.base_url}{API_PATH}"
 
@@ -630,7 +630,7 @@ class Client(pydantic.BaseModel):
         servo.logger.trace(
             f"Sending request to Prometheus HTTP API (`{request}`): {method} {request.endpoint}"
         )
-        async with httpx.AsyncClient(base_url=self.api_url) as client:
+        async with httpx.AsyncClient(base_url=self.url) as client:
             try:
                 kwargs = (
                     dict(params=request.params) if method == 'GET'

@@ -316,7 +316,7 @@ async def stream_subprocess_output(
         )
         await asyncio.wait_for(gather_task, timeout=timeout_in_seconds)
 
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, asyncio.CancelledError):
         with contextlib.suppress(ProcessLookupError):
             if process.returncode is None:
                 process.terminate()

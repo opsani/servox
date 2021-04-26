@@ -1,6 +1,6 @@
-from datetime import datetime, timedelta
-from typing import Optional, Union
 import re
+from datetime import datetime, timedelta
+from typing import Union
 
 import freezegun
 import pydantic
@@ -95,73 +95,6 @@ def test_adjustment_str() -> None:
         f"[adjustments=({', '.join(list(map(str, [adjustment])))})]"
         == "[adjustments=(web.cpu=1.25)]"
     )
-
-
-# TODO: Move to api_test.py
-def test_parse_measure_command_response_including_units() -> None:
-    from typing import Union
-
-    from pydantic import parse_obj_as
-
-    from servo.api import CommandResponse, MeasureParams, Status
-
-    payload = {
-        "cmd": "MEASURE",
-        "param": {
-            "control": {
-                "delay": 10,
-                "warmup": 30,
-                "duration": 180,
-            },
-            "metrics": {
-                "throughput": {
-                    "unit": "rpm",
-                },
-                "error_rate": {
-                    "unit": "%",
-                },
-                "latency_total": {
-                    "unit": "ms",
-                },
-                "latency_mean": {
-                    "unit": "ms",
-                },
-                "latency_50th": {
-                    "unit": "ms",
-                },
-                "latency_90th": {
-                    "unit": "ms",
-                },
-                "latency_95th": {
-                    "unit": "ms",
-                },
-                "latency_99th": {
-                    "unit": "ms",
-                },
-                "latency_max": {
-                    "unit": "ms",
-                },
-                "latency_min": {
-                    "unit": "ms",
-                },
-            },
-        },
-    }
-    obj = parse_obj_as(Union[CommandResponse, Status], payload)
-    assert isinstance(obj, CommandResponse)
-    assert isinstance(obj.param, MeasureParams)
-    assert obj.param.metrics == [
-        "throughput",
-        "error_rate",
-        "latency_total",
-        "latency_mean",
-        "latency_50th",
-        "latency_90th",
-        "latency_95th",
-        "latency_99th",
-        "latency_max",
-        "latency_min",
-    ]
 
 
 import asyncio
@@ -558,8 +491,8 @@ class TestRangeSetting:
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
     def test_validate_step_alignment_suggestion(self) -> None:
-        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
-            RangeSetting(name="invalid", min=1.0, max=11.0, step=3.0)
+        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 3.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
+            RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -567,16 +500,16 @@ class TestRangeSetting:
             (0, 5, 1, None),
             (2.0, 3.0, 1.0, None),
             (
-                1.0,
+                3.0,
                 11.0,
                 3.0,
-                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
+                "RangeSetting('invalid' 3.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
             ),
             (
                 3.0,
-                12.0,
-                2.0,
-                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0 (consider 2.0 or 4.0).",
+                13.0,
+                3.0,
+                "RangeSetting('invalid' 3.0-13.0, 3.0) max is not step aligned: 13.0 is not a multiple of 3.0 (consider 12.0 or 15.0).",
             ),
         ],
     )
@@ -599,7 +532,7 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 5, 1, None),
-            (1.0, 6.0, 2.0, None),
+            (0.0, 6.0, 2.0, None),
             (
                 1.0,
                 2,
@@ -971,6 +904,7 @@ class TestDataPoint:
 
 
 from servo.types import _is_step_aligned
+
 
 @pytest.mark.parametrize(
     "value, step, aligned",

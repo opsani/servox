@@ -1,11 +1,11 @@
 import asyncio
+
 import pytest
+
 import servo
-import servo.pubsub
 import servo.connectors.prometheus
 import servo.connectors.vegeta
-
-from typing import Callable, AsyncIterator
+import servo.pubsub
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
