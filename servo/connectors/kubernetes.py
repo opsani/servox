@@ -1597,7 +1597,7 @@ class Deployment(KubernetesModel):
         """
         Return a string for matching the Deployment in Kubernetes API calls.
         """
-        return selector_string(self.obj.spec.selector.match_labels)
+        return selector_string(self.obj.metadata.labels)
 
     # TODO: I need to model these two and add label/annotation helpers
     @property
