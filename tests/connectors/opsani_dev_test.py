@@ -67,8 +67,8 @@ class TestConfig:
             "  min: 250m\n"
             "  max: '4'\n"
             "memory:\n"
-            "  min: 256.0MiB\n"
-            "  max: 4.0GiB\n"
+            "  min: 256.0Mi\n"
+            "  max: 4.0Gi\n"
         )
 
     def test_assign_optimizer(self) -> None:

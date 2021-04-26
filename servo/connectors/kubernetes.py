@@ -1978,6 +1978,13 @@ class ShortByteSize(pydantic.ByteSize):
             v = v * GiB
         return super().validate(v)
 
+    def human_readable(self) -> str:
+        sup = super().human_readable()
+        # Remove the 'B' suffix to align with Kubernetes units (`GiB` -> `Gi`)
+        if sup[-1] == 'B' and sup[-2].isalpha():
+            sup = sup[0:-1]
+        return sup
+
 
 class Memory(servo.Memory):
     """

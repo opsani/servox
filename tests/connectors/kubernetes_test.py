@@ -349,9 +349,9 @@ class TestKubernetesConfiguration:
             ("deployments[0].containers[0].cpu.max", "4"),
             ("deployments[0].containers[0].cpu.step", "125m"),
             # Memory
-            ("deployments[0].containers[0].memory.min", "256.0MiB"),
-            ("deployments[0].containers[0].memory.max", "4.0GiB"),
-            ("deployments[0].containers[0].memory.step", "128.0MiB"),
+            ("deployments[0].containers[0].memory.min", "256.0Mi"),
+            ("deployments[0].containers[0].memory.max", "4.0Gi"),
+            ("deployments[0].containers[0].memory.step", "128.0Mi"),
         ],
     )
     def test_generate_emits_human_readable_values(
@@ -839,9 +839,9 @@ class TestMemory:
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization["min"] == "256.0MiB"
-        assert serialization["max"] == "4.0GiB"
-        assert serialization["step"] == "128.0MiB"
+        assert serialization["min"] == "256.0Mi"
+        assert serialization["max"] == "4.0Gi"
+        assert serialization["step"] == "128.0Mi"
 
     def test_min_cannot_be_less_than_step(self) -> None:
         with pytest.raises(ValueError, match=re.escape('min cannot be less than step (33554432 < 268435456)')):
@@ -1183,7 +1183,6 @@ class TestKubernetesConnectorIntegration:
         await KubernetesChecks.run(config)
 
     # Deployment readiness check was returning false positives, guard against regression
-    @pytest.mark.timeout(10)
     async def test_check_deployment_readiness_failure(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
         deployments = kube.get_deployments()
         target_deploy = deployments.get("fiber-http")
