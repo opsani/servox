@@ -47,7 +47,7 @@ freezegun = "^1.1.0"
 respx = "^0.16.3"
 kubetest = {git = "https://github.com/opsani/kubetest.git", rev = "feature/template-manifests"}
 pytest-freezegun = "^0.4.2"
-yamlpath = "^3.2.0"
+yamlpath = "^3.5.0"
 isort = "^5.7.0"
 autoflake = "^1.4"
 flake8-fixme = "^1.1.1"
