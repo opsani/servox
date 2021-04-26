@@ -342,8 +342,15 @@ class TestServiceMultiport:
             # These env vars are set by our manifests
             deployment = kube.get_deployments()["servo"]
             pod = deployment.get_pods()[0]
-            os.environ['POD_NAME'] = pod.name
-            os.environ["POD_NAMESPACE"] = kube.namespace
+            try:
+                os.environ['POD_NAME'] = pod.name
+                os.environ["POD_NAMESPACE"] = kube.namespace
+
+                yield
+
+            finally:
+                os.environ.pop('POD_NAME', None)
+                os.environ.pop('POD_NAMESPACE', None)
 
         async def test_process(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
