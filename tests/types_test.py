@@ -558,8 +558,8 @@ class TestRangeSetting:
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
     def test_validate_step_alignment_suggestion(self) -> None:
-        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
-            RangeSetting(name="invalid", min=1.0, max=11.0, step=3.0)
+        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 3.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).")):
+            RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -567,16 +567,16 @@ class TestRangeSetting:
             (0, 5, 1, None),
             (2.0, 3.0, 1.0, None),
             (
-                1.0,
+                3.0,
                 11.0,
                 3.0,
-                "RangeSetting('invalid' 1.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
+                "RangeSetting('invalid' 3.0-11.0, 3.0) max is not step aligned: 11.0 is not a multiple of 3.0 (consider 9.0 or 12.0).",
             ),
             (
                 3.0,
-                12.0,
-                2.0,
-                "RangeSetting('invalid' 3.0-12.0, 2.0) min is not step aligned: 3.0 is not a multiple of 2.0 (consider 2.0 or 4.0).",
+                13.0,
+                3.0,
+                "RangeSetting('invalid' 3.0-13.0, 3.0) max is not step aligned: 13.0 is not a multiple of 3.0 (consider 12.0 or 15.0).",
             ),
         ],
     )
@@ -599,7 +599,7 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 5, 1, None),
-            (1.0, 6.0, 2.0, None),
+            (0.0, 6.0, 2.0, None),
             (
                 1.0,
                 2,

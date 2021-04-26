@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Type
 
 import kubetest.client
+import kubernetes.client.models
 import pydantic
 import pytest
+import re
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -17,6 +19,7 @@ from servo.connectors.kubernetes import (
     ContainerConfiguration,
     ContainerTagName,
     DefaultOptimizationStrategyConfiguration,
+    Deployment,
     DeploymentConfiguration,
     DNSLabelName,
     DNSSubdomainName,
@@ -28,7 +31,7 @@ from servo.connectors.kubernetes import (
     Millicore,
     OptimizationStrategy,
     Pod,
-    ResourceRequirements,
+    ResourceRequirement,
 )
 from servo.errors import AdjustmentRejectedError
 from servo.types import Adjustment
@@ -536,122 +539,122 @@ def test_compare_strategy() -> None:
     assert config == OptimizationStrategy.canary
 
 
-class TestResourceRequirements:
-    @pytest.mark.parametrize(
-        "requirement, val",
-        [
-            (ResourceRequirements.limit, True),
-            (ResourceRequirements.request, True),
-            (ResourceRequirements.compute, False),
-        ],
-    )
-    def test_flag_introspection(self, requirement, val) -> None:
-        assert requirement.flag is val
-        assert requirement.flags is not val
+# class TestResourceRequirements:
+#     @pytest.mark.parametrize(
+#         "requirement, val",
+#         [
+#             (ResourceRequirements.limit, True),
+#             (ResourceRequirements.request, True),
+#             (ResourceRequirements.compute, False),
+#         ],
+#     )
+#     def test_flag_introspection(self, requirement, val) -> None:
+#         assert requirement.flag is val
+#         assert requirement.flags is not val
 
 
-class TestContainer:
-    @pytest.fixture
-    def container(self, mocker) -> Container:
-        stub_pod = mocker.stub(name="Pod")
-        return Container(client.V1Container(name="container"), stub_pod)
+# class TestContainer:
+#     @pytest.fixture
+#     def container(self, mocker) -> Container:
+#         stub_pod = mocker.stub(name="Pod")
+#         return Container(client.V1Container(name="container"), stub_pod)
 
-    @pytest.mark.parametrize(
-        "name, requirements, kwargs, value",
-        [
-            ("cpu", ..., ..., ("100m", "15000m")),
-            ("cpu", ResourceRequirements.compute, ..., ("100m", "15000m")),
-            ("cpu", ResourceRequirements.request, ..., ("100m",)),
-            ("cpu", ResourceRequirements.limit, dict(first=True), "15000m"),
-            (
-                "cpu",
-                ResourceRequirements.compute,
-                dict(first=True, reverse=True),
-                "15000m",
-            ),
-            ("memory", ..., ..., ("3G", None)),
-            ("memory", ResourceRequirements.compute, ..., ("3G", None)),
-            ("memory", ResourceRequirements.request, ..., ("3G",)),
-            ("memory", ResourceRequirements.compute, dict(first=True), "3G"),
-            ("memory", ResourceRequirements.request, dict(first=True), "3G"),
-            ("memory", ResourceRequirements.limit, dict(first=True), None),
-            (
-                "memory",
-                ResourceRequirements.limit,
-                dict(first=True, default="1TB"),
-                "1TB",
-            ),
-            ("invalid", ResourceRequirements.compute, ..., (None, None)),
-            (
-                "invalid",
-                ResourceRequirements.compute,
-                dict(first=True, default="3.125"),
-                "3.125",
-            ),
-        ],
-    )
-    def test_get_resource_requirements(
-        self, container, name, requirements, kwargs, value
-    ) -> None:
-        resources = client.V1ResourceRequirements()
-        resources.requests = {"cpu": "100m", "memory": "3G"}
-        resources.limits = {"cpu": "15000m"}
-        container.resources = resources
+#     @pytest.mark.parametrize(
+#         "name, requirements, kwargs, value",
+#         [
+#             ("cpu", ..., ..., ("100m", "15000m")),
+#             ("cpu", ResourceRequirements.compute, ..., ("100m", "15000m")),
+#             ("cpu", ResourceRequirements.request, ..., ("100m",)),
+#             ("cpu", ResourceRequirements.limit, dict(first=True), "15000m"),
+#             (
+#                 "cpu",
+#                 ResourceRequirements.compute,
+#                 dict(first=True, reverse=True),
+#                 "15000m",
+#             ),
+#             ("memory", ..., ..., ("3G", None)),
+#             ("memory", ResourceRequirements.compute, ..., ("3G", None)),
+#             ("memory", ResourceRequirements.request, ..., ("3G",)),
+#             ("memory", ResourceRequirements.compute, dict(first=True), "3G"),
+#             ("memory", ResourceRequirements.request, dict(first=True), "3G"),
+#             ("memory", ResourceRequirements.limit, dict(first=True), None),
+#             (
+#                 "memory",
+#                 ResourceRequirements.limit,
+#                 dict(first=True, default="1TB"),
+#                 "1TB",
+#             ),
+#             ("invalid", ResourceRequirements.compute, ..., (None, None)),
+#             (
+#                 "invalid",
+#                 ResourceRequirements.compute,
+#                 dict(first=True, default="3.125"),
+#                 "3.125",
+#             ),
+#         ],
+#     )
+#     def test_get_resource_requirements(
+#         self, container, name, requirements, kwargs, value
+#     ) -> None:
+#         resources = client.V1ResourceRequirements()
+#         resources.requests = {"cpu": "100m", "memory": "3G"}
+#         resources.limits = {"cpu": "15000m"}
+#         container.resources = resources
 
-        # Support testing default arguments
-        if requirements == ...:
-            requirements = container.get_resource_requirements.__defaults__[0]
-        if kwargs == ...:
-            kwargs = container.get_resource_requirements.__kwdefaults__
+#         # Support testing default arguments
+#         if requirements == ...:
+#             requirements = container.get_resource_requirements.__defaults__[0]
+#         if kwargs == ...:
+#             kwargs = container.get_resource_requirements.__kwdefaults__
 
-        assert (
-            container.get_resource_requirements(name, requirements, **kwargs) == value
-        )
+#         assert (
+#             container.get_resource_requirements(name, requirements, **kwargs) == value
+#         )
 
-    @pytest.mark.parametrize(
-        "name, value, requirements, kwargs, resources_dict",
-        [
-            (
-                "cpu",
-                ("100m", "250m"),
-                ...,
-                ...,
-                {"limits": {"cpu": "250m"}, "requests": {"cpu": "100m", "memory": "3G"}},
-            ),
-            (
-                "cpu",
-                "500m",
-                ResourceRequirements.limit,
-                dict(clear_others=True),
-                {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
-            ),
-        ],
-    )
-    def test_set_resource_requirements(
-        self, container, name, value, requirements, kwargs, resources_dict
-    ) -> None:
-        resources = client.V1ResourceRequirements()
-        resources.requests = {"cpu": "100m", "memory": "3G"}
-        resources.limits = {"cpu": "15000m"}
-        container.resources = resources
+#     @pytest.mark.parametrize(
+#         "name, value, requirements, kwargs, resources_dict",
+#         [
+#             (
+#                 "cpu",
+#                 ("100m", "250m"),
+#                 ...,
+#                 ...,
+#                 {"limits": {"cpu": "250m"}, "requests": {"cpu": "100m", "memory": "3G"}},
+#             ),
+#             (
+#                 "cpu",
+#                 "500m",
+#                 ResourceRequirements.limit,
+#                 dict(clear_others=True),
+#                 {"limits": {"cpu": "500m"}, "requests": {"memory": "3G"}},
+#             ),
+#         ],
+#     )
+#     def test_set_resource_requirements(
+#         self, container, name, value, requirements, kwargs, resources_dict
+#     ) -> None:
+#         resources = client.V1ResourceRequirements()
+#         resources.requests = {"cpu": "100m", "memory": "3G"}
+#         resources.limits = {"cpu": "15000m"}
+#         container.resources = resources
 
-        # Support testing default arguments
-        if requirements == ...:
-            requirements = container.set_resource_requirements.__defaults__[0]
-        if kwargs == ...:
-            kwargs = container.set_resource_requirements.__kwdefaults__
+#         # Support testing default arguments
+#         if requirements == ...:
+#             requirements = container.set_resource_requirements.__defaults__[0]
+#         if kwargs == ...:
+#             kwargs = container.set_resource_requirements.__kwdefaults__
 
-        container.set_resource_requirements(name, value, requirements, **kwargs)
-        assert container.resources.to_dict() == resources_dict
+#         container.set_resource_requirements(name, value, requirements, **kwargs)
+#         assert container.resources.to_dict() == resources_dict
 
-    def test_set_resource_requirements_handles_null_requirements_dict(self, container):
-        container.resources = client.V1ResourceRequirements()
+#     def test_set_resource_requirements_handles_null_requirements_dict(self, container):
+        # container.resources = client.V1ResourceRequirements()
 
-        container.set_resource_requirements("cpu", "1000m")
-        assert container.resources.to_dict() == {
-            "limits": {"cpu": "1000m"},
-            "requests": {"cpu": "1000m"},
-        }
+        # container.set_resource_requirements("cpu", "1000m")
+        # assert container.resources.to_dict() == {
+        #     "limits": {"cpu": "1000m"},
+        #     "requests": {"cpu": "1000m"},
+        # }
 
 
 class TestReplicas:
@@ -698,7 +701,16 @@ class TestCPU:
             "step": 125,
             "value": None,
             "pinned": False,
-            "requirements": ResourceRequirements.compute,
+            'request': None,
+            'limit': None,
+            'get': [
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
+            ],
+            'set': [
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
+            ]
         } == cpu.dict()
 
     def test_to___opsani_repr__(self, cpu) -> None:
@@ -726,9 +738,9 @@ class TestCPU:
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
 
-    def test_cannot_be_less_than_100m(self) -> None:
-        with pytest.raises(ValueError, match='minimum CPU value allowed is 100m'):
-            CPU(min="50m", max=4.0, step=0.100)
+    def test_min_cannot_be_less_than_step(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (125m < 250m)')):
+            CPU(min="125m", max=4.0, step=0.250)
 
 
 class TestMillicore:
@@ -770,18 +782,27 @@ class TestMillicore:
 class TestMemory:
     @pytest.fixture
     def memory(self) -> Memory:
-        return Memory(min="128 MiB", max="4.0 GiB", step="0.25 GiB")
+        return Memory(min="0.25 GiB", max="4.0 GiB", step="128 MiB")
 
     def test_parsing(self, memory) -> None:
         assert {
-            "name": "mem",
-            "type": "range",
-            "min": 134217728,
-            "max": 4294967296,
-            "step": 268435456,
-            "value": None,
-            "pinned": False,
-            "requirements": ResourceRequirements.compute,
+            'name': 'mem',
+            'type': 'range',
+            'pinned': False,
+            'value': None,
+            'min': 268435456,
+            'max': 4294967296,
+            'step': 134217728,
+            'request': None,
+            'limit': None,
+            'get': [
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
+            ],
+            'set': [
+                ResourceRequirement.request,
+                ResourceRequirement.limit,
+            ],
         } == memory.dict()
 
     def test_to___opsani_repr__(self, memory) -> None:
@@ -789,8 +810,8 @@ class TestMemory:
         assert memory.__opsani_repr__() == {
             "mem": {
                 "max": 4.0,
-                "min": 0.125,
-                "step": 0.25,
+                "min": 0.25,
+                "step": 0.125,
                 "value": 3.0,
                 "type": "range",
                 "pinned": False,
@@ -811,19 +832,19 @@ class TestMemory:
         }
 
     def test_resolving_equivalent_units(self) -> None:
-        memory = Memory(min="128 MiB", max=4.0, step=268435456)
-        assert memory.min == 134217728
+        memory = Memory(min=268435456, max=4.0, step="128 MiB")
+        assert memory.min == 268435456
         assert memory.max == 4294967296
-        assert memory.step == 268435456
+        assert memory.step == 134217728
 
     def test_resources_encode_to_json_human_readable(self, memory) -> None:
         serialization = json.loads(memory.json())
-        assert serialization["min"] == "128.0MiB"
+        assert serialization["min"] == "256.0MiB"
         assert serialization["max"] == "4.0GiB"
-        assert serialization["step"] == "256.0MiB"
+        assert serialization["step"] == "128.0MiB"
 
-    def test_cannot_be_less_than_128MiB(self) -> None:
-        with pytest.raises(ValueError, match='minimum Memory value allowed is 128MiB'):
+    def test_min_cannot_be_less_than_step(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (33554432 < 268435456)')):
             Memory(min="32 MiB", max=4.0, step=268435456)
 
 def test_millicpu():
@@ -977,11 +998,8 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
-            description = await connector.adjust([adjustment])
-            debug(description)
-
-        assert "Insufficient memory." in str(rejection_info.value)
+        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.'):
+            await connector.adjust([adjustment])
 
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
@@ -1020,6 +1038,7 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "3s"
+        tuning_config.deployments[0].containers[0].memory.max = '128Gi'
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1027,11 +1046,8 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi", # impossible right?
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
-            description = await connector.adjust([adjustment])
-            debug(description)
-
-        assert "Insufficient memory." in str(rejection_info.value)
+        with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
+            await connector.adjust([adjustment])
 
 
     async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker) -> None:
@@ -1138,6 +1154,30 @@ class TestKubernetesConnectorIntegration:
     async def test_checks(self, config: KubernetesConfiguration):
         await KubernetesChecks.run(config)
 
+    # Deployment readiness check was returning false positives, guard against regression
+    @pytest.mark.timeout(10)
+    async def test_check_deployment_readiness_failure(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
+        deployments = kube.get_deployments()
+        target_deploy = deployments.get("fiber-http")
+        assert target_deploy is not None
+
+        target_container = next(filter(lambda c: c.name == "fiber-http", target_deploy.obj.spec.template.spec.containers))
+        assert target_container is not None
+
+        # Update to put deployment in unready state
+        target_container.readiness_probe = kubernetes.client.models.V1Probe(
+            _exec=kubernetes.client.models.V1ExecAction(command=["exit", "1"]),
+            failure_threshold=1
+        )
+        target_deploy.obj.spec.strategy.rolling_update.max_surge = '0%'
+        target_deploy.api_client.patch_namespaced_deployment(target_deploy.name, target_deploy.namespace, target_deploy.obj)
+
+        while target_deploy.is_ready():
+            await asyncio.sleep(0.1)
+
+        result = await KubernetesChecks(config).run_one(id="check_deployments_are_ready_item_0")
+        assert result.success == False and result.message == "caught exception (RuntimeError): Deployment \"fiber-http\" is not ready"
+
 
 ##
 # Rejection Tests using modified deployment
@@ -1170,3 +1210,392 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
                         pass
                     else:
                         raise e
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesResourceRequirementsIntegration:
+    @pytest.fixture(autouse=True)
+    async def _wait_for_manifests(self, kube, config):
+        kube.wait_for_registered()
+        config.timeout = "5m"
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_get_resource_requirements_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        await deployment.wait_until_ready()
+
+        pods = await deployment.get_pods()
+        assert len(pods) == 1, "expected a fiber-http pod"
+        pod = pods[0]
+        container = pod.get_container('fiber-http')
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_set_resource_requirements_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        await deployment.wait_until_ready()
+
+        pods = await deployment.get_pods()
+        assert len(pods) == 1, "expected a fiber-http pod"
+        pod = pods[0]
+        container = pod.get_container('fiber-http')
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+        # Set request and limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        })
+        container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        }
+
+        # Set limit, leaving request alone
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.limit: '750m'
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '750m'
+        }
+
+        # Set request, clearing limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+        # Clear request and limit
+        container.set_resource_requirements('cpu', {
+            servo.connectors.kubernetes.ResourceRequirement.request: None,
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        })
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: None,
+            servo.connectors.kubernetes.ResourceRequirement.limit: None
+        }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_initialize_tuning_pod_set_defaults_for_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        container_config = tuning_config.deployments[0].containers[0]
+        container_config.cpu.limit = '1000m'
+        container_config.memory.limit = '1GiB'
+
+        # NOTE: Create the optimizations class to bring up the canary
+        await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+
+        # Read the Tuning Pod and check resources
+        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        container = pod.get_container('fiber-http')
+        cpu_requirements = container.get_resource_requirements('cpu')
+        memory_requirements = container.get_resource_requirements('memory')
+
+        assert cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1'
+        assert memory_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1073741824'
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_cpu_limit.yaml"])
+    async def test_no_cpu_limit(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        tuning_config.deployments[0].containers[0].cpu.limit = '1000m'
+        tuning_config.deployments[0].containers[0].cpu.set = ['request']
+
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert setting
+        assert setting.value == 250
+
+        # Read the Tuning Pod and check resources
+        pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        container = pod.get_container('fiber-http')
+
+        # CPU picks up the 1000m default and then gets adjust to 250m
+        assert container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '250m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '1'
+        }
+
+        # Memory is untouched from the mainfest
+        assert container.get_resource_requirements('memory') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '128Mi',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '128Mi'
+        }
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_reading_values_from_optimization_class_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # NOTE: Create the optimizations class to bring up the canary
+        kubernetes_optimizations = await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+        canary_optimization = kubernetes_optimizations.optimizations[0]
+
+        # Validate Tuning
+        assert canary_optimization.tuning_cpu, "Expected Tuning CPU"
+        assert canary_optimization.tuning_cpu.value == 125
+        assert canary_optimization.tuning_cpu.request == 125
+        assert canary_optimization.tuning_cpu.limit is None
+        assert canary_optimization.tuning_cpu.pinned is False
+
+        assert canary_optimization.tuning_memory, "Expected Tuning Memory"
+        assert canary_optimization.tuning_memory.value == 134217728
+        assert canary_optimization.tuning_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.tuning_memory.request == 134217728
+        assert canary_optimization.tuning_memory.limit is None
+        assert canary_optimization.tuning_memory.pinned is False
+
+        assert canary_optimization.tuning_replicas.value == 1
+        assert canary_optimization.tuning_replicas.pinned is True
+
+        # Validate Main
+        assert canary_optimization.main_cpu, "Expected Main CPU"
+        assert canary_optimization.main_cpu.value == 125
+        assert canary_optimization.main_cpu.request == 125
+        assert canary_optimization.main_cpu.limit is None
+        assert canary_optimization.main_cpu.pinned is True
+
+        assert canary_optimization.main_memory, "Expected Main Memory"
+        assert canary_optimization.main_memory.value == 134217728
+        assert canary_optimization.main_memory.value.human_readable() == '128.0MiB'
+        assert canary_optimization.main_memory.request == 134217728
+        assert canary_optimization.main_memory.limit is None
+        assert canary_optimization.main_memory.pinned is True
+
+        assert canary_optimization.main_replicas.value == 1
+        assert canary_optimization.main_replicas.pinned is True
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_bursty_memory.yaml"])
+    async def test_reading_values_from_optimization_class_bursty_memory(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to read limits instead of requests
+        container_config = tuning_config.deployments[0].containers[0]
+        container_config.cpu.get = ['limit']
+        container_config.memory.get = ['limit']
+        container_config.memory.max = '3.0GiB'  # Raise max so we validate
+
+        # NOTE: Create the optimizations class to bring up the canary
+        kubernetes_optimizations = await servo.connectors.kubernetes.KubernetesOptimizations.create(tuning_config)
+        canary_optimization = kubernetes_optimizations.optimizations[0]
+
+        # Validate Tuning
+        assert canary_optimization.tuning_cpu, "Expected Tuning CPU"
+        assert canary_optimization.tuning_cpu.value == 250
+        assert canary_optimization.tuning_cpu.request == 125
+        assert canary_optimization.tuning_cpu.limit == 250
+        assert canary_optimization.tuning_cpu.pinned is False
+
+        assert canary_optimization.tuning_memory, "Expected Tuning Memory"
+        assert canary_optimization.tuning_memory.value == 2147483648
+        assert canary_optimization.tuning_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.tuning_memory.request == 134217728
+        assert canary_optimization.tuning_memory.limit == 2147483648
+        assert canary_optimization.tuning_memory.pinned is False
+
+        assert canary_optimization.tuning_replicas.value == 1
+        assert canary_optimization.tuning_replicas.pinned is True
+
+        # Validate Main
+        assert canary_optimization.main_cpu, "Expected Main CPU"
+        assert canary_optimization.main_cpu.value == 250
+        assert canary_optimization.main_cpu.request == 125
+        assert canary_optimization.main_cpu.limit == 250
+        assert canary_optimization.main_cpu.pinned is True
+
+        assert canary_optimization.main_memory, "Expected Main Memory"
+        assert canary_optimization.main_memory.value == 2147483648
+        assert canary_optimization.main_memory.value.human_readable() == '2.0GiB'
+        assert canary_optimization.main_memory.request == 134217728
+        assert canary_optimization.main_memory.limit == 2147483648
+        assert canary_optimization.main_memory.pinned is True
+
+        assert canary_optimization.main_replicas.value == 2
+        assert canary_optimization.main_replicas.pinned is True
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_bursty_memory.yaml"])
+    async def test_preflight_cycle(self, kube, tuning_config: KubernetesConfiguration) -> None:
+        servo.logging.set_level("DEBUG")
+
+        # Setup the config to set a default limit
+        tuning_config.deployments[0].containers[0].cpu.get = ['limit']
+        tuning_config.deployments[0].containers[0].memory.max = '2.0GiB'
+        tuning_config.deployments[0].containers[0].memory.get = ['limit']
+
+        connector = KubernetesConnector(config=tuning_config)
+
+        # Describe to get our baseline
+        baseline_description = await connector.describe()
+        baseline_main_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http.cpu')
+        assert baseline_main_cpu_setting
+        assert baseline_main_cpu_setting.value == 250
+
+        baseline_main_memory_setting = baseline_description.get_setting('fiber-http/fiber-http.mem')
+        assert baseline_main_memory_setting
+        assert baseline_main_memory_setting.value.human_readable() == '2.0GiB'
+
+        ## Tuning settings
+        baseline_tuning_cpu_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert baseline_tuning_cpu_setting
+        assert baseline_tuning_cpu_setting.value == 250
+
+        baseline_tuning_memory_setting = baseline_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert baseline_tuning_memory_setting
+        assert baseline_tuning_memory_setting.value.human_readable() == '2.0GiB'
+
+        ##
+        # Adjust CPU and Memory
+        cpu_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".500",
+        )
+        memory_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="memory",
+            value="1.0",
+        )
+
+        adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
+        assert adjusted_description is not None
+
+        ## Main settings
+        adjusted_main_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http.cpu')
+        assert adjusted_main_cpu_setting
+        assert adjusted_main_cpu_setting.value == 250
+
+        adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
+        assert adjusted_main_mem_setting
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
+
+        ## Tuning settings
+        adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_tuning_cpu_setting
+        assert adjusted_tuning_cpu_setting.value == 500
+
+        adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_tuning_mem_setting
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+
+        ## Run another describe
+        adjusted_description = await connector.describe()
+        assert adjusted_description is not None
+
+        ## Main settings
+        adjusted_main_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http.cpu')
+        assert adjusted_main_cpu_setting
+        assert adjusted_main_cpu_setting.value == 250
+
+        adjusted_main_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http.mem')
+        assert adjusted_main_mem_setting
+        assert adjusted_main_mem_setting.value.human_readable() == "2.0GiB"
+
+        ## Tuning settings
+        adjusted_tuning_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_tuning_cpu_setting
+        assert adjusted_tuning_cpu_setting.value == 500
+
+        adjusted_tuning_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_tuning_mem_setting
+        assert adjusted_tuning_mem_setting.value.human_readable() == "1.0GiB"
+
+        ## Read the Main Pod and check resources
+        main_deployment = await Deployment.read('fiber-http', tuning_config.namespace)
+        main_pods = await main_deployment.get_pods()
+        main_pod_container = main_pods[0].get_container('fiber-http')
+
+        ## CPU is set to 500m on both requirements
+        assert main_pod_container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '125m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '250m'
+        }
+
+        ## Read the Tuning Pod and check resources
+        tuning_pod = await Pod.read('fiber-http-tuning', tuning_config.namespace)
+        tuning_pod_container = tuning_pod.get_container('fiber-http')
+
+        ## CPU is set to 500m on both requirements
+        assert tuning_pod_container.get_resource_requirements('cpu') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '500m',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '500m'
+        }
+
+        ## Memory is set to 1Gi on both requirements
+        assert tuning_pod_container.get_resource_requirements('memory') == {
+            servo.connectors.kubernetes.ResourceRequirement.request: '1Gi',
+            servo.connectors.kubernetes.ResourceRequirement.limit: '1Gi'
+        }
+
+        ##
+        # Adjust back to baseline
+
+        cpu_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+        memory_adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="memory",
+            value="2.0",
+        )
+
+        adjusted_description = await connector.adjust([cpu_adjustment, memory_adjustment])
+        assert adjusted_description is not None
+
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 250
+
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
+
+        ## Run another describe
+        adjusted_description = await connector.describe()
+        assert adjusted_description is not None
+
+        adjusted_cpu_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert adjusted_cpu_setting
+        assert adjusted_cpu_setting.value == 250
+
+        adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert adjusted_mem_setting
+        assert adjusted_mem_setting.value.human_readable() == '2.0GiB'
