@@ -2886,7 +2886,7 @@ class CanaryOptimization(BaseOptimization):
                 )
                 await self._configure_tuning_pod_template_spec()  # reset to baseline from the Deployment
                 self.tuning_pod = await self.create_or_recreate_tuning_pod()
-                
+
                 raise error # Always communicate errors to backend unless ignored
 
             except Exception as handler_error:
@@ -3086,7 +3086,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             task.add_done_callback(lambda task: _raise_for_task(optimization, task))
             tasks.append(task)
 
-        for future in asyncio.as_completed(tasks, timeout=self.config.timeout):
+        for future in asyncio.as_completed(tasks, timeout=self.config.timeout.total_seconds()):
             try:
                 await future
             except Exception as error:
