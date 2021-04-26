@@ -37,7 +37,7 @@ def _check_adjust_parse(obj: CommandResponse):
     for a in adjustments:
         assert isinstance(a, Adjustment)
         adj_strs.append(str(a))
-    
+
     assert adj_strs == [
         'main.cpu=1.0',
         'main.mem=1.0',
