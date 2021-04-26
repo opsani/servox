@@ -4,10 +4,12 @@ The `servo.repeating.Mixin` provides connectors with the ability to easily manag
 that require periodic execution or the observation of particular runtime conditions.
 """
 import asyncio
+import traceback
 from typing import Callable, Dict, Optional, Union
 
 import pydantic
 
+import servo
 from servo.types import Duration, NoneCallable, Numeric
 
 __all__ = ["Every", "Mixin", "repeating"]
@@ -63,7 +65,12 @@ class Mixin(pydantic.BaseModel):
         async def repeating_async_fn() -> None:
             while True:
                 if asyncio.iscoroutinefunction(callable):
-                    await asyncio.gather(callable(), return_exceptions=False)
+                    try:
+                        await callable()
+                    except Exception:
+                        servo.logger.error("Async Task Exception")
+                        servo.logger.error(traceback.format_exc())
+                        break
                 else:
                     callable()
                 await asyncio.sleep(every.total_seconds())
