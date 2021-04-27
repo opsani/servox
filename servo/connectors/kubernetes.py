@@ -2073,7 +2073,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         """
         ...
 
-    async def handle_error(self, error: Exception, mode: "FailureMode" = None) -> bool:
+    async def handle_error(self, error: Exception) -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
 
@@ -2093,31 +2093,28 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-        if mode is None:
-            mode = self.on_failure
-
         # Ensure that we chain any underlying exceptions that may occur
         try:
-            self.logger.error(f"handling error with with failure mode {mode}: {error.__class__.__name__} - {str(error)}")
+            self.logger.error(f"handling error with with failure mode {self.on_failure}: {error.__class__.__name__} - {str(error)}")
             self.logger.opt(exception=error).debug(f"kubernetes error details")
 
-            if mode == FailureMode.exception:
+            if self.on_failure == FailureMode.exception:
                 raise error
 
-            elif mode == FailureMode.ignore:
+            elif self.on_failure == FailureMode.ignore:
                 self.logger.opt(exception=error).warning(f"ignoring exception")
                 return True
 
-            elif mode == FailureMode.rollback:
+            elif self.on_failure == FailureMode.rollback:
                 await self.rollback(error)
 
-            elif mode == FailureMode.destroy:
+            elif self.on_failure == FailureMode.destroy:
                 await self.destroy(error)
 
             else:
                 # Trap any new modes that need to be handled
                 raise NotImplementedError(
-                    f"missing error handler for failure mode '{mode}'"
+                    f"missing error handler for failure mode '{self.on_failure}'"
                 )
 
             raise error # Always communicate errors to backend unless ignored
@@ -2905,14 +2902,11 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.success(f'destroyed tuning Pod "{self.name}"')
 
-    async def handle_error(self, error: Exception, mode: "FailureMode" = None) -> bool:
-        if mode is None:
-            mode = self.on_failure
-
-        if mode == FailureMode.rollback or mode == FailureMode.destroy:
+    async def handle_error(self, error: Exception) -> bool:
+        if self.on_failure == FailureMode.rollback or self.on_failure == FailureMode.destroy:
             # Ensure that we chain any underlying exceptions that may occur
             try:
-                if mode == FailureMode.rollback:
+                if self.on_failure == FailureMode.rollback:
                     self.logger.warning(
                         f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
@@ -2932,7 +2926,7 @@ class CanaryOptimization(BaseOptimization):
                 raise handler_error from error
 
         else:
-            return await super().handle_error(error, mode)
+            return await super().handle_error(error)
 
 
     async def is_ready(self) -> bool:
