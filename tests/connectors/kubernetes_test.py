@@ -1207,7 +1207,8 @@ class TestKubernetesConnectorIntegration:
         assert result.success == False and result.message == "caught exception (RuntimeError): Deployment \"fiber-http\" is not ready"
 
     async def test_node_check_fails(self, config: KubernetesConfiguration, mocker):
-        mocker.patch("servo.connectors.kubernetes.NODE_MIN_CPU", 100000)
+        # Set unrealistic CPU count to trigger check failure
+        config.node_requirements.min_cpu = Millicore.parse("200")
         results = await KubernetesChecks.run(config, matching=CheckFilter(id="check_node_performance"))
         node_check_result = next(iter(filter(lambda r: r.id == "check_node_performance", results)))
 

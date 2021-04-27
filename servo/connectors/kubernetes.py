@@ -3290,6 +3290,19 @@ STANDARD_PERMISSIONS = [
 ]
 
 
+class NodeRequirementsConfiguration(pydantic.BaseModel):
+    """Models configuration for checks against nodes in a k8s cluster to verify they are suitable for running optimizations."""
+
+    min_cpu: Optional[Millicore] = pydantic.Field(
+        Millicore.parse("500m"),
+        title="Minimum CPU"
+    )
+    min_memory: Optional[ShortByteSize] = pydantic.Field(
+        ShortByteSize.validate("512MiB"),
+        title="Minimum Memory"
+    )
+
+
 class BaseKubernetesConfiguration(servo.BaseConfiguration):
     """
     BaseKubernetesConfiguration provides a set of configuration primitives for optimizable Kubernetes resources.
@@ -3346,6 +3359,10 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     permissions: List[PermissionSet] = pydantic.Field(
         STANDARD_PERMISSIONS,
         description="Permissions required by the connector to operate in Kubernetes.",
+    )
+    node_requirements: Optional[NodeRequirementsConfiguration] = pydantic.Field(
+        NodeRequirementsConfiguration(),
+        description="Configuration for checks verifying shedulable Nodes are suitable for running optimizations on."
     )
 
     deployments: List[DeploymentConfiguration] = pydantic.Field(
@@ -3447,9 +3464,6 @@ KubernetesOptimizations.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 
-NODE_MIN_CPU = 500
-NODE_MIN_MEM = 512 * MiB
-
 class KubernetesChecks(servo.BaseChecks):
     """Checks for ensuring that the Kubernetes connector is ready to run."""
 
@@ -3536,13 +3550,19 @@ class KubernetesChecks(servo.BaseChecks):
     @servo.check("Nodes have sufficient capacity and availability")
     async def check_node_performance(self) ->  None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            if (node_req := self.config.node_requirements) is None:
+                return
+            min_cpu =  0 if node_req.min_cpu is None else node_req.min_cpu
+            min_memory = 0 if node_req.min_memory is None else node_req.min_memory
+
             cv1 = kubernetes_asyncio.client.CoreV1Api(api)
             nodes = (await cv1.list_node(field_selector="spec.unschedulable=false")).items
             low_nodes = list(filter(
                 lambda n: (
-                    Millicore.parse(n.status.allocatable["cpu"]) < NODE_MIN_CPU
-                    or ShortByteSize.validate(n.status.allocatable["memory"]) < NODE_MIN_MEM # TODO: rename validate to parse once alias class method merged
-                ),nodes
+                    Millicore.parse(n.status.allocatable["cpu"]) < min_cpu
+                    or ShortByteSize.validate(n.status.allocatable["memory"]) < min_memory
+                ),
+                nodes
             ))
 
             if low_nodes: # Assert output too verbose in this case, raise check error with curated message
