@@ -22,14 +22,15 @@ jobs:
         uses: fkirc/skip-duplicate-actions@master
         with:
           concurrent_skipping: 'same_content'
-          paths_ignore: '["**/README.md", "**/docs/**"]'
-          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
+          paths_ignore: '["**/README.md", "**/docs/**", "CHANGELOG.md"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule", "release"]'
 
   docker:
     needs: pre_job
     if: |
       needs.pre_job.outputs.should_skip != 'true' &&
-      github.repository == 'opsani/servox'
+      github.repository == 'opsani/servox' &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       -

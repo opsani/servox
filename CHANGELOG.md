@@ -17,10 +17,91 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.0] "serenity now" - Unreleased
+## [0.10.0] "baseless allegation" - Unreleased
+
+### Enhanced
+
+- Opsani Dev checks for traffic flows are faster.
+- Service check errors now include the missing labels.
+- Container resources are now checked against the optimizable range before
+  optimization begins.
+- Introduced pub/sub transformers for filtering, splitting, and aggregating
+  messages across channels. [#191](https://github.com/opsani/servox/pull/191)
+- Added `--no-poll` and `--interactive` options to the `servo run` command.
+  [#192](https://github.com/opsani/servox/pull/192)
+- Enjoy a random start-up banner in a random color palette.
+  [#193](https://github.com/opsani/servox/pull/193)
+- `TRACE` logging from the `servo.api` module now includes cURL commands.
+  [#194](https://github.com/opsani/servox/pull/194)
+
+### Fixed
+
+- Traffic checks no longer require a 2xx status code to pass.
+- Load testing hints using Vegeta now include `kubectl exec` stanza to run
+  remotely rather than on the local workstation.
+- Resource requirements now output a sensible error message rather than raising
+  a `KeyError` when `cpu` or `memory` are not defined.
+
+### Changed
+
+- Updated to httpx v0.17.0
+- Updated uvloop to v0.15.2
+- Optimizer is now a member of the Configuration object.
+
+### Fixed
+
+- HTTP connection errors could result in unbound references to `response` in the
+  `servo.api` module. (SOL-292)
+
+## [0.9.5] "serenity now" - 2021-02-24
+
+### Enhanced
+
+- Added support for deploying Opsani Dev on Kubernetes `NodePort` Services.
+- Range setting that are out of step alignment now suggest alternative values
+  to consider.
+- Normal operational logging is less verbose.
+
+### Fixed
+
+- Container restarts due to `CancellationError` in response to Kubernetes
+  adjustment failures are now avoided.
+- Kubernetes `ContainersNotReady` status upon timeout are now handled as
+  adjustment failures.
+- HTTP status code 4xx responses are no longer retried.
+
+## [0.9.4] "serenity now" - 2021-02-17
+
+### Fixed
+
+- Use the bound logger for reporting Prometheus query errors in publisher. refs
+  SOL-238
+
+## [0.9.3] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Fixed an asyncio crash in the `ServoRunner`.
+- Gracefully handle query errors from Prometheus.
+- Support asyncio cancellation within pub/sub publisher decorator.
+
+## [0.9.2] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Include colorama package in release builds.
+
+## [0.9.1] "serenity now" - 2021-02-16
+
+### Fixed
+
+- Include toml package in release builds.
+
+## [0.9.0] "serenity now" - 2021-02-16
 
 ### Added
 
+- Opsani Dev v2.0 integrated for rapid service optimization.
 - Incorporated [uvloop](https://github.com/MagicStack/uvloop) for faster async
   event loops.
 - Initial release of Wavefront Connector.

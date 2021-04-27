@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: fiber-http
 
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -38,10 +38,10 @@ spec:
         resources:
           requests:
             cpu: 125m
-            memory: 64Mi
+            memory: 128Mi
           limits:
             cpu: 250m
-            memory: 128Mi
+            memory: 2Gi
         ports:
           - containerPort: 8480
 

@@ -26,17 +26,7 @@ from servo.types import Component, DataPoint, Description, Measurement, Metric, 
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
 
-class StubBaseConfiguration(BaseConfiguration):
-    name: Optional[str]
-
-    @classmethod
-    def generate(cls, **kwargs) -> "StubBaseConfiguration":
-        return cls(**kwargs)
-
-
 class MeasureConnector(BaseConnector):
-    config: StubBaseConfiguration
-
     @on_event()
     async def metrics(self) -> List[Metric]:
         return [
@@ -84,8 +74,6 @@ class MeasureConnector(BaseConnector):
 
 
 class AdjustConnector(BaseConnector):
-    config: StubBaseConfiguration
-
     @on_event()
     async def describe(self) -> Description:
         components = await self.components()
@@ -188,7 +176,7 @@ class Subprocess:
         def create_output_callback(
             name: str, output: List[str]
         ) -> Callable[[str], Awaitable[None]]:
-            async def output_callback(msg: str) -> None:
+            def output_callback(msg: str) -> None:
                 output.append(msg)
                 m = f"[{name}] {msg}"
                 if print_output:

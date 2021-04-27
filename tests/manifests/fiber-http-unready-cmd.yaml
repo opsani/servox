@@ -50,7 +50,8 @@ spec:
       containers:
       # Primary container providing the fiber-http web service
       - name: fiber-http
-        image: ghcr.io/opsani/fiber-http:latest
+        image: opsani/fiber-http:latest
+        imagePullPolicy: IfNotPresent
         resources:
           requests:
             cpu: 500m
@@ -82,7 +83,7 @@ spec:
       # Opsani Envoy Sidecar
       # Provides metrics for consumption by the Opsani Servo
       - name: envoy
-        image: ghcr.io/opsani/envoy-proxy:latest
+        image: opsani/envoy-proxy:latest
         resources:
             requests:
                 cpu: 125m

@@ -35,13 +35,6 @@ spec:
       - name: fiber-http
         image: opsani/fiber-http:latest
         imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            cpu: 125m
-            memory: 64Mi
-          limits:
-            cpu: 250m
-            memory: 128Mi
         ports:
           - containerPort: 8480
 

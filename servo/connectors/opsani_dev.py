@@ -1,10 +1,11 @@
 import json
-import os
 import operator
+import os
 from typing import List, Optional, Union
 
 import kubernetes_asyncio
 import pydantic
+
 import servo
 import servo.connectors.kubernetes
 import servo.connectors.prometheus
@@ -32,20 +33,27 @@ PROMETHEUS_ANNOTATION_DEFAULTS = {
     "prometheus.opsani.com/scheme": "http",
     "prometheus.opsani.com/path": "/stats/prometheus",
     "prometheus.opsani.com/port": "9901",
+
 }
 ENVOY_SIDECAR_LABELS = {
     "sidecar.opsani.com/type": "envoy"
 }
 ENVOY_SIDECAR_DEFAULT_PORT = 9980
 
-class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
+class CPU(servo.connectors.kubernetes.CPU):
+    step: servo.connectors.kubernetes.Millicore = "125m"
+
+class Memory(servo.connectors.kubernetes.Memory):
+    step: servo.connectors.kubernetes.ShortByteSize = "128 MiB"
+
+class OpsaniDevConfiguration(servo.BaseConfiguration):
     namespace: str
     deployment: str
     container: str
     service: str
     port: Optional[Union[pydantic.StrictInt, str]] = None
-    cpu: servo.connectors.kubernetes.CPU
-    memory: servo.connectors.kubernetes.Memory
+    cpu: CPU
+    memory: Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
 
     @classmethod
@@ -55,8 +63,8 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
             deployment="app-deployment",
             container="main",
             service="app",
-            cpu=servo.connectors.kubernetes.CPU(min="250m", max="4000m", step="125m"),
-            memory=servo.connectors.kubernetes.Memory(min="256 MiB", max="4.0 GiB", step="128 MiB"),
+            cpu=CPU(min="250m", max="4000m"),
+            memory=Memory(min="256 MiB", max="4.0 GiB"),
         )
 
     def generate_kubernetes_config(
@@ -121,75 +129,75 @@ class OpsaniDevConfiguration(servo.AbstractBaseConfiguration):
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_pod_avg_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "total_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query="sum(rate(envoy_cluster_upstream_rq_total[3m]))",
+                    query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[3m])',
+                    query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m])',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class="2"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"2|3"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class="2"}[3m])',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"2|3"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[3m]))',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[3m])',
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p99_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p99_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p90_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_p50_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_p50_latency",
                     servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[3m])))',
+                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
             ],
             **kwargs,
@@ -265,13 +273,61 @@ class OpsaniDevChecks(servo.BaseChecks):
         deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
         container = deployment.find_container(self.config.container)
         assert container
-        assert container.resources
-        assert container.resources.requests
-        assert container.resources.requests["cpu"]
-        assert container.resources.requests["memory"]
-        assert container.resources.limits
-        assert container.resources.limits["cpu"]
-        assert container.resources.limits["memory"]
+        assert container.resources, "missing container resources"
+
+        # Apply any defaults/overrides for requests/limits from config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
+
+        # TODO: How do we handle when you just don't have any requests?
+        # assert container.resources.requests, "missing requests for container resources"
+        # assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        # assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+
+        # assert container.resources.limits, "missing limits for container resources"
+        # assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        # assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+
+    @servo.checks.require("Target container resources fall within optimization range")
+    async def check_target_container_resources_within_limits(self) -> None:
+        # Load the Deployment
+        deployment = await servo.connectors.kubernetes.Deployment.read(
+            self.config.deployment,
+            self.config.namespace
+        )
+        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+
+        # Find the target Container
+        target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
+        assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
+
+        # Apply any defaults/overrides from the config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(target_container, self.config)
+
+        # Get resource requirements from container
+        # TODO: This needs to reuse the logic from CanaryOptimization class (tuning_cpu, tuning_memory, etc properties)
+        cpu_resource_requirements = target_container.get_resource_requirements('cpu')
+        cpu_resource_value = cpu_resource_requirements.get(
+            next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
+        )
+        container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+
+        memory_resource_requirements = target_container.get_resource_requirements('memory')
+        memory_resource_value = memory_resource_requirements.get(
+            next(filter(lambda r: memory_resource_requirements[r] is not None, self.config.memory.get), None)
+        )
+        container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(memory_resource_value)
+
+        # Get config values
+        config_cpu_min = self.config.cpu.min
+        config_cpu_max = self.config.cpu.max
+        config_memory_min = self.config.memory.min
+        config_memory_max = self.config.memory.max
+
+        # Check values against config.
+        assert container_cpu_value >= config_cpu_min, f"target container CPU value {container_cpu_value.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+        assert container_cpu_value <= config_cpu_max, f"target container CPU value {container_cpu_value.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
+        assert container_memory_value >= config_memory_min, f"target container Memory value {container_memory_value.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+        assert container_memory_value <= config_memory_max, f"target container Memory value {container_memory_value.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
@@ -288,9 +344,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         service = await servo.connectors.kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
-        if not service.obj.spec.type in ("ClusterIP", "LoadBalancer"):
+        service_type = service.obj.spec.type
+        if not service_type in ("ClusterIP", "LoadBalancer", "NodePort"):
             raise ValueError(
-                f"expected service type of ClusterIP or LoadBalancer but found {service.spec.type}"
+                f"expected service type of ClusterIP, LoadBalancer, or NodePort but found {service_type}"
             )
 
     @servo.checks.check("service port")
@@ -330,21 +387,36 @@ class OpsaniDevChecks(servo.BaseChecks):
             self.config.deployment, self.config.namespace
         )
 
-        # NOTE: The Service labels should be a subset of the deployment labels
+        # NOTE: The Service labels should be a subset of the Deployment labels
         deployment_labels = deployment.obj.spec.selector.match_labels
-        if not service.selector.items() <= deployment_labels.items():
-            raise RuntimeError(f"Service selector does not match Deployment labels")
+        delta = dict(set(service.selector.items()) - set(deployment_labels.items()))
+        if delta:
+            desc = ' '.join(map('='.join, delta.items()))
+            raise RuntimeError(f"Service selector does not match Deployment labels. Missing labels: {desc}")
 
     ##
     # Prometheus sidecar
 
     @servo.checks.require("Prometheus ConfigMap exists")
     async def check_prometheus_config_map(self) -> None:
-        config = await servo.connectors.kubernetes.ConfigMap.read(
-            "prometheus-config", self.config.namespace
-        )
+        namespace = os.getenv("POD_NAMESPACE", self.config.namespace)
+        optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(self.config.optimizer.name)
+
+        # Read optimizer namespaced resources
+        names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
+        for name in names:
+            try:
+                config = await servo.connectors.kubernetes.ConfigMap.read(
+                    name, namespace
+                )
+                if config:
+                    break
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status != 404 or e.reason != "Not Found":
+                    raise
+
         self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
-        assert config, "failed: no config map named 'prometheus-config'"
+        assert config, f"failed: no ConfigMap named '{names}' found in namespace '{namespace}'"
 
     @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
@@ -461,12 +533,16 @@ class OpsaniDevChecks(servo.BaseChecks):
         )
         assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
+        # Add optimizer annotation to the static Prometheus values
+        required_annotations = PROMETHEUS_ANNOTATION_DEFAULTS.copy()
+        required_annotations['servo.opsani.com/optimizer'] = self.config.optimizer.id
+
         # NOTE: Only check for annotation keys
         annotations = deployment.pod_template_spec.metadata.annotations or dict()
         actual_annotations = set(annotations.keys())
-        delta = set(PROMETHEUS_ANNOTATION_DEFAULTS.keys()).difference(actual_annotations)
+        delta = set(required_annotations.keys()).difference(actual_annotations)
         if delta:
-            annotations = dict(map(lambda k: (k, PROMETHEUS_ANNOTATION_DEFAULTS[k]), delta))
+            annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
@@ -474,7 +550,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
                 hint=f"Patch annotations via: `{command}`",
-                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: _stream_remedy_command(command)
             )
 
     @servo.checks.require("Deployment PodSpec has expected labels")
@@ -488,17 +564,21 @@ class OpsaniDevChecks(servo.BaseChecks):
         labels = deployment.pod_template_spec.metadata.labels
         assert labels, f"deployment '{deployment.name}' does not have any labels"
 
+        # Add optimizer label to the static values
+        required_labels = ENVOY_SIDECAR_LABELS.copy()
+        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
+
         # NOTE: Check for exact labels as this isn't configurable
-        delta = dict(set(ENVOY_SIDECAR_LABELS.items()) - set(labels.items()))
+        delta = dict(set(required_labels.items()) - set(labels.items()))
         if delta:
-            desc = ' '.join(map('='.join, delta.items()))
+            desc = ', '.join(sorted(map('='.join, delta.items())))
             patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
             patch_json = json.dumps(patch, indent=None)
             command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
-                remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+                remedy=lambda: _stream_remedy_command(command)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
@@ -514,11 +594,11 @@ class OpsaniDevChecks(servo.BaseChecks):
             if container.name == "opsani-envoy":
                 return
 
-        command = f"kubectl exec -c servo deploy/servo -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
+        command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- servo --token-file /servo/opsani.token inject-sidecar -n {self.config.namespace} -s {self.config.service} deployment/{self.config.deployment}"
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
-            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+            remedy=lambda: _stream_remedy_command(command)
         )
 
     @servo.checks.require("Pods have Envoy sidecar containers")
@@ -562,57 +642,27 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
-        # NOTE: We zero the metrics so we don't have to worry about missing vs. flatlined in this context
-        metrics = [
-            servo.connectors.prometheus.PrometheusMetric(
-                "main_request_rate",
-                servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
-                step="10s",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
-            ),
-            servo.connectors.prometheus.PrometheusMetric(
-                "main_error_rate",
-                servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_xx{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}", envoy_response_code_class=~"4|5"}}[10s]))',
-                step="10s",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
-            )
-        ]
+        # NOTE: We don't care about the response status code, we just want to see that traffic is being metered by Envoy
+        metric = servo.connectors.prometheus.PrometheusMetric(
+            "main_request_total",
+            servo.types.Unit.requests_per_second,
+            query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
+        )
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
-        summaries = []
-        for metric in metrics:
-            response = await client.query(metric)
-            if response.data:
-                assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
-                assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
-                result = response.data[0]
-
-                if metric.name == "main_request_rate":
-                    timestamp, value = result.value
-                    if not value > 0.0:
-                        command = f"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 15s | vegeta report -every 3s"
-                        raise servo.checks.CheckError(
-                            f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
-                            hint=f"Send traffic to your application on port 9980. Try `{command}`",
-                            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
-                        )
-                    summaries.append(f"{metric.name}={value}{metric.unit}")
-                elif metric.name == "main_error_rate":
-                    if result.value is None:
-                        # NOTE: if no errors are occurring this can legitimately be None
-                        value = 0
-                    else:
-                        timestamp, value = result.value
-                        assert int(value) < 10, f"Envoy is reporting an error rate above 10% to Prometheus for metric '{metric.name}' ({metric.query})"
-
-                    summaries.append(f"{metric.name}={0}{metric.unit}")
-                else:
-                    raise NotImplementedError(f"unexpected metric: {metric.name}")
-            else:
-                raise RuntimeError(f'Encountered unexpected null result value for metric "{metric.name}"')
-
-        return ", ".join(summaries)
+        response = await client.query(metric)
+        assert response.data, f"query returned no response data: '{metric.query}'"
+        assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+        assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
+        result = response.data[0]
+        timestamp, value = result.value
+        if value in {None, 0.0}:
+            command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- sh -c \"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
+            raise servo.checks.CheckError(
+                f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
+                hint=f"Send traffic to your application on port 9980. Try `{command}`",
+                remedy=lambda: _stream_remedy_command(command)
+            )
+        return f"{metric.name}={value}{metric.unit}"
 
     @servo.check("Traffic is proxied through Envoy")
     async def check_service_proxy(self) -> str:
@@ -634,36 +684,40 @@ class OpsaniDevChecks(servo.BaseChecks):
         raise servo.checks.CheckError(
             f"service '{service.name}' is not routing traffic through Envoy sidecar on port {proxy_service_port}",
             hint=f"Update target port via: `{command}`",
-            remedy=lambda: servo.utilities.subprocess.run_subprocess_shell(command)
+            remedy=lambda: _stream_remedy_command(command)
         )
 
     @servo.check("Tuning pod is running")
     async def check_tuning_is_running(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
+        # Generate a KubernetesConfiguration to initialize the optimization class
+        kubernetes_config = self.config.generate_kubernetes_config()
+        deployment_config = kubernetes_config.deployments[0]
+        optimization = await servo.connectors.kubernetes.CanaryOptimization.create(
+            deployment_config, timeout=kubernetes_config.timeout
         )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
+        # Ensure the canary is available
         try:
-            await deployment.ensure_tuning_pod()
+            await optimization.create_or_recreate_tuning_pod()
+
         except Exception as error:
+            servo.logger.exception("Failed creating tuning Pod: {error}")
             raise servo.checks.CheckError(
-                f"could not find tuning pod '{deployment.tuning_pod_name}''"
+                f"could not find tuning pod '{optimization.tuning_pod_name}''"
             ) from error
 
     @servo.check("Pods are processing traffic")
     async def check_traffic_metrics(self) -> str:
         metrics = [
             servo.connectors.prometheus.PrometheusMetric(
-                "main_request_rate",
+                "main_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'sum(rate(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s]))',
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
             ),
             servo.connectors.prometheus.PrometheusMetric(
-                "tuning_request_rate",
+                "tuning_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'rate(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}[10s])'
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}})'
             ),
         ]
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
@@ -671,14 +725,22 @@ class OpsaniDevChecks(servo.BaseChecks):
         for metric in metrics:
             response = await client.query(metric)
             assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+
             assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
 
             result = response.data[0]
             value = result.value[1]
-            assert value > 0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
+            assert value is not None and value > 0.0, f"Envoy is reporting a value of {value} which is not greater than zero for metric '{metric.name}' ({metric.query})"
 
             summaries.append(f"{metric.name}={value}{metric.unit}")
             return ", ".join(summaries)
+
+    @property
+    def _servo_resource_target(self) -> str:
+        if pod_name := os.environ.get('POD_NAME'):
+            return f"pods/{pod_name}"
+        else:
+            return "deployment/servo"
 
 
 @servo.metadata(
@@ -718,3 +780,10 @@ class OpsaniDevConnector(servo.BaseConnector):
         return await OpsaniDevChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
+
+async def _stream_remedy_command(command: str) -> None:
+    await servo.utilities.subprocess.stream_subprocess_shell(
+        command,
+        stdout_callback=lambda msg: servo.logger.debug(f"[stdout] {msg}"),
+        stderr_callback=lambda msg: servo.logger.warning(f"[stderr] {msg}"),
+    )

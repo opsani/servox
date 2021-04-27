@@ -25,7 +25,7 @@ def cli_runner() -> CliRunner:
 
 @pytest.fixture()
 def optimizer() -> Optimizer:
-    return Optimizer("dev.opsani.com/servox", token="123456789")
+    return Optimizer(id="dev.opsani.com/servox", token="123456789")
 
 
 @pytest.fixture()
@@ -437,7 +437,12 @@ def test_run_with_empty_config_file(
 ) -> None:
     result = cli_runner.invoke(servo_cli, "config", catch_exceptions=False)
     assert result.exit_code == 0, f"RESULT: {result.stderr}"
-    assert "{}" in result.stdout
+
+    parsed = yaml.full_load(result.stdout)
+    assert parsed, f"Expected to a config doc: {optimizer}"
+    optimizer = parsed['optimizer']
+    assert optimizer['id'] == 'dev.opsani.com/servox'
+    assert optimizer['token'] == '123456789'
 
 
 def test_run_with_malformed_config_file(
@@ -501,6 +506,8 @@ def test_config_configmap_file(
     path = tmp_path / "settings.yaml"
     result = cli_runner.invoke(servo_cli, f"config -f configmap -o {path}")
     assert result.exit_code == 0
+
+    # TODO: Fixme -- this should just be optimizer: and token:
     assert path.read_text() == (
         "---\n"
         "apiVersion: v1\n"
@@ -789,7 +796,6 @@ class TestCommands:
                 ],
                 'measure': {
                     'description': None,
-                    'name': 'stub',
                 },
             },
             {

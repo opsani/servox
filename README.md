@@ -752,6 +752,10 @@ The project is bound to a local Python version via the `.python-version` file.
 Tell Poetry to bind against the locally selected environment via:
 ``poetry env use `cat .python-version` ``
 
+When upgrading between point releases of the Python interpreter, you may need
+to tear down and recreate your venv:
+``poetry env remove `cat .python-version` && poetry install``
+
 ## Testing
 
 Tests are implemented using [pytest](https://docs.pytest.org/en/stable/) and
@@ -966,6 +970,29 @@ All manifests loaded through kubetest support Mustache templating.
 A context dictionary is provided to the template that includes references to all
 Kubernetes resources that have been loaded at render time. The `namespace` and
 `objs` are likely to be the most interesting.
+
+### Startup Banner
+
+Just for fun, ServoX generates an ASCII art banner at startup. The font is
+randomized from a painstakingly selected set of style that represent the ServoX
+vibe. The output color is then randomized and has a 50/50 shot of being rendered
+as a rainbow or a randomly selected flat output color.
+
+Don't like serendipity?
+
+You can take control of the banner output with two environment variables:
+
+* `SERVO_BANNER_FONT`: Name of the [Figlet](http://www.figlet.org/fontdb.cgi)
+  font to render the banner in.
+* `SERVO_BANNER_COLOR`: The color to use when rendering the banner. Valid
+  options are:
+  * `RED`
+  * `GREEN`
+  * `YELLOW`
+  * `BLUE`
+  * `MAGENTA`
+  * `CYAN`
+  * `RAINBOW`
 
 ## License
 

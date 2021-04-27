@@ -338,8 +338,7 @@ def test_decorating_invalid_signatures() -> None:
 
 
 @pytest.mark.freeze_time("2020-08-25", auto_tick_seconds=15)
-@pytest.mark.event_loop_policy("default")
-async def test_check_timer() -> None:
+def test_check_timer() -> None:
     @check("Check timer")
     def check_test() -> None:
         ...
@@ -352,7 +351,6 @@ async def test_check_timer() -> None:
 
 
 @pytest.mark.freeze_time("2020-08-25", auto_tick_seconds=15)
-@pytest.mark.event_loop_policy("default")
 async def test_decorate_async() -> None:
     @check("Check async")
     async def check_test() -> None:

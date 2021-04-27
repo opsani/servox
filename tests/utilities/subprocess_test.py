@@ -4,10 +4,6 @@ import pytest
 
 import servo.utilities.subprocess
 
-# NOTE: These tests are brittle when run under uvloop. We run these under the default
-# asyncio event loop policy to avoid exceptions relating to pytest output capture.
-# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
-pytestmark = [pytest.mark.asyncio, pytest.mark.event_loop_policy("default")]
 
 async def test_stream_subprocess_exec():
     output = []

@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: fiber-http
 
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: fiber-http
-        image: ghcr.io/opsani/fiber-http:latest
+        image: opsani/fiber-http:latest
         imagePullPolicy: IfNotPresent
         resources:
           requests:

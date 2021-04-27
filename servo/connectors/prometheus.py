@@ -517,7 +517,7 @@ class Client(pydantic.BaseModel):
     _normalize_base_url = pydantic.validator('base_url', allow_reuse=True)(_rstrip_slash)
 
     @property
-    def api_url(self) -> str:
+    def url(self) -> str:
         """Return the full URL for accessing the Prometheus API."""
         return f"{self.base_url}{API_PATH}"
 
@@ -630,7 +630,7 @@ class Client(pydantic.BaseModel):
         servo.logger.trace(
             f"Sending request to Prometheus HTTP API (`{request}`): {method} {request.endpoint}"
         )
-        async with httpx.AsyncClient(base_url=self.api_url) as client:
+        async with httpx.AsyncClient(base_url=self.url) as client:
             try:
                 kwargs = (
                     dict(params=request.params) if method == 'GET'
@@ -777,16 +777,21 @@ class PrometheusConnector(servo.BaseConnector):
                 report = []
                 client = Client(base_url=self.config.base_url)
                 responses = await asyncio.gather(
-                    *list(map(client.query, self.config.metrics))
+                    *list(map(client.query, self.config.metrics)),
+                    return_exceptions=True
                 )
                 for response in responses:
+                    if isinstance(response, Exception):
+                        logger.error(f"failed querying Prometheus for metrics: {response}")
+                        continue
+
                     if response.data:
                         # NOTE: Instant queries return a single vector
                         timestamp, value = response.data[0].value
                         report.append((response.metric.name, timestamp.isoformat(), value))
 
                 await publisher(servo.pubsub.Message(json=report))
-                logger.info(f"Published {len(report)} metrics.")
+                logger.debug(f"Published {len(report)} metrics.")
 
     @servo.on_event()
     async def check(
@@ -867,7 +872,7 @@ class PrometheusConnector(servo.BaseConnector):
         if eager_metrics:
             servo.logger.info(f"Observing values of {len(eager_metrics)} eager metrics: measurement will return after {eager_settlement} of stability")
         else:
-            servo.logger.info(f"No eager metrics found: measurement will proceed for full duration of {measurement_duration}")
+            servo.logger.debug(f"No eager metrics found: measurement will proceed for full duration of {measurement_duration}")
 
         # Allow the maximum settlement time of eager metrics to elapse before eager return (None runs full duration)
         progress = servo.EventProgress(timeout=measurement_duration, settlement=eager_settlement)

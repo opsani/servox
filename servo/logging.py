@@ -19,7 +19,6 @@ import loguru
 import servo.assembly
 import servo.events
 
-
 __all__ = (
     "Mixin",
     "Filter",
@@ -160,16 +159,23 @@ class ProgressHandler:
             try:
                 progress = await self._queue.get()
                 if progress is None:
+                    logger.info(f"retrieved None from progress queue. halting progress reporting")
                     break
+
+                if int(progress['progress']) == 100:
+                    logger.debug(f"eliding 100% progress event: {progress}")
+                    continue
 
                 if asyncio.iscoroutinefunction(self._progress_reporter):
                     await self._progress_reporter(**progress)
                 else:
                     self._progress_reporter(**progress)
+            except servo.errors.EventCancelledError:
+                pass  # Event cancellation should not be logged as an error.
             except asyncio.CancelledError:
-                pass  # Task cancellation should not be logged as an error.
+                raise
             except Exception as error:  # pylint: disable=broad-except
-                logger.warning(f"encountered exception while processing progress logging: {error}")
+                logger.warning(f"encountered exception while processing progress logging: {repr(error)}")
                 if self._exception_handler:
                     if asyncio.iscoroutinefunction(self._exception_handler):
                         await self._exception_handler(error)
