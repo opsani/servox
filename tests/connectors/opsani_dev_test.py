@@ -67,8 +67,8 @@ class TestConfig:
             "  min: 250m\n"
             "  max: '4'\n"
             "memory:\n"
-            "  min: 256.0MiB\n"
-            "  max: 4.0GiB\n"
+            "  min: 256.0Mi\n"
+            "  max: 4.0Gi\n"
         )
 
     def test_assign_optimizer(self) -> None:
@@ -85,6 +85,7 @@ class TestConfig:
     ],
 )
 @pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestIntegration:
     class TestChecksOriginalState:
@@ -144,6 +145,12 @@ class TestIntegration:
         ) -> None:
             result = await checks.run_one(id=f"check_service_routes_traffic_to_deployment")
             assert result.success, f"Failed with message: {result.message}"
+
+        async def test_prometheus_configmap_exists(
+            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ) -> None:
+            result = await checks.run_one(id=f"check_prometheus_config_map")
+            assert result.success
 
         async def test_prometheus_sidecar_exists(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
@@ -335,8 +342,15 @@ class TestServiceMultiport:
             # These env vars are set by our manifests
             deployment = kube.get_deployments()["servo"]
             pod = deployment.get_pods()[0]
-            os.environ['POD_NAME'] = pod.name
-            os.environ["POD_NAMESPACE"] = kube.namespace
+            try:
+                os.environ['POD_NAME'] = pod.name
+                os.environ["POD_NAMESPACE"] = kube.namespace
+
+                yield
+
+            finally:
+                os.environ.pop('POD_NAME', None)
+                os.environ.pop('POD_NAMESPACE', None)
 
         async def test_process(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
@@ -400,7 +414,7 @@ class TestServiceMultiport:
                     await add_labels_to_podspec_of_deployment(deployment,
                         {
                             "sidecar.opsani.com/type": "envoy",
-                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(checks.config.optimizer.id),
+                            "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(checks.config.optimizer.id),
                         }
                     )
                 await assert_check(checks.run_one(id=f"check_deployment_labels"))
@@ -487,7 +501,7 @@ class TestServiceMultiport:
                 # Step 7
                 servo.logger.critical("Step 7 - Bring tuning Pod online")
                 async with change_to_resource(deployment):
-                    await deployment.ensure_tuning_pod()
+                    await deployment.create_or_recreate_tuning_pod()
                 await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
                 # Step 8
@@ -907,7 +921,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
             await add_labels_to_podspec_of_deployment(deployment,
                 {
                     "sidecar.opsani.com/type": "envoy",
-                    "servo.opsani.com/optimizer": servo.connectors.kubernetes.labelize(config.optimizer.id),
+                    "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(config.optimizer.id),
                 }
             )
 
@@ -951,7 +965,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
     elif id == 'check_tuning_is_running':
         servo.logger.critical("Step 7 - Bring tuning Pod online")
         async with change_to_resource(deployment):
-            await deployment.ensure_tuning_pod()
+            await deployment.create_or_recreate_tuning_pod()
 
     elif id == 'check_traffic_metrics':
         # Step 8
