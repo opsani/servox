@@ -2784,7 +2784,7 @@ class CanaryOptimization(BaseOptimization):
         Return the configured failure behavior. If not set explicitly, this will be cascaded
         from the base kubernetes configuration (or its default)
         """
-        return self.target_deployment_config.on_failure
+        return self.deployment_config.on_failure
 
     def main_cpu(self) -> CPU:
         """
@@ -3087,7 +3087,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                     if isinstance(result, Exception):
                         for optimization in self.optimizations:
                             if await optimization.handle_error(result):
-                                # Stop error propogation once it has been handled
+                                # Stop error propagation once it has been handled
                                 break
 
             except asyncio.exceptions.TimeoutError as error:
@@ -3096,7 +3096,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 )
                 for optimization in self.optimizations:
                     if await optimization.handle_error(error):
-                        # Stop error propogation once it has been handled
+                        # Stop error propagation once it has been handled
                         break
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
