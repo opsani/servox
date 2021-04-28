@@ -2786,6 +2786,7 @@ class CanaryOptimization(BaseOptimization):
         """
         return self.deployment_config.on_failure
 
+    @property
     def main_cpu(self) -> CPU:
         """
         Return the current CPU setting for the main containers.
