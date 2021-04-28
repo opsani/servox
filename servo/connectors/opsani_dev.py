@@ -274,14 +274,20 @@ class OpsaniDevChecks(servo.BaseChecks):
         container = deployment.find_container(self.config.container)
         assert container
         assert container.resources, "missing container resources"
-        assert container.resources.requests, "missing requests for container resources"
-        assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
-        assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
-        assert container.resources.limits, "missing limits for container resources"
-        assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
-        assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
-    @servo.checks.require("Target container resource requests are within limits")
+        # Apply any defaults/overrides for requests/limits from config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
+
+        # TODO: How do we handle when you just don't have any requests?
+        # assert container.resources.requests, "missing requests for container resources"
+        # assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+        # assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+
+        # assert container.resources.limits, "missing limits for container resources"
+        # assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+        # assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+
+    @servo.checks.require("Target container resources fall within optimization range")
     async def check_target_container_resources_within_limits(self) -> None:
         # Load the Deployment
         deployment = await servo.connectors.kubernetes.Deployment.read(
@@ -292,12 +298,24 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Find the target Container
         target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
-
         assert target_container, f"failed to find container '{self.config.container}' when verifying resource limits"
 
+        # Apply any defaults/overrides from the config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(target_container, self.config)
+
         # Get resource requirements from container
-        container_cpu_request = servo.connectors.kubernetes.Millicore.parse(target_container.resources.requests["cpu"])
-        container_memory_request = servo.connectors.kubernetes.ShortByteSize.validate(target_container.resources.requests["memory"])
+        # TODO: This needs to reuse the logic from CanaryOptimization class (tuning_cpu, tuning_memory, etc properties)
+        cpu_resource_requirements = target_container.get_resource_requirements('cpu')
+        cpu_resource_value = cpu_resource_requirements.get(
+            next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
+        )
+        container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+
+        memory_resource_requirements = target_container.get_resource_requirements('memory')
+        memory_resource_value = memory_resource_requirements.get(
+            next(filter(lambda r: memory_resource_requirements[r] is not None, self.config.memory.get), None)
+        )
+        container_memory_value = servo.connectors.kubernetes.ShortByteSize.validate(memory_resource_value)
 
         # Get config values
         config_cpu_min = self.config.cpu.min
@@ -306,10 +324,10 @@ class OpsaniDevChecks(servo.BaseChecks):
         config_memory_max = self.config.memory.max
 
         # Check values against config.
-        assert container_cpu_request >= config_cpu_min, f"target container CPU request {container_cpu_request.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
-        assert container_cpu_request <= config_cpu_max, f"target container CPU request {container_cpu_request.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
-        assert container_memory_request >= config_memory_min, f"target container Memory request {container_memory_request.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
-        assert container_memory_request <= config_memory_max, f"target container Memory request {container_memory_request.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
+        assert container_cpu_value >= config_cpu_min, f"target container CPU value {container_cpu_value.human_readable()} must be greater than optimizable minimum {config_cpu_min.human_readable()}"
+        assert container_cpu_value <= config_cpu_max, f"target container CPU value {container_cpu_value.human_readable()} must be less than optimizable maximum {config_cpu_max.human_readable()}"
+        assert container_memory_value >= config_memory_min, f"target container Memory value {container_memory_value.human_readable()} must be greater than optimizable minimum {config_memory_min.human_readable()}"
+        assert container_memory_value <= config_memory_max, f"target container Memory value {container_memory_value.human_readable()} must be less than optimizable maximum {config_memory_max.human_readable()}"
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
@@ -378,6 +396,27 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     ##
     # Prometheus sidecar
+
+    @servo.checks.require("Prometheus ConfigMap exists")
+    async def check_prometheus_config_map(self) -> None:
+        namespace = os.getenv("POD_NAMESPACE", self.config.namespace)
+        optimizer_subdomain = servo.connectors.kubernetes.dns_subdomainify(self.config.optimizer.name)
+
+        # Read optimizer namespaced resources
+        names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
+        for name in names:
+            try:
+                config = await servo.connectors.kubernetes.ConfigMap.read(
+                    name, namespace
+                )
+                if config:
+                    break
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status != 404 or e.reason != "Not Found":
+                    raise
+
+        self.logger.trace(f"read Prometheus ConfigMap: {repr(config)}")
+        assert config, f"failed: no ConfigMap named '{names}' found in namespace '{namespace}'"
 
     @servo.checks.check("Prometheus sidecar is running")
     async def check_prometheus_sidecar_exists(self) -> None:
@@ -527,7 +566,7 @@ class OpsaniDevChecks(servo.BaseChecks):
 
         # Add optimizer label to the static values
         required_labels = ENVOY_SIDECAR_LABELS.copy()
-        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.labelize(self.config.optimizer.id)
+        required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
 
         # NOTE: Check for exact labels as this isn't configurable
         delta = dict(set(required_labels.items()) - set(labels.items()))
@@ -607,7 +646,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         metric = servo.connectors.prometheus.PrometheusMetric(
             "main_request_total",
             servo.types.Unit.requests_per_second,
-            query=f'envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}',
+            query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
         )
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
         response = await client.query(metric)
@@ -650,17 +689,21 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Tuning pod is running")
     async def check_tuning_is_running(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
+        # Generate a KubernetesConfiguration to initialize the optimization class
+        kubernetes_config = self.config.generate_kubernetes_config()
+        deployment_config = kubernetes_config.deployments[0]
+        optimization = await servo.connectors.kubernetes.CanaryOptimization.create(
+            deployment_config, timeout=kubernetes_config.timeout
         )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
 
+        # Ensure the canary is available
         try:
-            await deployment.ensure_tuning_pod()
+            await optimization.create_or_recreate_tuning_pod()
+
         except Exception as error:
+            servo.logger.exception("Failed creating tuning Pod: {error}")
             raise servo.checks.CheckError(
-                f"could not find tuning pod '{deployment.tuning_pod_name}''"
+                f"could not find tuning pod '{optimization.tuning_pod_name}''"
             ) from error
 
     @servo.check("Pods are processing traffic")
@@ -669,12 +712,12 @@ class OpsaniDevChecks(servo.BaseChecks):
             servo.connectors.prometheus.PrometheusMetric(
                 "main_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}}',
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role!="tuning", kubernetes_namespace="{self.config.namespace}"}})',
             ),
             servo.connectors.prometheus.PrometheusMetric(
                 "tuning_request_total",
                 servo.types.Unit.requests_per_second,
-                query=f'envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}}'
+                query=f'sum(envoy_cluster_upstream_rq_total{{opsani_role="tuning", kubernetes_namespace="{self.config.namespace}"}})'
             ),
         ]
         client = servo.connectors.prometheus.Client(base_url=self.config.prometheus_base_url)
@@ -682,6 +725,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         for metric in metrics:
             response = await client.query(metric)
             assert response.data.result_type == servo.connectors.prometheus.ResultType.vector, f"expected a vector result but found {response.data.result_type}"
+
             assert len(response.data) == 1, f"expected Prometheus API to return a single result for metric '{metric.name}' but found {len(response.data)}"
 
             result = response.data[0]
