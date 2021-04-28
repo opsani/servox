@@ -370,24 +370,22 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         )
         self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
 
-        # Establish watch on the config file and shutdown when updated
-        # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
-        async def _config_file_watch():
-            async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
-                # Only watching one file, should only ever get one change
-                if len(changes) > 1:
-                    self.logger.warning(f"servo.yaml config watch yielded multiple file changes: {changes}")
-                    change = next(filter(lambda c: c[1] == str(self.assembly.config_file), changes), None)
-                    if not change:
-                        continue
-                else:
-                    change = changes.pop()
+        if self.assembly.watch_config_file:
+            # Establish watch on the config file and shutdown when updated
+            # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
+            async def _config_file_watch():
+                async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
+                    # Only watching one file, should only ever get one change
+                    if len(changes) > 1:
+                        raise RuntimeError(f"config watch of {self.assembly.config_file} yielded multiple file changes: {changes}")
+                    else:
+                        change = changes.pop()
 
-                self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
-                self.logger.trace(f"Config file watch change: {change}")
+                    self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
+                    self.logger.trace(f"Config file watch change: {change}")
 
-                loop.create_task(self._shutdown(loop))
-                break
+                    loop.create_task(self._shutdown(loop))
+                    break
 
         loop.create_task(_config_file_watch())
 

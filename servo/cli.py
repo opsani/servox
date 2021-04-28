@@ -84,6 +84,7 @@ class Context(typer.Context):
 
     # Basic configuration
     config_file: Optional[pathlib.Path] = None
+    watch_config_file: Optional[bool] = None
     optimizer: Optional[servo.Optimizer] = None
     name: Optional[str] = None
 
@@ -130,6 +131,7 @@ class Context(typer.Context):
         command: "Command",
         *args,
         config_file: Optional[pathlib.Path] = None,
+        watch_config_file: Optional[bool] = None,
         name: Optional[str] = None,
         optimizer: Optional[servo.Optimizer] = None,
         assembly: Optional[servo.Assembly] = None,
@@ -144,6 +146,7 @@ class Context(typer.Context):
         **kwargs,
     ) -> None: # noqa: D107
         self.config_file = config_file
+        self.watch_config_file = watch_config_file
         self.name = name
         self.optimizer = optimizer
         self.assembly = assembly
@@ -399,6 +402,13 @@ class CLI(typer.Typer, servo.logging.Mixin):
             resolve_path=True,
             help="Servo configuration file",
         ),
+        watch_config_file: Optional[bool] = typer.Option(
+            None,
+            "--watch-config-file",
+            envvar="SERVO_WATCH_CONFIG_FILE",
+            show_envvar=True,
+            help="Watch the servo configuration file and reload when changed",
+        ),
         name: Optional[str] = typer.Option(
             None,
             "--name",
@@ -428,6 +438,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         ),
     ):
         ctx.config_file = config_file
+        ctx.watch_config_file = watch_config_file
         ctx.name = name
         ctx.optimizer = optimizer
         ctx.token = token

@@ -55,6 +55,7 @@ class Assembly(pydantic.BaseModel):
     """
 
     config_file: Optional[pathlib.Path]
+    watch_config_file: Optional[bool] = None
     servos: List[servo.servo.Servo]
     _context_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 
@@ -63,6 +64,7 @@ class Assembly(pydantic.BaseModel):
         cls,
         *,
         config_file: Optional[pathlib.Path] = None,
+        watch_config_file: Optional[bool] = None,
         configs: Optional[List[Dict[str, Any]]] = None,
         optimizer: Optional[servo.configuration.Optimizer] = None,
         env: Optional[Dict[str, str]] = os.environ,
@@ -137,6 +139,7 @@ class Assembly(pydantic.BaseModel):
 
         assembly = cls(
             config_file=config_file,
+            watch_config_file=watch_config_file,
             servos=servos,
         )
 

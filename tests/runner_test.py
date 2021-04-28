@@ -65,6 +65,34 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
                 # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
                 await assembly_runner._shutdown(event_loop)
 
+# WIP
+# async def test_file_config_update(assembly_runner: servo.runner.AssemblyRunner, fakeapi_url: str, servo_yaml: pathlib.Path):
+#     # Test Setup
+#     assembly_runner.assembly.watch_config_file = True
+
+#     servo_ = assembly_runner.assembly.servos[0]
+#     servo_.optimizer.base_url = fakeapi_url
+#     for connector in servo_.connectors:
+#         connector.optimizer.base_url = fakeapi_url
+
+#     # Capture critical logs
+#     messages = []
+#     assembly_runner.logger.add(lambda m: messages.append(m), level=50)
+
+#     # Mock event loop methods to prevent errors from servo trying to start/close it
+#     event_loop = asyncio.get_event_loop()
+#     # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
+#     with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
+#         # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
+#         with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+#             assembly_runner.run()
+#             await asyncio.sleep(1)
+#             servo_yaml.write_text("test update, won't be loaded")
+
+#             assert assembly_runner.running == False
+#             assert "Config file change detected (Change.modified), shutting down active Servo(s) for config reload" in messages[0]
+
+
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     """Return an unstarted servo runner."""

@@ -64,7 +64,6 @@ def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
 
-@pytest.mark.timeout(10)
 def test_file_config_update(
     event_loop: asyncio.AbstractEventLoop,
     assembly_runner: servo.runner.AssemblyRunner,
