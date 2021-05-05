@@ -12,7 +12,9 @@ class ScriptsConnector(servo.BaseConnector):
     @servo.on_event()
     async def startup(self) -> None:
         for preposition in (servo.Preposition.before, servo.Preposition.after):
-            for event_name, scripts in getattr(self.config, str(preposition), {}).items():
+            event_scripts = getattr(self.config, str(preposition))
+            if event_scripts is None: continue
+            for event_name, scripts in event_scripts.items():
                 event = servo.events.EventContext.from_str(event_name)
 
                 for script in scripts:
