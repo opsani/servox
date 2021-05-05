@@ -224,7 +224,7 @@ the `servo.connector` module. Handlers are registered with a *preposition* which
 determines if it is invoked before, on, or after the event has been processed.
 Handlers are invoked when the servo or another connector dispatches an event.
 Event handlers can be implemented either synchronously or asynchronously
-depending on if the method is a coroutined declared with the async prefix.
+depending on if the method is a coroutine declared with the async prefix.
 
 ```python
 from typing import List

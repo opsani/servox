@@ -386,10 +386,6 @@ class BackoffConfigurations(pydantic.BaseModel):
         ).max_tries
 
 
-# FIXME: this needs a better name -- maybe call it "CommonConfiguration" or maybe the options need to be pulled up to top level
-# FIXME: can we factor the shared config up?
-# TODO: This is probably called a Settings class of some kind
-# TODO: CommonSettings? BaseSettings? SharedSettings? Just Settings?
 class CommonConfiguration(AbstractBaseConfiguration):
     """CommonConfiguration models configuration for the Servo connector and establishes default
     settings for shared services such as networking and logging.
