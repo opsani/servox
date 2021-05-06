@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import copy
 import datetime
 import enum
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -267,7 +268,7 @@ class Mixin(abc.ABC):
                 self.logger.trace(
                     f"POST event response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
-                self.logger.trace(curlify2.to_curl(response.request))
+                self.logger.trace(_redacted_to_curl(response.request))
 
                 return pydantic.parse_obj_as(
                     Union[CommandResponse, Status], response_json
@@ -275,7 +276,7 @@ class Mixin(abc.ABC):
 
             except httpx.HTTPError as error:
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
-                self.logger.trace(curlify2.to_curl(error.request))
+                self.logger.trace(_redacted_to_curl(error.request))
                 raise
 
 
@@ -308,3 +309,18 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
 
 def user_agent() -> str:
     return f"{USER_AGENT} v{servo.__version__}"
+
+def _redacted_to_curl(request: httpx.Request) -> str:
+    """Pass through to curlify2.to_curl that redacts the authorization in the headers
+    """
+    if (auth_header := request.headers.get('authorization')) is None:
+        return curlify2.to_curl(request)
+
+    req_copy = copy.copy(request)
+    req_copy.headers = copy.deepcopy(request.headers)
+    if "Bearer" in auth_header:
+        req_copy.headers['authorization'] = "Bearer [REDACTED]"
+    else:
+        req_copy.headers['authorization'] = "[REDACTED]"
+
+    return curlify2.to_curl(req_copy)
