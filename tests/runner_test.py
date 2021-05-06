@@ -1,6 +1,8 @@
 
 import asyncio
+import contextlib
 import pathlib
+from typing import Callable
 
 import pytest
 import unittest.mock
@@ -12,6 +14,11 @@ import tests.fake
 import tests.helpers
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+
+test_optimizer_config = {
+    "id": "dev.opsani.com/servox-integration-tests",
+    "token": "179eddc9-20e2-4096-b064-824b72a83b7d",
+}
 
 @pytest.fixture()
 async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
@@ -25,10 +32,7 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     servo_yaml.write_text(config.yaml())
 
     # TODO: This needs a real optimizer ID
-    optimizer = servo.configuration.Optimizer(
-        id="dev.opsani.com/servox-integration-tests",
-        token="179eddc9-20e2-4096-b064-824b72a83b7d",
-    )
+    optimizer = servo.configuration.Optimizer(**test_optimizer_config)
     assembly_ = await servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
     )
@@ -40,57 +44,89 @@ def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
 
-async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.runner.AssemblyRunner):
-    event_loop = asyncio.get_event_loop()
-
+@contextlib.contextmanager
+def mock_event_loop_run_close_stop(event_loop: asyncio.AbstractEventLoop) -> asyncio.AbstractEventLoop:
+    # NOTE: defining this as a fixture causes RuntimeError: Event loop stopped before Future completed.
     # NOTE: using the pytest_mocker fixture for mocking the event loop can cause side effects with pytest-asyncio
     #   (eg. when fixture mocking the `stop` method, the test will run forever).
-    #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
+    #   By using unittest.mock, we can ensure the event_loop is restored before exiting the test method
 
     # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
     with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
-        # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
+        # run_forever no longer blocks causing loop.close() to be called immediately, stop assembly runner from closing it to prevent errors
         with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+            # stopping the loop causes test errors when fakeapi is running, don't let runner stop the loop
+            with unittest.mock.patch.object(event_loop, 'stop', return_value=None):
+                yield event_loop
+
+@contextlib.contextmanager
+def mock_all_tasks_exclude_test_tasks() -> None:
+    test_tasks = asyncio.all_tasks()
+    original_all_tasks = asyncio.all_tasks
+    def all_tasks_side_effect():
+        return set(filter(lambda t: t not in test_tasks, original_all_tasks()))
+
+    with unittest.mock.patch('asyncio.all_tasks', side_effect=all_tasks_side_effect):
+        yield
+
+async def safe_wait(condition: Callable[[], bool], max_checks: int = 5, sleep_duration: float = 0.01) -> None:
+    num_checks = 0
+    while not condition() and num_checks < max_checks:
+        print("wait")
+        num_checks += 1
+        await asyncio.sleep(sleep_duration)
+
+    if num_checks >= max_checks:
+        raise RuntimeError(f"Infinite loop guard expired (max_checks: {max_checks}, sleep_duration: {sleep_duration})")
+
+async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.runner.AssemblyRunner):
+    event_loop = asyncio.get_event_loop()
+    with mock_event_loop_run_close_stop(event_loop) as mocked_loop:
+        assembly_runner.run()
+        await safe_wait(lambda: assembly_runner.assembly.servos[0].is_running)
+
+        # Shutdown the servo to produce edge case error
+        await assembly_runner.assembly.servos[0].shutdown()
+        try:
+            await assembly_runner.assembly.shutdown()
+        except:
+            raise
+        finally:
+            # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
+            await assembly_runner._shutdown(mocked_loop)
+
+async def test_file_config_update(
+    assembly_runner: servo.runner.AssemblyRunner,
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+    servo_yaml: pathlib.Path
+) -> None:
+    # Test Setup
+    # assembly_runner.assembly.watch_config_file = True
+    fastapi_app.optimizer = tests.fake.SequencedOptimizer(**test_optimizer_config)
+    await fastapi_app.optimizer.request_description()
+
+    servo_ = assembly_runner.assembly.servos[0]
+    servo_.optimizer.base_url = fakeapi_url
+    for connector in servo_.connectors:
+        connector.optimizer.base_url = fakeapi_url
+
+    # Capture critical logs
+    messages = []
+    assembly_runner.logger.add(lambda m: messages.append(m), level=50)
+
+    # Mock event loop methods to prevent errors from servo trying to start/close it
+    event_loop = asyncio.get_event_loop()
+    with mock_event_loop_run_close_stop(event_loop) as mocked_loop:
+        with mock_all_tasks_exclude_test_tasks():
             assembly_runner.run()
-            while not assembly_runner.assembly.servos[0].is_running:
-                await asyncio.sleep(0.01)
+            await asyncio.sleep(1)
+            servo_yaml.write_text("test update, won't be loaded")
 
-            # Shutdown the servo to produce edge case error
-            await assembly_runner.assembly.servos[0].shutdown()
-            try:
-                await assembly_runner.assembly.shutdown()
-            except:
-                raise
-            finally:
-                # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
-                await assembly_runner._shutdown(event_loop)
+            await safe_wait(lambda: not assembly_runner.running, sleep_duration=0.1)
 
-# WIP
-# async def test_file_config_update(assembly_runner: servo.runner.AssemblyRunner, fakeapi_url: str, servo_yaml: pathlib.Path):
-#     # Test Setup
-#     assembly_runner.assembly.watch_config_file = True
-
-#     servo_ = assembly_runner.assembly.servos[0]
-#     servo_.optimizer.base_url = fakeapi_url
-#     for connector in servo_.connectors:
-#         connector.optimizer.base_url = fakeapi_url
-
-#     # Capture critical logs
-#     messages = []
-#     assembly_runner.logger.add(lambda m: messages.append(m), level=50)
-
-#     # Mock event loop methods to prevent errors from servo trying to start/close it
-#     event_loop = asyncio.get_event_loop()
-#     # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
-#     with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
-#         # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
-#         with unittest.mock.patch.object(event_loop, 'close', return_value=None):
-#             assembly_runner.run()
-#             await asyncio.sleep(1)
-#             servo_yaml.write_text("test update, won't be loaded")
-
-#             assert assembly_runner.running == False
-#             assert "Config file change detected (Change.modified), shutting down active Servo(s) for config reload" in messages[0]
+    assert assembly_runner.running == False
+    assert "Config file change detected (Change.modified), shutting down active Servo(s) for config reload" in messages[0]
 
 
 @pytest.fixture

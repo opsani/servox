@@ -387,7 +387,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     loop.create_task(self._shutdown(loop))
                     break
 
-        loop.create_task(_config_file_watch())
+            loop.create_task(_config_file_watch())
 
         self._display_banner()
 
