@@ -7,6 +7,7 @@ import random
 import shutil
 import signal
 from typing import Any, Dict, List, Optional
+import watchgod
 
 import backoff
 import colorama
@@ -369,6 +370,25 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         )
         self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
 
+        if self.assembly.watch_config_file:
+            # Establish watch on the config file and shutdown when updated
+            # TODO: perform hot reload instead of shutdown for cases when running outside k8s and theres no pod to restart the exited container
+            async def _config_file_watch():
+                async for changes in watchgod.awatch(self.assembly.config_file, normal_sleep=1000):
+                    # Only watching one file, should only ever get one change
+                    if len(changes) > 1:
+                        raise RuntimeError(f"config watch of {self.assembly.config_file} yielded multiple file changes: {changes}")
+                    else:
+                        change = changes.pop()
+
+                    self.logger.critical(f"Config file change detected ({str(change[0])}), shutting down active Servo(s) for config reload")
+                    self.logger.trace(f"Config file watch change: {change}")
+
+                    loop.create_task(self._shutdown(loop))
+                    break
+
+            loop.create_task(_config_file_watch())
+
         self._display_banner()
 
         try:
@@ -489,12 +509,15 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             await self.assembly.shutdown()
         except Exception as error:
             self.logger.critical(f"Failed assembly shutdown with error: {error}")
+            self.logger.opt(exception=error).debug("Failed assembly shutdown with error")
 
         await asyncio.gather(self.progress_handler.shutdown(), return_exceptions=True)
         self.logger.remove(self.progress_handler_id)
 
         # Cancel any outstanding tasks -- under a clean, graceful shutdown this list will be empty
         # The shutdown of the assembly and the servo should clean up its tasks
+        # TODO: ServoRunner.shutdown() does not clean up tasks, only sets its main_loop LCV to false
+        #   but the loops, in most cases, won't complete another iteration before the logic below shuts it down forcefully
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
         if len(tasks):
             [task.cancel() for task in tasks]
