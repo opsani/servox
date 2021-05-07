@@ -14,7 +14,6 @@ import operator
 import os
 import pathlib
 import re
-import sys
 from typing import (
     Any,
     Callable,
@@ -2181,9 +2180,6 @@ class DeploymentOptimization(BaseOptimization):
     async def create(
         cls, config: "DeploymentConfiguration", **kwargs
     ) -> "DeploymentOptimization":
-        if config.horizontal_pod_autoscaler:
-            raise ValueError("DeploymentOptimization is not compatible with deployments controlled by a Horizontal Pod Autoscaler")
-
         deployment = await Deployment.read(config.name, config.namespace)
 
         replicas = config.replicas.copy()
@@ -2813,8 +2809,8 @@ class CanaryOptimization(BaseOptimization):
         """
         max_replicas = self.deployment.replicas
         # TODO look up the HPA controlling the deployment and populate max with maxReplicas from the HPA
-        if self.deployment_config.horizontal_pod_autoscaler:
-            max_replicas = sys.maxsize # Stand in for maxint which was removed in PEP0238
+        if self.deployment_config.max_replicas_static:
+            max_replicas = 99999 # Stand in for maxint which was removed in PEP0238
         return servo.Replicas(
             min=0,
             max=max_replicas,
@@ -3346,9 +3342,10 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
-    horizontal_pod_autoscaler: bool = pydantic.Field(
-        False,
-        description="Set to True to indicate the deployment object is controlled by a Horizontal Pod Autoscaler"
+    max_replicas_static: bool = pydantic.Field(
+        True,
+        description=("When set to True under canary optimization, a static max will be reported for the replicas of the mainline deployment"
+        " (has no effect on deployment optimization strategy")
     )
 
 
