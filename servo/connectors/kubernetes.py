@@ -2807,9 +2807,13 @@ class CanaryOptimization(BaseOptimization):
         NOTE: This is a synthetic setting because the replica count of the main Deployment is not
         under out control. The min, max, and value are aligned on each synthetic read.
         """
+        max_replicas = self.deployment.replicas
+        # TODO look up the HPA controlling the deployment and populate max with maxReplicas from the HPA
+        if self.deployment_config.max_replicas_static:
+            max_replicas = 99999 # Stand in for maxint which was removed in PEP0238
         return servo.Replicas(
             min=0,
-            max=self.deployment.replicas,
+            max=max_replicas,
             value=self.deployment.replicas,
             pinned=True,
         )
@@ -3338,6 +3342,11 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
+    max_replicas_static: bool = pydantic.Field(
+        True,
+        description=("When set to True under canary optimization, a static max will be reported for the replicas of the mainline deployment"
+        " (has no effect on deployment optimization strategy")
+    )
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):

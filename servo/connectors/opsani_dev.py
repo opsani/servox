@@ -55,6 +55,11 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     cpu: CPU
     memory: Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
+    max_replicas_static: bool = pydantic.Field(
+        True,
+        description=("When set to True under canary optimization, a static max will be reported for the replicas of the mainline deployment"
+        " (has no effect on deployment optimization strategy")
+    )
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":
@@ -80,6 +85,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             deployments=[
                 servo.connectors.kubernetes.DeploymentConfiguration(
+                    max_replicas_static=self.max_replicas_static,
                     name=self.deployment,
                     strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
                         type=servo.connectors.kubernetes.OptimizationStrategy.canary,
