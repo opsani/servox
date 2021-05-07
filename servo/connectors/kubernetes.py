@@ -14,6 +14,7 @@ import operator
 import os
 import pathlib
 import re
+import sys
 from typing import (
     Any,
     Callable,
@@ -2180,6 +2181,9 @@ class DeploymentOptimization(BaseOptimization):
     async def create(
         cls, config: "DeploymentConfiguration", **kwargs
     ) -> "DeploymentOptimization":
+        if config.horizontal_pod_autoscaler:
+            raise ValueError("DeploymentOptimization is not compatible with deployments controlled by a Horizontal Pod Autoscaler")
+
         deployment = await Deployment.read(config.name, config.namespace)
 
         replicas = config.replicas.copy()
@@ -2807,9 +2811,13 @@ class CanaryOptimization(BaseOptimization):
         NOTE: This is a synthetic setting because the replica count of the main Deployment is not
         under out control. The min, max, and value are aligned on each synthetic read.
         """
+        max_replicas = self.deployment.replicas
+        # TODO look up the HPA controlling the deployment and populate max with maxReplicas from the HPA
+        if self.deployment_config.horizontal_pod_autoscaler:
+            max_replicas = sys.maxsize # Stand in for maxint which was removed in PEP0238
         return servo.Replicas(
             min=0,
-            max=self.deployment.replicas,
+            max=max_replicas,
             value=self.deployment.replicas,
             pinned=True,
         )
@@ -3338,6 +3346,10 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     containers: List[ContainerConfiguration]
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
+    horizontal_pod_autoscaler: bool = pydantic.Field(
+        False,
+        description="Set to True to indicate the deployment object is controlled by a Horizontal Pod Autoscaler"
+    )
 
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
