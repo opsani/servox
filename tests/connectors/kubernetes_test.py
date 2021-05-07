@@ -6,6 +6,7 @@ import kubetest.client
 import kubernetes.client.models
 import pydantic
 import pytest
+import pytest_mock
 import re
 from kubernetes_asyncio import client
 from pydantic import BaseModel
@@ -1078,27 +1079,30 @@ class TestKubernetesConnectorIntegration:
             await connector.adjust([adjustment])
 
 
-    async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker) -> None:
+    async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker: pytest_mock.MockerFixture) -> None:
         """Verify a failure to create a pod is not poorly handled in the handle_error destroy logic"""
 
+        # Passing in an intentionally mangled memory setting to trigger an API error that prevents pod creation
+        mocker.patch("servo.connectors.kubernetes.Memory.__config__.validate_assignment", new_callable=mocker.PropertyMock(return_value=False))
+        mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","256.0MiBGiB"))
+
         tuning_config.on_failure = FailureMode.rollback
-        mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","96.0Mi"))
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
-            value="96Mi",
+            value="256Mi",
         )
 
         # Catch info log messages
         messages = []
-        connector.logger.add(lambda m: messages.append(m.record['message']), level=20)
+        connector.logger.add(lambda m: messages.append(m.record['message']), level=10)
 
         with pytest.raises(kubernetes_asyncio.client.exceptions.ApiException) as error:
             await connector.adjust([adjustment])
 
         # Check logs
-        assert 'Pod "fiber-http-tuning" does not exist. no-op' in messages[-10:]
+        assert 'no tuning pod exists, ignoring destroy' in messages[-30:]
         # Check error
         assert 'quantities must match the regular expression' in str(error.value)
         assert error.value.status == 400
