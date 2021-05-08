@@ -2809,7 +2809,7 @@ class CanaryOptimization(BaseOptimization):
         """
         return servo.Replicas(
             min=0,
-            max=self.deployment.replicas,
+            max=99999,
             value=self.deployment.replicas,
             pinned=True,
         )
