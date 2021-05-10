@@ -65,6 +65,10 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
                 # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
                 await assembly_runner._shutdown(event_loop)
 
+# NOTE: this stub was added for reproducing a particular test order with a static pytest-randomly seed
+async def test_file_config_update() -> None:
+    pass
+
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     """Return an unstarted servo runner."""
