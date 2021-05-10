@@ -1386,7 +1386,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
     @pytest.mark.applymanifests("../manifests/resource_requirements",
                                 files=["fiber-http_no_resource_limits.yaml"])
-    async def test_reading_values_from_optimization_class_no_limits(self, kube, tuning_config: KubernetesConfiguration) -> None:
+    async def test_reading_values_from_no_limits_optimization_class(self, kube, tuning_config: KubernetesConfiguration) -> None:
         servo.logging.set_level("DEBUG")
 
         # NOTE: Create the optimizations class to bring up the canary
@@ -1429,7 +1429,7 @@ class TestKubernetesResourceRequirementsIntegration:
 
     @pytest.mark.applymanifests("../manifests/resource_requirements",
                                 files=["fiber-http_bursty_memory.yaml"])
-    async def test_reading_values_from_optimization_class_bursty_memory(self, kube, tuning_config: KubernetesConfiguration) -> None:
+    async def test_reading_values_from_bursty_memory_optimization_class(self, kube, tuning_config: KubernetesConfiguration) -> None:
         servo.logging.set_level("DEBUG")
 
         # Setup the config to read limits instead of requests

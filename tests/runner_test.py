@@ -72,7 +72,6 @@ def mock_all_tasks_exclude_test_tasks() -> None:
 async def safe_wait(condition: Callable[[], bool], max_checks: int = 5, sleep_duration: float = 0.01) -> None:
     num_checks = 0
     while not condition() and num_checks < max_checks:
-        print("wait")
         num_checks += 1
         await asyncio.sleep(sleep_duration)
 
@@ -102,7 +101,7 @@ async def test_file_config_update(
     servo_yaml: pathlib.Path
 ) -> None:
     # Test Setup
-    # assembly_runner.assembly.watch_config_file = True
+    assembly_runner.assembly.watch_config_file = True
     fastapi_app.optimizer = tests.fake.SequencedOptimizer(**test_optimizer_config)
     await fastapi_app.optimizer.request_description()
 
