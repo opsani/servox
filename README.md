@@ -999,9 +999,9 @@ You can take control of the banner output with two environment variables:
 ## Release Procedure
 
 1. Use [semantic versioning](https://semver.org/) to choose a release number and your ingenuity for the cryptonym.
-1. Update [CHANGELOG.md] with the notable changes of the release. See the introduction for guidance on the form and format. Follow the pattern of prior releases for the release title, generally `[x.y.z] "cryptonym" - YYYY-MM-DD`.
-1. Set the cryptonym as the value of `__cryptonym__` in [servo/__init__.py].
-1. Update the version number as `version` in  section `[tool.poetry]` of [pyproject.toml].
+1. Update [CHANGELOG.md](CHANGELOG.md) with the notable changes of the release. See the introduction for guidance on the form and format. Follow the pattern of prior releases for the release title, generally `[x.y.z] "cryptonym" - YYYY-MM-DD`.
+1. Set the cryptonym as the value of `__cryptonym__` in [servo/\_\_init\_\_.py](servo/__init__.py).
+1. Update the version number as `version` in  section `[tool.poetry]` of [pyproject.toml](pyproject.toml).
 1. Commit changes and make sure all tests pass
 1. (Optionally) Set a tag with the version name as `vX.Y.Z`
 1. Create a release:
