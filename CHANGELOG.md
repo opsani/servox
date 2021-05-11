@@ -27,7 +27,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Allowed min=max in range settings
-- Correctly use selector labels to locate deployment [#200](https://github.com/opsani/servox/pull/200)
+- Correctly use selector labels to locate deployment [#202](https://github.com/opsani/servox/pull/202)
 
 ## [0.10.0] "baseless allegation" - Unreleased
 
