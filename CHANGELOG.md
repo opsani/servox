@@ -17,6 +17,18 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] "tailored replication"
+
+### Enhanced
+
+- Flexible support for pod template resource specifications [#182](https://github.com/opsani/servox/pull/182)
+- Aligned memory unit display with the expected Kubernetes output
+
+### Fixed
+
+- Allowed min=max in range settings
+- Correctly use selector labels to locate deployment [#200](https://github.com/opsani/servox/pull/200)
+
 ## [0.10.0] "baseless allegation" - Unreleased
 
 ### Enhanced
