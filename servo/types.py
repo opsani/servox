@@ -522,7 +522,6 @@ class EventProgress(BaseProgress):
         else:
             return None
 
-    # TODO: Figure out how to make sure this can't go backward sanely...
     @property
     def progress(self) -> float:
         """Return completion progress percentage as a floating point value from 0.0 to 100.0
@@ -912,7 +911,7 @@ class EnumSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def validate_value_in_values(cls, values: dict) -> Optional[Union[str, Numeric]]:
+    def _validate_value_in_values(cls, values: dict) -> Dict[str, Any]:
         value, options = values["value"], values["values"]
         if value is not None and value not in options:
             raise ValueError(
@@ -971,7 +970,7 @@ class RangeSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def range_must_be_of_same_type(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def _attributes_must_be_of_same_type(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         range_types: Dict[TypeVar[int, float], List[str]] = {}
         for attr in ("min", "max", "step"):
             value = values[attr] if attr in values else cls.__fields__[attr].default
@@ -997,7 +996,7 @@ class RangeSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def value_must_fall_in_range(cls, values) -> Numeric:
+    def _value_must_fall_in_range(cls, values) -> Numeric:
         value, min, max = values["value"], values["min"], values["max"]
         if value is not None and (value < min or value > max):
             raise ValueError(
@@ -1014,23 +1013,28 @@ class RangeSetting(Setting):
 
         return value
 
+    @pydantic.root_validator(skip_on_failure=True)
+    @classmethod
+    def _min_cannot_be_less_than_step(cls, values: dict) -> Dict[str, Any]:
+        min, step = values["min"], values["step"]
+        # NOTE: some resources can scale to zero (e.g., Replicas)
+        if min != 0 and min < step:
+            raise ValueError(f'min cannot be less than step ({min} < {step})')
+
+        return values
+
     @pydantic.validator("max")
     @classmethod
-    def test_max_defines_valid_range(cls, value: Numeric, values) -> Numeric:
+    def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
         if not "min" in values:
             # can't validate if we don't have a min (likely failed validation)
-            return value
+            return max_
 
-        max_ = value
         min_ = values["min"]
-
-        if min_ == max_:
-            raise ValueError(f"min and max cannot be equal ({cls.human_readable(min_)} == {cls.human_readable(max_)})")
-
         if min_ > max_:
             raise ValueError(f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})")
 
-        return value
+        return max_
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
@@ -1052,32 +1056,6 @@ class RangeSetting(Setting):
                 )
 
         return values
-
-    # @pydantic.root_validator(skip_on_failure=True)
-    # @classmethod
-    # def _validate_step_and_value(cls, values) -> Numeric:
-    #     value, min, max, step = values["value"], values["min"], values["max"], values["step"]
-
-    #     if value is not None:
-    #         if value != max and value + step > max:
-    #             raise ValueError(
-    #                 f"invalid range: adding step to value is greater than max ({cls.human_readable(value)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-    #             )
-    #         elif value != min and value - step < min:
-    #             raise ValueError(
-    #                 f"invalid range: subtracting step from value is less than min ({cls.human_readable(value)} - {cls.human_readable(step)} < {cls.human_readable(min)})"
-    #             )
-    #     else:
-    #         if (min + step > max):
-    #             raise ValueError(
-    #                 f"invalid step: adding step to min is greater than max ({cls.human_readable(min)} + {cls.human_readable(step)} > {cls.human_readable(max)})"
-    #             )
-    #         elif (max - step < min):
-    #             raise ValueError(
-    #                 f"invalid step: subtracting step from max is less than min ({cls.human_readable(max)} + {cls.human_readable(step)} < {cls.human_readable(min)})"
-    #             )
-
-    #     return values
 
     def __str__(self) -> str:
         return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"

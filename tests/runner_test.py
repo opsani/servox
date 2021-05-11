@@ -3,8 +3,10 @@ import asyncio
 import pathlib
 
 import pytest
+import unittest.mock
 
 import servo
+import servo.runner
 import servo.connectors.prometheus
 import tests.fake
 import tests.helpers
@@ -37,6 +39,31 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
+
+async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.runner.AssemblyRunner):
+    event_loop = asyncio.get_event_loop()
+
+    # NOTE: using the pytest_mocker fixture for mocking the event loop can cause side effects with pytest-asyncio
+    #   (eg. when fixture mocking the `stop` method, the test will run forever).
+    #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
+
+    # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
+    with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
+        # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
+        with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+            assembly_runner.run()
+            while not assembly_runner.assembly.servos[0].is_running:
+                await asyncio.sleep(0.01)
+
+            # Shutdown the servo to produce edge case error
+            await assembly_runner.assembly.servos[0].shutdown()
+            try:
+                await assembly_runner.assembly.shutdown()
+            except:
+                raise
+            finally:
+                # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
+                await assembly_runner._shutdown(event_loop)
 
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
