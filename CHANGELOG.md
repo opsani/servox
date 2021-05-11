@@ -17,7 +17,7 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.1] "tailored replication"
+## [0.10.1] "tailored replication" - 2021-05-11
 
 ### Enhanced
 
