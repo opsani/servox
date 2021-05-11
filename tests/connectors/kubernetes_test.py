@@ -1066,7 +1066,7 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "5s"
-        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].on_failure = FailureMode.destroy
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1086,7 +1086,7 @@ class TestKubernetesConnectorIntegration:
         mocker.patch("servo.connectors.kubernetes.Memory.__config__.validate_assignment", new_callable=mocker.PropertyMock(return_value=False))
         mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","256.0MiBGiB"))
 
-        tuning_config.on_failure = FailureMode.rollback
+        tuning_config.deployments[0].on_failure = FailureMode.rollback
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
