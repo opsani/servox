@@ -1283,39 +1283,47 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             setting_name="mem",
             value="128Mi",
         )
-        
+
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
         assert rejection_info.value.reason == "timed out waiting for Deployment to apply adjustment"
 
 
-    async def test_adjust_deployment_settlement_failed(self, config: KubernetesConfiguration, kubetest_deployment_becomes_unready: KubetestDeployment) -> None:
-        config.timeout = "15s"
-        config.settlement = "15s"
-        connector = KubernetesConnector(config=config)
+    async def test_adjust_tuning_settlement_failed(
+        self,
+        tuning_config: KubernetesConfiguration,
+        kubetest_deployment_becomes_unready: KubetestDeployment,
+        recwarn: pytest.WarningsRecorder,
+        kube: kubetest.client.TestClient
+    ) -> None:
+        tuning_config.timeout = "20s"
+        tuning_config.settlement = "15s"
+        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        connector = KubernetesConnector(config=tuning_config)
+
 
         adjustment = Adjustment(
-            component_name="fiber-http/fiber-http",
+            component_name="fiber-http/fiber-http-tuning",
             setting_name="mem",
             value="128Mi",
         )
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert rejection_info.value.reason == "Optimization target became unready during adjustment settlement period"
+        # Validate no warnings were raised to ensure all coroutines were awaited
+        assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
-        # NOTE: This can generate a 409 Conflict failure under CI
-        with pytest.raises(AdjustmentRejectedError):
-            for _ in range(3):
-                try:
-                    await connector.adjust([adjustment])
+        # Validate the correct error was raised
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]"
 
-                except kubernetes_asyncio.client.exceptions.ApiException as e:
-                    if e.status == 409 and e.reason == 'Conflict':
-                        pass
-                    else:
-                        raise e
+        # Validate baseline was restored during handle_error
+        tuning_pod = kube.get_pods()["fiber-http-tuning"]
+        fiber_container = next(filter(lambda cont: cont.name == "fiber-http", tuning_pod.obj.spec.containers))
+        assert fiber_container.resources.requests["memory"] == "256Mi"
+        assert fiber_container.resources.limits["memory"] == "256Mi"
+
 
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
