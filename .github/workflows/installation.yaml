@@ -13,7 +13,7 @@ jobs:
       with:
           fetch-depth: 1
     - name: Cache pyenv versions
-      uses: actions/cache@v2.1.1
+      uses: actions/cache@v2.1.5
       id: cached-pyenvs
       with:
         path: /opt/hostedtoolcache/pyenv_root
@@ -32,7 +32,7 @@ jobs:
         poetry env info
         poetry env use `cat .python-version`
     - name: Cache dependencies
-      uses: actions/cache@v2.1.1
+      uses: actions/cache@v2.1.5
       id: cached-poetry-dependencies
       with:
         path: .venv
