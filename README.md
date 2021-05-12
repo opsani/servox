@@ -994,6 +994,27 @@ You can take control of the banner output with two environment variables:
   * `CYAN`
   * `RAINBOW`
 
+
+
+## Release Procedure
+
+1. Use [semantic versioning](https://semver.org/) to choose a release number and your ingenuity for the cryptonym.
+1. Update [CHANGELOG.md](CHANGELOG.md) with the notable changes of the release. See the introduction for guidance on the form and format. Follow the pattern of prior releases for the release title, generally `[x.y.z] "cryptonym" - YYYY-MM-DD`.
+1. Set the cryptonym as the value of `__cryptonym__` in [servo/\_\_init\_\_.py](servo/__init__.py).
+1. Update the version number as `version` in  section `[tool.poetry]` of [pyproject.toml](pyproject.toml).
+1. Commit changes and make sure all tests pass
+1. (Optionally) Set a tag with the version name as `vX.Y.Z`
+1. Create a release:
+    * Tag version: set to vX.Y.Z (e.g., `v0.9.5`)
+    * Release title: set to `vX.Y.Z "<cryptonym>"`
+    * Description: judiciously paste the change log since the prior release
+1. Publish the release, wait for CI actions to complete
+1. Verify the new image, with tag `vX.Y.Z`, has been published in [Docker Hub](https://hub.docker.com/repository/docker/opsani/servox/tags)
+
+## Contributing
+
+Please reach out to support at opsani.com.
+
 ## License
 
 ServoX is distributed under the terms of the Apache 2.0 Open Source license.

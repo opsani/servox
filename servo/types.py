@@ -1025,21 +1025,16 @@ class RangeSetting(Setting):
 
     @pydantic.validator("max")
     @classmethod
-    def _max_must_define_valid_range(cls, value: Numeric, values) -> Numeric:
+    def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
         if not "min" in values:
             # can't validate if we don't have a min (likely failed validation)
-            return value
+            return max_
 
-        max_ = value
         min_ = values["min"]
-
-        if min_ == max_:
-            raise ValueError(f"min and max cannot be equal ({cls.human_readable(min_)} == {cls.human_readable(max_)})")
-
         if min_ > max_:
             raise ValueError(f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})")
 
-        return value
+        return max_
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod

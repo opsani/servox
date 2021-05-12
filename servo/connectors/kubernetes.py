@@ -1979,6 +1979,13 @@ class ShortByteSize(pydantic.ByteSize):
             v = v * GiB
         return super().validate(v)
 
+    def human_readable(self) -> str:
+        sup = super().human_readable()
+        # Remove the 'B' suffix to align with Kubernetes units (`GiB` -> `Gi`)
+        if sup[-1] == 'B' and sup[-2].isalpha():
+            sup = sup[0:-1]
+        return sup
+
 
 class Memory(servo.Memory):
     """
@@ -2789,8 +2796,8 @@ class CanaryOptimization(BaseOptimization):
 
         # NOTE: use copy + update to accept values from mainline outside of our range
         memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
-        # memory.request = resource_requirements.get(ResourceRequirement.request)
-        # memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        memory.request = resource_requirements.get(ResourceRequirement.request)
+        memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
 
     @property
@@ -2803,7 +2810,7 @@ class CanaryOptimization(BaseOptimization):
         """
         return servo.Replicas(
             min=0,
-            max=self.deployment.replicas,
+            max=99999,
             value=self.deployment.replicas,
             pinned=True,
         )
@@ -2861,6 +2868,10 @@ class CanaryOptimization(BaseOptimization):
         )
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
+        if not self.tuning_pod:
+            self.logger.debug(f'no tuning pod exists, ignoring destroy')
+            return
+
         self.logger.info(f'destroying tuning Pod "{self.name}"')
         status = await _try_delete_model(self.tuning_pod)
 

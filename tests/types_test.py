@@ -97,73 +97,6 @@ def test_adjustment_str() -> None:
     )
 
 
-# TODO: Move to api_test.py
-def test_parse_measure_command_response_including_units() -> None:
-    from typing import Union
-
-    from pydantic import parse_obj_as
-
-    from servo.api import CommandResponse, MeasureParams, Status
-
-    payload = {
-        "cmd": "MEASURE",
-        "param": {
-            "control": {
-                "delay": 10,
-                "warmup": 30,
-                "duration": 180,
-            },
-            "metrics": {
-                "throughput": {
-                    "unit": "rpm",
-                },
-                "error_rate": {
-                    "unit": "%",
-                },
-                "latency_total": {
-                    "unit": "ms",
-                },
-                "latency_mean": {
-                    "unit": "ms",
-                },
-                "latency_50th": {
-                    "unit": "ms",
-                },
-                "latency_90th": {
-                    "unit": "ms",
-                },
-                "latency_95th": {
-                    "unit": "ms",
-                },
-                "latency_99th": {
-                    "unit": "ms",
-                },
-                "latency_max": {
-                    "unit": "ms",
-                },
-                "latency_min": {
-                    "unit": "ms",
-                },
-            },
-        },
-    }
-    obj = parse_obj_as(Union[CommandResponse, Status], payload)
-    assert isinstance(obj, CommandResponse)
-    assert isinstance(obj.param, MeasureParams)
-    assert obj.param.metrics == [
-        "throughput",
-        "error_rate",
-        "latency_total",
-        "latency_mean",
-        "latency_50th",
-        "latency_90th",
-        "latency_95th",
-        "latency_99th",
-        "latency_max",
-        "latency_min",
-    ]
-
-
 import asyncio
 
 import servo
@@ -687,10 +620,10 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 3, 1, None),
-            (0, 0, 1, "min and max cannot be equal (0 == 0)"),
+            (1, 1, 1, None),
             (1, 0, 1, "min cannot be greater than max (1 > 0)"),
             (1.0, 3.0, 1.0, None),
-            (0.0, 0.0, 1.0, "min and max cannot be equal (0.0 == 0.0)"),
+            (1.0, 2.0, 3.0, "min cannot be less than step (1.0 < 3.0)"),
             (1.0, 0.0, 1.0, "min cannot be greater than max (1.0 > 0.0)"),
         ],
     )
@@ -703,39 +636,10 @@ class TestRangeSetting:
 
             assert error
             assert "1 validation error for RangeSetting" in str(error.value)
-            assert error.value.errors()[0]["loc"] == ("max",)
             assert error.value.errors()[0]["type"] == "value_error"
             assert error.value.errors()[0]["msg"] == error_message
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
-
-    # @pytest.mark.parametrize(
-    #     ("min", "max", "step", "value", "error_message"),
-    #     [
-    #         (0, 1, 1, None, None),
-    #         (5, 10, 1, None, None),
-    #         (-5, 10, 15, None, None),
-    #         (1, 2, 5, None, "invalid step: adding step to min is greater than max (1 + 5 > 2)"),
-    #         (1, 5, 5, None, "invalid step: adding step to min is greater than max (1 + 5 > 5)"),
-    #         (1, 5, 3, 2, "invalid range: subtracting step from value is less than min (2 - 3 < 1)"),
-    #         (1, 3, 3, 3, "invalid range: subtracting step from value is less than min (3 - 3 < 1)"),
-    #         (1.0, 5.0, 2.0, 4.0, "invalid range: adding step to value is greater than max (4.0 + 2.0 > 5.0)"),
-    #     ],
-    # )
-    # def test_step_and_value_validation(
-    #     self, min: Numeric, max: Numeric, step: Numeric, value: Optional[Numeric], error_message: str
-    # ) -> None:
-    #     if error_message is not None:
-    #         with pytest.raises(pydantic.ValidationError) as error:
-    #             RangeSetting(name="invalid", min=min, max=max, step=step, value=value)
-
-    #         assert error
-    #         assert "1 validation error for RangeSetting" in str(error.value)
-    #         assert error.value.errors()[0]["loc"] == ("__root__",)
-    #         assert error.value.errors()[0]["type"] == "value_error"
-    #         assert error.value.errors()[0]["msg"] == error_message
-    #     else:
-    #         RangeSetting(name="valid", min=min, max=max, step=step, value=value)
 
     def test_validation_on_value_mutation(
         self
@@ -775,6 +679,9 @@ class TestRangeSetting:
     def test_step_cannot_be_zero(self) -> None:
         with pytest.raises(ValueError, match='step cannot be zero') as error:
             RangeSetting(name="range", min=0, max=10, step=0)
+
+    def test_min_can_equal_max(self) -> None:
+        RangeSetting(name="range", min=5, max=5, step=1)
 
 
 

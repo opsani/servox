@@ -4,6 +4,7 @@ import asyncio
 import functools
 import os
 import random
+import shutil
 import signal
 from typing import Any, Dict, List, Optional
 
@@ -388,12 +389,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                      'YELLOW': colorama.Fore.YELLOW, 'BLUE': colorama.Fore.BLUE,
                      'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
                      'RAINBOW': colorama.Fore.MAGENTA}
-
-        try:
-            terminal_size = os.get_terminal_size()
-            width = max(terminal_size.columns, 80)
-        except OSError:
-            width = 80
+        terminal_size = shutil.get_terminal_size()
 
         # Generate an awesome banner for this launch
         font = os.getenv('SERVO_BANNER_FONT', random.choice(fonts))
@@ -404,7 +400,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             else (color_name.upper() == 'RAINBOW')
         )
 
-        figlet = pyfiglet.Figlet(font=font, width=width)
+        figlet = pyfiglet.Figlet(font=font, width=terminal_size.columns)
         banner = figlet.renderText('ServoX').rstrip()
 
         if rainbow:

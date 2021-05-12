@@ -67,8 +67,8 @@ class TestConfig:
             "  min: 250m\n"
             "  max: '4'\n"
             "memory:\n"
-            "  min: 256.0MiB\n"
-            "  max: 4.0GiB\n"
+            "  min: 256.0Mi\n"
+            "  max: 4.0Gi\n"
         )
 
     def test_assign_optimizer(self) -> None:
@@ -500,8 +500,12 @@ class TestServiceMultiport:
 
                 # Step 7
                 servo.logger.critical("Step 7 - Bring tuning Pod online")
-                async with change_to_resource(deployment):
-                    await deployment.create_or_recreate_tuning_pod()
+                # TODO: why is the tuning pod being created here when the check will recreate it anyway?
+                kubernetes_config = checks.config.generate_kubernetes_config()
+                canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
+                    deployment_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
+                )
+                await canary_opt.create_tuning_pod()
                 await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
                 # Step 8
@@ -509,8 +513,14 @@ class TestServiceMultiport:
                 async with kube_port_forward(f"service/fiber-http", port) as service_url:
                     await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
 
+                # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
+                scrapes_remaining = 3
                 targets = await wait_for_targets_to_be_scraped()
-                assert len(targets) == 2
+                while len(targets) != 3 and scrapes_remaining > 0:
+                    targets = await wait_for_targets_to_be_scraped()
+                    scrapes_remaining -= 1
+
+                assert len(targets) == 3
                 main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
                 tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
                 assert main.pool == "opsani-envoy-sidecars"
