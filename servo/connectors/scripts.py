@@ -4,6 +4,7 @@ import servo
 
 class ScriptsConfiguration(servo.BaseConfiguration):
     before: Optional[Dict[str, List[str]]]
+    on: Optional[Dict[str, List[str]]]
     after: Optional[Dict[str, List[str]]]
 
 class ScriptsConnector(servo.BaseConnector):
@@ -11,7 +12,10 @@ class ScriptsConnector(servo.BaseConnector):
 
     @servo.on_event()
     async def startup(self) -> None:
-        for preposition in (servo.Preposition.before, servo.Preposition.after):
+        for preposition in servo.Preposition:
+            # Skip flag sets
+            if not preposition.flag: continue
+
             event_scripts = getattr(self.config, str(preposition))
             if event_scripts is None: continue
             for event_name, scripts in event_scripts.items():
