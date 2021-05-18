@@ -126,13 +126,30 @@ class OLASController:
         self.cap = 0
         self.pod_ts = {}
         self.cpu = 0
-        self.target = 0
         self.cpu_history = []
         self.cpu_window = []  # transitional cpu observation window.
         self.cpu_window_size = self.cfg.config.sloWindow  # window size
-        self.cpu_target = 0   # cpu_target is a value between 0 - 1
+        self.cpu_detect = 0   # cpu_detect is a value between 0 - 1
         servo.logger.info(f"mode: {self.cfg.config.mode}")
         self.mode = getattr(Mode, self.cfg.config.mode.upper())
+        if self.cfg.config.target is None:
+            self.target = 0
+        elif self.mode == Mode.CPU_TARGET:
+            # below assignments equate self.target and self.cpu_detect, the reasons are:
+            #  - besides functioning independently, cpu_detect mode functions as a
+            #    fallback mechanism for cap_monitor and cpu_predict modes
+            #  - however in cpu_target mode, controller operates as HPA does thus
+            #    aforementioned fallback becomes unnecessary
+            #  - method scale_by_cpu is utilized by both cpu_detect and cpu_target modes.
+            #    We only want one threshold on which scaling ratio is calculated and the
+            #    threshold is self.cpu_detect
+            #  - therefore in cpu_target mode, equate self.target and self.cpu_detect
+            self.target = self.cpu_detect = self.cfg.config.target / 100  # target for cpu_target mode will be a percentage
+        elif self.mode == Mode.RATE_TARGET:
+            self.target = self.cfg.config.target        # target for rate_target mode is a positive rps value
+        else:
+            raise ValueError("Values for 'mode' and 'target' in Config class of OLASConfig are incompatible.")
+
         self.exlabels = kube.parse_selector(self.cfg.scaleTargetRef.exclude)
         self.last_violation = None
         self.mode_table = {
@@ -551,8 +568,8 @@ class OLASController:
     def scale_by_cpu(self, metrics):
         if math.isnan(self.cpu) or not self.cpu_request:
             return
-        scale = (self.cpu / self.cpu_request) / self.cpu_target
-        reason = f"cpu: {self.cpu:.1%} target {self.target:.1f}"
+        scale = (self.cpu / self.cpu_request) / self.cpu_detect
+        reason = f"cpu: {self.cpu / self.cpu_request:.1%} target {self.cpu_detect:.1%}"
         self.scale_pods_by_ratio(scale, reason)
 
     def scale_by_rate(self, metrics):
@@ -579,7 +596,7 @@ class OLASController:
         if math.isnan(self.cpu):
             return
         servo.logger.info(f"scale_by_cpu_slo, cpu {self.cpu:.1%} p90 {self.rq_time}, pod_rate {self.pod_rate}"
-                          f" mode {self.mode} cpu_target {self.cpu_target} {self.cpu_history[-2:]}")
+                          f" mode {self.mode} cpu_detect {self.cpu_detect} {self.cpu_history[-2:]}")
 
         violation = self.check_slo_violation()
         if not violation:
@@ -596,14 +613,14 @@ class OLASController:
             if self.last_violation != violation:
                 servo.logger.info("SLO recovered.")
                 if self.cpu_history and self.cpu_request:
-                    self.cpu_target = self.cpu_history[-1][0] * .85 / self.cpu_request
-                    servo.logger.info(f"Detect cpu target {self.cpu_target}")
+                    self.cpu_detect = self.cpu_history[-1][0] * .85 / self.cpu_request
+                    servo.logger.info(f"Detect cpu target {self.cpu_detect:.1%}")
         self.last_violation = violation
 
-        if self.cpu_target:
+        if self.cpu_detect:
             self.scale_by_cpu(metrics)
         else:
-            servo.logger.info(f"No cpu_target. Pass this round, mode {self.mode} cpu_target {self.cpu_target}")
+            servo.logger.info(f"scale_by_cpu_slo, mode {self.mode}: No cpu_detect. Pass this round.")
 
     def check_slo_violation(self):
         self.cpu_window.append((self.cpu, self.rq_time, self.pod_rate))

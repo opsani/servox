@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Optional
+import warnings
+
+from typing import Any, Dict, List, Optional, Union
 from pydantic import (
     AnyHttpUrl,
     BaseModel,
@@ -44,6 +46,7 @@ class Config(BaseModel):
     waveLength: int
     resolution: int
     mode: StrictStr
+    target: Optional[int]
     enablePrediction: bool
     coolDown: int
     tolerance: float
@@ -58,6 +61,25 @@ class Config(BaseModel):
     def _validate_resolution_value(cls, v: int) -> int:
         if v < 1:
             raise ValueError("'resolution' should be an integer and no less than 1 (denotes 1 minutes).")
+        return v
+
+    @validator('target', always=True)
+    def _validate_target(cls, v: int, values: Dict[str, Any]) -> Union[int, None]:
+        mode = values.get('mode')
+        if mode not in ('cpu_target', 'rate_target'):
+            if v is not None:
+                warnings.warn(f"'target' is not required for mode {mode}. Will be ignored.")
+            return None
+        if mode == 'cpu_target':
+            if v is None:
+                raise ValueError("'target' is required for 'cpu_target' mode. It denotes percent that should be in (0,100].")
+            elif v <= 0 or v > 100:
+                raise ValueError("'target' for 'cpu_target' mode denotes percent that should be in (0,100].")
+        if mode == 'rate_target':
+            if v is None:
+                raise ValueError("'target' is required for 'rate_target' mode. It denotes rps that should be positive.")
+            elif v <= 0:
+                raise ValueError("'target' for 'rate_target' mode denotes rps that should be positive.")
         return v
 
 
