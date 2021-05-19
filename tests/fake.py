@@ -68,10 +68,13 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         )
 
     @statesman.enter_state(States.awaiting_adjustment)
-    async def _enter_awaiting_adjustment(self, adjustments: List[servo.types.Adjustment] = []) -> None:
+    async def _enter_awaiting_adjustment(self, adjustments: List[servo.types.Adjustment] = [], control: servo.Control = servo.Control()) -> None:
+        descriptor = servo.api.adjustments_to_descriptor(adjustments)
+        descriptor["control"] = control.dict(exclude_unset=True)
+
         self.command_response = servo.api.CommandResponse(
             cmd=servo.api.Commands.adjust,
-            param=servo.api.adjustments_to_descriptor(adjustments)
+            param=descriptor
         )
 
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
@@ -164,9 +167,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     # Adjust
 
     @statesman.event([States.ready, States.analyzing], States.awaiting_adjustment)
-    async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment]) -> None:
+    async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment], control: servo.Control = servo.Control()) -> None:
         """Recommend Adjustments to the Servo."""
-        servo.logging.logger.info(f"Recommending Adjustments ({adjustments}")
+        servo.logging.logger.info(f"Recommending Adjustments ({adjustments}, {control})")
 
     async def _validate_adjustments(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {description}")

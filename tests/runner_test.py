@@ -3,9 +3,11 @@ import asyncio
 import pathlib
 
 import pytest
+import pytest_mock
 import unittest.mock
 
 import servo
+import servo.events
 import servo.runner
 import servo.connectors.prometheus
 import tests.fake
@@ -51,9 +53,12 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
     with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
         # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
         with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+            async def wait_for_servo_running():
+                while not assembly_runner.assembly.servos[0].is_running:
+                    await asyncio.sleep(0.01)
+
             assembly_runner.run()
-            while not assembly_runner.assembly.servos[0].is_running:
-                await asyncio.sleep(0.01)
+            await asyncio.wait_for(wait_for_servo_running(), timeout=2)
 
             # Shutdown the servo to produce edge case error
             await assembly_runner.assembly.servos[0].shutdown()
@@ -189,6 +194,35 @@ async def test_hello(
 #     ...
 #     # fire up runner.run and check .run, etc.
 
+
+async def test_control_sent_on_adjust(
+    servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+    mocker: pytest_mock.MockFixture
+) -> None:
+    sequenced_optimizer = tests.fake.SequencedOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    control = servo.Control(settlement='10s')
+    await sequenced_optimizer.recommend_adjustments(adjustments=[], control=control),
+    sequenced_optimizer.sequence(
+        sequenced_optimizer.done()
+    )
+    fastapi_app.optimizer = sequenced_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+
+    adjust_connector = servo_runner.servo.get_connector("adjust")
+    event_handler = adjust_connector.get_event_handlers("adjust", servo.events.Preposition.on)[0]
+    spy = mocker.spy(event_handler, "handler")
+
+    async def wait_for_optimizer_done():
+        while fastapi_app.optimizer.state.name != 'done':
+            await asyncio.sleep(0.01)
+
+    await servo_runner.run()
+    await asyncio.wait_for(wait_for_optimizer_done(), timeout=2)
+    await servo_runner.shutdown()
+
+    spy.assert_called_once_with(adjust_connector, [], control)
 
 # TODO: This doesn't need to be integration test
 async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunner) -> None:
