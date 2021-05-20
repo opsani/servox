@@ -17,14 +17,6 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-
-## [0.10.2] "preposterous ports" - 2021-05-20
-
-### Fixed
-
-- Port was not being accepted as input on inject_sidecar cli command [#241](https://gihtub.com/opsani/servox/pull/241)
-
-
 ## [0.10.1] "tailored replication" - 2021-05-11
 
 ### Enhanced
