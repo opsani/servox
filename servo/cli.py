@@ -1732,7 +1732,7 @@ class ServoCLI(CLI):
             if not target.startswith(("deploy/", "deployment/", "pod/")):
                 raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
 
-            if not service or port:
+            if not (service or port):
                 raise typer.BadParameter("service or port must be given")
 
             # TODO: Dry this up...
