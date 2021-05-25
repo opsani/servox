@@ -994,22 +994,35 @@ You can take control of the banner output with two environment variables:
   * `CYAN`
   * `RAINBOW`
 
+## Release Process
 
-
-## Release Procedure
-
-1. Use [semantic versioning](https://semver.org/) to choose a release number and your ingenuity for the cryptonym.
-1. Update [CHANGELOG.md](CHANGELOG.md) with the notable changes of the release. See the introduction for guidance on the form and format. Follow the pattern of prior releases for the release title, generally `[x.y.z] "cryptonym" - YYYY-MM-DD`.
-1. Set the cryptonym as the value of `__cryptonym__` in [servo/\_\_init\_\_.py](servo/__init__.py).
-1. Update the version number as `version` in  section `[tool.poetry]` of [pyproject.toml](pyproject.toml).
-1. Commit changes and make sure all tests pass
-1. (Optionally) Set a tag with the version name as `vX.Y.Z`
-1. Create a release:
-    * Tag version: set to vX.Y.Z (e.g., `v0.9.5`)
+1. Use [Semantic Versioning](https://semver.org/) to choose a release number.
+   Run `poetry version [major | minor | patch]` to increment the version. This
+   will update the version number as `version` in  section `[tool.poetry]` of
+   the [pyproject.toml](pyproject.toml) file.
+1. Minor version release series each have a unique cryptonym. If incrementing
+   the major or minor version, choose a new cryptonym for the release series and
+   set it as the value of `__cryptonym__` in
+   [servo/\_\_init\_\_.py](servo/__init__.py).
+1. Update [CHANGELOG.md](CHANGELOG.md) with the notable changes of the release.
+   See the introduction for guidance on the form and format. Follow the pattern
+   of prior releases for the release title, generally `[x.y.z] "cryptonym" -
+   YYYY-MM-DD`.
+1. Commit changes and make sure all tests pass.
+1. [Draft a new release on
+   GitHub](https://github.com/opsani/servox/releases/new) with the following
+   settings:
+    * Tag version: set to vX.Y.Z (e.g., `v0.9.5`) again the `main` branch.
     * Release title: set to `vX.Y.Z "<cryptonym>"`
     * Description: judiciously paste the change log since the prior release
-1. Publish the release, wait for CI actions to complete
-1. Verify the new image, with tag `vX.Y.Z`, has been published in [Docker Hub](https://hub.docker.com/repository/docker/opsani/servox/tags)
+1. Publish the release, wait for CI actions to complete. Release artifacts are
+   automatically created and published via the GitHub Actions `release.yml`
+   workflow. The framework is packaged into a Python library and published to
+   [PyPi](https://pypi.org/project/servox/) and Docker images are built and
+   published to
+   [DockerHub](https://hub.docker.com/repository/docker/opsani/servox).
+1. Verify the new image, with tag `vX.Y.Z`, has been published in [Docker
+   Hub](https://hub.docker.com/repository/docker/opsani/servox/tags).
 
 ## Contributing
 
