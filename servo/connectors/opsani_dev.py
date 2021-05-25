@@ -595,7 +595,7 @@ class OpsaniDevChecks(servo.BaseChecks):
                 return
 
         port_switch = (
-            f"--port {self.config.port}" if self.config.port is not None
+            f" --port {self.config.port}" if self.config.port is not None
             else ''
         )
         command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- servo --token-file /servo/opsani.token inject-sidecar --namespace {self.config.namespace} --service {self.config.service}{port_switch} deployment/{self.config.deployment}"
