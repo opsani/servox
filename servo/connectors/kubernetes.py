@@ -1629,11 +1629,15 @@ class Deployment(KubernetesModel):
         between the Envoy sidecar and the container responsible for fulfilling the request.
 
         Args:
+            name: The name of the sidecar to inject.
+            image: The container image for the sidecar container.
             deployment: Name of the target Deployment to inject the sidecar into.
             service: Name of the service to proxy. Envoy will accept ingress traffic
                 on the service port and reverse proxy requests back to the original
                 target container.
-
+            port: The name or number of a port within the Deployment to wrap the proxy around.
+            index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
+            service_port: The port to receive ingress traffic from an upstream service.
         """
 
         await self.refresh()
@@ -1655,17 +1659,18 @@ class Deployment(KubernetesModel):
                     raise error
             if not port:
                 if len(ser.obj.spec.ports) > 1:
-                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be given")
-                port = ser.obj.spec.ports[0].target_port
+                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be specified")
+                port_obj = ser.obj.spec.ports[0]
             else:
                 if isinstance(port, int):
-                    if not next(filter(lambda p: p.target_port == port, ser.obj.spec.ports), None):
-                        raise ValueError(f"Port {port} does not exist in the Service '{service}'")
+                    port_obj = next(filter(lambda p: p.port == port, ser.obj.spec.ports), None)
+                elif isinstance(port, str):
+                    port_obj = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
                 else:
-                    _port = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
-                    if not _port:
-                        raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
-                    port = _port.target_port
+                    raise TypeError(f"Unable to resolve port value of type {port.__class__} (port={port})")
+
+                if not port_obj:
+                    raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
 
         # check for a port conflict
         if self.containers:
@@ -1690,7 +1695,7 @@ class Deployment(KubernetesModel):
             ),
             env=[
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port_obj.target_port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
@@ -3628,33 +3633,6 @@ class KubernetesConnector(servo.BaseConnector):
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
-
-    # TODO: delete this?
-    async def inject_sidecar(
-        self,
-        name: str,
-        image: str,
-        *,
-        service: Optional[str] = None,
-        port: Optional[int] = None,
-        index: Optional[int] = None,
-        service_port: int = 9980
-    ) -> None:
-        """
-        Injects an Envoy sidecar into a target Deployment that proxies a service
-        or literal TCP port, generating scrapable metrics usable for optimization.
-
-        The service or port argument must be provided to define how traffic is proxied
-        between the Envoy sidecar and the container responsible for fulfilling the request.
-
-        Args:
-            deployment: Name of the target Deployment to inject the sidecar into.
-            service: Name of the service to proxy. Envoy will accept ingress traffic
-                on the service port and reverse proxy requests back to the original
-                target container.
-
-        """
-        raise NotImplementedError("stub out for the moment")
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
