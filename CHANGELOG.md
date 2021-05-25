@@ -17,6 +17,18 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] "baseless allegation" - Unreleased
+
+### Enhanced
+
+- The `port` option is now respected by the sidecar injection remedy.
+
+### Fixed
+
+- Dynamically named ports are now supported by resolving the port name against
+  the Pod spec template [#246](https://gihtub.com/opsani/servox/pull/246)
+- When checks fail and are rerun, the tuning pod is no longer rebuilt
+  unnecessarily.
 
 ## [0.10.2] "baseless allegation" - 2021-05-20
 
