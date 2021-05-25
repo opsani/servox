@@ -1648,37 +1648,39 @@ class Deployment(KubernetesModel):
         if isinstance(port, str) and port.isdigit():
             port = int(port)
 
+        # check for a port conflict
+        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Port conflict: Deployment '{self.name}' already exposes port {service_port} through an existing container")
+
         # lookup the port on the target service
         if service:
             try:
-                ser = await Service.read(service, self.namespace)
+                service_obj = await Service.read(service, self.namespace)
             except kubernetes_asyncio.client.exceptions.ApiException as error:
                 if error.status == 404:
                     raise ValueError(f"Unknown Service '{service}'") from error
                 else:
                     raise error
             if not port:
-                if len(ser.obj.spec.ports) > 1:
+                port_count = len(service_obj.obj.spec.ports)
+                if port_count == 0:
+                    raise ValueError(f"Target Service '{service}' does not expose any ports")
+                elif port_count > 1:
                     raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be specified")
-                port_obj = ser.obj.spec.ports[0]
+                port_obj = service_obj.obj.spec.ports[0]
             else:
                 if isinstance(port, int):
-                    port_obj = next(filter(lambda p: p.port == port, ser.obj.spec.ports), None)
+                    port_obj = next(filter(lambda p: p.port == port, service_obj.obj.spec.ports), None)
                 elif isinstance(port, str):
-                    port_obj = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
+                    port_obj = next(filter(lambda p: p.name == port, service_obj.obj.spec.ports), None)
                 else:
                     raise TypeError(f"Unable to resolve port value of type {port.__class__} (port={port})")
 
                 if not port_obj:
                     raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
 
-        # check for a port conflict
-        if self.containers:
-            container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
-            if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
-                raise ValueError(f"Deployment already has a container port {service_port}")
-
-            # if we have a symbolic name in the target port, we need to resolve it to a concrete container port
+            # resolve symbolic name in the service target port to a concrete container port
             if isinstance(port_obj.target_port, str):
                 container_port_obj = next(filter(lambda p: p.name == port_obj.target_port, container_ports), None)
                 if not container_port_obj:
@@ -1687,6 +1689,14 @@ class Deployment(KubernetesModel):
                 container_port = container_port_obj.container_port
             else:
                 container_port = port_obj.target_port
+
+        else:
+            # find the container port
+            container_port_obj = next(filter(lambda p: p.container_port == port, container_ports), None)
+            if not container_port_obj:
+                raise ValueError(f"Port '{port}' could not be resolved to a destination container port")
+
+            container_port = container_port_obj.container_port
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(

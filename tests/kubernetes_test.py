@@ -122,7 +122,7 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8181)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8480)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -130,14 +130,14 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number_string(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8181')
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8480')
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
 
     async def test_inject_sidecar_port_conflict(self, kube):
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
-        with pytest.raises(ValueError, match='Deployment already has a container port 8480'):
+        with pytest.raises(ValueError, match='Port conflict: Deployment \'fiber-http\' already exposes port 8480 through an existing container'):
             await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8481, service_port=8480)
 
     async def test_inject_sidecar_by_service(self, kube) -> None:
@@ -153,7 +153,7 @@ class TestSidecar:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
 
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=8480)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=80)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
