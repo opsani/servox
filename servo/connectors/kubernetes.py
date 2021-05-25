@@ -1678,6 +1678,16 @@ class Deployment(KubernetesModel):
             if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
                 raise ValueError(f"Deployment already has a container port {service_port}")
 
+            # if we have a symbolic name in the target port, we need to resolve it to a concrete container port
+            if isinstance(port_obj.target_port, str):
+                container_port_obj = next(filter(lambda p: p.name == port_obj.target_port, container_ports), None)
+                if not container_port_obj:
+                    raise ValueError(f"Port '{port_obj.target_port}' could not be resolved to a destination container port")
+
+                container_port = container_port_obj.container_port
+            else:
+                container_port = port_obj.target_port
+
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
             name=name,
@@ -1695,7 +1705,7 @@ class Deployment(KubernetesModel):
             ),
             env=[
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port_obj.target_port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(container_port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
