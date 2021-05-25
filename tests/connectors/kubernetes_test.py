@@ -1658,6 +1658,7 @@ class TestSidecarInjection:
     @pytest.mark.parametrize(
         "service, port",
         [
+            ('fiber-http', None),
             ('fiber-http', 80),
             ('fiber-http', 'http'),
         ],
@@ -1720,7 +1721,77 @@ class TestSidecarInjection:
             ),
         ]
 
+    @pytest.mark.applymanifests("../manifests/sidecar_injection",
+                                files=["fiber-http_multiple_ports.yaml"])
+    @pytest.mark.parametrize(
+        "service, port, error",
+        [
+            ('fiber-http', None, ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
+            ('fiber-http', 80, None),
+            ('fiber-http', 'http', None),
+        ],
+    )
+    async def test_inject_multiport_deployment(self, namespace: str, service: str, port: Union[str, int], error: Optional[Exception]) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
+        assert len(deployment.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 2
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 8480
+
+        try:
+            await deployment.inject_sidecar(
+                'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+            )
+        except Exception as e:
+            assert repr(e) == repr(error)
+
+        # Examine new sidecar (if success is expected)
+        if error is None:
+            await deployment.refresh()
+            assert len(deployment.containers) == 2, "expected an injected container"
+            sidecar_container = deployment.containers[1]
+            assert sidecar_container.name == 'opsani-envoy'
+
+            # Check ports and env
+            assert sidecar_container.ports == [
+                kubernetes_asyncio.client.V1ContainerPort(
+                    container_port=9980,
+                    host_ip=None,
+                    host_port=None,
+                    name='opsani-proxy',
+                    protocol='TCP'
+                ),
+                kubernetes_asyncio.client.V1ContainerPort(
+                    container_port=9901,
+                    host_ip=None,
+                    host_port=None,
+                    name='opsani-metrics',
+                    protocol='TCP'
+                )
+            ]
+            assert sidecar_container.obj.env == [
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                    value='9980',
+                    value_from=None
+                ),
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                    value='8480',
+                    value_from=None
+                ),
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                    value='9901',
+                    value_from=None
+                ),
+            ]
+
     async def test_inject_by_source_port_name_with_symbolic_target_port(str) -> None:
         ...
-
-    # TODO: multi-port, error cases
