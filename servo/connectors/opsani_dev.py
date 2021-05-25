@@ -700,9 +700,13 @@ class OpsaniDevChecks(servo.BaseChecks):
             deployment_config, timeout=kubernetes_config.timeout
         )
 
-        # Ensure the canary is available
+        # Ensure the tuning pod is available
         try:
-            await optimization.create_or_recreate_tuning_pod()
+            if optimization.tuning_pod is None:
+                servo.logger.info(f"Creating tuning pod '{optimization.tuning_pod_name}'")
+                await optimization.create_tuning_pod()
+            else:
+                servo.logger.info(f"Found existing tuning pod '{optimization.tuning_pod_name}'")
 
         except Exception as error:
             servo.logger.exception("Failed creating tuning Pod: {error}")

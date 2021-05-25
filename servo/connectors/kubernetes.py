@@ -2486,7 +2486,6 @@ class CanaryOptimization(BaseOptimization):
 
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        # return
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
@@ -2519,7 +2518,7 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod, "Tuning Pod not loaded"
         assert self.tuning_container, "Tuning Container not loaded"
 
-        servo.logger.info("Applying adjustmenting to Tuning Pod")
+        servo.logger.info("Applying adjustments to Tuning Pod")
         task = asyncio.create_task(self.create_or_recreate_tuning_pod())
         try:
             await task
@@ -2530,7 +2529,7 @@ class CanaryOptimization(BaseOptimization):
 
             raise
 
-        # TODO: logging the wrong values -- should becoming from the podtemplatespec?
+        # TODO: logging the wrong values -- should be coming from the podtemplatespec?
         servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
 
     @property
