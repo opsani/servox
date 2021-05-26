@@ -101,9 +101,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
         self.logger.info(f"Adjusting... {summary}")
         self.logger.trace(devtools.pformat(adjustments))
+        self.logger.trace(devtools.pformat(control))
 
         aggregate_description = Description.construct()
-        results = await self.servo.dispatch_event(servo.Events.adjust, adjustments)
+        results = await self.servo.dispatch_event(
+            servo.Events.adjust, adjustments=adjustments, control=control
+        )
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)

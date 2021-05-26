@@ -55,6 +55,10 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     cpu: CPU
     memory: Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
+    timeout: servo.Duration = "5m"
+    settlement: Optional[servo.Duration] = pydantic.Field(
+        description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
+    )
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":
@@ -78,6 +82,8 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            timeout=self.timeout,
+            settlement=self.settlement,
             deployments=[
                 servo.connectors.kubernetes.DeploymentConfiguration(
                     name=self.deployment,
