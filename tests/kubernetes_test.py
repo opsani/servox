@@ -400,7 +400,7 @@ async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
     kube_dep = kube.get_deployments()["fiber-http"]
     kube_dep.obj.spec.template.spec.containers[0].resources.requests["memory"] = "128Mi"
     kube_dep.api_client.patch_namespaced_deployment(kube_dep.name, kube_dep.namespace, kube_dep.obj)
-    
+
     servo_dep = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
     # Timing is a bit tricky on this one
     await asyncio.sleep(1.5)

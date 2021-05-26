@@ -10,6 +10,7 @@ import pydantic
 import pytest
 import pytest_mock
 import re
+import traceback
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -1336,7 +1337,11 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", debug(rejection_info)
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", traceback.format_exception(
+            type(rejection_info.value),
+            rejection_info.value,
+            rejection_info.value.__traceback__
+        )
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
