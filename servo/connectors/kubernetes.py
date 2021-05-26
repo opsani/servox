@@ -2906,7 +2906,7 @@ class CanaryOptimization(BaseOptimization):
                         f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
 
-                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds() + 60)
 
                 # create a new canary against baseline
                 self.logger.info(
