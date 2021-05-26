@@ -404,7 +404,7 @@ async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
     servo_dep = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
     # Timing is a bit tricky on this one
     await asyncio.sleep(1.5)
-    for _ in range(5):
+    for _ in range(10):
         latest_pods = await servo_dep.get_latest_pods()
         # Check the latest pods aren't from the old replicaset
         for pod in latest_pods:
