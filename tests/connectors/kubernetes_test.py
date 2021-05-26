@@ -1336,7 +1336,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]"
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", debug(rejection_info)
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
