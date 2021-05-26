@@ -194,6 +194,29 @@ async def test_hello(
 #     ...
 #     # fire up runner.run and check .run, etc.
 
+async def test_authorization_redacted(
+    servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+) -> None:
+    static_optimizer = tests.fake.StaticOptimizer(
+        id="dev.opsani.com/servox-integration-tests",
+        token="179eddc9-20e2-4096-b064-824b72a83b7d",
+    )
+    fastapi_app.optimizer = static_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+
+    # Capture TRACE logs
+    messages = []
+    servo_runner.logger.add(lambda m: messages.append(m), level=5)
+
+    await servo_runner._post_event(
+        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+    )
+
+    curlify_log = next(filter(lambda m: "curl" in m, messages))
+    assert servo_runner.optimizer.token.get_secret_value() not in curlify_log
+
 
 async def test_control_sent_on_adjust(
     servo_runner: servo.runner.ServoRunner,

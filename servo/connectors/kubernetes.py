@@ -9,6 +9,7 @@ import copy
 import datetime
 import decimal
 import enum
+import functools
 import itertools
 import operator
 import os
@@ -2867,18 +2868,11 @@ class CanaryOptimization(BaseOptimization):
         )
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
-        if not self.tuning_pod:
+        if await self.delete_tuning_pod(raise_if_not_found=False) is None:
             self.logger.debug(f'no tuning pod exists, ignoring destroy')
             return
 
-        self.logger.info(f'destroying tuning Pod "{self.name}"')
-        status = await _try_delete_model(self.tuning_pod)
-
-        if status is not None:
-            self.logger.debug(f'awaiting deletion of tuning Pod "{self.name}"')
-            await self.tuning_pod.wait_until_deleted()
-
-        self.logger.success(f'destroyed tuning Pod "{self.name}"')
+        self.logger.success(f'destroyed tuning Pod "{self.tuning_pod_name}"')
 
     async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
         if mode == FailureMode.rollback or mode == FailureMode.destroy:
@@ -3084,17 +3078,18 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         # TODO: Run sanity checks to look for out of band changes
 
     async def raise_for_status(self) -> None:
-        async def _raise_for_task(optimization: BaseOptimization, task: asyncio.Task) -> None:
+        handle_error_tasks = []
+        def _raise_for_task(task: asyncio.Task, optimization: BaseOptimization) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
-                    await optimization.handle_error(
+                    handle_error_tasks.append(asyncio.create_task(optimization.handle_error(
                         exception, self.config.on_failure
-                    )
+                    )))
 
         tasks = []
         for optimization in self.optimizations:
             task = asyncio.create_task(optimization.raise_for_status())
-            task.add_done_callback(lambda task: _raise_for_task(optimization, task))
+            task.add_done_callback(functools.partial(_raise_for_task, optimization=optimization))
             tasks.append(task)
 
         for future in asyncio.as_completed(tasks, timeout=self.config.timeout.total_seconds()):
@@ -3102,6 +3097,10 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 await future
             except Exception as error:
                 servo.logger.exception(f"Optimization failed with error: {error}")
+
+        # TODO: first handler to raise will likely interrupt other tasks.
+        #   Gather with return_exceptions=True and aggregate resulting exceptions before raising
+        await asyncio.gather(*handle_error_tasks)
 
     async def is_ready(self):
         if self.optimizations:
