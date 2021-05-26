@@ -75,17 +75,6 @@ class Optimizer(pydantic.BaseSettings):
         ua_comment_str = "; ".join(list(map(lambda tup: f"{tup[0]} {tup[1]}", ua_comment_dict.items())))
         self._user_agents_dict[USER_AGENT] = f"{servo.__version__} ({ua_comment_str})"
 
-
-    @pydantic.root_validator(pre=True)
-    @classmethod
-    def _expand_id_fields(cls, values: dict[str, Any]) -> dict[str, Any]:
-        if id := values.pop("id", None):
-            org_domain, app_name = id.split("/")
-            values["org_domain"] = org_domain
-            values["app_name"] = app_name
-
-        return values
-
     @property
     def organization(self) -> str:
         """Returns the organization component of the optimizer ID.
