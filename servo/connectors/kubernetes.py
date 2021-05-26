@@ -928,6 +928,12 @@ class Pod(KubernetesModel):
         if not status.conditions:
             raise RuntimeError(f'Pod is not running: {self.name}')
 
+        self.logger.trace(f"checking container statuses: {status.container_statuses}")
+        if status.container_statuses:
+            for cont_stat in status.container_statuses:
+                if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason == "ImagePullBackOff":
+                    raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
+
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
             if cond.reason in {"Unschedulable", "ContainersNotReady"}:
@@ -1852,8 +1858,10 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
+    # TODO: move to _raise_for_pod_status and call from Deployment.raise_for_status once implemented
     async def _check_pod_conditions(self):
         pods = await self.get_latest_pods()
+        self.logger.trace(f"current pod statuses are {map(lambda pod: pod.obj.status, pods)}")
         unschedulable_pods = [
             pod for pod in pods
             if pod.obj.status.conditions and any(
@@ -1868,6 +1876,18 @@ class Deployment(KubernetesModel):
 
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
+
+        image_pull_failed_pods = [
+            pod for pod in pods
+            if pod.obj.status.container_statuses and any(
+                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason == "ImagePullBackOff" for cont_stat in pod.obj.status.container_statuses
+            )
+        ]
+        if image_pull_failed_pods:
+            raise servo.AdjustmentFailedError(
+                f"Container image pull failure detected on {len(image_pull_failed_pods)} pods: {', '.join(map(lambda pod: pod.obj.name, pods))}",
+                reason="image-pull-failed"
+            )
 
     async def get_restart_count(self) -> int:
         count = 0
