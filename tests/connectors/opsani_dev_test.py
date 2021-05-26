@@ -471,6 +471,7 @@ class TestServiceMultiport:
                     )
 
                 # Let Prometheus scrape to see the traffic
+                await wait_for_targets_to_be_scraped()
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_prometheus_targets"))
 
                 # Step 6
