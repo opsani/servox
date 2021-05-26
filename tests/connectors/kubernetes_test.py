@@ -1246,6 +1246,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
     def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
         deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        deployment.obj.spec.template.spec.termination_grace_period_seconds = 10
         fiber_container = deployment.obj.spec.template.spec.containers[0]
         fiber_container.resources.requests['memory'] = '256Mi'
         fiber_container.resources.limits['memory'] = '256Mi'
