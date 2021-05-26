@@ -1068,7 +1068,7 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "10s"
-        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].on_failure = FailureMode.destroy
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1088,7 +1088,7 @@ class TestKubernetesConnectorIntegration:
         mocker.patch("servo.connectors.kubernetes.Memory.__config__.validate_assignment", new_callable=mocker.PropertyMock(return_value=False))
         mocker.patch("servo.connectors.kubernetes._normalize_adjustment", return_value=("memory","256.0MiBGiB"))
 
-        tuning_config.on_failure = FailureMode.rollback
+        tuning_config.deployments[0].on_failure = FailureMode.rollback
         connector = KubernetesConnector(config=tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -1124,6 +1124,26 @@ class TestKubernetesConnectorIntegration:
         setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
         assert setting
         assert setting.value == 250
+
+    async def test_adjust_handle_error_respects_nested_config(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
+        config.timeout = "3s"
+        config.on_failure = FailureMode.destroy
+        config.deployments[0].on_failure = FailureMode.exception
+        config.deployments[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Gi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+            debug(description)
+
+        assert "Insufficient memory." in str(rejection_info.value)
+
+        await Deployment.read("fiber-http", kube.namespace)
 
     # async def test_apply_no_changes(self):
 #         # resource_version stays the same and early exits
@@ -1316,7 +1336,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]"
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", debug(rejection_info)
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]

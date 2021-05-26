@@ -2066,7 +2066,15 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         """Raise an exception if in an unhealthy state."""
         ...
 
-    async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
+    @property
+    @abc.abstractmethod
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior.
+        """
+        ...
+
+    async def handle_error(self, error: Exception) -> bool:
         """
         Handle an operational failure in accordance with the failure mode configured by the operator.
 
@@ -2086,29 +2094,28 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             NotImplementedError: Raised if there is no handler for a given failure mode. Subclasses
                 must filter failure modes before calling the superclass implementation.
         """
-
         # Ensure that we chain any underlying exceptions that may occur
         try:
-            self.logger.error(f"handling error with with failure mode {mode}: {error.__class__.__name__} - {str(error)}")
+            self.logger.error(f"handling error with with failure mode {self.on_failure}: {error.__class__.__name__} - {str(error)}")
             self.logger.opt(exception=error).debug(f"kubernetes error details")
 
-            if mode == FailureMode.exception:
+            if self.on_failure == FailureMode.exception:
                 raise error
 
-            elif mode == FailureMode.ignore:
+            elif self.on_failure == FailureMode.ignore:
                 self.logger.opt(exception=error).warning(f"ignoring exception")
                 return True
 
-            elif mode == FailureMode.rollback:
+            elif self.on_failure == FailureMode.rollback:
                 await self.rollback(error)
 
-            elif mode == FailureMode.destroy:
+            elif self.on_failure == FailureMode.destroy:
                 await self.destroy(error)
 
             else:
                 # Trap any new modes that need to be handled
                 raise NotImplementedError(
-                    f"missing error handler for failure mode '{mode}'"
+                    f"missing error handler for failure mode '{self.on_failure}'"
                 )
 
             raise error # Always communicate errors to backend unless ignored
@@ -2251,6 +2258,14 @@ class DeploymentOptimization(BaseOptimization):
         replicas = self.deployment_config.replicas.copy()
         replicas.value = self.deployment.replicas
         return replicas
+
+    @property
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior. If not set explicitly, this will be cascaded
+        from the base kubernetes configuration (or its default)
+        """
+        return self.deployment_config.on_failure
 
     async def rollback(self, error: Optional[Exception] = None) -> None:
         """
@@ -2765,6 +2780,14 @@ class CanaryOptimization(BaseOptimization):
         )
 
     @property
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior. If not set explicitly, this will be cascaded
+        from the base kubernetes configuration (or its default)
+        """
+        return self.deployment_config.on_failure
+
+    @property
     def main_cpu(self) -> CPU:
         """
         Return the current CPU setting for the main containers.
@@ -2874,11 +2897,11 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.success(f'destroyed tuning Pod "{self.tuning_pod_name}"')
 
-    async def handle_error(self, error: Exception, mode: "FailureMode") -> bool:
-        if mode == FailureMode.rollback or mode == FailureMode.destroy:
+    async def handle_error(self, error: Exception) -> bool:
+        if self.on_failure == FailureMode.rollback or self.on_failure == FailureMode.destroy:
             # Ensure that we chain any underlying exceptions that may occur
             try:
-                if mode == FailureMode.rollback:
+                if self.on_failure == FailureMode.rollback:
                     self.logger.warning(
                         f"cannot rollback a tuning Pod: falling back to destroy: {error}"
                     )
@@ -2898,7 +2921,7 @@ class CanaryOptimization(BaseOptimization):
                 raise handler_error from error
 
         else:
-            return await super().handle_error(error, mode)
+            return await super().handle_error(error)
 
 
     async def is_ready(self) -> bool:
@@ -3058,9 +3081,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 for result in results:
                     if isinstance(result, Exception):
                         for optimization in self.optimizations:
-                            if await optimization.handle_error(
-                                result, self.config.on_failure
-                            ):
+                            if await optimization.handle_error(result):
                                 # Stop error propagation once it has been handled
                                 break
 
@@ -3069,7 +3090,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                     f"timed out after {timeout} + 60s waiting for adjustments to apply"
                 )
                 for optimization in self.optimizations:
-                    if await optimization.handle_error(error, self.config.on_failure):
+                    if await optimization.handle_error(error):
                         # Stop error propagation once it has been handled
                         break
         else:
@@ -3082,9 +3103,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         def _raise_for_task(task: asyncio.Task, optimization: BaseOptimization) -> None:
             if task.done() and not task.cancelled():
                 if exception := task.exception():
-                    handle_error_tasks.append(asyncio.create_task(optimization.handle_error(
-                        exception, self.config.on_failure
-                    )))
+                    handle_error_tasks.append(asyncio.create_task(optimization.handle_error(exception)))
 
         tasks = []
         for optimization in self.optimizations:
