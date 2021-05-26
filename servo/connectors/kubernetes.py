@@ -1487,8 +1487,7 @@ class Deployment(KubernetesModel):
                 for ownRef in rs.metadata.owner_references)]
         if not rs_list:
             raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
-        # latest_rs = sorted(rs_list, key= lambda rs: int(rs.metadata.annotations['deployment.kubernetes.io/revision']), reverse=True)[0]
-        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+        latest_rs = sorted(rs_list, key= lambda rs: int(rs.metadata.annotations['deployment.kubernetes.io/revision']), reverse=True)[0]
 
         return [
             pod for pod in await self.get_pods()
