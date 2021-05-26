@@ -1,7 +1,7 @@
 import asyncio
 import builtins
-import enum
 import contextlib
+import enum
 import json
 import os
 import pathlib
@@ -10,7 +10,6 @@ import socket
 import string
 from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
-import backoff
 import chevron
 import devtools
 import fastapi
@@ -62,12 +61,7 @@ def event_loop_policy(request) -> str:
         assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
         event_loop_policy = marker.args[0]
     else:
-        # NOTE: integration and system tests tend to run subprocesses that trigger
-        # MagicStack/uvloop#136 io.UnsupportedOperation("redirected stdin is pseudofile, has no fileno()")
-        if "integration" in request.node.keywords or "system" in request.node.keywords:
-            event_loop_policy = "default"
-        else:
-            event_loop_policy = "uvloop"
+        event_loop_policy = "uvloop"
 
     valid_policies = ("default", "uvloop")
     assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
@@ -331,7 +325,7 @@ def servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return the path to a servo config file set up for running stub connectors from the test helpers."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
-    settings = tests.helpers.StubBaseConfiguration(name="stub")
+    settings = servo.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(
@@ -348,7 +342,7 @@ def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
 def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     """Return the path to a servo config file set up for multi-servo execution."""
     config_path: pathlib.Path = tmp_path / "servo.yaml"
-    settings = tests.helpers.StubBaseConfiguration(name="stub")
+    settings = tests.helpers.BaseConfiguration()
     measure_config_json = json.loads(
         json.dumps(
             settings.dict(
@@ -358,10 +352,8 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     )
     optimizer1 = servo.Optimizer(id="dev.opsani.com/multi-servox-1", token="123456789")
     optimizer1_config_json = json.loads(
-        json.dumps(
-            optimizer1.dict(
-                by_alias=True,
-            )
+        optimizer1.json(
+            by_alias=True,
         )
     )
     config1 = {
@@ -372,10 +364,8 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
     }
     optimizer2 = servo.Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
     optimizer2_config_json = json.loads(
-        json.dumps(
-            optimizer2.dict(
-                by_alias=True,
-            )
+        optimizer2.json(
+            by_alias=True,
         )
     )
     config2 = {
@@ -420,6 +410,10 @@ def random_string() -> str:
     """Return a random string of characters."""
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
+
+@pytest.fixture
+def rootpath(pytestconfig) -> pathlib.Path:
+    return pytestconfig.rootpath
 
 def kubeconfig_path_from_config(config) -> pathlib.Path:
     config_opt = config.getoption('kube_config') or "tests/kubeconfig"
@@ -564,7 +558,6 @@ ForwardingTarget = Union[
 ]
 
 
-@backoff.on_exception(backoff.expo, (asyncio.TimeoutError, RuntimeError), max_tries=10, max_time=10)
 @contextlib.asynccontextmanager
 async def kubectl_ports_forwarded(
     target: ForwardingTarget,
@@ -627,15 +620,18 @@ async def kubectl_ports_forwarded(
         if a_socket.connect_ex(("localhost", local_port)) != 0:
             raise RuntimeError(f"port forwarding failed: port {local_port} is not open")
 
-    if len(ports) == 1:
-        url = f"http://localhost:{ports[0][0]}"
-        yield url
-    else:
-        # Build a mapping of from target ports to the forwarded URL
-        ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
-        yield ports_to_urls
-
-    task.cancel()
+    try:
+        if len(ports) == 1:
+            url = f"http://localhost:{ports[0][0]}"
+            yield url
+        else:
+            # Build a mapping of from target ports to the forwarded URL
+            ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
+            yield ports_to_urls
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 @pytest.fixture()
 async def kube_port_forward(
@@ -646,7 +642,7 @@ async def kube_port_forward(
 ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
-        kube.wait_for_registered(timeout=10)
+        kube.wait_for_registered()
         ports = list(map(lambda port: (unused_tcp_port_factory(), port), remote_ports))
         return kubectl_ports_forwarded(
             target,
@@ -663,7 +659,7 @@ async def kube_port_forward(
 def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.objects.Pod]:
     """A pytest fixture that returns a callable for loading a kubernetes pod reference."""
     def _pod_loader(deployment: str) -> kubetest.objects.Pod:
-        kube.wait_for_registered(timeout=10)
+        kube.wait_for_registered()
 
         deployments = kube.get_deployments()
         prometheus = deployments.get(deployment)

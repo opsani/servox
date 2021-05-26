@@ -3,8 +3,12 @@ import asyncio
 import pathlib
 
 import pytest
+import pytest_mock
+import unittest.mock
 
 import servo
+import servo.events
+import servo.runner
 import servo.connectors.prometheus
 import tests.fake
 import tests.helpers
@@ -37,6 +41,34 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
 def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
+
+async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.runner.AssemblyRunner):
+    event_loop = asyncio.get_event_loop()
+
+    # NOTE: using the pytest_mocker fixture for mocking the event loop can cause side effects with pytest-asyncio
+    #   (eg. when fixture mocking the `stop` method, the test will run forever).
+    #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
+
+    # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
+    with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
+        # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
+        with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+            async def wait_for_servo_running():
+                while not assembly_runner.assembly.servos[0].is_running:
+                    await asyncio.sleep(0.01)
+
+            assembly_runner.run()
+            await asyncio.wait_for(wait_for_servo_running(), timeout=2)
+
+            # Shutdown the servo to produce edge case error
+            await assembly_runner.assembly.servos[0].shutdown()
+            try:
+                await assembly_runner.assembly.shutdown()
+            except:
+                raise
+            finally:
+                # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
+                await assembly_runner._shutdown(event_loop)
 
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
@@ -162,6 +194,58 @@ async def test_hello(
 #     ...
 #     # fire up runner.run and check .run, etc.
 
+async def test_authorization_redacted(
+    servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+) -> None:
+    static_optimizer = tests.fake.StaticOptimizer(
+        id="dev.opsani.com/servox-integration-tests",
+        token="179eddc9-20e2-4096-b064-824b72a83b7d",
+    )
+    fastapi_app.optimizer = static_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+
+    # Capture TRACE logs
+    messages = []
+    servo_runner.logger.add(lambda m: messages.append(m), level=5)
+
+    await servo_runner._post_event(
+        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+    )
+
+    curlify_log = next(filter(lambda m: "curl" in m, messages))
+    assert servo_runner.optimizer.token.get_secret_value() not in curlify_log
+
+
+async def test_control_sent_on_adjust(
+    servo_runner: servo.runner.ServoRunner,
+    fakeapi_url: str,
+    fastapi_app: 'tests.OpsaniAPI',
+    mocker: pytest_mock.MockFixture
+) -> None:
+    sequenced_optimizer = tests.fake.SequencedOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    control = servo.Control(settlement='10s')
+    await sequenced_optimizer.recommend_adjustments(adjustments=[], control=control),
+    sequenced_optimizer.sequence(
+        sequenced_optimizer.done()
+    )
+    fastapi_app.optimizer = sequenced_optimizer
+    servo_runner.servo.optimizer.base_url = fakeapi_url
+
+    adjust_connector = servo_runner.servo.get_connector("adjust")
+    event_handler = adjust_connector.get_event_handlers("adjust", servo.events.Preposition.on)[0]
+    spy = mocker.spy(event_handler, "handler")
+
+    async def wait_for_optimizer_done():
+        while fastapi_app.optimizer.state.name != 'done':
+            await asyncio.sleep(0.01)
+
+    await servo_runner.run()
+    await asyncio.wait_for(wait_for_optimizer_done(), timeout=2)
+    await servo_runner.shutdown()
+
+    spy.assert_called_once_with(adjust_connector, [], control)
 
 # TODO: This doesn't need to be integration test
 async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunner) -> None:

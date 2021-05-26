@@ -17,6 +17,62 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.10.2] "preposterous ports" - 2021-05-20
+
+### Fixed
+
+- Port was not being accepted as input on inject_sidecar cli command [#241](https://gihtub.com/opsani/servox/pull/241)
+
+
+## [0.10.1] "tailored replication" - 2021-05-11
+
+### Enhanced
+
+- Flexible support for pod template resource specifications [#182](https://github.com/opsani/servox/pull/182)
+- Aligned memory unit display with the expected Kubernetes output
+
+### Fixed
+
+- Allowed min=max in range settings
+- Correctly use selector labels to locate deployment [#202](https://github.com/opsani/servox/pull/202)
+
+## [0.10.0] "baseless allegation" - Unreleased
+
+### Enhanced
+
+- Opsani Dev checks for traffic flows are faster.
+- Service check errors now include the missing labels.
+- Container resources are now checked against the optimizable range before
+  optimization begins.
+- Introduced pub/sub transformers for filtering, splitting, and aggregating
+  messages across channels. [#191](https://github.com/opsani/servox/pull/191)
+- Added `--no-poll` and `--interactive` options to the `servo run` command.
+  [#192](https://github.com/opsani/servox/pull/192)
+- Enjoy a random start-up banner in a random color palette.
+  [#193](https://github.com/opsani/servox/pull/193)
+- `TRACE` logging from the `servo.api` module now includes cURL commands.
+  [#194](https://github.com/opsani/servox/pull/194)
+
+### Fixed
+
+- Traffic checks no longer require a 2xx status code to pass.
+- Load testing hints using Vegeta now include `kubectl exec` stanza to run
+  remotely rather than on the local workstation.
+- Resource requirements now output a sensible error message rather than raising
+  a `KeyError` when `cpu` or `memory` are not defined.
+
+### Changed
+
+- Updated to httpx v0.17.0
+- Updated uvloop to v0.15.2
+- Optimizer is now a member of the Configuration object.
+
+### Fixed
+
+- HTTP connection errors could result in unbound references to `response` in the
+  `servo.api` module. (SOL-292)
+
 ## [0.9.5] "serenity now" - 2021-02-24
 
 ### Enhanced

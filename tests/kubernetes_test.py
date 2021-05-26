@@ -1,26 +1,21 @@
 import asyncio
 import datetime
 import hashlib
+import re
 
 import kubernetes_asyncio
 import kubernetes_asyncio.client
 import kubetest.client
+import pydantic
 import pytest
 
 import servo
 import servo.connectors.kubernetes
 import tests.helpers
+from servo.types import _is_step_aligned, _suggest_step_aligned_values
 
-import pydantic
-import re
-from servo.types import _suggest_step_aligned_values, _is_step_aligned
-
-# NOTE: These tests are brittle when run under uvloop. We run these under the default
-# asyncio event loop policy to avoid exceptions relating to pytest output capture.
-# The exception is: `io.UnsupportedOperation: redirected stdin is pseudofile, has no fileno()`
 pytestmark = [
     pytest.mark.asyncio,
-    pytest.mark.event_loop_policy("default"),
     pytest.mark.integration,
     pytest.mark.usefixtures("kubernetes_asyncio_config")
 ]
@@ -165,9 +160,19 @@ class TestSidecar:
 
     async def test_inject_sidecar_by_service_and_port_name(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
-        # change the container port so we don't conflict
-        deployment.obj.spec.template.spec.containers[0].ports[0].container_port = 9999
-        await deployment.replace()
+        # NOTE: This can generate a 409 Conflict failure under CI
+        for _ in range(3):
+            try:
+                # change the container port so we don't conflict
+                deployment.obj.spec.template.spec.containers[0].ports[0].container_port = 9999
+                await deployment.replace()
+                break
+
+            except kubernetes_asyncio.client.exceptions.ApiException as e:
+                if e.status == 409 and e.reason == 'Conflict':
+                    # If we have a conflict, just load the existing object and continue
+                    await deployment.refresh()
+
 
         assert len(deployment.containers) == 1
         await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port='http')
@@ -346,7 +351,7 @@ class TestChecks:
         container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"cpu": None}, requests={"cpu": "500"})
         await deployment.patch()
         try:
-            await deployment.wait_until_ready(5)
+            await asyncio.wait_for(deployment.wait_until_ready(), timeout=2.0)
         except asyncio.TimeoutError:
             pass
 
@@ -388,13 +393,13 @@ class TestService:
 @pytest.mark.parametrize(
     "value, step, expected_lower, expected_upper",
     [
-        ('1.3GiB', '128MiB', '1.0GiB', '1.5GiB'),
-        ('756MiB', '128MiB', '640.0MiB', '768.0MiB'),
-        ('96MiB', '32MiB', '96.0MiB', '128.0MiB'),
-        ('32MiB', '96MiB', '96.0MiB', '192.0MiB'),
-        ('4.4GiB', '128MiB', '4.0GiB', '4.5GiB'),
-        ('4.5GiB', '128MiB', '4.5GiB', '5.0GiB'),
-        ('128MiB', '128MiB', '128.0MiB', '256.0MiB'),
+        ('1.3Gi', '128Mi', '1.0Gi', '1.5Gi'),
+        ('756Mi', '128Mi', '640.0Mi', '768.0Mi'),
+        ('96Mi', '32Mi', '96.0Mi', '128.0Mi'),
+        ('32Mi', '96Mi', '96.0Mi', '192.0Mi'),
+        ('4.4Gi', '128Mi', '4.0Gi', '4.5Gi'),
+        ('4.5Gi', '128Mi', '4.5Gi', '5.0Gi'),
+        ('128Mi', '128Mi', '128.0Mi', '256.0Mi'),
     ]
 )
 def test_step_alignment_calculations_memory(value, step, expected_lower, expected_upper) -> None:
@@ -428,7 +433,21 @@ def test_cpu_not_step_aligned() -> None:
         )
 
 def test_memory_not_step_aligned() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):
+    with pytest.raises(pydantic.ValidationError, match=re.escape("Memory('mem' 256.0Mi-4.1Gi, 128.0Mi) max is not step aligned: 4.1Gi is not a multiple of 128.0Mi (consider 4.0Gi or 4.5Gi).")):
         servo.connectors.kubernetes.Memory(
             min="256.0MiB", max="4.1GiB", step="128.0MiB"
         )
+
+
+def test_copying_cpu_with_invalid_value_does_not_raise() -> None:
+    cpu = servo.connectors.kubernetes.CPU(
+        min="250m", max="4", step="125m", value=None
+    )
+
+    # Trigger an error
+    with pytest.raises(pydantic.ValidationError, match=re.escape("5 is outside of the range 250m-4")):
+        cpu.value = '5'
+
+    # Use copy + update to hydrate the value
+    cpu_copy = cpu.copy(update={'value': '5'})
+    assert cpu_copy.value == '5'

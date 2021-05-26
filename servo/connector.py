@@ -100,21 +100,20 @@ class BaseConnector(
     ##
     # Instance configuration
 
-    optimizer: Optional[servo.configuration.Optimizer]
-    """Name of the command for interacting with the connector instance via the CLI.
-
-    Note that optimizers are attached as configuration to Connector instance because
-    the settings are not managed as part of the assembly config files and are always
-    provided via environment variablesm, commandline arguments, or secrets management.
-    """
-
     config: servo.configuration.BaseConfiguration
     """Configuration for the connector set explicitly or loaded from a config file."""
 
-    _servo_config: servo.configuration.ServoConfiguration = pydantic.PrivateAttr(
-        default_factory=lambda: servo.configuration.ServoConfiguration()
+    # TODO: needs better name... BaseCommonConfiguration? attr can be _base_config or __base_config__
+    # NOTE: __shared__ maybe?
+    _global_config: servo.configuration.CommonConfiguration = pydantic.PrivateAttr(
+        default_factory=lambda: servo.configuration.CommonConfiguration()
     )
     """Shared configuration from our parent Servo instance."""
+
+    @property
+    def optimizer(self) -> Optional[servo.configuration.Optimizer]:
+        """The optimizer for the connector."""
+        return self.config.optimizer
 
     ##
     # Validators
@@ -213,15 +212,15 @@ class BaseConnector(
                 f"cannot construct API client: optimizer is not configured"
             )
         return {
-            "base_url": self.optimizer.api_url,
+            "base_url": self.optimizer.url,
             "headers": {
-                "Authorization": f"Bearer {self.optimizer.token}",
+                "Authorization": f"Bearer {self.optimizer.token.get_secret_value()}",
                 "User-Agent": self.optimizer.user_agent,
                 "Content-Type": "application/json",
             },
-            "proxies": self._servo_config.proxies,
-            "timeout": self._servo_config.timeouts,
-            "verify": self._servo_config.ssl_verify,
+            "proxies": self._global_config.proxies,
+            "timeout": self._global_config.timeouts,
+            "verify": self._global_config.ssl_verify,
         }
 
     @property
@@ -300,11 +299,15 @@ def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
         if not name:
             continue
         name = re.sub(r"Connector$", "", name)
-        name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+        if re.match(r"^[A-Z]+$", name):
+            # Handle case where the name is an acronym (e.g. 'OLAS') => 'olas'
+            name = name.lower()
+        else:
+            # Handle case where the name is CamelCase (e.g., 'DataDog') => 'data_dog'
+            name = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
         if name != "":
             return name
     return None
-
 
 #####
 

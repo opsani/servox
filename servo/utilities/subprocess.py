@@ -3,6 +3,7 @@ execution of subprocesses with support for timeouts, streaming output, error
 management, and logging.
 """
 import asyncio
+import contextlib
 import datetime
 import pathlib
 import time
@@ -250,31 +251,26 @@ async def stream_subprocess_shell(
     )
     from servo.types import Duration
 
-    try:
-        start = time.time()
-        timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
-        loguru.logger.info(f"Running subprocess command `{cmd}`{timeout_note}")
-        result = await stream_subprocess_output(
-            process,
-            timeout=timeout,
-            stdout_callback=stdout_callback,
-            stderr_callback=stderr_callback,
+    start = time.time()
+    timeout_note = f" ({Duration(timeout)} timeout)" if timeout else ""
+    loguru.logger.info(f"Running subprocess command `{cmd}`{timeout_note}")
+    result = await stream_subprocess_output(
+        process,
+        timeout=timeout,
+        stdout_callback=stdout_callback,
+        stderr_callback=stderr_callback,
+    )
+    end = time.time()
+    duration = Duration(end - start)
+    if result == 0:
+        loguru.logger.success(
+            f"Subprocess succeeded in {duration} (`{cmd}`)"
         )
-        end = time.time()
-        duration = Duration(end - start)
-        if result == 0:
-            loguru.logger.success(
-                f"Subprocess succeeded in {duration} (`{cmd}`)"
-            )
-        else:
-            loguru.logger.error(
-                f"Subprocess failed with return code {result} in {duration} (`{cmd}`)"
-            )
-        return result
-    except asyncio.TimeoutError as error:
-        loguru.logger.warning(f"timeout expired waiting for subprocess to complete: {error}")
-        raise error
-
+    else:
+        loguru.logger.error(
+            f"Subprocess failed with return code {result} in {duration} (`{cmd}`)"
+        )
+    return result
 
 async def stream_subprocess_output(
     process: asyncio.subprocess.Process,
@@ -299,13 +295,13 @@ async def stream_subprocess_output(
     if process.stdout:
         tasks.append(
             asyncio.create_task(
-                _read_lines_from_output_stream(process.stdout, stdout_callback)
+                _read_lines_from_output_stream(process.stdout, stdout_callback), name="stdout"
             )
         )
     if process.stderr:
         tasks.append(
             asyncio.create_task(
-                _read_lines_from_output_stream(process.stderr, stderr_callback)
+                _read_lines_from_output_stream(process.stderr, stderr_callback), name="stderr"
             )
         )
 
@@ -313,19 +309,25 @@ async def stream_subprocess_output(
         timeout.total_seconds() if isinstance(timeout, datetime.timedelta) else timeout
     )
     try:
-        # Await the tasks to start reading from the I/O streams
-        await asyncio.wait(tasks)
+        # Gather the stream output tasks and the parent process
+        gather_task = asyncio.gather(
+            *tasks,
+            process.wait()
+        )
+        await asyncio.wait_for(gather_task, timeout=timeout_in_seconds)
 
-        # Run the process under a timeout
-        await asyncio.wait_for(process.wait(), timeout=timeout_in_seconds)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        with contextlib.suppress(ProcessLookupError):
+            if process.returncode is None:
+                process.terminate()
 
-    except Exception as error:
-        process.terminate()
+        with contextlib.suppress(asyncio.CancelledError):
+            await gather_task
 
         [task.cancel() for task in tasks]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        raise error
+        raise
 
     return cast(int, process.returncode)
 

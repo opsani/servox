@@ -1,18 +1,19 @@
 import asyncio
 import datetime
-import freezegun
 import itertools
 import operator
+import re
+import weakref
+from typing import Callable, List, Optional
+
+import freezegun
+import pydantic
 import pytest
 import pytest_mock
-import pydantic
-import re
+
 import servo
 import servo.pubsub
 import servo.utilities.pydantic
-import weakref
-
-from typing import Callable, List, Optional
 
 
 class TestMessage:
@@ -43,9 +44,9 @@ class TestMessage:
         # NOTE: Use Pydantic's json() method support
         channel = servo.pubsub.Channel.construct(name="whatever", created_at=datetime.datetime.now())
         message = servo.pubsub.Message(json=channel)
-        assert message.text == '{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
+        assert message.text == '{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
         assert message.content_type == 'application/json'
-        assert message.content == b'{"description": null, "created_at": "2021-01-01T12:00:01", "name": "whatever"}'
+        assert message.content == b'{"name": "whatever", "description": null, "created_at": "2021-01-01T12:00:01"}'
 
     def test_yaml_message(self) -> None:
         message = servo.pubsub.Message(yaml={"key": "value"})
@@ -530,6 +531,339 @@ class TestPublisher:
             ])
             assert spy.call_count == 2
 
+class TestFilter:
+    async def test_passthrough_filter(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        filter_event = asyncio.Event()
+
+        async def _filter_message(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> servo.pubsub.Message:
+            filter_event.set()
+            return message
+
+        cancel_filter = servo.pubsub.Filter(_filter_message)
+        exchange.add_transformer(cancel_filter)
+
+        exchange.start()
+        channel = exchange.create_channel("metrics")
+        message = servo.pubsub.Message(text='Testing')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(channel.name)
+        subscriber.callback = callback
+
+        await exchange.publish(message, channel)
+        await filter_event.wait()
+        await subscriber_event.wait()
+        callback.assert_awaited_once_with(message, channel)
+
+    async def test_cancel_with_async_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        filter_event = asyncio.Event()
+
+        async def _filter_message(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> servo.pubsub.Message:
+            filter_event.set()
+            return None
+
+        cancel_filter = servo.pubsub.Filter(_filter_message)
+        exchange.add_transformer(cancel_filter)
+
+        exchange.start()
+        channel = exchange.create_channel("metrics")
+        message = servo.pubsub.Message(text='Testing')
+
+        callback = mocker.AsyncMock()
+        subscriber = exchange.create_subscriber(channel.name)
+        subscriber.callback = callback
+
+        await exchange.publish(message, channel)
+        await filter_event.wait()
+        callback.assert_not_awaited()
+
+    async def test_cancel_with_sync_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        filter_event = asyncio.Event()
+
+        def _filter_message(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> servo.pubsub.Message:
+            filter_event.set()
+            return None
+
+        cancel_filter = servo.pubsub.Filter(_filter_message)
+        exchange.add_transformer(cancel_filter)
+
+        exchange.start()
+        channel = exchange.create_channel("metrics")
+        message = servo.pubsub.Message(text='Testing')
+
+        callback = mocker.AsyncMock()
+        subscriber = exchange.create_subscriber(channel.name)
+        subscriber.callback = callback
+
+        await exchange.publish(message, channel)
+        await filter_event.wait()
+        callback.assert_not_awaited()
+
+    async def test_modify_message_async_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        filter_event = asyncio.Event()
+
+        async def _uppercase_message(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> servo.pubsub.Message:
+            filter_event.set()
+            return servo.pubsub.Message(text=message.text.upper())
+
+        cancel_filter = servo.pubsub.Filter(_uppercase_message)
+        exchange.add_transformer(cancel_filter)
+
+        exchange.start()
+        channel = exchange.create_channel("metrics")
+        message = servo.pubsub.Message(text='Testing')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(channel.name)
+        subscriber.callback = callback
+
+        await exchange.publish(message, channel)
+        await filter_event.wait()
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        filtered_message = callback.await_args.args[0]
+        assert filtered_message
+        assert isinstance(filtered_message, servo.pubsub.Message)
+        assert filtered_message.text == 'TESTING'
+        assert callback.await_args.args[1] == channel
+
+    async def test_modify_message_sync_callback(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        filter_event = asyncio.Event()
+
+        def _uppercase_message(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> servo.pubsub.Message:
+            filter_event.set()
+            return servo.pubsub.Message(text=message.text.upper())
+
+        cancel_filter = servo.pubsub.Filter(_uppercase_message)
+        exchange.add_transformer(cancel_filter)
+
+        exchange.start()
+        channel = exchange.create_channel("metrics")
+        message = servo.pubsub.Message(text='Testing')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(channel.name)
+        subscriber.callback = callback
+
+        await exchange.publish(message, channel)
+        await filter_event.wait()
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        filtered_message = callback.await_args.args[0]
+        assert filtered_message
+        assert isinstance(filtered_message, servo.pubsub.Message)
+        assert filtered_message.text == 'TESTING'
+        assert callback.await_args.args[1] == channel
+
+class TestSplitter:
+    async def test_mirror_to_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        metrics_channel = exchange.create_channel("metrics")
+        one_channel = exchange.create_channel("one")
+        two_channel = exchange.create_channel("two")
+        three_channel = exchange.create_channel("three")
+        remainder_channel = exchange.create_channel("remainder")
+
+        async def _mirror_message(splitter: servo.pubsub.Splitter, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if channel == metrics_channel:
+                for channel in splitter.channels:
+                    await channel.publish(message)
+
+        splitter = servo.pubsub.Splitter(_mirror_message, one_channel, two_channel, three_channel, remainder_channel)
+        exchange.add_transformer(splitter)
+
+        exchange.start()
+        message = servo.pubsub.Message(text='Testing')
+
+        latch = CountDownLatch(5)
+        async def _called(*args) -> None:
+            await latch.decrement()
+        callback = mocker.AsyncMock(side_effect=_called)
+        subscriber = exchange.create_subscriber('*')
+        subscriber.callback = callback
+
+        await exchange.publish(message, metrics_channel)
+        await latch.wait()
+
+        calls = [mocker.call(message, metrics_channel),
+                 mocker.call(message, one_channel),
+                 mocker.call(message, two_channel),
+                 mocker.call(message, three_channel),
+                 mocker.call(message, remainder_channel)]
+        callback.assert_has_awaits(calls)
+
+    async def test_split_across_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        metrics_channel = exchange.create_channel("metrics")
+        one_channel = exchange.create_channel("one")
+        two_channel = exchange.create_channel("two")
+        three_channel = exchange.create_channel("three")
+        remainder_channel = exchange.create_channel("remainder")
+
+        async def _split_message(splitter: servo.pubsub.Splitter, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if channel == metrics_channel:
+                words = message.text.split(None, 4)
+                words_to_channel = dict(zip(words, [one_channel, two_channel, three_channel, remainder_channel]))
+                for words, channel in words_to_channel.items():
+                    await channel.publish(servo.pubsub.Message(text=words))
+
+        splitter = servo.pubsub.Splitter(_split_message, one_channel, two_channel, three_channel, remainder_channel)
+        exchange.add_transformer(splitter)
+
+        exchange.start()
+        message = servo.pubsub.Message(text='First second third everything else')
+
+        # Use an ordered dict and a side-effect to accumulate the results
+        results = {}
+        latch = CountDownLatch(5)
+        async def _called(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            results[channel.name] = message.text
+            await latch.decrement()
+        callback = mocker.AsyncMock(side_effect=_called)
+        subscriber = exchange.create_subscriber('*')
+        subscriber.callback = callback
+
+        await exchange.publish(message, metrics_channel)
+        await latch.wait()
+
+        assert results == {
+            'metrics': 'First second third everything else',
+            'one': 'First',
+            'two': 'second',
+            'three': 'third',
+            'remainder': 'everything',
+        }
+
+class TestAggregator:
+    async def test_repr(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator.message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator.message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(from_channels=[prometheus_metrics, cloudwatch_metrics], to_channel=scaling_metrics, callback=_aggregate_metrics)
+        assert repr(aggregator) == "Aggregator(from_channels=['prometheus', 'cloudwatch'], to_channel='scaling', every=None, message=None, last_published_at=None, channel_message_count={'prometheus': 0, 'cloudwatch': 0})"
+
+    async def test_aggregating_two_channels(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator.message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator.message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(from_channels=[prometheus_metrics, cloudwatch_metrics], to_channel=scaling_metrics, callback=_aggregate_metrics)
+        exchange.add_transformer(aggregator)
+
+        exchange.start()
+        prometheus_message = servo.pubsub.Message(text='This message is from Prometheus')
+        cloudwatch_message = servo.pubsub.Message(text='This message is from Cloudwatch')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(scaling_metrics.name)
+        subscriber.callback = callback
+
+        await exchange.publish(prometheus_message, prometheus_metrics)
+        await exchange.publish(cloudwatch_message, cloudwatch_metrics)
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        aggregate_message = callback.await_args.args[0]
+        assert aggregate_message
+        assert isinstance(aggregate_message, servo.pubsub.Message)
+        assert aggregate_message.text == "This message is from Prometheus\nThis message is from Cloudwatch"
+        assert callback.await_args.args[1] == scaling_metrics
+
+    async def test_aggregating_two_channels_on_timer(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        # Don't publish a message for the second channel and let it fire with current state
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            if aggregator.message is None:
+                aggregator.message = message.copy()
+            else:
+                text = "\n".join([aggregator.message.text, message.text])
+                aggregator.message = servo.pubsub.Message(text=text)
+
+        aggregator = servo.pubsub.Aggregator(
+            from_channels=[prometheus_metrics, cloudwatch_metrics],
+            to_channel=scaling_metrics,
+            callback=_aggregate_metrics,
+            every='10ms'
+        )
+        exchange.add_transformer(aggregator)
+
+        exchange.start()
+        prometheus_message = servo.pubsub.Message(text='This message is from Prometheus')
+
+        subscriber_event = asyncio.Event()
+        callback = mocker.AsyncMock(side_effect=lambda m, c: subscriber_event.set())
+        subscriber = exchange.create_subscriber(scaling_metrics.name)
+        subscriber.callback = callback
+
+        await exchange.publish(prometheus_message, prometheus_metrics)
+        await subscriber_event.wait()
+
+        callback.assert_awaited_once()
+        aggregate_message = callback.await_args.args[0]
+        assert aggregate_message
+        assert isinstance(aggregate_message, servo.pubsub.Message)
+        assert aggregate_message.text == "This message is from Prometheus"
+        assert callback.await_args.args[1] == scaling_metrics
+
+        aggregator.cancel()
+
+    async def test_timer_fires_repeatedly(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
+        # Don't publish a message for the second channel and let it fire with current state
+        prometheus_metrics = exchange.create_channel("prometheus")
+        cloudwatch_metrics = exchange.create_channel("cloudwatch")
+        scaling_metrics = exchange.create_channel("scaling")
+
+        async def _aggregate_metrics(aggregator: servo.pubsub.Aggregator, message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            ...
+
+        aggregator = servo.pubsub.Aggregator(
+            from_channels=[prometheus_metrics, cloudwatch_metrics],
+            to_channel=scaling_metrics,
+            callback=_aggregate_metrics,
+            every='10ms'
+        )
+        exchange.add_transformer(aggregator)
+
+        with servo.utilities.pydantic.extra(aggregator):
+            with servo.utilities.pydantic.allow_mutation(aggregator):
+                spy = mocker.spy(aggregator, "publish")
+
+        counter = 0
+        def _increment_counter():
+            nonlocal counter
+            counter += 1
+        spy.side_effect = _increment_counter
+
+        exchange.start()
+
+        await asyncio.sleep(servo.Duration('500ms').total_seconds())
+
+        assert counter > 1
+
+        aggregator.cancel()
+
 class TestExchange:
     def test_starts_not_running(self, exchange: servo.pubsub.Exchange) -> None:
         assert not exchange.running
@@ -696,6 +1030,32 @@ class TestExchange:
         exchange.remove_subscriber(subscriber)
         assert subscriber not in exchange._subscribers
 
+    async def test_add_transformer(self, exchange: servo.pubsub.Exchange) -> None:
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange._transformers
+
+    async def test_remove_transformer(self, exchange: servo.pubsub.Exchange) -> None:
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange._transformers
+        exchange.remove_transformer(transformer)
+        assert transformer not in exchange._transformers
+
+    async def test_transformers(self, exchange: servo.pubsub.Exchange) -> None:
+        transformer = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer)
+        assert transformer in exchange.transformers
+
+    async def test_insert_transformers(self, exchange: servo.pubsub.Exchange) -> None:
+        transformer1 = servo.pubsub.Filter(lambda m, c: None)
+        exchange.add_transformer(transformer1)
+        assert transformer1 in exchange.transformers
+
+        transformer2 = servo.pubsub.Filter(lambda m, c: None)
+        exchange.insert_transformer(0, transformer2)
+        assert [transformer2, transformer1] == exchange.transformers
+
     async def test_publisher_to_subscriber(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         exchange.start()
         message = servo.pubsub.Message(text='Testing')
@@ -713,7 +1073,7 @@ class TestExchange:
     async def test_repr(self, exchange: servo.pubsub.Exchange) -> None:
         exchange.create_publisher('whatever')
         exchange.create_subscriber('whatever')
-        assert repr(exchange) == "Exchange(running=False, channel_names=['whatever'], publisher_count=1, subscriber_count=1, queue_size=0)"
+        assert repr(exchange) == "Exchange(running=False, channel_names=['whatever'], publisher_count=1, subscriber_count=1, transformer_count=0, queue_size=0)"
 
     async def test_subscribe_context_manager(self, exchange: servo.pubsub.Exchange, mocker: pytest_mock.MockerFixture) -> None:
         # This is a little bit tricky. To ensure that the Subscriber is attached before the Publisher begins firing Messages

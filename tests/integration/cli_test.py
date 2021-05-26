@@ -1,8 +1,10 @@
 import asyncio
 import os
 import pathlib
-import pytest
 import shutil
+
+import pytest
+
 import tests.helpers
 
 # FIXME: This file should be getting marked as integration automatically
@@ -30,7 +32,7 @@ async def install_servox(project_path: pathlib.Path, pytestconfig) -> None:
 
     # Copy the lock file so we don't get unexpected package upgrades
     lock_file = pytestconfig.rootpath / 'poetry.lock'
-    path = shutil.copy(lock_file, project_path)
+    shutil.copy(lock_file, project_path)
 
     await tests.helpers.Subprocess.shell('poetry install --no-dev --no-root --no-interaction', print_output=True)
 
@@ -54,9 +56,7 @@ async def test_generate_opsani_dev(project_path: pathlib.Path, subprocess) -> No
             "  cpu:\n"
             "    min: 250m\n"
             "    max: '4'\n"
-            "    step: 125m\n"
             "  memory:\n"
-            "    min: 256.0MiB\n"
-            "    max: 4.0GiB\n"
-            "    step: 128.0MiB\n"
+            "    min: 256.0Mi\n"
+            "    max: 4.0Gi\n"
         )

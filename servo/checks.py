@@ -481,8 +481,6 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
     """
 
     config: servo.configuration.BaseConfiguration
-    """The configuration object for the connector being checked.
-    """
 
     @classmethod
     async def run(

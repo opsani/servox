@@ -752,6 +752,10 @@ The project is bound to a local Python version via the `.python-version` file.
 Tell Poetry to bind against the locally selected environment via:
 ``poetry env use `cat .python-version` ``
 
+When upgrading between point releases of the Python interpreter, you may need
+to tear down and recreate your venv:
+``poetry env remove `cat .python-version` && poetry install``
+
 ## Testing
 
 Tests are implemented using [pytest](https://docs.pytest.org/en/stable/) and
@@ -966,6 +970,50 @@ All manifests loaded through kubetest support Mustache templating.
 A context dictionary is provided to the template that includes references to all
 Kubernetes resources that have been loaded at render time. The `namespace` and
 `objs` are likely to be the most interesting.
+
+### Startup Banner
+
+Just for fun, ServoX generates an ASCII art banner at startup. The font is
+randomized from a painstakingly selected set of style that represent the ServoX
+vibe. The output color is then randomized and has a 50/50 shot of being rendered
+as a rainbow or a randomly selected flat output color.
+
+Don't like serendipity?
+
+You can take control of the banner output with two environment variables:
+
+* `SERVO_BANNER_FONT`: Name of the [Figlet](http://www.figlet.org/fontdb.cgi)
+  font to render the banner in.
+* `SERVO_BANNER_COLOR`: The color to use when rendering the banner. Valid
+  options are:
+  * `RED`
+  * `GREEN`
+  * `YELLOW`
+  * `BLUE`
+  * `MAGENTA`
+  * `CYAN`
+  * `RAINBOW`
+
+
+
+## Release Procedure
+
+1. Use [semantic versioning](https://semver.org/) to choose a release number and your ingenuity for the cryptonym.
+1. Update [CHANGELOG.md](CHANGELOG.md) with the notable changes of the release. See the introduction for guidance on the form and format. Follow the pattern of prior releases for the release title, generally `[x.y.z] "cryptonym" - YYYY-MM-DD`.
+1. Set the cryptonym as the value of `__cryptonym__` in [servo/\_\_init\_\_.py](servo/__init__.py).
+1. Update the version number as `version` in  section `[tool.poetry]` of [pyproject.toml](pyproject.toml).
+1. Commit changes and make sure all tests pass
+1. (Optionally) Set a tag with the version name as `vX.Y.Z`
+1. Create a release:
+    * Tag version: set to vX.Y.Z (e.g., `v0.9.5`)
+    * Release title: set to `vX.Y.Z "<cryptonym>"`
+    * Description: judiciously paste the change log since the prior release
+1. Publish the release, wait for CI actions to complete
+1. Verify the new image, with tag `vX.Y.Z`, has been published in [Docker Hub](https://hub.docker.com/repository/docker/opsani/servox/tags)
+
+## Contributing
+
+Please reach out to support at opsani.com.
 
 ## License
 

@@ -110,20 +110,19 @@ autotest:
 	poetry run watchgod autotest.main
 
 .PHONY: test
-test:
-	poetry run pytest -n auto --dist loadscope
+test: test-unit test-integration test-system
 
 .PHONY: test-coverage
 	poetry run pytest --cov=servo --cov-report=term-missing:skip-covered --cov-config=setup.cfg
 
 .PHONY: test-unit
 test-unit:
-	poetry run pytest -T unit -n auto --dist loadscope
+	poetry run pytest -T unit -n 6
 
 .PHONY: test-integration
 test-integration:
-	poetry run pytest -T integration -n auto --dist loadscope
+	poetry run pytest -T integration -n 6 --durations=0 --durations-min=5
 
 .PHONY: test-system
 test-system:
-	poetry run pytest -T system -n auto --dist loadscope
+	poetry run pytest -T system -n 6 --durations=0 --durations-min=5

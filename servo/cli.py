@@ -12,8 +12,7 @@ import shlex
 import subprocess
 import sys
 import textwrap
-import time
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Literal, Optional, Pattern, Set, Tuple, Type, Union
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Pattern, Set, Tuple, Type, Union
 
 import bullet
 import click
@@ -33,7 +32,6 @@ from timeago import format as timeago
 import servo
 import servo.runner
 import servo.utilities.yaml
-
 
 ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
 
@@ -503,7 +501,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                     raise typer.BadParameter("token cannot be blank")
 
                 optimizer = servo.Optimizer(
-                    ctx.optimizer, token=ctx.token, base_url=ctx.base_url, url=ctx.url
+                    id=ctx.optimizer, token=ctx.token, base_url=ctx.base_url, __url__=ctx.url
                 )
         else:
             if ctx.optimizer:
@@ -524,6 +522,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 configs=configs,
                 optimizer=optimizer
             ))
+
         except pydantic.ValidationError as error:
             typer.echo(error, err=True)
             raise typer.Exit(2) from error
@@ -1147,6 +1146,17 @@ class ServoCLI(CLI):
                 help="Verify all checks pass before running",
                 envvar="SERVO_RUN_CHECK",
             ),
+            no_poll: Optional[bool] = typer.Option(
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
+            ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),
         ) -> None:
             """
             Run the servo
@@ -1158,7 +1168,8 @@ class ServoCLI(CLI):
                 )
 
             if context.assembly:
-                servo.runner.AssemblyRunner(context.assembly).run()
+                poll = not no_poll
+                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
             else:
                 raise typer.Abort("failed to assemble servo")
 
@@ -1721,7 +1732,7 @@ class ServoCLI(CLI):
             if not target.startswith(("deploy/", "deployment/", "pod/")):
                 raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
 
-            if not service or port:
+            if not (service or port):
                 raise typer.BadParameter("service or port must be given")
 
             # TODO: Dry this up...
@@ -1887,7 +1898,7 @@ class ServoCLI(CLI):
             Display configured settings
             """
             include = set(keys) if keys else None
-            export_options = dict(exclude_unset=True, include=include, indent=2)
+            export_options = dict(exclude_unset=True, exclude_defaults=True, include=include, indent=2)
 
             for servo_ in context.assembly.servos:
                 if context.servo_ and context.servo_ != servo_:
@@ -1939,7 +1950,7 @@ class ServoCLI(CLI):
                             "data": {
                                 "servo.yaml": servo.utilities.yaml.PreservedScalarString(
                                     servo_.config.yaml(
-                                        sort_keys=True, **export_options
+                                        sort_keys=True, exclude={'optimizer'}, **export_options
                                     )
                                 )
                             },
