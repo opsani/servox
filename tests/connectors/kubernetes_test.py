@@ -36,7 +36,7 @@ from servo.connectors.kubernetes import (
     Pod,
     ResourceRequirement,
 )
-from servo.errors import AdjustmentRejectedError
+from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
 from servo.types import Adjustment
 from tests.helpers import *
 
@@ -1031,6 +1031,28 @@ class TestKubernetesConnectorIntegration:
         with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.'):
             await connector.adjust([adjustment])
 
+    async def test_adjust_deployment_image_pull_backoff(
+        self,
+        config: KubernetesConfiguration,
+        mocker: pytest_mock.MockerFixture,
+    ) -> None:
+        config.timeout = "10s"
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="256Mi",
+        )
+
+        mocker.patch(
+            "kubernetes_asyncio.client.models.v1_container.V1Container.image", 
+            new_callable=mocker.PropertyMock, 
+            return_value="opsani/bababooey:latest"
+        )
+
+        with pytest.raises(AdjustmentFailedError, match="Container image pull failure detected"):
+            await connector.adjust([adjustment])
+
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
@@ -1079,6 +1101,27 @@ class TestKubernetesConnectorIntegration:
         )
         with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
             await connector.adjust([adjustment])
+
+
+    async def test_create_tuning_image_pull_backoff(
+        self,
+        tuning_config: KubernetesConfiguration,
+        mocker: pytest_mock.MockerFixture,
+        kube
+    ) -> None:
+        tuning_config.timeout = "10s"
+        connector = KubernetesConnector(config=tuning_config)
+
+        mocker.patch(
+            "kubernetes_asyncio.client.models.v1_container.V1Container.image", 
+            new_callable=mocker.PropertyMock, 
+            return_value="opsani/bababooey:latest"
+        )
+
+        # NOTE: describe logic currently invokes the same creation as adjust and allows for a faster test. 
+        # If tuning creation is removed from describe this test will need to be refactored and have a longer timeout and runtime
+        with pytest.raises(AdjustmentFailedError, match="Container image pull failure detected"):
+            await connector.describe()
 
 
     async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker: pytest_mock.MockerFixture) -> None:

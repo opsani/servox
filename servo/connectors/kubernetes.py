@@ -931,7 +931,7 @@ class Pod(KubernetesModel):
         self.logger.trace(f"checking container statuses: {status.container_statuses}")
         if status.container_statuses:
             for cont_stat in status.container_statuses:
-                if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason == "ImagePullBackOff":
+                if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]:
                     raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
 
         self.logger.trace(f"checking status conditions {status.conditions}")
@@ -1783,6 +1783,8 @@ class Deployment(KubernetesModel):
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
                         self._check_conditions(status.conditions)
+                        # TODO: if pods fail to start, the following will not detect it as the deployment is not updated and yields no watch events. 
+                        # Move to Deployment.raise_for_status once implemented
                         await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
@@ -1880,7 +1882,7 @@ class Deployment(KubernetesModel):
         image_pull_failed_pods = [
             pod for pod in pods
             if pod.obj.status.container_statuses and any(
-                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason == "ImagePullBackOff" for cont_stat in pod.obj.status.container_statuses
+                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"] for cont_stat in pod.obj.status.container_statuses
             )
         ]
         if image_pull_failed_pods:
