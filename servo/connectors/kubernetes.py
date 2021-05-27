@@ -3588,25 +3588,25 @@ class KubernetesConnector(servo.BaseConnector):
 
     @servo.on_event()
     async def describe(self) -> servo.Description:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
         return state.to_description()
 
     @servo.on_event()
     async def components(self) -> List[servo.Component]:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
         return state.to_components()
 
     @servo.before_event(servo.Events.measure)
     async def before_measure(self) -> None:
         # Build state before a measurement to ensure all necessary setup is done
-        # (e.g., canary is up)
-        await KubernetesOptimizations.create(self.config)
+        # (e.g., Tuning Pod is up and running)
+        await self._create_optimizations()
 
     @servo.on_event()
     async def adjust(
         self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
     ) -> servo.Description:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
 
         # Apply the adjustments and emit progress status
         progress_logger = lambda p: self.logger.info(
@@ -3668,6 +3668,24 @@ class KubernetesConnector(servo.BaseConnector):
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
+
+    async def _create_optimizations(self) -> KubernetesOptimizations:
+        # Build a KubernetesOptimizations object with progress reporting
+        # This ensures that the Servo isn't reported as offline
+        progress_logger = lambda p: self.logger.info(
+            p.annotate(f"waiting up to {p.timeout} for Kubernetes optimization setup to complete", prefix=False),
+            progress=p.progress,
+        )
+        progress = servo.EventProgress(timeout=self.config.timeout)
+        future = asyncio.create_task(KubernetesOptimizations.create(self.config))
+        future.add_done_callback(lambda _: progress.trigger())
+
+        await asyncio.gather(
+            future,
+            progress.watch(progress_logger),
+        )
+
+        return future.result()
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
