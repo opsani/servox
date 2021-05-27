@@ -2705,10 +2705,10 @@ class CanaryOptimization(BaseOptimization):
         await tuning_pod.create(self.namespace)
         servo.logger.success(f"Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
-        servo.logger.info(f"Waiting up to {self.timeout} for Tuning Pod to become ready...")
+        servo.logger.info(f"waiting up to {self.timeout} for Tuning Pod to become ready...")
         progress = servo.EventProgress(self.timeout)
         progress_logger = lambda p: self.logger.info(
-            p.annotate(f"Waiting for '{self.tuning_pod_name}' to become ready...", prefix=False)
+            p.annotate(f"waiting for '{self.tuning_pod_name}' to become ready...", prefix=False)
         )
         progress.start()
 
@@ -3610,7 +3610,7 @@ class KubernetesConnector(servo.BaseConnector):
 
         # Apply the adjustments and emit progress status
         progress_logger = lambda p: self.logger.info(
-            p.annotate(f"waiting for adjustments to be applied...", False),
+            p.annotate(f"waiting up to {p.timeout} for adjustments to be applied...", prefix=False),
             progress=p.progress,
         )
         progress = servo.EventProgress(timeout=self.config.timeout)
