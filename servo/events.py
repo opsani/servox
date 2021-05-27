@@ -152,6 +152,17 @@ class Preposition(enum.Flag):
         else:
             raise ValueError(f"unsupported value for Preposition '{prep}'")
 
+    @property
+    def flag(self) -> bool:
+        """
+        Return a boolean value that indicates if the requirements are an individual flag value.
+        The implementation relies on the Python `enum.Flag` modeling of individual members of
+        the flag enumeration as values that are powers of two (1, 2, 4, 8, …), while combinations
+        of flags are not.
+        """
+        value = self.value
+        return bool((value & (value - 1) == 0) and value != 0)
+
     def __str__(self):
         if self == Preposition.before:
             return "before"
