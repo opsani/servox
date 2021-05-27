@@ -17,15 +17,32 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] "baseless allegation" - Unreleased
 
-## [0.10.2] "preposterous ports" - 2021-05-20
+### Enhanced
+
+- The `port` option is now respected by the sidecar injection remedy.
+- Introduced the `scripts` connector that supports attaching arbitrary shell
+  commands to be run before, on, or after an event is dispatched by the servo. [#245](https://github.com/opsani/servox/pull/225)
+
+### Fixed
+
+- Dynamically named ports are now supported by resolving the port name against
+  the Pod spec template [#246](https://gihtub.com/opsani/servox/pull/246)
+- When checks fail and are rerun, the tuning pod is no longer rebuilt
+  unnecessarily.
+- Eliminated cases where the `KubernetesConnector` could fail to report progress
+  due to Kubernetes API availability, timeouts, etc. resulting in errant Servo
+  disconnected events being emitted by the optimizer.
+
+## [0.10.2] "baseless allegation" - 2021-05-20
 
 ### Fixed
 
 - Port was not being accepted as input on inject_sidecar cli command [#241](https://gihtub.com/opsani/servox/pull/241)
 
 
-## [0.10.1] "tailored replication" - 2021-05-11
+## [0.10.1] "baseless allegation" - 2021-05-11
 
 ### Enhanced
 
