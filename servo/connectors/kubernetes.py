@@ -1630,11 +1630,15 @@ class Deployment(KubernetesModel):
         between the Envoy sidecar and the container responsible for fulfilling the request.
 
         Args:
+            name: The name of the sidecar to inject.
+            image: The container image for the sidecar container.
             deployment: Name of the target Deployment to inject the sidecar into.
             service: Name of the service to proxy. Envoy will accept ingress traffic
                 on the service port and reverse proxy requests back to the original
                 target container.
-
+            port: The name or number of a port within the Deployment to wrap the proxy around.
+            index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
+            service_port: The port to receive ingress traffic from an upstream service.
         """
 
         await self.refresh()
@@ -1645,34 +1649,55 @@ class Deployment(KubernetesModel):
         if isinstance(port, str) and port.isdigit():
             port = int(port)
 
+        # check for a port conflict
+        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Port conflict: Deployment '{self.name}' already exposes port {service_port} through an existing container")
+
         # lookup the port on the target service
         if service:
             try:
-                ser = await Service.read(service, self.namespace)
+                service_obj = await Service.read(service, self.namespace)
             except kubernetes_asyncio.client.exceptions.ApiException as error:
                 if error.status == 404:
                     raise ValueError(f"Unknown Service '{service}'") from error
                 else:
                     raise error
             if not port:
-                if len(ser.obj.spec.ports) > 1:
-                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be given")
-                port = ser.obj.spec.ports[0].target_port
+                port_count = len(service_obj.obj.spec.ports)
+                if port_count == 0:
+                    raise ValueError(f"Target Service '{service}' does not expose any ports")
+                elif port_count > 1:
+                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be specified")
+                port_obj = service_obj.obj.spec.ports[0]
             else:
                 if isinstance(port, int):
-                    if not next(filter(lambda p: p.target_port == port, ser.obj.spec.ports), None):
-                        raise ValueError(f"Port {port} does not exist in the Service '{service}'")
+                    port_obj = next(filter(lambda p: p.port == port, service_obj.obj.spec.ports), None)
+                elif isinstance(port, str):
+                    port_obj = next(filter(lambda p: p.name == port, service_obj.obj.spec.ports), None)
                 else:
-                    _port = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
-                    if not _port:
-                        raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
-                    port = _port.target_port
+                    raise TypeError(f"Unable to resolve port value of type {port.__class__} (port={port})")
 
-        # check for a port conflict
-        if self.containers:
-            container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
-            if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
-                raise ValueError(f"Deployment already has a container port {service_port}")
+                if not port_obj:
+                    raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
+
+            # resolve symbolic name in the service target port to a concrete container port
+            if isinstance(port_obj.target_port, str):
+                container_port_obj = next(filter(lambda p: p.name == port_obj.target_port, container_ports), None)
+                if not container_port_obj:
+                    raise ValueError(f"Port '{port_obj.target_port}' could not be resolved to a destination container port")
+
+                container_port = container_port_obj.container_port
+            else:
+                container_port = port_obj.target_port
+
+        else:
+            # find the container port
+            container_port_obj = next(filter(lambda p: p.container_port == port, container_ports), None)
+            if not container_port_obj:
+                raise ValueError(f"Port '{port}' could not be resolved to a destination container port")
+
+            container_port = container_port_obj.container_port
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
@@ -1691,7 +1716,7 @@ class Deployment(KubernetesModel):
             ),
             env=[
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(container_port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
@@ -2477,7 +2502,6 @@ class CanaryOptimization(BaseOptimization):
 
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        # return
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
@@ -2510,7 +2534,7 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod, "Tuning Pod not loaded"
         assert self.tuning_container, "Tuning Container not loaded"
 
-        servo.logger.info("Applying adjustmenting to Tuning Pod")
+        servo.logger.info("Applying adjustments to Tuning Pod")
         task = asyncio.create_task(self.create_or_recreate_tuning_pod())
         try:
             await task
@@ -2521,7 +2545,7 @@ class CanaryOptimization(BaseOptimization):
 
             raise
 
-        # TODO: logging the wrong values -- should becoming from the podtemplatespec?
+        # TODO: logging the wrong values -- should be coming from the podtemplatespec?
         servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
 
     @property
@@ -3646,33 +3670,6 @@ class KubernetesConnector(servo.BaseConnector):
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )
-
-    # TODO: delete this?
-    async def inject_sidecar(
-        self,
-        name: str,
-        image: str,
-        *,
-        service: Optional[str] = None,
-        port: Optional[int] = None,
-        index: Optional[int] = None,
-        service_port: int = 9980
-    ) -> None:
-        """
-        Injects an Envoy sidecar into a target Deployment that proxies a service
-        or literal TCP port, generating scrapable metrics usable for optimization.
-
-        The service or port argument must be provided to define how traffic is proxied
-        between the Envoy sidecar and the container responsible for fulfilling the request.
-
-        Args:
-            deployment: Name of the target Deployment to inject the sidecar into.
-            service: Name of the service to proxy. Envoy will accept ingress traffic
-                on the service port and reverse proxy requests back to the original
-                target container.
-
-        """
-        raise NotImplementedError("stub out for the moment")
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
