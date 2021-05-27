@@ -22,6 +22,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Enhanced
 
 - The `port` option is now respected by the sidecar injection remedy.
+- Introduced the `scripts` connector that supports attaching arbitrary shell
+  commands to be run before, on, or after an event is dispatched by the servo. [#245](https://github.com/opsani/servox/pull/225)
 
 ### Fixed
 
