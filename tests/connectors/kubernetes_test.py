@@ -1320,7 +1320,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         recwarn: pytest.WarningsRecorder,
         kube: kubetest.client.TestClient
     ) -> None:
-        tuning_config.timeout = "20s"
+        tuning_config.timeout = "25s"
         tuning_config.settlement = "15s"
         tuning_config.on_failure = FailureMode.destroy
         tuning_config.deployments[0].on_failure = FailureMode.destroy
