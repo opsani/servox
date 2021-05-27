@@ -2615,11 +2615,11 @@ class CanaryOptimization(BaseOptimization):
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
 
         if self.tuning_container:
-            servo.logger.info(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
+            servo.logger.debug(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
             resource_requirements = self.tuning_container.resources
             container.resources = resource_requirements
         else:
-            servo.logger.info(f"No existing tuning pod container found, initializing resource requirement defaults")
+            servo.logger.debug(f"No existing tuning pod container found, initializing resource requirement defaults")
             set_container_resource_defaults_from_config(container, self.container_config)
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
