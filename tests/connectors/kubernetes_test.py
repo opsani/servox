@@ -950,17 +950,18 @@ class TestKubernetesConnectorIntegration:
         assert setting.value == 250
 
     async def test_adjust_cpu_at_non_zero_container_index(self, config):
+        # Inject a sidecar at index zero
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
+        assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
+        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8480", service_port=8091, index=0)
+
+        await asyncio.sleep(3.0)
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
             setting_name="cpu",
             value=".250",
         )
-
-        # Inject a sidecar at index zero
-        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
-        assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8480", service_port=8091, index=0)
 
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
