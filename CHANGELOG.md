@@ -29,6 +29,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   the Pod spec template [#246](https://gihtub.com/opsani/servox/pull/246)
 - When checks fail and are rerun, the tuning pod is no longer rebuilt
   unnecessarily.
+- Eliminated cases where the `KubernetesConnector` could fail to report progress
+  due to Kubernetes API availability, timeouts, etc. resulting in errant Servo
+  disconnected events being emitted by the optimizer.
 
 ## [0.10.2] "baseless allegation" - 2021-05-20
 
