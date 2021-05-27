@@ -2705,12 +2705,10 @@ class CanaryOptimization(BaseOptimization):
         await tuning_pod.create(self.namespace)
         servo.logger.success(f"Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
-        # TODO: This double progress can go away soon
         servo.logger.info(f"Waiting up to {self.timeout} for Tuning Pod to become ready...")
         progress = servo.EventProgress(self.timeout)
         progress_logger = lambda p: self.logger.info(
-            p.annotate(f"Waiting for '{self.tuning_pod_name}' to become ready...", False),
-            progress=p.progress,
+            p.annotate(f"Waiting for '{self.tuning_pod_name}' to become ready...", prefix=False)
         )
         progress.start()
 
@@ -3610,12 +3608,12 @@ class KubernetesConnector(servo.BaseConnector):
     ) -> servo.Description:
         state = await KubernetesOptimizations.create(self.config)
 
-        # Apply the adjustments and emit indeterminate progress status
+        # Apply the adjustments and emit progress status
         progress_logger = lambda p: self.logger.info(
             p.annotate(f"waiting for adjustments to be applied...", False),
             progress=p.progress,
         )
-        progress = servo.EventProgress()
+        progress = servo.EventProgress(timeout=self.config.timeout)
         future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
