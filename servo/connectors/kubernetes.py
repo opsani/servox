@@ -4,6 +4,7 @@ from __future__ import annotations, print_function
 
 import abc
 import asyncio
+import collections
 import contextlib
 import copy
 import datetime
@@ -1874,13 +1875,6 @@ class Deployment(KubernetesModel):
         if not status.conditions:
             raise RuntimeError(f'Deployment is not running: {self.name}')
 
-        # Check for restarts
-        if await self.get_restart_count() > 0:
-            raise servo.AdjustmentRejectedError(
-                "Deployment {self.name} pod(s) crash restart detected",
-                reason="unstable"
-            )
-
         # Check for failure conditions
         self._check_conditions(status.conditions)
         await self.raise_for_pod_status()
@@ -1905,7 +1899,28 @@ class Deployment(KubernetesModel):
                 pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
 
             fmt_str = ", ".join(pod_fmts)
-            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
+            raise servo.AdjustmentRejectedError(
+                message=f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
+                reason="scheduling-failed"
+            )
+
+        restarted_pods_container_statuses = [
+            (pod, cont_stat) for pod in pods for cont_stat in getattr(pod.obj.status, 'container_statuses', [])
+            if cont_stat.restart_count > 0
+        ]
+        if restarted_pods_container_statuses:
+            pod_to_counts = collections.defaultdict(list)
+            for pod_cont_stat in restarted_pods_container_statuses:
+                pod_to_counts[pod_cont_stat[0].obj.metadata.name].append(f"{pod_cont_stat[1].name} x{pod_cont_stat[1].restart_count}")
+
+            pod_message = ", ".join(map(
+                lambda kv_tup: f"{kv_tup[0]} - {'; '.join(kv_tup[1])}",
+                list(pod_to_counts.items())
+            ))
+            raise servo.AdjustmentRejectedError(
+                f"Deployment {self.name} pod(s) crash restart detected: {pod_message}",
+                reason="unstable"
+            )
 
         # Unready pod catchall
         unready_pod_conds = [
@@ -1917,7 +1932,10 @@ class Deployment(KubernetesModel):
                 lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
                 unready_pod_conds
             ))
-            raise servo.AdjustmentRejectedError(message=f"Found {len(unready_pod_conds)} unready pod(s): {pod_message}", reason="start-failed")
+            raise servo.AdjustmentRejectedError(
+                message=f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                reason="start-failed"
+            )
 
     async def get_restart_count(self) -> int:
         count = 0

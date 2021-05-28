@@ -15,6 +15,7 @@ from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
+import servo.connectors.kubernetes
 from servo.connectors.kubernetes import (
     CPU,
     CanaryOptimization,
@@ -954,9 +955,9 @@ class TestKubernetesConnectorIntegration:
         # Inject a sidecar at index zero
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
         assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8480", service_port=8091, index=0)
+        async with deployment.rollout(timeout=config.timeout) as deployment_update:
+            await deployment_update.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8480", service_port=8091, index=0)
 
-        await asyncio.sleep(3.0)
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
@@ -1331,7 +1332,10 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+        assert (
+            "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+            or "Deployment fiber-http pod(s) crash restart detected" in str(rejection_info.value)
+        ), str(rejection_info.value)
         assert rejection_info.value.reason == "unstable"
 
         # Validate deployment destroyed
