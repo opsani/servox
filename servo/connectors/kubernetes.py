@@ -41,6 +41,7 @@ import kubernetes_asyncio
 import kubernetes_asyncio.client.models
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.watch
 import pydantic
 
 import servo
@@ -479,27 +480,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-
-async def _try_delete_model(model: KubernetesModel, options: kubernetes_asyncio.client.V1DeleteOptions = None) -> Optional[kubernetes_asyncio.client.V1Status]:
-    """Try to delete the underlying kubernetes resource; catch and log 404 Not Found as a no-op
-
-    Args:
-        model (KubernetesModel): Model representing kubernetes object to be deleted
-        options (V1DeleteOptions): Options for resource deletion.
-
-    Returns:
-        V1Status returned from API or None if the object was not found
-    """
-    try:
-        return await model.delete(options)
-    except kubernetes_asyncio.client.exceptions.ApiException as error:
-        if error.status == 404 and error.reason == "Not Found":
-            kind = getattr(model.obj, "kind", model.__class__.__name__)
-            model.logger.info(f'{kind} "{model.name}" does not exist. no-op')
-            return None
-        else:
-            raise error
-
+        self.logger.warning(f"raise_for_status not implemented on {self.__class__.__name__}")
 
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
@@ -1809,7 +1790,6 @@ class Deployment(KubernetesModel):
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
                         self._check_conditions(status.conditions)
-                        await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
                     if status.observed_generation == observed_generation:
@@ -1839,8 +1819,8 @@ class Deployment(KubernetesModel):
                         stream.stop()
                         return
 
-            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
-            raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
+            # watch doesn't raise a timeoutError when when elapsed, treat fall through as timeout
+            await self.raise_for_status()
 
 
 
@@ -1884,8 +1864,34 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
-    async def _check_pod_conditions(self):
+    async def raise_for_status(self) -> None:
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.obj.status
+        self.logger.trace(f"current deployment status is {status}")
+        if status is None:
+            raise RuntimeError(f'No such deployment: {self.name}')
+
+        if not status.conditions:
+            raise RuntimeError(f'Deployment is not running: {self.name}')
+
+        # Check for restarts
+        if await self.get_restart_count() > 0:
+            raise servo.AdjustmentRejectedError(
+                "Deployment {self.name} pod(s) crash restart detected",
+                reason="unstable"
+            )
+
+        # Check for failure conditions
+        self._check_conditions(status.conditions)
+        await self.raise_for_pod_status()
+
+        # Catchall
+        self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
+        raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
+
+    async def raise_for_pod_status(self):
         pods = await self.get_latest_pods()
+        self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
             pod for pod in pods
             if pod.obj.status.conditions and any(
@@ -1901,9 +1907,21 @@ class Deployment(KubernetesModel):
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
 
+        # Unready pod catchall
+        unready_pod_conds = [
+            (pod, cond) for pod in pods for cond in getattr(pod.obj.status, 'conditions', [])
+            if cond.type == "Ready" and cond.status == "False"
+        ]
+        if unready_pod_conds:
+            pod_message = ", ".join(map(
+                lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
+                unready_pod_conds
+            ))
+            raise servo.AdjustmentRejectedError(message=f"Found {len(unready_pod_conds)} unready pod(s): {pod_message}", reason="start-failed")
+
     async def get_restart_count(self) -> int:
         count = 0
-        for pod in await self.get_pods():
+        for pod in await self.get_latest_pods():
             try:
                 count += await pod.get_restart_count()
             except kubernetes_asyncio.client.exceptions.ApiException as error:
@@ -2399,19 +2417,9 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        try:
-            async with self.deployment.rollout(timeout=self.timeout) as deployment:
-                # Patch the Deployment via the Kubernetes API
-                await deployment.patch()
-
-        except asyncio.TimeoutError as error:
-            raise servo.AdjustmentRejectedError(
-                reason="timed out waiting for Deployment to apply adjustment"
-            ) from error
-
-        if await self.deployment.get_restart_count() > 0:
-            # TODO: Return a string summary about the restarts (which pods bounced)
-            raise servo.AdjustmentRejectedError(reason="unstable")
+        async with self.deployment.rollout(timeout=self.timeout) as deployment:
+            # Patch the Deployment via the Kubernetes API
+            await deployment.patch()
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -3644,11 +3652,14 @@ class KubernetesConnector(servo.BaseConnector):
                 while not progress.finished:
                     if not await state.is_ready():
                         # Raise a specific exception if the optimization defines one
-                        await state.raise_for_status()
+                        try:
+                            await state.raise_for_status()
+                        except servo.AdjustmentRejectedError as e:
+                            # Update rejections with start-failed to indicate the initial rollout was successful
+                            if e.reason == "start-failed":
+                                e.reason = "unstable"
+                            raise e
 
-                        raise servo.AdjustmentRejectedError(
-                            reason="Optimization target became unready during adjustment settlement period"
-                        )
                     await asyncio.sleep(servo.Duration('50ms').total_seconds())
 
             await asyncio.gather(

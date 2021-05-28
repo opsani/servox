@@ -4,8 +4,8 @@ from typing import Type
 
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
-from kubernetes.client.models import V1HTTPGetAction, V1Probe
 import kubernetes.client.models
+import kubernetes.client.exceptions
 import pydantic
 import pytest
 import pytest_mock
@@ -1251,9 +1251,9 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         fiber_container = deployment.obj.spec.template.spec.containers[0]
         fiber_container.resources.requests['memory'] = '256Mi'
         fiber_container.resources.limits['memory'] = '256Mi'
-        fiber_container.readiness_probe = V1Probe(
+        fiber_container.readiness_probe = kubernetes.client.models.V1Probe(
             failure_threshold=3,
-            http_get=V1HTTPGetAction(
+            http_get=kubernetes.client.models.V1HTTPGetAction(
               path= "/",
               port= 9980,
               scheme="HTTP",
@@ -1310,8 +1310,35 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert rejection_info.value.reason == "timed out waiting for Deployment to apply adjustment"
+        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+        assert rejection_info.value.reason == "start-failed"
 
+    async def test_adjust_deployment_settlement_failed(
+        self,
+        config: KubernetesConfiguration,
+        kubetest_deployment_becomes_unready: KubetestDeployment
+    ) -> None:
+        config.timeout = "15s"
+        config.settlement = "15s"
+        config.deployments[0].on_failure = FailureMode.destroy
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+        assert rejection_info.value.reason == "unstable"
+
+        # Validate deployment destroyed
+        with pytest.raises(kubernetes.client.exceptions.ApiException) as not_found_error:
+            kubetest_deployment_becomes_unready.refresh()
+
+        assert not_found_error.value.status == 404 and not_found_error.value.reason == "Not Found", str(not_found_error.value)
 
     async def test_adjust_tuning_settlement_failed(
         self,

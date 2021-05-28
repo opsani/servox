@@ -43,6 +43,10 @@ class BaseError(RuntimeError):
         """A supplemental reason explaining why the error occurred."""
         return self._reason
 
+    @reason.setter
+    def reason(self, value: Optional[str]) -> None:
+        self._reason = value
+
     @property
     def created_at(self) -> datetime.datetime:
         """The date and time when the error occurred."""
