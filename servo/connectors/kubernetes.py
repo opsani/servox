@@ -3676,7 +3676,7 @@ class KubernetesConnector(servo.BaseConnector):
                             # Update rejections with start-failed to indicate the initial rollout was successful
                             if e.reason == "start-failed":
                                 e.reason = "unstable"
-                            raise e
+                            raise
 
                     await asyncio.sleep(servo.Duration('50ms').total_seconds())
 
