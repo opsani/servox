@@ -10,6 +10,7 @@ import pydantic
 import pytest
 import pytest_mock
 import re
+import traceback
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
@@ -1246,6 +1247,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
     def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
         deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        deployment.obj.spec.template.spec.termination_grace_period_seconds = 10
         fiber_container = deployment.obj.spec.template.spec.containers[0]
         fiber_container.resources.requests['memory'] = '256Mi'
         fiber_container.resources.limits['memory'] = '256Mi'
@@ -1318,7 +1320,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         recwarn: pytest.WarningsRecorder,
         kube: kubetest.client.TestClient
     ) -> None:
-        tuning_config.timeout = "20s"
+        tuning_config.timeout = "25s"
         tuning_config.settlement = "15s"
         tuning_config.on_failure = FailureMode.destroy
         tuning_config.deployments[0].on_failure = FailureMode.destroy
@@ -1337,7 +1339,11 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", debug(rejection_info)
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", traceback.format_exception(
+            type(rejection_info.value),
+            rejection_info.value,
+            rejection_info.value.__traceback__
+        )
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]

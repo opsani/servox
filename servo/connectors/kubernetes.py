@@ -1477,17 +1477,24 @@ class Deployment(KubernetesModel):
         async with self.api_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
             rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
-                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
+                namespace=self.namespace, label_selector=selector_string(label_selector)
             )
 
         # Verify all returned RS have this deployment as an owner
         rs_list = [
             rs for rs in rs_list.items if rs.metadata.owner_references and any(
                 ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
-                for ownRef in rs.metadata.owner_references)]
+                for ownRef in rs.metadata.owner_references
+            )
+        ]
         if not rs_list:
-            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
-        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+            raise servo.ConnectorError(f'Unable to locate replicaset(s) for deployment "{self.name}"')
+        if missing_revision_rsets := list(filter(lambda rs: 'deployment.kubernetes.io/revision' not in rs.metadata.annotations, rs_list)):
+            raise servo.ConnectorError(
+                f'Unable to determine latest replicaset for deployment "{self.name}" due to missing revision annotation in replicaset(s)'
+                f' "{", ".join(list(map(lambda rs: rs.metadata.name, missing_revision_rsets)))}"'
+            )
+        latest_rs = sorted(rs_list, key= lambda rs: int(rs.metadata.annotations['deployment.kubernetes.io/revision']), reverse=True)[0]
 
         return [
             pod for pod in await self.get_pods()
