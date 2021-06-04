@@ -1031,8 +1031,14 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.'):
+        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.') as rejection_info:
             await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert rejection_info.value.reason == "unschedulable"
+        except AssertionError as e:
+            raise e from rejection_info.value
 
     async def test_adjust_replicas(self, config):
         connector = KubernetesConnector(config=config)
@@ -1082,6 +1088,12 @@ class TestKubernetesConnectorIntegration:
         )
         with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
             await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert rejection_info.value.reason == "unschedulable"
+        except AssertionError as e:
+            raise e from rejection_info.value
 
 
     async def test_bad_request_error_handled_gracefully(self, tuning_config: KubernetesConfiguration, mocker: pytest_mock.MockerFixture) -> None:
@@ -1140,11 +1152,9 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+        with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
             description = await connector.adjust([adjustment])
             debug(description)
-
-        assert "Insufficient memory." in str(rejection_info.value)
 
         await Deployment.read("fiber-http", kube.namespace)
 
@@ -1281,6 +1291,22 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         return kubetest_deployment
 
     @pytest.fixture
+    def kubetest_deployemnt_oom_killed(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
+        fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
+        fiber_container.command = [ "/bin/sh" ]
+        # Simulate a deployment which will be OOMKilled when memory adjusted to < 192Mi
+        fiber_container.args = [ "-c", (
+            "if [ $(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) -gt 201326592 ]; "
+                "then /bin/fiber-http; "
+                "else tail /dev/zero; "
+            "fi"
+        )]
+
+        kubetest_deployment.create()
+        kubetest_deployment.wait_until_ready(timeout=30)
+        return kubetest_deployment
+
+    @pytest.fixture
     def kubetest_deployment_becomes_unready(self, kubetest_deployment: KubetestDeployment) -> KubetestDeployment:
         fiber_container = kubetest_deployment.obj.spec.template.spec.containers[0]
         fiber_container.command = [ "/bin/sh" ]
@@ -1311,8 +1337,32 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
-        assert rejection_info.value.reason == "start-failed"
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert "(reason ContainersNotReady) containers with unready status: [fiber-http" in str(rejection_info.value)
+            assert rejection_info.value.reason == "start-failed"
+        except AssertionError as e:
+            raise e from rejection_info.value
+
+    async def test_adjust_deployment_oom_killed(self, config: KubernetesConfiguration, kubetest_deployemnt_oom_killed: KubetestDeployment) -> None:
+        config.timeout = "5s"
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert "Deployment fiber-http pod(s) crash restart detected: fiber-http-" in str(rejection_info.value)
+            assert rejection_info.value.reason == "unstable"
+        except AssertionError as e:
+            raise e from rejection_info.value
 
     async def test_adjust_deployment_settlement_failed(
         self,
@@ -1332,17 +1382,87 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert (
-            "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
-            or "Deployment fiber-http pod(s) crash restart detected" in str(rejection_info.value)
-        ), str(rejection_info.value)
-        assert rejection_info.value.reason == "unstable"
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert (
+                "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+                or "Deployment fiber-http pod(s) crash restart detected" in str(rejection_info.value)
+            ), str(rejection_info.value)
+            assert rejection_info.value.reason == "unstable"
+        except AssertionError as e:
+            raise e from rejection_info.value
 
         # Validate deployment destroyed
         with pytest.raises(kubernetes.client.exceptions.ApiException) as not_found_error:
             kubetest_deployment_becomes_unready.refresh()
 
         assert not_found_error.value.status == 404 and not_found_error.value.reason == "Not Found", str(not_found_error.value)
+
+    async def test_adjust_tuning_never_ready(
+        self,
+        tuning_config: KubernetesConfiguration,
+        kubetest_deployment_never_ready: KubetestDeployment,
+        kube: kubetest.client.TestClient
+    ) -> None:
+        tuning_config.timeout = "25s"
+        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Mi",
+        )
+
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert "(reason ContainersNotReady) containers with unready status: [fiber-http" in str(rejection_info.value)
+            assert rejection_info.value.reason == "start-failed"
+        except AssertionError as e:
+            raise e from rejection_info.value
+
+        # Validate baseline was restored during handle_error
+        tuning_pod = kube.get_pods()["fiber-http-tuning"]
+        fiber_container = next(filter(lambda cont: cont.name == "fiber-http", tuning_pod.obj.spec.containers))
+        assert fiber_container.resources.requests["memory"] == "256Mi"
+        assert fiber_container.resources.limits["memory"] == "256Mi"
+
+    async def test_adjust_tuning_oom_killed(
+        self,
+        tuning_config: KubernetesConfiguration,
+        kubetest_deployemnt_oom_killed: KubetestDeployment,
+        kube: kubetest.client.TestClient
+    ) -> None:
+        tuning_config.timeout = "25s"
+        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Mi",
+        )
+
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert "Tuning optimization fiber-http-tuning crash restart detected on container(s): fiber-http" in str(rejection_info.value)
+            assert rejection_info.value.reason == "unstable"
+        except AssertionError as e:
+            raise e from rejection_info.value
+
+        # Validate baseline was restored during handle_error
+        tuning_pod = kube.get_pods()["fiber-http-tuning"]
+        fiber_container = next(filter(lambda cont: cont.name == "fiber-http", tuning_pod.obj.spec.containers))
+        assert fiber_container.resources.requests["memory"] == "256Mi"
+        assert fiber_container.resources.limits["memory"] == "256Mi"
 
     async def test_adjust_tuning_settlement_failed(
         self,
@@ -1369,12 +1489,15 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         # Validate no warnings were raised to ensure all coroutines were awaited
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
-        # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", traceback.format_exception(
-            type(rejection_info.value),
-            rejection_info.value,
-            rejection_info.value.__traceback__
-        )
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert (
+                "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+                or "Tuning optimization fiber-http-tuning crash restart detected on container(s): fiber-http" in str(rejection_info.value)
+            )
+            rejection_info.value.reason == "unstable"
+        except AssertionError as e:
+            raise e from rejection_info.value
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
