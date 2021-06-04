@@ -1355,7 +1355,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+        assert "(reason ContainersNotReady) containers with unready status: [fiber-http" in str(rejection_info.value)
         assert rejection_info.value.reason == "start-failed"
 
     async def test_adjust_deployment_settlement_failed(
