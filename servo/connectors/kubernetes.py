@@ -1919,7 +1919,7 @@ class Deployment(KubernetesModel):
         ]
         if image_pull_failed_pods:
             raise servo.AdjustmentFailedError(
-                f"Container image pull failure detected on {len(image_pull_failed_pods)} pods: {', '.join(map(lambda pod: pod.obj.name, pods))}",
+                f"Container image pull failure detected on {len(image_pull_failed_pods)} pods: {', '.join(map(lambda pod: pod.obj.metadata.name, pods))}",
                 reason="image-pull-failed"
             )
 
