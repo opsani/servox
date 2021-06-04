@@ -1039,6 +1039,7 @@ class TestKubernetesConnectorIntegration:
         config: KubernetesConfiguration,
         mocker: pytest_mock.MockerFixture,
     ) -> None:
+        servo.logging.set_level("TRACE")
         config.timeout = "10s"
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
