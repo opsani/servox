@@ -50,7 +50,7 @@ jobs:
           path: ~/.poetry
           key: poetry-${{ runner.os }}-1.1.5
       - name: Install and configure Poetry
-        uses: snok/install-poetry@v1.1.4
+        uses: snok/install-poetry@v1.1.6
         if: steps.cached-poetry.outputs.cache-hit != 'true'
         with:
           version: 1.1.5
@@ -103,7 +103,7 @@ jobs:
         path: ~/.poetry
         key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.4
+      uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
       with:
         version: 1.1.5
@@ -167,7 +167,7 @@ jobs:
         path: ~/.poetry
         key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.4
+      uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
       with:
         version: 1.1.5
@@ -247,7 +247,7 @@ jobs:
         path: ~/.poetry
         key: poetry-${{ runner.os }}-1.1.5
     - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.4
+      uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
       with:
         version: 1.1.5

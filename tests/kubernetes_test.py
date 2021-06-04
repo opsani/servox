@@ -122,7 +122,7 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8181)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8480)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -130,14 +130,14 @@ class TestSidecar:
     async def test_inject_sidecar_by_port_number_string(self, kube) -> None:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8181')
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port='8480')
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
 
     async def test_inject_sidecar_port_conflict(self, kube):
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
-        with pytest.raises(ValueError, match='Deployment already has a container port 8480'):
+        with pytest.raises(ValueError, match='Port conflict: Deployment \'fiber-http\' already exposes port 8480 through an existing container'):
             await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', port=8481, service_port=8480)
 
     async def test_inject_sidecar_by_service(self, kube) -> None:
@@ -153,7 +153,7 @@ class TestSidecar:
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
 
         assert len(deployment.containers) == 1
-        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=8480)
+        await deployment.inject_sidecar('whatever', 'opsani/envoy-proxy:latest', service='fiber-http', port=80)
 
         deployment_ = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert len(deployment_.containers) == 2
@@ -389,6 +389,33 @@ class TestService:
         await svc.patch()
         await svc.refresh()
         assert svc.obj.metadata.labels["testing.opsani.com"] == sentinel_value
+
+@pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
+async def test_get_latest_pods(kube: kubetest.client.TestClient) -> None:
+    kube.wait_for_registered()
+    # Cache initially created replicaset
+    _, old_rset = kube.get_replicasets().popitem()
+
+    # Generate a new replicaset
+    kube_dep = kube.get_deployments()["fiber-http"]
+    kube_dep.obj.spec.template.spec.containers[0].resources.requests["memory"] = "128Mi"
+    kube_dep.api_client.patch_namespaced_deployment(kube_dep.name, kube_dep.namespace, kube_dep.obj)
+
+    servo_dep = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+
+    async def wait_for_new_replicaset():
+        while len(kube.get_replicasets()) < 2:
+            await asyncio.sleep(0.1)
+    await asyncio.wait_for(wait_for_new_replicaset(), timeout=2)
+
+    for _ in range(10):
+        latest_pods = await servo_dep.get_latest_pods()
+        # Check the latest pods aren't from the old replicaset
+        for pod in latest_pods:
+            for ow in pod.obj.metadata.owner_references:
+                assert ow.name != old_rset.obj.metadata.name
+
+        await asyncio.sleep(0.1)
 
 @pytest.mark.parametrize(
     "value, step, expected_lower, expected_upper",

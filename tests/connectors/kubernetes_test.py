@@ -4,16 +4,18 @@ from typing import Type
 
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
-from kubernetes.client.models import V1HTTPGetAction, V1Probe
 import kubernetes.client.models
+import kubernetes.client.exceptions
 import pydantic
 import pytest
 import pytest_mock
 import re
+import traceback
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
+import servo.connectors.kubernetes
 from servo.connectors.kubernetes import (
     CPU,
     CanaryOptimization,
@@ -950,17 +952,18 @@ class TestKubernetesConnectorIntegration:
         assert setting.value == 250
 
     async def test_adjust_cpu_at_non_zero_container_index(self, config):
+        # Inject a sidecar at index zero
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
+        assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
+        async with deployment.rollout(timeout=config.timeout) as deployment_update:
+            await deployment_update.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8480", service_port=8091, index=0)
+
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
             setting_name="cpu",
             value=".250",
         )
-
-        # Inject a sidecar at index zero
-        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', config.namespace)
-        assert deployment, f"failed loading deployment 'fiber-http' in namespace '{config.namespace}'"
-        await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', port="8090", service_port=8091, index=0)
 
         control = servo.Control(settlement='1s')
         description = await connector.adjust([adjustment], control)
@@ -1045,8 +1048,8 @@ class TestKubernetesConnectorIntegration:
         )
 
         mocker.patch(
-            "kubernetes_asyncio.client.models.v1_container.V1Container.image", 
-            new_callable=mocker.PropertyMock, 
+            "kubernetes_asyncio.client.models.v1_container.V1Container.image",
+            new_callable=mocker.PropertyMock,
             return_value="opsani/bababooey:latest"
         )
 
@@ -1113,12 +1116,12 @@ class TestKubernetesConnectorIntegration:
         connector = KubernetesConnector(config=tuning_config)
 
         mocker.patch(
-            "kubernetes_asyncio.client.models.v1_container.V1Container.image", 
-            new_callable=mocker.PropertyMock, 
+            "kubernetes_asyncio.client.models.v1_container.V1Container.image",
+            new_callable=mocker.PropertyMock,
             return_value="opsani/bababooey:latest"
         )
 
-        # NOTE: describe logic currently invokes the same creation as adjust and allows for a faster test. 
+        # NOTE: describe logic currently invokes the same creation as adjust and allows for a faster test.
         # If tuning creation is removed from describe this test will need to be refactored and have a longer timeout and runtime
         with pytest.raises(AdjustmentFailedError, match="Container image pull failure detected"):
             await connector.describe()
@@ -1288,12 +1291,13 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
     def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
         deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
+        deployment.obj.spec.template.spec.termination_grace_period_seconds = 10
         fiber_container = deployment.obj.spec.template.spec.containers[0]
         fiber_container.resources.requests['memory'] = '256Mi'
         fiber_container.resources.limits['memory'] = '256Mi'
-        fiber_container.readiness_probe = V1Probe(
+        fiber_container.readiness_probe = kubernetes.client.models.V1Probe(
             failure_threshold=3,
-            http_get=V1HTTPGetAction(
+            http_get=kubernetes.client.models.V1HTTPGetAction(
               path= "/",
               port= 9980,
               scheme="HTTP",
@@ -1350,8 +1354,38 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        assert rejection_info.value.reason == "timed out waiting for Deployment to apply adjustment"
+        assert "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+        assert rejection_info.value.reason == "start-failed"
 
+    async def test_adjust_deployment_settlement_failed(
+        self,
+        config: KubernetesConfiguration,
+        kubetest_deployment_becomes_unready: KubetestDeployment
+    ) -> None:
+        config.timeout = "15s"
+        config.settlement = "15s"
+        config.deployments[0].on_failure = FailureMode.destroy
+        connector = KubernetesConnector(config=config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="128Mi",
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            await connector.adjust([adjustment])
+
+        assert (
+            "(reason ContainersNotReady) containers with unready status: [fiber-http]" in str(rejection_info.value)
+            or "Deployment fiber-http pod(s) crash restart detected" in str(rejection_info.value)
+        ), str(rejection_info.value)
+        assert rejection_info.value.reason == "unstable"
+
+        # Validate deployment destroyed
+        with pytest.raises(kubernetes.client.exceptions.ApiException) as not_found_error:
+            kubetest_deployment_becomes_unready.refresh()
+
+        assert not_found_error.value.status == 404 and not_found_error.value.reason == "Not Found", str(not_found_error.value)
 
     async def test_adjust_tuning_settlement_failed(
         self,
@@ -1360,7 +1394,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         recwarn: pytest.WarningsRecorder,
         kube: kubetest.client.TestClient
     ) -> None:
-        tuning_config.timeout = "20s"
+        tuning_config.timeout = "25s"
         tuning_config.settlement = "15s"
         tuning_config.on_failure = FailureMode.destroy
         tuning_config.deployments[0].on_failure = FailureMode.destroy
@@ -1379,7 +1413,11 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised
-        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", debug(rejection_info)
+        assert str(rejection_info.value) == "containers with unready status: [fiber-http]", traceback.format_exception(
+            type(rejection_info.value),
+            rejection_info.value,
+            rejection_info.value.__traceback__
+        )
 
         # Validate baseline was restored during handle_error
         tuning_pod = kube.get_pods()["fiber-http-tuning"]
@@ -1776,3 +1814,233 @@ class TestKubernetesResourceRequirementsIntegration:
         adjusted_mem_setting = adjusted_description.get_setting('fiber-http/fiber-http-tuning.mem')
         assert adjusted_mem_setting
         assert adjusted_mem_setting.value.human_readable() == '2.0Gi'
+
+
+# TODO: test_inject_by_source_port_int, test_inject_by_source_port_name
+
+##
+# Sidecar injection tests
+
+ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestSidecarInjection:
+    @pytest.fixture(autouse=True)
+    async def _wait_for_manifests(self, kube, config):
+        kube.wait_for_registered()
+        config.timeout = "5m"
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+
+    @pytest.mark.applymanifests("../manifests/sidecar_injection",
+                                files=["fiber-http_single_port.yaml"])
+    @pytest.mark.parametrize(
+        "service, port",
+        [
+            ('fiber-http', None),
+            ('fiber-http', 80),
+            ('fiber-http', 'http'),
+        ],
+    )
+    async def test_inject_single_port_deployment(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
+        assert len(deployment.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 1
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 8480
+
+        await deployment.inject_sidecar(
+            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+        )
+
+        # Examine new sidecar
+        await deployment.refresh()
+        assert len(deployment.containers) == 2, "expected an injected container"
+        sidecar_container = deployment.containers[1]
+        assert sidecar_container.name == 'opsani-envoy'
+
+        # Check ports and env
+        assert sidecar_container.ports == [
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9980,
+                host_ip=None,
+                host_port=None,
+                name='opsani-proxy',
+                protocol='TCP'
+            ),
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9901,
+                host_ip=None,
+                host_port=None,
+                name='opsani-metrics',
+                protocol='TCP'
+            )
+        ]
+        assert sidecar_container.obj.env == [
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                value='9980',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                value='8480',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                value='9901',
+                value_from=None
+            ),
+        ]
+
+    @pytest.mark.applymanifests("../manifests/sidecar_injection",
+                                files=["fiber-http_multiple_ports.yaml"])
+    @pytest.mark.parametrize(
+        "service, port, error",
+        [
+            ('fiber-http', None, ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
+            ('fiber-http', 80, None),
+            ('fiber-http', 'http', None),
+        ],
+    )
+    async def test_inject_multiport_deployment(self, namespace: str, service: str, port: Union[str, int], error: Optional[Exception]) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
+        assert len(deployment.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 2
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 8480
+
+        try:
+            await deployment.inject_sidecar(
+                'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+            )
+        except Exception as e:
+            assert repr(e) == repr(error)
+
+        # Examine new sidecar (if success is expected)
+        if error is None:
+            await deployment.refresh()
+            assert len(deployment.containers) == 2, "expected an injected container"
+            sidecar_container = deployment.containers[1]
+            assert sidecar_container.name == 'opsani-envoy'
+
+            # Check ports and env
+            assert sidecar_container.ports == [
+                kubernetes_asyncio.client.V1ContainerPort(
+                    container_port=9980,
+                    host_ip=None,
+                    host_port=None,
+                    name='opsani-proxy',
+                    protocol='TCP'
+                ),
+                kubernetes_asyncio.client.V1ContainerPort(
+                    container_port=9901,
+                    host_ip=None,
+                    host_port=None,
+                    name='opsani-metrics',
+                    protocol='TCP'
+                )
+            ]
+            assert sidecar_container.obj.env == [
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                    value='9980',
+                    value_from=None
+                ),
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                    value='8480',
+                    value_from=None
+                ),
+                kubernetes_asyncio.client.V1EnvVar(
+                    name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                    value='9901',
+                    value_from=None
+                ),
+            ]
+
+    @pytest.mark.applymanifests("../manifests/sidecar_injection",
+                                files=["fiber-http_multiple_ports_symbolic_targets.yaml"])
+    @pytest.mark.parametrize(
+        "service, port",
+        [
+            ('fiber-http', None),
+            ('fiber-http', 80),
+            ('fiber-http', 'http'),
+        ],
+    )
+    async def test_inject_by_source_port_name_with_symbolic_target_port(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
+        assert len(deployment.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 1
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 'collector'
+
+        await deployment.inject_sidecar(
+            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+        )
+
+        # Examine new sidecar
+        await deployment.refresh()
+        assert len(deployment.containers) == 2, "expected an injected container"
+        sidecar_container = deployment.containers[1]
+        assert sidecar_container.name == 'opsani-envoy'
+
+        # Check ports and env
+        assert sidecar_container.ports == [
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9980,
+                host_ip=None,
+                host_port=None,
+                name='opsani-proxy',
+                protocol='TCP'
+            ),
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9901,
+                host_ip=None,
+                host_port=None,
+                name='opsani-metrics',
+                protocol='TCP'
+            )
+        ]
+        assert sidecar_container.obj.env == [
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                value='9980',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                value='8480',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                value='9901',
+                value_from=None
+            ),
+        ]

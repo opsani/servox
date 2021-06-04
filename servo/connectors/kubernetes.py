@@ -4,6 +4,7 @@ from __future__ import annotations, print_function
 
 import abc
 import asyncio
+import collections
 import contextlib
 import copy
 import datetime
@@ -41,6 +42,7 @@ import kubernetes_asyncio
 import kubernetes_asyncio.client.models
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.watch
 import pydantic
 
 import servo
@@ -479,27 +481,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-
-async def _try_delete_model(model: KubernetesModel, options: kubernetes_asyncio.client.V1DeleteOptions = None) -> Optional[kubernetes_asyncio.client.V1Status]:
-    """Try to delete the underlying kubernetes resource; catch and log 404 Not Found as a no-op
-
-    Args:
-        model (KubernetesModel): Model representing kubernetes object to be deleted
-        options (V1DeleteOptions): Options for resource deletion.
-
-    Returns:
-        V1Status returned from API or None if the object was not found
-    """
-    try:
-        return await model.delete(options)
-    except kubernetes_asyncio.client.exceptions.ApiException as error:
-        if error.status == 404 and error.reason == "Not Found":
-            kind = getattr(model.obj, "kind", model.__class__.__name__)
-            model.logger.info(f'{kind} "{model.name}" does not exist. no-op')
-            return None
-        else:
-            raise error
-
+        self.logger.warning(f"raise_for_status not implemented on {self.__class__.__name__}")
 
 class Namespace(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Namespace`_ API Object.
@@ -1483,17 +1465,24 @@ class Deployment(KubernetesModel):
         async with self.api_client() as api_client:
             label_selector = self.obj.spec.selector.match_labels
             rs_list:kubernetes_asyncio.client.V1ReplicasetList = await api_client.list_namespaced_replica_set(
-                namespace=self.namespace, label_selector=selector_string(label_selector), resource_version=self.resource_version
+                namespace=self.namespace, label_selector=selector_string(label_selector)
             )
 
         # Verify all returned RS have this deployment as an owner
         rs_list = [
             rs for rs in rs_list.items if rs.metadata.owner_references and any(
                 ownRef.kind == "Deployment" and ownRef.uid == self.obj.metadata.uid
-                for ownRef in rs.metadata.owner_references)]
+                for ownRef in rs.metadata.owner_references
+            )
+        ]
         if not rs_list:
-            raise servo.ConnectorError('Unable to locate replicaset(s) for deployment "{self.name}"')
-        latest_rs = sorted(rs_list, key= lambda rs: rs.metadata.resource_version, reverse=True)[0]
+            raise servo.ConnectorError(f'Unable to locate replicaset(s) for deployment "{self.name}"')
+        if missing_revision_rsets := list(filter(lambda rs: 'deployment.kubernetes.io/revision' not in rs.metadata.annotations, rs_list)):
+            raise servo.ConnectorError(
+                f'Unable to determine latest replicaset for deployment "{self.name}" due to missing revision annotation in replicaset(s)'
+                f' "{", ".join(list(map(lambda rs: rs.metadata.name, missing_revision_rsets)))}"'
+            )
+        latest_rs = sorted(rs_list, key= lambda rs: int(rs.metadata.annotations['deployment.kubernetes.io/revision']), reverse=True)[0]
 
         return [
             pod for pod in await self.get_pods()
@@ -1636,11 +1625,15 @@ class Deployment(KubernetesModel):
         between the Envoy sidecar and the container responsible for fulfilling the request.
 
         Args:
+            name: The name of the sidecar to inject.
+            image: The container image for the sidecar container.
             deployment: Name of the target Deployment to inject the sidecar into.
             service: Name of the service to proxy. Envoy will accept ingress traffic
                 on the service port and reverse proxy requests back to the original
                 target container.
-
+            port: The name or number of a port within the Deployment to wrap the proxy around.
+            index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
+            service_port: The port to receive ingress traffic from an upstream service.
         """
 
         await self.refresh()
@@ -1651,34 +1644,55 @@ class Deployment(KubernetesModel):
         if isinstance(port, str) and port.isdigit():
             port = int(port)
 
+        # check for a port conflict
+        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Port conflict: Deployment '{self.name}' already exposes port {service_port} through an existing container")
+
         # lookup the port on the target service
         if service:
             try:
-                ser = await Service.read(service, self.namespace)
+                service_obj = await Service.read(service, self.namespace)
             except kubernetes_asyncio.client.exceptions.ApiException as error:
                 if error.status == 404:
                     raise ValueError(f"Unknown Service '{service}'") from error
                 else:
                     raise error
             if not port:
-                if len(ser.obj.spec.ports) > 1:
-                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be given")
-                port = ser.obj.spec.ports[0].target_port
+                port_count = len(service_obj.obj.spec.ports)
+                if port_count == 0:
+                    raise ValueError(f"Target Service '{service}' does not expose any ports")
+                elif port_count > 1:
+                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be specified")
+                port_obj = service_obj.obj.spec.ports[0]
             else:
                 if isinstance(port, int):
-                    if not next(filter(lambda p: p.target_port == port, ser.obj.spec.ports), None):
-                        raise ValueError(f"Port {port} does not exist in the Service '{service}'")
+                    port_obj = next(filter(lambda p: p.port == port, service_obj.obj.spec.ports), None)
+                elif isinstance(port, str):
+                    port_obj = next(filter(lambda p: p.name == port, service_obj.obj.spec.ports), None)
                 else:
-                    _port = next(filter(lambda p: p.name == port, ser.obj.spec.ports), None)
-                    if not _port:
-                        raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
-                    port = _port.target_port
+                    raise TypeError(f"Unable to resolve port value of type {port.__class__} (port={port})")
 
-        # check for a port conflict
-        if self.containers:
-            container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
-            if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
-                raise ValueError(f"Deployment already has a container port {service_port}")
+                if not port_obj:
+                    raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
+
+            # resolve symbolic name in the service target port to a concrete container port
+            if isinstance(port_obj.target_port, str):
+                container_port_obj = next(filter(lambda p: p.name == port_obj.target_port, container_ports), None)
+                if not container_port_obj:
+                    raise ValueError(f"Port '{port_obj.target_port}' could not be resolved to a destination container port")
+
+                container_port = container_port_obj.container_port
+            else:
+                container_port = port_obj.target_port
+
+        else:
+            # find the container port
+            container_port_obj = next(filter(lambda p: p.container_port == port, container_ports), None)
+            if not container_port_obj:
+                raise ValueError(f"Port '{port}' could not be resolved to a destination container port")
+
+            container_port = container_port_obj.container_port
 
         # build the sidecar container
         container = kubernetes_asyncio.client.V1Container(
@@ -1697,7 +1711,7 @@ class Deployment(KubernetesModel):
             ),
             env=[
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
-                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(port)),
+                kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(container_port)),
                 kubernetes_asyncio.client.V1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
@@ -1783,9 +1797,6 @@ class Deployment(KubernetesModel):
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
                         self._check_conditions(status.conditions)
-                        # TODO: if pods fail to start, the following will not detect it as the deployment is not updated and yields no watch events. 
-                        # Move to Deployment.raise_for_status once implemented
-                        await self._check_pod_conditions()
 
                     # Early events in the watch may be against previous generation
                     if status.observed_generation == observed_generation:
@@ -1815,8 +1826,8 @@ class Deployment(KubernetesModel):
                         stream.stop()
                         return
 
-            # watch doesn't raise a timeoutError when when elapsed so do it as fall through
-            raise servo.AdjustmentRejectedError(reason="timed out waiting for Deployment to apply adjustment")
+            # watch doesn't raise a timeoutError when when elapsed, treat fall through as timeout
+            await self.raise_for_status()
 
 
 
@@ -1860,10 +1871,27 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
-    # TODO: move to _raise_for_pod_status and call from Deployment.raise_for_status once implemented
-    async def _check_pod_conditions(self):
+    async def raise_for_status(self) -> None:
+        # NOTE: operate off of current state, assuming you have checked is_ready()
+        status = self.obj.status
+        self.logger.trace(f"current deployment status is {status}")
+        if status is None:
+            raise RuntimeError(f'No such deployment: {self.name}')
+
+        if not status.conditions:
+            raise RuntimeError(f'Deployment is not running: {self.name}')
+
+        # Check for failure conditions
+        self._check_conditions(status.conditions)
+        await self.raise_for_pod_status()
+
+        # Catchall
+        self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
+        raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
+
+    async def raise_for_pod_status(self):
         pods = await self.get_latest_pods()
-        self.logger.trace(f"current pod statuses are {map(lambda pod: pod.obj.status, pods)}")
+        self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
             pod for pod in pods
             if pod.obj.status.conditions and any(
@@ -1877,12 +1905,16 @@ class Deployment(KubernetesModel):
                 pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
 
             fmt_str = ", ".join(pod_fmts)
-            raise servo.AdjustmentRejectedError(message=f"{len(unschedulable_pods)} pod(s) could not be scheduled: {fmt_str}", reason="scheduling-failed")
+            raise servo.AdjustmentRejectedError(
+                message=f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
+                reason="scheduling-failed"
+            )
 
         image_pull_failed_pods = [
             pod for pod in pods
             if pod.obj.status.container_statuses and any(
-                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"] for cont_stat in pod.obj.status.container_statuses
+                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]
+                for cont_stat in pod.obj.status.container_statuses
             )
         ]
         if image_pull_failed_pods:
@@ -1891,9 +1923,42 @@ class Deployment(KubernetesModel):
                 reason="image-pull-failed"
             )
 
+        restarted_pods_container_statuses = [
+            (pod, cont_stat) for pod in pods for cont_stat in getattr(pod.obj.status, 'container_statuses', [])
+            if cont_stat.restart_count > 0
+        ]
+        if restarted_pods_container_statuses:
+            pod_to_counts = collections.defaultdict(list)
+            for pod_cont_stat in restarted_pods_container_statuses:
+                pod_to_counts[pod_cont_stat[0].obj.metadata.name].append(f"{pod_cont_stat[1].name} x{pod_cont_stat[1].restart_count}")
+
+            pod_message = ", ".join(map(
+                lambda kv_tup: f"{kv_tup[0]} - {'; '.join(kv_tup[1])}",
+                list(pod_to_counts.items())
+            ))
+            raise servo.AdjustmentRejectedError(
+                f"Deployment {self.name} pod(s) crash restart detected: {pod_message}",
+                reason="unstable"
+            )
+
+        # Unready pod catchall
+        unready_pod_conds = [
+            (pod, cond) for pod in pods for cond in getattr(pod.obj.status, 'conditions', [])
+            if cond.type == "Ready" and cond.status == "False"
+        ]
+        if unready_pod_conds:
+            pod_message = ", ".join(map(
+                lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
+                unready_pod_conds
+            ))
+            raise servo.AdjustmentRejectedError(
+                message=f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                reason="start-failed"
+            )
+
     async def get_restart_count(self) -> int:
         count = 0
-        for pod in await self.get_pods():
+        for pod in await self.get_latest_pods():
             try:
                 count += await pod.get_restart_count()
             except kubernetes_asyncio.client.exceptions.ApiException as error:
@@ -2389,19 +2454,9 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        try:
-            async with self.deployment.rollout(timeout=self.timeout) as deployment:
-                # Patch the Deployment via the Kubernetes API
-                await deployment.patch()
-
-        except asyncio.TimeoutError as error:
-            raise servo.AdjustmentRejectedError(
-                reason="timed out waiting for Deployment to apply adjustment"
-            ) from error
-
-        if await self.deployment.get_restart_count() > 0:
-            # TODO: Return a string summary about the restarts (which pods bounced)
-            raise servo.AdjustmentRejectedError(reason="unstable")
+        async with self.deployment.rollout(timeout=self.timeout) as deployment:
+            # Patch the Deployment via the Kubernetes API
+            await deployment.patch()
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -2499,7 +2554,6 @@ class CanaryOptimization(BaseOptimization):
 
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
-        # return
 
         if setting_name in ("cpu", "memory"):
             # NOTE: Assign to the config model to trigger validations
@@ -2532,7 +2586,7 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod, "Tuning Pod not loaded"
         assert self.tuning_container, "Tuning Container not loaded"
 
-        servo.logger.info("Applying adjustmenting to Tuning Pod")
+        servo.logger.info("Applying adjustments to Tuning Pod")
         task = asyncio.create_task(self.create_or_recreate_tuning_pod())
         try:
             await task
@@ -2543,7 +2597,7 @@ class CanaryOptimization(BaseOptimization):
 
             raise
 
-        # TODO: logging the wrong values -- should becoming from the podtemplatespec?
+        # TODO: logging the wrong values -- should be coming from the podtemplatespec?
         servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
 
     @property
@@ -2613,11 +2667,11 @@ class CanaryOptimization(BaseOptimization):
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
 
         if self.tuning_container:
-            servo.logger.info(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
+            servo.logger.debug(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
             resource_requirements = self.tuning_container.resources
             container.resources = resource_requirements
         else:
-            servo.logger.info(f"No existing tuning pod container found, initializing resource requirement defaults")
+            servo.logger.debug(f"No existing tuning pod container found, initializing resource requirement defaults")
             set_container_resource_defaults_from_config(container, self.container_config)
 
         # If the servo is running inside Kubernetes, register self as the controller for the Pod and ReplicaSet
@@ -2703,12 +2757,10 @@ class CanaryOptimization(BaseOptimization):
         await tuning_pod.create(self.namespace)
         servo.logger.success(f"Created Tuning Pod '{self.tuning_pod_name}' in namespace '{self.namespace}'")
 
-        # TODO: This double progress can go away soon
-        servo.logger.info(f"Waiting up to {self.timeout} for Tuning Pod to become ready...")
+        servo.logger.info(f"waiting up to {self.timeout} for Tuning Pod to become ready...")
         progress = servo.EventProgress(self.timeout)
         progress_logger = lambda p: self.logger.info(
-            p.annotate(f"Waiting for '{self.tuning_pod_name}' to become ready...", False),
-            progress=p.progress,
+            p.annotate(f"waiting for '{self.tuning_pod_name}' to become ready...", prefix=False)
         )
         progress.start()
 
@@ -3588,32 +3640,32 @@ class KubernetesConnector(servo.BaseConnector):
 
     @servo.on_event()
     async def describe(self) -> servo.Description:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
         return state.to_description()
 
     @servo.on_event()
     async def components(self) -> List[servo.Component]:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
         return state.to_components()
 
     @servo.before_event(servo.Events.measure)
     async def before_measure(self) -> None:
         # Build state before a measurement to ensure all necessary setup is done
-        # (e.g., canary is up)
-        await KubernetesOptimizations.create(self.config)
+        # (e.g., Tuning Pod is up and running)
+        await self._create_optimizations()
 
     @servo.on_event()
     async def adjust(
         self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
     ) -> servo.Description:
-        state = await KubernetesOptimizations.create(self.config)
+        state = await self._create_optimizations()
 
-        # Apply the adjustments and emit indeterminate progress status
+        # Apply the adjustments and emit progress status
         progress_logger = lambda p: self.logger.info(
-            p.annotate(f"waiting for adjustments to be applied...", False),
+            p.annotate(f"waiting up to {p.timeout} for adjustments to be applied...", prefix=False),
             progress=p.progress,
         )
-        progress = servo.EventProgress()
+        progress = servo.EventProgress(timeout=self.config.timeout)
         future = asyncio.create_task(state.apply(adjustments))
         future.add_done_callback(lambda _: progress.trigger())
 
@@ -3637,11 +3689,14 @@ class KubernetesConnector(servo.BaseConnector):
                 while not progress.finished:
                     if not await state.is_ready():
                         # Raise a specific exception if the optimization defines one
-                        await state.raise_for_status()
+                        try:
+                            await state.raise_for_status()
+                        except servo.AdjustmentRejectedError as e:
+                            # Update rejections with start-failed to indicate the initial rollout was successful
+                            if e.reason == "start-failed":
+                                e.reason = "unstable"
+                            raise
 
-                        raise servo.AdjustmentRejectedError(
-                            reason="Optimization target became unready during adjustment settlement period"
-                        )
                     await asyncio.sleep(servo.Duration('50ms').total_seconds())
 
             await asyncio.gather(
@@ -3669,32 +3724,23 @@ class KubernetesConnector(servo.BaseConnector):
             self.config, matching=matching, halt_on=halt_on
         )
 
-    # TODO: delete this?
-    async def inject_sidecar(
-        self,
-        name: str,
-        image: str,
-        *,
-        service: Optional[str] = None,
-        port: Optional[int] = None,
-        index: Optional[int] = None,
-        service_port: int = 9980
-    ) -> None:
-        """
-        Injects an Envoy sidecar into a target Deployment that proxies a service
-        or literal TCP port, generating scrapable metrics usable for optimization.
+    async def _create_optimizations(self) -> KubernetesOptimizations:
+        # Build a KubernetesOptimizations object with progress reporting
+        # This ensures that the Servo isn't reported as offline
+        progress_logger = lambda p: self.logger.info(
+            p.annotate(f"waiting up to {p.timeout} for Kubernetes optimization setup to complete", prefix=False),
+            progress=p.progress,
+        )
+        progress = servo.EventProgress(timeout=self.config.timeout)
+        future = asyncio.create_task(KubernetesOptimizations.create(self.config))
+        future.add_done_callback(lambda _: progress.trigger())
 
-        The service or port argument must be provided to define how traffic is proxied
-        between the Envoy sidecar and the container responsible for fulfilling the request.
+        await asyncio.gather(
+            future,
+            progress.watch(progress_logger),
+        )
 
-        Args:
-            deployment: Name of the target Deployment to inject the sidecar into.
-            service: Name of the service to proxy. Envoy will accept ingress traffic
-                on the service port and reverse proxy requests back to the original
-                target container.
-
-        """
-        raise NotImplementedError("stub out for the moment")
+        return future.result()
 
 
 def selector_string(selectors: Mapping[str, str]) -> str:
