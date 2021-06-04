@@ -1345,7 +1345,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             raise e from rejection_info.value
 
     async def test_adjust_deployment_oom_killed(self, config: KubernetesConfiguration, kubetest_deployemnt_oom_killed: KubetestDeployment) -> None:
-        config.timeout = "5s"
+        config.timeout = "10s"
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
