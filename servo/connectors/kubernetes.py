@@ -910,6 +910,12 @@ class Pod(KubernetesModel):
         if not status.conditions:
             raise RuntimeError(f'Pod is not running: {self.name}')
 
+        self.logger.trace(f"checking container statuses: {status.container_statuses}")
+        if status.container_statuses:
+            for cont_stat in status.container_statuses:
+                if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]:
+                    raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
+
         restarted_container_statuses = list(filter(lambda cont_stat: cont_stat.restart_count > 0, (status.container_statuses or [])))
         if restarted_container_statuses:
             container_messages = list(map(lambda cont_stat: f"{cont_stat.name} x{cont_stat.restart_count}", restarted_container_statuses))
@@ -1917,6 +1923,19 @@ class Deployment(KubernetesModel):
             raise servo.AdjustmentRejectedError(
                 message=f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
                 reason="unschedulable"
+            )
+
+        image_pull_failed_pods = [
+            pod for pod in pods
+            if pod.obj.status.container_statuses and any(
+                cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]
+                for cont_stat in pod.obj.status.container_statuses
+            )
+        ]
+        if image_pull_failed_pods:
+            raise servo.AdjustmentFailedError(
+                f"Container image pull failure detected on {len(image_pull_failed_pods)} pods: {', '.join(map(lambda pod: pod.obj.metadata.name, pods))}",
+                reason="image-pull-failed"
             )
 
         restarted_pods_container_statuses = [
