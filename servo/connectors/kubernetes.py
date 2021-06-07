@@ -928,16 +928,10 @@ class Pod(KubernetesModel):
         for cond in status.conditions:
             if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
-                raise servo.AdjustmentRejectedError(
-                    message=cond.message,
-                    reason="unschedulable"
-                )
+                raise servo.AdjustmentRejectedError(cond.message, reason="unschedulable")
 
             if cond.type == "Ready" and cond.status == "False":
-                raise servo.AdjustmentRejectedError(
-                    message=f"(reason {cond.reason}) {cond.message}",
-                    reason="start-failed"
-                )
+                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -1809,7 +1803,7 @@ class Deployment(KubernetesModel):
                     if event_type == "ERROR":
                         stream.stop()
                         # FIXME: Not sure what types we expect here
-                        raise servo.AdjustmentRejectedError(str(deployment))
+                        raise servo.AdjustmentRejectedError(str(deployment), reason="start-failed")
 
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
@@ -1867,7 +1861,7 @@ class Deployment(KubernetesModel):
             elif condition.type == "ReplicaFailure":
                 # TODO: Check what this error looks like
                 raise servo.AdjustmentRejectedError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    f"ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                     reason="start-failed"
                 )
 
@@ -1878,7 +1872,7 @@ class Deployment(KubernetesModel):
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        f"ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
                         reason="start-failed"
                     )
                 else:
@@ -1921,7 +1915,7 @@ class Deployment(KubernetesModel):
 
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(
-                message=f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
+                f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
                 reason="unschedulable"
             )
 
@@ -1967,7 +1961,7 @@ class Deployment(KubernetesModel):
                 unready_pod_conds
             ))
             raise servo.AdjustmentRejectedError(
-                message=f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
                 reason="start-failed"
             )
 
