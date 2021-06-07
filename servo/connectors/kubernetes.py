@@ -916,11 +916,22 @@ class Pod(KubernetesModel):
                 if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]:
                     raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
 
+        restarted_container_statuses = list(filter(lambda cont_stat: cont_stat.restart_count > 0, (status.container_statuses or [])))
+        if restarted_container_statuses:
+            container_messages = list(map(lambda cont_stat: f"{cont_stat.name} x{cont_stat.restart_count}", restarted_container_statuses))
+            raise servo.AdjustmentRejectedError(
+                f"Tuning optimization {self.name} crash restart detected on container(s): {', '.join(container_messages)}",
+                reason="unstable"
+            )
+
         self.logger.trace(f"checking status conditions {status.conditions}")
         for cond in status.conditions:
-            if cond.reason in {"Unschedulable", "ContainersNotReady"}:
+            if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
-                raise servo.AdjustmentRejectedError(message=cond.message, reason="scheduling-failed")
+                raise servo.AdjustmentRejectedError(cond.message, reason="unschedulable")
+
+            if cond.type == "Ready" and cond.status == "False":
+                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -1792,7 +1803,7 @@ class Deployment(KubernetesModel):
                     if event_type == "ERROR":
                         stream.stop()
                         # FIXME: Not sure what types we expect here
-                        raise servo.AdjustmentRejectedError(reason=str(deployment))
+                        raise servo.AdjustmentRejectedError(str(deployment), reason="start-failed")
 
                     # Check that the conditions aren't reporting a failure
                     if status.conditions:
@@ -1850,9 +1861,8 @@ class Deployment(KubernetesModel):
             elif condition.type == "ReplicaFailure":
                 # TODO: Check what this error looks like
                 raise servo.AdjustmentRejectedError(
-                    "ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                    condition.status.message,
-                    reason=condition.status.reason
+                    f"ReplicaFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                    reason="start-failed"
                 )
 
             elif condition.type == "Progressing":
@@ -1862,9 +1872,8 @@ class Deployment(KubernetesModel):
                     break
                 elif condition.status == "False":
                     raise servo.AdjustmentRejectedError(
-                        "ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
-                        condition.status.message,
-                        reason=condition.status.reason
+                        f"ProgressionFailure: message='{condition.status.message}', reason='{condition.status.reason}'",
+                        reason="start-failed"
                     )
                 else:
                     raise servo.AdjustmentFailedError(
@@ -1906,8 +1915,8 @@ class Deployment(KubernetesModel):
 
             fmt_str = ", ".join(pod_fmts)
             raise servo.AdjustmentRejectedError(
-                message=f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
-                reason="scheduling-failed"
+                f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
+                reason="unschedulable"
             )
 
         image_pull_failed_pods = [
@@ -1952,7 +1961,7 @@ class Deployment(KubernetesModel):
                 unready_pod_conds
             ))
             raise servo.AdjustmentRejectedError(
-                message=f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
                 reason="start-failed"
             )
 
@@ -3144,29 +3153,34 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                 f"waiting for adjustments to take effect on {len(self.optimizations)} optimizations"
             )
             try:
-                results = await asyncio.wait_for(
-                    asyncio.gather(
-                        *list(map(lambda a: a.apply(), self.optimizations)),
-                        return_exceptions=True,
-                    ),
-                    timeout=timeout.total_seconds() + 60, # allow sub-optimization timeouts to expire first
+                gather_apply = asyncio.gather(
+                    *list(map(lambda a: a.apply(), self.optimizations)),
+                    return_exceptions=True,
                 )
-
-                for result in results:
-                    if isinstance(result, Exception):
-                        for optimization in self.optimizations:
-                            if await optimization.handle_error(result):
-                                # Stop error propagation once it has been handled
-                                break
+                results = await asyncio.wait_for(gather_apply, timeout=timeout.total_seconds() + 60) # allow sub-optimization timeouts to expire first
 
             except asyncio.exceptions.TimeoutError as error:
                 self.logger.error(
                     f"timed out after {timeout} + 60s waiting for adjustments to apply"
                 )
+                # Prevent "_GatheringFuture exception was never retrieved" warning if the above wait_for raises a timeout error
+                # https://bugs.python.org/issue29432
+                try:
+                    await gather_apply
+                except asyncio.CancelledError:
+                    pass
                 for optimization in self.optimizations:
                     if await optimization.handle_error(error):
                         # Stop error propagation once it has been handled
                         break
+                raise  # No results to process in this case, reraise timeout if handlers didn't
+
+            for result in results:
+                if isinstance(result, Exception):
+                    for optimization in self.optimizations:
+                        if await optimization.handle_error(result):
+                            # Stop error propagation once it has been handled
+                            break
         else:
             self.logger.warning(f"failed to apply adjustments: no adjustables")
 
@@ -3704,8 +3718,10 @@ class KubernetesConnector(servo.BaseConnector):
                 readiness_monitor()
             )
             if not await state.is_ready():
+                self.logger.warning("Rejection triggered without running error handler")
                 raise servo.AdjustmentRejectedError(
-                    reason="Optimization target became unready after adjustment settlement period"
+                    "Optimization target became unready after adjustment settlement period (WARNING: error handler was not run)",
+                    reason="unstable"
                 )
             self.logger.info(
                 f"Settlement duration of {settlement} has elapsed, resuming optimization."
