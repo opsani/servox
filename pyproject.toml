@@ -37,6 +37,11 @@ toml = "^0.10.2"
 colorama = "^0.4.4"
 pyfiglet = "^0.8.post1"
 curlify2 = "^1.0.0"
+plyvel = "^1.3.0"
+prometheus-client = "^0.11.0"
+pygam = "^0.8.0"
+pandas = "^1.2.4"
+scikit-learn = "^0.24.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
@@ -91,6 +96,7 @@ kubernetes = "servo.connectors.kubernetes:KubernetesConnector"
 prometheus = "servo.connectors.prometheus:PrometheusConnector"
 opsani_dev = "servo.connectors.opsani_dev:OpsaniDevConnector"
 scripts = "servo.connectors.scripts:ScriptsConnector"
+olas = "servo.connectors.olas.connector:OLASConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
