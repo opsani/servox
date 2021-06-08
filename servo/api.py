@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import collections
 import copy
 import datetime
 import enum
@@ -12,6 +13,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo.telemetry
 import servo.types
 import servo.utilities
 
@@ -307,8 +309,40 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
     return descriptor
 
 
-def user_agent() -> str:
-    return f"{USER_AGENT} v{servo.__version__}"
+def user_agent_header_with_telemetry(telemetry: servo.telemetry.Telemetry) -> str:
+    platforms: Dict[str, str] = {}
+    platform_details: Dict[str, List[str]] = collections.defaultdict(list)
+
+    for k, v in telemetry.values.items():
+        if "." in k:
+            platform, platform_detail = k.split(".", 1)
+            if platform == "servox":
+                platform = USER_AGENT
+
+            if platform_detail == "version":
+                platforms[platform] = v
+                continue
+
+            if platform not in platforms:
+                platforms[platform] = None
+
+            platform_details[platform].append(f"{platform_detail} {v}")
+        else:
+            if k == "servox":
+                k = USER_AGENT
+            platforms[k] = v
+
+    user_agents_list: List[str] = []
+    for p_k, p_v in platforms.items():
+        if p_v is None:
+            user_agents_list.append(p_k)
+        else:
+            user_agents_list.append(f"{p_k}/{p_v}")
+
+        if platform_details[p_k]:
+            user_agents_list.append(f"({'; '.join(platform_details[p_k])})")
+
+    return " ".join(user_agents_list)
 
 def _redacted_to_curl(request: httpx.Request) -> str:
     """Pass through to curlify2.to_curl that redacts the authorization in the headers

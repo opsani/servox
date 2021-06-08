@@ -1,7 +1,12 @@
 import pytest
+import platform
+
 import servo
 import servo.api
+import servo.telemetry
 
+from servo.api import descriptor_to_adjustments, user_agent_header_with_telemetry, CommandResponse, MeasureParams, Status
+from servo.types import Adjustment, Control
 
 class TestStatus:
     def test_from_error(self) -> None:
@@ -10,9 +15,6 @@ class TestStatus:
         assert status.message == 'foo'
         assert status.status == 'rejected'
 
-
-from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status
-from servo.types import Adjustment, Control
 
 def _check_measure_parse(obj: CommandResponse):
     assert isinstance(obj, CommandResponse)
@@ -151,3 +153,12 @@ def test_parse_command_response_including_units_control(payload, validator) -> N
 
     obj = parse_obj_as(Union[CommandResponse, Status], payload)
     validator(obj)
+
+async def test_user_agent(monkeypatch) -> None:
+    expected = f"github.com/opsani/servox/{servo.__version__} (platform {platform.platform()}; namespace test-namespace)"
+
+    # Simulate running as a k8s pod
+    monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
+    telemetry = servo.telemetry.Telemetry()
+
+    assert user_agent_header_with_telemetry(telemetry) == expected

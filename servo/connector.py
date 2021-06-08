@@ -23,6 +23,7 @@ import servo.events
 import servo.logging
 import servo.pubsub
 import servo.repeating
+import servo.telemetry
 import servo.utilities.associations
 from servo.types import *
 
@@ -113,6 +114,10 @@ class BaseConnector(
     def optimizer(self) -> Optional[servo.configuration.Optimizer]:
         """The optimizer for the connector."""
         return self.config.optimizer
+
+    ##
+    # Shared telemetry metadata
+    telemetry: servo.telemetry.Telemetry = pydantic.Field(default_factory=servo.telemetry.Telemetry)
 
     ##
     # Validators
@@ -214,7 +219,7 @@ class BaseConnector(
             "base_url": self.optimizer.url,
             "headers": {
                 "Authorization": f"Bearer {self.optimizer.token.get_secret_value()}",
-                "User-Agent": servo.api.user_agent(),
+                "User-Agent": servo.api.user_agent_header_with_telemetry(self.telemetry),
                 "Content-Type": "application/json",
             },
             "proxies": self._global_config.proxies,

@@ -6,6 +6,7 @@ import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
 import kubernetes.client.models
 import kubernetes.client.exceptions
+import platform
 import pydantic
 import pytest
 import pytest_mock
@@ -15,6 +16,8 @@ from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
+import servo.api
+import servo.assembly
 import servo.connectors.kubernetes
 from servo.connectors.kubernetes import (
     CPU,
@@ -2168,3 +2171,30 @@ class TestSidecarInjection:
                 value_from=None
             ),
         ]
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesClusterConnectorIntegration:
+    """Tests not requiring manifests setup, just an active cluster
+    """
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, assembly: servo.assembly.Assembly):
+        async with client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.VersionApi(api)
+            version_obj = await v1.get_code()
+
+        expected = (
+            f"github.com/opsani/servox/{servo.__version__} (platform {platform.platform()})"
+            f" kubernetes/{version_obj.major}.{version_obj.minor} (namespace {namespace}; platform {version_obj.platform})"
+        )
+
+        connector = KubernetesConnector(config=config)
+        # attach connector
+        await assembly.servos[0].add_connector("kubernetes", connector)
+
+        assert servo.api.user_agent_header_with_telemetry(connector.telemetry) == expected
