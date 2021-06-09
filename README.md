@@ -103,7 +103,7 @@ options under control. The init command will generate one for you.
 # Capture and display a measurement
 ❯ servo measure
 
-# Adjust the memory of web-server to 512MB and cpu of gateway to .8 millicores
+# Adjust the memory of web-server to 512MB and cpu of gateway to 800 millicores
 ❯ servo adjust web.mem=512 gateway.cpu=0.8
 
 # Run the servo to start optimizing
