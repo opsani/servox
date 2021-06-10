@@ -109,7 +109,7 @@ async def running_servo(
 async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -> None:
     await servo_runner.servo.startup()
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+        servo.api.Events.hello, dict(agent=servo.api.user_agent_header_with_telemetry(servo_runner.servo.telemetry))
     )
     debug(response)
     assert response.status == "ok"
@@ -152,7 +152,7 @@ async def test_hello(
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+        servo.api.Events.hello, dict(agent=servo.api.user_agent_header_with_telemetry(servo_runner.servo.telemetry))
     )
     assert response.status == "ok"
 
@@ -211,7 +211,7 @@ async def test_authorization_redacted(
     servo_runner.logger.add(lambda m: messages.append(m), level=5)
 
     await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.user_agent())
+        servo.api.Events.hello, dict(agent=servo.api.user_agent_header_with_telemetry(servo_runner.servo.telemetry))
     )
 
     curlify_log = next(filter(lambda m: "curl" in m, messages))
