@@ -47,7 +47,7 @@ class Optimizer(pydantic.BaseSettings):
 
     id: pydantic.constr(regex=OPTIMIZER_ID_REGEX)
     token: pydantic.SecretStr
-    base_url: pydantic.AnyHttpUrl = "https://api.opsani.com/"
+    base_url: pydantic.AnyHttpUrl = "https://api.opsani.com"
     _organization: str
     _name: str
     __url__: Optional[pydantic.AnyHttpUrl] = None
@@ -59,6 +59,10 @@ class Optimizer(pydantic.BaseSettings):
         self._organization = organization
         self._name = name
         self.__url__ = __url__
+
+    @pydantic.validator("base_url")
+    def _rstrip_slash(cls, url: str) -> str:
+        return url.rstrip("/")
 
     @property
     def organization(self) -> str:
@@ -91,7 +95,7 @@ class Optimizer(pydantic.BaseSettings):
         """
         return (
             self.__url__
-            or f"{self.base_url}accounts/{self.organization}/applications/{self.name}/"
+            or f"{self.base_url}/accounts/{self.organization}/applications/{self.name}/"
         )
 
     class Config:
@@ -99,6 +103,7 @@ class Optimizer(pydantic.BaseSettings):
         case_sensitive = True
         extra = pydantic.Extra.forbid
         underscore_attrs_are_private = True
+        validate_assignment = True
         fields = {
             "token": {
                 "env": "OPSANI_TOKEN",

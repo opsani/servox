@@ -56,3 +56,8 @@ def test_token_exports_to_json() -> None:
     assert isinstance(optimizer, servo.configuration.Optimizer)
     parsed_optimizer = json.loads(optimizer.json())
     assert parsed_optimizer['token'] == '8675309'
+
+def test_base_url_stripping() -> None:
+    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309', 'base_url': 'https://foo.opsani.com/'})
+    assert optimizer.base_url == 'https://foo.opsani.com'
+    assert optimizer.url == 'https://foo.opsani.com/accounts/dev.opsani.com/applications/awesome-app/'

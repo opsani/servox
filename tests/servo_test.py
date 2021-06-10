@@ -785,7 +785,7 @@ class TestAssembly:
                         },
                         'base_url': {
                             'title': 'Base Url',
-                            'default': 'https://api.opsani.com/',
+                            'default': 'https://api.opsani.com',
                             'env': 'OPSANI_BASE_URL',
                             'env_names': [
                                 'OPSANI_BASE_URL',
