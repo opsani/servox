@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] "baseless allegation" - Unreleased
+
+### Fixed
+
+- The Optimizer `base_url` is now normalized to strip a trailing slash to ensure
+  that computed paths are deterministically correct.
+
 ## [0.10.3] "baseless allegation" - 2021-06-06
 
 ### Enhanced
