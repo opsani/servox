@@ -1933,7 +1933,7 @@ class Deployment(KubernetesModel):
             )
 
         restarted_pods_container_statuses = [
-            (pod, cont_stat) for pod in pods for cont_stat in getattr(pod.obj.status, 'container_statuses', [])
+            (pod, cont_stat) for pod in pods for cont_stat in (pod.obj.status.container_statuses or [])
             if cont_stat.restart_count > 0
         ]
         if restarted_pods_container_statuses:
@@ -1952,7 +1952,7 @@ class Deployment(KubernetesModel):
 
         # Unready pod catchall
         unready_pod_conds = [
-            (pod, cond) for pod in pods for cond in getattr(pod.obj.status, 'conditions', [])
+            (pod, cond) for pod in pods for cond in (pod.obj.status.conditions or [])
             if cond.type == "Ready" and cond.status == "False"
         ]
         if unready_pod_conds:
