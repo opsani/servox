@@ -173,15 +173,15 @@ class ProgressHandler:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # pylint: disable=broad-except
-                logger.warning(f"encountered exception while processing progress logging: {repr(error)} (self._exception_handler={self._exception_handler})")
+                logger.warning(f"encountered exception while processing progress logging: {repr(progress)} => {repr(error)}")
                 if self._exception_handler:
                     try:
                         if asyncio.iscoroutinefunction(self._exception_handler):
-                            await self._exception_handler(error)
+                            await self._exception_handler(progress, error)
                         else:
-                            self._exception_handler(error)
+                            self._exception_handler(progress, error)
                     except Exception as inner_error:
-                        logger.critical(f"encountered an exception while attempting to handle a progress reporting exception: {repr(inner_error)} from {repr(error)}")
+                        logger.critical(f"encountered an exception while attempting to handle a progress reporting exception: {repr(progress)} => {repr(inner_error)} from {repr(error)}")
                         raise inner_error from error
                 else:
                     logger.warning(f"ignoring exception raised during progress reporting due to lack of handler: {repr(error)}")

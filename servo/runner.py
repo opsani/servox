@@ -345,7 +345,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
                 )
 
-        async def handle_progress_exception(error: Exception) -> None:
+        async def handle_progress_exception(progress: Dict[str, Any], error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
             if isinstance(error, (servo.errors.UnexpectedEventError, servo.errors.EventCancelledError)):
@@ -359,10 +359,10 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     )
 
                     # Post a status to resolve the operation
-                    event = servo.current_event().event
+                    operation = progress['operation']
                     status = servo.api.Status.from_error(error)
                     runner = self._runner_for_servo(servo.current_servo())
-                    await runner._post_event(servo.api.Events.adjust, status.dict()) # TODO: WRONG EVENT. CONTEXT STATE GETTING UNWOUND
+                    await runner._post_event(operation, status.dict())
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
