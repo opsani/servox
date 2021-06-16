@@ -2405,9 +2405,9 @@ class DeploymentOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
-            # NOTE: Assign to the config to trigger validations
-            setting = getattr(self.container_config, setting_name)
-            setting.value = value
+            # NOTE: use copy + update to apply values that may be outside of the range
+            servo.logger.debug(f"Adjusting {setting_name}={value}")
+            setting = getattr(self.container_config, setting_name).copy(update={"value": value})
 
             # Set only the requirements defined in the config
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
@@ -2565,10 +2565,9 @@ class CanaryOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
-            # NOTE: Assign to the config model to trigger validations
-            setting = getattr(self.container_config, setting_name).copy()
+            # NOTE: use copy + update to apply values that may be outside of the range
             servo.logger.debug(f"Adjusting {setting_name}={value}")
-            setting.value = value
+            setting = getattr(self.container_config, setting_name).copy(update={"value": value})
 
             # Set only the requirements defined in the config
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
