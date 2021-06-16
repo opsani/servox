@@ -219,7 +219,7 @@ class BaseConnector(
             "base_url": self.optimizer.url,
             "headers": {
                 "Authorization": f"Bearer {self.optimizer.token.get_secret_value()}",
-                "User-Agent": servo.api.user_agent_header_with_telemetry(self.telemetry),
+                "User-Agent": servo.api.user_agent(),
                 "Content-Type": "application/json",
             },
             "proxies": self._global_config.proxies,

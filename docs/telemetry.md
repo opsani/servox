@@ -5,8 +5,7 @@ Merged into main with [Pull Request 261](https://github.com/opsani/servox/pull/2
 Features:
 
 * Allows the Servo and Connectors to gather and set arbitrary metadata key/value pairs
-* Provides an api module method to serialize gathered metadata into a [user-agent](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent)
-  string that will be sent on requests to the OCO API
+* Sends collected metadata to the OCO with the HELLO event request
 * Gathers and sends the following metadata out of the box:
   * The servox version
   * The platform that servox is running on (as provided by [platform.platform()](https://docs.python.org/3/library/platform.html#platform.platform))
@@ -49,26 +48,11 @@ class KubernetesConnector(servo.BaseConnector):
         self.telemetry.remove(f"{self.name}.platform")
 ```
 
-## Metadata User Agent Serialization
+## Metadata Serialization
 
-On requests to the Opsani OCO API, the telemetry is serialized set as the user-agent request header
-in the format defined within the [Mozilla User-Agent documentation](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent)
-
-During serialization into a user agent string, the keys of the telemetry object are treated as associations
-between platforms, their details, and whatever arbitrary information is being collected. Keys with no `.`
-seperator are treated as platform to version mappings. Keys containing `.` are treated as platform detail
-mappings. Eg.
-
-* `telemtry["kubernetes"] = 1.0` is serialized as `kubernetes/1.0`
-* `telemtry["kubernetes.namespace"] ="some_namespace"` is serialized as `kubernetes (namespace some_namespace)`
-(assuming a version has not been set for the `kubernetes` platform)
-
-Note that the version of the platform can be specified either with the key of the platform, or
-with the `<platform>.version` key
-
-Note that the `servox` and `servox.*` keys are special case keys which will be serialized
-with a platform of `github.com/opsani/servox`
+On HELLO requests to the Opsani OCO API, the telemetry backing dictionary is serialized and sent as json within the
+`servo.api._post_event()` method
 
 See the following for an example of the out of the box telemetry as serialized to a user-agent:
 
-`github.com/opsani/servox/0.10.3 (platform Linux-5.8.0-55-generic-x86_64-with-glibc2.29) kubernetes/1.20 (namespace kubetest-test-user-agent-1623359159; platform linux/amd64)`
+`{"event": "HELLO", "param": {"agent": "github.com/opsani/servox v0.10.4-alpha.0", "telemetry": {"servox.version": "0.10.4-alpha.0", "servox.platform": "Linux-5.8.0-55-generic-x86_64-with-glibc2.29", "kubernetes.namespace": "kubetest-test-telemetry-hello-1623872048", "kubernetes.version": "1.20", "kubernetes.platform": "linux/amd64"}}}`

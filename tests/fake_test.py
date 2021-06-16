@@ -7,7 +7,6 @@ import fastapi
 import pytest
 
 import servo
-import servo.api
 import servo.runner
 import tests.fake
 from tests.fake import AbstractOptimizer
@@ -100,11 +99,11 @@ async def test_hello_and_describe(
     servo_runner.servo.optimizer.base_url = fakeapi_url
 
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
-    await static_optimizer.say_hello(dict(agent=servo.api.user_agent_header_with_telemetry(servo_runner.servo.telemetry)))
+    await static_optimizer.say_hello(dict(agent=servo.api.user_agent()))
     assert static_optimizer.state == tests.fake.StateMachine.States.ready
 
     response = await servo_runner._post_event(
-        servo.api.Events.hello, dict(agent=servo.api.user_agent_header_with_telemetry(servo_runner.servo.telemetry))
+        servo.api.Events.hello, dict(agent=servo.api.user_agent())
     )
     assert response.status == "ok"
 

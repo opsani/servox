@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Type
 
+import httpx
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
 import kubernetes.client.models
@@ -11,13 +12,12 @@ import pydantic
 import pytest
 import pytest_mock
 import re
+import respx
 import traceback
 from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
-import servo.api
-import servo.assembly
 import servo.connectors.kubernetes
 from servo.connectors.kubernetes import (
     CPU,
@@ -42,6 +42,7 @@ from servo.connectors.kubernetes import (
     ResourceRequirement,
 )
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
+import servo.runner
 from servo.types import Adjustment
 from tests.helpers import *
 
@@ -2183,18 +2184,30 @@ class TestKubernetesClusterConnectorIntegration:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
-    async def test_user_agent(self, namespace: str, config: KubernetesConfiguration, assembly: servo.assembly.Assembly):
+    @respx.mock
+    async def test_telemetry_hello(self, namespace: str, config: KubernetesConfiguration, servo_runner: servo.runner.Runner) -> None:
         async with client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.VersionApi(api)
             version_obj = await v1.get_code()
 
         expected = (
-            f"github.com/opsani/servox/{servo.__version__} (platform {platform.platform()})"
-            f" kubernetes/{version_obj.major}.{version_obj.minor} (namespace {namespace}; platform {version_obj.platform})"
+            f'"telemetry": {{"servox.version": "{servo.__version__}", "servox.platform": "{platform.platform()}", '
+            f'"kubernetes.namespace": "{namespace}", "kubernetes.version": "{version_obj.major}.{version_obj.minor}", "kubernetes.platform": "{version_obj.platform}"}}'
         )
 
-        connector = KubernetesConnector(config=config)
+        connector = KubernetesConnector(config=config, telemetry=servo_runner.servo.telemetry)
         # attach connector
-        await assembly.servos[0].add_connector("kubernetes", connector)
+        await servo_runner.servo.add_connector("kubernetes", connector)
 
-        assert servo.api.user_agent_header_with_telemetry(connector.telemetry) == expected
+        request = respx.post(
+            "https://api.opsani.com/accounts/servox.opsani.com/applications/tests/servo"
+        ).mock(return_value=httpx.Response(200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'))
+
+        await servo_runner._post_event(servo.api.Events.hello, dict(
+            agent=servo.api.user_agent(),
+            telemetry=servo_runner.servo.telemetry.values
+        ))
+
+        assert request.called
+        print(request.calls.last.request.content.decode())
+        assert expected in request.calls.last.request.content.decode()
