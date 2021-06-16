@@ -23,6 +23,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The Optimizer `base_url` is now normalized to strip a trailing slash to ensure
   that computed paths are deterministically correct.
+- Cancellation requests from the optimizer were not being properly respected,
+  resulting in unnecessary delays to cancel operations from the console.
 
 ## [0.10.3] "baseless allegation" - 2021-06-06
 
