@@ -28,6 +28,8 @@ class OLASClient:
                     if out_class:
                         obj = parse_obj_as(out_class, obj)
                     return obj
+                elif res.status == 204:
+                    return data
                 else:
                     err = await res.text()
                     servo.logger.info(f"jsoncall {path} error {res.status}, {err}")
@@ -35,15 +37,15 @@ class OLASClient:
 
     async def upload_message(self, ts, msg):
         msg = sc.Message(ts=float(ts), msg=msg)
-        return await self.jsoncall(f"{self.url}/{self.base}/upload_message", 'put', msg, sc.Id)
+        return await self.jsoncall(f"{self.url}/{self.base}/messages", 'post', msg, sc.Message)
 
     async def upload_config(self, cfgdict):
         cfg = configuration.OLASConfiguration.parse_obj(cfgdict)
-        return await self.jsoncall(f"{self.url}/{self.base}/upload_config", 'put', cfg, sc.Id)
+        return await self.jsoncall(f"{self.url}/{self.base}/config", 'put', cfg, '')
 
     async def predict(self, source):
         traffic = sc.Prediction(src=source)
-        r = await self.jsoncall(f"{self.url}/{self.base}/predict", 'get', traffic, sc.PredictionResult, timeout=30)
+        r = await self.jsoncall(f"{self.url}/{self.base}/prediction", 'get', traffic, sc.PredictionResult, timeout=30)
         if r is None:
             return None
         if r.err:
@@ -53,7 +55,7 @@ class OLASClient:
 
     async def upload_metrics(self, metrics):
         m = sc.Metrics.parse_obj(metrics)
-        return await self.jsoncall(f"{self.url}/{self.base}/upload_metrics", 'put', m, sc.Id)
+        return await self.jsoncall(f"{self.url}/{self.base}/metrics", 'post', m, sc.Id)
 
     async def get_pod_model(self):
-        return await self.jsoncall(f"{self.url}/{self.base}/get_pod_model", 'get', '', sc.PodModelWithId)
+        return await self.jsoncall(f"{self.url}/{self.base}/model", 'get', '', sc.PodModelWithId)
