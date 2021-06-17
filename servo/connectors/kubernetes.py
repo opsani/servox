@@ -3654,7 +3654,7 @@ class KubernetesConnector(servo.BaseConnector):
 
         self.telemetry[f"{self.name}.namespace"] = self.config.namespace
 
-        with self.logger.catch(level="DEBUG", message=f"Unable to set User Agent string for connector {self.name}"):
+        with self.logger.catch(level="DEBUG", message=f"Unable to set version telemetry for connector {self.name}"):
             async with kubernetes_asyncio.client.api_client.ApiClient() as api:
                 v1 =kubernetes_asyncio.client.VersionApi(api)
                 version_obj = await v1.get_code()

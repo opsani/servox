@@ -34,7 +34,7 @@ class KubernetesConnector(servo.BaseConnector):
 
         self.telemetry[f"{self.name}.namespace"] = self.config.namespace
 
-        with self.logger.catch(level="DEBUG", message=f"Unable to set User Agent string for connector {self.name}"):
+        with self.logger.catch(level="DEBUG", message=f"Unable to set version telemtry for connector {self.name}"):
             async with kubernetes_asyncio.client.api_client.ApiClient() as api:
                 v1 =kubernetes_asyncio.client.VersionApi(api)
                 version_obj = await v1.get_code()
@@ -53,6 +53,6 @@ class KubernetesConnector(servo.BaseConnector):
 On HELLO requests to the Opsani OCO API, the telemetry backing dictionary is serialized and sent as json within the
 `servo.api._post_event()` method
 
-See the following for an example of the out of the box telemetry as serialized to a user-agent:
+See the following for an example of the out of the box telemetry as serialized with the HELLO request:
 
 `{"event": "HELLO", "param": {"agent": "github.com/opsani/servox v0.10.4-alpha.0", "telemetry": {"servox.version": "0.10.4-alpha.0", "servox.platform": "Linux-5.8.0-55-generic-x86_64-with-glibc2.29", "kubernetes.namespace": "kubetest-test-telemetry-hello-1623872048", "kubernetes.version": "1.20", "kubernetes.platform": "linux/amd64"}}}`
