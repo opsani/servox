@@ -12,6 +12,16 @@ from pydantic import (
 import servo
 
 
+SUPPORT_MODES = ('CPU_DETECT',
+                 'CPU_PREDICT',
+                 'CPU_TARGET',
+                 'CAP_MONITOR',
+                 'RATE_TARGET',
+                 'HPA',
+                 'NOOP'
+                 )
+
+
 class ScaleTargetRef(BaseModel):
     apiVersion: Optional[StrictStr]
     kind: Optional[StrictStr]
@@ -63,19 +73,25 @@ class Config(BaseModel):
             raise ValueError("'resolution' should be an integer and no less than 1 (denotes 1 minutes).")
         return v
 
+    @validator('mode', always=True)
+    def _validate_mode(cls, v: StrictStr) -> StrictStr:
+        if v.upper() not in SUPPORT_MODES:
+            raise ValueError(f"Mode {v} is not supported. Supported modes are {SUPPORT_MODES}.")
+        return v.upper()
+
     @validator('target', always=True)
     def _validate_target(cls, v: int, values: Dict[str, Any]) -> Union[int, None]:
         mode = values.get('mode')
-        if mode not in ('cpu_target', 'rate_target'):
+        if mode not in ('CPU_TARGET', 'RATE_TARGET'):
             if v is not None:
                 warnings.warn(f"'target' is not required for mode {mode}. Will be ignored.")
             return None
-        if mode == 'cpu_target':
+        if mode == 'CPU_TARGET':
             if v is None:
                 raise ValueError("'target' is required for 'cpu_target' mode. It denotes percent that should be in (0,100].")
             elif v <= 0 or v > 100:
                 raise ValueError("'target' for 'cpu_target' mode denotes percent that should be in (0,100].")
-        if mode == 'rate_target':
+        if mode == 'RATE_TARGET':
             if v is None:
                 raise ValueError("'target' is required for 'rate_target' mode. It denotes rps that should be positive.")
             elif v <= 0:

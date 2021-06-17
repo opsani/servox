@@ -1,9 +1,8 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic import BaseModel
 
 __all__ = [
     "Message",
-    "Prediction",
     "TimeSeries",
     "PredictionResult",
     "Id",
@@ -14,7 +13,6 @@ __all__ = [
     "NodeMetrics",
     "PodMetrics",
     "Metrics",
-    "GetMetrics",
 ]
 
 
@@ -23,18 +21,19 @@ class Message(BaseModel):
     msg: str
 
 
-class Prediction(BaseModel):
-    src: str
-
-
 class TimeSeries(BaseModel):
     ts: float
     value: float
 
 
-class PredictionResult(BaseModel):
+class Prediction(BaseModel):
     value: float
-    err: str = ''
+    error: str
+
+
+class PredictionResult(BaseModel):
+    cpu: Optional[Prediction]
+    rate: Optional[Prediction]
 
 
 class Id(BaseModel):
@@ -96,9 +95,3 @@ class Metrics(BaseModel):
     deployments: List[str] = []
     excluded_deployments: List[str] = []
     replicas: int = 0
-
-
-class GetMetrics(BaseModel):
-    start_ts: float
-    stop_ts: float = 0
-    limit: int = 8192
