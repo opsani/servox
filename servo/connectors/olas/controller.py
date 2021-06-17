@@ -131,7 +131,7 @@ class OLASController:
         self.cpu_window_size = self.cfg.config.sloWindow  # window size
         self.cpu_detect = 0   # cpu_detect is a value between 0 - 1
         servo.logger.info(f"mode: {self.cfg.config.mode}")
-        self.mode = getattr(Mode, self.cfg.config.mode.upper())
+        self.mode = getattr(Mode, self.cfg.config.mode)
         if self.cfg.config.target is None:
             self.target = 0
         elif self.mode == Mode.CPU_TARGET:

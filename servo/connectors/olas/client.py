@@ -44,14 +44,15 @@ class OLASClient:
         return await self.jsoncall(f"{self.url}/{self.base}/config", 'put', cfg, '')
 
     async def predict(self, source):
-        traffic = sc.Prediction(src=source)
-        r = await self.jsoncall(f"{self.url}/{self.base}/prediction", 'get', traffic, sc.PredictionResult, timeout=30)
+        r = await self.jsoncall(f"{self.url}/{self.base}/prediction", 'get', '', sc.PredictionResult, timeout=30)
         if r is None:
             return None
-        if r.err:
-            servo.logger.info(f"Prediction {self.app_id} failed with error: {r.err}")
+        # convert response, a Pydantic model, to a dictionary
+        r = r.dict()
+        if err := r[source]['error']:
+            servo.logger.info(f"Prediction {self.app_id} failed with error: {err}")
             return None
-        return r.value
+        return r[source]['value']
 
     async def upload_metrics(self, metrics):
         m = sc.Metrics.parse_obj(metrics)
