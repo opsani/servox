@@ -711,9 +711,12 @@ class OLASController:
             desired = self.replicas
 
         if desired != self.replicas and self.deployment:
-            servo.logger.info(f"\tscaling from {self.replicas} to {desired} ==============")
-            await self.output_scale(desired)
-            self.replicas = desired
+            if self.cfg.config.dryRun:
+                servo.logger.info(f"\tOLAS suggests scaling from {self.replicas} to {desired} ==============")
+            else:
+                servo.logger.info(f"\tscaling from {self.replicas} to {desired} ==============")
+                await self.output_scale(desired)
+                self.replicas = desired
 
     async def output_scale(self, desired):
         target = self.cfg.scaleTargetRef

@@ -56,6 +56,7 @@ class Config(BaseModel):
     waveLength: int
     resolution: int
     mode: StrictStr
+    dryRun: bool
     target: Optional[int]
     enablePrediction: bool
     coolDown: int
@@ -193,6 +194,7 @@ class OLASConfiguration(servo.BaseConfiguration):
                 waveLength=1440,          # one day in minutes
                 resolution=10,            # 10 minutes
                 mode='cpu_predict',
+                dryRun=True,              # whether to deploy OLAS as an observer - perform all workflows of above "mode" to provide scaling suggestions rather than scale actually
                 enablePrediction=True,
                 coolDown=300,             # 5 minutes
                 tolerance=0.1,
