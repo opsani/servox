@@ -36,7 +36,7 @@ class OLASClient:
                     return None
 
     async def upload_message(self, ts, msg):
-        msg = sc.Message(ts=float(ts), msg=msg)
+        msg = sc.Message(ts=ts, msg=msg)
         return await self.jsoncall(f"{self.url}/{self.base}/messages", 'post', msg, sc.Message)
 
     async def upload_config(self, cfgdict):

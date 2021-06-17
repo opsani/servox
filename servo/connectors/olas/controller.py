@@ -18,6 +18,7 @@ from servo.connectors.olas import kube
 from servo.connectors.olas import prometheus
 from servo.connectors.olas import server_classes
 from servo.connectors.olas.fastpath import Fastpath
+from servo.connectors.olas.utility import epoch_to_str
 
 ERR_ENVOY_NOT_RD = "pod not ready"
 ERR_ENVOY_NO_URL = "no metrics url"
@@ -115,7 +116,7 @@ class OLASController:
         self.cpu_slo = cpu_slo_percent / 100.0
         servo.logger.info(f"time slo: {self.time_slo} cpu slo {self.cpu_slo}")
 
-        self.model_id = 0
+        self.model_id = ''
         self.ps = None
         self.output_array = []
         self.count: int = 0
@@ -448,7 +449,7 @@ class OLASController:
                                          allocation=alloc_index, node=node_index)
 
     async def collect_metrics(self, pods):
-        m = server_classes.Metrics(ts=self.ts, deployments=self.deployments,
+        m = server_classes.Metrics(ts=epoch_to_str(self.ts), deployments=self.deployments,
                                    excluded_deployments=self.excluded_dps)
         m.replicas = len(pods)
         exclude = [p for p in pods
