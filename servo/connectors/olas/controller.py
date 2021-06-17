@@ -765,7 +765,7 @@ class OLASController:
         # TODO: enable CAP_MONITOR mode
         # if self.mode.name == 'CAP_MONITOR' and model_id and model_id.id > self.model_id:
         #     servo.logger.info(f"Fetching new model {model_id.id} from the back end.")
-        #     model = self.client.get_pod_model()
+        #     model = await self.client.get_pod_model()
         #     servo.logger.info(f"Fetched model_id {model.model_id} model size {len(model.model)}")
         #     if model and model.model_id > self.model_id:
         #         servo.logger.info(f'Updating new model "{model.model[:10]}..." from the back end.')
