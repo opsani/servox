@@ -1,5 +1,8 @@
 from typing import List, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
+
+from servo.connectors.olas.utility import str_to_epoch, TIME_STAMP_FORMAT
+
 
 __all__ = [
     "Message",
@@ -16,14 +19,26 @@ __all__ = [
 ]
 
 
+def timestamp_validator(ts: str) -> str:
+    try:
+        str_to_epoch(ts)
+        return ts
+    except ValueError:
+        raise ValueError(f"Time string '{ts}' does not conform to ISO format '{TIME_STAMP_FORMAT}'.")
+
+
 class Message(BaseModel):
-    ts: float
+    ts: str
     msg: str
+
+    _formatted_timestamp = validator('ts', allow_reuse=True)(timestamp_validator)
 
 
 class TimeSeries(BaseModel):
-    ts: float
+    ts: str
     value: float
+
+    _formatted_timestamp = validator('ts', allow_reuse=True)(timestamp_validator)
 
 
 class Prediction(BaseModel):
@@ -37,17 +52,21 @@ class PredictionResult(BaseModel):
 
 
 class Id(BaseModel):
-    id: float
+    id: str
 
 
 class PodModelWithId(BaseModel):
-    model_id: float
+    model_id: str
     model: str
+
+    _formatted_timestamp = validator('model_id', allow_reuse=True)(timestamp_validator)
 
 
 class TrainPodModel(BaseModel):
-    start: float
-    end: float
+    start: str
+    end: str
+
+    _formatted_timestamp = validator('start', 'end', allow_reuse=True)(timestamp_validator)
 
 
 class Allocation(BaseModel):
@@ -85,7 +104,7 @@ class PodMetrics(BaseModel):
 
 
 class Metrics(BaseModel):
-    ts: float
+    ts: str
     metrics: Dict[str, float] = {}
     nodetypes: List[NodeType] = []
     allocations: List[Allocation] = []
@@ -95,3 +114,5 @@ class Metrics(BaseModel):
     deployments: List[str] = []
     excluded_deployments: List[str] = []
     replicas: int = 0
+
+    _formatted_timestamp = validator('ts', allow_reuse=True)(timestamp_validator)
