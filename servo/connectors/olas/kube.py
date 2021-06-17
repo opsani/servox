@@ -39,26 +39,6 @@ class KubeNodeMetrics(BaseModel):
     usage: dict
 
 
-class NodeInfo(BaseModel):
-    ec2type: str
-    cpu_allocatable: float
-    memory_allocatable: float
-    cpu_capacity: float
-    memory_capacity: float
-
-
-class Usage(BaseModel):
-    cpu: float
-    memory: float
-
-
-class Allocation(BaseModel):
-    cpu_request: float = 0
-    cpu_limit: float = 0
-    memory_request: float = 0
-    memory_limit: float = 0
-
-
 async def get_deployment(deploy, ns='default'):
     async with ApiClient() as api:
         appsv1 = kubernetes_asyncio.client.AppsV1Api(api)
@@ -303,8 +283,8 @@ def get_node_memory_allocated_request(nodename, pods):
     return sum(pods) if pods else 0
 
 
-def get_node_allocation(nodename):
-    pods = list_pod_in_node(nodename)
+async def get_node_allocation(nodename):
+    pods = await list_pod_in_node(nodename)
     cpu_r = get_node_cpu_allocated_request(nodename, pods)
     cpu_l = get_node_cpu_allocated_limit(nodename, pods)
     mem_r = get_node_memory_allocated_request(nodename, pods)

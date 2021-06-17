@@ -437,8 +437,8 @@ class OLASController:
                     nodetype_map[ec2type] = len(nodetype_map)
                     m.nodetypes.append(server_classes.NodeType.parse_obj(kube.get_node_info(node)))
                 nodetype_index = nodetype_map[ec2type]
-                nodeusage = kube.get_node_usage(nodename, nm_cache)
-                nodealloc = kube.get_node_allocation(nodename)
+                nodeusage = await kube.get_node_usage(nodename, nm_cache)
+                nodealloc = await kube.get_node_allocation(nodename)
                 node_map[nodename] = len(m.nodes)
                 m.nodes.append(server_classes.NodeMetrics(name=nodename, nodetype=nodetype_index,
                                                           usage=nodeusage, allocation=nodealloc)
