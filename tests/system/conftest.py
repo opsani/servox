@@ -16,7 +16,7 @@ async def servo_image(request) -> str:
     return image
 
 @pytest.fixture
-async def minikube(request, subprocess) -> str:
+async def minikube(request, subprocess, kubeconfig: str) -> str:
     """Run tests within a local minikube profile.
 
     The profile name is determined using the parametrized `minikube_profile` marker
@@ -30,7 +30,7 @@ async def minikube(request, subprocess) -> str:
         profile = "servox"
 
     # Start minikube and configure environment
-    exit_code, _, _ = await subprocess(f"minikube start -p {profile} --interactive=false --keep-context=true --wait=true", print_output=True)
+    exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube start -p {profile} --interactive=false --keep-context=true --wait=true", print_output=True,)
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
@@ -39,7 +39,7 @@ async def minikube(request, subprocess) -> str:
         yield profile
 
     finally:
-        exit_code, _, _ = await subprocess(f"minikube stop -p {profile}", print_output=True)
+        exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True)
         if exit_code != 0:
             raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
