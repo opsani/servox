@@ -3663,9 +3663,9 @@ class KubernetesChecks(servo.BaseChecks):
 
                 vpas_for_deployment = list(filter(
                     lambda vpa: (
-                        vpa['spec']['targetRef']['kind'] == "Deployment" 
+                        vpa['spec']['targetRef']['kind'] == "Deployment"
                         and vpa['spec']['targetRef']['name'] == dep_config.name
-                    ), 
+                    ),
                     vpas_to_check
                 ))
                 if vpas_for_deployment:
