@@ -31,9 +31,13 @@ async def test_run_servo_on_kind(
 ) -> None:
     await subprocess(f"kubectl --kubeconfig={kubeconfig} config view", print_output=True)
     command = (
-        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --rm --wait --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
-    exit_code, stdout, stderr = await subprocess(command, print_output=True, timeout=None)
+    exit_code, _, stderr = await subprocess(command, print_output=True, timeout=None)
     assert exit_code == 0, f"servo image execution failed: {stderr}"
+
+    # workaround for brittleness from https://github.com/kubernetes/kubernetes/issues/27264
+    exit_code, stdout, stderr = await subprocess(f"kubectl --kubeconfig={kubeconfig} --context kind-{kind} logs servo", print_output=True)
+    assert exit_code == 0, f"servo logs failed: {stderr}"
     assert "https://opsani.com/" in "".join(stdout) # lgtm[py/incomplete-url-substring-sanitization]
