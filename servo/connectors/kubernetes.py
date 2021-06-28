@@ -1933,7 +1933,7 @@ class Deployment(KubernetesModel):
             )
 
         restarted_pods_container_statuses = [
-            (pod, cont_stat) for pod in pods for cont_stat in getattr(pod.obj.status, 'container_statuses', [])
+            (pod, cont_stat) for pod in pods for cont_stat in (pod.obj.status.container_statuses or [])
             if cont_stat.restart_count > 0
         ]
         if restarted_pods_container_statuses:
@@ -1952,7 +1952,7 @@ class Deployment(KubernetesModel):
 
         # Unready pod catchall
         unready_pod_conds = [
-            (pod, cond) for pod in pods for cond in getattr(pod.obj.status, 'conditions', [])
+            (pod, cond) for pod in pods for cond in (pod.obj.status.conditions or [])
             if cond.type == "Ready" and cond.status == "False"
         ]
         if unready_pod_conds:
@@ -3635,6 +3635,45 @@ class KubernetesChecks(servo.BaseChecks):
                 raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
         return self.config.deployments, check_deployment
+
+    @servo.multicheck('Deployment "{item.name}" is not managed by a vertical pod autoscaler')
+    async def check_deployments_for_vpa(self) -> Tuple[Iterable, servo.CheckHandler]:
+        async def check_deployment_vpa(dep_config: DeploymentConfiguration) -> None:
+            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+                # Determine stored version(s) of VPA
+                api_extensions_client = kubernetes_asyncio.client.ApiextensionsV1Api(api)
+                try:
+                    with servo.logger.catch(level="WARNING", reraise=True, message="Unable to read Vertical Pod Autoscaler CRD"):
+                        vpa_crd = await api_extensions_client.read_custom_resource_definition(name="verticalpodautoscalers.autoscaling.k8s.io")
+                except Exception:
+                    # VPA likely not present or we don't have permission to check for it. error was logged
+                    return
+
+                # List VPAs for each stored version
+                vpas_to_check = []
+                custom_objects_client = kubernetes_asyncio.client.CustomObjectsApi(api)
+                for version in vpa_crd.status.stored_versions:
+                    vpas_for_ver = await custom_objects_client.list_namespaced_custom_object(
+                        group="autoscaling.k8s.io",
+                        version=version,
+                        namespace=dep_config.namespace,
+                        plural="verticalpodautoscalers"
+                    )
+                    vpas_to_check.extend(vpas_for_ver['items'])
+
+                vpas_for_deployment = list(filter(
+                    lambda vpa: (
+                        vpa['spec']['targetRef']['kind'] == "Deployment"
+                        and vpa['spec']['targetRef']['name'] == dep_config.name
+                    ),
+                    vpas_to_check
+                ))
+                if vpas_for_deployment:
+                    # Should only be 1 VPA per dep in sane setups but you never know
+                    vpa_name = ", ".join(list(map(lambda vpa: vpa["metadata"]["name"], vpas_for_deployment)))
+                    raise RuntimeError(f'Deployment "{dep_config.name}" is managed by VPA "{vpa_name}"')
+
+        return self.config.deployments, check_deployment_vpa
 
 
 @servo.metadata(
