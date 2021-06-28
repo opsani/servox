@@ -78,7 +78,7 @@ class ProgressHandler:
         progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]],
         error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
         exception_handler: Optional[
-            Callable[[Exception], Union[None, Awaitable[None]]]
+            Callable[[Dict[str, Any], Exception], Union[None, Awaitable[None]]]
         ] = None,
     ) -> None: # noqa: D107
         self._progress_reporter = progress_reporter

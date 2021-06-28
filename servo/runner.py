@@ -370,6 +370,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
 
+                await asyncio.gather(*tasks, return_exceptions=True)
+
                 # Restart a fresh main loop
                 if poll:
                     runner = self._runner_for_servo(servo.current_servo())
