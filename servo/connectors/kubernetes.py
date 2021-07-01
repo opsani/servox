@@ -3616,14 +3616,23 @@ class KubernetesChecks(servo.BaseChecks):
             dep_config: DeploymentConfiguration,
         ) -> str:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            for container in deployment.containers:
-                assert container.resources
-                assert container.resources.requests
-                assert container.resources.requests["cpu"]
-                assert container.resources.requests["memory"]
-                assert container.resources.limits
-                assert container.resources.limits["cpu"]
-                assert container.resources.limits["memory"]
+            for cont_config in dep_config.containers:
+                container = deployment.find_container(cont_config.name)
+                assert container, f"Deployment {dep_config.name} has no container {cont_config.name}"
+
+                for resource in {'cpu', 'memory'}:
+                    baseline = None
+                    container_requirements = container.get_resource_requirements(resource)
+                    get_requirements = getattr(cont_config, resource).get
+                    for requirement in get_requirements:
+                        baseline = container_requirements.get(requirement)
+                        if baseline:
+                            break
+
+                    assert baseline, (
+                        f"Deployment {dep_config.name} target container {cont_config.name} has no baseline for {resource} "
+                        f"(configured get: {', '.join(map(lambda req: req.resources_key, get_requirements))})"
+                    )
 
         return self.config.deployments, check_dep_resource_requirements
 
