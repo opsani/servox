@@ -3630,8 +3630,8 @@ class KubernetesChecks(servo.BaseChecks):
                             break
 
                     assert baseline, (
-                        f"Deployment {dep_config.name} target container {cont_config.name} has no baseline for {resource} "
-                        f"(configured get: {', '.join(map(lambda req: req.resources_key, get_requirements))})"
+                        f"Deployment {dep_config.name} target container {cont_config.name} has no baseline for {resource}. "
+                        f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
                     )
 
         return self.config.deployments, check_dep_resource_requirements
