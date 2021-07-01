@@ -47,10 +47,10 @@ jobs:
         uses: actions/cache@v2
         id: cached-poetry
         with:
-          path: |
-            ~/.local/share/pypoetry
-            ~/.local/bin/poetry
-          key: poetry-${{ runner.os }}-1.1.5
+          path: ~/.local/share/pypoetry
+          # NOTE: cache cannot be cleared, cN added as cache verion
+          # https://github.com/actions/cache/issues/2
+          key: poetry-${{ runner.os }}-1.1.5-c1
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1.1.6
         if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -58,6 +58,11 @@ jobs:
           version: 1.1.5
           virtualenvs-create: true
           virtualenvs-in-project: true
+      # NOTE: cache wasn't working with multiple files so have to reproduce some of the poetry setup
+      # https://github.com/python-poetry/poetry/blob/22c3aaddc20ad74d3633738093f685fd6dbb998a/install-poetry.py#L532-L561
+      - name: Symlink poetry bin
+        run: ln -s ~/.local/share/pypoetry/venv/bin/poetry ~/.local/bin/poetry
+        if: steps.cached-poetry.outputs.cache-hit == 'true'
       - name: Source Poetry env
         run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -102,10 +107,10 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: |
-          ~/.local/share/pypoetry
-          ~/.local/bin/poetry
-        key: poetry-${{ runner.os }}-1.1.5
+        path: ~/.local/share/pypoetry
+        # NOTE: cache cannot be cleared, cN added as cache verion
+        # https://github.com/actions/cache/issues/2
+        key: poetry-${{ runner.os }}-1.1.5-c1
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -113,6 +118,11 @@ jobs:
         version: 1.1.5
         virtualenvs-create: true
         virtualenvs-in-project: true
+    # NOTE: cache wasn't working with multiple files so have to reproduce some of the poetry setup
+    # https://github.com/python-poetry/poetry/blob/22c3aaddc20ad74d3633738093f685fd6dbb998a/install-poetry.py#L532-L561
+    - name: Symlink poetry bin
+      run: ln -s ~/.local/share/pypoetry/venv/bin/poetry ~/.local/bin/poetry
+      if: steps.cached-poetry.outputs.cache-hit == 'true'
     - name: Source Poetry env
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -168,10 +178,10 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: |
-          ~/.local/share/pypoetry
-          ~/.local/bin/poetry
-        key: poetry-${{ runner.os }}-1.1.5
+        path: ~/.local/share/pypoetry
+        # NOTE: cache cannot be cleared, cN added as cache verion
+        # https://github.com/actions/cache/issues/2
+        key: poetry-${{ runner.os }}-1.1.5-c1
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -179,6 +189,11 @@ jobs:
         version: 1.1.5
         virtualenvs-create: true
         virtualenvs-in-project: true
+    # NOTE: cache wasn't working with multiple files so have to reproduce some of the poetry setup
+    # https://github.com/python-poetry/poetry/blob/22c3aaddc20ad74d3633738093f685fd6dbb998a/install-poetry.py#L532-L561
+    - name: Symlink poetry bin
+      run: ln -s ~/.local/share/pypoetry/venv/bin/poetry ~/.local/bin/poetry
+      if: steps.cached-poetry.outputs.cache-hit == 'true'
     - name: Source Poetry env
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
@@ -250,10 +265,10 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: |
-          ~/.local/share/pypoetry
-          ~/.local/bin/poetry
-        key: poetry-${{ runner.os }}-1.1.5
+        path: ~/.local/share/pypoetry
+        # NOTE: cache cannot be cleared, cN added as cache verion
+        # https://github.com/actions/cache/issues/2
+        key: poetry-${{ runner.os }}-1.1.5-c1
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.6
       if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -261,6 +276,11 @@ jobs:
         version: 1.1.5
         virtualenvs-create: true
         virtualenvs-in-project: true
+    # NOTE: cache wasn't working with multiple files so have to reproduce some of the poetry setup
+    # https://github.com/python-poetry/poetry/blob/22c3aaddc20ad74d3633738093f685fd6dbb998a/install-poetry.py#L532-L561
+    - name: Symlink poetry bin
+      run: ln -s ~/.local/share/pypoetry/venv/bin/poetry ~/.local/bin/poetry
+      if: steps.cached-poetry.outputs.cache-hit == 'true'
     - name: Source Poetry env
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
