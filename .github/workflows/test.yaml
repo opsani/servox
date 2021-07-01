@@ -50,7 +50,7 @@ jobs:
           path: ~/.local/share/pypoetry
           # NOTE: cache cannot be cleared, cN added as cache verion
           # https://github.com/actions/cache/issues/2
-          key: poetry-${{ runner.os }}-1.1.5-c1
+          key: poetry-${{ runner.os }}-1.1.5-c2
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1.1.6
         if: steps.cached-poetry.outputs.cache-hit != 'true'
@@ -65,6 +65,7 @@ jobs:
         if: steps.cached-poetry.outputs.cache-hit == 'true'
       - name: Source Poetry env
         run: |
+          realpath ~/.local/bin/poetry
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           export PATH="$HOME/.local/bin:$PATH"
           poetry config virtualenvs.create true
