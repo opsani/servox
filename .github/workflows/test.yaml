@@ -58,12 +58,6 @@ jobs:
           virtualenvs-in-project: true
       - name: Ensure Poetry is on GITHUB_PATH
         run: |
-          # echo $PATH
-          # poetry env info
-          # ls -al ~/.local
-          # source "$HOME"/.poetry/env
-          # poetry config virtualenvs.create true
-          # poetry config virtualenvs.in-project true
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Set up dependencies cache
         uses: actions/cache@v2
@@ -83,13 +77,8 @@ jobs:
           key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
       - name: Install root project
         # NOTE: Skipping root project install accelerates cases where only tests have changed
-        # if: steps.cached-project.outputs.cache-hit != 'true'
+        if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
-      # - name: Show .local
-      #   run: |
-      #     echo $PATH
-      #     poetry env info
-      #     tree ~/.local/venv
 
   unit:
     needs:
@@ -124,7 +113,7 @@ jobs:
         name: test-reports
         path: artifacts/
     - name: Test CLI entrypoints
-      run: poetry run servo version
+      run: servo version
 
   integration:
     name: Run Integration Tests
