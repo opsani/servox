@@ -113,7 +113,9 @@ jobs:
         name: test-reports
         path: artifacts/
     - name: Test CLI entrypoints
-      run: servo version
+      run: |
+        source .venv/bin/activate
+        servo version
 
   integration:
     name: Run Integration Tests
