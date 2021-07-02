@@ -165,9 +165,6 @@ jobs:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
-    - name: Ensure Poetry is on GITHUB_PATH
-      run: |
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: Run integration tests
       run: |
         source .venv/bin/activate
@@ -199,6 +196,15 @@ jobs:
       with:
         python-version: '3.8'
         architecture: x64
+    - name: Set up Poetry cache
+      uses: actions/cache@v2
+      id: cached-poetry
+      with:
+        path: ~/.local
+        key: poetry-${{ runner.os }}-1.1.7a
+    - name: Ensure Poetry is on GITHUB_PATH
+      run: |
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project

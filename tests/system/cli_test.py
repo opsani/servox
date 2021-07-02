@@ -8,7 +8,7 @@ import pytest
 import tests.helpers
 
 # FIXME: This file should be getting marked as integration automatically
-pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+pytestmark = [pytest.mark.asyncio, pytest.mark.system]
 
 # NOTE: Use module level functions so that we don't have to install multiple times
 
