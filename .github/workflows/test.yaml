@@ -83,14 +83,13 @@ jobs:
           key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
       - name: Install root project
         # NOTE: Skipping root project install accelerates cases where only tests have changed
-        if: steps.cached-project.outputs.cache-hit != 'true'
+        # if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
       - name: Show .local
         run: |
           echo $PATH
           poetry env info
-          ls -al ~/.local
-          tree ~/.local
+          tree ~/.local/venv
 
   unit:
     needs:
@@ -154,19 +153,6 @@ jobs:
       with:
         path: ~/.poetry
         key: poetry-${{ runner.os }}-1.1.7
-    - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.6
-      # if: steps.cached-poetry.outputs.cache-hit != 'true'
-      with:
-        version: 1.1.7
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-    # - name: Source Poetry env
-    #   run: |
-    #     source "$HOME"/.poetry/env
-    #     poetry config virtualenvs.create true
-    #     poetry config virtualenvs.in-project true
-    #     echo "$HOME/.poetry/bin" >> $GITHUB_PATH
     - name: Install Vegeta
       run: |
         wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
@@ -178,9 +164,6 @@ jobs:
       with:
         path: .venv
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
-    - name: Install root project
-      if: steps.cached-project.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -195,12 +178,12 @@ jobs:
       shell: bash
       env:
         KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-
     - name: Install AWS IAM Authenticator
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run integration tests
       run: |
-        poetry run pytest -n 8 \
+        source .venv/bin/activate
+        pytest -n 8 \
           -T integration --verbose --durations=0 --durations-min=5
     - uses: actions/upload-artifact@v2
       with:
@@ -228,34 +211,12 @@ jobs:
       with:
         python-version: '3.8'
         architecture: x64
-    - name: Set up Poetry cache
-      uses: actions/cache@v2
-      id: cached-poetry
-      with:
-        path: ~/.poetry
-        key: poetry-${{ runner.os }}-1.1.7
-    - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.6
-      # if: steps.cached-poetry.outputs.cache-hit != 'true'
-      with:
-        version: 1.1.7
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-    # - name: Source Poetry env
-    #   run: |
-    #     source "$HOME"/.poetry/env
-    #     poetry config virtualenvs.create true
-    #     poetry config virtualenvs.in-project true
-    #     echo "$HOME/.poetry/bin" >> $GITHUB_PATH
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
       with:
         path: .venv
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
-    - name: Install root project
-      if: steps.cached-project.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -295,7 +256,8 @@ jobs:
       uses: prepor/action-aws-iam-authenticator@master
     - name: Run system tests
       run: |
-        poetry run pytest -n 6 \
+        source .venv/bin/activate
+        pytest -n 6 \
           -T system --verbose --durations=0 --durations-min=5
     - uses: actions/upload-artifact@v2
       with:
