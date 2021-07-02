@@ -56,19 +56,31 @@ jobs:
           version: 1.1.7
           virtualenvs-create: true
           virtualenvs-in-project: true
-      - name: Ensure Poetry is on GITHUB_PATH
+      - name: Initialize Poetry
+        # NOTE: We have to apply the config options to cover cases where the install-poetry action is skipped but we have new deps
         run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
       - name: Set up dependencies cache
         uses: actions/cache@v2
         id: cached-poetry-dependencies
         with:
           path: .venv
-          key: servox-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
+      # NOTE: Install our root project into the venv cache without busting it
+      - name: Set up root + dependencies cache
+        uses: actions/cache@v2
+        id: cached-project
+        with:
+          path: .venv
+          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
       - name: Install root project
+        # NOTE: Skipping root project install accelerates cases where only tests have changed
+        if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
   unit:
@@ -84,12 +96,12 @@ jobs:
       with:
         python-version: '3.8'
         architecture: x64
-    - name: Load venv cache
+    - name: Set up root + dependencies cache
       uses: actions/cache@v2
-      id: cached-poetry-dependencies
+      id: cached-project
       with:
         path: .venv
-        key: servox-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Run tests
       run: |
         source .venv/bin/activate
@@ -134,12 +146,12 @@ jobs:
         wget https://github.com/tsenart/vegeta/releases/download/v12.8.4/vegeta_12.8.4_linux_amd64.tar.gz
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
-    - name: Load venv cache
+    - name: Set up root + dependencies cache
       uses: actions/cache@v2
-      id: cached-poetry-dependencies
+      id: cached-project
       with:
         path: .venv
-        key: servox-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -196,12 +208,12 @@ jobs:
     - name: Ensure Poetry is on GITHUB_PATH
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
-    - name: Load venv cache
+    - name: Set up root + dependencies cache
       uses: actions/cache@v2
-      id: cached-poetry-dependencies
+      id: cached-project
       with:
         path: .venv
-        key: servox-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
