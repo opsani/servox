@@ -64,9 +64,9 @@ jobs:
         id: cached-poetry-dependencies
         with:
           path: .venv
-          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+          key: servox-.venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
       - name: Install dependencies
-        # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
       # NOTE: Install our root project into the venv cache without busting it
       - name: Set up root + dependencies cache
@@ -74,10 +74,10 @@ jobs:
         id: cached-project
         with:
           path: .venv
-          key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+          key: servox-.venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
       - name: Install root project
         # NOTE: Skipping root project install accelerates cases where only tests have changed
-        # if: steps.cached-project.outputs.cache-hit != 'true'
+        if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
   unit:
@@ -98,7 +98,7 @@ jobs:
       id: cached-project
       with:
         path: .venv
-        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+        key: servox-.venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Run tests
       run: |
         source .venv/bin/activate
@@ -148,7 +148,7 @@ jobs:
       id: cached-project
       with:
         path: .venv
-        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+        key: servox-.venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -210,7 +210,7 @@ jobs:
       id: cached-project
       with:
         path: .venv
-        key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
+        key: servox-.venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
