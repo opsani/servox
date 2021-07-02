@@ -90,7 +90,6 @@ jobs:
           echo $PATH
           poetry env info
           ls -al ~/.local
-          cat ~/.local/venv
           tree ~/.local
 
   unit:
@@ -106,38 +105,16 @@ jobs:
       with:
         python-version: '3.8'
         architecture: x64
-    - name: Set up Poetry cache
-      uses: actions/cache@v2
-      id: cached-poetry
-      with:
-        path: .venv
-        key: poetry-${{ runner.os }}-1.1.7
-    - name: Install and configure Poetry
-      uses: snok/install-poetry@v1.1.6
-      if: steps.cached-poetry.outputs.cache-hit != 'true'
-      with:
-        version: 1.1.7
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-    - name: Source Poetry env
-      run: |
-        source .venv/bin/activate
-        # source "$HOME"/.poetry/env
-        # poetry config virtualenvs.create true
-        # poetry config virtualenvs.in-project true
-        # echo "$HOME/.poetry/bin" >> $GITHUB_PATH
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
       with:
         path: .venv
         key: .venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock', 'servo/**/*.py') }}
-    - name: Install root project
-      if: steps.cached-project.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction
     - name: Run tests
       run: |
-        poetry run pytest -T unit -n 6 \
+        source .venv/bin/activate
+        pytest -T unit -n 6 \
           --cov=servo --cov-config=setup.cfg --doctest-modules \
           --cov-report=term-missing:skip-covered \
           --cov-report=xml:artifacts/coverage.xml --cov-report=html:artifacts/coverage-html \
@@ -148,7 +125,7 @@ jobs:
         name: test-reports
         path: artifacts/
     - name: Test CLI entrypoints
-      run: poetry run servo version
+      run: servo version
 
   integration:
     name: Run Integration Tests
