@@ -166,6 +166,10 @@ EVENT_LOOP_POLICY_INI = (
     'The `event_loop_policy` fixture determines what event loop policy is registered '
     'at runtime and respects the value of this marker.'
 )
+MINIKUBE_PROFILE_INI = (
+    'minikube_profile: marks tests using minikube to run under the profile specified'
+    'in the first marker argument. Eg. pytest.mark.minikube_profile.with_args(MINIKUBE_PROFILE)'
+)
 
 def pytest_configure(config) -> None:
     """Register custom markers for use in the test suite."""
@@ -173,6 +177,7 @@ def pytest_configure(config) -> None:
     config.addinivalue_line("markers", INTEGRATION_INI)
     config.addinivalue_line("markers", SYSTEM_INI)
     config.addinivalue_line("markers", EVENT_LOOP_POLICY_INI)
+    config.addinivalue_line("markers", MINIKUBE_PROFILE_INI)
 
     # Add generic description for all environments
     for key, value in Environment.__members__.items():
