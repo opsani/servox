@@ -60,8 +60,7 @@ jobs:
         run: |
           echo $PATH
           poetry env info
-          ls ~/.local; true
-          ls ~/.poetry; true
+          ls -al ~/.local
           # source "$HOME"/.poetry/env
           # poetry config virtualenvs.create true
           # poetry config virtualenvs.in-project true
@@ -86,6 +85,11 @@ jobs:
         # NOTE: Skipping root project install accelerates cases where only tests have changed
         if: steps.cached-project.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
+      - name: Show .local
+        run: |
+          echo $PATH
+          poetry env info
+          ls -al ~/.local
 
   unit:
     needs:
