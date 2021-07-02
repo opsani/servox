@@ -108,21 +108,22 @@ jobs:
       uses: actions/cache@v2
       id: cached-poetry
       with:
-        path: ~/.poetry
+        path: .venv
         key: poetry-${{ runner.os }}-1.1.7
     - name: Install and configure Poetry
       uses: snok/install-poetry@v1.1.6
-      # if: steps.cached-poetry.outputs.cache-hit != 'true'
+      if: steps.cached-poetry.outputs.cache-hit != 'true'
       with:
         version: 1.1.7
         virtualenvs-create: true
         virtualenvs-in-project: true
-    # - name: Source Poetry env
-    #   run: |
-    #     source "$HOME"/.poetry/env
-    #     poetry config virtualenvs.create true
-    #     poetry config virtualenvs.in-project true
-    #     echo "$HOME/.poetry/bin" >> $GITHUB_PATH
+    - name: Source Poetry env
+      run: |
+        source .venv/bin/activate
+        # source "$HOME"/.poetry/env
+        # poetry config virtualenvs.create true
+        # poetry config virtualenvs.in-project true
+        # echo "$HOME/.poetry/bin" >> $GITHUB_PATH
     - name: Set up root + dependencies cache
       uses: actions/cache@v2
       id: cached-project
