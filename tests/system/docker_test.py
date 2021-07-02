@@ -31,7 +31,7 @@ async def test_run_servo_on_kind(
 ) -> None:
     await subprocess(f"kubectl --kubeconfig={kubeconfig} config view", print_output=True)
     command = (
-        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --attach --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
+        f'kubectl --kubeconfig={kubeconfig} --context kind-{kind} run servo --pod-running-timeout=5m --attach --image-pull-policy=Never --restart=Never --image="{kind_servo_image}" --'
         " --optimizer example.com/app --token 123456 version"
     )
     exit_code, _, stderr = await subprocess(command, print_output=True, timeout=None)
