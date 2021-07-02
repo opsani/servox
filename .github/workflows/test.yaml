@@ -90,6 +90,8 @@ jobs:
           echo $PATH
           poetry env info
           ls -al ~/.local
+          cat ~/.local/venv
+          tree ~/.local
 
   unit:
     needs:
