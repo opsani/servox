@@ -3385,7 +3385,7 @@ STANDARD_PERMISSIONS = [
     PermissionSet(
         group="",
         resources=["namespaces"],
-        verbs=["get", "list"],
+        verbs=["get"],
     ),
     PermissionSet(
         group="",
