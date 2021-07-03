@@ -18,11 +18,6 @@ KUBERNETES_PERMISSIONS = [
     ),
     servo.connectors.kubernetes.PermissionSet(
         group="",
-        resources=["namespaces"],
-        verbs=["get", "list"],
-    ),
-    servo.connectors.kubernetes.PermissionSet(
-        group="",
         resources=["pods", "pods/logs", "pods/status", "pods/exec", "pods/portforward", "services"],
         verbs=["create", "delete", "get", "list", "watch", "update", "patch"],
     ),
