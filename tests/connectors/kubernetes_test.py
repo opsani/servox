@@ -1031,7 +1031,10 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.') as rejection_info:
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=re.escape("Insufficient memory. Unschedulable adjustment value: fiber-http/fiber-http.mem=128Gi (Reason unschedulable)")
+        ) as rejection_info:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
@@ -1109,7 +1112,10 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi", # impossible right?
         )
-        with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=re.escape("Insufficient memory. Unschedulable adjustment value: fiber-http/fiber-http-tuning.mem=128Gi (Reason unschedulable)")
+        ) as rejection_info:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context

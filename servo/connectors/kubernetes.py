@@ -895,7 +895,7 @@ class Pod(KubernetesModel):
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
         """Raise an exception if the Pod status is not not ready."""
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
@@ -928,7 +928,8 @@ class Pod(KubernetesModel):
         for cond in status.conditions:
             if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
-                raise servo.AdjustmentRejectedError(cond.message, reason="unschedulable")
+                unschedulable_adjustment = next(filter(lambda a: a.setting_name in cond.message, adjustments), None)
+                raise servo.AdjustmentRejectedError(f"{cond.message} Unschedulable adjustment value: {unschedulable_adjustment}", reason="unschedulable")
 
             if cond.type == "Ready" and cond.status == "False":
                 raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
@@ -1316,6 +1317,11 @@ class Service(KubernetesModel):
         pods = [Pod(p) for p in pod_list.items]
         return pods
 
+
+class WatchTimeoutError(Exception):
+    """The kubernetes watch timeout has elapsed. The api client raises no error
+    on timeout expiration so this should be raised in fall-through logic.
+    """
 
 class Deployment(KubernetesModel):
     """Kubetest wrapper around a Kubernetes `Deployment`_ API Object.
@@ -1838,7 +1844,7 @@ class Deployment(KubernetesModel):
                         return
 
             # watch doesn't raise a timeoutError when when elapsed, treat fall through as timeout
-            await self.raise_for_status()
+            raise WatchTimeoutError()
 
 
 
@@ -1880,7 +1886,7 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
         self.logger.trace(f"current deployment status is {status}")
@@ -1892,13 +1898,13 @@ class Deployment(KubernetesModel):
 
         # Check for failure conditions
         self._check_conditions(status.conditions)
-        await self.raise_for_pod_status()
+        await self.raise_for_pod_status(adjustments=adjustments)
 
         # Catchall
         self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
         raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
 
-    async def raise_for_pod_status(self):
+    async def raise_for_pod_status(self, adjustments: List[servo.Adjustment]):
         pods = await self.get_latest_pods()
         self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
@@ -1908,14 +1914,17 @@ class Deployment(KubernetesModel):
             )
         ]
         if unschedulable_pods:
-            pod_fmts = []
+            pod_messages = []
             for pod in unschedulable_pods:
-                cond_msgs = "; ".join(cond.message for cond in pod.obj.status.conditions if cond.reason == "Unschedulable")
-                pod_fmts.append(f"{pod.obj.metadata.name} - {cond_msgs}")
+                cond_msgs = []
+                for unschedulable_condition in filter(lambda cond: cond.reason == "Unschedulable", pod.obj.status.conditions):
+                    unschedulable_adjustment = next(filter(lambda a: a.setting_name in unschedulable_condition.message, adjustments), None)
+                    cond_msgs.append(f"{unschedulable_condition.message} Unschedulable adjustment value: {unschedulable_adjustment}")
 
-            fmt_str = ", ".join(pod_fmts)
+                pod_messages.append(f"{pod.obj.metadata.name} - {'; '.join(cond_msgs)}")
+
             raise servo.AdjustmentRejectedError(
-                f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {fmt_str}",
+                f"{len(unschedulable_pods)} pod(s) could not be scheduled for deployment {self.name}: {', '.join(pod_messages)}",
                 reason="unschedulable"
             )
 
@@ -2129,10 +2138,19 @@ def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str,
 class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
     """
     BaseOptimization is the base class for concrete implementations of optimization strategies.
+
+    Attributes:
+        name (str): The name of the Optimization. Used to set the name for the corresponding component.
+        timeout (Duration): Time interval to wait before considering Kubernetes operations to have failed.
+        adjustments (List[Adjustment]): List of adjustments applied to this optimization (NOTE optimizations are re-created for each
+            event dispatched to the connector. Thus, this value will only be populated during adjust event handling with only the adjustments
+            pertaining to that adjust event dispatch)
     """
 
     name: str
     timeout: servo.Duration
+
+    adjustments: List[servo.Adjustment] = []
 
     @abc.abstractclassmethod
     async def create(
@@ -2142,7 +2160,7 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         ...
 
     @abc.abstractmethod
-    async def adjust(
+    def adjust(
         self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()
     ) -> servo.Description:
         """
@@ -2401,6 +2419,7 @@ class DeploymentOptimization(BaseOptimization):
         Adjustments do not take effect on the cluster until the `apply` method is invoked
         to enable aggregation of related adjustments and asynchronous application.
         """
+        self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
 
@@ -2463,9 +2482,13 @@ class DeploymentOptimization(BaseOptimization):
         # The resource_version attribute lets us efficiently watch for changes
         # reference: https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes
         """
-        async with self.deployment.rollout(timeout=self.timeout) as deployment:
-            # Patch the Deployment via the Kubernetes API
-            await deployment.patch()
+        try:
+            async with self.deployment.rollout(timeout=self.timeout) as deployment:
+                # Patch the Deployment via the Kubernetes API
+                await deployment.patch()
+        except WatchTimeoutError:
+            servo.logger.error(f"Timed out waiting for Deployment to become ready...")
+            await self.raise_for_status()
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -2476,7 +2499,7 @@ class DeploymentOptimization(BaseOptimization):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.deployment.raise_for_status()
+        await self.deployment.raise_for_status(adjustments=self.adjustments)
 
 
 # TODO: Break down into CanaryDeploymentOptimization and CanaryContainerOptimization
@@ -2561,6 +2584,7 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod, "Tuning Pod not loaded"
         assert self.tuning_container, "Tuning Container not loaded"
 
+        self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
 
@@ -2795,7 +2819,7 @@ class CanaryOptimization(BaseOptimization):
                     await t
                     servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
 
-            await tuning_pod.raise_for_status()
+            await tuning_pod.raise_for_status(adjustments=self.adjustments)
 
         # Load the in memory model for various convenience accessors
         await tuning_pod.refresh()
@@ -3016,7 +3040,7 @@ class CanaryOptimization(BaseOptimization):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.tuning_pod.raise_for_status()
+        await self.tuning_pod.raise_for_status(adjustments=self.adjustments)
 
 
     class Config:
