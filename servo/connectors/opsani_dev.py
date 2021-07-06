@@ -19,7 +19,7 @@ KUBERNETES_PERMISSIONS = [
     servo.connectors.kubernetes.PermissionSet(
         group="",
         resources=["namespaces"],
-        verbs=["get", "list"],
+        verbs=["get"],
     ),
     servo.connectors.kubernetes.PermissionSet(
         group="",
