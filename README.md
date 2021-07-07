@@ -1020,7 +1020,7 @@ You can take control of the banner output with two environment variables:
    workflow. The framework is packaged into a Python library and published to
    [PyPi](https://pypi.org/project/servox/) and Docker images are built and
    published to
-   [DockerHub](https://hub.docker.com/repository/docker/opsani/servox).
+   [Docker Hub](https://hub.docker.com/repository/docker/opsani/servox).
 1. Verify the new image, with tag `vX.Y.Z`, has been published in [Docker
    Hub](https://hub.docker.com/repository/docker/opsani/servox/tags).
 

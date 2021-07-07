@@ -194,6 +194,7 @@ class Subprocess:
             timeout=timeout,
             stdout_callback=create_output_callback("stdout", stdout),
             stderr_callback=create_output_callback("stderr", stderr),
+            **kwargs,
         )
         return SubprocessResult(return_code, stdout, stderr)
 

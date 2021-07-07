@@ -137,12 +137,18 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             return await self._post_event(servo.api.Events.describe, status.dict())
 
         elif cmd_response.command == servo.api.Commands.measure:
-            measurement = await self.measure(cmd_response.param)
-            self.logger.success(
-                f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
-            )
-            self.logger.trace(devtools.pformat(measurement))
-            param = measurement.__opsani_repr__()
+            try:
+                measurement = await self.measure(cmd_response.param)
+                self.logger.success(
+                    f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
+                )
+                self.logger.trace(devtools.pformat(measurement))
+                param = measurement.__opsani_repr__()
+            except servo.errors.EventError as error:
+                self.logger.info(f"Measurement failed: {error}")
+                param = servo.api.Status.from_error(error)
+                self.logger.opt(exception=error).debug("Measure failure details")
+
             return await self._post_event(servo.api.Events.measure, param)
 
         elif cmd_response.command == servo.api.Commands.adjust:
@@ -160,7 +166,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.success(
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
-            except servo.AdjustmentFailedError as error:
+            except servo.EventError as error:
                 self.logger.info(f"Adjustment failed: {error}")
                 status = servo.api.Status.from_error(error)
                 self.logger.opt(exception=error).debug("Adjust failure details")
@@ -342,24 +348,32 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
                 )
 
-        def handle_progress_exception(error: Exception) -> None:
+        async def handle_progress_exception(progress: Dict[str, Any], error: Exception) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, (servo.api.UnexpectedEventError, servo.api.EventCancelledError)):
-                if isinstance(error, servo.api.UnexpectedEventError):
+            if isinstance(error, (servo.errors.UnexpectedEventError, servo.errors.EventCancelledError)):
+                if isinstance(error, servo.errors.UnexpectedEventError):
                     self.logger.error(
                         "servo has lost synchronization with the optimizer: restarting"
                     )
-                elif isinstance(error, servo.api.EventCancelledError):
+                elif isinstance(error, servo.errors.EventCancelledError):
                     self.logger.error(
-                        "optimizer has cancelled operation in progress: restarting"
+                        "optimizer has cancelled operation in progress: cancelling and restarting loop"
                     )
+
+                    # Post a status to resolve the operation
+                    operation = progress['operation']
+                    status = servo.api.Status.from_error(error)
+                    runner = self._runner_for_servo(servo.current_servo())
+                    await runner._post_event(operation, status.dict())
 
                 tasks = [
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
                 self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
                 [task.cancel() for task in tasks]
+
+                await asyncio.gather(*tasks, return_exceptions=True)
 
                 # Restart a fresh main loop
                 if poll:
@@ -370,10 +384,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"unrecognized exception passed to progress exception handler: {error}"
                 )
 
+
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
         )
-        self.progress_handler_id = self.logger.add(self.progress_handler.sink, catch=True)
+        self.progress_handler_id = self.logger.add(self.progress_handler.sink)
 
         self._display_banner()
 
