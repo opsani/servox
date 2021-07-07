@@ -364,15 +364,6 @@ class TestChecks:
         assert result.id, "check_resource_requirements_item_0"
         assert not result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
-    async def test_check_for_vpa_success(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
-        results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_deployments_for_vpa_item_0")
-        )
-        assert results
-        result = results[-1]
-        assert result.id == "check_deployments_for_vpa_item_0"
-        assert result.success
-
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestService:
     @pytest.fixture(autouse=True)
