@@ -1454,7 +1454,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kubetest_deployment_never_ready: KubetestDeployment,
         kube: kubetest.client.TestClient
     ) -> None:
-        tuning_config.timeout = "25s"
+        tuning_config.timeout = "30s"
         tuning_config.on_failure = FailureMode.destroy
         tuning_config.deployments[0].on_failure = FailureMode.destroy
         connector = KubernetesConnector(config=tuning_config)
