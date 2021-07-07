@@ -1420,7 +1420,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kubetest_deployment_becomes_unready: KubetestDeployment
     ) -> None:
         config.timeout = "15s"
-        config.settlement = "15s"
+        config.settlement = "20s"
         config.deployments[0].on_failure = FailureMode.destroy
         connector = KubernetesConnector(config=config)
 
@@ -1536,8 +1536,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        # Validate no warnings were raised to ensure all coroutines were awaited
-        assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
+        # Validate raised warnings to ensure all coroutines were awaited
+        assert not any(filter(lambda warn: "was never awaited" in warn.message, recwarn)), list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
