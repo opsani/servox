@@ -1100,7 +1100,6 @@ class TestKubernetesConnectorIntegration:
         kube
     ) -> None:
         tuning_config.timeout = "10s"
-        tuning_config.deployments[0].on_failure = FailureMode.destroy
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
