@@ -17,7 +17,7 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.4] "baseless allegation" - Unreleased
+## [0.10.4] "baseless allegation" - 2021-07-09
 
 ### Fixed
 
@@ -25,6 +25,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   that computed paths are deterministically correct.
 - Cancellation requests from the optimizer were not being properly respected,
   resulting in unnecessary delays to cancel operations from the console.
+- Enforce settlement time user-config parameter.
 
 ## [0.10.3] "baseless allegation" - 2021-06-06
 
