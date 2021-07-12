@@ -334,7 +334,7 @@ class TestChecks:
         await deployment.patch()
         await deployment.wait_until_ready()
 
-        # Update resource config to require limits baseline for CPU and requests baseline for memory
+        # Update resource config to require limits for CPU and requests for memory
         config.deployments[0].containers[0].cpu.get = [servo.connectors.kubernetes.ResourceRequirement.limit]
         config.deployments[0].containers[0].memory.get = [servo.connectors.kubernetes.ResourceRequirement.request]
 
@@ -364,7 +364,7 @@ class TestChecks:
         assert result.id == "check_resource_requirements_item_0"
         failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
-        assert str(result.exception) == "Deployment fiber-http target container fiber-http has no baseline for cpu. At least one of the following must be specified: requests, limits", failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests, limits", failed_message
 
     async def test_check_resource_requirements_cpu_config_mismatch(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Zero out the CPU setting for requests
@@ -375,7 +375,7 @@ class TestChecks:
         await deployment.patch()
         await deployment.wait_until_ready()
 
-        # Update resource config to require requests baseline
+        # Update resource config to require requests
         config.deployments[0].containers[0].cpu.get = [servo.connectors.kubernetes.ResourceRequirement.request]
 
         # Fail the check because the CPU doesn't define requests
@@ -387,7 +387,7 @@ class TestChecks:
         assert result.id == "check_resource_requirements_item_0"
         failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
-        assert str(result.exception) == "Deployment fiber-http target container fiber-http has no baseline for cpu. At least one of the following must be specified: requests", failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests", failed_message
 
     async def test_check_resource_requirements_mem_config_mismatch(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Zero out the Memory setting for requests
@@ -398,7 +398,7 @@ class TestChecks:
         await deployment.patch()
         await deployment.wait_until_ready()
 
-        # Update resource config to require requests baseline
+        # Update resource config to require requests
         config.deployments[0].containers[0].memory.get = [servo.connectors.kubernetes.ResourceRequirement.request]
 
         # Fail the check because the Memory doesn't define requests
@@ -410,7 +410,7 @@ class TestChecks:
         assert result.id == "check_resource_requirements_item_0"
         failed_message =  f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
-        assert str(result.exception) == "Deployment fiber-http target container fiber-http has no baseline for memory. At least one of the following must be specified: requests", failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource memory. At least one of the following must be specified: requests", failed_message
 
     async def test_deployments_are_ready(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Set the CPU request implausibly high to force it into pending

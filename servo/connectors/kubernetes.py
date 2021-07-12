@@ -166,6 +166,17 @@ async def wait_for_condition(
         servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
+class Resource(str, enum.Enum):
+    memory = "memory"
+    cpu = "cpu"
+
+    @classmethod
+    def values(cls) -> List[str]:
+        """
+        Return a list of strings that identifies all resource values.
+        """
+        return list(map(lambda rsrc: rsrc.value, cls.__members__.values()))
+
 class ResourceRequirement(enum.Enum):
     """
     The ResourceRequirement enumeration determines how optimization values are submitted to the
@@ -3620,17 +3631,17 @@ class KubernetesChecks(servo.BaseChecks):
                 container = deployment.find_container(cont_config.name)
                 assert container, f"Deployment {dep_config.name} has no container {cont_config.name}"
 
-                for resource in {'cpu', 'memory'}:
-                    baseline = None
+                for resource in Resource.values():
+                    current_state = None
                     container_requirements = container.get_resource_requirements(resource)
                     get_requirements = getattr(cont_config, resource).get
                     for requirement in get_requirements:
-                        baseline = container_requirements.get(requirement)
-                        if baseline:
+                        current_state = container_requirements.get(requirement)
+                        if current_state:
                             break
 
-                    assert baseline, (
-                        f"Deployment {dep_config.name} target container {cont_config.name} has no baseline for {resource}. "
+                    assert current_state, (
+                        f"Deployment {dep_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
                         f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
                     )
 
