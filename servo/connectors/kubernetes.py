@@ -1901,13 +1901,13 @@ class Deployment(KubernetesModel):
 
         # Check for failure conditions
         self._check_conditions(status.conditions)
-        await self.raise_for_pod_status(adjustments=adjustments)
+        await self.raise_for_failed_pod_adjustments(adjustments=adjustments)
 
         # Catchall
         self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
         raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
 
-    async def raise_for_pod_status(self, adjustments: List[servo.Adjustment]):
+    async def raise_for_failed_pod_adjustments(self, adjustments: List[servo.Adjustment]):
         pods = await self.get_latest_pods()
         self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
@@ -2153,7 +2153,6 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
     name: str
     timeout: servo.Duration
-
     adjustments: List[servo.Adjustment] = []
 
     @abc.abstractclassmethod
