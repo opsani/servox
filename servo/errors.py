@@ -72,11 +72,6 @@ class BaseError(RuntimeError):
         """The event that was executing when the error occurred."""
         return self._event
 
-    def __str__(self) -> str:
-        if self.reason:
-            return f"{super().__str__()} (Reason {self.reason})"
-        return super().__str__()
-
 class ServoError(BaseError):
     """An error occurred within a servo."""
     @property

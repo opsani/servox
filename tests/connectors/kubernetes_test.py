@@ -1033,7 +1033,10 @@ class TestKubernetesConnectorIntegration:
         )
         with pytest.raises(
             AdjustmentRejectedError,
-            match=re.escape("Insufficient memory. Unschedulable adjustment value: fiber-http/fiber-http.mem=128Gi (Reason unschedulable)")
+            match=(
+                re.escape("Requested adjustment (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+            )
         ) as rejection_info:
             await connector.adjust([adjustment])
 
@@ -1114,7 +1117,10 @@ class TestKubernetesConnectorIntegration:
         )
         with pytest.raises(
             AdjustmentRejectedError,
-            match=re.escape("Insufficient memory. Unschedulable adjustment value: fiber-http/fiber-http-tuning.mem=128Gi (Reason unschedulable)")
+            match=(
+                re.escape("Requested adjustment (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+            )
         ) as rejection_info:
             await connector.adjust([adjustment])
 

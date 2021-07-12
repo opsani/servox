@@ -929,7 +929,10 @@ class Pod(KubernetesModel):
             if cond.reason == "Unschedulable":
                 # FIXME: The servo rejected error should be raised further out. This should be a generic scheduling error
                 unschedulable_adjustment = next(filter(lambda a: a.setting_name in cond.message, adjustments), None)
-                raise servo.AdjustmentRejectedError(f"{cond.message} Unschedulable adjustment value: {unschedulable_adjustment}", reason="unschedulable")
+                raise servo.AdjustmentRejectedError(
+                    f"Requested adjustment ({unschedulable_adjustment}) cannot be scheduled due to \"{cond.message}\"",
+                    reason="unschedulable"
+                )
 
             if cond.type == "Ready" and cond.status == "False":
                 raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
@@ -1919,8 +1922,9 @@ class Deployment(KubernetesModel):
                 cond_msgs = []
                 for unschedulable_condition in filter(lambda cond: cond.reason == "Unschedulable", pod.obj.status.conditions):
                     unschedulable_adjustment = next(filter(lambda a: a.setting_name in unschedulable_condition.message, adjustments), None)
-                    cond_msgs.append(f"{unschedulable_condition.message} Unschedulable adjustment value: {unschedulable_adjustment}")
-
+                    cond_msgs.append(
+                        f"Requested adjustment ({unschedulable_adjustment}) cannot be scheduled due to \"{unschedulable_condition.message}\""
+                    )
                 pod_messages.append(f"{pod.obj.metadata.name} - {'; '.join(cond_msgs)}")
 
             raise servo.AdjustmentRejectedError(
