@@ -1034,7 +1034,7 @@ class TestKubernetesConnectorIntegration:
         with pytest.raises(
             AdjustmentRejectedError,
             match=(
-                re.escape("Requested adjustment (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to ")
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to ")
                 + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
             )
         ) as rejection_info:
@@ -1099,11 +1099,9 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
-    async def test_adjust_tuning_insufficient_resources(
+    async def test_adjust_tuning_insufficient_mem(
         self,
-        tuning_config: KubernetesConfiguration,
-        namespace,
-        kube
+        tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
@@ -1117,11 +1115,47 @@ class TestKubernetesConnectorIntegration:
         with pytest.raises(
             AdjustmentRejectedError,
             match=(
-                re.escape("Requested adjustment (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to ")
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to ")
                 + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
             )
         ) as rejection_info:
             await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert rejection_info.value.reason == "unschedulable"
+        except AssertionError as e:
+            raise e from rejection_info.value
+
+    async def test_adjust_tuning_insufficient_cpu_and_mem(
+        self,
+        tuning_config: KubernetesConfiguration
+    ) -> None:
+        tuning_config.timeout = "10s"
+        tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
+        tuning_config.deployments[0].containers[0].cpu = CPU(min="125m", max="200", step="125m")
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustments = [
+            Adjustment(
+                component_name="fiber-http/fiber-http-tuning",
+                setting_name="mem",
+                value="128Gi", # impossible right?
+            ),
+            Adjustment(
+                component_name="fiber-http/fiber-http-tuning",
+                setting_name="cpu",
+                value="100", # impossible right?
+            )
+        ]
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=(
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi, fiber-http/fiber-http-tuning.cpu=100) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient cpu\, \d+ Insufficient memory\.\""
+            )
+        ) as rejection_info:
+            await connector.adjust(adjustments)
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
