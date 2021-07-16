@@ -23,6 +23,7 @@ import servo.events
 import servo.logging
 import servo.pubsub
 import servo.repeating
+import servo.telemetry
 import servo.utilities.associations
 from servo.types import *
 
@@ -113,6 +114,10 @@ class BaseConnector(
     def optimizer(self) -> Optional[servo.configuration.Optimizer]:
         """The optimizer for the connector."""
         return self.config.optimizer
+
+    ##
+    # Shared telemetry metadata
+    telemetry: servo.telemetry.Telemetry = pydantic.Field(default_factory=servo.telemetry.Telemetry)
 
     ##
     # Validators
