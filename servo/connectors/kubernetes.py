@@ -4005,7 +4005,7 @@ def dns_labelize(name: str) -> str:
 
 
 def set_container_resource_defaults_from_config(container: Container, config: ContainerConfiguration) -> None:
-    for resource in {'cpu', 'memory'}:
+    for resource in Resource.values():
         # NOTE: cpu/memory stanza in container config
         resource_config = getattr(config, resource)
         requirements = container.get_resource_requirements(resource)
@@ -4013,7 +4013,7 @@ def set_container_resource_defaults_from_config(container: Container, config: Co
         for requirement in ResourceRequirement:
             # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
             if resource_value := getattr(resource_config, requirement.name):
-                if existing_resource_value := requirements.get(requirement) is None:
+                if (existing_resource_value := requirements.get(requirement)) is None:
                     servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
                 else:
                     servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
