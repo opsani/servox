@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from typing import Type
 
+import httpx
 import kubetest.client
 from kubetest.objects import Deployment as KubetestDeployment
 import kubernetes.client.models
 import kubernetes.client.exceptions
+import platform
 import pydantic
 import pytest
 import pytest_mock
 import re
+import respx
 import traceback
 from kubernetes_asyncio import client
 from pydantic import BaseModel
@@ -39,6 +42,7 @@ from servo.connectors.kubernetes import (
     ResourceRequirement,
 )
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
+import servo.runner
 from servo.types import Adjustment
 from tests.helpers import *
 
@@ -2213,3 +2217,42 @@ class TestSidecarInjection:
                 value_from=None
             ),
         ]
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesClusterConnectorIntegration:
+    """Tests not requiring manifests setup, just an active cluster
+    """
+
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @respx.mock
+    async def test_telemetry_hello(self, namespace: str, config: KubernetesConfiguration, servo_runner: servo.runner.Runner) -> None:
+        async with client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.VersionApi(api)
+            version_obj = await v1.get_code()
+
+        expected = (
+            f'"telemetry": {{"servox.version": "{servo.__version__}", "servox.platform": "{platform.platform()}", '
+            f'"kubernetes.namespace": "{namespace}", "kubernetes.version": "{version_obj.major}.{version_obj.minor}", "kubernetes.platform": "{version_obj.platform}"}}'
+        )
+
+        connector = KubernetesConnector(config=config, telemetry=servo_runner.servo.telemetry)
+        # attach connector
+        await servo_runner.servo.add_connector("kubernetes", connector)
+
+        request = respx.post(
+            "https://api.opsani.com/accounts/servox.opsani.com/applications/tests/servo"
+        ).mock(return_value=httpx.Response(200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'))
+
+        await servo_runner._post_event(servo.api.Events.hello, dict(
+            agent=servo.api.user_agent(),
+            telemetry=servo_runner.servo.telemetry.values
+        ))
+
+        assert request.called
+        print(request.calls.last.request.content.decode())
+        assert expected in request.calls.last.request.content.decode()

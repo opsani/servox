@@ -3679,6 +3679,21 @@ class KubernetesConnector(servo.BaseConnector):
         # Ensure we are ready to talk to Kubernetes API
         await self.config.load_kubeconfig()
 
+        self.telemetry[f"{self.name}.namespace"] = self.config.namespace
+
+        with self.logger.catch(level="DEBUG", message=f"Unable to set version telemetry for connector {self.name}"):
+            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+                v1 =kubernetes_asyncio.client.VersionApi(api)
+                version_obj = await v1.get_code()
+                self.telemetry[f"{self.name}.version"] = f"{version_obj.major}.{version_obj.minor}"
+                self.telemetry[f"{self.name}.platform"] = version_obj.platform
+
+    @servo.on_event()
+    async def detach(self, servo_: servo.Servo) -> None:
+        self.telemetry.remove(f"{self.name}.namespace")
+        self.telemetry.remove(f"{self.name}.version")
+        self.telemetry.remove(f"{self.name}.platform")
+
     @servo.on_event()
     async def describe(self) -> servo.Description:
         state = await self._create_optimizations()
