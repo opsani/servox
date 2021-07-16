@@ -1031,7 +1031,13 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi",
         )
-        with pytest.raises(AdjustmentRejectedError, match='Insufficient memory.') as rejection_info:
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=(
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http.mem=128Gi) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+            )
+        ) as rejection_info:
             await connector.adjust([adjustment])
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
@@ -1093,11 +1099,9 @@ class TestKubernetesConnectorIntegration:
         # description = await connector.startup()
         # debug(description)
 
-    async def test_adjust_tuning_insufficient_resources(
+    async def test_adjust_tuning_insufficient_mem(
         self,
-        tuning_config: KubernetesConfiguration,
-        namespace,
-        kube
+        tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
@@ -1108,8 +1112,50 @@ class TestKubernetesConnectorIntegration:
             setting_name="mem",
             value="128Gi", # impossible right?
         )
-        with pytest.raises(AdjustmentRejectedError, match="Insufficient memory.") as rejection_info:
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=(
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient memory\.\""
+            )
+        ) as rejection_info:
             await connector.adjust([adjustment])
+
+        # Validate the correct error was raised, re-raise if not for additional debugging context
+        try:
+            assert rejection_info.value.reason == "unschedulable"
+        except AssertionError as e:
+            raise e from rejection_info.value
+
+    async def test_adjust_tuning_insufficient_cpu_and_mem(
+        self,
+        tuning_config: KubernetesConfiguration
+    ) -> None:
+        tuning_config.timeout = "10s"
+        tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
+        tuning_config.deployments[0].containers[0].cpu = CPU(min="125m", max="200", step="125m")
+        connector = KubernetesConnector(config=tuning_config)
+
+        adjustments = [
+            Adjustment(
+                component_name="fiber-http/fiber-http-tuning",
+                setting_name="mem",
+                value="128Gi", # impossible right?
+            ),
+            Adjustment(
+                component_name="fiber-http/fiber-http-tuning",
+                setting_name="cpu",
+                value="100", # impossible right?
+            )
+        ]
+        with pytest.raises(
+            AdjustmentRejectedError,
+            match=(
+                re.escape("Requested adjustment(s) (fiber-http/fiber-http-tuning.mem=128Gi, fiber-http/fiber-http-tuning.cpu=100) cannot be scheduled due to ")
+                + r"\"\d+/\d+ nodes are available: \d+ Insufficient cpu\, \d+ Insufficient memory\.\""
+            )
+        ) as rejection_info:
+            await connector.adjust(adjustments)
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:
@@ -1413,7 +1459,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kubetest_deployment_becomes_unready: KubetestDeployment
     ) -> None:
         config.timeout = "15s"
-        config.settlement = "15s"
+        config.settlement = "20s"
         config.deployments[0].on_failure = FailureMode.destroy
         connector = KubernetesConnector(config=config)
 
@@ -1447,7 +1493,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kubetest_deployment_never_ready: KubetestDeployment,
         kube: kubetest.client.TestClient
     ) -> None:
-        tuning_config.timeout = "25s"
+        tuning_config.timeout = "30s"
         tuning_config.on_failure = FailureMode.destroy
         tuning_config.deployments[0].on_failure = FailureMode.destroy
         connector = KubernetesConnector(config=tuning_config)
@@ -1529,8 +1575,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         with pytest.raises(AdjustmentRejectedError) as rejection_info:
             await connector.adjust([adjustment])
 
-        # Validate no warnings were raised to ensure all coroutines were awaited
-        assert len(recwarn) == 0, list(map(lambda warn: warn.message, recwarn))
+        # Validate raised warnings to ensure all coroutines were awaited
+        assert not any(filter(lambda warn: "was never awaited" in warn.message, recwarn)), list(map(lambda warn: warn.message, recwarn))
 
         # Validate the correct error was raised, re-raise if not for additional debugging context
         try:

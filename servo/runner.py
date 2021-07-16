@@ -145,8 +145,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.trace(devtools.pformat(measurement))
                 param = measurement.__opsani_repr__()
             except servo.errors.EventError as error:
-                self.logger.info(f"Measurement failed: {error}")
-                param = servo.api.Status.from_error(error)
+                self.logger.error(f"Measurement failed: {error}")
+                param = servo.api.Status.from_error(error).dict()
+                self.logger.error(f"Responding with {param}")
                 self.logger.opt(exception=error).debug("Measure failure details")
 
             return await self._post_event(servo.api.Events.measure, param)
@@ -167,8 +168,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
             except servo.EventError as error:
-                self.logger.info(f"Adjustment failed: {error}")
+                self.logger.error(f"Adjustment failed: {error}")
                 status = servo.api.Status.from_error(error)
+                self.logger.error(f"Responding with {status.dict()}")
                 self.logger.opt(exception=error).debug("Adjust failure details")
 
             return await self._post_event(servo.api.Events.adjust, status.dict())
@@ -361,6 +363,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     # Post a status to resolve the operation
                     operation = progress['operation']
                     status = servo.api.Status.from_error(error)
+                    self.logger.error(f"Responding with {status.dict()}")
                     runner = self._runner_for_servo(servo.current_servo())
                     await runner._post_event(operation, status.dict())
 
