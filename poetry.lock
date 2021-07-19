@@ -751,7 +751,7 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "kubernetes-asyncio"
-version = "12.1.0"
+version = "12.1.1"
 description = "Kubernetes asynchronous python client"
 category = "main"
 optional = false
@@ -2192,7 +2192,7 @@ kubernetes = [
     {file = "kubernetes-17.17.0.tar.gz", hash = "sha256:c69b318696ba797dcf63eb928a8d4370c52319f4140023c502d7dfdf2080eb79"},
 ]
 kubernetes-asyncio = [
-    {file = "kubernetes_asyncio-12.1.0.tar.gz", hash = "sha256:d6f0dccc6d6131017549b115d3ca076b2b2557646975b0e624d016926411e48d"},
+    {file = "kubernetes_asyncio-12.1.1.tar.gz", hash = "sha256:826d79ab68f7e158895da624826e5ae9c75c1b69f3f3b7aa3447bd8bba022445"},
 ]
 kubetest = []
 loguru = [
