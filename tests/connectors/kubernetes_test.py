@@ -40,6 +40,8 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirement,
+    Rollout,
+    RolloutConfiguration,
 )
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
 import servo.runner
@@ -2256,3 +2258,234 @@ class TestKubernetesClusterConnectorIntegration:
         assert request.called
         print(request.calls.last.request.content.decode())
         assert expected in request.calls.last.request.content.decode()
+
+
+##
+# Tests against an ArgoCD rollout
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestKubernetesConnectorRolloutIntegration:
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    # Apply rollouts CRDs
+    # NOTE: session scope doesnt work under xdist, setup has been factored to be idempotent so running it multiple times does not cause issues
+    @pytest.fixture(autouse=True)
+    async def _install_rollout_crds(self, subprocess, kubeconfig):
+        # Setup
+        # Rollouts are picky about installation namespace
+        ns_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "namespace", "argo-rollouts" ]
+        exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+        if exit_code != 0:
+            ns_cmd[2] = "create"
+            exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+            assert exit_code == 0, f"argo-rollouts namespace creation failed: {stderr}"
+
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts crd apply failed: {stderr}"
+
+        # NOTE: under xdist, we're unable to guarantee all tests using the CRD are run prior to teardown
+        # yield # Tests run
+
+        # rollout_crd_cmd[2] = "delete"
+        # exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+        # assert exit_code == 0, f"argo-rollouts crd delete failed: {stderr}"
+
+        # ns_cmd[2] = "delete"
+        # exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+        # assert exit_code == 0, f"argo-rollouts namespace delete failed: {stderr}"
+
+    # Apply manifest defining rollout custom resource
+    @pytest.fixture(autouse=True)
+    async def _manage_rollout(self, namespace, rootpath, kubeconfig, subprocess):
+        """
+        Apply manifest of the target rollout being tested against
+        """
+
+        rollout_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", namespace, "-f", str(rootpath / "tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml")]
+        exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
+
+        wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
+        exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
+
+        yield   # Test runs
+
+        # Teardown
+        rollout_cmd[2] = "delete"
+        exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest delete failed: {stderr}"
+
+    @pytest.fixture()
+    def _rollout_tuning_config(self, tuning_config: KubernetesConfiguration):
+        tuning_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in tuning_config.deployments ]
+        tuning_config.deployments = []
+        return tuning_config
+
+    ##
+    # Canary Tests
+    async def test_create_tuning(self, _rollout_tuning_config, namespace: str) -> None:
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+        rol = await Rollout.read("fiber-http", namespace)
+        await connector.describe()
+
+
+    async def test_adjust_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert setting
+        assert setting.value == 250
+
+    async def test_adjust_tuning_insufficient_resources(self, _rollout_tuning_config, namespace) -> None:
+        _rollout_tuning_config.timeout = "10s"
+        _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Gi", # impossible right?
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+
+        rej_msg = str(rejection_info.value)
+        debug(rejection_info.value)
+        assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config")
+class TestRolloutSidecarInjection:
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    # Apply rollouts CRDs
+    # NOTE: session scope doesnt work under xdist, setup has been factored to be idempotent so running it multiple times does not cause issues
+    @pytest.fixture(autouse=True)
+    async def _install_rollout_crds(self, subprocess, kubeconfig):
+        # Setup
+        # Rollouts are picky about installation namespace
+        ns_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "namespace", "argo-rollouts" ]
+        exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+        if exit_code != 0:
+            ns_cmd[2] = "create"
+            exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+            assert exit_code == 0, f"argo-rollouts namespace creation failed: {stderr}"
+
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts crd apply failed: {stderr}"
+
+        # NOTE: under xdist, we're unable to guarantee all tests using the CRD are run prior to teardown
+        # yield # Tests run
+
+        # rollout_crd_cmd[2] = "delete"
+        # exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+        # assert exit_code == 0, f"argo-rollouts crd delete failed: {stderr}"
+
+        # ns_cmd[2] = "delete"
+        # exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+        # assert exit_code == 0, f"argo-rollouts namespace delete failed: {stderr}"
+
+    # Apply manifest defining rollout custom resource
+    @pytest.fixture(autouse=True)
+    async def _manage_rollout(self, namespace, rootpath, kubeconfig, subprocess):
+        """
+        Apply manifest of the target rollout being tested against
+        """
+
+        rollout_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", namespace, "-f", str(rootpath / "tests/manifests/argo_rollouts/fiber-http_single_port.yaml")]
+        exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
+
+        wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", namespace, "rollout", "fiber-http" ]
+        exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
+
+        yield   # Test runs
+
+        # Teardown
+        rollout_cmd[2] = "delete"
+        exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts CR manifest delete failed: {stderr}"
+    
+
+    @pytest.mark.parametrize(
+        "service, port",
+        [
+            ('fiber-http', None),
+            ('fiber-http', 80),
+            ('fiber-http', 'http'),
+        ],
+    )
+    async def test_inject_single_port_rollout(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        rollout = await servo.connectors.kubernetes.Rollout.read('fiber-http', namespace)
+        assert len(rollout.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 1
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 8480
+
+        await rollout.inject_sidecar(
+            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+        )
+
+        # Examine new sidecar
+        await rollout.refresh()
+        assert len(rollout.containers) == 2, "expected an injected container"
+        sidecar_container = rollout.containers[1]
+        assert sidecar_container.name == 'opsani-envoy'
+
+        # Check ports and env
+        assert sidecar_container.ports == [
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9980,
+                host_ip=None,
+                host_port=None,
+                name='opsani-proxy',
+                protocol='TCP'
+            ),
+            kubernetes_asyncio.client.V1ContainerPort(
+                container_port=9901,
+                host_ip=None,
+                host_port=None,
+                name='opsani-metrics',
+                protocol='TCP'
+            )
+        ]
+        assert sidecar_container.obj.env == [
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                value='9980',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                value='8480',
+                value_from=None
+            ),
+            kubernetes_asyncio.client.V1EnvVar(
+                name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                value='9901',
+                value_from=None
+            ),
+        ]

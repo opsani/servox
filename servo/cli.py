@@ -1759,6 +1759,19 @@ class ServoCLI(CLI):
                 )
                 typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
 
+            elif target.startswith("rollout"):
+                rollout = run_async(
+                    servo.connectors.kubernetes.Rollout.read(
+                        target.split('/', 1)[1], namespace
+                    )
+                )
+                run_async(
+                    rollout.inject_sidecar(
+                        'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service=service, port=port
+                    )
+                )
+                typer.echo(f"Envoy sidecar injected to Rollout {rollout.name} in {namespace}")
+
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")
             else:

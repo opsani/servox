@@ -48,7 +48,8 @@ class Memory(servo.connectors.kubernetes.Memory):
 
 class OpsaniDevConfiguration(servo.BaseConfiguration):
     namespace: str
-    deployment: str
+    deployment: Optional[str]
+    rollout: Optional[str]
     container: str
     service: str
     port: Optional[Union[pydantic.StrictInt, str]] = None
@@ -59,6 +60,16 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
+
+    @pydantic.root_validator
+    def check_deployment_and_rollout(cls, values):
+        if values.get('deployment') is not None and values.get('rollout') is not None:
+            raise ValueError("Configuration cannot specify both rollout and deployment")
+
+        if values.get('deployment') is None and values.get('rollout') is None:
+            raise ValueError("Configuration must specify either rollout or deployment")
+
+        return values
 
     @classmethod
     def generate(cls, **kwargs) -> "OpsaniDevConfiguration":
@@ -79,32 +90,36 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
+        main_config = servo.connectors.kubernetes.DeploymentConfiguration(
+            name=self.deployment,
+            strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
+                type=servo.connectors.kubernetes.OptimizationStrategy.canary,
+                alias="tuning"
+            ),
+            replicas=servo.Replicas(
+                min=0,
+                max=1,
+            ),
+            containers=[
+                servo.connectors.kubernetes.ContainerConfiguration(
+                    name=self.container,
+                    alias="main",
+                    cpu=self.cpu,
+                    memory=self.memory,
+                )
+            ],
+        )
+        if self.deployment:
+            main_arg = { 'deployments': main_config }
+        elif self.rollout:
+            main_arg = { 'rollouts': servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config) }
+        
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             timeout=self.timeout,
             settlement=self.settlement,
-            deployments=[
-                servo.connectors.kubernetes.DeploymentConfiguration(
-                    name=self.deployment,
-                    strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
-                        type=servo.connectors.kubernetes.OptimizationStrategy.canary,
-                        alias="tuning"
-                    ),
-                    replicas=servo.Replicas(
-                        min=0,
-                        max=1,
-                    ),
-                    containers=[
-                        servo.connectors.kubernetes.ContainerConfiguration(
-                            name=self.container,
-                            alias="main",
-                            cpu=self.cpu,
-                            memory=self.memory,
-                        )
-                    ],
-                )
-            ],
+            **main_arg,
             **kwargs,
         )
 
@@ -262,45 +277,69 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.checks.require('Deployment "{self.config.deployment}" is readable')
     async def check_kubernetes_deployment(self) -> None:
-        await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+        if self.config.deployment:
+            await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+
+    @servo.checks.require('Rollout "{self.config.rollout}" is readable')
+    async def check_kubernetes_rollout(self) -> None:
+        if self.config.rollout:
+            await servo.connectors.kubernetes.Rollout.read(self.config.rollout, self.config.namespace)
 
     @servo.checks.require('Container "{self.config.container}" is readable')
     async def check_kubernetes_container(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, self.config.namespace
-        )
+        if self.config.deployment:
+            resource = "Deployment"
+            resource_name = self.config.deployment
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment, self.config.namespace
+            )
+        elif self.config.rollout:
+            resource = "Rollout"
+            resource_name = self.config.rollout
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout, self.config.namespace
+            )
         container = deployment.find_container(self.config.container)
         assert (
             container
-        ), f"failed reading Container '{self.config.container}' in Deployment '{self.config.deployment}'"
+        ), f"failed reading Container '{self.config.container}' in {resource} '{resource_name}'"
 
     @servo.require('Container "{self.config.container}" has resource requirements')
     async def check_resource_requirements(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
-        container = deployment.find_container(self.config.container)
-        assert container
-        assert container.resources, "missing container resources"
+        if self.config.deployment:
+            deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+            container = deployment.find_container(self.config.container)
+            assert container
+            assert container.resources, "missing container resources"
 
-        # Apply any defaults/overrides for requests/limits from config
-        servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
+            # Apply any defaults/overrides for requests/limits from config
+            servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
 
-        # TODO: How do we handle when you just don't have any requests?
-        # assert container.resources.requests, "missing requests for container resources"
-        # assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
-        # assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
+            # TODO: How do we handle when you just don't have any requests?
+            # assert container.resources.requests, "missing requests for container resources"
+            # assert container.resources.requests.get("cpu"), "missing request for resource 'cpu'"
+            # assert container.resources.requests.get("memory"), "missing request for resource 'memory'"
 
-        # assert container.resources.limits, "missing limits for container resources"
-        # assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
-        # assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
+            # assert container.resources.limits, "missing limits for container resources"
+            # assert container.resources.limits.get("cpu"), "missing limit for resource 'cpu'"
+            # assert container.resources.limits.get("memory"), "missing limit for resource 'memory'"
 
     @servo.checks.require("Target container resources fall within optimization range")
     async def check_target_container_resources_within_limits(self) -> None:
-        # Load the Deployment
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
-        )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        if self.config.deployment:
+            # Load the Deployment
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        elif self.config.rollout:
+            # Load the Rollout
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         # Find the target Container
         target_container = next(filter(lambda c: c.name == self.config.container, deployment.containers), None)
@@ -337,9 +376,17 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.require('Deployment "{self.config.deployment}" is ready')
     async def check_deployment(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
-        if not await deployment.is_ready():
-            raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
+        if self.config.deployment:
+            deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
+            if not await deployment.is_ready():
+                raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
+
+    @servo.require('Rollout "{self.config.rollout}" is ready')
+    async def check_rollout(self) -> None:
+        if self.config.rollout:
+            rollout = await servo.connectors.kubernetes.Rollout.read(self.config.rollout, self.config.namespace)
+            if not await rollout.is_ready():
+                raise RuntimeError(f'Rollout "{rollout.name}" is not ready')
 
     @servo.checks.require("service")
     async def check_kubernetes_service(self) -> None:
@@ -389,16 +436,25 @@ class OpsaniDevChecks(servo.BaseChecks):
         service = await servo.connectors.kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment, self.config.namespace
-        )
+        if self.config.deployment:
+            resource = "Deloyment"
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment, self.config.namespace
+            )
+        if self.config.rollout:
+            resource = "Rollout"
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout, self.config.namespace
+            )
+            # Remove label dynamically applied by argo-rollouts to service and rollout pods
+            service.selector.pop('rollouts-pod-template-hash')
 
         # NOTE: The Service labels should be a subset of the Deployment labels
         deployment_labels = deployment.obj.spec.selector.match_labels
         delta = dict(set(service.selector.items()) - set(deployment_labels.items()))
         if delta:
             desc = ' '.join(map('='.join, delta.items()))
-            raise RuntimeError(f"Service selector does not match Deployment labels. Missing labels: {desc}")
+            raise RuntimeError(f"Service selector does not match {resource} labels. Missing labels: {desc}")
 
     ##
     # Prometheus sidecar
@@ -531,13 +587,22 @@ class OpsaniDevChecks(servo.BaseChecks):
     ##
     # Kubernetes Deployment edits
 
-    @servo.checks.require("Deployment PodSpec has expected annotations")
+    @servo.checks.require("PodSpec has expected annotations")
     async def check_deployment_annotations(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
-        )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        if self.config.deployment:
+            resource = "deployment"
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        elif self.config.rollout:
+            resource = "rollout"
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         # Add optimizer annotation to the static Prometheus values
         required_annotations = PROMETHEUS_ANNOTATION_DEFAULTS.copy()
@@ -551,7 +616,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
-            command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} -p '{patch_json}'"
             desc = ', '.join(sorted(delta))
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
@@ -559,17 +624,24 @@ class OpsaniDevChecks(servo.BaseChecks):
                 remedy=lambda: _stream_remedy_command(command)
             )
 
-    @servo.checks.require("Deployment PodSpec has expected labels")
+    @servo.checks.require("PodSpec has expected labels")
     async def check_deployment_labels(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
-        )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        if self.config.deployment:
+            resource = "deployment"
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        elif self.config.rollout:
+            resource = "rollout"
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
-        labels = deployment.pod_template_spec.metadata.labels
-        assert labels, f"deployment '{deployment.name}' does not have any labels"
-
+        labels = deployment.pod_template_spec.metadata.labels or dict()
         # Add optimizer label to the static values
         required_labels = ENVOY_SIDECAR_LABELS.copy()
         required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
@@ -580,20 +652,29 @@ class OpsaniDevChecks(servo.BaseChecks):
             desc = ', '.join(sorted(map('='.join, delta.items())))
             patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
             patch_json = json.dumps(patch, indent=None)
-            command = f"kubectl --namespace {self.config.namespace} patch deployment {self.config.deployment} -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} -p '{patch_json}'"
             raise servo.checks.CheckError(
-                f"deployment '{deployment.name}' is missing labels: {desc}",
+                f"{resource} '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
                 remedy=lambda: _stream_remedy_command(command)
             )
 
     @servo.checks.require("Deployment has Envoy sidecar container")
     async def check_deployment_envoy_sidecars(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
-        )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        if self.config.deployment:
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+            target_resource = f"deployment/{self.config.deployment}"
+        elif self.config.rollout:
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
+            target_resource = f"rollout/{self.config.rollout}"
 
         # Search the containers list for the sidecar
         for container in deployment.containers:
@@ -604,7 +685,10 @@ class OpsaniDevChecks(servo.BaseChecks):
             f" --port {self.config.port}" if self.config.port is not None
             else ''
         )
-        command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- servo --token-file /servo/opsani.token inject-sidecar --namespace {self.config.namespace} --service {self.config.service}{port_switch} deployment/{self.config.deployment}"
+        command = (
+            f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- "
+            f"servo --token-file /servo/opsani.token inject-sidecar --namespace {self.config.namespace} --service {self.config.service}{port_switch} {target_resource}"
+        )
         raise servo.checks.CheckError(
             f"deployment '{deployment.name}' pod template spec does not include envoy sidecar container ('opsani-envoy')",
             hint=f"Inject Envoy sidecar container via: `{command}`",
@@ -613,11 +697,18 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.checks.require("Pods have Envoy sidecar containers")
     async def check_pod_envoy_sidecars(self) -> None:
-        deployment = await servo.connectors.kubernetes.Deployment.read(
-            self.config.deployment,
-            self.config.namespace
-        )
-        assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        if self.config.deployment:
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                self.config.deployment,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
+        elif self.config.rollout:
+            deployment = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout,
+                self.config.namespace
+            )
+            assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         pods_without_sidecars = []
         for pod in await deployment.get_pods():
@@ -652,6 +743,10 @@ class OpsaniDevChecks(servo.BaseChecks):
 
     @servo.check("Envoy proxies are being scraped")
     async def check_envoy_sidecar_metrics(self) -> str:
+        if self.config.deployment:
+            resource = f"deploy/{self.config.deployment}"
+        elif self.config.rollout:
+            resource = f"rollout/{self.config.rollout}"
         # NOTE: We don't care about the response status code, we just want to see that traffic is being metered by Envoy
         metric = servo.connectors.prometheus.PrometheusMetric(
             "main_request_total",
@@ -666,7 +761,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         result = response.data[0]
         timestamp, value = result.value
         if value in {None, 0.0}:
-            command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- sh -c \"kubectl port-forward --namespace={self.config.namespace} deploy/{self.config.deployment} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
+            command = f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- sh -c \"kubectl port-forward --namespace={self.config.namespace} {resource} 9980 & echo 'GET http://localhost:9980/' | vegeta attack -duration 10s | vegeta report -every 3s\""
             raise servo.checks.CheckError(
                 f"Envoy is not reporting any traffic to Prometheus for metric '{metric.name}' ({metric.query})",
                 hint=f"Send traffic to your application on port 9980. Try `{command}`",
@@ -701,7 +796,10 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_tuning_is_running(self) -> None:
         # Generate a KubernetesConfiguration to initialize the optimization class
         kubernetes_config = self.config.generate_kubernetes_config()
-        deployment_config = kubernetes_config.deployments[0]
+        if self.config.deployment:
+            deployment_config = kubernetes_config.deployments[0]
+        elif self.config.rollout:
+            deployment_config = kubernetes_config.rollouts[0]
         optimization = await servo.connectors.kubernetes.CanaryOptimization.create(
             deployment_config, timeout=kubernetes_config.timeout
         )
