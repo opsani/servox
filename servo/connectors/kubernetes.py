@@ -166,6 +166,17 @@ async def wait_for_condition(
         servo.logger.debug(f"wait completed (total={servo.Duration.since(started_at)}) {condition}")
 
 
+class Resource(str, enum.Enum):
+    memory = "memory"
+    cpu = "cpu"
+
+    @classmethod
+    def values(cls) -> List[str]:
+        """
+        Return a list of strings that identifies all resource values.
+        """
+        return list(map(lambda rsrc: rsrc.value, cls.__members__.values()))
+
 class ResourceRequirement(enum.Enum):
     """
     The ResourceRequirement enumeration determines how optimization values are submitted to the
@@ -3643,14 +3654,23 @@ class KubernetesChecks(servo.BaseChecks):
             dep_config: DeploymentConfiguration,
         ) -> str:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            for container in deployment.containers:
-                assert container.resources
-                assert container.resources.requests
-                assert container.resources.requests["cpu"]
-                assert container.resources.requests["memory"]
-                assert container.resources.limits
-                assert container.resources.limits["cpu"]
-                assert container.resources.limits["memory"]
+            for cont_config in dep_config.containers:
+                container = deployment.find_container(cont_config.name)
+                assert container, f"Deployment {dep_config.name} has no container {cont_config.name}"
+
+                for resource in Resource.values():
+                    current_state = None
+                    container_requirements = container.get_resource_requirements(resource)
+                    get_requirements = getattr(cont_config, resource).get
+                    for requirement in get_requirements:
+                        current_state = container_requirements.get(requirement)
+                        if current_state:
+                            break
+
+                    assert current_state, (
+                        f"Deployment {dep_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
+                        f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
+                    )
 
         return self.config.deployments, check_dep_resource_requirements
 
@@ -4027,7 +4047,7 @@ def dns_labelize(name: str) -> str:
 
 
 def set_container_resource_defaults_from_config(container: Container, config: ContainerConfiguration) -> None:
-    for resource in {'cpu', 'memory'}:
+    for resource in Resource.values():
         # NOTE: cpu/memory stanza in container config
         resource_config = getattr(config, resource)
         requirements = container.get_resource_requirements(resource)
@@ -4035,7 +4055,7 @@ def set_container_resource_defaults_from_config(container: Container, config: Co
         for requirement in ResourceRequirement:
             # Use the request/limit from the container.[cpu|memory].[request|limit] as default/override
             if resource_value := getattr(resource_config, requirement.name):
-                if existing_resource_value := requirements.get(requirement) is None:
+                if (existing_resource_value := requirements.get(requirement)) is None:
                     servo.logger.debug(f"Setting default value for {resource}.{requirement} to: {resource_value}")
                 else:
                     servo.logger.debug(f"Overriding existing value for {resource}.{requirement} ({existing_resource_value}) to: {resource_value}")
