@@ -230,6 +230,49 @@ class TestIntegration:
                 assert check.message is not None
                 assert isinstance(check.exception, httpx.HTTPStatusError)
 
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+class TestResourceRequirementsIntegration:
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_check_resource_requirements(
+        self, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+    ) -> None:
+        result = await checks.run_one(id=f"check_resource_requirements")
+        assert result.success, f"Expected success but got: {result}"
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_limits.yaml"])
+    async def test_check_resource_requirements_get_config_fails(
+        self, checks: servo.connectors.opsani_dev.OpsaniDevChecks,  config: servo.connectors.opsani_dev.OpsaniDevConfiguration
+    ) -> None:
+        config.cpu.get = [servo.connectors.kubernetes.ResourceRequirement.limit]
+
+        result = await checks.run_one(id=f"check_resource_requirements")
+        assert result.exception, f"Expected exception but got: {result}"
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_requirements.yaml"])
+    async def test_check_resource_requirements_fails(
+        self, checks: servo.connectors.opsani_dev.OpsaniDevChecks
+    ) -> None:
+        result = await checks.run_one(id=f"check_resource_requirements")
+        assert result.exception, f"Expected exception but got: {result}"
+
+    @pytest.mark.applymanifests("../manifests/resource_requirements",
+                                files=["fiber-http_no_resource_requirements.yaml"])
+    async def test_check_resource_requirements_config_defaults(
+        self, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
+    ) -> None:
+        config.cpu.request = "125m"
+        config.memory.limit = "1Gi"
+
+        servo.logging.set_level("DEBUG")
+
+        result = await checks.run_one(id=f"check_resource_requirements")
+        assert result.success, f"Expected success but got: {result}"
+
 @pytest.mark.applymanifests(
     "opsani_dev",
     files=[

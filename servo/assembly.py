@@ -16,6 +16,7 @@ import servo.configuration
 import servo.connector
 import servo.pubsub
 import servo.servo
+import servo.telemetry
 
 __all__ = ["Assembly", 'current_assembly']
 
@@ -107,6 +108,7 @@ class Assembly(pydantic.BaseModel):
                 servo_config.optimizer = optimizer
             servo_optimizer = servo_config.optimizer or optimizer
 
+            telemetry = servo.telemetry.Telemetry()
 
             # Initialize all active connectors
             connectors: List[servo.connector.BaseConnector] = []
@@ -119,6 +121,7 @@ class Assembly(pydantic.BaseModel):
                         config=connector_config,
                         optimizer=servo_optimizer,
                         pubsub_exchange=pubsub_exchange,
+                        telemetry=telemetry,
                         __optimizer__=servo_optimizer,
                         __connectors__=connectors,
                     )
@@ -129,6 +132,7 @@ class Assembly(pydantic.BaseModel):
                 config=servo_config,
                 connectors=connectors.copy(),  # Avoid self-referential reference to servo
                 optimizer=servo_optimizer,
+                telemetry=telemetry,
                 __connectors__=connectors,
                 pubsub_exchange=pubsub_exchange,
             )

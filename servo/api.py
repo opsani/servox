@@ -310,6 +310,7 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
 def user_agent() -> str:
     return f"{USER_AGENT} v{servo.__version__}"
 
+
 def _redacted_to_curl(request: httpx.Request) -> str:
     """Pass through to curlify2.to_curl that redacts the authorization in the headers
     """
