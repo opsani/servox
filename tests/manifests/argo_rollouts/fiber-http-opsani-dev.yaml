@@ -71,6 +71,7 @@ spec:
           # would typically be the `targetPort` of the Service defined
           # below.
           - containerPort: 8480
+            protocol: TCP
 
       # Opsani Envoy Sidecar
       # Provides metrics for consumption by the Opsani Servo
@@ -118,6 +119,7 @@ spec:
         # the Service routing traffic into the Pod.
         - containerPort: 9980
           name: service
+          protocol: TCP
 
         # Metrics port exposed by the Envoy proxy that will be scraped by the
         # Prometheus sidecar running alongside the Servo. Must match the
@@ -125,6 +127,7 @@ spec:
         # annotation entries above.
         - containerPort: 9901
           name: metrics
+          protocol: TCP
 
 ---
 

@@ -2012,6 +2012,7 @@ class RolloutBaseModel(pydantic.BaseModel):
     class Config:
         # arbitrary_types_allowed = True
         alias_generator = to_lower_camel
+        allow_population_by_field_name = True
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
 # https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
@@ -2504,8 +2505,8 @@ class Rollout(KubernetesModel):
                 RolloutV1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
             ],
             ports=[
-                RolloutV1ContainerPort(name="opsani-proxy", containerPort=service_port),
-                RolloutV1ContainerPort(name="opsani-metrics", containerPort=9901),
+                RolloutV1ContainerPort(name="opsani-proxy", container_port=service_port, protocol="TCP"),
+                RolloutV1ContainerPort(name="opsani-metrics", container_port=9901, protocol="TCP"),
             ]
         )
 

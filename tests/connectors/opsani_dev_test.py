@@ -70,7 +70,7 @@ def rollout_checks(rollout_config: servo.connectors.opsani_dev.OpsaniDevConfigur
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['description', 'namespace', 'deployment', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url', 'timeout', 'settlement']
+        assert list(config.dict().keys()) == ['description', 'namespace', 'deployment', 'rollout', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url', 'timeout', 'settlement']
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -299,27 +299,14 @@ class TestResourceRequirementsIntegration:
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+@pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")
 class TestRolloutIntegration:
-
-    # Apply manifest defining rollout custom resource
-    @pytest.fixture(autouse=True)
-    async def _manage_rollout(self, kube, rootpath, kubeconfig, subprocess):
-        """
-        Apply manifest of the target rollout being tested against
-        """
-
-        rollout_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", kube.namespace, "-f", str(rootpath / "tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")]
-        exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
-        assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
-
-        wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", kube.namespace, "rollout", "fiber-http" ]
-        exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
-        assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
-
     class TestChecksOriginalState:
         @pytest.fixture(autouse=True)
         async def load_manifests(
-            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig
+            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig,
+            manage_rollout # NOTE: rollout must be specified as a dependency, otherwise kube.wait_for_registered runs
+                           #    indefinitely waiting for the service to have endpoints
         ) -> None:
             kube.wait_for_registered()
             rollout_checks.config.namespace = kube.namespace
@@ -373,6 +360,27 @@ class TestRolloutIntegration:
         ) -> None:
             result = await rollout_checks.run_one(id=f"check_service_routes_traffic_to_deployment")
             assert result.success, f"Failed with message: {result.message}"
+
+        async def test_check_resource_requirements(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ) -> None:
+            result = await rollout_checks.run_one(id=f"check_resource_requirements")
+            assert result.success, f"Expected success but got: {result}"
+
+        @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_mem.yaml")
+        async def test_check_resource_requirements_fails_mem(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ):
+            result = await rollout_checks.run_one(id=f"check_resource_requirements")
+            assert result.exception, f"Expected exception but got: {result}"
+
+        @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml")
+        async def test_check_resource_requirements_fails_cpu_limit(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        ):
+            rollout_checks.config.cpu.get = [ servo.connectors.kubernetes.ResourceRequirement.limit ]
+            result = await rollout_checks.run_one(id=f"check_resource_requirements")
+            assert result.exception, f"Expected exception but got: {result}"
 
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
         # async def test_prometheus_configmap_exists(

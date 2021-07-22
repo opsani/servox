@@ -113,7 +113,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             main_arg = { 'deployments': main_config }
         elif self.rollout:
             main_arg = { 'rollouts': servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config) }
-        
+
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
@@ -308,12 +308,15 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_resource_requirements(self) -> None:
         if self.config.deployment:
             deployment = await servo.connectors.kubernetes.Deployment.read(self.config.deployment, self.config.namespace)
-            container = deployment.find_container(self.config.container)
-            assert container
-            assert container.resources, "missing container resources"
+        elif self.config.rollout:
+            deployment = await servo.connectors.kubernetes.Rollout.read(self.config.rollout, self.config.namespace)
 
-            # Apply any defaults/overrides for requests/limits from config
-            servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
+        container = deployment.find_container(self.config.container)
+        assert container
+        assert container.resources, "missing container resources"
+
+        # Apply any defaults/overrides for requests/limits from config
+        servo.connectors.kubernetes.set_container_resource_defaults_from_config(container, self.config)
 
         for resource in servo.connectors.kubernetes.Resource.values():
             current_state = None
