@@ -1470,8 +1470,11 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
 
     elif id == 'check_tuning_is_running':
         servo.logger.critical("Step 7 - Bring tuning Pod online")
-        async with change_to_resource(deployment):
-            await deployment.create_or_recreate_tuning_pod()
+        kubernetes_config = config.generate_kubernetes_config()
+        canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
+            deployment_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
+        )
+        await canary_opt.create_tuning_pod()
 
     elif id == 'check_traffic_metrics':
         # Step 8
