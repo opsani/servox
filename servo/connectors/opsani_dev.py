@@ -607,7 +607,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         elif self.config.rollout:
             resource = "rollout"
             deployment = await servo.connectors.kubernetes.Rollout.read(
-                self.config.deployment,
+                self.config.rollout,
                 self.config.namespace
             )
             assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
@@ -644,7 +644,7 @@ class OpsaniDevChecks(servo.BaseChecks):
         elif self.config.rollout:
             resource = "rollout"
             deployment = await servo.connectors.kubernetes.Rollout.read(
-                self.config.deployment,
+                self.config.rollout,
                 self.config.namespace
             )
             assert deployment, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
