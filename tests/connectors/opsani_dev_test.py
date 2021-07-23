@@ -91,6 +91,9 @@ class TestConfig:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         config.__optimizer__ = None
 
+    def test_generate_rollout_config(self, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> None:
+        rollout_config.generate_kubernetes_config()
+
 
 @pytest.mark.applymanifests(
     "opsani_dev",

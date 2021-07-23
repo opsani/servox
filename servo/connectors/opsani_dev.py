@@ -91,7 +91,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             A Kubernetes connector configuration object.
         """
         main_config = servo.connectors.kubernetes.DeploymentConfiguration(
-            name=self.deployment,
+            name=(self.deployment or self.rollout),
             strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
                 type=servo.connectors.kubernetes.OptimizationStrategy.canary,
                 alias="tuning"
@@ -112,7 +112,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         if self.deployment:
             main_arg = { 'deployments': [ main_config ] }
         elif self.rollout:
-            main_arg = { 'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config) ] }
+            main_arg = { 'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config) ], 'deployments': [] }
 
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
