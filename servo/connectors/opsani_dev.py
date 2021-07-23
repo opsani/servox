@@ -758,7 +758,14 @@ class OpsaniDevChecks(servo.BaseChecks):
         if self.config.deployment:
             resource = f"deploy/{self.config.deployment}"
         elif self.config.rollout:
-            resource = f"rollout/{self.config.rollout}"
+            rollout = await servo.connectors.kubernetes.Rollout.read(
+                self.config.rollout,
+                self.config.namespace
+            )
+            assert rollout, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
+            assert rollout.status, f"unable to verify envoy proxy. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no status"
+            # NOTE rollouts don't support kubectl port-forward, have to target the current replicaset instead
+            resource = f"replicaset/{rollout.name}-{rollout.status.current_pod_hash}"
         # NOTE: We don't care about the response status code, we just want to see that traffic is being metered by Envoy
         metric = servo.connectors.prometheus.PrometheusMetric(
             "main_request_total",
