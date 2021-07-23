@@ -599,6 +599,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_deployment_annotations(self) -> None:
         if self.config.deployment:
             resource = "deployment"
+            patch_type_arg = "" # defaults to 'strategic'
             deployment = await servo.connectors.kubernetes.Deployment.read(
                 self.config.deployment,
                 self.config.namespace
@@ -606,6 +607,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
         elif self.config.rollout:
             resource = "rollout"
+            patch_type_arg = "--type='merge' " # strategic not supported on custom resources
             deployment = await servo.connectors.kubernetes.Rollout.read(
                 self.config.rollout,
                 self.config.namespace
@@ -624,7 +626,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
-            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} {patch_type_arg}-p '{patch_json}'"
             desc = ', '.join(sorted(delta))
             raise servo.checks.CheckError(
                 f"deployment '{deployment.name}' is missing annotations: {desc}",
@@ -636,6 +638,7 @@ class OpsaniDevChecks(servo.BaseChecks):
     async def check_deployment_labels(self) -> None:
         if self.config.deployment:
             resource = "deployment"
+            patch_type_arg = ""
             deployment = await servo.connectors.kubernetes.Deployment.read(
                 self.config.deployment,
                 self.config.namespace
@@ -643,6 +646,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             assert deployment, f"failed to read deployment '{self.config.deployment}' in namespace '{self.config.namespace}'"
         elif self.config.rollout:
             resource = "rollout"
+            patch_type_arg = "--type='merge' "
             deployment = await servo.connectors.kubernetes.Rollout.read(
                 self.config.rollout,
                 self.config.namespace
@@ -660,7 +664,7 @@ class OpsaniDevChecks(servo.BaseChecks):
             desc = ', '.join(sorted(map('='.join, delta.items())))
             patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
             patch_json = json.dumps(patch, indent=None)
-            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {resource} {deployment.name} {patch_type_arg}-p '{patch_json}'"
             raise servo.checks.CheckError(
                 f"{resource} '{deployment.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
