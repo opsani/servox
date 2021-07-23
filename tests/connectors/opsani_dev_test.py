@@ -91,7 +91,16 @@ class TestConfig:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         config.__optimizer__ = None
 
-    def test_generate_rollout_config(self, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> None:
+    def test_generate_rollout_config(self) -> None:
+        rollout_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
+            namespace="test",
+            rollout="fiber-http",
+            container="fiber-http",
+            service="fiber-http",
+            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
+            memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
+            __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
+        )
         rollout_config.generate_kubernetes_config()
 
 

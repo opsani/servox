@@ -2125,7 +2125,7 @@ class RolloutSpec(RolloutBaseModel):
     selector: RolloutV1LabelSelector
     template: RolloutV1PodTemplateSpec
     min_ready_seconds: Optional[int]
-    revision_history_limit: int
+    revision_history_limit: Optional[int]
     paused: Optional[bool]
     progress_deadline_seconds: Optional[int]
     restart_at: Optional[datetime.datetime]
