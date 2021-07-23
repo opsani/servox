@@ -1729,8 +1729,8 @@ class ServoCLI(CLI):
             """
             Inject an Envoy sidecar to capture metrics
             """
-            if not target.startswith(("deploy/", "deployment/", "pod/")):
-                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+            if not target.startswith(("deploy/", "deployment/", "pod/", "rollout/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\", \"rollout\" or \"pod\"")
 
             if not (service or port):
                 raise typer.BadParameter("service or port must be given")
