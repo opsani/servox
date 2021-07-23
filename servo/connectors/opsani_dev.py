@@ -113,7 +113,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             main_arg = { 'deployments': [ main_config ] }
         elif self.rollout:
             main_arg = {
-                'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config.dict(exclude_unset=True)) ],
+                'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config.dict(exclude_none=True)) ],
                 'deployments': []
             }
 
