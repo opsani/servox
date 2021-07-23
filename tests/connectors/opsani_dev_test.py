@@ -101,7 +101,8 @@ class TestConfig:
             memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
             __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
         )
-        rollout_config.generate_kubernetes_config()
+        k_config = rollout_config.generate_kubernetes_config()
+        assert k_config.rollouts[0].namespace == "test" # validate config cascade
 
 
 @pytest.mark.applymanifests(
