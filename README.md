@@ -19,9 +19,15 @@ shared by all servos and a rich library supporting the development of connectors
 
 ## Quick Start
 
+```
+pip install servox
+```
+
 ServoX is a modern Python application distributed as an installable Python package. Development is done
 in a Python install managed with [Pyenv](https://github.com/pyenv/pyenv) and a virtual environment managed by [Poetry](https://python-poetry.org/). 
 This is the path of least resistance but any Python package management system should work.
+
+To build ServoX yourself, you can:
 
 * Clone the repo: `git clone git@github.com:opsani/servox`
 * Install required Python: `cd servox && pyenv install`
