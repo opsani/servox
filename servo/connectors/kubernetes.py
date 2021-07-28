@@ -12,6 +12,7 @@ import decimal
 import enum
 import functools
 import itertools
+import json
 import operator
 import os
 import pathlib
@@ -1588,6 +1589,9 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        return self.find_container(config.name)
+
     def set_container(self, name: str, container: Container) -> None:
         """Set the container with the given name to a new value."""
         index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
@@ -1631,6 +1635,15 @@ class Deployment(KubernetesModel):
     def pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
         """Return the pod template spec for instances of the Deployment."""
         return self.obj.spec.template
+
+    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec for creation of a tuning pod"""
+        return copy.deepcopy(self.pod_template_spec)
+
+    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the tuning pod with the latest state of the controller if needed"""
+        # NOTE: Deployment currently needs no updating
+        return pod
 
     @property
     def pod_spec(self) -> kubernetes_asyncio.client.models.V1PodSpec:
@@ -2003,6 +2016,21 @@ class Deployment(KubernetesModel):
 
         return count
 
+# Workarounds to allow use of api_client.deserialize() public method instead of private api_client._ApiClient__deserialize
+# TODO: is this workaround worth it just to avoid using the private method?
+# fix for https://github.com/kubernetes-client/python/issues/977#issuecomment-594045477
+def default_kubernetes_json_serializer(o: Any) -> Any:
+    if isinstance(o, (datetime.datetime, datetime.date)):
+        return o.isoformat()
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+
+# https://github.com/kubernetes-client/python/issues/977#issuecomment-592030030
+class FakeKubeResponse:
+    """Mocks the RESTResponse object as a workaround for kubernetes python api_client deserialization"""
+    def __init__(self, obj):
+        self.data = json.dumps(obj, default=default_kubernetes_json_serializer)
+
 # Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
 def to_lower_camel(string: str) -> str:
     split = string.split('_')
@@ -2371,6 +2399,16 @@ class Rollout(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        tuning_container = self.find_container(config.name)
+        if tuning_container is not None:
+            async with kubernetes_asyncio.client.ApiClient() as api_client:
+                tuning_container.obj = api_client.deserialize(
+                        response=FakeKubeResponse(tuning_container.obj.dict(by_alias=True, exclude_none=True)),
+                        response_type=kubernetes_asyncio.client.models.V1Container
+                    )
+        return tuning_container
+
     @property
     def replicas(self) -> int:
         """
@@ -2390,12 +2428,19 @@ class Rollout(KubernetesModel):
         """Return the pod template spec for instances of the Rollout."""
         return self.obj.spec.template
 
-    async def deserialize_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec for creation of a tuning pod"""
         async with kubernetes_asyncio.client.ApiClient() as api_client:
             return api_client.deserialize(
-                self.obj.spec.template.dict(by_alias=True, exclude_none=True),
-                kubernetes_asyncio.client.models.V1PodTemplateSpec
+                response=FakeKubeResponse(self.pod_template_spec.dict(by_alias=True, exclude_none=True)),
+                response_type=kubernetes_asyncio.client.models.V1PodTemplateSpec
             )
+
+    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the tuning pod with the latest state of the controller if needed"""
+        # Apply the latest template hash so the active service register the tuning pod as an endpoint
+        pod.metadata.labels["rollouts-pod-template-hash"] = self.obj.status.current_pod_hash
+        return pod
 
     @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
     async def inject_sidecar(
@@ -3090,14 +3135,7 @@ class CanaryOptimization(BaseOptimization):
         # NOTE: Currently only supporting one container
         assert len(deployment_config.containers) == 1, "CanaryOptimization currently only supports a single container"
         container_config = deployment_config.containers[0]
-        main_container = deployment.find_container(container_config.name)
-
-        if isinstance(deployment_config, RolloutConfiguration):
-            async with kubernetes_asyncio.client.ApiClient() as api_client:
-                main_container.obj = api_client._ApiClient__deserialize(
-                    main_container.obj.dict(by_alias=True, exclude_none=True),
-                    kubernetes_asyncio.client.models.V1Container
-                )
+        main_container = await deployment.get_tuning_container(container_config)
         name = (
             deployment_config.strategy.alias
             if isinstance(deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
@@ -3247,14 +3285,7 @@ class CanaryOptimization(BaseOptimization):
     # TODO: Factor into another class?
     async def _configure_tuning_pod_template_spec(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
-        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.deepcopy(self.deployment.pod_template_spec)
-        if isinstance(self.deployment_config, RolloutConfiguration):
-            async with kubernetes_asyncio.client.ApiClient() as api_client:
-                pod_template_spec = api_client._ApiClient__deserialize(
-                    data=pod_template_spec.dict(by_alias=True, exclude_none=True),
-                    klass=kubernetes_asyncio.client.models.V1PodTemplateSpec
-                )
-
+        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = await self.deployment.get_tuning_pod_template_spec()
         pod_template_spec.metadata.name = self.tuning_pod_name
 
         if pod_template_spec.metadata.annotations is None:
@@ -3351,9 +3382,8 @@ class CanaryOptimization(BaseOptimization):
             metadata=self._tuning_pod_template_spec.metadata, spec=self._tuning_pod_template_spec.spec
         )
 
-        # Update pod template hash for rollouts
-        if isinstance(self.deployment, Rollout):
-            pod_obj.metadata.labels["rollouts-pod-template-hash"] = self.deployment.obj.status.current_pod_hash
+        # Update pod with latest controller state
+        pod_obj = self.deployment.update_tuning_pod(pod_obj)
 
         tuning_pod = Pod(obj=pod_obj)
 

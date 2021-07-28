@@ -2272,17 +2272,29 @@ class TestKubernetesConnectorRolloutIntegration:
         return kube.namespace
 
     @pytest.fixture()
-    def _rollout_tuning_config(self, tuning_config: KubernetesConfiguration):
+    def _rollout_tuning_config(self, tuning_config: KubernetesConfiguration) -> KubernetesConfiguration:
         tuning_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in tuning_config.deployments ]
         tuning_config.deployments = []
         return tuning_config
 
     ##
     # Canary Tests
-    async def test_create_tuning(self, _rollout_tuning_config, namespace: str) -> None:
+    async def test_create_tuning(self, _rollout_tuning_config: KubernetesConfiguration, namespace: str) -> None:
         connector = KubernetesConnector(config=_rollout_tuning_config)
         rol = await Rollout.read("fiber-http", namespace)
         await connector.describe()
+
+        # verify tuning pod is registered as service endpoint
+        service = await servo.connectors.kubernetes.Service.read("fiber-http", namespace)
+        endpoints = await service.get_endpoints()
+        tuning_name = f"{_rollout_tuning_config.rollouts[0].name}-tuning"
+        tuning_endpoint = next(filter(
+            lambda epa: epa.target_ref.name == tuning_name,
+            endpoints[0].subsets[0].addresses
+        ), None)
+        if tuning_endpoint is None:
+            raise AssertionError(f"Tuning pod {tuning_name} not contained in service endpoints: {endpoints}")
+
 
 
     async def test_adjust_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
