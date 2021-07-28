@@ -24,7 +24,7 @@ __all__ = [
 ]
 
 
-ORGANIZATION_REGEX = r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
+ORGANIZATION_REGEX = r"(?!-)([A-Za-z0-9-.]+){5,50}"
 NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
 OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
 
