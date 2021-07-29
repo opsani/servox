@@ -2048,7 +2048,7 @@ class RolloutBaseModel(pydantic.BaseModel):
 #   arise to interact with such fields, they will need to have an explicit type defined so the alias_generator is applied
 class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
     match_expressions: Any
-    match_labels: Dict[str, str]
+    match_labels: Optional[Dict[str, str]]
 
 class RolloutV1ObjectMeta(RolloutBaseModel):
     annotations: Optional[Dict[str, str]]
@@ -2193,8 +2193,8 @@ class RolloutStatus(RolloutBaseModel):
     current_step_index: Optional[int]
     observed_generation: str
     pause_conditions: Any
-    ready_replicas: int
-    replicas: int
+    ready_replicas: Optional[int]
+    replicas: Optional[int]
     restarted_at: Optional[datetime.datetime]
     selector: str
     stable_RS: Optional[str]
@@ -2424,7 +2424,12 @@ class Rollout(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
-    def pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+    def match_labels(self) -> Dict[str, str]:
+        """Return the labels used to match pods managed by the Rollout"""
+        return self.obj.spec.selector.match_labels
+
+    @property
+    def pod_template_spec(self) -> RolloutV1PodTemplateSpec:
         """Return the pod template spec for instances of the Rollout."""
         return self.obj.spec.template
 

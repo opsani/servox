@@ -32,6 +32,7 @@ import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
+import tests.helpers
 
 
 @pytest.fixture
@@ -64,8 +65,8 @@ def checks(config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.
     return servo.connectors.opsani_dev.OpsaniDevChecks(config=config)
 
 @pytest.fixture
-def rollout_checks(rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.connectors.opsani_dev.OpsaniDevChecks:
-    return servo.connectors.opsani_dev.OpsaniDevChecks(config=rollout_config)
+def rollout_checks(rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration) -> servo.connectors.opsani_dev.OpsaniDevRolloutChecks:
+    return servo.connectors.opsani_dev.OpsaniDevRolloutChecks(config=rollout_config)
 
 class TestConfig:
     def test_generate(self) -> None:
@@ -141,7 +142,7 @@ class TestIntegration:
 
 
         @pytest.mark.parametrize(
-            "resource", ["namespace", "deployment", "container", "service"]
+            "resource", ["namespace", "controller", "container", "service"]
         )
         async def test_resource_exists(
             self, resource: str, checks: servo.connectors.opsani_dev.OpsaniDevChecks
@@ -172,7 +173,7 @@ class TestIntegration:
         async def test_service_routes_traffic_to_deployment(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks
         ) -> None:
-            result = await checks.run_one(id=f"check_service_routes_traffic_to_deployment")
+            result = await checks.run_one(id=f"check_service_routes_traffic_to_controller")
             assert result.success, f"Failed with message: {result.message}"
 
         async def test_prometheus_configmap_exists(
@@ -317,7 +318,7 @@ class TestRolloutIntegration:
     class TestChecksOriginalState:
         @pytest.fixture(autouse=True)
         async def load_manifests(
-            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks, kubeconfig,
+            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, kubeconfig,
             manage_rollout # NOTE: rollout must be specified as a dependency, otherwise kube.wait_for_registered runs
                            #    indefinitely waiting for the service to have endpoints
         ) -> None:
@@ -340,16 +341,16 @@ class TestRolloutIntegration:
 
 
         @pytest.mark.parametrize(
-            "resource", ["namespace", "rollout", "container", "service"]
+            "resource", ["namespace", "controller", "container", "service"]
         )
         async def test_resource_exists(
-            self, resource: str, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+            self, resource: str, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ) -> None:
             result = await rollout_checks.run_one(id=f"check_kubernetes_{resource}")
             assert result.success
 
         async def test_target_container_resources_within_limits(
-            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
+            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
             rollout_config.cpu.min = "125m"
             rollout_config.cpu.max = "2000m"
@@ -359,7 +360,7 @@ class TestRolloutIntegration:
             assert result.success, f"Expected success but got: {result}"
 
         async def test_target_container_resources_outside_of_limits(
-            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
+            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
             rollout_config.cpu.min = "4000m"
             rollout_config.cpu.max = "5000m"
@@ -368,375 +369,52 @@ class TestRolloutIntegration:
             result = await rollout_checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 
-        async def test_service_routes_traffic_to_deployment(
-            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+        async def test_service_routes_traffic_to_rollout(
+            self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ) -> None:
-            result = await rollout_checks.run_one(id=f"check_service_routes_traffic_to_deployment")
+            result = await rollout_checks.run_one(id=f"check_service_routes_traffic_to_controller")
             assert result.success, f"Failed with message: {result.message}"
 
         async def test_check_resource_requirements(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ) -> None:
             result = await rollout_checks.run_one(id=f"check_resource_requirements")
             assert result.success, f"Expected success but got: {result}"
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_mem.yaml")
         async def test_check_resource_requirements_fails_mem(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
             result = await rollout_checks.run_one(id=f"check_resource_requirements")
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml")
         async def test_check_resource_requirements_fails_cpu_limit(
-            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
             rollout_checks.config.cpu.get = [ servo.connectors.kubernetes.ResourceRequirement.limit ]
             result = await rollout_checks.run_one(id=f"check_resource_requirements")
             assert result.exception, f"Expected exception but got: {result}"
 
+        @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")
+        async def test_check_rollout_selector_labels(
+            self, kube, kubeconfig, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+        ):
+            result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
+            assert result.exception, f"Expected exception but got: {result}"
+            # debug(result)
+
+            rollout = await servo.connectors.kubernetes.Rollout.read(name=rollout_checks.config.rollout, namespace=kube.namespace)
+            with tests.helpers.environment_overrides({"KUBECONFIG": str(kubeconfig)}):
+                async with change_to_resource(rollout):
+                    await result.remedy()
+
+            result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
+            assert result.success, f"Expected success but got: {result}"
+
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
-        # async def test_prometheus_configmap_exists(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     result = await rollout_checks.run_one(id=f"check_prometheus_config_map")
-        #     assert result.success
 
-        # async def test_prometheus_sidecar_exists(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     result = await rollout_checks.run_one(id=f"check_prometheus_sidecar_exists")
-        #     assert result.success
-
-        # async def test_prometheus_sidecar_is_ready(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     result = await rollout_checks.run_one(id=f"check_prometheus_sidecar_is_ready")
-        #     assert result.success
-
-        # async def test_check_prometheus_restart_count(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     result = await rollout_checks.run_one(id=f"check_prometheus_restart_count")
-        #     assert result.success
-
-        # async def test_check_prometheus_container_port(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     result = await rollout_checks.run_one(id=f"check_prometheus_container_port")
-        #     assert result.success
-
-        # @pytest.fixture
-        # def go_memstats_gc_sys_bytes(self) -> dict:
-        #     return {
-        #         "status": "success",
-        #         "data": {
-        #             "resultType": "matrix",
-        #             "result": [
-        #                 {
-        #                     "metric": {
-        #                         "__name__": "go_memstats_gc_sys_bytes",
-        #                         "instance": "localhost:9090",
-        #                         "job": "prometheus",
-        #                     },
-        #                     "values": [
-        #                         [1595142421.024, "3594504"],
-        #                         [1595142481.024, "3594504"],
-        #                     ],
-        #                 }
-        #             ],
-        #         },
-        #     }
-
-        # @pytest.fixture
-        # def mocked_api(self, go_memstats_gc_sys_bytes):
-        #     with respx.mock(
-        #         base_url=servo.connectors.opsani_dev.PROMETHEUS_SIDECAR_BASE_URL,
-        #         assert_all_called=False
-        #     ) as respx_mock:
-        #         respx_mock.get(
-        #             "/ap/v1/targets",
-        #             name="targets"
-        #         ).mock(return_value=httpx.Response(200, json=[]))
-
-        #         respx_mock.get(
-        #             re.compile(r"/ap/v1/query_range.+"),
-        #             name="query",
-        #         ).mock(return_value=httpx.Response(200, json=go_memstats_gc_sys_bytes))
-        #         yield respx_mock
-
-        # async def test_check_prometheus_is_accessible(
-        #     self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-        # ) -> None:
-        #     with respx.mock(base_url=servo.connectors.opsani_dev.PROMETHEUS_SIDECAR_BASE_URL) as respx_mock:
-        #         request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(status_code=503))
-        #         check = await rollout_checks.run_one(id=f"check_prometheus_is_accessible")
-        #         assert request.called
-        #         assert check
-        #         assert check.name == 'Prometheus is accessible'
-        #         assert check.id == "check_prometheus_is_accessible"
-        #         assert check.critical
-        #         assert not check.success
-        #         assert check.message is not None
-        #         assert isinstance(check.exception, httpx.HTTPStatusError)
-
-    # TODO: rewrite deployment specific portions
-    # class TestInstall:
-    #     @pytest.fixture(autouse=True)
-    #     async def load_manifests(
-    #         self, kube, kubeconfig, kubernetes_asyncio_config, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks
-    #     ) -> None:
-    #         kube.wait_for_registered()
-    #         rollout_checks.config.namespace = kube.namespace
-
-    #         # Fake out the servo metadata in the environment
-    #         # These env vars are set by our manifests
-    #         deployment = kube.get_deployments()["servo"]
-    #         pod = deployment.get_pods()[0]
-    #         try:
-    #             os.environ['POD_NAME'] = pod.name
-    #             os.environ["POD_NAMESPACE"] = kube.namespace
-
-    #             yield
-
-    #         finally:
-    #             os.environ.pop('POD_NAME', None)
-    #             os.environ.pop('POD_NAMESPACE', None)
-
-    #     async def test_process(
-    #         self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks,
-    #         kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
-    #         load_generator: Callable[[], 'LoadGenerator'],
-    #     ) -> None:
-    #         # Deploy fiber-http with annotations and Prometheus will start scraping it
-    #         envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
-    #         async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-    #             # Connect the checks to our port forward interface
-    #             rollout_checks.config.prometheus_base_url = prometheus_base_url
-
-    #             deployment = await servo.connectors.kubernetes.Rollout.read(rollout_checks.config.rollout, rollout_checks.config.namespace)
-    #             assert deployment, f"failed loading rollout '{rollout_checks.config.rollout}' in namespace '{rollout_checks.config.namespace}'"
-
-    #             prometheus_config = servo.connectors.prometheus.PrometheusConfiguration.generate(base_url=prometheus_base_url)
-    #             prometheus_connector = servo.connectors.prometheus.PrometheusConnector(config=prometheus_config)
-
-    #             ## Step 1
-    #             servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
-    #             async with assert_check_raises_in_context(
-    #                 servo.checks.CheckError,
-    #                 match="deployment 'fiber-http' is missing annotations"
-    #             ) as assertion:
-    #                 assertion.set(rollout_checks.run_one(id=f"check_deployment_annotations"))
-
-    #             # Add a subset of the required annotations to catch partial setup cases
-    #             async with change_to_resource(deployment):
-    #                 await add_annotations_to_podspec_of_deployment(deployment,
-    #                     {
-    #                         "prometheus.opsani.com/path": "/stats/prometheus",
-    #                         "prometheus.opsani.com/port": "9901",
-    #                         "servo.opsani.com/optimizer": checks.config.optimizer.id,
-    #                     }
-    #                 )
-    #             await assert_check_raises(
-    #                 checks.run_one(id=f"check_deployment_annotations"),
-    #                 servo.checks.CheckError,
-    #                 re.escape("deployment 'fiber-http' is missing annotations: prometheus.opsani.com/scheme, prometheus.opsani.com/scrape")
-    #             )
-
-    #             # Fill in the missing annotations
-    #             async with change_to_resource(deployment):
-    #                 await add_annotations_to_podspec_of_deployment(deployment,
-    #                     {
-    #                         "prometheus.opsani.com/scrape": "true",
-    #                         "prometheus.opsani.com/scheme": "http",
-    #                     }
-    #                 )
-    #             await assert_check(checks.run_one(id=f"check_deployment_annotations"))
-
-    #             # Step 2: Verify the labels are set on the Deployment pod spec
-    #             servo.logger.critical("Step 2 - Label the Deployment PodSpec")
-    #             await assert_check_raises(
-    #                 checks.run_one(id=f"check_deployment_labels"),
-    #                 servo.checks.CheckError,
-    #                 re.escape("deployment 'fiber-http' is missing labels: servo.opsani.com/optimizer=test.com_foo, sidecar.opsani.com/type=envoy")
-    #             )
-
-    #             async with change_to_resource(deployment):
-    #                 await add_labels_to_podspec_of_deployment(deployment,
-    #                     {
-    #                         "sidecar.opsani.com/type": "envoy",
-    #                         "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(checks.config.optimizer.id),
-    #                     }
-    #                 )
-    #             await assert_check(checks.run_one(id=f"check_deployment_labels"))
-
-    #             # Step 3
-    #             servo.logger.critical("Step 3 - Inject Envoy sidecar container")
-    #             await assert_check_raises(
-    #                 checks.run_one(id=f"check_deployment_envoy_sidecars"),
-    #                 servo.checks.CheckError,
-    #                 re.escape("deployment 'fiber-http' pod template spec does not include envoy sidecar container ('opsani-envoy')")
-    #             )
-
-    #             # servo.logging.set_level("DEBUG")
-    #             async with change_to_resource(deployment):
-    #                 servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
-    #                 await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
-
-    #             await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_deployment_envoy_sidecars"))
-    #             await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_pod_envoy_sidecars"))
-
-    #             # Step 4
-    #             servo.logger.critical("Step 4 - Check that Prometheus is discovering and scraping annotated Pods")
-    #             servo.logger.info("waiting for Prometheus to scrape our Pods")
-
-    #             async def wait_for_targets_to_be_scraped() -> List[servo.connectors.prometheus.ActiveTarget]:
-    #                 servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
-    #                 # NOTE: Prometheus is on a 5s scrape interval
-    #                 scraped_since = pytz.utc.localize(datetime.datetime.now())
-    #                 while True:
-    #                     targets = await prometheus_connector.targets()
-    #                     if targets:
-    #                         if not any(filter(lambda t: t.last_scraped_at is None or t.last_scraped_at < scraped_since, targets.active)):
-    #                             # NOTE: filter targets to match our namespace in
-    #                             # case there are other things running in the cluster
-    #                             return list(filter(lambda t: t.labels["kubernetes_namespace"] == kube.namespace, targets.active))
-
-    #             await wait_for_targets_to_be_scraped()
-    #             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
-
-    #             # Step 5
-    #             servo.logger.critical("Step 5 - Check that traffic metrics are coming in from Envoy")
-    #             await assert_check_raises(
-    #                 checks.run_one(id=f"check_envoy_sidecar_metrics"),
-    #                 servo.checks.CheckError,
-    #                 re.escape("Envoy is not reporting any traffic to Prometheus")
-    #             )
-
-    #             servo.logger.info(f"Sending test traffic to Envoy through deploy/fiber-http")
-    #             async with kube_port_forward("deploy/fiber-http", envoy_proxy_port) as envoy_url:
-    #                 await load_generator(envoy_url).run_until(
-    #                     wait_for_check_to_pass(
-    #                         functools.partial(checks.run_one, id=f"check_envoy_sidecar_metrics")
-    #                     )
-    #                 )
-
-    #             # Let Prometheus scrape to see the traffic
-    #             await wait_for_targets_to_be_scraped()
-    #             await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_prometheus_targets"))
-
-    #             # Step 6
-    #             servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
-    #             await assert_check_raises(
-    #                 checks.run_one(id=f"check_service_proxy"),
-    #                 servo.checks.CheckError,
-    #                 re.escape(f"service 'fiber-http' is not routing traffic through Envoy sidecar on port {envoy_proxy_port}")
-    #             )
-
-    #             # Update the port to point to the sidecar
-    #             service = await servo.connectors.kubernetes.Service.read("fiber-http", checks.config.namespace)
-    #             service.ports[0].target_port = envoy_proxy_port
-    #             async with change_to_resource(service):
-    #                 await service.patch()
-    #             await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_service_proxy"))
-
-    #             # Send traffic through the service and verify it shows up in Envoy
-    #             port = service.ports[0].port
-    #             servo.logger.info(f"Sending test traffic through proxied Service fiber-http on port {port}")
-
-    #             async with kube_port_forward(f"service/fiber-http", port) as service_url:
-    #                 await load_generator(envoy_url).run_until(wait_for_targets_to_be_scraped())
-
-    #             # Let Prometheus scrape to see the traffic
-    #             await assert_check(checks.run_one(id=f"check_prometheus_targets"))
-
-    #             # Step 7
-    #             servo.logger.critical("Step 7 - Bring tuning Pod online")
-    #             # TODO: why is the tuning pod being created here when the check will recreate it anyway?
-    #             kubernetes_config = checks.config.generate_kubernetes_config()
-    #             canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-    #                 deployment_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
-    #             )
-    #             await canary_opt.create_tuning_pod()
-    #             await assert_check(checks.run_one(id=f"check_tuning_is_running"))
-
-    #             # Step 8
-    #             servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
-    #             async with kube_port_forward(f"service/fiber-http", port) as service_url:
-    #                 await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
-
-    #             # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
-    #             scrapes_remaining = 3
-    #             targets = await wait_for_targets_to_be_scraped()
-    #             while len(targets) != 3 and scrapes_remaining > 0:
-    #                 targets = await wait_for_targets_to_be_scraped()
-    #                 scrapes_remaining -= 1
-
-    #             assert len(targets) == 3
-    #             main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
-    #             tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
-    #             assert main.pool == "opsani-envoy-sidecars"
-    #             assert main.health == "up"
-    #             assert main.labels["app_kubernetes_io_name"] == "fiber-http"
-
-    #             assert tuning.pool == "opsani-envoy-sidecars"
-    #             assert tuning.health == "up"
-    #             assert tuning.labels["opsani_role"] == "tuning"
-    #             assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
-    #             assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
-
-    #             async with kube_port_forward(f"service/fiber-http", port) as service_url:
-    #                 await load_generator(service_url).run_until(
-    #                     wait_for_check_to_pass(
-    #                         functools.partial(checks.run_one, id=f"check_traffic_metrics")
-    #                     )
-    #                 )
-
-    #             servo.logger.success("🥷 Opsani Dev is now deployed.")
-    #             servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
-
-    #             # Cancel outstanding tasks
-    #             tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    #             [task.cancel() for task in tasks]
-
-    #             await asyncio.gather(*tasks, return_exceptions=True)
-
-    #     async def test_install_wait(
-    #         self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevChecks,
-    #         kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
-    #         load_generator: Callable[[], 'LoadGenerator'],
-    #         tmp_path: pathlib.Path
-    #     ) -> None:
-    #         servo.logging.set_level("TRACE")
-
-    #         async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-    #             # Connect the checks to our port forward interface
-    #             rollout_checks.config.prometheus_base_url = prometheus_base_url
-
-    #             deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
-    #             assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
-
-    #             async def loop_checks() -> None:
-    #                 while True:
-    #                     results = await checks.run_all()
-    #                     next_failure = next(filter(lambda r: r.success is False, results), None)
-    #                     if next_failure:
-    #                         servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
-    #                         await _remedy_check(
-    #                             next_failure.id,
-    #                             config=checks.config,
-    #                             deployment=deployment,
-    #                             kube_port_forward=kube_port_forward,
-    #                             load_generator=load_generator,
-    #                             checks=checks
-    #                         )
-    #                     else:
-    #                         break
-
-    #             await asyncio.wait_for(loop_checks(), timeout=420.0)
-
-    #         servo.logger.success("🥷 Opsani Dev is now deployed.")
-    #         servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+    # TODO: port TestInstall class to rollouts by refactoring deployment specific helper code
 
 @pytest.mark.applymanifests(
     "opsani_dev",
@@ -881,9 +559,9 @@ class TestServiceMultiport:
                 servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
                 async with assert_check_raises_in_context(
                     servo.checks.CheckError,
-                    match="deployment 'fiber-http' is missing annotations"
+                    match="Deployment 'fiber-http' is missing annotations"
                 ) as assertion:
-                    assertion.set(checks.run_one(id=f"check_deployment_annotations"))
+                    assertion.set(checks.run_one(id=f"check_controller_annotations"))
 
                 # Add a subset of the required annotations to catch partial setup cases
                 async with change_to_resource(deployment):
@@ -895,9 +573,9 @@ class TestServiceMultiport:
                         }
                     )
                 await assert_check_raises(
-                    checks.run_one(id=f"check_deployment_annotations"),
+                    checks.run_one(id=f"check_controller_annotations"),
                     servo.checks.CheckError,
-                    re.escape("deployment 'fiber-http' is missing annotations: prometheus.opsani.com/scheme, prometheus.opsani.com/scrape")
+                    re.escape("Deployment 'fiber-http' is missing annotations: prometheus.opsani.com/scheme, prometheus.opsani.com/scrape")
                 )
 
                 # Fill in the missing annotations
@@ -908,14 +586,14 @@ class TestServiceMultiport:
                             "prometheus.opsani.com/scheme": "http",
                         }
                     )
-                await assert_check(checks.run_one(id=f"check_deployment_annotations"))
+                await assert_check(checks.run_one(id=f"check_controller_annotations"))
 
                 # Step 2: Verify the labels are set on the Deployment pod spec
                 servo.logger.critical("Step 2 - Label the Deployment PodSpec")
                 await assert_check_raises(
-                    checks.run_one(id=f"check_deployment_labels"),
+                    checks.run_one(id=f"check_controller_labels"),
                     servo.checks.CheckError,
-                    re.escape("deployment 'fiber-http' is missing labels: servo.opsani.com/optimizer=test.com_foo, sidecar.opsani.com/type=envoy")
+                    re.escape("Deployment 'fiber-http' is missing labels: servo.opsani.com/optimizer=test.com_foo, sidecar.opsani.com/type=envoy")
                 )
 
                 async with change_to_resource(deployment):
@@ -925,14 +603,14 @@ class TestServiceMultiport:
                             "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(checks.config.optimizer.id),
                         }
                     )
-                await assert_check(checks.run_one(id=f"check_deployment_labels"))
+                await assert_check(checks.run_one(id=f"check_controller_labels"))
 
                 # Step 3
                 servo.logger.critical("Step 3 - Inject Envoy sidecar container")
                 await assert_check_raises(
-                    checks.run_one(id=f"check_deployment_envoy_sidecars"),
+                    checks.run_one(id=f"check_controller_envoy_sidecars"),
                     servo.checks.CheckError,
-                    re.escape("deployment 'fiber-http' pod template spec does not include envoy sidecar container ('opsani-envoy')")
+                    re.escape("Deployment 'fiber-http' pod template spec does not include envoy sidecar container ('opsani-envoy')")
                 )
 
                 # servo.logging.set_level("DEBUG")
@@ -940,7 +618,7 @@ class TestServiceMultiport:
                     servo.logger.info(f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec")
                     await deployment.inject_sidecar('opsani-envoy', 'opsani/envoy-proxy:latest', service="fiber-http")
 
-                await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_deployment_envoy_sidecars"))
+                await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_controller_envoy_sidecars"))
                 await wait_for_check_to_pass(functools.partial(checks.run_one, id=f"check_pod_envoy_sidecars"))
 
                 # Step 4
@@ -1277,9 +955,11 @@ async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesMod
             await resource.refresh()
 
     # wait for the change to roll out
-    if isinstance(resource, servo.connectors.kubernetes.Deployment):
-        await resource.wait_until_ready()
-    elif isinstance(resource, servo.connectors.kubernetes.Pod):
+    if isinstance(resource, (
+        servo.connectors.kubernetes.Deployment,
+        servo.connectors.kubernetes.Rollout,
+        servo.connectors.kubernetes.Pod,
+    )):
         await resource.wait_until_ready()
     elif isinstance(resource, servo.connectors.kubernetes.Service):
         pass
@@ -1419,7 +1099,7 @@ async def wait_for_check_to_pass(
 async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_generator, checks) -> None:
     envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
     servo.logger.warning(f"Remedying failing check '{id}'...")
-    if id == 'check_deployment_annotations':
+    if id == 'check_controller_annotations':
         ## Step 1
         servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
         async with change_to_resource(deployment):
@@ -1433,7 +1113,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
                 }
             )
 
-    elif id == 'check_deployment_labels':
+    elif id == 'check_controller_labels':
         # Step 2: Verify the labels are set on the Deployment pod spec
         servo.logger.critical("Step 2 - Label the Deployment PodSpec")
         async with change_to_resource(deployment):
@@ -1444,7 +1124,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
                 }
             )
 
-    elif id == 'check_deployment_envoy_sidecars':
+    elif id == 'check_controller_envoy_sidecars':
         # Step 3
         servo.logger.critical("Step 3 - Inject Envoy sidecar container")
         async with change_to_resource(deployment):
