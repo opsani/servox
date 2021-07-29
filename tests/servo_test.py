@@ -768,7 +768,7 @@ class TestAssembly:
                             'title': 'Id',
                             'env_names': ['id'],
                             'pattern': (
-                                '^(?!-)([A-Za-z0-9-.]+){5,50}/[a-zA-Z\\_\\-\\.0-9]{1,64}$'
+                                '^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\\_\\-\\.0-9]{1,64}$'
                             ),
                             'type': 'string',
                         },

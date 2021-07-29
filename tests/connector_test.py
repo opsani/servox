@@ -36,7 +36,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]+){5,50}/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_name_valid(self) -> None:
@@ -50,7 +50,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]+){5,50}/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_token_validation(self) -> None:
