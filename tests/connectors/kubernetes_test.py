@@ -2015,11 +2015,11 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_single_port.yaml"])
     @pytest.mark.parametrize(
-        "service, port",
+        "port, service",
         [
-            ('fiber-http', None),
-            ('fiber-http', 80),
-            ('fiber-http', 'http'),
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
         ],
     )
     async def test_inject_single_port_deployment(self, namespace: str, service: str, port: Union[str, int]) -> None:
@@ -2083,11 +2083,11 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_multiple_ports.yaml"])
     @pytest.mark.parametrize(
-        "service, port, error",
+        "port, service, error",
         [
-            ('fiber-http', None, ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
-            ('fiber-http', 80, None),
-            ('fiber-http', 'http', None),
+            (None, 'fiber-http', ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
+            (80, 'fiber-http', None),
+            ('http', 'fiber-http', None),
         ],
     )
     async def test_inject_multiport_deployment(self, namespace: str, service: str, port: Union[str, int], error: Optional[Exception]) -> None:
@@ -2155,14 +2155,15 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_multiple_ports_symbolic_targets.yaml"])
     @pytest.mark.parametrize(
-        "service, port",
+        "port, service",
         [
-            ('fiber-http', None),
-            ('fiber-http', 80),
-            ('fiber-http', 'http'),
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
         ],
     )
-    async def test_inject_by_source_port_name_with_symbolic_target_port(self, namespace: str, service: str, port: Union[str, int]) -> None:
+    async def test_inject_symbolic_target_port(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        """test_inject_by_source_port_name_with_symbolic_target_port"""
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
         assert len(deployment.containers) == 1, "expected a single container"
         service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
@@ -2336,11 +2337,11 @@ class TestRolloutSidecarInjection:
         return kube.namespace
 
     @pytest.mark.parametrize(
-        "service, port",
+        "port, service",
         [
-            ('fiber-http', None),
-            ('fiber-http', 80),
-            ('fiber-http', 'http'),
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
         ],
     )
     @pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http_single_port.yaml")
