@@ -397,11 +397,34 @@ class TestRolloutIntegration:
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")
-        async def test_check_rollout_selector_labels(
+        async def test_check_rollout_selector_labels_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
+            # simulate servo running outside of cluster
+            os.environ.pop('POD_NAME', None)
+            os.environ.pop('POD_NAMESPACE', None)
+
             result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
             assert result.exception, f"Expected exception but got: {result}"
+
+        @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")
+        async def test_check_rollout_mainline_selector_labels_pass(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+        ):
+            # simulate servo running outside of cluster
+            os.environ.pop('POD_NAME', None)
+            os.environ.pop('POD_NAMESPACE', None)
+
+            result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
+            assert result.success, f"Expected success but got: {result}"
+
+        @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")
+        async def test_check_rollout_servo_in_cluster_selector_labels_pass(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+        ):
+            # servo running in cluster, owner reference will be set on tuning pod
+            result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
+            assert result.success, f"Expected success but got: {result}"
 
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
 
