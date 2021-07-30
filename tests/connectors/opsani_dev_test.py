@@ -32,7 +32,6 @@ import servo.cli
 import servo.connectors.kubernetes
 import servo.connectors.opsani_dev
 import servo.connectors.prometheus
-import tests.helpers
 
 
 @pytest.fixture

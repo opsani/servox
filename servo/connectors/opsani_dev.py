@@ -618,7 +618,8 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         controller = await self.controller_class.read(self.config_controller_name, self.config.namespace)
         assert controller, f"failed to read {self.controller_type_name} '{self.config_controller_name}' in namespace '{self.config.namespace}'"
 
-        labels = controller.pod_template_spec.metadata.labels or dict()
+        labels = controller.pod_template_spec.metadata.labels
+        assert labels, f"{self.controller_type_name} '{controller.name}' does not have any labels"
         # Add optimizer label to the static values
         required_labels = ENVOY_SIDECAR_LABELS.copy()
         required_labels['servo.opsani.com/optimizer'] = servo.connectors.kubernetes.dns_labelize(self.config.optimizer.id)
