@@ -2280,7 +2280,7 @@ class TestKubernetesConnectorRolloutIntegration:
 
     ##
     # Canary Tests
-    async def test_create_tuning(self, _rollout_tuning_config: KubernetesConfiguration, namespace: str) -> None:
+    async def test_create_rollout_tuning(self, _rollout_tuning_config: KubernetesConfiguration, namespace: str) -> None:
         connector = KubernetesConnector(config=_rollout_tuning_config)
         rol = await Rollout.read("fiber-http", namespace)
         await connector.describe()
@@ -2298,7 +2298,7 @@ class TestKubernetesConnectorRolloutIntegration:
 
 
 
-    async def test_adjust_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
+    async def test_adjust_rollout_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
         connector = KubernetesConnector(config=_rollout_tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -2312,7 +2312,7 @@ class TestKubernetesConnectorRolloutIntegration:
         assert setting
         assert setting.value == 250
 
-    async def test_adjust_tuning_insufficient_resources(self, _rollout_tuning_config, namespace) -> None:
+    async def test_adjust_rollout_tuning_insufficient_resources(self, _rollout_tuning_config, namespace) -> None:
         _rollout_tuning_config.timeout = "10s"
         _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=_rollout_tuning_config)

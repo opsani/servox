@@ -898,13 +898,18 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
             patch_json = json.dumps(patch, indent=None)
             # NOTE: custom resources don't support strategic merge type. json merge is acceptable because the patch json doesn't contain lists
             command = f"kubectl --namespace {self.config.namespace} patch rollout {self.config.rollout} --type='merge' -p '{patch_json}'"
+            replicasets = [ f"rs/{rollout.name}-{rollout.status.current_pod_hash}" ]
+            if rollout.status.stable_RS and rollout.status.stable_RS != rollout.status.current_pod_hash:
+                replicasets.append(f"rs/{rollout.name}-{rollout.status.stable_RS}")
             raise servo.checks.CheckError(
                 (
                     f"Rollout '{self.config.rollout}' has missing/mismatched opsani_role selector and/or label."
                     " Label opsani_role with value != \"tuning\" is required to prevent the rollout controller from adopting and destroying the tuning pod"
                 ),
-                hint=f"Patch labels via: `{command}`",
-                remedy=lambda: _stream_remedy_command(command)
+                hint=(
+                    f"NOTE: Running this patch will require that you manually scale down or delete the replicaset(s) ({', '.join(replicasets)})"
+                    f" orphaned by the selector update. Patch selector and labels via: `{command}`"
+                )
             )
 
 @servo.metadata(

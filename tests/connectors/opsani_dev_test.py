@@ -398,19 +398,10 @@ class TestRolloutIntegration:
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")
         async def test_check_rollout_selector_labels(
-            self, kube, kubeconfig, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
             result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
             assert result.exception, f"Expected exception but got: {result}"
-            # debug(result)
-
-            rollout = await servo.connectors.kubernetes.Rollout.read(name=rollout_checks.config.rollout, namespace=kube.namespace)
-            with tests.helpers.environment_overrides({"KUBECONFIG": str(kubeconfig)}):
-                async with change_to_resource(rollout):
-                    await result.remedy()
-
-            result = await rollout_checks.run_one(id=f"check_rollout_selector_labels", skip_requirements=True)
-            assert result.success, f"Expected success but got: {result}"
 
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
 
