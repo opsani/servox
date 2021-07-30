@@ -133,11 +133,6 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     query='envoy_cluster_membership_healthy{opsani_role="tuning"}',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
-                    "main_pod_avg_request_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
                     "total_request_rate",
                     servo.types.Unit.requests_per_second,
                     query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
@@ -145,34 +140,34 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_request_rate",
                     servo.types.Unit.requests_per_second,
-                    query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m])',
+                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"2|3"}[1m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"2|3"}[1m]))',
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_success_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"2|3"}[1m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"2|3"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "main_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
                     "tuning_error_rate",
                     servo.types.Unit.requests_per_second,
-                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m]))',
+                    query='avg(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
