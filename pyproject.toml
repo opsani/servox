@@ -36,7 +36,7 @@ toml = "^0.10.2"
 colorama = "^0.4.4"
 pyfiglet = "^0.8.post1"
 curlify2 = "^1.0.0"
-kubernetes-asyncio = {git = "https://github.com/opsani/kubernetes_asyncio.git", rev = "v12.1.1-custom-resource-patch-fix"}
+kubernetes-asyncio = {git = "https://github.com/opsani/kubernetes_asyncio", rev = "v12.1.2-custom-resource-patch-fix"}
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"

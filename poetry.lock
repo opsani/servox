@@ -751,7 +751,7 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "kubernetes-asyncio"
-version = "12.1.1"
+version = "12.1.2"
 description = "Kubernetes asynchronous python client"
 category = "main"
 optional = false
@@ -768,9 +768,9 @@ urllib3 = ">=1.24.2"
 
 [package.source]
 type = "git"
-url = "https://github.com/opsani/kubernetes_asyncio.git"
-reference = "v12.1.1-custom-resource-patch-fix"
-resolved_reference = "af49eeac7d370071cb6d9f2fbcdb019cbba4f226"
+url = "https://github.com/opsani/kubernetes_asyncio"
+reference = "v12.1.2-custom-resource-patch-fix"
+resolved_reference = "63b0d36288a867212d24f7d03e0f77c985343fc0"
 
 [[package]]
 name = "kubetest"
@@ -1799,7 +1799,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "783d0a84dab387ccd9762d47d0405e196f70786b21a8628770d27d94f0ac1d8f"
+content-hash = "ac88e3e0073d282f08d044699dd98fdd4641e5151123070a94b033c57e13b4b0"
 
 [metadata.files]
 aiohttp = [
