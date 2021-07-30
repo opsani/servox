@@ -343,13 +343,13 @@ class TestRolloutIntegration:
         @pytest.mark.parametrize(
             "resource", ["namespace", "controller", "container", "service"]
         )
-        async def test_resource_exists(
+        async def test_rollout_resource_exists(
             self, resource: str, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ) -> None:
             result = await rollout_checks.run_one(id=f"check_kubernetes_{resource}")
             assert result.success
 
-        async def test_target_container_resources_within_limits(
+        async def test_rollout_target_container_resources_within_limits(
             self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
             rollout_config.cpu.min = "125m"
@@ -359,7 +359,7 @@ class TestRolloutIntegration:
             result = await rollout_checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.success, f"Expected success but got: {result}"
 
-        async def test_target_container_resources_outside_of_limits(
+        async def test_rollout_target_container_resources_outside_of_limits(
             self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
             rollout_config.cpu.min = "4000m"
@@ -375,21 +375,21 @@ class TestRolloutIntegration:
             result = await rollout_checks.run_one(id=f"check_service_routes_traffic_to_controller")
             assert result.success, f"Failed with message: {result.message}"
 
-        async def test_check_resource_requirements(
+        async def test_rollout_check_resource_requirements(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ) -> None:
             result = await rollout_checks.run_one(id=f"check_resource_requirements")
             assert result.success, f"Expected success but got: {result}"
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_mem.yaml")
-        async def test_check_resource_requirements_fails_mem(
+        async def test_rollout_check_mem_resource_requirements_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
             result = await rollout_checks.run_one(id=f"check_resource_requirements")
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml")
-        async def test_check_resource_requirements_fails_cpu_limit(
+        async def test_rollout_check_cpu_limit_resource_requirements_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
         ):
             rollout_checks.config.cpu.get = [ servo.connectors.kubernetes.ResourceRequirement.limit ]
