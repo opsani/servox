@@ -878,6 +878,9 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
 
     @servo.checks.require("Rollout Selector and PodSpec has opsani_role label")
     async def check_rollout_selector_labels(self) -> None:
+        if os.environ.get("POD_NAME") and os.environ.get("POD_NAMESPACE"):
+            return # Setting owner reference to servo should prevent tuning pod from being adopted by the rollout controller
+
         rollout = await servo.connectors.kubernetes.Rollout.read(self.config.rollout, self.config.namespace)
         assert rollout, f"failed to read Rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
