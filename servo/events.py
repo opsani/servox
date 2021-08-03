@@ -972,7 +972,7 @@ class _DispatchEvent:
             for connector in self._connectors:
                 try:
                     results = await connector.run_event_handlers(
-                        self.event, Preposition.before
+                        self.event, Preposition.before, *self._args, return_exceptions=False, **self._kwargs
                     )
 
                 except servo.errors.EventCancelledError as error:

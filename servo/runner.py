@@ -68,11 +68,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
-    async def describe(self) -> Description:
+    async def describe(self, control: Control) -> Description:
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe)
+        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe, control=control)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
@@ -127,7 +127,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.trace(devtools.pformat(cmd_response))
 
         if cmd_response.command == servo.api.Commands.describe:
-            description = await self.describe()
+            description = await self.describe(Control(**cmd_response.param.get("control", {})))
             self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
