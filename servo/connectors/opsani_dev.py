@@ -288,7 +288,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     async def check_permissions(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
-            for permission in KUBERNETES_PERMISSIONS:
+            for permission in self.required_permissions:
                 for resource in permission.resources:
                     for verb in permission.verbs:
                         attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
