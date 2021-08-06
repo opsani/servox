@@ -751,11 +751,12 @@ adal = ["adal (>=1.0.2)"]
 
 [[package]]
 name = "kubernetes-asyncio"
-version = "12.1.1"
+version = "12.1.2"
 description = "Kubernetes asynchronous python client"
 category = "main"
 optional = false
 python-versions = "*"
+develop = false
 
 [package.dependencies]
 aiohttp = ">=3.7.0,<4.0.0"
@@ -764,6 +765,12 @@ python-dateutil = ">=2.5.3"
 pyyaml = ">=3.12"
 six = ">=1.9.0"
 urllib3 = ">=1.24.2"
+
+[package.source]
+type = "git"
+url = "https://github.com/opsani/kubernetes_asyncio"
+reference = "v12.1.2-custom-resource-patch-fix"
+resolved_reference = "63b0d36288a867212d24f7d03e0f77c985343fc0"
 
 [[package]]
 name = "kubetest"
@@ -1792,7 +1799,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "bc2f0ccb76c2e05a2c6b69ad6850da78996567014a441af7fde4352daf7e8f6b"
+content-hash = "ac88e3e0073d282f08d044699dd98fdd4641e5151123070a94b033c57e13b4b0"
 
 [metadata.files]
 aiohttp = [
@@ -2191,9 +2198,7 @@ kubernetes = [
     {file = "kubernetes-17.17.0-py3-none-any.whl", hash = "sha256:225a95a0aadbd5b645ab389d941a7980db8cdad2a776fde64d1b43fc3299bde9"},
     {file = "kubernetes-17.17.0.tar.gz", hash = "sha256:c69b318696ba797dcf63eb928a8d4370c52319f4140023c502d7dfdf2080eb79"},
 ]
-kubernetes-asyncio = [
-    {file = "kubernetes_asyncio-12.1.1.tar.gz", hash = "sha256:826d79ab68f7e158895da624826e5ae9c75c1b69f3f3b7aa3447bd8bba022445"},
-]
+kubernetes-asyncio = []
 kubetest = []
 loguru = [
     {file = "loguru-0.5.3-py3-none-any.whl", hash = "sha256:f8087ac396b5ee5f67c963b495d615ebbceac2796379599820e324419d53667c"},

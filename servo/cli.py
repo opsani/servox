@@ -1729,8 +1729,8 @@ class ServoCLI(CLI):
             """
             Inject an Envoy sidecar to capture metrics
             """
-            if not target.startswith(("deploy/", "deployment/", "pod/")):
-                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\" or \"pod\"")
+            if not target.startswith(("deploy/", "deployment/", "pod/", "rollout/")):
+                raise typer.BadParameter("target must prefixed with Kubernetes object kind of \"deployment\", \"rollout\" or \"pod\"")
 
             if not (service or port):
                 raise typer.BadParameter("service or port must be given")
@@ -1758,6 +1758,19 @@ class ServoCLI(CLI):
                     )
                 )
                 typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
+
+            elif target.startswith("rollout"):
+                rollout = run_async(
+                    servo.connectors.kubernetes.Rollout.read(
+                        target.split('/', 1)[1], namespace
+                    )
+                )
+                run_async(
+                    rollout.inject_sidecar(
+                        'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service=service, port=port
+                    )
+                )
+                typer.echo(f"Envoy sidecar injected to Rollout {rollout.name} in {namespace}")
 
             elif target.startswith("pod"):
                 raise typer.BadParameter("Pod sidecar injection is not yet implemented")

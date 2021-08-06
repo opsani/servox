@@ -12,6 +12,7 @@ import decimal
 import enum
 import functools
 import itertools
+import json
 import operator
 import os
 import pathlib
@@ -1588,6 +1589,9 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
+    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        return self.find_container(config.name)
+
     def set_container(self, name: str, container: Container) -> None:
         """Set the container with the given name to a new value."""
         index = next(filter(lambda i: self.containers[i].name == name, range(len(self.containers))))
@@ -1631,6 +1635,15 @@ class Deployment(KubernetesModel):
     def pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
         """Return the pod template spec for instances of the Deployment."""
         return self.obj.spec.template
+
+    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec for creation of a tuning pod"""
+        return copy.deepcopy(self.pod_template_spec)
+
+    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the tuning pod with the latest state of the controller if needed"""
+        # NOTE: Deployment currently needs no updating
+        return pod
 
     @property
     def pod_spec(self) -> kubernetes_asyncio.client.models.V1PodSpec:
@@ -2002,6 +2015,578 @@ class Deployment(KubernetesModel):
                     raise error
 
         return count
+
+# Workarounds to allow use of api_client.deserialize() public method instead of private api_client._ApiClient__deserialize
+# TODO: is this workaround worth it just to avoid using the private method?
+# fix for https://github.com/kubernetes-client/python/issues/977#issuecomment-594045477
+def default_kubernetes_json_serializer(o: Any) -> Any:
+    if isinstance(o, (datetime.datetime, datetime.date)):
+        return o.isoformat()
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+
+# https://github.com/kubernetes-client/python/issues/977#issuecomment-592030030
+class FakeKubeResponse:
+    """Mocks the RESTResponse object as a workaround for kubernetes python api_client deserialization"""
+    def __init__(self, obj):
+        self.data = json.dumps(obj, default=default_kubernetes_json_serializer)
+
+# Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
+def to_lower_camel(string: str) -> str:
+    split = string.split('_')
+    return split[0] + ''.join(word.capitalize() for word in split[1:])
+
+class RolloutBaseModel(pydantic.BaseModel):
+    class Config:
+        # arbitrary_types_allowed = True
+        alias_generator = to_lower_camel
+        allow_population_by_field_name = True
+
+# Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
+# https://github.com/argoproj/argo-rollouts/blob/master/manifests/crds/rollout-crd.yaml
+# NOTE/TODO: fields typed with Any should maintain the same form when dumped as when they are parsed. Should the need
+#   arise to interact with such fields, they will need to have an explicit type defined so the alias_generator is applied
+class RolloutV1LabelSelector(RolloutBaseModel): # must type out k8s models as well to allow parse_obj to work
+    match_expressions: Any
+    match_labels: Optional[Dict[str, str]]
+
+class RolloutV1ObjectMeta(RolloutBaseModel):
+    annotations: Optional[Dict[str, str]]
+    cluster_name: Optional[str]
+    creation_timestamp: Optional[datetime.datetime]
+    deletion_grace_period_seconds: Optional[int]
+    deletion_timestamp: Optional[datetime.datetime]
+    finalizers: Optional[List[str]]
+    generate_name: Optional[str]
+    generation: Optional[int]
+    labels: Optional[Dict[str, str]]
+    managed_fields: Any
+    name: Optional[str]
+    namespace: Optional[str]
+    owner_references: Any
+    resource_version: Optional[str]
+    self_link: Optional[str]
+    uid: Optional[str]
+
+class RolloutV1EnvVar(RolloutBaseModel):
+    name: str
+    value: Optional[str]
+    value_from: Any
+
+class RolloutV1ContainerPort(RolloutBaseModel):
+    container_port: int
+    host_ip: Optional[str]
+    host_port: Optional[int]
+    name: Optional[str]
+    protocol: Optional[str]
+
+class RolloutV1ResourceRequirements(RolloutBaseModel):
+    limits: Optional[Dict[str, str]]
+    requests: Optional[Dict[str, str]]
+
+class RolloutV1Container(RolloutBaseModel):
+    args: Optional[List[str]]
+    command: Optional[List[str]]
+    env: Optional[List[RolloutV1EnvVar]]
+    env_from: Any
+    image: str
+    image_pull_policy: Optional[str]
+    lifecycle: Any
+    liveness_probe: Any
+    name: str
+    ports: Optional[List[RolloutV1ContainerPort]]
+    readiness_probe: Any
+    resources: Optional[RolloutV1ResourceRequirements]
+    security_context: Any
+    startup_probe: Any
+    stdin: Optional[bool]
+    stdin_once: Optional[bool]
+    termination_message_path: Optional[str]
+    termination_message_policy: Optional[str]
+    tty: Optional[bool]
+    volume_devices: Any
+    volume_mounts: Any
+    working_dir: Optional[str]
+
+class RolloutV1PodSpec(RolloutBaseModel):
+    active_deadline_seconds: Optional[int]
+    affinity: Any
+    automount_service_account_token: Optional[bool]
+    containers: List[RolloutV1Container]
+    dns_config: Any
+    dns_policy: Optional[str]
+    enable_service_links: Optional[bool]
+    ephemeral_containers: Any
+    host_aliases: Any
+    host_ipc: Optional[bool]
+    host_network: Optional[bool]
+    host_pid: Optional[bool]
+    hostname: Optional[str]
+    image_pull_secrets: Any
+    init_containers: Optional[List[RolloutV1Container]]
+    node_name: Optional[str]
+    node_selector: Optional[Dict[str, str]]
+    overhead: Optional[Dict[str, str]]
+    preemption_policy: Optional[str]
+    priority: Optional[int]
+    priority_class_name: Optional[str]
+    readiness_gates: Any
+    restart_policy: Optional[str]
+    runtime_class_name: Optional[str]
+    scheduler_name: Optional[str]
+    security_context: Any
+    service_account: Optional[str]
+    service_account_name: Optional[str]
+    share_process_namespace: Optional[bool]
+    subdomain: Optional[str]
+    termination_grace_period_seconds: Optional[int]
+    tolerations: Any
+    topology_spread_constraints: Any
+    volumes: Any
+
+class RolloutV1PodTemplateSpec(RolloutBaseModel):
+    metadata: RolloutV1ObjectMeta
+    spec: RolloutV1PodSpec
+
+class RolloutSpec(RolloutBaseModel):
+    replicas: int
+    selector: RolloutV1LabelSelector
+    template: RolloutV1PodTemplateSpec
+    min_ready_seconds: Optional[int]
+    revision_history_limit: Optional[int]
+    paused: Optional[bool]
+    progress_deadline_seconds: Optional[int]
+    restart_at: Optional[datetime.datetime]
+    strategy: Any
+
+class RolloutBlueGreenStatus(RolloutBaseModel):
+    active_selector: Optional[str]
+    post_promotion_analysis_run: Optional[str]
+    post_promotion_analysis_run_status: Any
+    pre_promotion_analysis_run: Optional[str]
+    pre_promotion_analysis_run_status: Any
+    preview_selector: Optional[str]
+    previous_active_selector: Optional[str]
+    scale_down_delay_start_time: Optional[datetime.datetime]
+    scale_up_preview_check_point: Optional[bool]
+
+class RolloutStatusCondition(RolloutBaseModel):
+    last_transition_time: datetime.datetime
+    last_update_time: datetime.datetime
+    message: str
+    reason: str
+    status: str
+    type: str
+
+class RolloutStatus(RolloutBaseModel):
+    HPA_replicas: Optional[int]
+    abort: Optional[bool]
+    aborted_at: Optional[datetime.datetime]
+    available_replicas: Optional[int]
+    blue_green: RolloutBlueGreenStatus
+    canary: Any #  TODO type this out if connector needs to interact with it
+    collision_count: Optional[int]
+    conditions: List[RolloutStatusCondition]
+    controller_pause: Optional[bool]
+    current_pod_hash: str
+    current_step_hash: Optional[str]
+    current_step_index: Optional[int]
+    observed_generation: str
+    pause_conditions: Any
+    ready_replicas: Optional[int]
+    replicas: Optional[int]
+    restarted_at: Optional[datetime.datetime]
+    selector: str
+    stable_RS: Optional[str]
+    updated_replicas: Optional[int]
+
+class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
+    api_version: str
+    kind: str
+    metadata: RolloutV1ObjectMeta
+    spec: RolloutSpec
+    status: Optional[RolloutStatus]
+
+# TODO expose to config if needed
+ROLLOUT_GROUP = "argoproj.io"
+ROLLOUT_VERSION = "v1alpha1"
+ROLLOUT_PURAL = "rollouts"
+
+ROLLOUT_CONST_ARGS = dict(
+    group=ROLLOUT_GROUP,
+    version=ROLLOUT_VERSION,
+    plural=ROLLOUT_PURAL,
+)
+
+class Rollout(KubernetesModel):
+    """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
+    The actual instance that this
+    wraps can be accessed via the ``obj`` instance member.
+    This wrapper provides some convenient functionality around the
+    API Object and provides some state management for the `Rollout`.
+    .. Rollout:
+        https://argoproj.github.io/argo-rollouts/features/specification/
+    """
+
+    obj: RolloutObj
+
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred":kubernetes_asyncio.client.CustomObjectsApi,
+        "argoproj.io/v1alpha1":kubernetes_asyncio.client.CustomObjectsApi,
+    }
+
+    async def create(self, namespace: str = None) -> None:
+        """Create the Rollout under the given namespace.
+        Args:
+            namespace: The namespace to create the Rollout under.
+        """
+        if namespace is None:
+            namespace = self.namespace
+
+        self.logger.info(
+            f'creating rollout "{self.name}" in namespace "{namespace}"'
+        )
+        self.logger.debug(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
+                namespace=namespace,
+                body=self.obj.dict(by_alias=True, exclude_none=True),
+                **ROLLOUT_CONST_ARGS,
+            ))
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "Rollout":
+        """Read a Rollout by name under the given namespace.
+        Args:
+            name: The name of the Rollout to read.
+            namespace: The namespace to read the Rollout from.
+        """
+
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.get_namespaced_custom_object(
+                namespace=namespace,
+                name=name,
+                **ROLLOUT_CONST_ARGS,
+            )
+            return Rollout(RolloutObj.parse_obj(obj))
+
+    async def patch(self) -> None:
+        """Update the changed attributes of the Rollout."""
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
+                namespace=self.namespace,
+                name=self.name,
+                body=self.obj.dict(by_alias=True, exclude_none=True),
+                **ROLLOUT_CONST_ARGS,
+            ))
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        """Delete the Rollout.
+        This method expects the Rollout to have been loaded or otherwise
+        assigned a namespace already. If it has not, the namespace will need
+        to be set manually.
+        Args:
+            options: Unsupported, options for Rollout deletion.
+        Returns:
+            The status of the delete operation.
+        """
+        if options is not None:
+            raise RuntimeError("Rollout deletion does not support V1DeleteOptions")
+
+        self.logger.info(f'deleting rollout "{self.name}"')
+        self.logger.trace(f"rollout: {self.obj}")
+
+        async with self.api_client() as api_client:
+            return await api_client.delete_namespaced_custom_object(
+                namespace=self.namespace,
+                name=self.name,
+                **ROLLOUT_CONST_ARGS,
+            )
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes Rollout resource."""
+        async with self.api_client() as api_client:
+            self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
+                namespace=self.namespace,
+                name=self.name,
+                **ROLLOUT_CONST_ARGS
+            ))
+
+    async def rollback(self) -> None:
+        # TODO rollbacks are automated in Argo Rollouts, not sure if making this No Op will cause issues
+        #   but I was unable to locate a means of triggering a rollout rollback manually
+        raise TypeError(
+            (
+                "rollback is not supported under the optimization of rollouts because rollbacks are applied to "
+                "Kubernetes Deployment objects whereas this is automated by argocd"
+            )
+        )
+
+    async def get_status(self) -> RolloutStatus:
+        """Get the status of the Rollout.
+        Returns:
+            The status of the Rollout.
+        """
+        self.logger.info(f'checking status of rollout "{self.name}"')
+        # first, refresh the rollout state to ensure the latest status
+        await self.refresh()
+
+        # return the status from the rollout
+        return self.obj.status
+
+    async def get_pods(self) -> List[Pod]:
+        """Get the pods for the Rollout.
+
+        Returns:
+            A list of pods that belong to the rollout.
+        """
+        self.logger.debug(f'getting pods for rollout "{self.name}"')
+
+        async with Pod.preferred_client() as api_client:
+            label_selector = self.obj.spec.selector.match_labels
+            pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
+                namespace=self.namespace, label_selector=selector_string(label_selector)
+            )
+
+        pods = [Pod(p) for p in pod_list.items]
+        return pods
+
+    @property
+    def status(self) -> RolloutStatus:
+        """Return the status of the Rollout.
+        Returns:
+            The status of the Rollout.
+        """
+        return self.obj.status
+
+    async def is_ready(self) -> bool:
+        """Check if the Rollout is in the ready state.
+
+        Returns:
+            True if in the ready state; False otherwise.
+        """
+        await self.refresh()
+
+        # if there is no status, the deployment is definitely not ready
+        status = self.obj.status
+        if status is None:
+            return False
+
+        # check the status for the number of total replicas and compare
+        # it to the number of ready replicas. if the numbers are
+        # equal, the deployment is ready; otherwise it is not ready.
+        total = status.replicas
+        ready = status.ready_replicas
+
+        if total is None:
+            return False
+
+        return total == ready
+
+    @property
+    def containers(self) -> List[Container]:
+        """
+        Return a list of Container objects from the underlying pod template spec.
+        """
+        return list(
+            map(lambda c: Container(c, None), self.obj.spec.template.spec.containers)
+        )
+
+    def find_container(self, name: str) -> Optional[Container]:
+        """
+        Return the container with the given name.
+        """
+        return next(filter(lambda c: c.name == name, self.containers), None)
+
+    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        tuning_container = self.find_container(config.name)
+        if tuning_container is not None:
+            async with kubernetes_asyncio.client.ApiClient() as api_client:
+                tuning_container.obj = api_client.deserialize(
+                        response=FakeKubeResponse(tuning_container.obj.dict(by_alias=True, exclude_none=True)),
+                        response_type=kubernetes_asyncio.client.models.V1Container
+                    )
+        return tuning_container
+
+    @property
+    def replicas(self) -> int:
+        """
+        Return the number of desired pods.
+        """
+        return self.obj.spec.replicas
+
+    @replicas.setter
+    def replicas(self, replicas: int) -> None:
+        """
+        Set the number of desired pods.
+        """
+        self.obj.spec.replicas = replicas
+
+    @property
+    def match_labels(self) -> Dict[str, str]:
+        """Return the labels used to match pods managed by the Rollout"""
+        return self.obj.spec.selector.match_labels
+
+    @property
+    def pod_template_spec(self) -> RolloutV1PodTemplateSpec:
+        """Return the pod template spec for instances of the Rollout."""
+        return self.obj.spec.template
+
+    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec for creation of a tuning pod"""
+        async with kubernetes_asyncio.client.ApiClient() as api_client:
+            return api_client.deserialize(
+                response=FakeKubeResponse(self.pod_template_spec.dict(by_alias=True, exclude_none=True)),
+                response_type=kubernetes_asyncio.client.models.V1PodTemplateSpec
+            )
+
+    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the tuning pod with the latest state of the controller if needed"""
+        # Apply the latest template hash so the active service register the tuning pod as an endpoint
+        pod.metadata.labels["rollouts-pod-template-hash"] = self.obj.status.current_pod_hash
+        return pod
+
+    @backoff.on_exception(backoff.expo, kubernetes_asyncio.client.exceptions.ApiException, max_tries=3)
+    async def inject_sidecar(
+        self,
+        name: str,
+        image: str,
+        *,
+        service: Optional[str] = None,
+        port: Optional[int] = None,
+        index: Optional[int] = None,
+        service_port: int = 9980
+        ) -> None:
+        """
+        Injects an Envoy sidecar into a target Deployment that proxies a service
+        or literal TCP port, generating scrapeable metrics usable for optimization.
+
+        The service or port argument must be provided to define how traffic is proxied
+        between the Envoy sidecar and the container responsible for fulfilling the request.
+
+        Args:
+            name: The name of the sidecar to inject.
+            image: The container image for the sidecar container.
+            service: Name of the service to proxy. Envoy will accept ingress traffic
+                on the service port and reverse proxy requests back to the original
+                target container.
+            port: The name or number of a port within the Deployment to wrap the proxy around.
+            index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
+            service_port: The port to receive ingress traffic from an upstream service.
+        """
+
+        await self.refresh()
+
+        if not (service or port):
+            raise ValueError(f"a service or port must be given")
+
+        if isinstance(port, str) and port.isdigit():
+            port = int(port)
+
+        # check for a port conflict
+        container_ports = list(itertools.chain(*map(operator.attrgetter("ports"), self.containers)))
+        if service_port in list(map(operator.attrgetter("container_port"), container_ports)):
+            raise ValueError(f"Port conflict: Rollout '{self.name}' already exposes port {service_port} through an existing container")
+
+        # lookup the port on the target service
+        if service:
+            try:
+                service_obj = await Service.read(service, self.namespace)
+            except kubernetes_asyncio.client.exceptions.ApiException as error:
+                if error.status == 404:
+                    raise ValueError(f"Unknown Service '{service}'") from error
+                else:
+                    raise error
+            if not port:
+                port_count = len(service_obj.obj.spec.ports)
+                if port_count == 0:
+                    raise ValueError(f"Target Service '{service}' does not expose any ports")
+                elif port_count > 1:
+                    raise ValueError(f"Target Service '{service}' exposes multiple ports -- target port must be specified")
+                port_obj = service_obj.obj.spec.ports[0]
+            else:
+                if isinstance(port, int):
+                    port_obj = next(filter(lambda p: p.port == port, service_obj.obj.spec.ports), None)
+                elif isinstance(port, str):
+                    port_obj = next(filter(lambda p: p.name == port, service_obj.obj.spec.ports), None)
+                else:
+                    raise TypeError(f"Unable to resolve port value of type {port.__class__} (port={port})")
+
+                if not port_obj:
+                    raise ValueError(f"Port '{port}' does not exist in the Service '{service}'")
+
+            # resolve symbolic name in the service target port to a concrete container port
+            if isinstance(port_obj.target_port, str):
+                container_port_obj = next(filter(lambda p: p.name == port_obj.target_port, container_ports), None)
+                if not container_port_obj:
+                    raise ValueError(f"Port '{port_obj.target_port}' could not be resolved to a destination container port")
+
+                container_port = container_port_obj.container_port
+            else:
+                container_port = port_obj.target_port
+
+        else:
+            # find the container port
+            container_port_obj = next(filter(lambda p: p.container_port == port, container_ports), None)
+            if not container_port_obj:
+                raise ValueError(f"Port '{port}' could not be resolved to a destination container port")
+
+            container_port = container_port_obj.container_port
+
+        # build the sidecar container
+        container = RolloutV1Container(
+            name=name,
+            image=image,
+            image_pull_policy="IfNotPresent",
+            resources=RolloutV1ResourceRequirements(
+                requests={
+                    "cpu": "125m",
+                    "memory": "128Mi"
+                },
+                limits={
+                    "cpu": "250m",
+                    "memory": "256Mi"
+                }
+            ),
+            env=[
+                RolloutV1EnvVar(name="OPSANI_ENVOY_PROXY_SERVICE_PORT", value=str(service_port)),
+                RolloutV1EnvVar(name="OPSANI_ENVOY_PROXIED_CONTAINER_PORT", value=str(container_port)),
+                RolloutV1EnvVar(name="OPSANI_ENVOY_PROXY_METRICS_PORT", value="9901")
+            ],
+            ports=[
+                RolloutV1ContainerPort(name="opsani-proxy", container_port=service_port, protocol="TCP"),
+                RolloutV1ContainerPort(name="opsani-metrics", container_port=9901, protocol="TCP"),
+            ]
+        )
+
+        # add the sidecar to the Deployment
+        if index is None:
+            self.obj.spec.template.spec.containers.append(container)
+        else:
+            self.obj.spec.template.spec.containers.insert(index, container)
+
+        # patch the deployment
+        await self.patch()
+
+    # TODO: convert to rollout logic
+    async def eject_sidecar(self, name: str) -> bool:
+        """Eject an Envoy sidecar from the Deployment.
+
+        Returns True if the sidecar was ejected.
+        """
+        await self.refresh()
+        container = self.remove_container(name)
+        if container:
+            await self.replace()
+            return True
+
+        return False
+
+    # TODO: rebase this and _check_conditions for saturation mode
+    @contextlib.asynccontextmanager
+    async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
+        raise NotImplementedError('To be implemented in future update')
 
 class Millicore(int):
     """
@@ -2524,11 +3109,11 @@ class CanaryOptimization(BaseOptimization):
     """
 
     # The deployment and container stanzas from the configuration
-    deployment_config: "DeploymentConfiguration"
+    deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
     container_config: "ContainerConfiguration"
 
     # State for mainline resources. Read from the cluster
-    deployment: Deployment
+    deployment: Union[Deployment, Rollout]
     main_container: Container
 
     # State for tuning resources
@@ -2539,9 +3124,14 @@ class CanaryOptimization(BaseOptimization):
 
     @classmethod
     async def create(
-        cls, deployment_config: "DeploymentConfiguration", **kwargs
+        cls, deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"], **kwargs
     ) -> "CanaryOptimization":
-        deployment = await Deployment.read(deployment_config.name, cast(str, deployment_config.namespace))
+        if isinstance(deployment_config, DeploymentConfiguration):
+            deployment = await Deployment.read(deployment_config.name, cast(str, deployment_config.namespace))
+        elif isinstance(deployment_config, RolloutConfiguration):
+            deployment = await Rollout.read(deployment_config.name, cast(str, deployment_config.namespace))
+        else:
+            raise NotImplementedError(f"Unknown configuration type '{type(deployment_config).__name__}'")
         if not deployment:
             raise ValueError(
                 f'cannot create CanaryOptimization: target Deployment "{deployment_config.name}" does not exist in Namespace "{deployment_config.namespace}"'
@@ -2550,7 +3140,7 @@ class CanaryOptimization(BaseOptimization):
         # NOTE: Currently only supporting one container
         assert len(deployment_config.containers) == 1, "CanaryOptimization currently only supports a single container"
         container_config = deployment_config.containers[0]
-        main_container = deployment.find_container(container_config.name)
+        main_container = await deployment.get_tuning_container(container_config)
         name = (
             deployment_config.strategy.alias
             if isinstance(deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
@@ -2566,6 +3156,8 @@ class CanaryOptimization(BaseOptimization):
             main_container=main_container,
             **kwargs,
         )
+        # Assign config to prevent pydantic Union coercing RolloutConfiguration to DeploymentConfiguration
+        optimization.deployment_config = deployment_config
         await optimization._load_tuning_state()
 
         return optimization
@@ -2698,7 +3290,7 @@ class CanaryOptimization(BaseOptimization):
     # TODO: Factor into another class?
     async def _configure_tuning_pod_template_spec(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
-        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = copy.deepcopy(self.deployment.pod_template_spec)
+        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = await self.deployment.get_tuning_pod_template_spec()
         pod_template_spec.metadata.name = self.tuning_pod_name
 
         if pod_template_spec.metadata.annotations is None:
@@ -2794,6 +3386,9 @@ class CanaryOptimization(BaseOptimization):
         pod_obj = kubernetes_asyncio.client.V1Pod(
             metadata=self._tuning_pod_template_spec.metadata, spec=self._tuning_pod_template_spec.spec
         )
+
+        # Update pod with latest controller state
+        pod_obj = self.deployment.update_tuning_pod(pod_obj)
 
         tuning_pod = Pod(obj=pod_obj)
 
@@ -3087,8 +3682,10 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for deployment_config in config.deployments:
+        for deployment_config in config.deployments + config.rollouts:
             if deployment_config.strategy == OptimizationStrategy.default:
+                if isinstance(deployment_config, RolloutConfiguration):
+                    raise NotImplementedError("Saturation mode not currently supported on Argo Rollouts")
                 optimization = await DeploymentOptimization.create(
                     deployment_config, timeout=config.timeout
                 )
@@ -3483,6 +4080,16 @@ class DeploymentConfiguration(BaseKubernetesConfiguration):
     strategy: StrategyTypes = OptimizationStrategy.default
     replicas: servo.Replicas
 
+class RolloutConfiguration(BaseKubernetesConfiguration):
+    """
+    The RolloutConfiguration class models the configuration of an optimizable Argo Rollout.
+    """
+
+    name: DNSSubdomainName
+    containers: List[ContainerConfiguration]
+    strategy: StrategyTypes = OptimizationStrategy.canary
+    replicas: servo.Replicas
+
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
@@ -3494,6 +4101,11 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
     deployments: List[DeploymentConfiguration] = pydantic.Field(
         description="Deployments to be optimized.",
+    )
+
+    rollouts: List[RolloutConfiguration] = pydantic.Field(
+        description="Argo rollouts to be optimized.",
+        default=[],
     )
 
     @classmethod
