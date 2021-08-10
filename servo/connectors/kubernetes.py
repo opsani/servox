@@ -1589,7 +1589,8 @@ class Deployment(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
-    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
+    async def get_target_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        """Return the container targeted by the supplied configuration"""
         return self.find_container(config.name)
 
     def set_container(self, name: str, container: Container) -> None:
@@ -1636,12 +1637,12 @@ class Deployment(KubernetesModel):
         """Return the pod template spec for instances of the Deployment."""
         return self.obj.spec.template
 
-    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
-        """Return a deep copy of the pod template spec for creation of a tuning pod"""
+    async def get_pod_template_spec_copy(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec. Eg. for creation of a tuning pod"""
         return copy.deepcopy(self.pod_template_spec)
 
-    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
-        """Update the tuning pod with the latest state of the controller if needed"""
+    def update_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the pod with the latest state of the controller if needed"""
         # NOTE: Deployment currently needs no updating
         return pod
 
@@ -2031,15 +2032,15 @@ class FakeKubeResponse:
     def __init__(self, obj):
         self.data = json.dumps(obj, default=default_kubernetes_json_serializer)
 
-# Use alias generator so that lower camel case can be parsed to snake case properties to match k8s python client behaviour
-def to_lower_camel(string: str) -> str:
+# Use alias generator so that dromedary case can be parsed to snake case properties to match k8s python client behaviour
+def to_dromedary_case(string: str) -> str:
     split = string.split('_')
     return split[0] + ''.join(word.capitalize() for word in split[1:])
 
 class RolloutBaseModel(pydantic.BaseModel):
     class Config:
         # arbitrary_types_allowed = True
-        alias_generator = to_lower_camel
+        alias_generator = to_dromedary_case
         allow_population_by_field_name = True
 
 # Pydantic type models for argo rollout spec: https://argoproj.github.io/argo-rollouts/features/specification/
@@ -2179,7 +2180,7 @@ class RolloutStatusCondition(RolloutBaseModel):
     type: str
 
 class RolloutStatus(RolloutBaseModel):
-    HPA_replicas: Optional[int]
+    hpa_replicas: Optional[int] = pydantic.Field(..., alias="HPAReplicas")
     abort: Optional[bool]
     aborted_at: Optional[datetime.datetime]
     available_replicas: Optional[int]
@@ -2212,12 +2213,6 @@ ROLLOUT_GROUP = "argoproj.io"
 ROLLOUT_VERSION = "v1alpha1"
 ROLLOUT_PURAL = "rollouts"
 
-ROLLOUT_CONST_ARGS = dict(
-    group=ROLLOUT_GROUP,
-    version=ROLLOUT_VERSION,
-    plural=ROLLOUT_PURAL,
-)
-
 class Rollout(KubernetesModel):
     """Wrapper around an ArgoCD Kubernetes `Rollout` Object.
     The actual instance that this
@@ -2230,9 +2225,15 @@ class Rollout(KubernetesModel):
 
     obj: RolloutObj
 
+    _rollout_const_args: Dict[str, str] = dict(
+        group=ROLLOUT_GROUP,
+        version=ROLLOUT_VERSION,
+        plural=ROLLOUT_PURAL,
+    )
+
     api_clients: ClassVar[Dict[str, Type]] = {
         "preferred":kubernetes_asyncio.client.CustomObjectsApi,
-        "argoproj.io/v1alpha1":kubernetes_asyncio.client.CustomObjectsApi,
+        f"{ROLLOUT_GROUP}/{ROLLOUT_VERSION}":kubernetes_asyncio.client.CustomObjectsApi,
     }
 
     async def create(self, namespace: str = None) -> None:
@@ -2252,7 +2253,7 @@ class Rollout(KubernetesModel):
             self.obj = RolloutObj.parse_obj(await api_client.create_namespaced_custom_object(
                 namespace=namespace,
                 body=self.obj.dict(by_alias=True, exclude_none=True),
-                **ROLLOUT_CONST_ARGS,
+                **self._rollout_const_args,
             ))
 
     @classmethod
@@ -2267,7 +2268,7 @@ class Rollout(KubernetesModel):
             obj = await api_client.get_namespaced_custom_object(
                 namespace=namespace,
                 name=name,
-                **ROLLOUT_CONST_ARGS,
+                **cls._rollout_const_args,
             )
             return Rollout(RolloutObj.parse_obj(obj))
 
@@ -2278,7 +2279,7 @@ class Rollout(KubernetesModel):
                 namespace=self.namespace,
                 name=self.name,
                 body=self.obj.dict(by_alias=True, exclude_none=True),
-                **ROLLOUT_CONST_ARGS,
+                **self._rollout_const_args,
             ))
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
@@ -2301,7 +2302,7 @@ class Rollout(KubernetesModel):
             return await api_client.delete_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
-                **ROLLOUT_CONST_ARGS,
+                **self._rollout_const_args,
             )
 
     async def refresh(self) -> None:
@@ -2310,7 +2311,7 @@ class Rollout(KubernetesModel):
             self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
                 namespace=self.namespace,
                 name=self.name,
-                **ROLLOUT_CONST_ARGS
+                **self._rollout_const_args
             ))
 
     async def rollback(self) -> None:
@@ -2399,15 +2400,16 @@ class Rollout(KubernetesModel):
         """
         return next(filter(lambda c: c.name == name, self.containers), None)
 
-    async def get_tuning_container(self, config: ContainerConfiguration) -> Optional[Container]:
-        tuning_container = self.find_container(config.name)
-        if tuning_container is not None:
+    async def get_target_container(self, config: ContainerConfiguration) -> Optional[Container]:
+        """Return the container targeted by the supplied configuration"""
+        target_container = self.find_container(config.name)
+        if target_container is not None:
             async with kubernetes_asyncio.client.ApiClient() as api_client:
-                tuning_container.obj = api_client.deserialize(
-                        response=FakeKubeResponse(tuning_container.obj.dict(by_alias=True, exclude_none=True)),
+                target_container.obj = api_client.deserialize(
+                        response=FakeKubeResponse(target_container.obj.dict(by_alias=True, exclude_none=True)),
                         response_type=kubernetes_asyncio.client.models.V1Container
                     )
-        return tuning_container
+        return target_container
 
     @property
     def replicas(self) -> int:
@@ -2424,25 +2426,21 @@ class Rollout(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
-    def match_labels(self) -> Dict[str, str]:
-        """Return the labels used to match pods managed by the Rollout"""
-        return self.obj.spec.selector.match_labels
-
-    @property
     def pod_template_spec(self) -> RolloutV1PodTemplateSpec:
         """Return the pod template spec for instances of the Rollout."""
         return self.obj.spec.template
 
-    async def get_tuning_pod_template_spec(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
-        """Return a deep copy of the pod template spec for creation of a tuning pod"""
+    async def get_pod_template_spec_copy(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
+        """Return a deep copy of the pod template spec. Eg. for creation of a tuning pod"""
         async with kubernetes_asyncio.client.ApiClient() as api_client:
             return api_client.deserialize(
                 response=FakeKubeResponse(self.pod_template_spec.dict(by_alias=True, exclude_none=True)),
                 response_type=kubernetes_asyncio.client.models.V1PodTemplateSpec
             )
 
-    def update_tuning_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
-        """Update the tuning pod with the latest state of the controller if needed"""
+    def update_pod(self, pod: kubernetes_asyncio.client.models.V1Pod) -> kubernetes_asyncio.client.models.V1Pod:
+        """Update the pod with the latest state of the controller if needed. In the case of argo rollouts, the
+        pod labels are updated with the latest template hash so that it will be routed to by the appropriate service"""
         # Apply the latest template hash so the active service register the tuning pod as an endpoint
         pod.metadata.labels["rollouts-pod-template-hash"] = self.obj.status.current_pod_hash
         return pod
@@ -3109,11 +3107,13 @@ class CanaryOptimization(BaseOptimization):
     """
 
     # The deployment and container stanzas from the configuration
-    deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"]
+    deployment_config: Optional["DeploymentConfiguration"]
+    rollout_config: Optional["RolloutConfiguration"]
     container_config: "ContainerConfiguration"
 
     # State for mainline resources. Read from the cluster
-    deployment: Union[Deployment, Rollout]
+    deployment: Optional[Deployment]
+    rollout: Optional[Rollout]
     main_container: Container
 
     # State for tuning resources
@@ -3122,42 +3122,72 @@ class CanaryOptimization(BaseOptimization):
 
     _tuning_pod_template_spec: Optional[kubernetes_asyncio.client.models.V1PodTemplateSpec] = pydantic.PrivateAttr()
 
+
+    @pydantic.root_validator
+    def check_deployment_and_rollout(cls, values):
+        if values.get('deployment_config') is not None and values.get('rollout_config') is not None:
+            raise ValueError("Cannot create a CanaryOptimization with both rollout and deployment configurations")
+        if values.get('deployment') is not None and values.get('rollout') is not None:
+            raise ValueError("Cannot create a CanaryOptimization with both rollout and deployment")
+
+        if values.get('deployment_config') is None and values.get('rollout_config') is None:
+            raise ValueError("CanaryOptimization must be initialized with either a rollout or deployment configuration")
+        if values.get('deployment') is None and values.get('rollout') is None:
+            raise ValueError("CanaryOptimization must be initialized with either a rollout or deployment")
+
+        return values
+
+    @property
+    def target_controller_config(self) -> Union["DeploymentConfiguration", "RolloutConfiguration"]:
+        return self.deployment_config or self.rollout_config
+
+    @property
+    def target_controller(self) -> Union[Deployment, Rollout]:
+        return self.deployment or self.rollout
+
+    @property
+    def target_controller_type(self) -> str:
+        return type(self.target_controller).__name__
+
     @classmethod
     async def create(
-        cls, deployment_config: Union["DeploymentConfiguration", "RolloutConfiguration"], **kwargs
+        cls, deployment_or_rollout_config: Union["DeploymentConfiguration", "RolloutConfiguration"], **kwargs
     ) -> "CanaryOptimization":
-        if isinstance(deployment_config, DeploymentConfiguration):
-            deployment = await Deployment.read(deployment_config.name, cast(str, deployment_config.namespace))
-        elif isinstance(deployment_config, RolloutConfiguration):
-            deployment = await Rollout.read(deployment_config.name, cast(str, deployment_config.namespace))
+        read_args = (deployment_or_rollout_config.name, cast(str, deployment_or_rollout_config.namespace))
+        if isinstance(deployment_or_rollout_config, DeploymentConfiguration):
+            controller_type = "Deployment"
+            deployment_or_rollout = await Deployment.read(*read_args)
+            init_args = dict(deployment_config = deployment_or_rollout_config, deployment = deployment_or_rollout)
+        elif isinstance(deployment_or_rollout_config, RolloutConfiguration):
+            controller_type = "Rollout"
+            deployment_or_rollout = await Rollout.read(*read_args)
+            init_args = dict(rollout_config = deployment_or_rollout_config, rollout = deployment_or_rollout)
         else:
-            raise NotImplementedError(f"Unknown configuration type '{type(deployment_config).__name__}'")
-        if not deployment:
+            raise NotImplementedError(f"Unknown configuration type '{type(deployment_or_rollout_config).__name__}'")
+        if not deployment_or_rollout:
             raise ValueError(
-                f'cannot create CanaryOptimization: target Deployment "{deployment_config.name}" does not exist in Namespace "{deployment_config.namespace}"'
+                f'cannot create CanaryOptimization: target {controller_type} "{deployment_or_rollout_config.name}"'
+                f' does not exist in Namespace "{deployment_or_rollout_config.namespace}"'
             )
 
         # NOTE: Currently only supporting one container
-        assert len(deployment_config.containers) == 1, "CanaryOptimization currently only supports a single container"
-        container_config = deployment_config.containers[0]
-        main_container = await deployment.get_tuning_container(container_config)
+        assert len(deployment_or_rollout_config.containers) == 1, "CanaryOptimization currently only supports a single container"
+        container_config = deployment_or_rollout_config.containers[0]
+        main_container = await deployment_or_rollout.get_target_container(container_config)
         name = (
-            deployment_config.strategy.alias
-            if isinstance(deployment_config.strategy, CanaryOptimizationStrategyConfiguration)
-            and deployment_config.strategy.alias
-            else f"{deployment.name}/{main_container.name}-tuning"
+            deployment_or_rollout_config.strategy.alias
+            if isinstance(deployment_or_rollout_config.strategy, CanaryOptimizationStrategyConfiguration)
+            and deployment_or_rollout_config.strategy.alias
+            else f"{deployment_or_rollout.name}/{main_container.name}-tuning"
         )
 
         optimization = cls(
             name=name,
-            deployment_config=deployment_config,
+            **init_args,
             container_config=container_config,
-            deployment=deployment,
             main_container=main_container,
             **kwargs,
         )
-        # Assign config to prevent pydantic Union coercing RolloutConfiguration to DeploymentConfiguration
-        optimization.deployment_config = deployment_config
         await optimization._load_tuning_state()
 
         return optimization
@@ -3165,7 +3195,7 @@ class CanaryOptimization(BaseOptimization):
     async def _load_tuning_state(self) -> None:
         # Find an existing tuning Pod/Container if available
         try:
-            tuning_pod = await Pod.read(self.tuning_pod_name, cast(str, self.deployment_config.namespace))
+            tuning_pod = await Pod.read(self.tuning_pod_name, cast(str, self.namespace))
             tuning_container = tuning_pod.get_container(self.container_config.name)
 
         except kubernetes_asyncio.client.exceptions.ApiException as e:
@@ -3241,14 +3271,14 @@ class CanaryOptimization(BaseOptimization):
 
     @property
     def namespace(self) -> str:
-        return self.deployment_config.namespace
+        return self.target_controller_config.namespace
 
     @property
     def tuning_pod_name(self) -> str:
         """
         Return the name of tuning Pod for this optimization.
         """
-        return f"{self.deployment_config.name}-tuning"
+        return f"{self.target_controller_config.name}-tuning"
 
     async def delete_tuning_pod(self, *, raise_if_not_found: bool = True) -> Optional[Pod]:
         """
@@ -3280,8 +3310,8 @@ class CanaryOptimization(BaseOptimization):
         return None
 
     @property
-    def deployment_name(self) -> str:
-        return self.deployment_config.name
+    def target_controller_name(self) -> str:
+        return self.target_controller_config.name
 
     @property
     def container_name(self) -> str:
@@ -3290,7 +3320,7 @@ class CanaryOptimization(BaseOptimization):
     # TODO: Factor into another class?
     async def _configure_tuning_pod_template_spec(self) -> None:
         # Configure a PodSpecTemplate for the tuning Pod state
-        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = await self.deployment.get_tuning_pod_template_spec()
+        pod_template_spec: kubernetes_asyncio.client.models.V1PodTemplateSpec = await self.target_controller.get_pod_template_spec_copy()
         pod_template_spec.metadata.name = self.tuning_pod_name
 
         if pod_template_spec.metadata.annotations is None:
@@ -3378,7 +3408,7 @@ class CanaryOptimization(BaseOptimization):
         assert self.tuning_pod is None, "Tuning Pod already exists"
         assert self.tuning_container is None, "Tuning Pod Container already exists"
         self.logger.debug(
-            f"creating tuning pod '{self.tuning_pod_name}' based on deployment '{self.deployment_name}' in namespace '{self.namespace}'"
+            f"creating tuning pod '{self.tuning_pod_name}' based on {self.target_controller_type} '{self.target_controller_name}' in namespace '{self.namespace}'"
         )
 
         # Setup the tuning Pod -- our settings are updated on the underlying PodSpec template
@@ -3388,7 +3418,7 @@ class CanaryOptimization(BaseOptimization):
         )
 
         # Update pod with latest controller state
-        pod_obj = self.deployment.update_tuning_pod(pod_obj)
+        pod_obj = self.target_controller.update_pod(pod_obj)
 
         tuning_pod = Pod(obj=pod_obj)
 
@@ -3501,7 +3531,7 @@ class CanaryOptimization(BaseOptimization):
         Return the configured failure behavior. If not set explicitly, this will be cascaded
         from the base kubernetes configuration (or its default)
         """
-        return self.deployment_config.on_failure
+        return self.target_controller_config.on_failure
 
     @property
     def main_cpu(self) -> CPU:
@@ -3550,7 +3580,7 @@ class CanaryOptimization(BaseOptimization):
         return servo.Replicas(
             min=0,
             max=99999,
-            value=self.deployment.replicas,
+            value=self.target_controller.replicas,
             pinned=True,
         )
 
@@ -3563,7 +3593,7 @@ class CanaryOptimization(BaseOptimization):
         """
         return (
             self.container_config.alias
-            or f"{self.deployment_config.name}/{self.container_config.name}"
+            or f"{self.target_controller_config.name}/{self.container_config.name}"
         )
 
     def to_components(self) -> List[servo.Component]:
@@ -3628,7 +3658,7 @@ class CanaryOptimization(BaseOptimization):
                 self.logger.info(
                     "creating new tuning pod against baseline following failed adjust"
                 )
-                await self._configure_tuning_pod_template_spec()  # reset to baseline from the Deployment
+                await self._configure_tuning_pod_template_spec()  # reset to baseline from the target controller
                 self.tuning_pod = await self.create_or_recreate_tuning_pod()
 
                 raise error # Always communicate errors to backend unless ignored
@@ -3682,20 +3712,20 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         runtime_ids = {}
         pod_tmpl_specs = {}
 
-        for deployment_config in config.deployments + config.rollouts:
-            if deployment_config.strategy == OptimizationStrategy.default:
-                if isinstance(deployment_config, RolloutConfiguration):
+        for deployment_or_rollout_config in (config.deployments or []) + (config.rollouts or []):
+            if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
+                if isinstance(deployment_or_rollout_config, RolloutConfiguration):
                     raise NotImplementedError("Saturation mode not currently supported on Argo Rollouts")
                 optimization = await DeploymentOptimization.create(
-                    deployment_config, timeout=config.timeout
+                    deployment_or_rollout_config, timeout=deployment_or_rollout_config.timeout
                 )
-                deployment = optimization.deployment
+                deployment_or_rollout = optimization.deployment
                 container = optimization.container
-            elif deployment_config.strategy == OptimizationStrategy.canary:
+            elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
                 optimization = await CanaryOptimization.create(
-                    deployment_config, timeout=config.timeout
+                    deployment_or_rollout_config, timeout=deployment_or_rollout_config.timeout
                 )
-                deployment = optimization.deployment
+                deployment_or_rollout = optimization.target_controller
                 container = optimization.main_container
 
                 # Ensure the canary is available
@@ -3705,15 +3735,15 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                     await optimization.create_tuning_pod()
             else:
                 raise ValueError(
-                    f"unknown optimization strategy: {deployment_config.strategy}"
+                    f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
                 )
 
             optimizations.append(optimization)
 
             # compile artifacts for checksum calculation
-            pods = await deployment.get_pods()
+            pods = await deployment_or_rollout.get_pods()
             runtime_ids[optimization.name] = [pod.uid for pod in pods]
-            pod_tmpl_specs[deployment.name] = deployment.obj.spec.template.spec
+            pod_tmpl_specs[deployment_or_rollout.name] = deployment_or_rollout.obj.spec.template.spec
             images[container.name] = container.image
 
         # Compute checksums for change detection
@@ -4099,14 +4129,20 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         description="Permissions required by the connector to operate in Kubernetes.",
     )
 
-    deployments: List[DeploymentConfiguration] = pydantic.Field(
+    deployments: Optional[List[DeploymentConfiguration]] = pydantic.Field(
         description="Deployments to be optimized.",
     )
 
-    rollouts: List[RolloutConfiguration] = pydantic.Field(
+    rollouts: Optional[List[RolloutConfiguration]] = pydantic.Field(
         description="Argo rollouts to be optimized.",
-        default=[],
     )
+
+    @pydantic.root_validator
+    def check_deployment_and_rollout(cls, values):
+        if (not values.get('deployments')) and (not values.get('rollouts')):
+            raise ValueError("No optimization target(s) were specified")
+
+        return values
 
     @classmethod
     def generate(cls, **kwargs) -> "KubernetesConfiguration":
@@ -4154,6 +4190,9 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
                 for obj in (
                     attribute if isinstance(attribute, Collection) else [attribute]
                 ):
+                    # don't cascade if optional and not set
+                    if obj is None:
+                        continue
                     for (
                         field_name,
                         field,

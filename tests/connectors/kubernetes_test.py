@@ -2275,7 +2275,7 @@ class TestKubernetesConnectorRolloutIntegration:
     @pytest.fixture()
     def _rollout_tuning_config(self, tuning_config: KubernetesConfiguration) -> KubernetesConfiguration:
         tuning_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in tuning_config.deployments ]
-        tuning_config.deployments = []
+        tuning_config.deployments = None
         return tuning_config
 
     ##
@@ -2295,8 +2295,6 @@ class TestKubernetesConnectorRolloutIntegration:
         ), None)
         if tuning_endpoint is None:
             raise AssertionError(f"Tuning pod {tuning_name} not contained in service endpoints: {endpoints}")
-
-
 
     async def test_adjust_rollout_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
         connector = KubernetesConnector(config=_rollout_tuning_config)

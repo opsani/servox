@@ -2,7 +2,7 @@ import abc
 import json
 import operator
 import os
-from typing import List, Optional, Union, Type
+from typing import Dict, List, Optional, Union, Type
 
 import kubernetes_asyncio
 import pydantic
@@ -113,10 +113,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         if self.deployment:
             main_arg = { 'deployments': [ main_config ] }
         elif self.rollout:
-            main_arg = {
-                'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(main_config.dict(exclude_none=True)) ],
-                'deployments': []
-            }
+            main_arg = { 'rollouts': [ servo.connectors.kubernetes.RolloutConfiguration.parse_obj(
+                main_config.dict(exclude_none=True)
+            ) ] }
 
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=self.namespace,
@@ -254,6 +253,13 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         servo.connectors.kubernetes.DeploymentConfiguration,
         servo.connectors.kubernetes.RolloutConfiguration
     ]:
+        ...
+
+    @abc.abstractmethod
+    def _get_controller_service_selector(self, controller: Union[
+        servo.connectors.kubernetes.Deployment,
+        servo.connectors.kubernetes.Rollout
+    ]) -> Dict[str, str]:
         ...
 
     ##
@@ -436,11 +442,9 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             self.config.service, self.config.namespace
         )
         controller = await self.controller_class.read(self.config_controller_name, self.config.namespace)
-        # Remove label dynamically applied by argo-rollouts to service and rollout pods
-        service.selector.pop('rollouts-pod-template-hash', None)
 
         # NOTE: The Service labels should be a subset of the controller labels
-        controller_labels = controller.obj.spec.selector.match_labels
+        controller_labels = self._get_controller_service_selector(controller)
         delta = dict(set(service.selector.items()) - set(controller_labels.items()))
         if delta:
             desc = ' '.join(map('='.join, delta.items()))
@@ -829,6 +833,9 @@ class OpsaniDevChecks(BaseOpsaniDevChecks):
     ) -> servo.connectors.kubernetes.DeploymentConfiguration:
         return config.deployments[0]
 
+    def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Deployment) -> Dict[str, str]:
+        return controller.obj.spec.selector.match_labels
+
 class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
     """Opsani dev checks against argoproj.io Rollouts"""
     @property
@@ -859,6 +866,7 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         )
         assert rollout, f"failed to read rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
         assert rollout.status, f"unable to verify envoy proxy. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no status"
+        assert rollout.status.current_pod_hash, f"unable to verify envoy proxy. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no currentPodHash"
         return f"replicaset/{rollout.name}-{rollout.status.current_pod_hash}"
 
     def _get_generated_controller_config(
@@ -866,6 +874,13 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         config: servo.connectors.kubernetes.KubernetesConfiguration
     ) -> servo.connectors.kubernetes.RolloutConfiguration:
         return config.rollouts[0]
+
+    def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Rollout) -> Dict[str, str]:
+        match_labels = dict(controller.obj.spec.selector.match_labels)
+        assert controller.status, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no status"
+        assert controller.status.current_pod_hash, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no currentPodHash"
+        match_labels['rollouts-pod-template-hash'] = controller.status.current_pod_hash
+        return match_labels
 
     @servo.checks.require("Rollout Selector and PodSpec has opsani_role label")
     async def check_rollout_selector_labels(self) -> None:
@@ -876,7 +891,7 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         assert rollout, f"failed to read Rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         spec_patch = {}
-        match_labels = rollout.match_labels or dict()
+        match_labels = rollout.obj.spec.selector.match_labels or dict()
         opsani_role_selector = match_labels.get("opsani_role")
         if opsani_role_selector is None or opsani_role_selector == "tuning":
             opsani_role_selector = "mainline"
