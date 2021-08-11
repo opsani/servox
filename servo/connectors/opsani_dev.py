@@ -217,7 +217,6 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             **kwargs,
         )
 
-
 class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     config: OpsaniDevConfiguration
 
@@ -803,7 +802,6 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             return f"pods/{pod_name}"
         else:
             return "deployment/servo"
-
 
 class OpsaniDevChecks(BaseOpsaniDevChecks):
     """Opsani dev checks against standard kubernetes Deployments"""
