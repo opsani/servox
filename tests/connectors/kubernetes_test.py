@@ -1425,7 +1425,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
 
     async def test_adjust_deployment_never_ready(self, config: KubernetesConfiguration, kubetest_deployment_never_ready: KubetestDeployment) -> None:
-        config.timeout = "3s"
+        config.timeout = "5s"
         config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
 
