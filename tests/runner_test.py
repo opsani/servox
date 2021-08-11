@@ -157,7 +157,7 @@ async def test_hello(
     )
     assert response.status == "ok"
 
-    description = await servo_runner.describe()
+    description = await servo_runner.describe(servo.types.Control())
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     response = await servo_runner._post_event(servo.api.Events.describe, param)
