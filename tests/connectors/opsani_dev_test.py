@@ -703,7 +703,7 @@ class TestServiceMultiport:
                 # TODO: why is the tuning pod being created here when the check will recreate it anyway?
                 kubernetes_config = checks.config.generate_kubernetes_config()
                 canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-                    deployment_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
+                    deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
                 )
                 await canary_opt.create_tuning_pod()
                 await assert_check(checks.run_one(id=f"check_tuning_is_running"))
@@ -1178,7 +1178,7 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
         servo.logger.critical("Step 7 - Bring tuning Pod online")
         kubernetes_config = config.generate_kubernetes_config()
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
+            deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
         )
         await canary_opt.create_tuning_pod()
 

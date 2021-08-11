@@ -4060,6 +4060,14 @@ STANDARD_PERMISSIONS = [
     ),
 ]
 
+ROLLOUT_PERMISSIONS = [
+    PermissionSet(
+        group="argoproj.io",
+        resources=["rollouts", "rollouts/status"],
+        verbs=["get", "list", "watch", "update", "patch"],
+    ),
+]
+
 
 class BaseKubernetesConfiguration(servo.BaseConfiguration):
     """
@@ -4267,7 +4275,10 @@ class KubernetesChecks(servo.BaseChecks):
     async def check_permissions(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
-            for permission in self.config.permissions:
+            required_permissions = self.config.permissions
+            if self.config.rollouts:
+                required_permissions.append(ROLLOUT_PERMISSIONS)
+            for permission in required_permissions:
                 for resource in permission.resources:
                     for verb in permission.verbs:
                         attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
@@ -4294,36 +4305,62 @@ class KubernetesChecks(servo.BaseChecks):
 
     @servo.multicheck('Deployment "{item.name}" is readable')
     async def check_deployments(self) -> Tuple[Iterable, servo.CheckHandler]:
-        async def check_dep(dep_config: DeploymentConfiguration) -> str:
+        async def check_dep(dep_config: DeploymentConfiguration) -> None:
             await Deployment.read(dep_config.name, dep_config.namespace)
 
-        return self.config.deployments, check_dep
+        return (self.config.deployments or []), check_dep
+
+    @servo.multicheck('Rollout "{item.name}" is readable')
+    async def check_rollouts(self) -> Tuple[Iterable, servo.CheckHandler]:
+        async def check_rol(rol_config: RolloutConfiguration) -> None:
+            await Rollout.read(rol_config.name, rol_config.namespace)
+
+        return (self.config.rollouts or []), check_rol
+
+    async def _check_container_resource_requirements(
+        self,
+        target_controller: Union[Deployment, Rollout],
+        target_config: Union[DeploymentConfiguration, RolloutConfiguration]
+    ) -> None:
+        for cont_config in target_config.containers:
+            container = target_controller.find_container(cont_config.name)
+            assert container, f"{type(target_controller).__name__} {target_config.name} has no container {cont_config.name}"
+
+            for resource in Resource.values():
+                current_state = None
+                container_requirements = container.get_resource_requirements(resource)
+                get_requirements = getattr(cont_config, resource).get
+                for requirement in get_requirements:
+                    current_state = container_requirements.get(requirement)
+                    if current_state:
+                        break
+
+                assert current_state, (
+                    f"{type(target_controller).__name__} {target_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
+                    f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
+                )
 
     @servo.multicheck('Containers in the "{item.name}" Deployment have resource requirements')
     async def check_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_dep_resource_requirements(
             dep_config: DeploymentConfiguration,
-        ) -> str:
+        ) -> None:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
-            for cont_config in dep_config.containers:
-                container = deployment.find_container(cont_config.name)
-                assert container, f"Deployment {dep_config.name} has no container {cont_config.name}"
+            await self._check_container_resource_requirements(deployment, dep_config)
 
-                for resource in Resource.values():
-                    current_state = None
-                    container_requirements = container.get_resource_requirements(resource)
-                    get_requirements = getattr(cont_config, resource).get
-                    for requirement in get_requirements:
-                        current_state = container_requirements.get(requirement)
-                        if current_state:
-                            break
+        return (self.config.deployments or []), check_dep_resource_requirements
 
-                    assert current_state, (
-                        f"Deployment {dep_config.name} target container {cont_config.name} spec does not define the resource {resource}. "
-                        f"At least one of the following must be specified: {', '.join(map(lambda req: req.resources_key, get_requirements))}"
-                    )
 
-        return self.config.deployments, check_dep_resource_requirements
+    @servo.multicheck('Containers in the "{item.name}" Rollout have resource requirements')
+    async def check_rollout_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
+        async def check_rol_resource_requirements(
+            rol_config: RolloutConfiguration,
+        ) -> None:
+            rollout = await Rollout.read(rol_config.name, rol_config.namespace)
+            await self._check_container_resource_requirements(rollout, rol_config)
+
+        return (self.config.rollouts or []), check_rol_resource_requirements
+
 
     @servo.multicheck('Deployment "{item.name}" is ready')
     async def check_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
@@ -4332,7 +4369,16 @@ class KubernetesChecks(servo.BaseChecks):
             if not await deployment.is_ready():
                 raise RuntimeError(f'Deployment "{deployment.name}" is not ready')
 
-        return self.config.deployments, check_deployment
+        return (self.config.deployments or []), check_deployment
+
+    @servo.multicheck('Rollout "{item.name}" is ready')
+    async def check_rollouts_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
+        async def check_rollout(rol_config: RolloutConfiguration) -> None:
+            rollout = await Rollout.read(rol_config.name, rol_config.namespace)
+            if not await rollout.is_ready():
+                raise RuntimeError(f'Rollout "{rollout.name}" is not ready')
+
+        return (self.config.rollouts or []), check_rollout
 
 
 @servo.metadata(
