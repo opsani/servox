@@ -8,6 +8,7 @@ import pytest
 
 import servo
 import servo.runner
+import servo.types
 import tests.fake
 from tests.fake import AbstractOptimizer
 
@@ -112,7 +113,7 @@ async def test_hello_and_describe(
     assert static_optimizer.state == tests.fake.StateMachine.States.awaiting_description
 
     # get a description from the servo
-    description = await servo_runner.describe()
+    description = await servo_runner.describe(servo.types.Control())
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     response = await servo_runner._post_event(servo.api.Events.describe, param)
     assert response.status == "ok"
