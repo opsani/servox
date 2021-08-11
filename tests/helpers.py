@@ -41,12 +41,12 @@ class MeasureConnector(BaseConnector):
         ]
 
     @on_event()
-    async def describe(self) -> Description:
+    async def describe(self, **kwargs) -> Description:
         metrics = await self.metrics()
         return Description(metrics=metrics)
 
     @before_event(Events.measure)
-    def before_measure(self) -> None:
+    def before_measure(self, **kwargs) -> None:
         pass
 
     @on_event()
@@ -75,7 +75,7 @@ class MeasureConnector(BaseConnector):
 
 class AdjustConnector(BaseConnector):
     @on_event()
-    async def describe(self) -> Description:
+    async def describe(self, **kwargs) -> Description:
         components = await self.components()
         return Description(components=components)
 

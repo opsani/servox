@@ -10,6 +10,7 @@ import servo
 import servo.events
 import servo.runner
 import servo.connectors.prometheus
+import servo.types
 import tests.fake
 import tests.helpers
 
@@ -118,7 +119,7 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
     debug(response)
     assert response.command in (servo.api.Commands.describe, servo.api.Commands.sleep)
 
-    description = await servo_runner.describe()
+    description = await servo_runner.describe(servo.types.Control())
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     debug(param)
