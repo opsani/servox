@@ -4211,7 +4211,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
                         if field_name in obj.__fields_set__ and not overwrite:
                             self.logger.trace(
-                                f"skipping config cascade for unset field '{field_name}'"
+                                f"skipping config cascade for field '{field_name}' set with value '{getattr(obj, field_name)}'"
                             )
                             continue
 

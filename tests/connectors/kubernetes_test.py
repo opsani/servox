@@ -1029,7 +1029,7 @@ class TestKubernetesConnectorIntegration:
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
         config.timeout = "3s"
-        config.cascade_common_settings()
+        config.cascade_common_settings(overwrite=True)
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
 
@@ -1060,7 +1060,7 @@ class TestKubernetesConnectorIntegration:
     ) -> None:
         servo.logging.set_level("TRACE")
         config.timeout = "10s"
-        config.cascade_common_settings()
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
@@ -1112,7 +1112,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
-        tuning_config.cascade_common_settings()
+        tuning_config.cascade_common_settings(overwrite=True)
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1141,7 +1141,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
-        tuning_config.cascade_common_settings()
+        tuning_config.cascade_common_settings(overwrite=True)
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         tuning_config.deployments[0].containers[0].cpu = CPU(min="125m", max="200", step="125m")
         connector = KubernetesConnector(config=tuning_config)
@@ -1242,7 +1242,7 @@ class TestKubernetesConnectorIntegration:
     async def test_adjust_handle_error_respects_nested_config(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
         config.timeout = "3s"
         config.on_failure = FailureMode.destroy
-        config.cascade_common_settings()
+        config.cascade_common_settings(overwrite=True)
         config.deployments[0].on_failure = FailureMode.exception
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
@@ -1426,7 +1426,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_deployment_never_ready(self, config: KubernetesConfiguration, kubetest_deployment_never_ready: KubetestDeployment) -> None:
         config.timeout = "3s"
-        config.cascade_common_settings()
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1447,7 +1447,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_deployment_oom_killed(self, config: KubernetesConfiguration, kubetest_deployemnt_oom_killed: KubetestDeployment) -> None:
         config.timeout = "10s"
-        config.cascade_common_settings()
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1508,7 +1508,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         tuning_config.timeout = "30s"
         tuning_config.on_failure = FailureMode.destroy
-        tuning_config.cascade_common_settings()
+        tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1541,7 +1541,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         tuning_config.timeout = "25s"
         tuning_config.on_failure = FailureMode.destroy
-        tuning_config.cascade_common_settings()
+        tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -2319,7 +2319,7 @@ class TestKubernetesConnectorRolloutIntegration:
 
     async def test_adjust_rollout_tuning_insufficient_resources(self, _rollout_tuning_config: KubernetesConfiguration, namespace) -> None:
         _rollout_tuning_config.timeout = "10s"
-        _rollout_tuning_config.cascade_common_settings()
+        _rollout_tuning_config.cascade_common_settings(overwrite=True)
         _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=_rollout_tuning_config)
 
