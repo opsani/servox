@@ -171,16 +171,6 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
                 ),
                 servo.connectors.prometheus.PrometheusMetric(
-                    "main_p99_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_p99_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.99,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
                     "main_p90_latency",
                     servo.types.Unit.milliseconds,
                     query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
