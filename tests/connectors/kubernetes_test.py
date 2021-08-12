@@ -1249,7 +1249,9 @@ class TestKubernetesConnectorIntegration:
             description = await connector.adjust([adjustment])
             debug(description)
 
-        await Deployment.read("fiber-http", kube.namespace)
+        deployment = await Deployment.read("fiber-http", kube.namespace)
+        # check deployment was not scaled to 0 replicas (i.e., the outer-level 'destroy' was overridden)
+        assert deployment.obj.spec.replicas != 0
 
     # async def test_apply_no_changes(self):
 #         # resource_version stays the same and early exits
@@ -1485,11 +1487,9 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         except AssertionError as e:
             raise e from rejection_info.value
 
-        # Validate deployment destroyed
-        with pytest.raises(kubernetes.client.exceptions.ApiException) as not_found_error:
-            kubetest_deployment_becomes_unready.refresh()
-
-        assert not_found_error.value.status == 404 and not_found_error.value.reason == "Not Found", str(not_found_error.value)
+        # Validate deployment scaled down to 0 instances
+        kubetest_deployment_becomes_unready.refresh()
+        assert kubetest_deployment_becomes_unready.obj.spec.replicas == 0
 
     async def test_adjust_tuning_never_ready(
         self,

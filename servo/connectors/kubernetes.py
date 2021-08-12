@@ -1438,6 +1438,16 @@ class Deployment(KubernetesModel):
                 body=options,
             )
 
+    async def scale_to_zero(self) -> None:
+        """this is used instead of 'delete' as the 'destroy' operation to handle 'on_failure: destroy'.
+        Since the Deployment object is used as a wrapper around an existing k8s object that we did not create,
+        it shouldn't be destroyed. Instead, the deployments pods are destroyed by scaling it to 0 replicas.
+        """
+
+        await self.refresh()
+        self.replicas = 0
+        await self.patch()
+
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Deployment resource."""
         async with self.api_client() as api_client:
@@ -2410,14 +2420,14 @@ class DeploymentOptimization(BaseOptimization):
 
     async def destroy(self, error: Optional[Exception] = None) -> None:
         """
-        Initiates the asynchronous deletion of the Deployment under optimization.
+        Initiates the asynchronous deletion of all pods in the Deployment under optimization.
 
         Args:
             error: An optional error that triggered the destruction.
         """
         self.logger.info(f"adjustment failed: destroying deployment...")
         await asyncio.wait_for(
-            self.deployment.delete(),
+            self.deployment.scale_to_zero(),
             timeout=self.timeout.total_seconds(),
         )
 
