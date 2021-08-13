@@ -552,7 +552,7 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 spec = getattr(method, "__check__", None)
                 if spec:
                     # once all filtered methods are removed, only run non-decorated
-                    if not spec.critical or not filtered_methods:
+                    if not spec.critical or not filtered_methods or (matching and matching.exclusive):
                         continue
 
             check = await method() if asyncio.iscoroutinefunction(method) else method()
