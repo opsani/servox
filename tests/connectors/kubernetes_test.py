@@ -40,6 +40,8 @@ from servo.connectors.kubernetes import (
     OptimizationStrategy,
     Pod,
     ResourceRequirement,
+    Rollout,
+    RolloutConfiguration,
 )
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
 import servo.runner
@@ -1027,6 +1029,7 @@ class TestKubernetesConnectorIntegration:
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
         config.timeout = "3s"
+        config.cascade_common_settings(overwrite=True)
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
 
@@ -1057,6 +1060,7 @@ class TestKubernetesConnectorIntegration:
     ) -> None:
         servo.logging.set_level("TRACE")
         config.timeout = "10s"
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http",
@@ -1108,6 +1112,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
+        tuning_config.cascade_common_settings(overwrite=True)
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1136,6 +1141,7 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration
     ) -> None:
         tuning_config.timeout = "10s"
+        tuning_config.cascade_common_settings(overwrite=True)
         tuning_config.deployments[0].containers[0].memory = Memory(min="128MiB", max="128GiB", step="32MiB")
         tuning_config.deployments[0].containers[0].cpu = CPU(min="125m", max="200", step="125m")
         connector = KubernetesConnector(config=tuning_config)
@@ -1236,6 +1242,7 @@ class TestKubernetesConnectorIntegration:
     async def test_adjust_handle_error_respects_nested_config(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
         config.timeout = "3s"
         config.on_failure = FailureMode.destroy
+        config.cascade_common_settings(overwrite=True)
         config.deployments[0].on_failure = FailureMode.exception
         config.deployments[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=config)
@@ -1418,7 +1425,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
 
     async def test_adjust_deployment_never_ready(self, config: KubernetesConfiguration, kubetest_deployment_never_ready: KubetestDeployment) -> None:
-        config.timeout = "3s"
+        config.timeout = "5s"
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1439,6 +1447,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
     async def test_adjust_deployment_oom_killed(self, config: KubernetesConfiguration, kubetest_deployemnt_oom_killed: KubetestDeployment) -> None:
         config.timeout = "10s"
+        config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1499,7 +1508,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         tuning_config.timeout = "30s"
         tuning_config.on_failure = FailureMode.destroy
-        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -1532,7 +1541,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         tuning_config.timeout = "25s"
         tuning_config.on_failure = FailureMode.destroy
-        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
         adjustment = Adjustment(
@@ -2013,11 +2022,11 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_single_port.yaml"])
     @pytest.mark.parametrize(
-        "service, port",
+        "port, service",
         [
-            ('fiber-http', None),
-            ('fiber-http', 80),
-            ('fiber-http', 'http'),
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
         ],
     )
     async def test_inject_single_port_deployment(self, namespace: str, service: str, port: Union[str, int]) -> None:
@@ -2081,11 +2090,11 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_multiple_ports.yaml"])
     @pytest.mark.parametrize(
-        "service, port, error",
+        "port, service, error",
         [
-            ('fiber-http', None, ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
-            ('fiber-http', 80, None),
-            ('fiber-http', 'http', None),
+            (None, 'fiber-http', ValueError("Target Service 'fiber-http' exposes multiple ports -- target port must be specified")),
+            (80, 'fiber-http', None),
+            ('http', 'fiber-http', None),
         ],
     )
     async def test_inject_multiport_deployment(self, namespace: str, service: str, port: Union[str, int], error: Optional[Exception]) -> None:
@@ -2153,14 +2162,15 @@ class TestSidecarInjection:
     @pytest.mark.applymanifests("../manifests/sidecar_injection",
                                 files=["fiber-http_multiple_ports_symbolic_targets.yaml"])
     @pytest.mark.parametrize(
-        "service, port",
+        "port, service",
         [
-            ('fiber-http', None),
-            ('fiber-http', 80),
-            ('fiber-http', 'http'),
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
         ],
     )
-    async def test_inject_by_source_port_name_with_symbolic_target_port(self, namespace: str, service: str, port: Union[str, int]) -> None:
+    async def test_inject_symbolic_target_port(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        """test_inject_by_source_port_name_with_symbolic_target_port"""
         deployment = await servo.connectors.kubernetes.Deployment.read('fiber-http', namespace)
         assert len(deployment.containers) == 1, "expected a single container"
         service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
@@ -2256,3 +2266,145 @@ class TestKubernetesClusterConnectorIntegration:
         assert request.called
         print(request.calls.last.request.content.decode())
         assert expected in request.calls.last.request.content.decode()
+
+
+##
+# Tests against an ArgoCD rollout
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
+@pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml")
+class TestKubernetesConnectorRolloutIntegration:
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @pytest.fixture()
+    def _rollout_tuning_config(self, tuning_config: KubernetesConfiguration) -> KubernetesConfiguration:
+        tuning_config.rollouts = [ RolloutConfiguration.parse_obj(d) for d in tuning_config.deployments ]
+        tuning_config.deployments = None
+        return tuning_config
+
+    ##
+    # Canary Tests
+    async def test_create_rollout_tuning(self, _rollout_tuning_config: KubernetesConfiguration, namespace: str) -> None:
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+        rol = await Rollout.read("fiber-http", namespace)
+        await connector.describe()
+
+        # verify tuning pod is registered as service endpoint
+        service = await servo.connectors.kubernetes.Service.read("fiber-http", namespace)
+        endpoints = await service.get_endpoints()
+        tuning_name = f"{_rollout_tuning_config.rollouts[0].name}-tuning"
+        tuning_endpoint = next(filter(
+            lambda epa: epa.target_ref.name == tuning_name,
+            endpoints[0].subsets[0].addresses
+        ), None)
+        if tuning_endpoint is None:
+            raise AssertionError(f"Tuning pod {tuning_name} not contained in service endpoints: {endpoints}")
+
+    async def test_adjust_rollout_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".250",
+        )
+        control = servo.Control(settlement='1s')
+        description = await connector.adjust([adjustment], control)
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert setting
+        assert setting.value == 250
+
+    async def test_adjust_rollout_tuning_insufficient_resources(self, _rollout_tuning_config: KubernetesConfiguration, namespace) -> None:
+        _rollout_tuning_config.timeout = "10s"
+        _rollout_tuning_config.cascade_common_settings(overwrite=True)
+        _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
+        connector = KubernetesConnector(config=_rollout_tuning_config)
+
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="128Gi", # impossible right?
+        )
+        with pytest.raises(AdjustmentRejectedError) as rejection_info:
+            description = await connector.adjust([adjustment])
+
+        rej_msg = str(rejection_info.value)
+        assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
+
+@pytest.mark.integration
+@pytest.mark.clusterrolebinding('cluster-admin')
+@pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
+class TestRolloutSidecarInjection:
+    @pytest.fixture
+    def namespace(self, kube: kubetest.client.TestClient) -> str:
+        return kube.namespace
+
+    @pytest.mark.parametrize(
+        "port, service",
+        [
+            (None, 'fiber-http'),
+            (80, 'fiber-http'),
+            ('http', 'fiber-http'),
+        ],
+    )
+    @pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http_single_port.yaml")
+    async def test_inject_single_port_rollout(self, namespace: str, service: str, port: Union[str, int]) -> None:
+        rollout = await servo.connectors.kubernetes.Rollout.read('fiber-http', namespace)
+        assert len(rollout.containers) == 1, "expected a single container"
+        service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
+        assert len(service.ports) == 1
+        port_obj = service.ports[0]
+
+        if isinstance(port, int):
+            assert port_obj.port == port
+        elif isinstance(port, str):
+            assert port_obj.name == port
+        assert port_obj.target_port == 8480
+
+        await rollout.inject_sidecar(
+            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+        )
+
+        # Examine new sidecar
+        await rollout.refresh()
+        assert len(rollout.containers) == 2, "expected an injected container"
+        sidecar_container = rollout.containers[1]
+        assert sidecar_container.name == 'opsani-envoy'
+
+        # Check ports and env
+        assert sidecar_container.ports == [
+            servo.connectors.kubernetes.RolloutV1ContainerPort(
+                container_port=9980,
+                host_ip=None,
+                host_port=None,
+                name='opsani-proxy',
+                protocol='TCP'
+            ),
+            servo.connectors.kubernetes.RolloutV1ContainerPort(
+                container_port=9901,
+                host_ip=None,
+                host_port=None,
+                name='opsani-metrics',
+                protocol='TCP'
+            )
+        ]
+        assert sidecar_container.obj.env == [
+            servo.connectors.kubernetes.RolloutV1EnvVar(
+                name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+                value='9980',
+                value_from=None
+            ),
+            servo.connectors.kubernetes.RolloutV1EnvVar(
+                name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+                value='8480',
+                value_from=None
+            ),
+            servo.connectors.kubernetes.RolloutV1EnvVar(
+                name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+                value='9901',
+                value_from=None
+            ),
+        ]
