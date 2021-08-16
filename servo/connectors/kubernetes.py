@@ -4412,7 +4412,7 @@ class KubernetesConnector(servo.BaseConnector):
         self.telemetry.remove(f"{self.name}.platform")
 
     @servo.on_event()
-    async def describe(self, **kwargs) -> servo.Description:
+    async def describe(self, control: servo.Control = servo.Control()) -> servo.Description:
         state = await self._create_optimizations()
         return state.to_description()
 
@@ -4422,7 +4422,7 @@ class KubernetesConnector(servo.BaseConnector):
         return state.to_components()
 
     @servo.before_event(servo.Events.measure)
-    async def before_measure(self, **kwargs) -> None:
+    async def before_measure(self, *, metrics: List[str] = None, control: servo.Control = servo.Control()) -> None:
         # Build state before a measurement to ensure all necessary setup is done
         # (e.g., Tuning Pod is up and running)
         await self._create_optimizations()

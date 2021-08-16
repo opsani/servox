@@ -819,7 +819,7 @@ class PrometheusConnector(servo.BaseConnector):
         )
 
     @servo.on_event()
-    def describe(self, **kwargs) -> servo.Description:
+    def describe(self, control: servo.Control = servo.Control()) -> servo.Description:
         """Describes the current state of Metrics measured by querying Prometheus.
 
         Returns:
