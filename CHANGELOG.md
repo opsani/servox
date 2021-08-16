@@ -17,6 +17,26 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.5] "baseless allegation" - 2021-08-16
+
+### Changed
+
+- Improved messaging of unschedulable adjustment rejections [#285](https://github.com/opsani/servox/pull/285)
+- Test suites now treat warnings as errors [#288](https://github.com/opsani/servox/pull/288)
+- Relaxed validation of account names to support accounts that don't adhere to DNS naming convention [#302](https://github.com/opsani/servox/pull/302)
+- Updated calculation and naming of Opsani Dev prometheus metrics to use averages [#305](https://github.com/opsani/servox/pull/305)
+
+### Added
+
+- Beta support for optimizing [Argo Rollouts](https://argoproj.github.io/argo-rollouts/) [#303](https://github.com/opsani/servox/pull/303)
+- Simple telemetry to report run environment details to the backend [#261](https://github.com/opsani/servox/pull/261)
+- Existing kubernetes resource requests/limits are now validated [#282](https://github.com/opsani/servox/pull/282)
+
+### Removed
+
+- Opsani Dev p99 latency metrics [#306](https://github.com/opsani/servox/pull/306)
+- Opsani Dev main_pod_avg_request_rate redundant metric [#305](https://github.com/opsani/servox/pull/305)
+
 ## [0.10.4] "baseless allegation" - 2021-07-09
 
 ### Fixed
