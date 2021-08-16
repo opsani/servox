@@ -518,11 +518,14 @@ def event_handler(
         handler_mod_name = handler_localns.get("__module__", None)
         handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
 
-        if preposition == Preposition.before:
-            before_handler_signature = inspect.Signature.from_callable(__before_handler)
+        if preposition in (Preposition.before, Preposition.on):
+            ref_signature=event.signature
+            if preposition == Preposition.before:
+                # 'before' event takes same args as 'on' event, but returns None
+                ref_signature = ref_signature.replace(return_annotation="None")
             servo.utilities.inspect.assert_equal_callable_descriptors(
                 servo.utilities.inspect.CallableDescriptor(
-                    signature=before_handler_signature,
+                    signature=ref_signature,
                     module=event.module,
                     globalns=event_globalns,
                     localns=locals(),
@@ -534,24 +537,7 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                callable_description="before event handler"
-            )
-        elif preposition == Preposition.on:
-            servo.utilities.inspect.assert_equal_callable_descriptors(
-                servo.utilities.inspect.CallableDescriptor(
-                    signature=event.signature,
-                    module=event.module,
-                    globalns=event_globalns,
-                    localns=locals(),
-                ),
-                servo.utilities.inspect.CallableDescriptor(
-                    signature=handler_signature,
-                    module=handler_module,
-                    globalns=handler_globalns,
-                    localns=handler_localns,
-                ),
-                name=name,
-                callable_description="event handler"
+                callable_description="event handler" if preposition == Preposition.on else "before event handler"
             )
         elif preposition == Preposition.after:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
@@ -581,10 +567,6 @@ def event_handler(
         return fn
 
     return decorator
-
-
-def __before_handler(self) -> None:
-    pass
 
 
 def __after_handler(self, results: List[EventResult]) -> None:

@@ -41,7 +41,7 @@ class FirstTestServoConnector(BaseConnector):
         return "adjusting!"
 
     @before_event(Events.measure)
-    def do_something_before_measuring(self) -> None:
+    def do_something_before_measuring(self, metrics: List[str] = [], control: servox.Control = None) -> None:
         return "measuring!"
 
     @before_event(Events.promote)
@@ -524,7 +524,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
 
 def test_registering_before_handlers() -> None:
     @before_event("measure")
-    def before_measure(self) -> None:
+    def before_measure(self, metrics: List[str] = [], control: servox.Control = None) -> None:
         pass
 
     assert before_measure.__event_handler__.event.name == "measure"
@@ -541,7 +541,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
+        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'None'\""""
     )
 
 
