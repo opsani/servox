@@ -41,7 +41,7 @@ class FirstTestServoConnector(BaseConnector):
         return "adjusting!"
 
     @before_event(Events.measure)
-    def do_something_before_measuring(self, metrics: List[str] = [], control: servox.Control = None) -> None:
+    def do_something_before_measuring(self, metrics: List[str] = [], control: Control = Control()) -> None:
         return "measuring!"
 
     @before_event(Events.promote)
@@ -524,7 +524,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
 
 def test_registering_before_handlers() -> None:
     @before_event("measure")
-    def before_measure(self, metrics: List[str] = [], control: servox.Control = None) -> None:
+    def before_measure(self, metrics: List[str] = [], control: Control = Control()) -> None:
         pass
 
     assert before_measure.__event_handler__.event.name == "measure"
