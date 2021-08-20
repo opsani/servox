@@ -325,7 +325,7 @@ class TestChecks:
         assert result.id == "check_resource_requirements_item_0"
         assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
-    async def test_check_resource_requirements_get_configured(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+    async def test_check_resource_requirements_configured_get(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Zero out the CPU setting for requests and Memory setting for limits
         deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
         assert deployment
