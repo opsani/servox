@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "servox"
-version = "0.10.5"
+version = "0.10.6"
 description = "Opsani Servo: The Next Generation"
 homepage = "https://opsani.com/"
 repository = "https://github.com/opsani/servox"
@@ -36,7 +36,7 @@ toml = "^0.10.2"
 colorama = "^0.4.4"
 pyfiglet = "^0.8.post1"
 curlify2 = "^1.0.0"
-kubernetes-asyncio = {git = "https://github.com/opsani/kubernetes_asyncio", rev = "v12.1.2-custom-resource-patch-fix"}
+kubernetes-asyncio-cr-patch = "^12.1.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
