@@ -117,7 +117,7 @@ class _EventDefinitions(Protocol):
         ...
 
     @servo.events.event(Events.describe)
-    async def describe(self) -> servo.types.Description:
+    async def describe(self, control: servo.types.Control = servo.types.Control()) -> servo.types.Description:
         ...
 
     @servo.events.event(Events.adjust)

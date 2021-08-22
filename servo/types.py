@@ -1253,6 +1253,10 @@ class Control(BaseModel):
     semantics.
     """
 
+    environment: Optional[Dict[str, Any]] = None
+    """Optional mode control.
+    """
+
     @pydantic.root_validator(pre=True)
     def validate_past_and_delay(cls, values):
         if "past" in values:
