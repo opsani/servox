@@ -14,6 +14,8 @@ import pydantic
 import pytz
 
 import servo
+import servo.configuration
+import servo.fast_fail
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
@@ -676,6 +678,9 @@ class PrometheusConfiguration(servo.BaseConfiguration):
     scraped by the Prometheus instance being queried.
     """
 
+    fast_fail: servo.configuration.FastFailConfiguration = pydantic.Field(default_factory=servo.configuration.FastFailConfiguration)
+    """Configuration sub section for fast fail behavior. Defines toggle and timing of SLO observation"""
+
     @classmethod
     def generate(cls, **kwargs) -> "PrometheusConfiguration":
         """Generate a default configuration for capturing measurements from the
@@ -876,7 +881,27 @@ class PrometheusConnector(servo.BaseConnector):
 
         # Allow the maximum settlement time of eager metrics to elapse before eager return (None runs full duration)
         progress = servo.EventProgress(timeout=measurement_duration, settlement=eager_settlement)
-        await progress.watch(eager_observer.observe)
+
+        # Handle fast fail metrics
+        if self.config.fast_fail.disabled == 0 and control.userdata and control.userdata.slo:
+            fast_fail_observer = servo.fast_fail.FastFailObserver(
+                config=self.config.fast_fail,
+                input=control.userdata.slo,
+                metrics_getter=functools.partial(self._query_slo_metrics, metrics=metrics__)
+            )
+            fast_fail_progress = servo.EventProgress(timeout=measurement_duration, settlement=eager_settlement)
+            gather_tasks = [
+                asyncio.create_task(progress.watch(eager_observer.observe)),
+                asyncio.create_task(fast_fail_progress.watch(fast_fail_observer.observe, every=self.config.fast_fail.period))
+            ]
+            try:
+                await asyncio.gather(*gather_tasks)
+            except:
+                [task.cancel() for task in gather_tasks]
+                await asyncio.gather(*gather_tasks, return_exceptions=True)
+                raise
+        else:
+            await progress.watch(eager_observer.observe)
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
@@ -899,7 +924,7 @@ class PrometheusConnector(servo.BaseConnector):
         self, metric: PrometheusMetric, start: datetime, end: datetime
     ) -> List[servo.TimeSeries]:
         client = Client(base_url=self.config.base_url)
-        response = await client.query_range(metric, start, end)
+        response: MetricResponse = await client.query_range(metric, start, end)
         self.logger.trace(f"Got response data type {response.__class__} for metric {metric}: {response}")
         response.raise_for_error()
 
@@ -923,6 +948,13 @@ class PrometheusConnector(servo.BaseConnector):
                         raise ValueError(f"unknown metric absent value: {metric.absent}")
 
             return []
+
+    async def _query_slo_metrics(self, start: datetime, end: datetime, metrics: List[PrometheusMetric]) -> Dict[str, List[servo.TimeSeries]]:
+        """Query prometheus for the provided metrics and return mapping of metric names to their corresponding readings"""
+        readings = await asyncio.gather(
+            *list(map(lambda m: self._query_prometheus(m, start, end), metrics))
+        )
+        return dict(map(lambda tup: (tup[0].name, tup[1]), zip(metrics, readings)))
 
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")
 
@@ -1006,7 +1038,7 @@ class EagerMetricObserver(pydantic.BaseModel):
                 active_data_point = self.data_points.get(metric)
                 readings = await self._query_prometheus(metric)
                 if readings:
-                    data_point = readings[0][-1]
+                    data_point: servo.DataPoint = readings[0][-1]
                     servo.logger.trace(f"Prometheus returned reading for the `{metric.name}` metric: {data_point}")
                     if data_point.value > 0:
                         if active_data_point is None:
