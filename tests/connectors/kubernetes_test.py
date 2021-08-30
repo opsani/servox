@@ -1241,7 +1241,7 @@ class TestKubernetesConnectorIntegration:
 
     async def test_adjust_handle_error_respects_nested_config(self, config: KubernetesConfiguration, kube: kubetest.client.TestClient):
         config.timeout = "3s"
-        config.on_failure = FailureMode.destroy
+        config.on_failure = FailureMode.shutdown
         config.cascade_common_settings(overwrite=True)
         config.deployments[0].on_failure = FailureMode.exception
         config.deployments[0].containers[0].memory.max = "256Gi"
@@ -1257,7 +1257,7 @@ class TestKubernetesConnectorIntegration:
             debug(description)
 
         deployment = await Deployment.read("fiber-http", kube.namespace)
-        # check deployment was not scaled to 0 replicas (i.e., the outer-level 'destroy' was overridden)
+        # check deployment was not scaled to 0 replicas (i.e., the outer-level 'shutdown' was overridden)
         assert deployment.obj.spec.replicas != 0
 
     # async def test_apply_no_changes(self):
@@ -1475,7 +1475,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         config.timeout = "15s"
         config.settlement = "20s"
-        config.deployments[0].on_failure = FailureMode.destroy
+        config.deployments[0].on_failure = FailureMode.shutdown
         connector = KubernetesConnector(config=config)
 
         adjustment = Adjustment(
@@ -1507,7 +1507,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kube: kubetest.client.TestClient
     ) -> None:
         tuning_config.timeout = "30s"
-        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.on_failure = FailureMode.shutdown
         tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1540,7 +1540,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         kube: kubetest.client.TestClient
     ) -> None:
         tuning_config.timeout = "25s"
-        tuning_config.on_failure = FailureMode.destroy
+        tuning_config.on_failure = FailureMode.shutdown
         tuning_config.cascade_common_settings(overwrite=True)
         connector = KubernetesConnector(config=tuning_config)
 
@@ -1574,8 +1574,8 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
     ) -> None:
         tuning_config.timeout = "25s"
         tuning_config.settlement = "15s"
-        tuning_config.on_failure = FailureMode.destroy
-        tuning_config.deployments[0].on_failure = FailureMode.destroy
+        tuning_config.on_failure = FailureMode.shutdown
+        tuning_config.deployments[0].on_failure = FailureMode.shutdown
         connector = KubernetesConnector(config=tuning_config)
 
 
