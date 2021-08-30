@@ -138,6 +138,12 @@ class TestPrometheusConfiguration:
             "  absent: ignore\n"
             "  eager: null\n"
             "targets: null\n"
+            "fast_fail:\n"
+            "  disabled: 0\n"
+            "  period: 1m\n"
+            "  span: 1m\n"
+            "  skip: '0'\n"
+            
         )
 
     def test_generate_override_metrics(self):
