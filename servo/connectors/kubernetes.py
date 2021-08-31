@@ -3654,7 +3654,6 @@ class CanaryOptimization(BaseOptimization):
         self.logger.success(f'destroyed tuning Pod "{self.tuning_pod_name}"')
 
     async def shutdown(self, error: Optional[Exception] = None) -> None:
-        # (not called - see handle_error(), defined for completeness)
         await self.destroy(error)
 
     async def handle_error(self, error: Exception) -> bool:
