@@ -394,6 +394,36 @@ class TestKubernetesConfiguration:
         assert len(matches) == 1, "expected only a single matching node"
         assert matches[0].node == expected_value
 
+    def test_failure_mode_destroy(self) -> None:
+        """test that the old 'destroy' setting is converted to 'shutdown'"""
+        config = servo.connectors.kubernetes.KubernetesConfiguration(
+            namespace="default",
+            description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
+            on_failure=servo.connectors.kubernetes.FailureMode.destroy,
+            deployments=[
+                servo.connectors.kubernetes.DeploymentConfiguration(
+                    name="fiber-http",
+                    replicas=servo.Replicas(
+                        min=1,
+                        max=2,
+                    ),
+                    containers=[
+                        servo.connectors.kubernetes.ContainerConfiguration(
+                            name="fiber-http",
+                            cpu=servo.connectors.kubernetes.CPU(
+                                min="250m", max="4000m", step="125m"
+                            ),
+                            memory=servo.connectors.kubernetes.Memory(
+                                min="128MiB", max="4.0GiB", step="128MiB"
+                            ),
+                        )
+                    ],
+                )
+            ],
+        )
+        assert config.on_failure == FailureMode.shutdown
+        assert config.deployments[0].on_failure == FailureMode.shutdown
+
 
 class TestKubernetesConnector:
     pass

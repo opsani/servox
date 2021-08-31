@@ -1440,7 +1440,7 @@ class Deployment(KubernetesModel):
             )
 
     async def scale_to_zero(self) -> None:
-        """his is used as a "soft" 'delete'/'destroy'.
+        """This is used as a "soft" 'delete'/'destroy'.
         Since the Deployment object is used as a wrapper around an existing k8s object that we did not create,
         it shouldn't be destroyed. Instead, the deployments pods are destroyed by scaling it to 0 replicas.
         """
@@ -3666,7 +3666,7 @@ class CanaryOptimization(BaseOptimization):
                         f"cannot rollback a tuning Pod: falling back to shutdown: {error}"
                     )
 
-                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+                await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
 
                 # create a new canary against baseline
                 self.logger.info(
