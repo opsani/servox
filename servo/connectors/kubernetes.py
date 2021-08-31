@@ -4040,6 +4040,8 @@ class FailureMode(str, enum.Enum):
     ignore = "ignore"
     exception = "exception"
 
+    destroy = "destroy"  # deprecated, but accepted as "shutdown"
+
     @classmethod
     def options(cls) -> List[str]:
         """
@@ -4113,6 +4115,13 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     timeout: Optional[servo.Duration] = pydantic.Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
     )
+
+    @pydantic.validator("on_failure")
+    def validate_failure_mode(cls, v):
+        if v == FailureMode.destroy:
+            servo.logger.warning(f"Deprecated value 'destroy' used for 'on_failure', replacing with 'shutdown'")
+            return FailureMode.shutdown
+        return v
 
 
 StrategyTypes = Union[
