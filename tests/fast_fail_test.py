@@ -112,12 +112,12 @@ def _make_time_series_list(metric: Metric, values: List[List[float]]) -> List[Ti
         (
             datetime(2020, 1, 21, 12, 0, 1),
             [[21337.0, 566.0, 87.0, 320.0, 59.0]],
-            [[31337.0, 666.0, 187.0, 420.0, 69.0]], 
+            [[31337.0, 666.0, 187.0, 420.0, 69.0]],
         ),
         (
             datetime(2020, 1, 21, 12, 10, 1),
             [[21337.0, 566.0, 87.0, 320.0, 59.0],  [31337.0, 666.0, 187.0, 420.0, 69.0]],
-            [[31337.0, 666.0, 187.0, 420.0, 69.0], [31337.0, 666.0, 187.0, 420.0, 69.0]], 
+            [[31337.0, 666.0, 187.0, 420.0, 69.0], [31337.0, 666.0, 187.0, 420.0, 69.0]],
         ),
         (
             datetime(2020, 1, 21, 12, 20, 1),
@@ -145,10 +145,10 @@ def test_timeseries_slos_pass(
     tuning_values: List[List[float]]
 ) -> None:
     slo_check_readings: Dict[str, List[TimeSeries]] = {
-        metric.name: _make_time_series_list(metric, values), 
+        metric.name: _make_time_series_list(metric, values),
         tuning_metric.name: _make_time_series_list(tuning_metric, tuning_values)
     }
-    
+
     servo.logging.set_level("DEBUG")
     observer.check_readings(slo_check_readings, checked_at)
 
@@ -165,7 +165,7 @@ def test_timeseries_slos_pass(
         ),
         (
             datetime(2020, 1, 21, 12, 10, 1),
-            [[31337.0, 666.0, 187.0, 420.0, 69.0], [31337.0, 666.0, 187.0, 420.0, 69.0]], 
+            [[31337.0, 666.0, 187.0, 420.0, 69.0], [31337.0, 666.0, 187.0, 420.0, 69.0]],
             [[21337.0, 566.0, 87.0, 320.0, 59.0],  [31337.0, 666.0, 187.0, 420.0, 69.0]],
             "SLO violation(s) observed: (throughput below 6000)[2020-01-21 12:10:01 SLO failed metric value 6535.8 was"
             " not below threshold value 6000], (throughput below tuning_throughput)[2020-01-21 12:10:01 SLO failed metric"
@@ -198,10 +198,10 @@ def test_timeseries_slos_fail(
     error_str: str,
 ) -> None:
     slo_check_readings: Dict[str, List[TimeSeries]] = {
-        metric.name: _make_time_series_list(metric, values), 
+        metric.name: _make_time_series_list(metric, values),
         tuning_metric.name: _make_time_series_list(tuning_metric, tuning_values)
     }
-    
+
     servo.logging.set_level("DEBUG")
     with pytest.raises(servo.EventAbortedError) as err_info:
         observer.check_readings(slo_check_readings, checked_at)
@@ -218,12 +218,12 @@ def _make_data_point_list(metric: Metric, values: List[float]) -> List[DataPoint
         (
             datetime(2020, 1, 21, 12, 0, 1),
             [21337.0, 566.0, 87.0, 320.0, 59.0],
-            [31337.0, 666.0, 187.0, 420.0, 69.0], 
+            [31337.0, 666.0, 187.0, 420.0, 69.0],
         ),
         (
             datetime(2020, 1, 21, 12, 10, 1),
             [2.0],
-            [3.0], 
+            [3.0],
         ),
     ],
 )
@@ -236,10 +236,10 @@ def test_data_point_slos_pass(
     tuning_values: List[float]
 ) -> None:
     slo_check_readings: Dict[str, List[DataPoint]] = {
-        metric.name: _make_data_point_list(metric, values), 
+        metric.name: _make_data_point_list(metric, values),
         tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values)
     }
-    
+
     servo.logging.set_level("DEBUG")
     observer.check_readings(slo_check_readings, checked_at)
 
@@ -248,7 +248,7 @@ def test_data_point_slos_pass(
     [
         (
             datetime(2020, 1, 21, 12, 0, 1),
-            [31337.0, 666.0, 187.0, 420.0, 69.0], 
+            [31337.0, 666.0, 187.0, 420.0, 69.0],
             [21337.0, 566.0, 87.0, 320.0, 59.0],
             "SLO violation(s) observed: (throughput below 6000)[2020-01-21 12:00:01 SLO failed metric value 6535.8 was"
             " not below threshold value 6000], (throughput below tuning_throughput)[2020-01-21 12:00:01 SLO failed metric"
@@ -256,7 +256,7 @@ def test_data_point_slos_pass(
         ),
         (
             datetime(2020, 1, 21, 12, 10, 1),
-            [3.0], 
+            [3.0],
             [2.0],
             "SLO violation(s) observed: (throughput below tuning_throughput)[2020-01-21 12:10:01 SLO failed metric value"
             " 3 was not below threshold value 2]"
@@ -273,7 +273,7 @@ def test_data_point_slos_fail(
     error_str: str,
 ) -> None:
     slo_check_readings: Dict[str, List[DataPoint]] = {
-        metric.name: _make_data_point_list(metric, values), 
+        metric.name: _make_data_point_list(metric, values),
         tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values)
     }
 

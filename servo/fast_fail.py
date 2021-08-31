@@ -54,7 +54,7 @@ class FastFailObserver(pydantic.BaseModel):
     async def observe(self, progress: servo.EventProgress) -> None:
         if progress.elapsed < self.config.skip:
             return
-        
+
         checked_at = datetime.datetime.now()
         metrics = await self.metrics_getter(checked_at - self.config.span, checked_at)
         self.check_readings(metrics=metrics, checked_at=checked_at)
@@ -98,7 +98,7 @@ class FastFailObserver(pydantic.BaseModel):
 
             if len(list(filter(lambda res: res.status == SloOutcomeStatus.failed, self._results[condition]))) >= condition.trigger_count:
                 failures[condition] = self._results[condition]
-        
+
         servo.logger.debug(f"SLO results: {devtools.pformat(self._results)}")
 
         if failures:
@@ -144,4 +144,3 @@ def _get_results_str(results: Dict[servo.types.SloCondition, List[SloOutcome]]) 
         outcome_str_list = list(map(lambda outcome: outcome.to_message(condition), outcome_list))
         fmt_outcomes.append(f"{condition}[{', '.join(outcome_str_list)}]")
     return ", ".join(fmt_outcomes)
-

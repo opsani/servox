@@ -143,7 +143,6 @@ class TestPrometheusConfiguration:
             "  period: 1m\n"
             "  span: 1m\n"
             "  skip: '0'\n"
-            
         )
 
     def test_generate_override_metrics(self):
@@ -681,6 +680,7 @@ class TestPrometheusIntegration:
                             SloCondition(
                                 metric="tuning_p50_latency",
                                 threshold_metric="main_p50_latency",
+                                threshold_multiplier=1.1,
                             )
                         ]))
                     )
