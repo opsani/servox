@@ -884,6 +884,10 @@ class PrometheusConnector(servo.BaseConnector):
 
         # Handle fast fail metrics
         if self.config.fast_fail.disabled == 0 and control.userdata and control.userdata.slo:
+            self.logger.info(
+                "Fast Fail enabled, the following SLO Conditions will be monitored during measurement: "
+                f"{', '.join(map(str, control.userdata.slo.conditions))}"
+            )
             fast_fail_observer = servo.fast_fail.FastFailObserver(
                 config=self.config.fast_fail,
                 input=control.userdata.slo,

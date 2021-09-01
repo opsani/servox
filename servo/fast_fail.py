@@ -101,6 +101,18 @@ class FastFailObserver(pydantic.BaseModel):
 
         servo.logger.debug(f"SLO results: {devtools.pformat(self._results)}")
 
+        # Log the latest results
+        last_results_buckets: Dict[SloOutcomeStatus, List[str]] = collections.defaultdict(list)
+        for condition, results_list in self._results.items():
+            last_result = results_list[-1]
+            last_results_buckets[last_result.status].append(str(condition))
+
+        last_results_messages: List[str] = []
+        for status, condition_str_list in last_results_buckets.items():
+            last_results_messages.append(f"x{len(condition_str_list)} {status} [{', '.join(condition_str_list)}]")
+
+        servo.logger.info(f"SLO statuses from last check: {', '.join(last_results_messages)}")
+
         if failures:
             raise servo.errors.EventAbortedError(
                 f"SLO violation(s) observed: {_get_results_str(failures)}",
