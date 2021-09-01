@@ -191,7 +191,7 @@ class Mixin(abc.ABC):
             raise servo.errors.UnexpectedEventError(status.reason)
         elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
-            raise servo.errors.EventCancelledError("Command cancelled")
+            raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
