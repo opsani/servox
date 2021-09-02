@@ -142,7 +142,7 @@ class CommandResponse(pydantic.BaseModel):
     command: Commands = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
-    ]  # TODO: Switch to a union of supported types
+    ]  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done
 
     class Config:
         json_encoders = {
