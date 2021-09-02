@@ -5,7 +5,7 @@ import datetime
 import operator
 import pydantic
 import statistics
-from typing import Awaitable, Callable, Dict, List, MutableMapping, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 import devtools
 
