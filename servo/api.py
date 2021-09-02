@@ -31,6 +31,7 @@ class ServoStatuses(str, enum.Enum):
     failed = "failed"
     rejected = "rejected"
     aborted = "aborted"
+    cancelled = "cancelled"
 
 
 Statuses = Union[OptimizerStatuses, ServoStatuses]
@@ -64,7 +65,7 @@ class Commands(str, enum.Enum):
         elif self == Commands.adjust:
             return Events.adjust
         else:
-            raise ValueError(f"unknoen command: {self}")
+            raise ValueError(f"unknown command: {self}")
 
 
 class Request(pydantic.BaseModel):
@@ -94,6 +95,8 @@ class Status(pydantic.BaseModel):
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
+        elif isinstance(error, servo.errors.EventCancelledError):
+            status = ServoStatuses.cancelled
         else:
             status = ServoStatuses.failed
 
@@ -188,7 +191,7 @@ class Mixin(abc.ABC):
             raise servo.errors.UnexpectedEventError(status.reason)
         elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
-            raise servo.errors.EventCancelledError(status.reason)
+            raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
