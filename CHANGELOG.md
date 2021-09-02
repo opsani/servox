@@ -17,6 +17,12 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] "baseless allegation" - 2021-09-02
+
+### Changed
+
+- Updated opsani Dev connector metrics to remove confusing _avg metric name [#331](https://github.com/opsani/servox/pull/331)
+
 ## [0.10.6] "baseless allegation" - 2021-08-20
 
 ### Changed
