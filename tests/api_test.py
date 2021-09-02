@@ -10,6 +10,12 @@ class TestStatus:
         assert status.message == 'foo'
         assert status.status == 'rejected'
 
+    def test_event_aborted_from_error(self) -> None:
+        error = servo.errors.EventAbortedError("bar")
+        status = servo.api.Status.from_error(error)
+        assert status.message == 'bar'
+        assert status.status == 'aborted'
+
     def test_event_cancelled_from_error(self) -> None:
         error = servo.errors.EventCancelledError("Command cancelled")
         status = servo.api.Status.from_error(error)
