@@ -12,6 +12,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo.errors
 import servo.types
 import servo.utilities
 
@@ -95,6 +96,8 @@ class Status(pydantic.BaseModel):
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
+        elif isinstance(error, servo.errors.EventAbortedError):
+            status = ServoStatuses.aborted
         elif isinstance(error, servo.errors.EventCancelledError):
             status = ServoStatuses.cancelled
         else:
@@ -139,7 +142,7 @@ class CommandResponse(pydantic.BaseModel):
     command: Commands = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
-    ]  # TODO: Switch to a union of supported types
+    ]  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done
 
     class Config:
         json_encoders = {

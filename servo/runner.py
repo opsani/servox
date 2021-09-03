@@ -81,6 +81,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return aggregate_description
 
     async def measure(self, param: servo.MeasureParams) -> Measurement:
+        if isinstance(param, dict):
+            # required parsing has failed in api.Mixin._post_event(), run parse_obj to surface the validation errors
+            servo.api.MeasureParams.parse_obj(param)
         servo.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
         servo.logger.trace(devtools.pformat(param))
 

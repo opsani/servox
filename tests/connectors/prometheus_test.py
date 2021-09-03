@@ -12,7 +12,9 @@ import pytz
 import respx
 import typer
 
+import servo.connectors.kubernetes
 import servo.connectors.prometheus
+import servo.errors
 import servo.utilities
 from servo.connectors.prometheus import (
     Client,
@@ -136,6 +138,11 @@ class TestPrometheusConfiguration:
             "  absent: ignore\n"
             "  eager: null\n"
             "targets: null\n"
+            "fast_fail:\n"
+            "  disabled: 0\n"
+            "  period: 1m\n"
+            "  span: 1m\n"
+            "  skip: '0'\n"
         )
 
     def test_generate_override_metrics(self):
@@ -573,6 +580,230 @@ class TestPrometheusIntegration:
                 assert time_series.max.value != 0.0
                 assert time_series[0].value == 0.0
                 assert time_series[-1].value == 0.0
+
+    @pytest.fixture
+    def tuning_config(self, kube) -> servo.connectors.kubernetes.KubernetesConfiguration:
+        return servo.connectors.kubernetes.KubernetesConfiguration(
+            namespace=kube.namespace,
+            timeout="60s",
+            deployments=[
+                servo.connectors.kubernetes.DeploymentConfiguration(
+                    name="fiber-http",
+                    strategy = "canary",
+                    replicas=Replicas(
+                        min=0,
+                        max=1,
+                    ),
+                    containers=[
+                        servo.connectors.kubernetes.ContainerConfiguration(
+                            name="fiber-http",
+                            cpu=servo.connectors.kubernetes.CPU(min="125m", max="875m", step="125m", request="250m", limit="250m"),
+                            memory=servo.connectors.kubernetes.Memory(min="128MiB", max="0.75GiB", step="32MiB", request="256MiB", limit="256MiB"),
+                        )
+                    ],
+                )
+            ],
+        )
+
+    @pytest.mark.applymanifests(
+        "../manifests",
+        files=[
+            "fiber-http-opsani-dev.yaml",
+        ],
+    )
+    async def test_fast_fail_passes(
+        self,
+        optimizer: servo.Optimizer,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration
+    ) -> None:
+        # NOTE: TODO add notes
+        servo.logging.set_level("DEBUG")
+        # Create a tuning instance
+        canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
+            deployment_or_rollout_config=tuning_config.deployments[0], timeout=tuning_config.timeout
+        )
+        await canary_opt.create_tuning_pod()
+
+        async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
+            # Ugly workaround for lack of load balancing on port forward
+            async with kube_port_forward("deploy/fiber-http", 9980) as main_fiber_url:
+                async with kube_port_forward("pod/fiber-http-tuning", 9980) as tuning_fiber_url:
+                    config = PrometheusConfiguration.generate(
+                        base_url=prometheus_url,
+                        metrics=[
+                            servo.connectors.prometheus.PrometheusMetric(
+                                "main_p50_latency",
+                                servo.types.Unit.milliseconds,
+                                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[15s])))',
+                                absent="fail",
+                                step="5s",
+                            ),
+                            servo.connectors.prometheus.PrometheusMetric(
+                                "tuning_p50_latency",
+                                servo.types.Unit.milliseconds,
+                                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[15s])))',
+                                absent="fail",
+                                step="5s",
+                            ),
+                        ],
+                    )
+
+                    # TODO: Replace this with the load tester fixture
+                    sending_traffic = True
+                    async def send_traffic() -> None:
+                        # Ugly workaround for lack of load balancing on port forward
+                        async with httpx.AsyncClient(base_url=main_fiber_url) as main_client:
+                            async with httpx.AsyncClient(base_url=tuning_fiber_url) as tuning_client:
+                                servo.logger.info(f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}...")
+                                count = 0
+                                try:
+                                    while sending_traffic:
+                                        response = await main_client.get("/")
+                                        response.raise_for_status()
+                                        response = await tuning_client.get("/")
+                                        response.raise_for_status()
+                                        count += 1
+                                finally:
+                                    servo.logger.success(f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}.")
+
+                    config.fast_fail.period = Duration("20s")
+                    connector = PrometheusConnector(config=config, optimizer=optimizer)
+                    control = Control(
+                        duration="10s",
+                        warmup="10s",
+                        userdata=UserData(slo=SloInput(conditions=[
+                            SloCondition(
+                                metric="tuning_p50_latency",
+                                threshold=0.3,
+                            ),
+                            SloCondition(
+                                metric="tuning_p50_latency",
+                                threshold_metric="main_p50_latency",
+                                threshold_multiplier=1.1,
+                            )
+                        ]))
+                    )
+                    # Send traffic in the background
+                    traffic_task = asyncio.create_task(send_traffic())
+
+                    try:
+                        measurement = await asyncio.wait_for(
+                            connector.measure(control=control),
+                            timeout=90
+                        )
+                        assert measurement
+                    finally:
+                        sending_traffic = False
+                        await traffic_task
+
+    @pytest.mark.applymanifests(
+        "../manifests",
+        files=[
+            "fiber-http-opsani-dev.yaml",
+        ],
+    )
+    async def test_fast_fail_fails(
+        self,
+        optimizer: servo.Optimizer,
+        kube_port_forward: Callable[[str, int], AsyncIterator[str]],
+        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration
+    ) -> None:
+        # NOTE: TODO add notes
+        servo.logging.set_level("DEBUG")
+        # Create a tuning instance
+        canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
+            deployment_or_rollout_config=tuning_config.deployments[0], timeout=tuning_config.timeout
+        )
+        await canary_opt.create_tuning_pod()
+
+        async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
+            # Ugly workaround for lack of load balancing on port forward
+            async with kube_port_forward("deploy/fiber-http", 9980) as main_fiber_url:
+                async with kube_port_forward("pod/fiber-http-tuning", 9980) as tuning_fiber_url:
+                    config = PrometheusConfiguration.generate(
+                        base_url=prometheus_url,
+                        metrics=[
+                            servo.connectors.prometheus.PrometheusMetric(
+                                "main_p50_latency",
+                                servo.types.Unit.milliseconds,
+                                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[15s])))',
+                                absent="fail",
+                                step="5s",
+                            ),
+                            servo.connectors.prometheus.PrometheusMetric(
+                                "tuning_p50_latency",
+                                servo.types.Unit.milliseconds,
+                                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[15s])))',
+                                absent="fail",
+                                step="5s",
+                            ),
+                        ],
+                    )
+
+                    # TODO: Replace this with the load tester fixture
+                    sending_traffic = True
+                    async def send_traffic() -> None:
+                        # Ugly workaround for lack of load balancing on port forward
+                        async with httpx.AsyncClient(base_url=main_fiber_url) as main_client:
+                            async with httpx.AsyncClient(base_url=tuning_fiber_url) as tuning_client:
+                                servo.logger.info(f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}...")
+                                count = 0
+                                try:
+                                    while sending_traffic:
+                                        response = await main_client.get("/")
+                                        response.raise_for_status()
+                                        response = await tuning_client.get("/")
+                                        response.raise_for_status()
+                                        count += 1
+                                finally:
+                                    servo.logger.success(f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}.")
+
+                    config.fast_fail.skip = Duration("14s")
+                    config.fast_fail.period = Duration("2s")
+                    connector = PrometheusConnector(config=config, optimizer=optimizer)
+                    control = Control(
+                        duration="10s",
+                        warmup="10s",
+                        userdata=UserData(slo=SloInput(conditions=[
+                            SloCondition(
+                                metric="tuning_p50_latency",
+                                threshold=0.2,
+                                trigger_count=2,
+                                trigger_window=2,
+                            ),
+                            SloCondition(
+                                metric="tuning_p50_latency",
+                                threshold_metric="main_p50_latency",
+                                threshold_multiplier=0.9,
+                                trigger_count=2,
+                                trigger_window=2,
+                            )
+                        ]))
+                    )
+                    # Send traffic in the background
+                    traffic_task = asyncio.create_task(send_traffic())
+
+                    date_matcher = r"[\s0-9-:.]*"
+                    float_matcher = r"[0-9.]*"
+                    error_text = (re.escape("SLO violation(s) observed: (tuning_p50_latency below 0.2)[") + date_matcher
+                        + "SLO failed metric value " + float_matcher + re.escape(" was not below threshold value 0.2, ") + date_matcher
+                        + "SLO failed metric value " + float_matcher + re.escape(" was not below threshold value 0.2], ")
+                        + re.escape("(tuning_p50_latency below main_p50_latency)[") + date_matcher +" SLO failed metric value "
+                        + float_matcher + " was not below threshold value " + float_matcher + ", " + date_matcher
+                        + " SLO failed metric value " + float_matcher + " was not below threshold value " + float_matcher
+                        + re.escape("]"))
+
+                    try:
+                        with pytest.raises(servo.errors.EventAbortedError, match=error_text):
+                            measurement = await asyncio.wait_for(
+                                connector.measure(control=control),
+                                timeout=90
+                            )
+                            debug(measurement)
+                    finally:
+                        sending_traffic = False
+                        await traffic_task
 
 def empty_targets_response() -> Dict[str, Any]:
     return json.load("{'status': 'success', 'data': {'activeTargets': [], 'droppedTargets': []}}")
