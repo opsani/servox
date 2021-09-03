@@ -2149,10 +2149,16 @@ class RolloutV1PodTemplateSpec(RolloutBaseModel):
     metadata: RolloutV1ObjectMeta
     spec: RolloutV1PodSpec
 
+class RolloutV1WorkloadRef(RolloutBaseModel):
+    api_version: str
+    kind: str
+    name: str
+
 class RolloutSpec(RolloutBaseModel):
     replicas: int
-    selector: RolloutV1LabelSelector
-    template: RolloutV1PodTemplateSpec
+    selector: Optional[RolloutV1LabelSelector]
+    template: Optional[RolloutV1PodTemplateSpec]
+    workload_ref: Optional[RolloutV1WorkloadRef]
     min_ready_seconds: Optional[int]
     revision_history_limit: Optional[int]
     paused: Optional[bool]
@@ -2224,6 +2230,7 @@ class Rollout(KubernetesModel):
     """
 
     obj: RolloutObj
+    workload_ref_controller: Optional[Deployment]
 
     _rollout_const_args: Dict[str, str] = dict(
         group=ROLLOUT_GROUP,
@@ -2270,7 +2277,25 @@ class Rollout(KubernetesModel):
                 name=name,
                 **cls._rollout_const_args,
             )
-            return Rollout(RolloutObj.parse_obj(obj))
+            rollout = Rollout(RolloutObj.parse_obj(obj))
+            if rollout.obj.spec.workload_ref:
+                await rollout.read_workfload_ref(namespace=namespace)
+            return rollout
+
+    async def read_workfload_ref(self, namespace: str) -> None:
+        if self.obj.spec.workload_ref.kind != "Deployment":
+            raise RuntimeError(f"Rollout integration does not currently support workloadRef kind of {self.obj.spec.workload_ref.kind}")
+
+        self.workload_ref_controller = await Deployment.read(
+            name=self.obj.spec.workload_ref.name,
+            namespace=namespace
+        )
+        if not self.workload_ref_controller:
+            raise ValueError(
+                f'cannot read Rollout: workloadRef Deployment "{self.obj.spec.workload_ref.name}"'
+                f' does not exist in Namespace "{namespace}"'
+            )
+
 
     async def patch(self) -> None:
         """Update the changed attributes of the Rollout."""
@@ -2314,6 +2339,9 @@ class Rollout(KubernetesModel):
                 **self._rollout_const_args
             ))
 
+        if self.workload_ref_controller:
+            await self.workload_ref_controller.refresh()
+
     async def rollback(self) -> None:
         # TODO rollbacks are automated in Argo Rollouts, not sure if making this No Op will cause issues
         #   but I was unable to locate a means of triggering a rollout rollback manually
@@ -2345,7 +2373,10 @@ class Rollout(KubernetesModel):
         self.logger.debug(f'getting pods for rollout "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
+            if self.workload_ref_controller:
+                label_selector = self.workload_ref_controller.obj.spec.selector.match_labels
+            else:
+                label_selector = self.obj.spec.selector.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
                 namespace=self.namespace, label_selector=selector_string(label_selector)
             )
@@ -2390,6 +2421,9 @@ class Rollout(KubernetesModel):
         """
         Return a list of Container objects from the underlying pod template spec.
         """
+        if self.workload_ref_controller:
+            return self.workload_ref_controller.containers
+
         return list(
             map(lambda c: Container(c, None), self.obj.spec.template.spec.containers)
         )
@@ -2403,7 +2437,7 @@ class Rollout(KubernetesModel):
     async def get_target_container(self, config: ContainerConfiguration) -> Optional[Container]:
         """Return the container targeted by the supplied configuration"""
         target_container = self.find_container(config.name)
-        if target_container is not None:
+        if target_container is not None and isinstance(target_container.obj, RolloutV1Container):
             async with kubernetes_asyncio.client.ApiClient() as api_client:
                 target_container.obj = api_client.deserialize(
                         response=FakeKubeResponse(target_container.obj.dict(by_alias=True, exclude_none=True)),
@@ -2428,10 +2462,16 @@ class Rollout(KubernetesModel):
     @property
     def pod_template_spec(self) -> RolloutV1PodTemplateSpec:
         """Return the pod template spec for instances of the Rollout."""
+        if self.workload_ref_controller:
+            return self.workload_ref_controller.pod_template_spec
+
         return self.obj.spec.template
 
     async def get_pod_template_spec_copy(self) -> kubernetes_asyncio.client.models.V1PodTemplateSpec:
         """Return a deep copy of the pod template spec. Eg. for creation of a tuning pod"""
+        if self.workload_ref_controller:
+            return await self.workload_ref_controller.get_pod_template_spec_copy()
+
         async with kubernetes_asyncio.client.ApiClient() as api_client:
             return api_client.deserialize(
                 response=FakeKubeResponse(self.pod_template_spec.dict(by_alias=True, exclude_none=True)),
@@ -2558,14 +2598,18 @@ class Rollout(KubernetesModel):
             ]
         )
 
-        # add the sidecar to the Deployment
-        if index is None:
-            self.obj.spec.template.spec.containers.append(container)
-        else:
-            self.obj.spec.template.spec.containers.insert(index, container)
+        # add the sidecar to the Rollout or workloadRef
+        update_controller = self
+        if self.workload_ref_controller:
+            update_controller = self.workload_ref_controller
 
-        # patch the deployment
-        await self.patch()
+        if index is None:
+            update_controller.obj.spec.template.spec.containers.append(container)
+        else:
+            update_controller.obj.spec.template.spec.containers.insert(index, container)
+
+        # patch the Rollout or workloadRef
+        await update_controller.patch()
 
     # TODO: convert to rollout logic
     async def eject_sidecar(self, name: str) -> bool:
