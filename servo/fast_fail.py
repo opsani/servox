@@ -88,7 +88,9 @@ class FastFailObserver(pydantic.BaseModel):
             result_args.update(threshold_value=threshold_value, threshold_readings=threshold_readings)
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
-            if check_passed_op(metric_value, threshold_value):
+            if condition.allow_equals and metric_value == threshold_value:
+                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.passed))
+            elif check_passed_op(metric_value, threshold_value):
                 self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.passed))
             else:
                 self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.failed))
