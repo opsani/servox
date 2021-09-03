@@ -88,9 +88,7 @@ class FastFailObserver(pydantic.BaseModel):
             result_args.update(threshold_value=threshold_value, threshold_readings=threshold_readings)
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
-            if condition.allow_equals and metric_value == threshold_value:
-                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.passed))
-            elif check_passed_op(metric_value, threshold_value):
+            if check_passed_op(metric_value, threshold_value):
                 self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.passed))
             else:
                 self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.failed))
@@ -125,9 +123,9 @@ class FastFailObserver(pydantic.BaseModel):
 # Helper methods
 def _get_keep_operator(keep: servo.types.SloKeep):
     if keep == servo.types.SloKeep.below:
-        return operator.lt
+        return operator.le
     elif keep == servo.types.SloKeep.above:
-        return operator.gt
+        return operator.ge
     else:
         raise ValueError(f"Unknown SloKeep type {keep}")
 

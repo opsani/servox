@@ -1225,7 +1225,6 @@ class SloCondition(BaseModel):
     metric: str
     threshold_multiplier: decimal.Decimal = decimal.Decimal(1)
     keep: SloKeep = SloKeep.below
-    allow_equals: bool = False
     trigger_count: pydantic.conint(ge=1, multiple_of=1) = 1
     trigger_window: pydantic.conint(ge=1, multiple_of=1) = None
     threshold: Optional[decimal.Decimal]
