@@ -4,11 +4,23 @@ import servo.api
 
 
 class TestStatus:
-    def test_from_error(self) -> None:
+    def test_adjustment_rejected_from_error(self) -> None:
         error = servo.errors.AdjustmentRejectedError("foo")
         status = servo.api.Status.from_error(error)
         assert status.message == 'foo'
         assert status.status == 'rejected'
+
+    def test_event_aborted_from_error(self) -> None:
+        error = servo.errors.EventAbortedError("bar")
+        status = servo.api.Status.from_error(error)
+        assert status.message == 'bar'
+        assert status.status == 'aborted'
+
+    def test_event_cancelled_from_error(self) -> None:
+        error = servo.errors.EventCancelledError("Command cancelled")
+        status = servo.api.Status.from_error(error)
+        assert status.message == 'Command cancelled'
+        assert status.status == 'cancelled'
 
 
 from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status

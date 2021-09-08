@@ -553,3 +553,28 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         extra = pydantic.Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"
+
+class FastFailConfiguration(pydantic.BaseSettings):
+    """Configuration providing support for fast fail behavior which returns early
+    from long running connector operations when SLO violations are observed"""
+
+    disabled: pydantic.conint(ge=0, le=1, multiple_of=1) = 0
+    """Toggle fast-fail behavior on or off"""
+
+    period: servo.types.Duration = "60s"
+    """How often to check the SLO metrics"""
+
+    span: servo.types.Duration = None
+    """The span or window of time that SLO metrics are gathered for"""
+
+    skip: servo.types.Duration = 0
+    """How long to wait before querying SLO metrics for potential violations"""
+
+    class Config:
+        extra = pydantic.Extra.forbid
+
+    @pydantic.validator('span', pre=True, always=True)
+    def span_defaults_to_period(cls, v, *, values, **kwargs):
+        if v is None:
+            return values['period']
+        return v
