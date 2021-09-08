@@ -1625,6 +1625,11 @@ class Deployment(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
+    def match_labels(self) -> Dict[str, str]:
+        """Return the matchLabels dict of the selector field"""
+        return self.obj.spec.selector.match_labels
+
+    @property
     def label_selector(self) -> str:
         """
         Return a string for matching the Deployment in Kubernetes API calls.
@@ -2230,7 +2235,7 @@ class Rollout(KubernetesModel):
     """
 
     obj: RolloutObj
-    workload_ref_controller: Optional[Deployment]
+    workload_ref_controller: Optional[Deployment] = None
 
     _rollout_const_args: Dict[str, str] = dict(
         group=ROLLOUT_GROUP,
@@ -2460,6 +2465,13 @@ class Rollout(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
+    def match_labels(self) -> Dict[str, str]:
+        """Return the matchLabels dict of the selector field (from the workloadRef if applicable"""
+        if self.workload_ref_controller:
+            return self.workload_ref_controller.match_labels
+        return self.obj.spec.selector.match_labels
+
+    @property
     def pod_template_spec(self) -> RolloutV1PodTemplateSpec:
         """Return the pod template spec for instances of the Rollout."""
         if self.workload_ref_controller:
@@ -2490,7 +2502,7 @@ class Rollout(KubernetesModel):
         self,
         name: str,
         image: str,
-        *,
+        *args,
         service: Optional[str] = None,
         port: Optional[int] = None,
         index: Optional[int] = None,
@@ -2513,6 +2525,12 @@ class Rollout(KubernetesModel):
             index: The index at which to insert the sidecar container. When `None`, the sidecar is appended.
             service_port: The port to receive ingress traffic from an upstream service.
         """
+
+        if self.workload_ref_controller:
+            await self.workload_ref_controller.inject_sidecar(
+                name=name, image=image, *args, service=service, port=port, index=index, service_port=service_port
+            )
+            return
 
         await self.refresh()
 
@@ -2598,18 +2616,14 @@ class Rollout(KubernetesModel):
             ]
         )
 
-        # add the sidecar to the Rollout or workloadRef
-        update_controller = self
-        if self.workload_ref_controller:
-            update_controller = self.workload_ref_controller
-
+        # add the sidecar to the Rollout
         if index is None:
-            update_controller.obj.spec.template.spec.containers.append(container)
+            self.obj.spec.template.spec.containers.append(container)
         else:
-            update_controller.obj.spec.template.spec.containers.insert(index, container)
+            self.obj.spec.template.spec.containers.insert(index, container)
 
-        # patch the Rollout or workloadRef
-        await update_controller.patch()
+        # patch the Rollout
+        await self.patch()
 
     # TODO: convert to rollout logic
     async def eject_sidecar(self, name: str) -> bool:
@@ -3787,7 +3801,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             # compile artifacts for checksum calculation
             pods = await deployment_or_rollout.get_pods()
             runtime_ids[optimization.name] = [pod.uid for pod in pods]
-            pod_tmpl_specs[deployment_or_rollout.name] = deployment_or_rollout.obj.spec.template.spec
+            pod_tmpl_specs[deployment_or_rollout.name] = deployment_or_rollout.pod_template_spec.spec
             images[container.name] = container.image
 
         # Compute checksums for change detection

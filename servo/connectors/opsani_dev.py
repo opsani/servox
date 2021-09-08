@@ -827,7 +827,7 @@ class OpsaniDevChecks(BaseOpsaniDevChecks):
         return config.deployments[0]
 
     def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Deployment) -> Dict[str, str]:
-        return controller.obj.spec.selector.match_labels
+        return controller.match_labels
 
 class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
     """Opsani dev checks against argoproj.io Rollouts"""
@@ -869,7 +869,7 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         return config.rollouts[0]
 
     def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Rollout) -> Dict[str, str]:
-        match_labels = dict(controller.obj.spec.selector.match_labels)
+        match_labels = dict(controller.match_labels)
         assert controller.status, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no status"
         assert controller.status.current_pod_hash, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no currentPodHash"
         match_labels['rollouts-pod-template-hash'] = controller.status.current_pod_hash
@@ -884,7 +884,7 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         assert rollout, f"failed to read Rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         spec_patch = {}
-        match_labels = rollout.obj.spec.selector.match_labels or dict()
+        match_labels = rollout.match_labels or dict()
         opsani_role_selector = match_labels.get("opsani_role")
         if opsani_role_selector is None or opsani_role_selector == "tuning":
             opsani_role_selector = "mainline"

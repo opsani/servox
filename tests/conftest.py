@@ -707,7 +707,7 @@ async def install_rollout_crds(tmp_path_factory: pytest.TempPathFactory, subproc
             exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
             assert exit_code == 0, f"argo-rollouts namespace creation failed: {stderr}"
 
-        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://raw.githubusercontent.com/argoproj/argo-rollouts/stable/manifests/install.yaml"]
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml"]
         exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
         assert exit_code == 0, f"argo-rollouts crd apply failed: {stderr}"
 
