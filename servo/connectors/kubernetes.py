@@ -1439,6 +1439,16 @@ class Deployment(KubernetesModel):
                 body=options,
             )
 
+    async def scale_to_zero(self) -> None:
+        """This is used as a "soft" 'delete'/'destroy'.
+        Since the Deployment object is used as a wrapper around an existing k8s object that we did not create,
+        it shouldn't be destroyed. Instead, the deployments pods are destroyed by scaling it to 0 replicas.
+        """
+
+        await self.refresh()
+        self.replicas = 0
+        await self.patch()
+
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Deployment resource."""
         async with self.api_client() as api_client:
@@ -2820,8 +2830,8 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
             elif self.on_failure == FailureMode.rollback:
                 await self.rollback(error)
 
-            elif self.on_failure == FailureMode.destroy:
-                await self.destroy(error)
+            elif self.on_failure == FailureMode.shutdown:
+                await self.shutdown(error)
 
             else:
                 # Trap any new modes that need to be handled
@@ -2847,9 +2857,9 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         ...
 
     @abc.abstractmethod
-    async def destroy(self, error: Optional[Exception] = None) -> None:
+    async def shutdown(self, error: Optional[Exception] = None) -> None:
         """
-        Asynchronously destroy the Optimization.
+        Asynchronously shut down the Optimization.
 
         Args:
             error: An optional exception that contextualizes the cause of the destruction.
@@ -2991,16 +3001,16 @@ class DeploymentOptimization(BaseOptimization):
             timeout=self.timeout.total_seconds(),
         )
 
-    async def destroy(self, error: Optional[Exception] = None) -> None:
+    async def shutdown(self, error: Optional[Exception] = None) -> None:
         """
-        Initiates the asynchronous deletion of the Deployment under optimization.
+        Initiates the asynchronous deletion of all pods in the Deployment under optimization.
 
         Args:
             error: An optional error that triggered the destruction.
         """
-        self.logger.info(f"adjustment failed: destroying deployment...")
+        self.logger.info(f"adjustment failed: shutting down deployment's pods...")
         await asyncio.wait_for(
-            self.deployment.delete(),
+            self.deployment.scale_to_zero(),
             timeout=self.timeout.total_seconds(),
         )
 
@@ -3643,16 +3653,19 @@ class CanaryOptimization(BaseOptimization):
 
         self.logger.success(f'destroyed tuning Pod "{self.tuning_pod_name}"')
 
+    async def shutdown(self, error: Optional[Exception] = None) -> None:
+        await self.destroy(error)
+
     async def handle_error(self, error: Exception) -> bool:
-        if self.on_failure == FailureMode.rollback or self.on_failure == FailureMode.destroy:
+        if self.on_failure == FailureMode.rollback or self.on_failure == FailureMode.shutdown:
             # Ensure that we chain any underlying exceptions that may occur
             try:
                 if self.on_failure == FailureMode.rollback:
                     self.logger.warning(
-                        f"cannot rollback a tuning Pod: falling back to destroy: {error}"
+                        f"cannot rollback a tuning Pod: falling back to shutdown: {error}"
                     )
 
-                await asyncio.wait_for(self.destroy(), timeout=self.timeout.total_seconds())
+                await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
 
                 # create a new canary against baseline
                 self.logger.info(
@@ -4022,9 +4035,11 @@ class FailureMode(str, enum.Enum):
     """
 
     rollback = "rollback"
-    destroy = "destroy"
+    shutdown = "shutdown"
     ignore = "ignore"
     exception = "exception"
+
+    destroy = "destroy"  # deprecated, but accepted as "shutdown"
 
     @classmethod
     def options(cls) -> List[str]:
@@ -4099,6 +4114,13 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     timeout: Optional[servo.Duration] = pydantic.Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
     )
+
+    @pydantic.validator("on_failure")
+    def validate_failure_mode(cls, v):
+        if v == FailureMode.destroy:
+            servo.logger.warning(f"Deprecated value 'destroy' used for 'on_failure', replacing with 'shutdown'")
+            return FailureMode.shutdown
+        return v
 
 
 StrategyTypes = Union[
