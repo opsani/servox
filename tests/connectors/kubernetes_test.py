@@ -973,6 +973,23 @@ class TestKubernetesConnectorIntegration:
         description = await connector.describe()
         assert description.get_setting("fiber-http/fiber-http.cpu").value == 150
 
+    async def test_adjust_cpu_out_of_range(self, config):
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="cpu",
+            value=".100",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.cpu')
+        assert setting
+        assert setting.value == 100
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.cpu").value == 100
+
     async def test_adjust_cpu_with_settlement(self, config):
         connector = KubernetesConnector(config=config)
         adjustment = Adjustment(
@@ -1056,6 +1073,23 @@ class TestKubernetesConnectorIntegration:
         # deployment = await Deployment.read("web", "default")
         # debug(deployment)
         # debug(deployment.obj.spec.template.spec.containers)
+
+    async def test_adjust_memory_out_of_range(self, config):
+        connector = KubernetesConnector(config=config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http",
+            setting_name="mem",
+            value="64Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http.mem')
+        assert setting
+        assert setting.value == 67108864
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http.mem").value == 67108864
 
     async def test_adjust_deployment_insufficient_resources(self, config: KubernetesConfiguration):
         config.timeout = "3s"
@@ -1289,6 +1323,40 @@ class TestKubernetesConnectorIntegration:
         deployment = await Deployment.read("fiber-http", kube.namespace)
         # check deployment was not scaled to 0 replicas (i.e., the outer-level 'shutdown' was overridden)
         assert deployment.obj.spec.replicas != 0
+
+    async def test_adjust_tuning_cpu_out_of_range(self, tuning_config):
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="cpu",
+            value=".100",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.cpu')
+        assert setting
+        assert setting.value == 100
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http-tuning.cpu").value == 100
+
+    async def test_adjust_tuning_memory_out_of_range(self, tuning_config):
+        connector = KubernetesConnector(config=tuning_config)
+        adjustment = Adjustment(
+            component_name="fiber-http/fiber-http-tuning",
+            setting_name="mem",
+            value="64Mi",
+        )
+        description = await connector.adjust([adjustment])
+        assert description is not None
+        setting = description.get_setting('fiber-http/fiber-http-tuning.mem')
+        assert setting
+        assert setting.value == 67108864
+
+        # Describe it again and make sure it matches
+        description = await connector.describe()
+        assert description.get_setting("fiber-http/fiber-http-tuning.mem").value == 67108864
 
     # async def test_apply_no_changes(self):
 #         # resource_version stays the same and early exits
