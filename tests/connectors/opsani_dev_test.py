@@ -26,6 +26,7 @@ import pydantic
 import pytest
 import pytz
 import respx
+import tests.helpers
 
 import servo
 import servo.cli
@@ -441,6 +442,69 @@ class TestRolloutIntegration:
             assert result.success, f"Expected success but got: {result}"
 
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
+
+    @pytest.mark.parametrize((), [
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")),
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"))
+    ])
+    class TestChecksUpdateState:
+        @pytest.fixture(autouse=True)
+        def set_kubeconfig_env_var(self, kubeconfig: Union[pathlib.Path, pathlib.PurePath]) -> None:
+            with tests.helpers.environment_overrides({"KUBECONFIG": str(kubeconfig)}):
+                yield
+
+        @pytest.fixture()
+        async def port_forward_prometheus_sidecar(
+            self,
+            kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+        ) -> None:
+            async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+                # Connect the checks to our port forward interface
+                rollout_checks.config.prometheus_base_url = prometheus_base_url
+                yield
+
+        async def test_rollout_check_annotations(
+            self,
+            rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks,
+            port_forward_prometheus_sidecar
+        ) -> None:
+            servo.logging.set_level("TRACE")
+            result = await rollout_checks.run_one(id=f"check_controller_annotations")
+            assert result.exception, f"Expected exception but got: {result}"
+            assert result.remedy, f"Expected failed result to have remedy. Result: {result}"
+
+            rollout = await servo.connectors.kubernetes.Rollout.read(
+                rollout_checks.config.rollout, rollout_checks.config.namespace
+            )
+            # NOTE in workload ref case, deployment is patched which doesn't immediately update
+            #   the rollout's resource version causing change_to_resource to erroneously return early.
+            #   wait for the resource version update before exiting the context to prevent test flakiness
+            pre_patch_resource_version = rollout.obj.metadata.resource_version
+            async def wait_for_resource_version_update():
+                while True:
+                    await rollout.refresh()
+                    if rollout.obj.metadata.resource_version != pre_patch_resource_version:
+                        break
+
+            async with change_to_resource(rollout):
+                await _run_remedy_from_check(result)
+                await asyncio.wait_for(wait_for_resource_version_update(), timeout=5)
+
+            result = await rollout_checks.run_one(id=f"check_controller_annotations")
+            assert result.success, f"Expected success after remedy was run but got: {result}"
+
+        async def test_rollout_check_labels(
+            self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
+        ) -> None:
+            result = await rollout_checks.run_one(id=f"check_controller_labels", skip_requirements=True)
+            assert result.exception, f"Expected exception but got: {result}"
+            assert result.remedy, f"Expected failed result to have remedy. Result: {result}"
+            await _run_remedy_from_check(result)
+
+            result = await rollout_checks.run_one(id=f"check_controller_labels", skip_requirements=True)
+            assert result.success, f"Expected success after remedy was run but got: {result}"
+
 
     # TODO: port TestInstall class to rollouts by refactoring deployment specific helper code
 
@@ -961,7 +1025,8 @@ async def add_labels_to_podspec_of_deployment(deployment, labels: List[str]) -> 
 
 @contextlib.asynccontextmanager
 async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesModel):
-    status = resource.status
+    if hasattr(resource, "observed_generation"):
+        observed_generation_prepatch = resource.observed_generation
     metadata = resource.obj.metadata
 
     if isinstance(resource, servo.connectors.kubernetes.Deployment):
@@ -978,8 +1043,8 @@ async def change_to_resource(resource: servo.connectors.kubernetes.KubernetesMod
         servo.logger.debug(f"exiting early: metadata resource version has not changed")
         return
 
-    if hasattr(status, "observed_generation"):
-        while status.observed_generation == resource.status.observed_generation:
+    if hasattr(resource, "observed_generation"):
+        while observed_generation_prepatch == resource.observed_generation:
             await resource.refresh()
 
     # wait for the change to roll out
@@ -1209,3 +1274,28 @@ async def _remedy_check(id: str, *, config, deployment, kube_port_forward, load_
 
     else:
         raise AssertionError(f"unhandled check: '{id}'")
+
+async def _run_remedy_from_check(failure: servo.Check) -> None:
+    """Replicate the application remedies as done in ServoCLI.check_servo with the remedy argument set to True"""
+    assert failure.remedy, f"Expected check to have remedy method: {failure}"
+
+    if asyncio.iscoroutinefunction(failure.remedy):
+        task = asyncio.create_task(failure.remedy())
+    elif asyncio.iscoroutine(failure.remedy):
+        task = asyncio.create_task(failure.remedy)
+    else:
+        async def fn() -> None:
+            result = failure.remedy()
+            if asyncio.iscoroutine(result):
+                await result
+
+        task = asyncio.create_task(fn())
+
+    servo.logger.info("💡 Attempting to apply remedy...")
+    try:
+        await asyncio.wait_for(
+            task,
+            10.0
+        )
+    except asyncio.TimeoutError as error:
+        servo.logger.warning("💡 Remedy attempt timed out after 10s")

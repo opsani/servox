@@ -1489,7 +1489,7 @@ class Deployment(KubernetesModel):
         self.logger.debug(f'getting pods for deployment "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            label_selector = self.obj.spec.selector.match_labels
+            label_selector = self.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
                 namespace=self.namespace, label_selector=selector_string(label_selector)
             )
@@ -2388,10 +2388,7 @@ class Rollout(KubernetesModel):
         self.logger.debug(f'getting pods for rollout "{self.name}"')
 
         async with Pod.preferred_client() as api_client:
-            if self.workload_ref_controller:
-                label_selector = self.workload_ref_controller.obj.spec.selector.match_labels
-            else:
-                label_selector = self.obj.spec.selector.match_labels
+            label_selector = self.match_labels
             pod_list:kubernetes_asyncio.client.V1PodList = await api_client.list_namespaced_pod(
                 namespace=self.namespace, label_selector=selector_string(label_selector)
             )
@@ -2407,6 +2404,18 @@ class Rollout(KubernetesModel):
         """
         return self.obj.status
 
+    @property
+    def observed_generation(self) -> str:
+        """
+        Returns the observed generation of the Deployment status.
+
+        The generation is observed by the deployment controller.
+        """
+        if self.workload_ref_controller:
+            return self.workload_ref_controller.observed_generation
+
+        return self.obj.status.observed_generation
+
     async def is_ready(self) -> bool:
         """Check if the Rollout is in the ready state.
 
@@ -2418,6 +2427,11 @@ class Rollout(KubernetesModel):
         # if there is no status, the deployment is definitely not ready
         status = self.obj.status
         if status is None:
+            return False
+
+        # check for the rollout completed status condition
+        completed_condition = next(filter(lambda con: con.type == "Completed", status.conditions), None)
+        if completed_condition.status != "True":
             return False
 
         # check the status for the number of total replicas and compare
