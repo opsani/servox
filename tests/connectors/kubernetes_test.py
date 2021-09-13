@@ -2349,7 +2349,8 @@ class TestKubernetesConnectorRolloutIntegration:
 
     async def test_adjust_rol_tuning_insufficient_rsrcs(self, _rollout_tuning_config: KubernetesConfiguration, namespace) -> None:
         # test_adjust_rollout_tuning_insufficient_resources
-        _rollout_tuning_config.timeout = "10s"
+        servo.logging.set_level("TRACE")
+        _rollout_tuning_config.timeout = "15s"
         _rollout_tuning_config.cascade_common_settings(overwrite=True)
         _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=_rollout_tuning_config)
