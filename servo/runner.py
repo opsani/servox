@@ -68,11 +68,11 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
-    async def describe(self) -> Description:
+    async def describe(self, control: Control) -> Description:
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe)
+        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe, control=control)
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
@@ -81,6 +81,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return aggregate_description
 
     async def measure(self, param: servo.MeasureParams) -> Measurement:
+        if isinstance(param, dict):
+            # required parsing has failed in api.Mixin._post_event(), run parse_obj to surface the validation errors
+            servo.api.MeasureParams.parse_obj(param)
         servo.logger.info(f"Measuring... [metrics={', '.join(param.metrics)}]")
         servo.logger.trace(devtools.pformat(param))
 
@@ -127,7 +130,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.trace(devtools.pformat(cmd_response))
 
         if cmd_response.command == servo.api.Commands.describe:
-            description = await self.describe()
+            description = await self.describe(Control(**cmd_response.param.get("control", {})))
             self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
@@ -145,8 +148,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.trace(devtools.pformat(measurement))
                 param = measurement.__opsani_repr__()
             except servo.errors.EventError as error:
-                self.logger.info(f"Measurement failed: {error}")
-                param = servo.api.Status.from_error(error)
+                self.logger.error(f"Measurement failed: {error}")
+                param = servo.api.Status.from_error(error).dict()
+                self.logger.error(f"Responding with {param}")
                 self.logger.opt(exception=error).debug("Measure failure details")
 
             return await self._post_event(servo.api.Events.measure, param)
@@ -167,8 +171,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     f"Adjusted: {components_count} components, {settings_count} settings"
                 )
             except servo.EventError as error:
-                self.logger.info(f"Adjustment failed: {error}")
+                self.logger.error(f"Adjustment failed: {error}")
                 status = servo.api.Status.from_error(error)
+                self.logger.error(f"Responding with {status.dict()}")
                 self.logger.opt(exception=error).debug("Adjust failure details")
 
             return await self._post_event(servo.api.Events.adjust, status.dict())
@@ -259,7 +264,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Events.hello, dict(agent=servo.api.user_agent()))
+                await self._post_event(servo.api.Events.hello, dict(
+                    agent=servo.api.user_agent(),
+                    telemetry=self.servo.telemetry.values
+                ))
                 self._connected = True
 
 
@@ -361,6 +369,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     # Post a status to resolve the operation
                     operation = progress['operation']
                     status = servo.api.Status.from_error(error)
+                    self.logger.error(f"Responding with {status.dict()}")
                     runner = self._runner_for_servo(servo.current_servo())
                     await runner._post_event(operation, status.dict())
 

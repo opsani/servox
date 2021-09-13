@@ -31,12 +31,12 @@ class TestOptimizer:
 
     def test_organization_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            Optimizer(id="invalid/my-app", token="123456")
+            Optimizer(id="inval/id/my-app", token="123456")
         assert "1 validation error for Optimizer" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == r'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_name_valid(self) -> None:
@@ -50,7 +50,7 @@ class TestOptimizer:
         assert e.value.errors()[0]["loc"] == ("id",)
         assert (
             e.value.errors()[0]["msg"]
-            == r'string does not match regex "^(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))/[a-zA-Z\_\-\.0-9]{1,64}$"'
+            == r'string does not match regex "^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\_\-\.0-9]{1,64}$"'
         )
 
     def test_token_validation(self) -> None:

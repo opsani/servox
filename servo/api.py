@@ -12,6 +12,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo.errors
 import servo.types
 import servo.utilities
 
@@ -31,6 +32,7 @@ class ServoStatuses(str, enum.Enum):
     failed = "failed"
     rejected = "rejected"
     aborted = "aborted"
+    cancelled = "cancelled"
 
 
 Statuses = Union[OptimizerStatuses, ServoStatuses]
@@ -64,7 +66,7 @@ class Commands(str, enum.Enum):
         elif self == Commands.adjust:
             return Events.adjust
         else:
-            raise ValueError(f"unknoen command: {self}")
+            raise ValueError(f"unknown command: {self}")
 
 
 class Request(pydantic.BaseModel):
@@ -94,6 +96,10 @@ class Status(pydantic.BaseModel):
         """Return a status object representation from the given error."""
         if isinstance(error, servo.errors.AdjustmentRejectedError):
             status = ServoStatuses.rejected
+        elif isinstance(error, servo.errors.EventAbortedError):
+            status = ServoStatuses.aborted
+        elif isinstance(error, servo.errors.EventCancelledError):
+            status = ServoStatuses.cancelled
         else:
             status = ServoStatuses.failed
 
@@ -136,7 +142,7 @@ class CommandResponse(pydantic.BaseModel):
     command: Commands = pydantic.Field(alias="cmd")
     param: Optional[
         Union[MeasureParams, Dict[str, Any]]
-    ]  # TODO: Switch to a union of supported types
+    ]  # TODO: Switch to a union of supported types, remove isinstance check from ServoRunner.measure when done
 
     class Config:
         json_encoders = {
@@ -188,7 +194,7 @@ class Mixin(abc.ABC):
             raise servo.errors.UnexpectedEventError(status.reason)
         elif status.status == OptimizerStatuses.cancelled:
             # Optimizer wants to cancel the operation
-            raise servo.errors.EventCancelledError(status.reason)
+            raise servo.errors.EventCancelledError(status.reason or "Command cancelled")
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
@@ -309,6 +315,7 @@ def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict
 
 def user_agent() -> str:
     return f"{USER_AGENT} v{servo.__version__}"
+
 
 def _redacted_to_curl(request: httpx.Request) -> str:
     """Pass through to curlify2.to_curl that redacts the authorization in the headers

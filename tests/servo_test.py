@@ -41,7 +41,7 @@ class FirstTestServoConnector(BaseConnector):
         return "adjusting!"
 
     @before_event(Events.measure)
-    def do_something_before_measuring(self) -> None:
+    def do_something_before_measuring(self, metrics: List[str] = [], control: Control = Control()) -> None:
         return "measuring!"
 
     @before_event(Events.promote)
@@ -470,7 +470,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Description'\""""
+        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Description'\""""
     )
 
 
@@ -484,7 +484,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     assert (
         str(error.value)
-        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None)) -> 'servo.types.Measurement'\""""
+        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Measurement'\""""
     )
 
 
@@ -524,7 +524,7 @@ def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
 
 def test_registering_before_handlers() -> None:
     @before_event("measure")
-    def before_measure(self) -> None:
+    def before_measure(self, metrics: List[str] = [], control: Control = Control()) -> None:
         pass
 
     assert before_measure.__event_handler__.event.name == "measure"
@@ -541,7 +541,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
     assert error
     assert (
         str(error.value)
-        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
+        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'None'\""""
     )
 
 
@@ -768,8 +768,7 @@ class TestAssembly:
                             'title': 'Id',
                             'env_names': ['id'],
                             'pattern': (
-                                '^(([\\da-zA-Z])([_\\w-]{,62})\\.){,127}(([\\da-zA-Z])[_\\w-]{,61})?([\\da-zA-Z]\\.((xn\\-\\-[a-zA-'
-                                'Z\\d]+)|([a-zA-Z\\d]{2,})))/[a-zA-Z\\_\\-\\.0-9]{1,64}$'
+                                '^(?!-)([A-Za-z0-9-.]{5,50})/[a-zA-Z\\_\\-\\.0-9]{1,64}$'
                             ),
                             'type': 'string',
                         },

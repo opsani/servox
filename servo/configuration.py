@@ -24,7 +24,15 @@ __all__ = [
 ]
 
 
-ORGANIZATION_REGEX = r"(([\da-zA-Z])([_\w-]{,62})\.){,127}(([\da-zA-Z])[_\w-]{,61})?([\da-zA-Z]\.((xn\-\-[a-zA-Z\d]+)|([a-zA-Z\d]{2,})))"
+ORGANIZATION_REGEX = r"(?!-)([A-Za-z0-9-.]{5,50})"
+# Organization regex constraint to enforce that:
+# * Cannot contain a forward slash (/)
+# * Cannot solely consist of a single period (.) or double periods (..)
+# * Cannot match the regular expression: __.*__
+# * Cannot start with dash (-)
+# * Must be between at least 5 characters long and no longer than 50
+# * Must match domain names but also allow non-domain names and names including no period (.)
+
 NAME_REGEX = r"[a-zA-Z\_\-\.0-9]{1,64}"
 OPTIMIZER_ID_REGEX = f"^{ORGANIZATION_REGEX}/{NAME_REGEX}$"
 
@@ -545,3 +553,28 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         extra = pydantic.Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"
+
+class FastFailConfiguration(pydantic.BaseSettings):
+    """Configuration providing support for fast fail behavior which returns early
+    from long running connector operations when SLO violations are observed"""
+
+    disabled: pydantic.conint(ge=0, le=1, multiple_of=1) = 0
+    """Toggle fast-fail behavior on or off"""
+
+    period: servo.types.Duration = "60s"
+    """How often to check the SLO metrics"""
+
+    span: servo.types.Duration = None
+    """The span or window of time that SLO metrics are gathered for"""
+
+    skip: servo.types.Duration = 0
+    """How long to wait before querying SLO metrics for potential violations"""
+
+    class Config:
+        extra = pydantic.Extra.forbid
+
+    @pydantic.validator('span', pre=True, always=True)
+    def span_defaults_to_period(cls, v, *, values, **kwargs):
+        if v is None:
+            return values['period']
+        return v

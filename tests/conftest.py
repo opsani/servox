@@ -13,6 +13,7 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List
 import chevron
 import devtools
 import fastapi
+import filelock
 import httpx
 import kubetest
 import pytest
@@ -170,6 +171,11 @@ MINIKUBE_PROFILE_INI = (
     'minikube_profile: marks tests using minikube to run under the profile specified'
     'in the first marker argument. Eg. pytest.mark.minikube_profile.with_args(MINIKUBE_PROFILE)'
 )
+ROLLOUT_MANIFEST_INI = (
+    'rollout_manifest: mark tests using argo rollouts to apply the manifest from'
+    'the specified path in the first marker argument. Eg.'
+    '@pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")'
+)
 
 def pytest_configure(config) -> None:
     """Register custom markers for use in the test suite."""
@@ -178,6 +184,7 @@ def pytest_configure(config) -> None:
     config.addinivalue_line("markers", SYSTEM_INI)
     config.addinivalue_line("markers", EVENT_LOOP_POLICY_INI)
     config.addinivalue_line("markers", MINIKUBE_PROFILE_INI)
+    config.addinivalue_line("markers", ROLLOUT_MANIFEST_INI)
 
     # Add generic description for all environments
     for key, value in Environment.__members__.items():
@@ -679,3 +686,67 @@ def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.obj
         return pod
 
     return _pod_loader
+
+# NOTE: kubetest does not support CRD or CR objects, rollout fixtures utilize kubectl for needed setup
+# NOTE: session scope doesnt work under xdist, rollout CRD setup has been factored to be idempotent so running it
+#        multiple times does not cause issues (https://github.com/pytest-dev/pytest-xdist/issues/271)
+@pytest.fixture
+async def install_rollout_crds(tmp_path_factory: pytest.TempPathFactory, subprocess, kubeconfig):
+    # Use lock file to ensure CRD setup doesn't fail due to multiple xdist runners trying to do it at the same time
+    # https://github.com/pytest-dev/pytest-xdist#making-session-scoped-fixtures-execute-only-once
+
+    # get the temp directory shared by all workers
+    root_tmp_dir = tmp_path_factory.getbasetemp().parent
+    lock_file = root_tmp_dir / "argo_rollout_crd_apply.lock"
+    with filelock.FileLock(str(lock_file)):
+        # NOTE: Rollout CRDs are picky about the installation namespace
+        ns_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "namespace", "argo-rollouts" ]
+        exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+        if exit_code != 0:
+            ns_cmd[2] = "create"
+            exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+            assert exit_code == 0, f"argo-rollouts namespace creation failed: {stderr}"
+
+        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml"]
+        exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts crd apply failed: {stderr}"
+
+        wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", "argo-rollouts", "deployment", "argo-rollouts" ]
+        exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
+        assert exit_code == 0, f"argo-rollouts wait for CRD controller available failed: {stderr}"
+
+    # NOTE: under xdist, we're unable to guarantee all tests using the CRD have finished running prior to teardown
+    # yield # Tests run
+
+    # rollout_crd_cmd[2] = "delete"
+    # exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
+    # assert exit_code == 0, f"argo-rollouts crd delete failed: {stderr}"
+
+    # ns_cmd[2] = "delete"
+    # exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
+    # assert exit_code == 0, f"argo-rollouts namespace delete failed: {stderr}"
+
+@pytest.fixture
+async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, install_rollout_crds):
+    """
+    Apply the manifest of the target rollout being tested against
+
+    The applied manifest is determined using the parametrized `rollout_manifest` marker
+    or else uses "tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml".
+    """
+    marker = request.node.get_closest_marker("rollout_manifest")
+    if marker:
+        assert len(marker.args) == 1, f"rollout_manifest marker accepts a single argument but received: {repr(marker.args)}"
+        manifest = marker.args[0]
+    else:
+        manifest = "tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml"
+
+    rollout_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", kube.namespace, "-f", str(rootpath / manifest)]
+    exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+    assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
+
+    wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", kube.namespace, "rollout", "fiber-http" ]
+    exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
+    assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
+
+    # NOTE: it is assumed kubetest will handle the needed teardown of the rollout

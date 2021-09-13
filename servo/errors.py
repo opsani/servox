@@ -12,6 +12,7 @@ __all__ = (
     "AdjustmentFailedError",
     "AdjustmentRejectedError",
     "UnexpectedEventError",
+    "EventAbortedError",
 )
 
 class BaseError(RuntimeError):
@@ -111,4 +112,11 @@ class AdjustmentRejectedError(AdjustmentFailedError):
     to start, becomes unstable, the orchestrator refuses to apply it, or
     other such definitive error condition is encountered that excludes the
     applied configuration from further consideration by the optimizer.
+    """
+
+class EventAbortedError(EventError):
+    """Abort the currently running event
+
+    During long running measurements (and, optionally, adjustments) it is often
+    neccessary to complete the operation early eg. if there are sustained SLO violations.
     """

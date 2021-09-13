@@ -17,7 +17,38 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.4] "baseless allegation" - Unreleased
+## [0.10.7] "baseless allegation" - 2021-09-02
+
+### Changed
+
+- Updated opsani Dev connector metrics to remove confusing _avg metric name [#331](https://github.com/opsani/servox/pull/331)
+
+## [0.10.6] "baseless allegation" - 2021-08-20
+
+### Changed
+* Update forked kubernetes_asyncio dependency to use PyPI package source instead of github [#315](https://github.com/opsani/servox/pull/315)
+
+## [0.10.5] "baseless allegation" - 2021-08-16
+
+### Changed
+
+- Improved messaging of unschedulable adjustment rejections [#285](https://github.com/opsani/servox/pull/285)
+- Test suites now treat warnings as errors [#288](https://github.com/opsani/servox/pull/288)
+- Relaxed validation of account names to support accounts that don't adhere to DNS naming convention [#302](https://github.com/opsani/servox/pull/302)
+- Updated calculation and naming of Opsani Dev prometheus metrics to use averages [#305](https://github.com/opsani/servox/pull/305)
+
+### Added
+
+- Beta support for optimizing [Argo Rollouts](https://argoproj.github.io/argo-rollouts/) [#303](https://github.com/opsani/servox/pull/303)
+- Simple telemetry to report run environment details to the backend [#261](https://github.com/opsani/servox/pull/261)
+- Existing kubernetes resource requests/limits are now validated [#282](https://github.com/opsani/servox/pull/282)
+
+### Removed
+
+- Opsani Dev p99 latency metrics [#306](https://github.com/opsani/servox/pull/306)
+- Opsani Dev main_pod_avg_request_rate redundant metric [#305](https://github.com/opsani/servox/pull/305)
+
+## [0.10.4] "baseless allegation" - 2021-07-09
 
 ### Fixed
 
@@ -25,6 +56,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   that computed paths are deterministically correct.
 - Cancellation requests from the optimizer were not being properly respected,
   resulting in unnecessary delays to cancel operations from the console.
+- Enforce settlement time user-config parameter.
 
 ## [0.10.3] "baseless allegation" - 2021-06-06
 

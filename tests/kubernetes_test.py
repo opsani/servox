@@ -206,7 +206,7 @@ class TestChecks:
                     ),
                     containers=[
                         servo.connectors.kubernetes.ContainerConfiguration(
-                            name="opsani/fiber-http:latest",
+                            name="fiber-http",
                             cpu=servo.connectors.kubernetes.CPU(
                                 min="250m", max="4000m", step="125m"
                             ),
@@ -322,7 +322,28 @@ class TestChecks:
         )
         assert results
         result = results[-1]
-        assert result.id, "check_resource_requirements_item_0"
+        assert result.id == "check_resource_requirements_item_0"
+        assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+
+    async def test_check_resource_requirements_configured_get(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+        # Zero out the CPU setting for requests and Memory setting for limits
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert deployment
+        container = deployment.containers[0]
+        container.resources = kubernetes_asyncio.client.V1ResourceRequirements(limits={"memory": None}, requests={"cpu": None})
+        await deployment.patch()
+        await deployment.wait_until_ready()
+
+        # Update resource config to require limits for CPU and requests for memory
+        config.deployments[0].containers[0].cpu.get = [servo.connectors.kubernetes.ResourceRequirement.limit]
+        config.deployments[0].containers[0].memory.get = [servo.connectors.kubernetes.ResourceRequirement.request]
+
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        )
+        assert results
+        result = results[-1]
+        assert result.id == "check_resource_requirements_item_0"
         assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
     async def test_check_resource_requirements_fail(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
@@ -340,8 +361,56 @@ class TestChecks:
         )
         assert results
         result = results[-1]
-        assert result.id, "check_resource_requirements_item_0"
-        assert not result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+        assert result.id == "check_resource_requirements_item_0"
+        failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+        assert not result.success, failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests, limits", failed_message
+
+    async def test_check_resource_requirements_cpu_config_mismatch(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+        # Zero out the CPU setting for requests
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert deployment
+        container = deployment.containers[0]
+        container.resources = kubernetes_asyncio.client.V1ResourceRequirements(requests={"cpu": None})
+        await deployment.patch()
+        await deployment.wait_until_ready()
+
+        # Update resource config to require requests
+        config.deployments[0].containers[0].cpu.get = [servo.connectors.kubernetes.ResourceRequirement.request]
+
+        # Fail the check because the CPU doesn't define requests
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        )
+        assert results
+        result = results[-1]
+        assert result.id == "check_resource_requirements_item_0"
+        failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+        assert not result.success, failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests", failed_message
+
+    async def test_check_resource_requirements_mem_config_mismatch(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
+        # Zero out the Memory setting for requests
+        deployment = await servo.connectors.kubernetes.Deployment.read("fiber-http", kube.namespace)
+        assert deployment
+        container = deployment.containers[0]
+        container.resources = kubernetes_asyncio.client.V1ResourceRequirements(requests={"memory": None})
+        await deployment.patch()
+        await deployment.wait_until_ready()
+
+        # Update resource config to require requests
+        config.deployments[0].containers[0].memory.get = [servo.connectors.kubernetes.ResourceRequirement.request]
+
+        # Fail the check because the Memory doesn't define requests
+        results = await servo.connectors.kubernetes.KubernetesChecks.run(
+            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+        )
+        assert results
+        result = results[-1]
+        assert result.id == "check_resource_requirements_item_0"
+        failed_message =  f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+        assert not result.success, failed_message
+        assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource memory. At least one of the following must be specified: requests", failed_message
 
     async def test_deployments_are_ready(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
         # Set the CPU request implausibly high to force it into pending
@@ -357,21 +426,14 @@ class TestChecks:
 
         # Fail because the Pod is stuck in pending
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_deployments_are_ready_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id, "check_resource_requirements_item_0"
-        assert not result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
-
-    async def test_check_for_vpa_success(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
-        results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_deployments_for_vpa_item_0")
-        )
-        assert results
-        result = results[-1]
-        assert result.id == "check_deployments_for_vpa_item_0"
-        assert result.success
+        assert result.id == "check_deployments_are_ready_item_0"
+        failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
+        assert not result.success, failed_message
+        assert str(result.exception) == 'Deployment "fiber-http" is not ready', failed_message
 
 @pytest.mark.applymanifests("manifests", files=["fiber-http.yaml"])
 class TestService:

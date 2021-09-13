@@ -303,7 +303,7 @@ class VegetaConnector(servo.BaseConnector):
     config: VegetaConfiguration
 
     @servo.on_event()
-    def describe(self) -> servo.Description:
+    def describe(self, control: servo.Control = servo.Control()) -> servo.Description:
         """
         Describes the metrics and components exported by the connector.
         """
