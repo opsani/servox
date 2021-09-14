@@ -2946,12 +2946,14 @@ class DeploymentOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.container.get_resource_requirements('cpu')
+        cpu.request = resource_requirements.get(ResourceRequirement.request)
+        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        cpu.value = value
-        cpu.request = resource_requirements.get(ResourceRequirement.request)
-        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
+        # NOTE: use copy + update to apply values that may be outside of the range
+        value = Millicore.parse(value)
+        cpu = cpu.copy(update={"value": value})
         return cpu
 
     @property
@@ -2963,12 +2965,14 @@ class DeploymentOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.container.get_resource_requirements('memory')
+        memory.request = resource_requirements.get(ResourceRequirement.request)
+        memory.limit = resource_requirements.get(ResourceRequirement.limit)
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
-        memory.value = value
-        memory.request = resource_requirements.get(ResourceRequirement.request)
-        memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        # NOTE: use copy + update to apply values that may be outside of the range
+        value = ShortByteSize.validate(value)
+        memory = memory.copy(update={"value": value})
         return memory
 
     @property
@@ -3031,9 +3035,9 @@ class DeploymentOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
-            # NOTE: Assign to the config to trigger validations
-            setting = getattr(self.container_config, setting_name)
-            setting.value = value
+            # NOTE: use copy + update to apply values that may be outside of the range
+            servo.logger.debug(f"Adjusting {setting_name}={value}")
+            setting = getattr(self.container_config, setting_name).copy(update={"value": value})
 
             # Set only the requirements defined in the config
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
@@ -3235,10 +3239,9 @@ class CanaryOptimization(BaseOptimization):
         self.logger.info(f"adjusting {setting_name} to {value}")
 
         if setting_name in ("cpu", "memory"):
-            # NOTE: Assign to the config model to trigger validations
-            setting = getattr(self.container_config, setting_name).copy()
+            # NOTE: use copy + update to apply values that may be outside of the range
             servo.logger.debug(f"Adjusting {setting_name}={value}")
-            setting.value = value
+            setting = getattr(self.container_config, setting_name).copy(update={"value": value})
 
             # Set only the requirements defined in the config
             requirements: Dict[ResourceRequirement, Optional[str]] = {}
@@ -3493,13 +3496,14 @@ class CanaryOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.tuning_container.get_resource_requirements('cpu')
+        cpu.request = resource_requirements.get(ResourceRequirement.request)
+        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-
-        cpu.value = value
-        cpu.request = resource_requirements.get(ResourceRequirement.request)
-        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
+        value = Millicore.parse(value)
+        # NOTE: use copy + update to apply values that may be outside of the range
+        cpu = cpu.copy(update={"value": value})
         return cpu
 
     @property
@@ -3514,12 +3518,14 @@ class CanaryOptimization(BaseOptimization):
 
         # Determine the value in priority order from the config
         resource_requirements = self.tuning_container.get_resource_requirements('memory')
+        memory.request = resource_requirements.get(ResourceRequirement.request)
+        memory.limit = resource_requirements.get(ResourceRequirement.limit)
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
-        memory.value = value
-        memory.request = resource_requirements.get(ResourceRequirement.request)
-        memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        value = ShortByteSize.validate(value)
+        # NOTE: use copy + update to apply values that may be outside of the range
+        memory = memory.copy(update={"value": value})
         return memory
 
     @property
