@@ -4,7 +4,8 @@ The `servo.repeating.Mixin` provides connectors with the ability to easily manag
 that require periodic execution or the observation of particular runtime conditions.
 """
 import asyncio
-from typing import Callable, Dict, Optional, Union
+import time
+from typing import Callable, Dict, Optional, Union, Awaitable
 
 import pydantic
 
@@ -42,14 +43,14 @@ class Mixin(pydantic.BaseModel):
                 self.start_repeating_task(name, duration, method)
 
     def start_repeating_task(
-        self, name: str, every: Every, callable: Callable[[None], None]
+        self, name: str, every: Every, function: Union[Callable[[None], None], Awaitable[None]]
     ) -> asyncio.Task:
         """Start a repeating task with the given name and duration.
 
         Args:
             name: A name for identifying the repeating task.
             every: The duration at which the task will repeatedly run.
-            callable: A callable to be executed repeatedly on the desired interval.
+            function: A callable to be executed repeatedly on the desired interval.
         """
         if task := self.repeating_tasks.get(name, None):
             if not task.done():
@@ -61,13 +62,24 @@ class Mixin(pydantic.BaseModel):
         task_name = f"{context_name}:{name} (repeating every {every})"
 
         async def repeating_async_fn() -> None:
+            t0 = time.time()
             while True:
-                callable()
-                await asyncio.sleep(every.total_seconds())
+                if asyncio.iscoroutinefunction(function):
+                    await function()
+                elif callable(function):
+                    function()
+                else:
+                    raise TypeError(f"function={function} must be Awaitable or Callable, but has "
+                        f"type(function)={type(function)}.")
+                t1 = time.time()
+                sleep_time = every.total_seconds() - max(t1 - t0, 0)
+                breakpoint()
+                await asyncio.sleep(sleep_time)
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task
         return asyncio_task
+
 
     def cancel_repeating_task(self, name: str) -> Optional[asyncio.Task]:
         """Cancel a repeating task with the given name.
