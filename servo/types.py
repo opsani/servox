@@ -1307,7 +1307,7 @@ class Control(BaseModel):
     aspects of the operation to be performed.
     """
 
-    duration: Duration = cast(Duration, 0)
+    duration: Duration = cast(Duration, 1)
     """How long the operation should execute.
     """
 
