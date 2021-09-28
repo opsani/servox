@@ -73,8 +73,8 @@ class Mixin(pydantic.BaseModel):
                         f"type(function)={type(function)}.")
                 t1 = time.time()
                 sleep_time = every.total_seconds() - max(t1 - t0, 0)
-                breakpoint()
-                await asyncio.sleep(sleep_time)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task
