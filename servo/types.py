@@ -1531,7 +1531,7 @@ class Adjustment(BaseModel):
     """The name of the setting to be adjusted.
     """
 
-    value: Union[str, Numeric]
+    value: Union[Numeric, str]  # Numeric must come first so e.g. 42:int is not coerced to '42':str
     """The value to be applied to the setting being adjusted.
     """
     @property
