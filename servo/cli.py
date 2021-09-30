@@ -1711,11 +1711,11 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def inject_sidecar(
             context: Context,
-            image: str = typer.Argument(
-                ..., help="Image of the sidecar to be injected in form [REPO]/[IMAGE]:[TAG]"
-            ),
             target: str = typer.Argument(
                 ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
+            ),
+            image: str = typer.Option(
+                ..., "--image", "-i", help="Image of the sidecar to be injected in form [REPO]/[IMAGE]:[TAG]"
             ),
             namespace: str = typer.Option(
                 "default", "--namespace", "-n", help="Namespace of the target"
