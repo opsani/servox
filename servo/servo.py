@@ -60,6 +60,7 @@ class Events(str, enum.Enum):
     measure = "measure"
     adjust = "adjust"
     promote = "promote"
+    patch_hpa = "patch_hpa"
 
 
 class _EventDefinitions(Protocol):
@@ -130,6 +131,13 @@ class _EventDefinitions(Protocol):
 
     @servo.events.event(Events.promote)
     async def promote(self) -> None:
+        ...
+
+    @servo.events.event(Events.patch_hpa)
+    async def patch_hpa(
+        self,
+        adjustments: List[servo.types.Adjustment],
+    ) -> int:  # TODO this should be a Description, but that's heavyweight for alpha
         ...
 
 
