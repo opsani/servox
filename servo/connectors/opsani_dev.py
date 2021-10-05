@@ -36,6 +36,7 @@ PROMETHEUS_ANNOTATION_DEFAULTS = {
     "prometheus.opsani.com/port": "9901",
 
 }
+ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:v1.19-latest'
 ENVOY_SIDECAR_LABELS = {
     "sidecar.opsani.com/type": "envoy"
 }
@@ -57,6 +58,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     cpu: CPU
     memory: Memory
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
+    envoy_sidecar_image: str = ENVOY_SIDECAR_IMAGE_TAG
     timeout: servo.Duration = "5m"
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
@@ -642,7 +644,8 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         )
         command = (
             f"kubectl exec -n {self.config.namespace} -c servo {self._servo_resource_target} -- "
-            f"servo --token-file /servo/opsani.token inject-sidecar --namespace {self.config.namespace} --service {self.config.service}{port_switch} "
+            f"servo --token-file /servo/opsani.token inject-sidecar --image {self.config.envoy_sidecar_image} "
+            f"--namespace {self.config.namespace} --service {self.config.service}{port_switch} "
             f"{self.controller_type_name.lower()}/{self.config_controller_name}"
         )
         raise servo.checks.CheckError(
