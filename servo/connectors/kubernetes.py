@@ -3348,6 +3348,17 @@ class CanaryOptimization(BaseOptimization):
         container = Container(container_obj, None)
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
 
+        if self.container_config.static_environment_variables:
+            if container.obj.env is None:
+                container.obj.env = []
+
+            # TODO: test and/or add support for overriding existing values
+            env_list = [
+                kubernetes_asyncio.client.V1EnvVar(name=k, value=v)
+                for k, v in self.container_config.static_environment_variables.items()
+            ]
+            container.obj.env.extend(env_list)
+
         if self.tuning_container:
             servo.logger.debug(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
             resource_requirements = self.tuning_container.resources
@@ -3995,7 +4006,8 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[List[str]]  # TODO: create model...
+    env: Optional[List[str]]  # (adjustable environment variables) TODO: create model...
+    static_environment_variables: Optional[Dict[str, str]]
 
 
 
