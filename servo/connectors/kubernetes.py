@@ -2925,6 +2925,9 @@ class DeploymentOptimization(BaseOptimization):
                     f'no container named "{container_config.name}" exists in the Pod (found {names})'
                 )
 
+            if container_config.static_environment_variables:
+                raise NotImplementedError("Configurable environment variables are not currently supported under Deployment optimization (saturation mode)")
+
             name = container_config.alias or (
                 f"{deployment.name}/{container.name}" if container else deployment.name
             )
