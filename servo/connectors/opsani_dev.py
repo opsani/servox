@@ -258,6 +258,13 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     ]) -> Dict[str, str]:
         ...
 
+    @abc.abstractmethod
+    def _get_controller_patch_target(self, controller: Union[
+        servo.connectors.kubernetes.Deployment,
+        servo.connectors.kubernetes.Rollout
+    ]) -> str:
+        ...
+
     ##
     # Kubernetes essentials
 
@@ -594,8 +601,9 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             annotations = dict(map(lambda k: (k, required_annotations[k]), delta))
             patch = {"spec": {"template": {"metadata": {"annotations": annotations}}}}
             patch_json = json.dumps(patch, indent=None)
+            controller_patch_target = self._get_controller_patch_target(controller)
             # NOTE: custom resources don't support strategic merge type. json merge is acceptable for both cases because the patch json doesn't contain lists
-            command = f"kubectl --namespace {self.config.namespace} patch {self.controller_type_name} {self.config_controller_name} --type='merge' -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {controller_patch_target} --type='merge' -p '{patch_json}'"
             desc = ', '.join(sorted(delta))
             raise servo.checks.CheckError(
                 f"{self.controller_type_name} '{controller.name}' is missing annotations: {desc}",
@@ -620,8 +628,9 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             desc = ', '.join(sorted(map('='.join, delta.items())))
             patch = {"spec": {"template": {"metadata": {"labels": delta}}}}
             patch_json = json.dumps(patch, indent=None)
+            controller_patch_target = self._get_controller_patch_target(controller)
             # NOTE: custom resources don't support strategic merge type. json merge is acceptable for both cases because the patch json doesn't contain lists
-            command = f"kubectl --namespace {self.config.namespace} patch {self.controller_type_name} {controller.name} --type='merge' -p '{patch_json}'"
+            command = f"kubectl --namespace {self.config.namespace} patch {controller_patch_target} --type='merge' -p '{patch_json}'"
             raise servo.checks.CheckError(
                 f"{self.controller_type_name} '{controller.name}' is missing labels: {desc}",
                 hint=f"Patch labels via: `{command}`",
@@ -830,7 +839,10 @@ class OpsaniDevChecks(BaseOpsaniDevChecks):
         return config.deployments[0]
 
     def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Deployment) -> Dict[str, str]:
-        return controller.obj.spec.selector.match_labels
+        return controller.match_labels
+
+    def _get_controller_patch_target(self, controller: servo.connectors.kubernetes.Deployment) -> str:
+        return f"Deployment {self.config_controller_name}"
 
 class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
     """Opsani dev checks against argoproj.io Rollouts"""
@@ -872,11 +884,17 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         return config.rollouts[0]
 
     def _get_controller_service_selector(self, controller: servo.connectors.kubernetes.Rollout) -> Dict[str, str]:
-        match_labels = dict(controller.obj.spec.selector.match_labels)
+        match_labels = dict(controller.match_labels)
         assert controller.status, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no status"
         assert controller.status.current_pod_hash, f"unable to determine service selector. rollout '{self.config.rollout}' in namespace '{self.config.namespace}' has no currentPodHash"
         match_labels['rollouts-pod-template-hash'] = controller.status.current_pod_hash
         return match_labels
+
+    def _get_controller_patch_target(self, controller: servo.connectors.kubernetes.Rollout) -> str:
+        if controller.workload_ref_controller:
+            return f"{controller.workload_ref_controller.obj.kind} {controller.workload_ref_controller.name}"
+
+        return f"Rollout {self.config_controller_name}"
 
     @servo.checks.require("Rollout Selector and PodSpec has opsani_role label")
     async def check_rollout_selector_labels(self) -> None:
@@ -887,7 +905,7 @@ class OpsaniDevRolloutChecks(BaseOpsaniDevChecks):
         assert rollout, f"failed to read Rollout '{self.config.rollout}' in namespace '{self.config.namespace}'"
 
         spec_patch = {}
-        match_labels = rollout.obj.spec.selector.match_labels or dict()
+        match_labels = rollout.match_labels or dict()
         opsani_role_selector = match_labels.get("opsani_role")
         if opsani_role_selector is None or opsani_role_selector == "tuning":
             opsani_role_selector = "mainline"
