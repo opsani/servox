@@ -1169,7 +1169,12 @@ class TestKubernetesConnectorIntegration:
         tuning_config: KubernetesConfiguration,
         kube: kubetest.client.TestClient
     ) -> None:
+        # verify existing env vars are overriden by config var with same name
+        main_dep = kube.get_deployments()["fiber-http"]
+        main_dep.obj.spec.template.spec.containers[0].env = [kubernetes.client.models.V1EnvVar(name="FOO", value="BAZ")]
+        main_dep.api_client.patch_namespaced_deployment(main_dep.name, main_dep.namespace, main_dep.obj)
         tuning_config.deployments[0].containers[0].static_environment_variables = { "FOO": "BAR" }
+        
         connector = KubernetesConnector(config=tuning_config)
         description = await connector.describe()
 
