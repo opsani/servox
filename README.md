@@ -393,8 +393,7 @@ The bundled connectors are registered and discovered using this mechanism via
 entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
-
-If you're writing your own connector in a different package, you need to include
+If you're writing your own connector in an external package, you need to include
 ```yaml
 [tool.poetry.plugins."servo.connectors"]
 "my_connector" = "my_project.foo:MyConnector"
@@ -410,7 +409,6 @@ my:
   baz: bat
 ...
 ```
-
 
 ### Running Multiple Connector Instances
 
