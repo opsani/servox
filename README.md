@@ -393,6 +393,27 @@ The bundled connectors are registered and discovered using this mechanism via
 entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
 
+### Writing your own Connector class
+
+#### Exporting the Connector
+If you're writing your own connector in an external package, you need to include
+```yaml
+[tool.poetry.plugins."servo.connectors"]
+"my_connector" = "my_project.foo:MySpecialConnector"
+```
+in your `pyproject.toml` - you don't need to change the `pyproject.toml` in the servox project.
+This is sufficient for the servo to discover your connector and make it available in `servo.yaml`
+for configuration under the `myspecial:` key. Note that the configuration key is reflected from the
+lexical token representing the class name (e.g. `MySpecialConnector` in this example). To use a
+different connector name, see the following section.
+
+#### Notes on Connector Discovery
+The `connector_routes` loaded by the `servo/connector.py:ConnectorLoader` will use the `echo
+MyConnector | sed 's/Connector//' | lowercase` name for the top-level key in `servo.yaml` unless you
+decorate the class with `@servo.metadata(name='myothername')`. In the latter case the
+`connector_routes` will use the name configured in the metadata decoration and you'll be able to use
+`'myothername'` for configuration in `servo.yaml`.
+
 ### Running Multiple Connector Instances
 
 ServoX is designed to support assemblies that contain an arbitrary number of
