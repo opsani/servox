@@ -2367,7 +2367,10 @@ class TestKubernetesClusterConnectorIntegration:
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
-@pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml")
+@pytest.mark.parametrize((),[
+    pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml")),
+    pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-opsani-dev-workload-ref.yaml"))
+])
 class TestKubernetesConnectorRolloutIntegration:
     @pytest.fixture
     def namespace(self, kube: kubetest.client.TestClient) -> str:
@@ -2397,7 +2400,8 @@ class TestKubernetesConnectorRolloutIntegration:
         if tuning_endpoint is None:
             raise AssertionError(f"Tuning pod {tuning_name} not contained in service endpoints: {endpoints}")
 
-    async def test_adjust_rollout_tuning_cpu_with_settlement(self, _rollout_tuning_config, namespace):
+    async def test_adjust_rol_tuning_cpu_with_settle(self, _rollout_tuning_config, namespace):
+        # test_adjust_rollout_tuning_cpu_with_settlement
         connector = KubernetesConnector(config=_rollout_tuning_config)
         adjustment = Adjustment(
             component_name="fiber-http/fiber-http-tuning",
@@ -2411,8 +2415,10 @@ class TestKubernetesConnectorRolloutIntegration:
         assert setting
         assert setting.value == 250
 
-    async def test_adjust_rollout_tuning_insufficient_resources(self, _rollout_tuning_config: KubernetesConfiguration, namespace) -> None:
-        _rollout_tuning_config.timeout = "10s"
+    async def test_adjust_rol_tuning_insufficient_rsrcs(self, _rollout_tuning_config: KubernetesConfiguration, namespace) -> None:
+        # test_adjust_rollout_tuning_insufficient_resources
+        servo.logging.set_level("TRACE")
+        _rollout_tuning_config.timeout = "15s"
         _rollout_tuning_config.cascade_common_settings(overwrite=True)
         _rollout_tuning_config.rollouts[0].containers[0].memory.max = "256Gi"
         connector = KubernetesConnector(config=_rollout_tuning_config)
@@ -2428,6 +2434,73 @@ class TestKubernetesConnectorRolloutIntegration:
         rej_msg = str(rejection_info.value)
         assert "Insufficient memory." in rej_msg or "Pod Node didn't have enough resource: memory" in rej_msg
 
+STANDARD_ROLLOUT_EXPECTED_PORTS = [
+    servo.connectors.kubernetes.RolloutV1ContainerPort(
+        container_port=9980,
+        host_ip=None,
+        host_port=None,
+        name='opsani-proxy',
+        protocol='TCP'
+    ),
+    servo.connectors.kubernetes.RolloutV1ContainerPort(
+        container_port=9901,
+        host_ip=None,
+        host_port=None,
+        name='opsani-metrics',
+        protocol='TCP'
+    )
+]
+STANDARD_ROLLOUT_EXPECTED_ENV = [
+    servo.connectors.kubernetes.RolloutV1EnvVar(
+        name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+        value='9980',
+        value_from=None
+    ),
+    servo.connectors.kubernetes.RolloutV1EnvVar(
+        name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+        value='8480',
+        value_from=None
+    ),
+    servo.connectors.kubernetes.RolloutV1EnvVar(
+        name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+        value='9901',
+        value_from=None
+    ),
+]
+WORKLOAD_REF_ROLLOUT_EXPECTED_PORTS = [
+    kubernetes_asyncio.client.V1ContainerPort(
+        container_port=9980,
+        host_ip=None,
+        host_port=None,
+        name='opsani-proxy',
+        protocol='TCP'
+    ),
+    kubernetes_asyncio.client.V1ContainerPort(
+        container_port=9901,
+        host_ip=None,
+        host_port=None,
+        name='opsani-metrics',
+        protocol='TCP'
+    )
+]
+WORKLOAD_REF_ROLLOUT_EXPECTED_ENV = [
+    kubernetes_asyncio.client.V1EnvVar(
+        name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
+        value='9980',
+        value_from=None
+    ),
+    kubernetes_asyncio.client.V1EnvVar(
+        name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
+        value='8480',
+        value_from=None
+    ),
+    kubernetes_asyncio.client.V1EnvVar(
+        name='OPSANI_ENVOY_PROXY_METRICS_PORT',
+        value='9901',
+        value_from=None
+    ),
+]
+
 @pytest.mark.integration
 @pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
@@ -2436,30 +2509,49 @@ class TestRolloutSidecarInjection:
     def namespace(self, kube: kubetest.client.TestClient) -> str:
         return kube.namespace
 
+    @pytest.mark.parametrize("ports, env",[
+        pytest.param(
+            STANDARD_ROLLOUT_EXPECTED_PORTS,
+            STANDARD_ROLLOUT_EXPECTED_ENV,
+            marks=pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http_single_port.yaml")
+        ),
+        pytest.param(
+            WORKLOAD_REF_ROLLOUT_EXPECTED_PORTS,
+            WORKLOAD_REF_ROLLOUT_EXPECTED_ENV,
+            marks=pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-workload-ref_single_port.yaml")
+        )
+    ])
     @pytest.mark.parametrize(
-        "port, service",
+        "test_port, service",
         [
             (None, 'fiber-http'),
             (80, 'fiber-http'),
             ('http', 'fiber-http'),
         ],
     )
-    @pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http_single_port.yaml")
-    async def test_inject_single_port_rollout(self, namespace: str, service: str, port: Union[str, int]) -> None:
+    async def test_inject_rollout(
+    # test_inject_single_port_rollout
+        self,
+        namespace: str,
+        service: str,
+        test_port: Union[str, int],
+        ports: List[Union[servo.connectors.kubernetes.RolloutV1ContainerPort, kubernetes_asyncio.client.V1ContainerPort]],
+        env: List[Union[servo.connectors.kubernetes.RolloutV1EnvVar, kubernetes_asyncio.client.V1EnvVar]]
+    ) -> None:
         rollout = await servo.connectors.kubernetes.Rollout.read('fiber-http', namespace)
         assert len(rollout.containers) == 1, "expected a single container"
         service = await servo.connectors.kubernetes.Service.read('fiber-http', namespace)
         assert len(service.ports) == 1
         port_obj = service.ports[0]
 
-        if isinstance(port, int):
-            assert port_obj.port == port
-        elif isinstance(port, str):
-            assert port_obj.name == port
+        if isinstance(test_port, int):
+            assert port_obj.port == test_port
+        elif isinstance(test_port, str):
+            assert port_obj.name == test_port
         assert port_obj.target_port == 8480
 
         await rollout.inject_sidecar(
-            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=port
+            'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service='fiber-http', port=test_port
         )
 
         # Examine new sidecar
@@ -2469,36 +2561,5 @@ class TestRolloutSidecarInjection:
         assert sidecar_container.name == 'opsani-envoy'
 
         # Check ports and env
-        assert sidecar_container.ports == [
-            servo.connectors.kubernetes.RolloutV1ContainerPort(
-                container_port=9980,
-                host_ip=None,
-                host_port=None,
-                name='opsani-proxy',
-                protocol='TCP'
-            ),
-            servo.connectors.kubernetes.RolloutV1ContainerPort(
-                container_port=9901,
-                host_ip=None,
-                host_port=None,
-                name='opsani-metrics',
-                protocol='TCP'
-            )
-        ]
-        assert sidecar_container.obj.env == [
-            servo.connectors.kubernetes.RolloutV1EnvVar(
-                name='OPSANI_ENVOY_PROXY_SERVICE_PORT',
-                value='9980',
-                value_from=None
-            ),
-            servo.connectors.kubernetes.RolloutV1EnvVar(
-                name='OPSANI_ENVOY_PROXIED_CONTAINER_PORT',
-                value='8480',
-                value_from=None
-            ),
-            servo.connectors.kubernetes.RolloutV1EnvVar(
-                name='OPSANI_ENVOY_PROXY_METRICS_PORT',
-                value='9901',
-                value_from=None
-            ),
-        ]
+        assert sidecar_container.ports == ports
+        assert sidecar_container.obj.env == env
