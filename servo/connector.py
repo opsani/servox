@@ -386,7 +386,10 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             if _validate_class(connector):
                 connector_routes[connector.__default_name__] = connector
             elif connector_class := _connector_class_from_string(connector):
-                connector_routes[connector_class.__default_name__] = connector_class
+                try:
+                    connector_routes[connector_class.name.lower()] = connector_class
+                except AttributeError:
+                    connector_routes[connector_class.__default_name__] = connector_class
             else:
                 raise ValueError(f"no connector found for the identifier \"{connector}\"")
 
@@ -452,6 +455,7 @@ def _connector_class_from_string(connector: str) -> Optional[Type["BaseConnector
         if connector == connector_class.__default_name__ or connector in [
             connector_class.__name__,
             connector_class.__qualname__,
+            connector_class.name,
         ]:
             return connector_class
 
