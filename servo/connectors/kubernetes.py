@@ -3357,8 +3357,8 @@ class CanaryOptimization(BaseOptimization):
 
             # Filter out vars with the same name as the ones we are setting
             container.obj.env = list(filter(
-                lambda e: e.name not in self.container_config.static_environment_variables, 
-                container.obj.env 
+                lambda e: e.name not in self.container_config.static_environment_variables,
+                container.obj.env
             ))
 
             env_list = [
