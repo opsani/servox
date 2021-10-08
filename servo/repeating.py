@@ -43,7 +43,11 @@ class Mixin(pydantic.BaseModel):
                 self.start_repeating_task(name, duration, method)
 
     def start_repeating_task(
-        self, name: str, every: Every, function: Union[Callable[[None], None], Awaitable[None]]
+        self,
+        name: str,
+        every: Every,
+        function: Union[Callable[[None], None], Awaitable[None]],
+        time_correction: bool=False,
     ) -> asyncio.Task:
         """Start a repeating task with the given name and duration.
 
@@ -51,6 +55,9 @@ class Mixin(pydantic.BaseModel):
             name: A name for identifying the repeating task.
             every: The duration at which the task will repeatedly run.
             function: A callable to be executed repeatedly on the desired interval.
+            time_correction: Whether to modify sleep time according to wall time taken to run
+            <function>. If True, e.g. if function took 1s and every is 5s, then sleep for 4s.
+            Otherwise sleep for e.g. 5s regardless.
         """
         if task := self.repeating_tasks.get(name, None):
             if not task.done():
@@ -62,8 +69,8 @@ class Mixin(pydantic.BaseModel):
         task_name = f"{context_name}:{name} (repeating every {every})"
 
         async def repeating_async_fn() -> None:
-            t0 = time.time()
             while True:
+                t0 = time.time()
                 if asyncio.iscoroutinefunction(function):
                     await function()
                 elif callable(function):
@@ -72,7 +79,9 @@ class Mixin(pydantic.BaseModel):
                     raise TypeError(f"function={function} must be Awaitable or Callable, but has "
                         f"type(function)={type(function)}.")
                 t1 = time.time()
-                sleep_time = every.total_seconds() - max(t1 - t0, 0)
+                sleep_time = every.total_seconds()
+                if time_correction:
+                    sleep_time -= max(t1 - t0, 0)
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
 
