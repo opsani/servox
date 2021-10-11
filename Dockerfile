@@ -42,9 +42,7 @@ COPY poetry.lock pyproject.toml README.md CHANGELOG.md ./
 COPY servo/entry_points.py servo/entry_points.py
 
 RUN pip install poetry==1.1.* \
-  && poetry install \
-    $(if [ "$SERVO_ENV" = 'production' ]; then echo '--no-dev'; fi) \
-    --no-interaction \
+  && poetry install --no-dev --no-interaction \
   # Clean poetry cache for production
   && if [ "$SERVO_ENV" = 'production' ]; then rm -rf "$POETRY_CACHE_DIR"; fi
 
