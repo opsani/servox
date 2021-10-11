@@ -33,8 +33,6 @@ import servo
 import servo.runner
 import servo.utilities.yaml
 
-ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
-
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
     ops = "Operational Commands"
@@ -1716,6 +1714,9 @@ class ServoCLI(CLI):
             target: str = typer.Argument(
                 ..., help="Deployment or Pod to inject the sidecar on (deployment/NAME or pod/NAME)"
             ),
+            image: str = typer.Option(
+                ..., "--image", "-i", help="Image of the sidecar to be injected in form [REPO]/[IMAGE]:[TAG]"
+            ),
             namespace: str = typer.Option(
                 "default", "--namespace", "-n", help="Namespace of the target"
             ),
@@ -1754,7 +1755,7 @@ class ServoCLI(CLI):
                 )
                 run_async(
                     deployment.inject_sidecar(
-                        'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service=service, port=port
+                        'opsani-envoy', image, service=service, port=port
                     )
                 )
                 typer.echo(f"Envoy sidecar injected to Deployment {deployment.name} in {namespace}")
@@ -1767,7 +1768,7 @@ class ServoCLI(CLI):
                 )
                 run_async(
                     rollout.inject_sidecar(
-                        'opsani-envoy', ENVOY_SIDECAR_IMAGE_TAG, service=service, port=port
+                        'opsani-envoy', image, service=service, port=port
                     )
                 )
                 typer.echo(f"Envoy sidecar injected to Rollout {rollout.name} in {namespace}")

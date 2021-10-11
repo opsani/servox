@@ -427,7 +427,7 @@ def random_string() -> str:
 def rootpath(pytestconfig) -> pathlib.Path:
     return pytestconfig.rootpath
 
-def kubeconfig_path_from_config(config) -> pathlib.Path:
+def kubeconfig_path_from_config(config) -> Union[pathlib.Path, pathlib.PurePath]:
     config_opt = config.getoption('kube_config') or "tests/kubeconfig"
     path = pathlib.Path(config_opt).expanduser()
     config_path = (
@@ -437,7 +437,7 @@ def kubeconfig_path_from_config(config) -> pathlib.Path:
     return config_path
 
 @pytest.fixture
-def kubeconfig(request) -> str:
+def kubeconfig(request) -> Union[pathlib.Path, pathlib.PurePath]:
     """Return the path to a kubeconfig file to use when running integration tests.
 
     To avoid inadvertantly interacting with clusters not explicitly configured
@@ -745,7 +745,7 @@ async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, instal
     exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
     assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
 
-    wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", kube.namespace, "rollout", "fiber-http" ]
+    wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=completed", "--timeout=60s", "-n", kube.namespace, "rollout", "fiber-http" ]
     exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
     assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
 
