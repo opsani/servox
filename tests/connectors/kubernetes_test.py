@@ -45,7 +45,7 @@ from servo.connectors.kubernetes import (
 )
 from servo.errors import AdjustmentFailedError, AdjustmentRejectedError
 import servo.runner
-from servo.types import Adjustment
+from servo.types import Adjustment, Component, Description, Replicas
 from tests.helpers import *
 
 
@@ -1164,12 +1164,46 @@ class TestKubernetesConnectorIntegration:
 
     ##
     # Canary Tests
-    # async def test_create_canary(self, tuning_config, namespace: str) -> None:
-   #      connector = KubernetesConnector(config=tuning_config)
-   #      dep = await Deployment.read("fiber-http", namespace)
-   #      debug(dep)
-        # description = await connector.startup()
-        # debug(description)
+    async def test_create_tuning(
+        self,
+        tuning_config: KubernetesConfiguration,
+        kube: kubetest.client.TestClient
+    ) -> None:
+        # verify existing env vars are overriden by config var with same name
+        main_dep = kube.get_deployments()["fiber-http"]
+        main_dep.obj.spec.template.spec.containers[0].env = [kubernetes.client.models.V1EnvVar(name="FOO", value="BAZ")]
+        main_dep.api_client.patch_namespaced_deployment(main_dep.name, main_dep.namespace, main_dep.obj)
+        tuning_config.deployments[0].containers[0].static_environment_variables = { "FOO": "BAR" }
+
+        connector = KubernetesConnector(config=tuning_config)
+        description = await connector.describe()
+
+        assert description == Description(components=[
+            Component(
+                name='fiber-http/fiber-http',
+                settings=[
+                    CPU(name='cpu', type='range', pinned=True, value="125m", min="125m", max="875m", step="125m", request="125m", limit="125m", get=['request', 'limit'], set=['request', 'limit']),
+                    Memory(name='mem', type='range', pinned=True, value=134217728, min=134217728, max=805306368, step=33554432, request=134217728, limit=134217728, get=['request', 'limit'], set=['request', 'limit']),
+                    Replicas(name='replicas', type='range', pinned=True, value=1, min=0, max=99999, step=1)
+                ]
+            ),
+            Component(
+                name='fiber-http/fiber-http-tuning',
+                settings=[
+                    CPU(name='cpu', type='range', pinned=False, value="125m", min="125m", max="875m", step="125m", request="125m", limit="125m", get=['request', 'limit'], set=['request', 'limit']),
+                    Memory(name='mem', type='range', pinned=False, value=134217728, min=134217728, max=805306368, step=33554432, request=134217728, limit=134217728, get=['request', 'limit'], set=['request', 'limit']),
+                    Replicas(name='replicas', type='range', pinned=True, value=1, min=0, max=1, step=1)
+                ]
+            )
+        ])
+
+        tuning_pod = kube.get_pods()["fiber-http-tuning"]
+        assert tuning_pod.obj.metadata.annotations["opsani.com/opsani_tuning_for"] == "fiber-http/fiber-http-tuning"
+        assert tuning_pod.obj.metadata.labels["opsani_role"] == "tuning"
+        target_container = next(filter(lambda c: c.name == "fiber-http" , tuning_pod.obj.spec.containers))
+        assert target_container.resources.requests == {'cpu': '125m', 'memory': '128Mi'}
+        assert target_container.resources.limits == {'cpu': '125m', 'memory': '128Mi'}
+        assert target_container.env == [kubernetes.client.models.V1EnvVar(name="FOO", value="BAR")]
 
     async def test_adjust_tuning_insufficient_mem(
         self,
@@ -2384,10 +2418,40 @@ class TestKubernetesConnectorRolloutIntegration:
 
     ##
     # Canary Tests
-    async def test_create_rollout_tuning(self, _rollout_tuning_config: KubernetesConfiguration, namespace: str) -> None:
+    async def test_create_rollout_tuning(
+        self, _rollout_tuning_config: KubernetesConfiguration, kube: kubetest.client.TestClient, namespace: str
+    ) -> None:
+        _rollout_tuning_config.rollouts[0].containers[0].static_environment_variables = { "FOO": "BAR" }
         connector = KubernetesConnector(config=_rollout_tuning_config)
         rol = await Rollout.read("fiber-http", namespace)
-        await connector.describe()
+        description = await connector.describe()
+
+        assert description == Description(components=[
+            Component(
+                name='fiber-http/fiber-http',
+                settings=[
+                    CPU(name='cpu', type='range', pinned=True, value="125m", min="125m", max="875m", step="125m", request="125m", limit="125m", get=['request', 'limit'], set=['request', 'limit']),
+                    Memory(name='mem', type='range', pinned=True, value=134217728, min=134217728, max=805306368, step=33554432, request=134217728, limit=134217728, get=['request', 'limit'], set=['request', 'limit']),
+                    Replicas(name='replicas', type='range', pinned=True, value=1, min=0, max=99999, step=1)
+                ]
+            ),
+            Component(
+                name='fiber-http/fiber-http-tuning',
+                settings=[
+                    CPU(name='cpu', type='range', pinned=False, value="125m", min="125m", max="875m", step="125m", request="125m", limit="125m", get=['request', 'limit'], set=['request', 'limit']),
+                    Memory(name='mem', type='range', pinned=False, value=134217728, min=134217728, max=805306368, step=33554432, request=134217728, limit=134217728, get=['request', 'limit'], set=['request', 'limit']),
+                    Replicas(name='replicas', type='range', pinned=True, value=1, min=0, max=1, step=1)
+                ]
+            )
+        ])
+
+        tuning_pod = kube.get_pods()["fiber-http-tuning"]
+        assert tuning_pod.obj.metadata.annotations["opsani.com/opsani_tuning_for"] == "fiber-http/fiber-http-tuning"
+        assert tuning_pod.obj.metadata.labels["opsani_role"] == "tuning"
+        target_container = next(filter(lambda c: c.name == "fiber-http" , tuning_pod.obj.spec.containers))
+        assert target_container.resources.requests == {'cpu': '125m', 'memory': '128Mi'}
+        assert target_container.resources.limits == {'cpu': '125m', 'memory': '128Mi'}
+        assert target_container.env == [kubernetes.client.models.V1EnvVar(name="FOO", value="BAR")]
 
         # verify tuning pod is registered as service endpoint
         service = await servo.connectors.kubernetes.Service.read("fiber-http", namespace)

@@ -2997,6 +2997,9 @@ class DeploymentOptimization(BaseOptimization):
                     f'no container named "{container_config.name}" exists in the Pod (found {names})'
                 )
 
+            if container_config.static_environment_variables:
+                raise NotImplementedError("Configurable environment variables are not currently supported under Deployment optimization (saturation mode)")
+
             name = container_config.alias or (
                 f"{deployment.name}/{container.name}" if container else deployment.name
             )
@@ -3419,6 +3422,22 @@ class CanaryOptimization(BaseOptimization):
         container_obj = next(filter(lambda c: c.name == self.container_config.name, pod_template_spec.spec.containers))
         container = Container(container_obj, None)
         servo.logger.debug(f"Initialized new tuning container from Pod spec template: {container.name}")
+
+        if self.container_config.static_environment_variables:
+            if container.obj.env is None:
+                container.obj.env = []
+
+            # Filter out vars with the same name as the ones we are setting
+            container.obj.env = list(filter(
+                lambda e: e.name not in self.container_config.static_environment_variables,
+                container.obj.env
+            ))
+
+            env_list = [
+                kubernetes_asyncio.client.V1EnvVar(name=k, value=v)
+                for k, v in self.container_config.static_environment_variables.items()
+            ]
+            container.obj.env.extend(env_list)
 
         if self.tuning_container:
             servo.logger.debug(f"Copying resource requirements from existing tuning pod container '{self.tuning_pod.name}/{self.tuning_container.name}'")
@@ -4067,7 +4086,8 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[List[str]]  # TODO: create model...
+    env: Optional[List[str]]  # (adjustable environment variables) TODO: create model...
+    static_environment_variables: Optional[Dict[str, str]]
 
 
 

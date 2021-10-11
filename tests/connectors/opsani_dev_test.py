@@ -71,7 +71,10 @@ def rollout_checks(rollout_config: servo.connectors.opsani_dev.OpsaniDevConfigur
 class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
-        assert list(config.dict().keys()) == ['description', 'namespace', 'deployment', 'rollout', 'container', 'service', 'port', 'cpu', 'memory', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement']
+        assert list(config.dict().keys()) == [
+            'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory',
+            'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement'
+        ]
 
     def test_generate_yaml(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
@@ -91,6 +94,26 @@ class TestConfig:
     def test_assign_optimizer(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         config.__optimizer__ = None
+
+    def test_generate_kubernetes_config(self) -> None:
+        opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
+            namespace="test",
+            deployment="fiber-http",
+            container="fiber-http",
+            service="fiber-http",
+            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
+            memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
+            static_environment_variables={"FOO": "BAR", "BAZ": 1},
+            __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
+        )
+        kubernetes_config = opsani_dev_config.generate_kubernetes_config()
+        assert kubernetes_config.namespace == "test"
+        assert kubernetes_config.deployments[0].namespace == "test"
+        assert kubernetes_config.deployments[0].name == "fiber-http"
+        assert kubernetes_config.deployments[0].containers[0].name == "fiber-http"
+        assert kubernetes_config.deployments[0].containers[0].cpu == servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m")
+        assert kubernetes_config.deployments[0].containers[0].memory == servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB")
+        assert kubernetes_config.deployments[0].containers[0].static_environment_variables == {"FOO": "BAR", "BAZ": "1"}
 
     def test_generate_rollout_config(self) -> None:
         rollout_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(

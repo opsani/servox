@@ -57,6 +57,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: CPU
     memory: Memory
+    static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
     envoy_sidecar_image: str = ENVOY_SIDECAR_IMAGE_TAG
     timeout: servo.Duration = "5m"
@@ -109,6 +110,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     alias="main",
                     cpu=self.cpu,
                     memory=self.memory,
+                    static_environment_variables=self.static_environment_variables,
                 )
             ],
         )
