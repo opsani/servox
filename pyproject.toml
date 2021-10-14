@@ -10,7 +10,7 @@ license = "Apache-2.0"
 packages = [
     { include = "servo" },
 ]
-include = ["README.md", "CHANGELOG.md"]
+include = ["README.md", "CHANGELOG.md", "servo/py.typed"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
