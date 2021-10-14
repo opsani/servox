@@ -4257,9 +4257,6 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
         description="Argo rollouts to be optimized.",
     )
 
-    # hpa: Optional[str] = pydantic.Field(
-    #     description="Name of HPA to tune if you're using HPA+.",
-    # )
     hpa: Optional[HPAConfiguration] = pydantic.Field(
         description="HPA to be tuned using HPA+",
     )
