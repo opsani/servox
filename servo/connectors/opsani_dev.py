@@ -674,6 +674,12 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         for pod in await controller.get_pods():
             # Search the containers list for the sidecar
             if not pod.get_container('opsani-envoy'):
+                if (
+                    pod.name == f"{controller.name}-tuning"
+                    and pod.obj.metadata.labels and pod.obj.metadata.labels.get("opsani_role") == "tuning"
+                ):
+                    await pod.delete() # Tuning pod was created prior to envoy injection. Will be recreated in check_tuning_is_running below
+
                 pods_without_sidecars.append(pod)
 
         if pods_without_sidecars:
