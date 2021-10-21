@@ -1329,7 +1329,7 @@ class ServoCLI(CLI):
 
                     if progressive:
                         if results:
-                            checks: List[servo.Check] = functools.reduce(lambda a, b: a.value + b.value, results)
+                            checks: List[servo.Check] = functools.reduce(lambda a, b: a + b.value, results, [])
                             failure = None
                             for check in checks:
                                 if check.success:
