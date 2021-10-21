@@ -4350,14 +4350,13 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     )
 
     hpa: Optional[HPAConfiguration] = pydantic.Field(
-        description="HPA to be tuned using HPA+",
+        description="HPA, if present",
     )
 
     @pydantic.root_validator
     def check_deployment_and_rollout(cls, values):
         if (not values.get('deployments')) and (not values.get('rollouts')):
             raise ValueError("No optimization target(s) were specified")
-
         return values
 
     @classmethod
@@ -4634,59 +4633,6 @@ class KubernetesConnector(servo.BaseConnector):
         # Build state before a measurement to ensure all necessary setup is done
         # (e.g., Tuning Pod is up and running)
         await self._create_optimizations()
-
-    async def _measure_target_cpu_utilization_percentage(self) -> Optional[DataPoint]:
-        """ Measure the HPA's cpu utilization scaling threshold and return it. If there is no HPA,
-        return None"""
-        try:
-            hpa = await HPA.read(self.config.hpa.name, self.config.hpa.namespace)
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != "Not Found":
-                servo.logger.trace(f"Failed reading HPA: {e}")
-                raise
-            else:
-                hpa = None
-        dp = None
-        if hpa:
-            cpu = hpa.obj.spec.target_cpu_utilization_percentage
-            m = servo.Metric('target_cpu_utilization_percentage', '%')
-            dp = servo.DataPoint(m, datetime.datetime.now(), cpu)
-        return dp
-
-    @servo.on_event()
-    async def measure(
-        self, *, metrics: List[str] = None, control: servo.Control = servo.Control()
-    ) -> servo.Measurement:
-        """ If there's an HPA configured, measure it. """
-        futures = []
-        if self.config.hpa:
-            # TODO add timeout
-            # progress = servo.EventProgress(timeout=self.config.timeout)
-            # future = asyncio.create_task(state.apply(adjustments))
-            # future.add_done_callback(lambda _: progress.trigger())
-            future = asyncio.create_task(self._measure_target_cpu_utilization_percentage())
-            futures.append(future)
-        readings = await asyncio.gather(*futures)
-        # NOTE the following will be useful when there's >1 future to gather
-        # all_readings = (
-        #     functools.reduce(lambda x, y: x + y, readings) if readings else []
-        # )
-        measurement = servo.Measurement(readings=readings)
-        return measurement
-
-    @servo.on_event()
-    async def patch_hpa(
-        self, adjustments: List[servo.Adjustment]
-    ) -> int:
-        # TODO add a timeout
-        hpa = await HPA.read(self.config.hpa.name, self.config.hpa.namespace)
-        for adjustment in adjustments:
-            if adjustment.component_name == self.config.hpa.name and adjustment.setting_name == HPA_CPU_UTILIZATION_THRESHOLD_NAME:
-                self.logger.debug(f"found adjustment={adjustment} targeting the hpa '{hpa.name}'")
-                hpa.target_cpu_utilization_percentage = adjustment.value
-                break
-        await hpa.patch()
-        return hpa.target_cpu_utilization_percentage
 
     @servo.on_event()
     async def adjust(
