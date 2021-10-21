@@ -1571,7 +1571,7 @@ class ServoCLI(CLI):
                 metavar="[CONNECTORS]...",
             ),
             duration: Optional[str] = typer.Option(
-                "1s",
+                "0",
                 "--duration",
                 "-d",
                 help="Duration of the measurement",
