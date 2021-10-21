@@ -1335,7 +1335,12 @@ class ServoCLI(CLI):
                                 if check.success:
                                     # FIXME: This should hold Check objects but hashing isn't matching
                                     if check.id not in passing:
-                                        servo.logger.success(f"✅ Check '{check.name}' passed", component=check.id)
+                                        msg = f"✅ Check '{check.name}' passed".replace(
+                                            '{', '{{',
+                                        ).replace(
+                                            '}', '}}'
+                                        )  # NOTE logger.success can't handle strings like '{foo="bar"}' but '{{foo="bar"}}' is ok
+                                        servo.logger.success(msg, component=check.id)
                                         passing.add(check.id)
                                 else:
                                     failure = check
