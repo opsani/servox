@@ -2352,7 +2352,7 @@ class Rollout(KubernetesModel):
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Rollout resource."""
         async with self.api_client() as api_client:
-            self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object_status(
+            self.obj = RolloutObj.parse_obj(await api_client.get_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
                 **self._rollout_const_args
