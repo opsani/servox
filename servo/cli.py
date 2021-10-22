@@ -1335,7 +1335,8 @@ class ServoCLI(CLI):
                                 if check.success:
                                     # FIXME: This should hold Check objects but hashing isn't matching
                                     if check.id not in passing:
-                                        servo.logger.success(f"✅ Check '{check.name}' passed", component=check.id)
+                                        # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
+                                        servo.logger.success(f"✅ Check '{check.escaped_name}' passed", component=check.id)
                                         passing.add(check.id)
                                 else:
                                     failure = check
