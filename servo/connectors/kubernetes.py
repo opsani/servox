@@ -2213,14 +2213,18 @@ class RolloutStatus(RolloutBaseModel):
     current_pod_hash: str
     current_step_hash: Optional[str]
     current_step_index: Optional[int]
+    message: Optional[str]
     observed_generation: str
     pause_conditions: Any
+    phase: Optional[str]
+    promote_full: Optional[bool]
     ready_replicas: Optional[int]
     replicas: Optional[int]
     restarted_at: Optional[datetime.datetime]
     selector: str
     stable_RS: Optional[str]
     updated_replicas: Optional[int]
+    workload_observed_generation: Optional[str]
 
 class RolloutObj(RolloutBaseModel): # TODO is this the right base to inherit from?
     api_version: str

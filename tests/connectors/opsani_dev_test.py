@@ -501,18 +501,20 @@ class TestRolloutIntegration:
                 rollout_checks.config.rollout, rollout_checks.config.namespace
             )
             # NOTE in workload ref case, deployment is patched which doesn't immediately update
-            #   the rollout's resource version causing change_to_resource to erroneously return early.
-            #   wait for the resource version update before exiting the context to prevent test flakiness
+            #   the rollout's status causing change_to_resource to erroneously return early.
+            #   wait for the status update before exiting the context to prevent test flakiness
             pre_patch_resource_version = rollout.obj.metadata.resource_version
-            async def wait_for_resource_version_update():
+            pre_patch_workload_observed_gen = rollout.obj.status.workload_observed_generation
+            async def wait_for_rollout_update():
                 while True:
                     await rollout.refresh()
-                    if rollout.obj.metadata.resource_version != pre_patch_resource_version:
+                    if ( rollout.obj.status.workload_observed_generation != pre_patch_workload_observed_gen
+                    or rollout.obj.metadata.resource_version != pre_patch_resource_version ):
                         break
 
             async with change_to_resource(rollout):
                 await _run_remedy_from_check(result)
-                await asyncio.wait_for(wait_for_resource_version_update(), timeout=5)
+                await asyncio.wait_for(wait_for_rollout_update(), timeout=5)
 
             result = await rollout_checks.run_one(id=f"check_controller_annotations")
             assert result.success, f"Expected success after remedy was run but got: {result}"
