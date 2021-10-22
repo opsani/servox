@@ -4377,13 +4377,13 @@ class KubernetesChecks(servo.BaseChecks):
     config: KubernetesConfiguration
 
     @servo.require("Connectivity to Kubernetes")
-    async def kubernetes_check_connectivity(self) -> None:
+    async def check_kubernetes_connectivity(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 =kubernetes_asyncio.client.VersionApi(api)
             await v1.get_code()
 
     @servo.warn("Kubernetes version")
-    async def kubernetes_check_version(self) -> None:
+    async def check_kubernetes_version(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 =kubernetes_asyncio.client.VersionApi(api)
             version = await v1.get_code()
@@ -4392,7 +4392,7 @@ class KubernetesChecks(servo.BaseChecks):
             assert int(int("".join(c for c in version.minor if c.isdigit()))) >= 16
 
     @servo.require("Required permissions")
-    async def kubernetes_check_permissions(self) -> None:
+    async def check_kubernetes_permissions(self) -> None:
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
             required_permissions = self.config.permissions
@@ -4420,18 +4420,18 @@ class KubernetesChecks(servo.BaseChecks):
                         ), f'Not allowed to "{verb}" resource "{resource}"'
 
     @servo.require('Namespace "{self.config.namespace}" is readable')
-    async def kubernetes_check_namespace(self) -> None:
+    async def check_kubernetes_namespace(self) -> None:
         await Namespace.read(self.config.namespace)
 
     @servo.multicheck('Deployment "{item.name}" is readable')
-    async def kubernetes_check_deployments(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_deployments(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_dep(dep_config: DeploymentConfiguration) -> None:
             await Deployment.read(dep_config.name, dep_config.namespace)
 
         return (self.config.deployments or []), check_dep
 
     @servo.multicheck('Rollout "{item.name}" is readable')
-    async def kubernetes_check_rollouts(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_rollouts(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_rol(rol_config: RolloutConfiguration) -> None:
             await Rollout.read(rol_config.name, rol_config.namespace)
 
@@ -4461,7 +4461,7 @@ class KubernetesChecks(servo.BaseChecks):
                 )
 
     @servo.multicheck('Containers in the "{item.name}" Deployment have resource requirements')
-    async def kubernetes_check_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_dep_resource_requirements(
             dep_config: DeploymentConfiguration,
         ) -> None:
@@ -4472,7 +4472,7 @@ class KubernetesChecks(servo.BaseChecks):
 
 
     @servo.multicheck('Containers in the "{item.name}" Rollout have resource requirements')
-    async def kubernetes_check_rollout_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_rollout_resource_requirements(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_rol_resource_requirements(
             rol_config: RolloutConfiguration,
         ) -> None:
@@ -4483,7 +4483,7 @@ class KubernetesChecks(servo.BaseChecks):
 
 
     @servo.multicheck('Deployment "{item.name}" is ready')
-    async def kubernetes_check_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_deployments_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_deployment(dep_config: DeploymentConfiguration) -> None:
             deployment = await Deployment.read(dep_config.name, dep_config.namespace)
             if not await deployment.is_ready():
@@ -4492,7 +4492,7 @@ class KubernetesChecks(servo.BaseChecks):
         return (self.config.deployments or []), check_deployment
 
     @servo.multicheck('Rollout "{item.name}" is ready')
-    async def kubernetes_check_rollouts_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
+    async def check_kubernetes_rollouts_are_ready(self) -> Tuple[Iterable, servo.CheckHandler]:
         async def check_rollout(rol_config: RolloutConfiguration) -> None:
             rollout = await Rollout.read(rol_config.name, rol_config.namespace)
             if not await rollout.is_ready():
