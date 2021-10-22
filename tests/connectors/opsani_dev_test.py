@@ -505,11 +505,11 @@ class TestRolloutIntegration:
             #   wait for the status update before exiting the context to prevent test flakiness
             pre_patch_resource_version = rollout.obj.metadata.resource_version
             pre_patch_workload_observed_gen = rollout.obj.status.workload_observed_generation
-            debug(rollout)
+            debug(rollout.workload_ref_controller)
             async def wait_for_rollout_update():
                 while True:
                     await rollout.refresh()
-                    debug(rollout)
+                    debug(rollout.workload_ref_controller)
                     if ( rollout.obj.status.workload_observed_generation != pre_patch_workload_observed_gen
                     or rollout.obj.metadata.resource_version != pre_patch_resource_version ):
                         break
