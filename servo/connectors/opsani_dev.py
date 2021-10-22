@@ -311,15 +311,15 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
                         ), f'Not allowed to "{verb}" resource "{resource}"'
 
     @servo.checks.require('Namespace "{self.config.namespace}" is readable')
-    async def check_kubernetes_namespace(self) -> None:
+    async def check_opsani_dev_kubernetes_namespace(self) -> None:
         await servo.connectors.kubernetes.Namespace.read(self.config.namespace)
 
     @servo.checks.require('{self.controller_type_name} "{self.config_controller_name}" is readable')
-    async def check_kubernetes_controller(self) -> None:
+    async def check_opsani_dev_kubernetes_controller(self) -> None:
         await self.controller_class.read(self.config_controller_name, self.config.namespace)
 
     @servo.checks.require('Container "{self.config.container}" is readable')
-    async def check_kubernetes_container(self) -> None:
+    async def check_opsani_dev_kubernetes_container(self) -> None:
         controller = await self.controller_class.read(self.config_controller_name, self.config.namespace)
         container = controller.find_container(self.config.container)
         assert (
@@ -399,11 +399,11 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             raise RuntimeError(f'{self.controller_type_name} "{controller.name}" is not ready')
 
     @servo.checks.require("service")
-    async def check_kubernetes_service(self) -> None:
+    async def check_opsani_dev_kubernetes_service(self) -> None:
         await servo.connectors.kubernetes.Service.read(self.config.service, self.config.namespace)
 
     @servo.checks.warn("service type")
-    async def check_kubernetes_service_type(self) -> None:
+    async def check_opsani_dev_kubernetes_service_type(self) -> None:
         service = await servo.connectors.kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
@@ -414,7 +414,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             )
 
     @servo.checks.check("service port")
-    async def check_kubernetes_service_port(self) -> None:
+    async def check_opsani_dev_kubernetes_service_port(self) -> None:
         service = await servo.connectors.kubernetes.Service.read(
             self.config.service, self.config.namespace
         )
