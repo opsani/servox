@@ -1475,7 +1475,7 @@ class TestKubernetesConnectorIntegration:
         while target_deploy.is_ready():
             await asyncio.sleep(0.1)
 
-        result = await KubernetesChecks(config).run_one(id="check_deployments_are_ready_item_0")
+        result = await KubernetesChecks(config).run_one(id="check_kubernetes_deployments_are_ready_item_0")
         assert result.success == False and result.message == "caught exception (RuntimeError): Deployment \"fiber-http\" is not ready"
 
 

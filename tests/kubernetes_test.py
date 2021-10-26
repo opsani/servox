@@ -227,7 +227,7 @@ class TestChecks:
     async def test_check_version(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id="check_version")
+            matching=servo.checks.CheckFilter(id="check_kubernetes_version")
         )
         assert results
         assert results[-1].success
@@ -235,7 +235,7 @@ class TestChecks:
     async def test_check_connectivity_success(self, config) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id="check_connectivity")
+            matching=servo.checks.CheckFilter(id="check_kubernetes_connectivity")
         )
         assert len(results) == 1
         assert results[0].success
@@ -244,7 +244,7 @@ class TestChecks:
         async with tests.helpers.kubernetes_asyncio_client_overrides(host="https://localhost:4321"):
             checks = servo.connectors.kubernetes.KubernetesChecks(config)
             results = await checks.run_all(
-                matching=servo.checks.CheckFilter(id="check_connectivity")
+                matching=servo.checks.CheckFilter(id="check_kubernetes_connectivity")
             )
             assert len(results) == 1
             result = results[0]
@@ -256,11 +256,11 @@ class TestChecks:
     ) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id=["check_permissions"])
+            matching=servo.checks.CheckFilter(id=["check_kubernetes_permissions"])
         )
         assert len(results)
         result = results[-1]
-        assert result.id == "check_permissions"
+        assert result.id == "check_kubernetes_permissions"
         assert result.success
 
     async def test_check_permissions_fails(
@@ -272,33 +272,33 @@ class TestChecks:
     async def test_check_namespace_success(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id=["check_namespace"])
+            matching=servo.checks.CheckFilter(id=["check_kubernetes_namespace"])
         )
         assert len(results)
         result = results[-1]
-        assert result.id == "check_namespace"
+        assert result.id == "check_kubernetes_namespace"
         assert result.success, f"expected success but failed: {result}"
 
     async def test_check_namespace_doesnt_exist(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         config.namespace = "INVALID"
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id=["check_namespace"])
+            matching=servo.checks.CheckFilter(id=["check_kubernetes_namespace"])
         )
         assert len(results)
         result = results[-1]
-        assert result.id == "check_namespace"
+        assert result.id == "check_kubernetes_namespace"
         assert not result.success
         assert result.exception
         assert "Not Found" in str(result.exception)
 
     async def test_check_deployment(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_deployments_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_deployments_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_deployments_item_0"
+        assert result.id == "check_kubernetes_deployments_item_0"
         assert result.success
 
     async def test_check_deployment_doesnt_exist(
@@ -307,22 +307,22 @@ class TestChecks:
         config.deployments[0].name = "INVALID"
         checks = servo.connectors.kubernetes.KubernetesChecks(config)
         results = await checks.run_all(
-            matching=servo.checks.CheckFilter(id=["check_deployments_item_0"])
+            matching=servo.checks.CheckFilter(id=["check_kubernetes_deployments_item_0"])
         )
         assert len(results)
         result = results[-1]
-        assert result.id == "check_deployments_item_0"
+        assert result.id == "check_kubernetes_deployments_item_0"
         assert not result.success
         assert result.exception
         assert "Not Found" in str(result.exception)
 
     async def test_check_resource_requirements(self, config: servo.connectors.kubernetes.KubernetesConfiguration) -> None:
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.id == "check_kubernetes_resource_requirements_item_0"
         assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
     async def test_check_resource_requirements_configured_get(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
@@ -339,11 +339,11 @@ class TestChecks:
         config.deployments[0].containers[0].memory.get = [servo.connectors.kubernetes.ResourceRequirement.request]
 
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.id == "check_kubernetes_resource_requirements_item_0"
         assert result.success, f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
 
     async def test_check_resource_requirements_fail(self, config: servo.connectors.kubernetes.KubernetesConfiguration, kube) -> None:
@@ -357,11 +357,11 @@ class TestChecks:
 
         # Fail the check because the CPU isn't limited
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.id == "check_kubernetes_resource_requirements_item_0"
         failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
         assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests, limits", failed_message
@@ -380,11 +380,11 @@ class TestChecks:
 
         # Fail the check because the CPU doesn't define requests
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.id == "check_kubernetes_resource_requirements_item_0"
         failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
         assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource cpu. At least one of the following must be specified: requests", failed_message
@@ -403,11 +403,11 @@ class TestChecks:
 
         # Fail the check because the Memory doesn't define requests
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_resource_requirements_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_resource_requirements_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_resource_requirements_item_0"
+        assert result.id == "check_kubernetes_resource_requirements_item_0"
         failed_message =  f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
         assert str(result.exception) == "Deployment fiber-http target container fiber-http spec does not define the resource memory. At least one of the following must be specified: requests", failed_message
@@ -426,11 +426,11 @@ class TestChecks:
 
         # Fail because the Pod is stuck in pending
         results = await servo.connectors.kubernetes.KubernetesChecks.run(
-            config, matching=servo.checks.CheckFilter(id="check_deployments_are_ready_item_0")
+            config, matching=servo.checks.CheckFilter(id="check_kubernetes_deployments_are_ready_item_0")
         )
         assert results
         result = results[-1]
-        assert result.id == "check_deployments_are_ready_item_0"
+        assert result.id == "check_kubernetes_deployments_are_ready_item_0"
         failed_message = f"Checking resource requirements \"{config.deployments[0].name}\" in namespace \"{config.namespace}\" failed: {result.exception or result.message or result}"
         assert not result.success, failed_message
         assert str(result.exception) == 'Deployment "fiber-http" is not ready', failed_message

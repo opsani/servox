@@ -3,6 +3,7 @@ import datetime
 import functools
 import hashlib
 import inspect
+import re
 import sys
 import types
 from typing import (
@@ -181,6 +182,11 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
         check = Check(name=name, description=description)
         await run_check_handler(check, handler, *args, **kwargs)
         return check
+
+    @property
+    def escaped_name(self) -> str:
+        """Return check name compatible with calls to str.format"""
+        return re.sub(r"\{(.*?)\}", r"{{\1}}", self.name)
 
     @property
     def passed(self) -> bool:
