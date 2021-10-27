@@ -784,12 +784,11 @@ class HPA(KubernetesModel):
             name: The name of the HPA to read.
             namespace: The namespace to read the HPA from.
         """
-        servo.logger.info(f'reading hpa "{name}" in namespace "{namespace}"')
-
+        servo.logger.debug(f'reading hpa "{name}" in namespace "{namespace}"')
         async with cls.preferred_client() as api_client:
-            # TODO what to do if HPA isn't present? make HPA.create() part of a check?
             obj = await api_client.read_namespaced_horizontal_pod_autoscaler(name, namespace)
-            return HPA(obj)
+            servo.logger.trace(f"got response from api_client {obj}")
+        return HPA(obj)
 
     async def create(self, namespace: str = None) -> None:
         ...
