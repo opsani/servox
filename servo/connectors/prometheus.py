@@ -14,6 +14,7 @@ import pydantic
 import pytz
 
 import servo
+import servo.cli
 import servo.configuration
 import servo.fast_fail
 
