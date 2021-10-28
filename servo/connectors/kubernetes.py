@@ -2668,7 +2668,7 @@ class Rollout(KubernetesModel):
     async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
         raise NotImplementedError('To be implemented in future update')
 
-class Millicore(int):
+class Millicore(decimal.Decimal):
     """
     The Millicore class represents one one-thousandth of a vCPU or hyperthread in Kubernetes.
     """
@@ -2691,27 +2691,32 @@ class Millicore(int):
         if isinstance(v, str):
             if v[-1] == "m":
                 return cls(int(v[:-1]))
+            elif v[-1] == "n": # Metrics server API returns usage in nanocores
+                return cls(decimal.Decimal(v[:-1]) / 1000)
             else:
-                return cls(int(float(v) * 1000))
+                return cls(int(decimal.Decimal(v) * 1000))
         elif isinstance(v, (int, float, decimal.Decimal)):
-            return cls(int(float(v) * 1000))
+            return cls(int(decimal.Decimal(v) * 1000))
         else:
             raise ValueError("could not parse millicore value")
 
     def __str__(self) -> str:
         if self % 1000 == 0:
             return str(int(self) // 1000)
-        else:
+        elif self % 1 == 0:
             return f"{int(self)}m"
+        else:
+            return f"{decimal.Decimal(self)}m"
 
-    def __float__(self) -> float:
-        return self / 1000.0
+    @property
+    def cores(self) -> float: # return as float to maintain trailing zeros from previous implementation
+        return float(self / decimal.Decimal(1000.0))
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, str):
-            return str(self) == other
-        elif isinstance(other, float):
-            return float(self) == other
+        if isinstance(other, Millicore):
+            return str(self) == str(other)
+        elif isinstance(other, (str, float, int, decimal.Decimal)):
+            return self == Millicore.parse(other)
         return super().__eq__(other)
 
     def human_readable(self) -> str:
@@ -2737,10 +2742,10 @@ class CPU(servo.CPU):
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
 
-        # normalize values into floats (see Millicore __float__)
+        # normalize millicore values into cores (see Millicore cores property)
         for field in ("min", "max", "step", "value"):
-            value = getattr(self, field)
-            o_dict["cpu"][field] = float(value) if value is not None else None
+            value: Optional[Millicore] = getattr(self, field)
+            o_dict["cpu"][field] = value.cores if value is not None else None
         return o_dict
 
 
