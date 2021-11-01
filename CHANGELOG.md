@@ -21,7 +21,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Prometheus connector fast-fail suport; shot-circuit long running measurements when SLO violations are detected [#330](https://github.com/opsani/servox/pull/330)
+- Prometheus connector fast-fail support; short-circuit long running measurements when SLO violations are detected [#330](https://github.com/opsani/servox/pull/330)
 - Kubernetes connector Argo Rollouts WorkloadRef support [#337](https://github.com/opsani/servox/pull/337)
 - Opsani Dev connector support for configuration of image and tag used for envoy sidecar injection [#341](https://github.com/opsani/servox/pull/341)
 - Kubernetes connector support for injecting static environment variables into the tuning Pod [#343](https://github.com/opsani/servox/pull/343)
