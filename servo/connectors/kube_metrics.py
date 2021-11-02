@@ -3,6 +3,7 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime
+from dateutil.parser import isoparse
 from enum import Enum
 import functools
 import os
@@ -17,6 +18,7 @@ from servo.connectors.kubernetes import (
     Deployment,
     DNSSubdomainName,
     Millicore,
+    PermissionSet,
     Pod,
     ResourceRequirement,
     Rollout,
@@ -29,6 +31,14 @@ import kubernetes_asyncio.client
 import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.config
 import kubernetes_asyncio.config.kube_config
+
+KUBERNETES_PERMISSIONS = [
+    PermissionSet(
+        group="metrics.k8s.io",
+        resources=["pods"],
+        verbs=["list"],
+    ),
+]
 
 class SupportedKubeMetrics(str, Enum):
     TUNING_CPU_USAGE = "tuning_cpu_usage"
@@ -97,6 +107,31 @@ class KubeMetricsChecks(servo.BaseChecks):
     async def check_target_resource(self) -> None:
         await _get_target_resource(self.config)
 
+    @servo.require('Metrics API Permissions')
+    async def check_metrics_api_permissions(self) -> None:
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
+            for permission in KUBERNETES_PERMISSIONS:
+                for resource in permission.resources:
+                    for verb in permission.verbs:
+                        attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
+                            namespace=self.config.namespace,
+                            group=permission.group,
+                            resource=resource,
+                            verb=verb,
+                        )
+
+                        spec = kubernetes_asyncio.client.models.V1SelfSubjectAccessReviewSpec(
+                            resource_attributes=attributes
+                        )
+                        review = kubernetes_asyncio.client.models.V1SelfSubjectAccessReview(spec=spec)
+                        access_review = await v1.create_self_subject_access_review(
+                            body=review
+                        )
+                        assert (
+                            access_review.status.allowed
+                        ), f'Not allowed to "{verb}" resource "{resource}"'
+
     @servo.require('Metrics API connectivity')
     async def check_metrics_api(self) -> None:
         target_resource = await _get_target_resource(self.config)
@@ -133,6 +168,7 @@ METRICS_CUSTOM_OJBECT_CONST_ARGS = dict(
 class KubeMetricsConnector(servo.BaseConnector):
     config: KubeMetricsConfiguration
 
+    @servo.on_event()
     async def attach(self) -> None:
         config_file = pathlib.Path(self.config.kubeconfig or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
         if config_file.exists():
@@ -146,6 +182,14 @@ class KubeMetricsConnector(servo.BaseConnector):
             raise RuntimeError(
                 f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found"
             )
+
+    @servo.on_event()
+    async def check(
+        self,
+        matching: Optional[servo.CheckFilter],
+        halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
+    ) -> List[servo.Check]:
+        await KubeMetricsChecks.run(self.config, matching=matching, halt_on=halt_on)
 
     @servo.on_event()
     def metrics(self) -> List[Metric]:
@@ -191,7 +235,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                     # NOTE items can be empty list
                     for pod_entry in main_metrics["items"]:
                         pod_name = pod_entry["metadata"]["name"]
-                        timestamp = datetime.fromisoformat(pod_entry["timestamp"])
+                        timestamp = isoparse(pod_entry["timestamp"])
                         _append_data_point_for_pod = functools.partial(
                             _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
                         )
@@ -274,7 +318,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                         pod_name = pod_entry["metadata"]["name"]
                         if pod_name != f"{target_resource.name}-tuning":
                             raise RuntimeError(f"Got unexpected tuning pod name {pod_name}")
-                        timestamp = datetime.fromisoformat(pod_entry["timestamp"])
+                        timestamp = isoparse(pod_entry["timestamp"])
                         _append_data_point_for_pod = functools.partial(
                             _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
                         )
