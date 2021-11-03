@@ -5,6 +5,7 @@ that require periodic execution or the observation of particular runtime conditi
 """
 import asyncio
 import time
+from sys import float_info
 from typing import Callable, Dict, Optional, Union, Awaitable
 
 import pydantic
@@ -84,6 +85,8 @@ class Mixin(pydantic.BaseModel):
                     sleep_time -= max(t1 - t0, 0)
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
+                else:
+                    await asyncio.sleep(float_info.epsilon)
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task
