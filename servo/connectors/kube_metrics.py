@@ -189,7 +189,7 @@ class KubeMetricsConnector(servo.BaseConnector):
         matching: Optional[servo.CheckFilter],
         halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
-        await KubeMetricsChecks.run(self.config, matching=matching, halt_on=halt_on)
+        return await KubeMetricsChecks.run(self.config, matching=matching, halt_on=halt_on)
 
     @servo.on_event()
     def metrics(self) -> List[Metric]:
