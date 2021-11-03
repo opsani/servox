@@ -2715,7 +2715,10 @@ class Millicore(decimal.Decimal):
     def __eq__(self, other) -> bool:
         if isinstance(other, Millicore):
             return str(self) == str(other)
-        elif isinstance(other, (str, float, int, decimal.Decimal)):
+        elif isinstance(other, int):
+            # compare self as decimal to avoid recursion
+            return decimal.Decimal(self) == other
+        elif isinstance(other, (str, float, decimal.Decimal)):
             return self == Millicore.parse(other)
         return super().__eq__(other)
 
