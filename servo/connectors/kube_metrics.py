@@ -169,7 +169,7 @@ class KubeMetricsConnector(servo.BaseConnector):
     config: KubeMetricsConfiguration
 
     @servo.on_event()
-    async def attach(self) -> None:
+    async def attach(self, servo_: servo.Servo) -> None:
         config_file = pathlib.Path(self.config.kubeconfig or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION).expanduser()
         if config_file.exists():
             await kubernetes_asyncio.config.load_kube_config(
