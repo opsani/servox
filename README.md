@@ -399,9 +399,10 @@ If you're writing your own connector in an external package, you need to include
 "my_connector" = "my_project.foo:MyConnector"
 ```
 in your `pyproject.toml` as an export
-and you _must_ name your connector `class MyConnector(servo.BaseConnector):` to have it discoverable via the
-`servo.connector:_name_for_connector_class` function that matches the `My` in the connector class
-name to the top level connector key in the `servo.yaml`. So your `servo.yaml` could be as follows:
+and you _must_ name your connector `class MyConnector(servo.BaseConnector):` to have it discoverable.
+Discovery is performed via the `servo.connector:_name_for_connector_class()` function. It matches
+the `My` in the connector class name to the top level connector key in the `servo.yaml`.
+So, for example, your `servo.yaml` could be as follows:
 ```yaml
 ...
 my:
