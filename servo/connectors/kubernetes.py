@@ -4397,7 +4397,7 @@ class KubernetesChecks(servo.BaseChecks):
             v1 = kubernetes_asyncio.client.AuthorizationV1Api(api)
             required_permissions = self.config.permissions
             if self.config.rollouts:
-                required_permissions.append(ROLLOUT_PERMISSIONS)
+                required_permissions.extend(ROLLOUT_PERMISSIONS)
             for permission in required_permissions:
                 for resource in permission.resources:
                     for verb in permission.verbs:
