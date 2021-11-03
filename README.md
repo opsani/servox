@@ -153,7 +153,7 @@ There are a few key components that form the foundation of the architecture:
   return a result. The Servo base class defines the primary events of
   `DESCRIBE`, `MEASURE`, `ADJUST`, and `PROMOTE` which correspond to declaring
   the metrics & components that the connector is interested in, taking
-  measurements and returning normalized scalar or time series data points,
+  measurements and returning aggregated scalar or time series data points,
   making changes to the application under optimization, or promoting an
   optimized configuration to the broader system.
 * **Checks** - Checks provide a mechanism for verifying the correctness and
