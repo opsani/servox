@@ -17,6 +17,28 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] "preposterous ports" - 2021-11-01
+
+### Added
+
+- Prometheus connector fast-fail support; short-circuit long running measurements when SLO violations are detected [#330](https://github.com/opsani/servox/pull/330)
+- Kubernetes connector Argo Rollouts WorkloadRef support [#337](https://github.com/opsani/servox/pull/337)
+- Opsani Dev connector support for configuration of image and tag used for envoy sidecar injection [#341](https://github.com/opsani/servox/pull/341)
+- Kubernetes connector support for injecting static environment variables into the tuning Pod [#343](https://github.com/opsani/servox/pull/343)
+
+### Changed
+
+- Kubernetes Deployment optimizations (Saturation Mode) `destroy` error behavior changed to `shutdown`; the Deployment
+resource is no longer destroyed and is scaled to zero replicas instead [#317](https://github.com/opsani/servox/pull/317)
+it to zero replicas instead
+- Kubernetes adjustment values no longer raise validation errors when outside the configured range (eg. falling back to
+initially observed/baseline values) [#279](https://github.com/opsani/servox/pull/279)
+
+### Fixed
+
+- Checks running on multiple connector assemblies were only processing checks for the first connector to respond [#351](https://github.com/opsani/servox/pull/351)
+- Prometheus connector reliance on implicit importing of servo.cli [#355](https://github.com/opsani/servox/pull/355)
+
 ## [0.10.7] "baseless allegation" - 2021-09-02
 
 ### Changed

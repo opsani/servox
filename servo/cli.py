@@ -1312,7 +1312,7 @@ class ServoCLI(CLI):
 
                 passing = set()
                 progress = servo.DurationProgress(servo.Duration(wait or 0))
-                ready = True
+                ready = False
                 while not progress.finished:
                     if not progress.started:
                         # run at least one time
@@ -1328,14 +1328,15 @@ class ServoCLI(CLI):
                     ) or []
 
                     if progressive:
-                        if result := next(iter(results), None):
-                            checks: List[servo.Check] = result.value
+                        if results:
+                            checks: List[servo.Check] = functools.reduce(lambda a, b: a + b.value, results, [])
                             failure = None
                             for check in checks:
                                 if check.success:
                                     # FIXME: This should hold Check objects but hashing isn't matching
                                     if check.id not in passing:
-                                        servo.logger.success(f"✅ Check '{check.name}' passed", component=check.id)
+                                        # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
+                                        servo.logger.success(f"✅ Check '{check.escaped_name}' passed", component=check.id)
                                         passing.add(check.id)
                                 else:
                                     failure = check
@@ -1381,18 +1382,21 @@ class ServoCLI(CLI):
                             typer.echo(f"WARNING: No checks found -- returning.")
                     else:
                         table = []
+                        # Don't return ready if no checks ran but initial value for this var must be true for subsequent "&=" ops to work
+                        and_checks_passed = bool(results)
                         if verbose:
                             headers = ["CONNECTOR", "CHECK", "ID", "TAGS", "STATUS", "MESSAGE"]
                             for result in results:
                                 checks: List[servo.Check] = result.value
                                 names, ids, tags, statuses, comments = [], [], [], [], []
+                                and_checks_passed &= bool(checks) # set ready False if connector responds with empty list
                                 for check in checks:
                                     names.append(check.name)
                                     ids.append(check.id)
                                     tags.append(", ".join(check.tags) if check.tags else "-")
                                     statuses.append(_check_status_to_str(check))
                                     comments.append(textwrap.shorten(check.message or "-", 70))
-                                    ready &= check.success
+                                    and_checks_passed &= check.success
 
                                 if not names:
                                     continue
@@ -1413,14 +1417,14 @@ class ServoCLI(CLI):
                                 if not checks:
                                     continue
 
-                                success = True
+                                success = bool(checks) # Don't return ready on empty lists of checks
                                 errors = []
                                 for check in checks:
                                     success &= check.passed
                                     check.success or errors.append(
                                         f"{check.name}: {textwrap.wrap(check.message or '-')}"
                                     )
-                                ready &= success
+                                and_checks_passed &= success
                                 status = "√ PASSED" if success else "X FAILED"
                                 message = functools.reduce(
                                     lambda m, e: m
@@ -1431,6 +1435,7 @@ class ServoCLI(CLI):
                                 row = [result.connector.name, status, message]
                                 table.append(row)
 
+                        ready = and_checks_passed
                         # Output table
                         if not quiet:
                             typer.echo(tabulate(table, headers, tablefmt="plain"))
