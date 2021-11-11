@@ -1,3 +1,4 @@
+# This comment was added to trigger CICD. Should not be merged to main
 """Optimize services and applications deployed on Kubernetes with Opsani.
 """
 from __future__ import annotations, print_function
