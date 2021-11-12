@@ -364,7 +364,6 @@ class TestPrometheusChecks:
         "prometheus.yaml",
     ],
 )
-@pytest.mark.clusterrolebinding('cluster-admin')
 class TestPrometheusIntegration:
     def optimizer(self) -> servo.Optimizer:
         # TODO: This needs a real optimizer

@@ -138,7 +138,6 @@ class TestConfig:
     ],
 )
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestIntegration:
     class TestChecksOriginalState:
@@ -284,7 +283,6 @@ class TestIntegration:
                 assert isinstance(check.exception, httpx.HTTPStatusError)
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestResourceRequirementsIntegration:
     @pytest.mark.applymanifests("../manifests/resource_requirements",
@@ -334,7 +332,6 @@ class TestResourceRequirementsIntegration:
     ],
 )
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestRolloutIntegration:
     @pytest.fixture(autouse=True)
@@ -544,7 +541,6 @@ class TestRolloutIntegration:
 )
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
-@pytest.mark.clusterrolebinding('cluster-admin')
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:
