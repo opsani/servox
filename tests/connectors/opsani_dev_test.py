@@ -850,6 +850,7 @@ class TestServiceMultiport:
 
                 await asyncio.gather(*tasks, return_exceptions=True)
 
+        @pytest.mark.namespace(create=False, name="test-install-wait")
         async def test_install_wait(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
