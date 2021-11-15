@@ -692,7 +692,7 @@ def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.obj
 async def verify_rollout_crd(subprocess, kubeconfig):
     """Verify applied CRDs are the latest version"""
 
-    rollouts_version_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "deployment", "argo-rollouts", "-n", "argo-rollouts" "-o" "jsonpath='{.spec.template.spec.containers[0].image}'" ]
+    rollouts_version_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "deployment", "argo-rollouts", "-n", "argo-rollouts", "-o", "jsonpath='{.spec.template.spec.containers[0].image}'" ]
     exit_code, stdout, stderr = await subprocess(" ".join(rollouts_version_cmd), print_output=True, timeout=None)
     assert exit_code == 0, f"Unable to get argo-rollouts controller Deployment: {stderr}"
 
