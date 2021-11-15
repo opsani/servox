@@ -699,7 +699,7 @@ async def verify_rollout_crd(subprocess, kubeconfig):
     async with httpx.AsyncClient() as client:
         latest_version = (await client.get("https://api.github.com/repos/argoproj/argo-rollouts/releases/latest")).json().get('tag_name')
 
-    assert latest_version in stdout, f"Installed rollout controller image ({stdout}) out of date (latest={latest_version})"
+    assert latest_version in stdout[0], f"Installed rollout controller image ({stdout[0]}) out of date (latest={latest_version})"
 
 @pytest.fixture
 async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, verify_rollout_crd):
