@@ -652,6 +652,7 @@ class TestServiceMultiport:
                 os.environ.pop('POD_NAME', None)
                 os.environ.pop('POD_NAMESPACE', None)
 
+        @pytest.mark.namespace(create=False, name="test-process")
         async def test_process(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
