@@ -77,21 +77,25 @@ class Mixin(pydantic.BaseModel):
                 elif callable(function):
                     function()
                 else:
+                    if asyncio.iscoroutine(function):
+                        TypeError(f"function={function} must be Awaitable or Callable, but has "
+                            f"type(function)={type(function)}. A developer may have invoked the "
+                            "async function while/prior to passing it in here.")
+
                     raise TypeError(f"function={function} must be Awaitable or Callable, but has "
                         f"type(function)={type(function)}.")
                 t1 = time.time()
                 sleep_time = every.total_seconds()
                 if time_correction:
-                    sleep_time -= max(t1 - t0, 0)
+                    sleep_time = max(sleep_time - (t1 -t0), 0)
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                 else:
-                    await asyncio.sleep(float_info.epsilon)
+                    await asyncio.sleep(float_info.epsilon)  # this is a concurrency failsafe.
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task
         return asyncio_task
-
 
     def cancel_repeating_task(self, name: str) -> Optional[asyncio.Task]:
         """Cancel a repeating task with the given name.

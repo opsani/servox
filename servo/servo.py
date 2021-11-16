@@ -132,6 +132,7 @@ class _EventDefinitions(Protocol):
     async def promote(self) -> None:
         ...
 
+
 class ServoChecks(servo.checks.BaseChecks):
     """Check that a servo is ready to perform optimization.
 

@@ -48,8 +48,6 @@ import pydantic
 
 import servo
 
-HPA_CPU_UTILIZATION_THRESHOLD_NAME = 'target_cpu_utilization_percentage'
-
 class Condition(servo.logging.Mixin):
     """A Condition is a convenience wrapper around a function and its arguments
     which allows the function to be called at a later time.
@@ -773,7 +771,9 @@ class HPA(KubernetesModel):
 
     api_clients: ClassVar[Dict[str, Type]] = {
         "preferred":kubernetes_asyncio.client.AutoscalingV1Api,
-        "v1":kubernetes_asyncio.client.CoreV1Api,
+        "v1":kubernetes_asyncio.client.AutoscalingV1Api,
+        "AutoscalingV2beta1Api":kubernetes_asyncio.client.AutoscalingV2beta1Api,
+        "AutoscalingV2beta2Api":kubernetes_asyncio.client.AutoscalingV2beta2Api,
     }
 
     @classmethod
@@ -787,11 +787,11 @@ class HPA(KubernetesModel):
         servo.logger.debug(f'reading hpa "{name}" in namespace "{namespace}"')
         async with cls.preferred_client() as api_client:
             obj = await api_client.read_namespaced_horizontal_pod_autoscaler(name, namespace)
-            servo.logger.trace(f"got response from api_client {obj}")
+            servo.logger.trace(f"read HorizontalPodAutoscaler: {obj}")
         return HPA(obj)
 
     async def create(self, namespace: str = None) -> None:
-        ...
+        raise NotImplementedError
 
     async def patch(self) -> None:
         """
@@ -800,32 +800,26 @@ class HPA(KubernetesModel):
         self.logger.info(f'patching HPA "{self.name}"')
         async with self.api_client() as api_client:
             api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
-            hpa = kubernetes_asyncio.client.V1HorizontalPodAutoscaler()
-            hpa.spec = self.obj.spec
             hpa_result = await api_client.patch_namespaced_horizontal_pod_autoscaler(
                 name=self.name,
                 namespace=self.namespace,
-                body=hpa,
+                body=self.obj,
             )
-        self.logger.debug(f"patched HPA, spec={hpa_result.spec}")
+        self.logger.trace(f"patched HPA, spec={hpa_result}")
 
     async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
-        ...
+        raise NotImplementedError
 
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes HPA resource."""
         async with self.api_client() as api_client:
-            self.obj = await api_client.read_namespaced_pod_status(
+            self.obj = await api_client.read_namespaced_horizontal_pod_autoscaler_status(
                 name=self.name,
                 namespace=self.namespace,
             )
 
     async def is_ready(self) -> bool:
-        ...
-
-    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
-        ...
-
+        NotImplementedError
 
     @property
     def target_cpu_utilization_percentage(self) -> int:

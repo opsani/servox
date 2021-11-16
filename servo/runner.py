@@ -341,7 +341,8 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 s, lambda s=s: asyncio.create_task(self._shutdown(loop, signal=s))
             )
 
-        loop.set_exception_handler(self._handle_exception)
+        # loop.set_exception_handler(self._handle_exception)
+        loop.set_exception_handler(None)
 
         # Setup logging
         async def _report_progress(**kwargs) -> None:
