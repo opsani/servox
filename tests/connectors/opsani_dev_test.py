@@ -860,41 +860,34 @@ class TestServiceMultiport:
         ) -> None:
             servo.logging.set_level("TRACE")
 
-            try:
-                async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-                    # Connect the checks to our port forward interface
-                    checks.config.prometheus_base_url = prometheus_base_url
+            async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+                # Connect the checks to our port forward interface
+                checks.config.prometheus_base_url = prometheus_base_url
 
-                    deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
-                    assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+                deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
+                assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
 
-                    async def loop_checks() -> None:
-                        while True:
-                            results = await checks.run_all()
-                            next_failure = next(filter(lambda r: r.success is False, results), None)
-                            if next_failure:
-                                servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
-                                await _remedy_check(
-                                    next_failure.id,
-                                    config=checks.config,
-                                    deployment=deployment,
-                                    kube_port_forward=kube_port_forward,
-                                    load_generator=load_generator,
-                                    checks=checks
-                                )
-                            else:
-                                break
+                async def loop_checks() -> None:
+                    while True:
+                        results = await checks.run_all()
+                        next_failure = next(filter(lambda r: r.success is False, results), None)
+                        if next_failure:
+                            servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
+                            await _remedy_check(
+                                next_failure.id,
+                                config=checks.config,
+                                deployment=deployment,
+                                kube_port_forward=kube_port_forward,
+                                load_generator=load_generator,
+                                checks=checks
+                            )
+                        else:
+                            break
 
-                    await asyncio.wait_for(loop_checks(), timeout=420.0)
+                await asyncio.wait_for(loop_checks(), timeout=420.0)
 
-                servo.logger.success("🥷 Opsani Dev is now deployed.")
-                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
-            finally:
-                kubernetes_config = checks.config.generate_kubernetes_config()
-                canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-                    deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
-                )
-                canary_opt.delete_tuning_pod(raise_if_not_found=False)
+            servo.logger.success("🥷 Opsani Dev is now deployed.")
+            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
 
 
 
