@@ -654,7 +654,7 @@ class TestServiceMultiport:
 
         @pytest.mark.namespace(create=False, name="test-process")
         async def test_process(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+            self, kube, kubetest_teardown, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
             load_generator: Callable[[], 'LoadGenerator'],
         ) -> None:
@@ -807,43 +807,43 @@ class TestServiceMultiport:
                 canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
                     deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
                 )
-                await canary_opt.create_tuning_pod()
-                await assert_check(checks.run_one(id=f"check_tuning_is_running"))
+                async with canary_opt.temporary_tuning_pod() as _:
+                    await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
-                # Step 8
-                servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
-                async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                    await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
+                    # Step 8
+                    servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
+                    async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                        await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
 
-                # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
-                scrapes_remaining = 3
-                targets = await wait_for_targets_to_be_scraped()
-                while len(targets) != 3 and scrapes_remaining > 0:
+                    # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
+                    scrapes_remaining = 3
                     targets = await wait_for_targets_to_be_scraped()
-                    scrapes_remaining -= 1
+                    while len(targets) != 3 and scrapes_remaining > 0:
+                        targets = await wait_for_targets_to_be_scraped()
+                        scrapes_remaining -= 1
 
-                assert len(targets) == 3
-                main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
-                tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
-                assert main.pool == "opsani-envoy-sidecars"
-                assert main.health == "up"
-                assert main.labels["app_kubernetes_io_name"] == "fiber-http"
+                    assert len(targets) == 3
+                    main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
+                    tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
+                    assert main.pool == "opsani-envoy-sidecars"
+                    assert main.health == "up"
+                    assert main.labels["app_kubernetes_io_name"] == "fiber-http"
 
-                assert tuning.pool == "opsani-envoy-sidecars"
-                assert tuning.health == "up"
-                assert tuning.labels["opsani_role"] == "tuning"
-                assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
-                assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
+                    assert tuning.pool == "opsani-envoy-sidecars"
+                    assert tuning.health == "up"
+                    assert tuning.labels["opsani_role"] == "tuning"
+                    assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
+                    assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
 
-                async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                    await load_generator(service_url).run_until(
-                        wait_for_check_to_pass(
-                            functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                    async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                        await load_generator(service_url).run_until(
+                            wait_for_check_to_pass(
+                                functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                            )
                         )
-                    )
 
-                servo.logger.success("🥷 Opsani Dev is now deployed.")
-                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+                    servo.logger.success("🥷 Opsani Dev is now deployed.")
+                    servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
 
                 # Cancel outstanding tasks
                 tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -853,41 +853,48 @@ class TestServiceMultiport:
 
         @pytest.mark.namespace(create=False, name="test-install-wait")
         async def test_install_wait(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+            self, kube, kubetest_teardown, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
             load_generator: Callable[[], 'LoadGenerator'],
             tmp_path: pathlib.Path
         ) -> None:
             servo.logging.set_level("TRACE")
 
-            async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
-                # Connect the checks to our port forward interface
-                checks.config.prometheus_base_url = prometheus_base_url
+            try:
+                async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+                    # Connect the checks to our port forward interface
+                    checks.config.prometheus_base_url = prometheus_base_url
 
-                deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
-                assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
+                    deployment = await servo.connectors.kubernetes.Deployment.read(checks.config.deployment, checks.config.namespace)
+                    assert deployment, f"failed loading deployment '{checks.config.deployment}' in namespace '{checks.config.namespace}'"
 
-                async def loop_checks() -> None:
-                    while True:
-                        results = await checks.run_all()
-                        next_failure = next(filter(lambda r: r.success is False, results), None)
-                        if next_failure:
-                            servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
-                            await _remedy_check(
-                                next_failure.id,
-                                config=checks.config,
-                                deployment=deployment,
-                                kube_port_forward=kube_port_forward,
-                                load_generator=load_generator,
-                                checks=checks
-                            )
-                        else:
-                            break
+                    async def loop_checks() -> None:
+                        while True:
+                            results = await checks.run_all()
+                            next_failure = next(filter(lambda r: r.success is False, results), None)
+                            if next_failure:
+                                servo.logger.critical(f"Attempting to remedy failing check: {devtools.pformat(next_failure)}")#, exception=next_failure.exception)
+                                await _remedy_check(
+                                    next_failure.id,
+                                    config=checks.config,
+                                    deployment=deployment,
+                                    kube_port_forward=kube_port_forward,
+                                    load_generator=load_generator,
+                                    checks=checks
+                                )
+                            else:
+                                break
 
-                await asyncio.wait_for(loop_checks(), timeout=420.0)
+                    await asyncio.wait_for(loop_checks(), timeout=420.0)
 
-            servo.logger.success("🥷 Opsani Dev is now deployed.")
-            servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+                servo.logger.success("🥷 Opsani Dev is now deployed.")
+                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+            finally:
+                kubernetes_config = checks.config.generate_kubernetes_config()
+                canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
+                    deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
+                )
+                canary_opt.delete_tuning_pod(raise_if_not_found=False)
 
 
 

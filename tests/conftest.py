@@ -8,7 +8,7 @@ import pathlib
 import random
 import socket
 import string
-from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Generator, Iterator, List, Optional, Tuple, Union
 
 import chevron
 import devtools
@@ -16,6 +16,7 @@ import fastapi
 import filelock
 import httpx
 import kubetest
+import kubetest.client
 import pytest
 import typer.testing
 import uvloop
@@ -686,6 +687,18 @@ def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.obj
         return pod
 
     return _pod_loader
+
+@pytest.fixture()
+def kubetest_teardown(kube: kubetest.client.TestClient) -> Generator[kubetest.client.TestClient, None, None]:
+    """
+    Kubetest's default teardown assumes the namespace was created and applied manifests will be cleaned up when the ns is deleted
+
+    This teardown method only needs to be used if a pre-existing namespace was used
+    """
+    # this is teardown only, yield for test run
+    yield
+    for obj in kube.pre_registered:
+        obj.delete()
 
 # NOTE: kubetest does not support CRD or CR objects, rollout fixtures utilize kubectl for needed setup
 @pytest.fixture
