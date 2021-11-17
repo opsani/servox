@@ -138,7 +138,6 @@ class TestConfig:
     ],
 )
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestIntegration:
     class TestChecksOriginalState:
@@ -284,7 +283,6 @@ class TestIntegration:
                 assert isinstance(check.exception, httpx.HTTPStatusError)
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestResourceRequirementsIntegration:
     @pytest.mark.applymanifests("../manifests/resource_requirements",
@@ -334,7 +332,6 @@ class TestResourceRequirementsIntegration:
     ],
 )
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
 class TestRolloutIntegration:
     @pytest.fixture(autouse=True)
@@ -544,7 +541,6 @@ class TestRolloutIntegration:
 )
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
-@pytest.mark.clusterrolebinding('cluster-admin')
 class TestServiceMultiport:
     @pytest.fixture
     async def multiport_service(self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks) -> None:
@@ -656,8 +652,9 @@ class TestServiceMultiport:
                 os.environ.pop('POD_NAME', None)
                 os.environ.pop('POD_NAMESPACE', None)
 
+        @pytest.mark.namespace(create=False, name="test-process")
         async def test_process(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+            self, kube, kubetest_teardown, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
             load_generator: Callable[[], 'LoadGenerator'],
         ) -> None:
@@ -810,43 +807,43 @@ class TestServiceMultiport:
                 canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
                     deployment_or_rollout_config=kubernetes_config.deployments[0], timeout=kubernetes_config.timeout
                 )
-                await canary_opt.create_tuning_pod()
-                await assert_check(checks.run_one(id=f"check_tuning_is_running"))
+                async with canary_opt.temporary_tuning_pod() as _:
+                    await assert_check(checks.run_one(id=f"check_tuning_is_running"))
 
-                # Step 8
-                servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
-                async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                    await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
+                    # Step 8
+                    servo.logger.critical("Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus")
+                    async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                        await load_generator(service_url).run_until(wait_for_targets_to_be_scraped())
 
-                # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
-                scrapes_remaining = 3
-                targets = await wait_for_targets_to_be_scraped()
-                while len(targets) != 3 and scrapes_remaining > 0:
+                    # NOTE it can take more than 2 scrapes before the tuning pod shows up in the targets
+                    scrapes_remaining = 3
                     targets = await wait_for_targets_to_be_scraped()
-                    scrapes_remaining -= 1
+                    while len(targets) != 3 and scrapes_remaining > 0:
+                        targets = await wait_for_targets_to_be_scraped()
+                        scrapes_remaining -= 1
 
-                assert len(targets) == 3
-                main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
-                tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
-                assert main.pool == "opsani-envoy-sidecars"
-                assert main.health == "up"
-                assert main.labels["app_kubernetes_io_name"] == "fiber-http"
+                    assert len(targets) == 3
+                    main = next(filter(lambda t: "opsani_role" not in t.labels, targets))
+                    tuning = next(filter(lambda t: "opsani_role" in t.labels, targets))
+                    assert main.pool == "opsani-envoy-sidecars"
+                    assert main.health == "up"
+                    assert main.labels["app_kubernetes_io_name"] == "fiber-http"
 
-                assert tuning.pool == "opsani-envoy-sidecars"
-                assert tuning.health == "up"
-                assert tuning.labels["opsani_role"] == "tuning"
-                assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
-                assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
+                    assert tuning.pool == "opsani-envoy-sidecars"
+                    assert tuning.health == "up"
+                    assert tuning.labels["opsani_role"] == "tuning"
+                    assert tuning.discovered_labels["__meta_kubernetes_pod_name"] == "fiber-http-tuning"
+                    assert tuning.discovered_labels["__meta_kubernetes_pod_label_opsani_role"] == "tuning"
 
-                async with kube_port_forward(f"service/fiber-http", port) as service_url:
-                    await load_generator(service_url).run_until(
-                        wait_for_check_to_pass(
-                            functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                    async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                        await load_generator(service_url).run_until(
+                            wait_for_check_to_pass(
+                                functools.partial(checks.run_one, id=f"check_traffic_metrics")
+                            )
                         )
-                    )
 
-                servo.logger.success("🥷 Opsani Dev is now deployed.")
-                servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
+                    servo.logger.success("🥷 Opsani Dev is now deployed.")
+                    servo.logger.critical("🔥 Now witness the firepower of this fully ARMED and OPERATIONAL battle station!")
 
                 # Cancel outstanding tasks
                 tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -854,8 +851,9 @@ class TestServiceMultiport:
 
                 await asyncio.gather(*tasks, return_exceptions=True)
 
+        @pytest.mark.namespace(create=False, name="test-install-wait")
         async def test_install_wait(
-            self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+            self, kube, kubetest_teardown, checks: servo.connectors.opsani_dev.OpsaniDevChecks,
             kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
             load_generator: Callable[[], 'LoadGenerator'],
             tmp_path: pathlib.Path
