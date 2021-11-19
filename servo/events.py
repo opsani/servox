@@ -641,6 +641,8 @@ class Mixin:
         if (not hasattr(value, "name")) or not isinstance(value.name, str):
             raise TypeError(f"events.Mixin inheritors must define a name property of type str (found {type(getattr(value, 'name', None))})")
 
+        return value
+
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:
         """

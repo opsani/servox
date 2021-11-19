@@ -403,8 +403,9 @@ def assert_equal_types(*types_: List[Type]) -> None:
         comparable_origin = typing.get_origin(comparable_type)
 
         # Handle subclass equality (origin must be checked first to ensure non-subscripted comparison)
-        if (type_origin is None and comparable_origin is None
-            and issubclass(comparable_type, type_)):
+        # Handle comparison built-in type used as annotation (in which case origin is None)
+        if (type_origin is None or comparable_origin is None
+            and isinstance(comparable_type, type_)):
             continue
 
         # Handle special forms

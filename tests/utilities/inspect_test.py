@@ -187,16 +187,16 @@ def test_equal_callable_descriptors() -> None:
     import servo
     import servo.types
 
-    def test_one() -> typing.Dict:
+    def test_one() -> dict:
         ...
 
-    def test_two() -> typing.Dict[str, Any]:
+    def test_two() -> dict[str, Any]:
         ...
 
-    def test_three() -> typing.Dict[str, int]:
+    def test_three() -> dict[str, int]:
         ...
 
-    def test_four() -> typing.Dict[float, str]:
+    def test_four() -> dict[float, str]:
         ...
 
     sig1 = inspect.Signature.from_callable(test_one)
