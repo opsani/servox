@@ -14,7 +14,7 @@ jobs:
     - name: Output Python version
       id: python-version
       run: |
-        echo "::set-output python-version::$(cat .python-version)"
+        echo "::set-output name=python-version::$(cat .python-version)"
     - uses: actions/setup-python@v2
       with:
         python-version: ${{ steps.python-version.outputs.python-version }}
