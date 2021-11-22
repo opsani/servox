@@ -470,7 +470,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
     assert error
     expected_error_substrings = [ 'invalid event handler', 'missing required parameter "adjustments"']
     for expected_error_substring in expected_error_substrings:
-        assert expected_error_substring in error.value
+        assert expected_error_substring in str(error.value)
 
 
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
@@ -483,7 +483,7 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     assert error
     expected_error_substrings = ['invalid event handler', 'missing required parameter "metrics"']
     for expected_error_substring in expected_error_substrings:
-        assert expected_error_substring in error.value
+        assert expected_error_substring in str(error.value)
 
 
 def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
@@ -539,7 +539,7 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
     assert error
     expected_error_substrings = ['invalid before event handler', 'unexpected parameters']
     for expected_error_substring in expected_error_substrings:
-        assert expected_error_substring in error.value
+        assert expected_error_substring in str(error.value)
 
 
 def test_validation_of_before_handlers_ignores_kwargs() -> None:
