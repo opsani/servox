@@ -17,6 +17,13 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] "preposterous ports" - 2021-11-19
+
+### Fixed
+
+- Kubernetes connector logical error in check for argo rollout permissions [#358](https://github.com/opsani/servox/pull/358)
+- Opsani Dev connector configuration mathematical error in prometheus queries for success_rate and error_rate [#357](https://github.com/opsani/servox/pull/357)
+
 ## [0.11.0] "preposterous ports" - 2021-11-01
 
 ### Added

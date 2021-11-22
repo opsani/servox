@@ -19,6 +19,7 @@ import pathlib
 import re
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     ClassVar,
     Collection,
@@ -3643,6 +3644,15 @@ class CanaryOptimization(BaseOptimization):
 
         servo.logger.info(f"Tuning Pod successfully created")
         return tuning_pod
+
+    @contextlib.asynccontextmanager
+    async def temporary_tuning_pod(self) -> AsyncIterator[Pod]:
+        """Mostly used for testing where automatic teardown is not available"""
+        try:
+            tuning_pod = await self.create_tuning_pod()
+            yield tuning_pod
+        finally:
+            await self.delete_tuning_pod(raise_if_not_found=False)
 
     @property
     def tuning_cpu(self) -> Optional[CPU]:
