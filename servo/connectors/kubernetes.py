@@ -771,9 +771,9 @@ class HPA(KubernetesModel):
 
     api_clients: ClassVar[Dict[str, Type]] = {
         "preferred":kubernetes_asyncio.client.AutoscalingV1Api,
-        "v1":kubernetes_asyncio.client.AutoscalingV1Api,
-        "AutoscalingV2beta1Api":kubernetes_asyncio.client.AutoscalingV2beta1Api,
-        "AutoscalingV2beta2Api":kubernetes_asyncio.client.AutoscalingV2beta2Api,
+        "autoscaling/v1":kubernetes_asyncio.client.AutoscalingV1Api,
+        "autoscaling/v2beta1":kubernetes_asyncio.client.AutoscalingV2beta1Api,
+        "autoscaling/v2beta2":kubernetes_asyncio.client.AutoscalingV2beta2Api,
     }
 
     @classmethod
@@ -4317,14 +4317,6 @@ class RolloutConfiguration(BaseKubernetesConfiguration):
     strategy: StrategyTypes = OptimizationStrategy.canary
     replicas: servo.Replicas
 
-class HPAConfiguration(BaseKubernetesConfiguration):
-    """
-    The HPAConfiguration class models the configuration of a modifiable HPA
-    """
-
-    name: str
-    namespace: str
-
 
 class KubernetesConfiguration(BaseKubernetesConfiguration):
     namespace: DNSSubdomainName = DNSSubdomainName("default")
@@ -4340,10 +4332,6 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
     rollouts: Optional[List[RolloutConfiguration]] = pydantic.Field(
         description="Argo rollouts to be optimized.",
-    )
-
-    hpa: Optional[HPAConfiguration] = pydantic.Field(
-        description="HPA, if present",
     )
 
     @pydantic.root_validator
