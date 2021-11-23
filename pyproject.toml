@@ -13,7 +13,7 @@ packages = [
 include = ["README.md", "CHANGELOG.md"]
 
 [tool.poetry.dependencies]
-python = "^3.9.9"
+python = "^3.9.7"
 pydantic = "^1.8.1"
 loguru = "^0.5.1"
 httpx = "^0.17.0"

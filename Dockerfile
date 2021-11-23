@@ -1,4 +1,4 @@
-ARG PYTHON_VERSION=3.9.9
+ARG PYTHON_VERSION=3.9.7
 
 FROM peterevans/vegeta AS vegeta
 FROM python:${PYTHON_VERSION}-slim
