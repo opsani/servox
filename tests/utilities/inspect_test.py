@@ -187,29 +187,32 @@ def test_equal_callable_descriptors() -> None:
     import servo
     import servo.types
 
-    def test_one() -> dict:
+    def test_one() -> typing.Dict:
         ...
 
-    def test_two() -> dict[str, Any]:
+    def test_two() -> typing.Dict[str, Any]:
         ...
 
-    def test_three() -> dict[str, int]:
+    def test_three() -> typing.Dict[str, int]:
         ...
 
-    def test_four() -> dict[float, str]:
+    def test_four() -> typing.Dict[float, str]:
         ...
 
     sig1 = inspect.Signature.from_callable(test_one)
     sig2 = inspect.Signature.from_callable(test_two)
 
-    servo.utilities.inspect.assert_equal_callable_descriptors(
-        servo.utilities.inspect.CallableDescriptor(
-            signature=sig1, globalns=globals(), localns=locals()
-        ),
-        servo.utilities.inspect.CallableDescriptor(
-            signature=sig2, globalns=globals(), localns=locals()
-        ),
-    )
+
+    with pytest.raises(TypeError) as e:
+        servo.utilities.inspect.assert_equal_callable_descriptors(
+            servo.utilities.inspect.CallableDescriptor(
+                signature=sig1, globalns=globals(), localns=locals()
+            ),
+            servo.utilities.inspect.CallableDescriptor(
+                signature=sig2, globalns=globals(), localns=locals()
+            ),
+        )
+    assert str(e.value) == 'invalid callable "() -> Dict": incompatible return type annotation "typing.Dict[str, typing.Any]" in callable signature "() -> Dict[str, Any]", expected "typing.Dict"'
 
     servo.utilities.inspect.assert_equal_callable_descriptors(
         servo.utilities.inspect.CallableDescriptor(
@@ -244,6 +247,7 @@ MaybeNumeric = Optional[Union[float, int]]
         ([None, None], None),
         ([List[str], List[str]], None),
         ([Dict[str, int], Dict[str, int]], None),
+        ([dict[str, int], Dict[str, int]], None),
         ([Any, str], None),
         ([Any, List[str]], None),
         ([List[Any], List[str]], None),

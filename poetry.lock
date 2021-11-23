@@ -1550,11 +1550,11 @@ full = ["aiofiles", "graphene", "itsdangerous", "jinja2", "python-multipart", "p
 
 [[package]]
 name = "statesman"
-version = "1.0.1"
+version = "1.0.2"
 description = "A modern state machine library."
 category = "main"
 optional = false
-python-versions = ">=3.8,<4.0"
+python-versions = ">=3.9,<4.0"
 
 [package.dependencies]
 pydantic = ">=1.7.1,<2.0.0"
@@ -1792,7 +1792,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9.7"
-content-hash = "c20a19000969bf84bdda669fe69ad913e3485ee53fcacb21ae9ca973408a7c43"
+content-hash = "c77f6139464395bcb42a802ab37b22c47593dfc89fa1825f06e49d997647bb05"
 
 [metadata.files]
 aiohttp = [
@@ -2637,8 +2637,8 @@ starlette = [
     {file = "starlette-0.14.2.tar.gz", hash = "sha256:7d49f4a27f8742262ef1470608c59ddbc66baf37c148e938c7038e6bc7a998aa"},
 ]
 statesman = [
-    {file = "statesman-1.0.1-py3-none-any.whl", hash = "sha256:77c4cf1a21662a347f5c64373de613eeb8b3c2c240e36f992b65f7dc9ff71711"},
-    {file = "statesman-1.0.1.tar.gz", hash = "sha256:a7b26173603749bb975a6424c4e2ccb7673d41a3cd6033eb513b80b4c5462edd"},
+    {file = "statesman-1.0.2-py3-none-any.whl", hash = "sha256:24b3fb2f147f721106f5c1e9dc6c9940bafb0dc019f5af480ce56fc21f9cd9a8"},
+    {file = "statesman-1.0.2.tar.gz", hash = "sha256:48e3833d07ddd809d2206782f73985b6f36db414366fb3f39df1d84b478f90fa"},
 ]
 stevedore = [
     {file = "stevedore-3.3.0-py3-none-any.whl", hash = "sha256:50d7b78fbaf0d04cd62411188fa7eedcb03eb7f4c4b37005615ceebe582aa82a"},

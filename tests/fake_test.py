@@ -7,6 +7,7 @@ import fastapi
 import pytest
 
 import servo
+import servo.api
 import servo.runner
 import servo.types
 import tests.fake
