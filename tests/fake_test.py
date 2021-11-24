@@ -127,24 +127,24 @@ def test_adjustments_to_descriptor() -> None:
     adjustment2 = servo.Adjustment(component_name="web", setting_name="mem", value=5.0)
     adjustment3 = servo.Adjustment(component_name="db", setting_name="mem", value=4.0)
     descriptor = servo.api.adjustments_to_descriptor([adjustment1, adjustment2, adjustment3])
-    assert descriptor == {
+    expected_descriptor = {
         'state': {
             'application': {
                 'components': {
                     'web': {
                         'settings': {
                             'cpu': {
-                                'value': '1.25',
+                                'value': 1.25,
                             },
                             'mem': {
-                                'value': '5.0',
+                                'value': 5.0,
                             },
                         },
                     },
                     'db': {
                         'settings': {
                             'mem': {
-                                'value': '4.0',
+                                'value': 4.0,
                             },
                         },
                     },
@@ -152,6 +152,7 @@ def test_adjustments_to_descriptor() -> None:
             },
         },
     }
+    assert descriptor == expected_descriptor
 
 async def test_state_machine_lifecyle(measurement: servo.Measurement) -> None:
     static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
