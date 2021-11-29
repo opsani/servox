@@ -58,7 +58,15 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
                 while not assembly_runner.assembly.servos[0].is_running:
                     await asyncio.sleep(0.01)
 
-            event_loop.call_soon(assembly_runner.run)
+            try:
+                assembly_runner.run()
+            except ValueError as e:
+                if "add_signal_handler() can only be called from the main thread" in str(e):
+                    # https://github.com/pytest-dev/pytest-xdist/issues/620
+                    pytest.xfail("not running in the main thread")
+                else:
+                    raise
+
             await asyncio.wait_for(wait_for_servo_running(), timeout=2)
 
             # Shutdown the servo to produce edge case error

@@ -4,7 +4,9 @@ The `servo.repeating.Mixin` provides connectors with the ability to easily manag
 that require periodic execution or the observation of particular runtime conditions.
 """
 import asyncio
-from typing import Callable, Dict, Optional, Union
+import time
+from sys import float_info
+from typing import Callable, Dict, Optional, Union, Awaitable
 
 import pydantic
 
@@ -42,14 +44,21 @@ class Mixin(pydantic.BaseModel):
                 self.start_repeating_task(name, duration, method)
 
     def start_repeating_task(
-        self, name: str, every: Every, callable: Callable[[None], None]
+        self,
+        name: str,
+        every: Every,
+        function: Union[Callable[[None], None], Awaitable[None]],
+        time_correction: bool=False,
     ) -> asyncio.Task:
         """Start a repeating task with the given name and duration.
 
         Args:
             name: A name for identifying the repeating task.
             every: The duration at which the task will repeatedly run.
-            callable: A callable to be executed repeatedly on the desired interval.
+            function: A callable to be executed repeatedly on the desired interval.
+            time_correction: Whether to modify sleep time according to wall time taken to run
+            <function>. If True, e.g. if function took 1s and every is 5s, then sleep for 4s.
+            Otherwise sleep for e.g. 5s regardless.
         """
         if task := self.repeating_tasks.get(name, None):
             if not task.done():
@@ -62,8 +71,27 @@ class Mixin(pydantic.BaseModel):
 
         async def repeating_async_fn() -> None:
             while True:
-                callable()
-                await asyncio.sleep(every.total_seconds())
+                t0 = time.time()
+                if asyncio.iscoroutinefunction(function):
+                    await function()
+                elif callable(function):
+                    function()
+                else:
+                    if asyncio.iscoroutine(function):
+                        TypeError(f"function={function} must be Awaitable or Callable, but has "
+                            f"type(function)={type(function)}. A developer may have invoked the "
+                            "async function while/prior to passing it in here.")
+
+                    raise TypeError(f"function={function} must be Awaitable or Callable, but has "
+                        f"type(function)={type(function)}.")
+                t1 = time.time()
+                sleep_time = every.total_seconds()
+                if time_correction:
+                    sleep_time = max(sleep_time - (t1 -t0), 0)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                else:
+                    await asyncio.sleep(float_info.epsilon)  # this is a concurrency failsafe.
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task

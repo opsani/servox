@@ -468,10 +468,9 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
             pass
 
     assert error
-    assert (
-        str(error.value)
-        == """invalid event handler "adjust": missing required parameter "adjustments" in callable signature "(self) -> servo.types.Description", expected "(self, adjustments: 'List[servo.types.Adjustment]', control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Description'\""""
-    )
+    expected_error_substrings = [ 'invalid event handler', 'missing required parameter "adjustments"']
+    for expected_error_substring in expected_error_substrings:
+        assert expected_error_substring in str(error.value)
 
 
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
@@ -482,10 +481,9 @@ def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
             pass
 
     assert error
-    assert (
-        str(error.value)
-        == """invalid event handler "measure": missing required parameter "metrics" in callable signature "(self, *, control: servo.types.Control = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> servo.types.Measurement", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'servo.types.Measurement'\""""
-    )
+    expected_error_substrings = ['invalid event handler', 'missing required parameter "metrics"']
+    for expected_error_substring in expected_error_substrings:
+        assert expected_error_substring in str(error.value)
 
 
 def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_keywords() -> None:
@@ -539,10 +537,9 @@ def test_registering_before_handler_fails_with_extra_args() -> None:
             pass
 
     assert error
-    assert (
-        str(error.value)
-        == """invalid before event handler "before:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self, *, metrics: 'List[str]' = None, control: 'servo.types.Control' = Control(duration=Duration('0'), delay=Duration('0'), warmup=Duration('0'), settlement=None, load=None, userdata=None, environment=None)) -> 'None'\""""
-    )
+    expected_error_substrings = ['invalid before event handler', 'unexpected parameters']
+    for expected_error_substring in expected_error_substrings:
+        assert expected_error_substring in str(error.value)
 
 
 def test_validation_of_before_handlers_ignores_kwargs() -> None:
