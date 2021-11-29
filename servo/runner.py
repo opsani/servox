@@ -118,12 +118,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.success(f"Adjustment completed {summary}")
         return aggregate_description
 
-    @backoff.on_exception(
-        backoff.expo,
-        (httpx.HTTPError, pydantic.ValidationError),
-        max_time=lambda: servo.current_servo().config.settings.backoff.max_time(),
-        max_tries=lambda: servo.current_servo().config.settings.backoff.max_tries(),
-    )
     async def exec_command(self) -> servo.api.Status:
         cmd_response = await self._post_event(servo.api.Events.whats_next, None)
         self.logger.info(f"What's Next? => {cmd_response.command}")
