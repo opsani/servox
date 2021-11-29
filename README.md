@@ -153,7 +153,7 @@ There are a few key components that form the foundation of the architecture:
   return a result. The Servo base class defines the primary events of
   `DESCRIBE`, `MEASURE`, `ADJUST`, and `PROMOTE` which correspond to declaring
   the metrics & components that the connector is interested in, taking
-  measurements and returning normalized scalar or time series data points,
+  measurements and returning aggregated scalar or time series data points,
   making changes to the application under optimization, or promoting an
   optimized configuration to the broader system.
 * **Checks** - Checks provide a mechanism for verifying the correctness and
@@ -392,6 +392,24 @@ Guide](https://packaging.python.org/guides/creating-and-discovering-plugins/).
 The bundled connectors are registered and discovered using this mechanism via
 entries in the `pyproject.toml` file under the
 `[tool.poetry.plugins."servo.connectors"]` stanza.
+
+If you're writing your own connector in an external package, you need to include
+```yaml
+[tool.poetry.plugins."servo.connectors"]
+"my_connector" = "my_project.foo:MyConnector"
+```
+in your `pyproject.toml` to add your connector as an entry point.
+and you _must_ name your connector `class MyConnector(servo.BaseConnector):` to have it discoverable.
+Discovery is performed via the `servo.connector:_name_for_connector_class()` function. It matches
+the `My` in the connector class name to the top level connector key in the `servo.yaml`.
+So, for example, your `servo.yaml` could be as follows:
+```yaml
+...
+my:
+  foo: bar
+  baz: bat
+...
+```
 
 ### Running Multiple Connector Instances
 

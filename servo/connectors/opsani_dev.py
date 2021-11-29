@@ -465,6 +465,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
         # Read optimizer namespaced resources
         names = [f'servo.prometheus-{optimizer_subdomain}', 'prometheus-config']
+        config = None
         for name in names:
             try:
                 config = await servo.connectors.kubernetes.ConfigMap.read(
