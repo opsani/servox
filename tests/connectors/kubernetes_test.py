@@ -36,7 +36,7 @@ from servo.connectors.kubernetes import (
     KubernetesConfiguration,
     KubernetesConnector,
     Memory,
-    Millicore,
+    Core,
     OptimizationStrategy,
     Pod,
     ResourceRequirement,
@@ -737,9 +737,9 @@ class TestCPU:
         assert {
             "name": "cpu",
             "type": "range",
-            "min": 125,
-            "max": 4000,
-            "step": 125,
+            "min": "125m",
+            "max": 4,
+            "step": "125m",
             "value": None,
             "pinned": False,
             'request': None,
@@ -769,9 +769,9 @@ class TestCPU:
 
     def test_resolving_equivalent_units(self) -> None:
         cpu = CPU(min="125m", max=4.0, step=0.125)
-        assert cpu.min == 125
-        assert cpu.max == 4000
-        assert cpu.step == 125
+        assert cpu.min == 0.125
+        assert cpu.max == 4
+        assert cpu.step.millicores == 125
 
     def test_resources_encode_to_json_human_readable(self, cpu) -> None:
         serialization = json.loads(cpu.json())
@@ -784,21 +784,21 @@ class TestCPU:
             CPU(min="125m", max=4.0, step=0.250)
 
 
-class TestMillicore:
+class TestCore:
     @pytest.mark.parametrize(
-        "input, millicores",
+        "input, cores",
         [
-            ("100m", 100),
-            ("1", 1000),
-            (1, 1000),
-            ("0.1", 100),
-            (0.1, 100),
-            (2.0, 2000),
-            ("2.0", 2000),
+            ("100m", 0.1),
+            ("1", 1),
+            (1, 1),
+            ("0.1", 0.1),
+            ("0.1", 0.1),
+            (2.0, 2),
+            ("2.0", 2),
         ],
     )
-    def test_parsing(self, input: Union[str, int, float], millicores: int) -> None:
-        assert Millicore.parse(input) == millicores
+    def test_parsing(self, input: Union[str, int, float], cores: Union[float, int]) -> None:
+        assert Core.parse(input) == cores
 
     @pytest.mark.parametrize(
         "input, output",
@@ -808,16 +808,19 @@ class TestMillicore:
             ("1.0", "1"),
             (1, "1"),
             ("0.1", "100m"),
-            (0.1, "100m"),
-            (2.5, "2500m"),
+            ("0.1", "100m"),
+            (2.5, "2.5"),
+            ("2500m", "2.5"),
             ("123m", "123m"),
+            ("100n", "100n"),
+            ("0.0001", "100n")
         ],
     )
     def test_string_serialization(
         self, input: Union[str, int, float], output: str
     ) -> None:
-        millicores = Millicore.parse(input)
-        assert str(millicores) == output
+        cores = Core.parse(input)
+        assert str(cores) == output
 
 
 class TestMemory:
@@ -890,13 +893,13 @@ class TestMemory:
 
 def test_millicpu():
     class Model(pydantic.BaseModel):
-        cpu: Millicore
+        cpu: Core
 
-    assert Model(cpu=0.1).cpu == 100
-    assert Model(cpu=0.5).cpu == 500
-    assert Model(cpu=1).cpu == 1000
-    assert Model(cpu="100m").cpu == 100
-    assert str(Model(cpu=1.5).cpu) == "1500m"
+    assert Model(cpu=0.1).cpu.millicores == 100
+    assert Model(cpu=0.5).cpu.millicores == 500
+    assert Model(cpu=1).cpu.millicores == 1000
+    assert Model(cpu="100m").cpu.millicores == 100
+    assert "{0:m}".format(Model(cpu=1.5).cpu) == "1500m"
     assert float(Model(cpu=1.5).cpu) == 1.5
     assert Model(cpu=0.1).cpu == "100m"
     assert Model(cpu="100m").cpu == 0.1

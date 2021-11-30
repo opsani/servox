@@ -517,12 +517,12 @@ def test_step_alignment_calculations_memory(value, step, expected_lower, expecte
     ]
 )
 def test_step_alignment_calculations_cpu(value, step, expected_lower, expected_upper) -> None:
-    value_millicores, step_millicores = servo.connectors.kubernetes.Millicore.parse(value), servo.connectors.kubernetes.Millicore.parse(step)
-    lower, upper = _suggest_step_aligned_values(value_millicores, step_millicores, in_repr=servo.connectors.kubernetes.CPU.human_readable)
+    value_cores, step_cores = servo.connectors.kubernetes.Core.parse(value), servo.connectors.kubernetes.Core.parse(step)
+    lower, upper = _suggest_step_aligned_values(value_cores, step_cores, in_repr=servo.connectors.kubernetes.CPU.human_readable)
     assert lower == expected_lower
     assert upper == expected_upper
-    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(lower), step_millicores)
-    assert _is_step_aligned(servo.connectors.kubernetes.Millicore.parse(upper), step_millicores)
+    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(lower), step_cores)
+    assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(upper), step_cores)
 
 def test_cpu_not_step_aligned() -> None:
     with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4100m, 125m) max is not step aligned: 4100m is not a multiple of 125m (consider 4 or 4125m).")):

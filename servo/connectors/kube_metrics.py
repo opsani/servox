@@ -17,7 +17,7 @@ from servo.connectors.kubernetes import (
     Container,
     Deployment,
     DNSSubdomainName,
-    Millicore,
+    Core,
     PermissionSet,
     Pod,
     ResourceRequirement,
@@ -99,6 +99,17 @@ class KubeMetricsConfiguration(servo.BaseConfiguration):
         unsupported_metrics = [m for m in value if m not in supported_metrics_set]
         assert not unsupported_metrics, f"Found unsupported metrics in metrics_to_collect configuration: {', '.join(unsupported_metrics)}"
         return value
+
+    @classmethod
+    def generate(cls, **kwargs) -> "KubeMetricsConfiguration":
+        return cls(
+            namespace="default",
+            name="app",
+            container="app_container_name",
+            kind="Deployment",
+            description="Update the namespace, resource name, etc. to match the resource to monitor",
+            **kwargs,
+        )
 
 class KubeMetricsChecks(servo.BaseChecks):
     config: KubeMetricsConfiguration
@@ -241,7 +252,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                         )
 
                         if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
-                            pod: Pod = next((p for p in target_resource.get_pods() if p.name == pod_name), None)
+                            pod: Pod = next((p for p in await target_resource.get_pods() if p.name == pod_name), None)
                             if pod is None:
                                 # TODO may need to skip these with continue depending on whether this comes up in testing
                                 raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
@@ -250,7 +261,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                         target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
                         if SupportedKubeMetrics.MAIN_CPU_USAGE in target_metrics:
-                            cpu_usage = Millicore.parse(target_container["usage"]["cpu"])
+                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_USAGE.value, value=cpu_usage)
 
                         if SupportedKubeMetrics.MAIN_MEM_USAGE in target_metrics:
@@ -260,18 +271,18 @@ class KubeMetricsConnector(servo.BaseConnector):
                         cpu_resources = target_resource_container.get_resource_requirements("cpu")
                         if SupportedKubeMetrics.MAIN_CPU_REQUEST in target_metrics:
                             if cpu_request := cpu_resources[ResourceRequirement.request] is not None:
-                                cpu_request = Millicore.parse(cpu_request)
+                                cpu_request = Core.parse(cpu_request)
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_REQUEST.value, value=cpu_request)
 
                         if SupportedKubeMetrics.MAIN_CPU_LIMIT in target_metrics:
                             if cpu_limit := cpu_resources[ResourceRequirement.limit] is not None:
-                                cpu_limit = Millicore.parse(cpu_limit)
+                                cpu_limit = Core.parse(cpu_limit)
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_LIMIT.value, value=cpu_limit)
 
                         if SupportedKubeMetrics.MAIN_CPU_SATURATION in target_metrics:
                             if cpu_request := cpu_resources[ResourceRequirement.request] is not None:
-                                cpu_request = Millicore.parse(cpu_request)
-                                cpu_usage = Millicore.parse(target_container["usage"]["cpu"])
+                                cpu_request = Core.parse(cpu_request)
+                                cpu_usage = Core.parse(target_container["usage"]["cpu"])
                                 cpu_saturation = 100 * cpu_usage / cpu_request
                             else:
                                 cpu_saturation = None # TODO return "NaN" string instead?
@@ -290,15 +301,15 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                         if SupportedKubeMetrics.MAIN_MEM_SATURATION in target_metrics:
                             if mem_request := mem_resources[ResourceRequirement.request] is not None:
-                                mem_request = Millicore.parse(mem_request)
-                                mem_usage = Millicore.parse(target_container["usage"]["memory"])
+                                mem_request = ShortByteSize.validate(mem_request)
+                                mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
                                 mem_saturation = 100 * mem_usage / mem_request
                             else:
                                 mem_saturation = None
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
 
                 # Retrieve latest tuning state
-                target_resource_tuning_pod: Pod = next((p for p in target_resource.get_pods() if p.name == f"{target_resource.name}-tuning"), None)
+                target_resource_tuning_pod: Pod = next((p for p in await target_resource.get_pods() if p.name == f"{target_resource.name}-tuning"), None)
                 if target_resource_tuning_pod:
                     target_resource_tuning_pod_container = _get_target_resource_container(self.config, target_resource_tuning_pod)
                     cpu_resources = target_resource_tuning_pod_container.get_resource_requirements("cpu")
@@ -333,7 +344,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                         target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
                         if SupportedKubeMetrics.TUNING_CPU_USAGE in target_metrics:
-                            cpu_usage = Millicore.parse(target_container["usage"]["cpu"])
+                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_USAGE.value, value=cpu_usage)
 
                         if SupportedKubeMetrics.TUNING_MEM_USAGE in target_metrics:
@@ -342,18 +353,18 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                         if SupportedKubeMetrics.TUNING_CPU_REQUEST in target_metrics:
                             if cpu_request := cpu_resources[ResourceRequirement.request] is not None:
-                                cpu_request = Millicore.parse(cpu_request)
+                                cpu_request = Core.parse(cpu_request)
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_REQUEST.value, value=cpu_request)
 
                         if SupportedKubeMetrics.TUNING_CPU_LIMIT in target_metrics:
                             if cpu_limit := cpu_resources[ResourceRequirement.limit] is not None:
-                                cpu_limit = Millicore.parse(cpu_limit)
+                                cpu_limit = Core.parse(cpu_limit)
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_LIMIT.value, value=cpu_limit)
 
                         if SupportedKubeMetrics.TUNING_CPU_SATURATION in target_metrics:
                             if cpu_request := cpu_resources[ResourceRequirement.request] is not None:
-                                cpu_request = Millicore.parse(cpu_request)
-                                cpu_usage = Millicore.parse(target_container["usage"]["cpu"])
+                                cpu_request = Core.parse(cpu_request)
+                                cpu_usage = Core.parse(target_container["usage"]["cpu"])
                                 cpu_saturation = 100 * cpu_usage / cpu_request
                             else:
                                 cpu_saturation = None
@@ -371,8 +382,8 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                         if SupportedKubeMetrics.TUNING_MEM_SATURATION in target_metrics:
                             if mem_request := mem_resources[ResourceRequirement.request] is not None:
-                                mem_request = Millicore.parse(mem_request)
-                                mem_usage = Millicore.parse(target_container["usage"]["memory"])
+                                mem_request = ShortByteSize.validate(mem_request)
+                                mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
                                 mem_saturation = 100 * mem_usage / mem_request
                             else:
                                 mem_saturation = None
