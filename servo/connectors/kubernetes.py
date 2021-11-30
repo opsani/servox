@@ -2801,7 +2801,7 @@ class Core(decimal.Decimal):
             return super().__format__(specifier)
 
         # strip the trailing zero and dot when present for consistent representation
-        str_val = str(value).rstrip("0").rstrip(".")
+        str_val = re.sub(r"\.0*$", repl="", string=str(value))
         return f"{str_val}{specifier}"
 
     def __eq__(self, other) -> bool:
