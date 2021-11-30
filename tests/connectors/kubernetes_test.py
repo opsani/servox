@@ -758,10 +758,10 @@ class TestCPU:
         cpu.value = "3"
         assert cpu.__opsani_repr__() == {
             "cpu": {
-                "max": 4.0,
-                "min": 0.125,
-                "step": 0.125,
-                "value": 3.0,
+                "max": "4",
+                "min": "0.125",
+                "step": "0.125",
+                "value": "3",
                 "type": "range",
                 "pinned": False,
             }
