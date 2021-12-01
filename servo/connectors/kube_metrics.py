@@ -229,7 +229,7 @@ class KubeMetricsConnector(servo.BaseConnector):
         await asyncio.sleep(control.warmup.total_seconds())
 
         datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(lambda: defaultdict(list))
-        while not progress.completed:
+        while not progress.finished:
             iteration_start_time = time.time()
 
             # Retrieve latest main state
