@@ -9,6 +9,7 @@ import functools
 import os
 import pathlib
 import pydantic
+import time
 from typing import Any, Dict, List, Optional, FrozenSet, Union
 
 import servo
@@ -229,7 +230,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
         datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(lambda: defaultdict(list))
         while not progress.completed:
-            iteration_start_time = datetime.now()
+            iteration_start_time = time.time()
 
             # Retrieve latest main state
             await target_resource.refresh()
@@ -390,7 +391,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                                 mem_saturation = None
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_SATURATION.value, value=mem_saturation)
 
-            sleep_time = max(0, self.config.metric_collection_frequency.total_seconds() - (datetime.now() - iteration_start_time))
+            sleep_time = max(0, self.config.metric_collection_frequency.total_seconds() - (time.time() - iteration_start_time))
             await asyncio.sleep(sleep_time)
 
         # Convert data points dicts to TimeSeries list
