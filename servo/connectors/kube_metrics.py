@@ -218,9 +218,10 @@ class KubeMetricsConnector(servo.BaseConnector):
         target_metrics = [m for m in self.config.metrics_to_collect if m.value in metrics]
         target_resource = await _get_target_resource(self.config)
 
-        progress = servo.EventProgress(timeout=servo.Duration(control.warmup + control.duration))
+        progress_duration = servo.Duration(control.warmup + control.duration)
+        progress = servo.EventProgress(timeout=progress_duration)
         progress_reporter_task = asyncio.create_task(progress.watch(notify=lambda progress: servo.logger.info(
-            progress.annotate(f"measuring kubernetes metrics for {servo.Duration(control.warmup + control.duration)}", False),
+            progress.annotate(f"measuring kubernetes metrics for {progress_duration}", False),
             progress=progress.progress,
         )))
 
@@ -321,7 +322,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
                 if any((m in TUNING_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
                     tuning_metrics = await cust_obj_api.list_namespaced_custom_object(
-                        label_selector=f"{label_selector_str},opsani_role=tuning"
+                        label_selector=f"{label_selector_str},opsani_role=tuning",
                         **METRICS_CUSTOM_OJBECT_CONST_ARGS
                     )
                     # TODO: raise error if more than 1 tuning pod?
