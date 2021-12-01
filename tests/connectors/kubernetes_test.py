@@ -1965,7 +1965,7 @@ class TestKubernetesResourceRequirementsIntegration:
         # Validate Main
         assert canary_optimization.main_cpu, "Expected Main CPU"
         assert canary_optimization.main_cpu.value == 0.25
-        assert canary_optimization.main_cpu.request == 125
+        assert canary_optimization.main_cpu.request == 0.125
         assert canary_optimization.main_cpu.limit == 0.25
         assert canary_optimization.main_cpu.pinned is True
 
