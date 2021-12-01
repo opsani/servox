@@ -750,9 +750,9 @@ websocket-client = ">=0.32.0,<0.40.0 || >0.40.0,<0.41.0 || >=0.43.0"
 adal = ["adal (>=1.0.2)"]
 
 [[package]]
-name = "kubernetes-asyncio-cr-patch"
+name = "kubernetes-asyncio"
 version = "12.1.2"
-description = "Kubernetes asynchronous python client with patched custom resource API client"
+description = "Kubernetes asynchronous python client"
 category = "main"
 optional = false
 python-versions = "*"
@@ -1792,7 +1792,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "a223bfb32aa635b02cb4bce3dd2a2fda1d18738c3fd4c50b7b55d6c59694a156"
+content-hash = "8cdcd5358838585afe406ed18c90ea4a4d961081703debbe1da1df0ab2bd3586"
 
 [metadata.files]
 aiohttp = [
@@ -2191,8 +2191,8 @@ kubernetes = [
     {file = "kubernetes-17.17.0-py3-none-any.whl", hash = "sha256:225a95a0aadbd5b645ab389d941a7980db8cdad2a776fde64d1b43fc3299bde9"},
     {file = "kubernetes-17.17.0.tar.gz", hash = "sha256:c69b318696ba797dcf63eb928a8d4370c52319f4140023c502d7dfdf2080eb79"},
 ]
-kubernetes-asyncio-cr-patch = [
-    {file = "kubernetes_asyncio_cr_patch-12.1.2.tar.gz", hash = "sha256:2e90c73b6cb3678eba397368c001bec27162f90e848aac71b3cfad9a476f938b"},
+kubernetes-asyncio = [
+    {file = "kubernetes_asyncio-12.1.2.tar.gz", hash = "sha256:dfff92cbeed37e81b0c94156162841a7a4ef3e95b00d521d50fe86a14f05fbf9"},
 ]
 kubetest = []
 loguru = [

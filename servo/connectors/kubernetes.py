@@ -41,9 +41,10 @@ from typing import (
 
 import backoff
 import kubernetes_asyncio
-import kubernetes_asyncio.client.models
 import kubernetes_asyncio.client
+import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.client.models
 import kubernetes_asyncio.watch
 import pydantic
 
@@ -304,7 +305,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         self.obj.metadata.namespace = namespace
 
     @contextlib.asynccontextmanager
-    async def api_client(self) -> Generator[Any, None, None]:
+    async def api_client(self, default_headers: Dict[str, str] = {}) -> Generator[Any, None, None]:
         """The API client for the Kubernetes object. This is determined
         by the ``apiVersion`` of the object configuration.
 
@@ -326,6 +327,8 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
                 )
         # If we did find it, initialize that client version.
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            for k, v in default_headers.items():
+                api.set_default_header(k, v)
             yield c(api)
 
     @classmethod
@@ -2384,7 +2387,7 @@ class Rollout(KubernetesModel):
 
     async def patch(self) -> None:
         """Update the changed attributes of the Rollout."""
-        async with self.api_client() as api_client:
+        async with self.api_client({'content-type': 'application/merge-patch+json'}) as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
