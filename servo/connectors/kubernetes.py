@@ -2747,7 +2747,8 @@ class Core(decimal.Decimal):
 
     Supports the following format specification (note values must be an exact match, any other specificiers are
     fulfilled by the base Decimal class):
-    - n - nanocores (default for values < 1 millicore)
+    - n - nanocores (default for values < 1 microcore)
+    - u - microcores (default for values < 1 millicore)
     - m - millicores (default for values < 1 core)
     - c - cores (default for values > 1 core)
     """
@@ -2773,8 +2774,11 @@ class Core(decimal.Decimal):
         elif isinstance(v, str):
             if v[-1] == "m":
                 return cls(decimal.Decimal(str(v[:-1])) / 1000)
-            elif v[-1] == "n": # Metrics server API returns usage in nanocores
+            # Metrics server API returns usage in microcores and nanocores
+            elif v[-1] == "u":
                 return cls(decimal.Decimal(str(v[:-1])) / 1000000)
+            elif v[-1] == "n":
+                return cls(decimal.Decimal(str(v[:-1])) / 1000000000)
             else:
                 return cls(decimal.Decimal(str(v)))
         elif isinstance(v, (int, float, decimal.Decimal)):
@@ -2788,14 +2792,18 @@ class Core(decimal.Decimal):
     def __format__(self, specifier: str = None) -> str:
         if not specifier:
             specifier = "c"
-            if self.millicores < 1:
+            if self.microcores < 1:
                 specifier = "n"
+            elif self.millicores < 1:
+                specifier = "u"
             elif self < 1:
                 specifier = "m"
 
         value = decimal.Decimal(self)
         if specifier == "n":
             value = self.nanocores
+        elif specifier == "u":
+            value = self.microcores
         elif specifier == "m":
             value = self.millicores
         elif specifier == "c":
@@ -2821,8 +2829,12 @@ class Core(decimal.Decimal):
         return self * 1000
 
     @property
-    def nanocores(self) -> decimal.Decimal:
+    def microcores(self) -> decimal.Decimal:
         return self * 1000000
+
+    @property
+    def nanocores(self) -> decimal.Decimal:
+        return self * 1000000000
 
 
 class CPU(servo.CPU):
