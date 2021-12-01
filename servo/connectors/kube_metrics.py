@@ -406,7 +406,8 @@ class KubeMetricsConnector(servo.BaseConnector):
 
         await asyncio.sleep(control.delay.total_seconds())
 
-        return readings
+        measurement = servo.Measurement(readings=readings)
+        return measurement
 
     def _get_target_container_metrics(self, pod_metrics_list_item: Dict[str, Any]) -> Dict[str, Union[str, Dict[str, str]]]:
         pod_name = pod_metrics_list_item["metadata"]["name"]
