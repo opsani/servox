@@ -396,8 +396,8 @@ class KubeMetricsConnector(servo.BaseConnector):
 
         # Convert data points dicts to TimeSeries list
         readings = []
-        for metric_name, pod_datapoints in datapoints_dicts:
-            for pod_name, datapoints in pod_datapoints:
+        for metric_name, pod_datapoints in datapoints_dicts.items():
+            for pod_name, datapoints in pod_datapoints.items():
                 readings.append(TimeSeries(
                     metric=_name_to_metric(metric_name),
                     data_points=datapoints,
