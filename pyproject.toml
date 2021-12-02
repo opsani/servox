@@ -35,8 +35,7 @@ toml = "^0.10.2"
 colorama = "^0.4.4"
 pyfiglet = "^0.8.post1"
 curlify2 = "^1.0.0"
-kubernetes-asyncio-cr-patch = "^12.1.2"
-statesman = "^1.0.2"
+kubernetes_asyncio = "^12.1.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
@@ -82,6 +81,7 @@ pytest-html = "^3.1.1"
 bandit = "^1.7.0"
 watchgod = "^0.7"
 filelock = "^3.0.12"
+statesman = "^1.0.2"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"
