@@ -404,7 +404,8 @@ class KubeMetricsConnector(servo.BaseConnector):
                     id=pod_name
                 ))
 
-        await asyncio.sleep(control.delay.total_seconds())
+        # TODO
+        # await asyncio.sleep(control.delay.total_seconds())
 
         measurement = servo.Measurement(readings=readings)
         return measurement
