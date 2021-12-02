@@ -13,6 +13,7 @@ import weakref
 from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
 
 import pydantic
+import pydantic.typing
 
 import servo.errors
 import servo.pubsub
@@ -274,7 +275,7 @@ class EventHandler(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     kwargs: Dict[str, Any]
-    connector_type: Optional[Type["servo.BaseConnector"]]  # NOTE: Optional due to decorator
+    connector_type: Optional[Type["Mixin"]] = None  # NOTE: Optional due to decorator
     handler: EventCallable
 
     def __str__(self):
@@ -289,7 +290,7 @@ class EventResult(pydantic.BaseModel):
     event: Event
     preposition: Preposition
     handler: EventHandler
-    connector: "servo.BaseConnector"
+    connector: "Mixin"
     created_at: datetime.datetime = None
     value: Any
 
@@ -613,7 +614,7 @@ class Mixin:
     def __init__(
         self,
         *args,
-        __connectors__: List["servo.BaseConnector"] = None,
+        __connectors__: List[Mixin] = None,
         **kwargs,
     ) -> None: # noqa: D107
         super().__init__(
@@ -625,6 +626,22 @@ class Mixin:
         # that Pydantic doesn't see additional attributes
         __connectors__ = __connectors__ if __connectors__ is not None else [self]
         _connector_event_bus[self] = __connectors__
+
+    @classmethod
+    def __get_validators__(cls: Mixin) -> pydantic.typing.CallableGenerator:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls: Mixin, value: Any) -> None:
+        if not isinstance(value, Mixin):
+            raise TypeError(f"field (type {type(value)}) must be instance of events.Mixin")
+
+        # Ideally, the name property would be part of an abstract base but pydantic doesn't play nice with abc
+        # https://github.com/samuelcolvin/pydantic/discussions/2410
+        if (not hasattr(value, "name")) or not isinstance(value.name, str):
+            raise TypeError(f"events.Mixin inheritors must define a name property of type str (found {type(getattr(value, 'name', None))})")
+
+        return value
 
     @classmethod
     def responds_to_event(cls, event: Union[Event, str]) -> bool:
@@ -675,7 +692,7 @@ class Mixin:
         return handler
 
     @property
-    def __connectors__(self) -> List["servo.BaseConnector"]:
+    def __connectors__(self) -> List[Mixin]:
         return _connector_event_bus[self]
 
     def dispatch_event(
@@ -683,8 +700,8 @@ class Mixin:
         event: Union[Event, str],
         *args,
         first: bool = False,
-        include: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
-        exclude: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        include: Optional[List[Union[str, Mixin]]] = None,
+        exclude: Optional[List[Union[str, Mixin]]] = None,
         return_exceptions: bool = False,
         _prepositions: Preposition = (
             Preposition.before | Preposition.on | Preposition.after
@@ -730,7 +747,7 @@ class Mixin:
         Returns:
             A list of event result objects detailing the results returned.
         """
-        connectors: List["servo.BaseConnector"] = self.__connectors__
+        connectors: List[Mixin] = self.__connectors__
         event = get_event(event) if isinstance(event, str) else event
 
         if include is not None:
@@ -849,12 +866,12 @@ class _DispatchEvent:
     def __init__(
         self,
         event: Union[Event, str],
-        connectors: List["servo.BaseConnector"],
+        connectors: List[Mixin],
         parent: servo.pubsub.Mixin,
         args: List[Any],
         first: bool = False,
-        include: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
-        exclude: Optional[List[Union[str, "servo.BaseConnector"]]] = None,
+        include: Optional[List[Union[str, Mixin]]] = None,
+        exclude: Optional[List[Union[str, Mixin]]] = None,
         return_exceptions: bool = False,
         _prepositions: Preposition = (
             Preposition.before | Preposition.on | Preposition.after

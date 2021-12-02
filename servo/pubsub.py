@@ -1573,6 +1573,8 @@ class Mixin(pydantic.BaseModel):
 def _current_iterator() -> Optional[AsyncIterator]:
     return servo.pubsub._current_iterator_var.get()
 
+Splitter.update_forward_refs()
+Aggregator.update_forward_refs()
 Channel.update_forward_refs()
 _Iterator.update_forward_refs()
 

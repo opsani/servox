@@ -12,6 +12,10 @@ jobs:
     - uses: actions/checkout@v2
       with:
           fetch-depth: 1
+    - name: Output Python version
+      id: python-version
+      run: |
+        echo "::set-output name=python-version::$(cat .python-version)"
     - name: Cache pyenv versions
       uses: actions/cache@v2.1.1
       id: cached-pyenvs
@@ -21,7 +25,7 @@ jobs:
     - name: Install pyenv versions
       uses: gabrielfalcao/pyenv-action@v8
       with:
-        default: 3.8.6
+        default: ${{ steps.python-version.outputs.python-version }}
       # if: steps.cached-pyenvs.outputs.cache-hit != 'true'
     - name: Install Poetry
       run: |
