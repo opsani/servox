@@ -30,8 +30,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     _servo: servo.Servo = pydantic.PrivateAttr(None)
     _connected: bool = pydantic.PrivateAttr(False)
     _running: bool = pydantic.PrivateAttr(False)
+    _running_diagnostics: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
-
+    _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     class Config:
         arbitrary_types_allowed = True
 
@@ -50,6 +51,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     @property
     def running(self) -> bool:
         return self._running
+
+    @property
+    def running_diagnostics(self) -> bool:
+        return self._running_diagnostics
 
     @property
     def connected(self) -> bool:
@@ -194,6 +199,20 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
+    async def diagnostics_check(self):
+
+        while self._running:
+            try:
+                self.logger.trace("Polling for diagnostics request")
+                request = await self.report_diagnostics()
+                if request == servo.api.DiagnosticStates.stop:
+                    asyncio.current_task().cancel()
+                await asyncio.sleep(10)
+
+            except Exception as error:
+                self.logger.exception(f"failed with unrecoverable error: {error}")
+                raise error     
+
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
@@ -224,9 +243,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error
 
-    def run_main_loop(self) -> None:
+    def run_main_loop(self, diagnostics: bool = True) -> None:
         if self._main_loop_task:
             self._main_loop_task.cancel()
+        
+        if self._diagnostics_loop_task:
+            self._diagnostics_loop_task.cancel()
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
@@ -237,10 +259,16 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
                 raise error  # Ensure that we surface the error for handling
 
-        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
+        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")        
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
+        
+        if diagnostics:
+            self._diagnostics_loop_task = asyncio.create_task(self.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+            self._diagnostics_loop_task.add_done_callback(_reraise_if_necessary)
+        else:
+            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")                    
 
-    async def run(self, *, poll: bool = True) -> None:
+    async def run(self, *, poll: bool = True, diagnostics: bool = True) -> None:
         self._running = True
 
         _set_current_servo(self.servo)
@@ -286,7 +314,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.logger.exception("exception encountered during connect")
 
         if poll:
-            self.run_main_loop()
+            self.run_main_loop(diagnostics=diagnostics)
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
 
@@ -323,7 +351,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     def running(self) -> bool:
         return self._running
 
-    def run(self, *, poll: bool = True, interactive: bool = False) -> None:
+    def run(self, *, poll: bool = True, diagnostics: bool = True, interactive: bool = False) -> None:
         """Asynchronously run all servos active within the assembly.
 
         Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.
@@ -401,7 +429,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         try:
             for servo_ in self.assembly.servos:
                 servo_runner = ServoRunner(servo_, interactive=interactive)
-                loop.create_task(servo_runner.run(poll=poll))
+                loop.create_task(servo_runner.run(poll=poll, diagnostics=diagnostics))
                 self.runners.append(servo_runner)
 
             loop.run_forever()

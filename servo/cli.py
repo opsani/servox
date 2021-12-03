@@ -30,6 +30,7 @@ from tabulate import tabulate
 from timeago import format as timeago
 
 import servo
+from servo.logging import logs_path
 import servo.runner
 import servo.utilities.yaml
 
@@ -1149,6 +1150,12 @@ class ServoCLI(CLI):
                 "--no-poll",
                 help="Do not poll the Opsani API for commands",
             ),
+            no_diagnostics: Optional[bool] = typer.Option(
+                None,
+                "--no-diagnostics",
+                help="Do not poll the Opsani API for diagnostics",
+                envvar="NO_DIAGNOSTICS",
+            ),            
             interactive: Optional[bool] = typer.Option(
                 None,
                 "--interactive",
@@ -1167,7 +1174,8 @@ class ServoCLI(CLI):
 
             if context.assembly:
                 poll = not no_poll
-                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
+                diagnostics = not no_diagnostics
+                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, diagnostics=diagnostics, interactive=bool(interactive))
             else:
                 raise typer.Abort("failed to assemble servo")
 
@@ -1231,6 +1239,23 @@ class ServoCLI(CLI):
                 help="Delay duration. Requires --wait",
                 metavar="[DURATION]",
             ),
+            no_poll: Optional[bool] = typer.Option(
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
+            ),
+            no_diagnostics: Optional[bool] = typer.Option(
+                None,
+                "--no-diagnostics",
+                help="Do not poll the Opsani API for diagnostics",
+                envvar="NO_DIAGNOSTICS",
+            ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),            
             run: bool = typer.Option(
                 False,
                 "--run",
@@ -1477,7 +1502,9 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    servo.runner.AssemblyRunner(context.assembly).run()
+                    poll = not no_poll
+                    diagnostics = not no_diagnostics                    
+                    servo.runner.AssemblyRunner(context.assembly).run(poll=poll, diagnostics=diagnostics, interactive=bool(interactive))
                 elif not exit_on_success:
                     return
 
@@ -1898,6 +1925,62 @@ class ServoCLI(CLI):
                     if len(context.assembly.servos) > 1:
                         typer.echo(f"{servo_.name}")
                     typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
+        
+        @self.command(section=section)
+        def diagnostics(
+            context: Context,
+            depth: Optional[int] = typer.Option(
+                None,
+                "--depth",
+                "-d",
+                help="How many lines of logs to retrieve and push",
+            ),               
+            check: bool = typer.Option(
+                False,
+                "--check",
+                "-c",
+                help="Verify all checks pass before running",
+                envvar="DIAGNOSTICS",
+            ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),         
+        ) -> None:
+            """
+            Send thus-far collected servo logs to the Opsani API for tech-support diagnostics  
+            """
+            if check:
+                typer_click_object = typer.main.get_group(self)
+                context.invoke(
+                    typer_click_object.commands["check"], exit_on_success=False
+                )
+
+            if context.assembly:
+                with open(logs_path, 'r') as log_file:
+                    log_data_lines = log_file.readlines()
+                
+                if depth:
+                    log_data_lines = log_data_lines[:depth]
+
+                # Format and strip emoji from logs :(
+                log_data = "\n".join(log_data_lines).encode("ascii", "ignore").decode()
+                print(log_data)
+
+                for servo_ in context.assembly.servos:
+                    config_dict = servo_.config.json()
+                    config_data = devtools.pformat(json.loads(config_dict))
+
+                    diagnostic_dict = dict(
+                        logs=log_data,
+                        configmap=config_data
+                    )
+                    servo_.report_diagnostic(diagnostic_data=diagnostic_dict)
+
+            else:
+                raise typer.Abort("failed to assemble servo")
 
     def add_config_commands(self, section=Section.config) -> None:
         @self.command(section=section)
