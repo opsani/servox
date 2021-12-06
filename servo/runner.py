@@ -204,11 +204,26 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         while self._running:
             try:
                 self.logger.trace("Polling for diagnostics request")
-                request = await self.report_diagnostics()
-                if request == servo.api.DiagnosticStates.stop:
-                    asyncio.current_task().cancel()
-                await asyncio.sleep(10)
+                
+                request = await self._diagnostics_request()
 
+                if request == servo.api.DiagnosticStates.withhold:
+                    self.logger.trace("Withholding diagnostics")
+
+                elif request == servo.api.DiagnosticStates.send:
+                    self.logger.info(f"Diagnostics requested, gathering and sending")
+                    diagnostic_data = await self._get_diagnostics()
+                    send = await self._post_diagnostics(diagnostic_data)
+                    reset = await self._reset_diagnostics()
+
+                elif request == servo.api.DiagnosticStates.stop:
+                    self.logger.info(f"Received request to disable polling for diagnostics")
+                    asyncio.current_task().cancel()
+                else:
+                    raise
+
+                await asyncio.sleep(10)
+                
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error     

@@ -79,12 +79,10 @@ class DiagnosticStates(str, enum.Enum):
     stop = "STOP"
 
 class Diagnostics(pydantic.BaseModel):
-    data: Optional[Dict[str, Any]]
-    
-    class Config:
-        json_encoders = {
-            Events: lambda v: str(v),
-        }  
+    configmap: Optional[Dict[str, Any]]
+    logs: Optional[Dict[str, Any]]
+
+
 class Request(pydantic.BaseModel):
     event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
     param: Optional[Dict[str, Any]]  # TODO: Switch to a union of supported types
@@ -212,26 +210,7 @@ class Mixin(abc.ABC):
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
-            raise ValueError(f"unknown error status: \"{status.status}\"")
-
-    async def report_diagnostics(self, **kwargs) -> DiagnosticStates:
-        """Check to see if diagnostic report was requested and post to the Opsani API if so."""
-        request = await self._diagnostics_request()
-
-        if request == DiagnosticStates.withhold:
-            pass
-        elif request == DiagnosticStates.send:
-            self.logger.info(f"Diagnostics requested, gathering and sending")
-            diagnostic_data = await self._get_diagnostics()
-            send = await self._post_diagnostics(diagnostic_data)
-            reset = await self._reset_diagnostics()
-        elif request == DiagnosticStates.stop:
-            self.logger.info(f"Received request to disable polling for diagnostics")
-        else:
-            raise
-
-        return request         
-
+            raise ValueError(f"unknown error status: \"{status.status}\"")    
 
     def progress_request(
         self,
@@ -320,8 +299,8 @@ class Mixin(abc.ABC):
 
     async def _get_diagnostics(self) -> Diagnostics:
 
-        with open(logs_path, 'r') as log_file:
-            log_data_lines = log_file.readlines()
+        async with aiofiles.open(logs_path, 'r') as log_file:
+            log_data_lines = await log_file.readlines()
 
         # Format and strip emoji from logs :(
         log_dict = {}
@@ -335,12 +314,7 @@ class Mixin(abc.ABC):
         config_dict = self.servo.config.json(**export_options)
         config_data = json.loads(config_dict)
 
-        diagnostic_dict = dict(
-            configmap=config_data,                
-            logs=log_dict
-        )
-
-        return Diagnostics(data=diagnostic_dict)
+        return Diagnostics(configmap=config_data, logs=log_dict)
 
 
     async def _diagnostics_request(self) -> DiagnosticStates:
@@ -378,8 +352,11 @@ class Mixin(abc.ABC):
     async def _post_diagnostics(self, diagnostic_data: Diagnostics) -> Status:
         async with self.api_client() as client:
             self.logger.trace(f"POST diagnostic data: {devtools.pformat(diagnostic_data.json())}")
+
+            # Roundtrip to push into data key
+            diagnostic_dict = dict(data=diagnostic_data.dict())
             try:
-                response = await client.put("assets/opsani.com/diagnostics-output", data=diagnostic_data.json())
+                response = await client.put("assets/opsani.com/diagnostics-output", data=json.dumps(diagnostic_dict))
                 response.raise_for_status()
                 response_json = response.json()
                 self.logger.trace(
@@ -398,7 +375,6 @@ class Mixin(abc.ABC):
 
     async def _reset_diagnostics(self) -> Status:
         async with self.api_client() as client:
-            # reset_request = Diagnostic(dict(data=DiagnosticStates.withhold))
             reset_request = (
                 dict(data=DiagnosticStates.withhold)
                 )
