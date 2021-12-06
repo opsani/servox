@@ -936,7 +936,6 @@ def config(namespace: str) -> KubernetesConfiguration:
     )
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 class TestKubernetesConnectorIntegration:
@@ -1482,7 +1481,6 @@ class TestKubernetesConnectorIntegration:
 ##
 # Rejection Tests using modified deployment, skips the standard manifest application
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestKubernetesConnectorIntegrationUnreadyCmd:
     @pytest.fixture
@@ -1737,7 +1735,6 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
 
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestKubernetesResourceRequirementsIntegration:
     @pytest.fixture(autouse=True)
@@ -2134,7 +2131,6 @@ class TestKubernetesResourceRequirementsIntegration:
 ENVOY_SIDECAR_IMAGE_TAG = 'opsani/envoy-proxy:servox-v0.9.0'
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestSidecarInjection:
     @pytest.fixture(autouse=True)
@@ -2357,7 +2353,6 @@ class TestSidecarInjection:
         ]
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
 class TestKubernetesClusterConnectorIntegration:
     """Tests not requiring manifests setup, just an active cluster
@@ -2399,7 +2394,6 @@ class TestKubernetesClusterConnectorIntegration:
 ##
 # Tests against an ArgoCD rollout
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
 @pytest.mark.parametrize((),[
     pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml")),
@@ -2566,7 +2560,6 @@ WORKLOAD_REF_ROLLOUT_EXPECTED_ENV = [
 ]
 
 @pytest.mark.integration
-@pytest.mark.clusterrolebinding('cluster-admin')
 @pytest.mark.usefixtures("kubernetes_asyncio_config", "manage_rollout")
 class TestRolloutSidecarInjection:
     @pytest.fixture

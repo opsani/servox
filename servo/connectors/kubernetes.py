@@ -19,6 +19,7 @@ import pathlib
 import re
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     ClassVar,
     Collection,
@@ -40,14 +41,14 @@ from typing import (
 
 import backoff
 import kubernetes_asyncio
-import kubernetes_asyncio.client.models
 import kubernetes_asyncio.client
+import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.client.exceptions
+import kubernetes_asyncio.client.models
 import kubernetes_asyncio.watch
 import pydantic
 
 import servo
-
 
 class Condition(servo.logging.Mixin):
     """A Condition is a convenience wrapper around a function and its arguments
@@ -304,7 +305,7 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
         self.obj.metadata.namespace = namespace
 
     @contextlib.asynccontextmanager
-    async def api_client(self) -> Generator[Any, None, None]:
+    async def api_client(self, default_headers: Dict[str, str] = {}) -> Generator[Any, None, None]:
         """The API client for the Kubernetes object. This is determined
         by the ``apiVersion`` of the object configuration.
 
@@ -326,6 +327,8 @@ class KubernetesModel(abc.ABC, servo.logging.Mixin):
                 )
         # If we did find it, initialize that client version.
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            for k, v in default_headers.items():
+                api.set_default_header(k, v)
             yield c(api)
 
     @classmethod
@@ -766,6 +769,76 @@ class Container(servo.logging.Mixin):
     def __repr__(self) -> str:
         return self.__str__()
 
+class HPA(KubernetesModel):
+
+    obj: kubernetes_asyncio.client.V1HorizontalPodAutoscaler
+
+    api_clients: ClassVar[Dict[str, Type]] = {
+        "preferred":kubernetes_asyncio.client.AutoscalingV1Api,
+        "autoscaling/v1":kubernetes_asyncio.client.AutoscalingV1Api,
+        "autoscaling/v2beta1":kubernetes_asyncio.client.AutoscalingV2beta1Api,
+        "autoscaling/v2beta2":kubernetes_asyncio.client.AutoscalingV2beta2Api,
+    }
+
+    @classmethod
+    async def read(cls, name: str, namespace: str) -> "HPA":
+        """Read the HPA from the cluster under the given namespace.
+
+        Args:
+            name: The name of the HPA to read.
+            namespace: The namespace to read the HPA from.
+        """
+        servo.logger.debug(f'reading hpa "{name}" in namespace "{namespace}"')
+        async with cls.preferred_client() as api_client:
+            obj = await api_client.read_namespaced_horizontal_pod_autoscaler(name, namespace)
+            servo.logger.trace(f"read HorizontalPodAutoscaler: {obj}")
+        return HPA(obj)
+
+    async def create(self, namespace: str = None) -> None:
+        raise NotImplementedError
+
+    async def patch(self) -> None:
+        """
+        Patches an HPA, applying spec changes to the cluster.
+        """
+        self.logger.info(f'patching HPA "{self.name}"')
+        async with self.api_client() as api_client:
+            api_client.api_client.set_default_header('content-type', 'application/strategic-merge-patch+json')
+            hpa_result = await api_client.patch_namespaced_horizontal_pod_autoscaler(
+                name=self.name,
+                namespace=self.namespace,
+                body=self.obj,
+            )
+        self.logger.trace(f"patched HPA, spec={hpa_result}")
+
+    async def delete(self, options:kubernetes_asyncio.client.V1DeleteOptions = None) ->kubernetes_asyncio.client.V1Status:
+        raise NotImplementedError
+
+    async def refresh(self) -> None:
+        """Refresh the underlying Kubernetes HPA resource."""
+        async with self.api_client() as api_client:
+            self.obj = await api_client.read_namespaced_horizontal_pod_autoscaler_status(
+                name=self.name,
+                namespace=self.namespace,
+            )
+
+    async def is_ready(self) -> bool:
+        NotImplementedError
+
+    @property
+    def target_cpu_utilization_percentage(self) -> int:
+        return self.obj.spec.target_cpu_utilization_percentage
+
+    @target_cpu_utilization_percentage.setter
+    def target_cpu_utilization_percentage(self, target: int) -> None:
+        if not isinstance(target, int):
+            self.logger.debug(f"got target={target}, attemptint to coerce to int")
+            target = int(target)
+        self.obj.spec.target_cpu_utilization_percentage = target
+
+    async def get_cpu_utilization_scaling_threshold(self) -> int:
+        await self.refresh()
+        return self.target_cpu_utilization_percentage
 
 class Pod(KubernetesModel):
     """Wrapper around a Kubernetes `Pod`_ API Object.
@@ -2314,7 +2387,7 @@ class Rollout(KubernetesModel):
 
     async def patch(self) -> None:
         """Update the changed attributes of the Rollout."""
-        async with self.api_client() as api_client:
+        async with self.api_client({'content-type': 'application/merge-patch+json'}) as api_client:
             self.obj = RolloutObj.parse_obj(await api_client.patch_namespaced_custom_object(
                 namespace=self.namespace,
                 name=self.name,
@@ -3575,6 +3648,15 @@ class CanaryOptimization(BaseOptimization):
         servo.logger.info(f"Tuning Pod successfully created")
         return tuning_pod
 
+    @contextlib.asynccontextmanager
+    async def temporary_tuning_pod(self) -> AsyncIterator[Pod]:
+        """Mostly used for testing where automatic teardown is not available"""
+        try:
+            tuning_pod = await self.create_tuning_pod()
+            yield tuning_pod
+        finally:
+            await self.delete_tuning_pod(raise_if_not_found=False)
+
     @property
     def tuning_cpu(self) -> Optional[CPU]:
         """
@@ -4269,7 +4351,6 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
     def check_deployment_and_rollout(cls, values):
         if (not values.get('deployments')) and (not values.get('rollouts')):
             raise ValueError("No optimization target(s) were specified")
-
         return values
 
     @classmethod

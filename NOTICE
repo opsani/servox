@@ -518,7 +518,7 @@ https://pypi.org/project/certifi/
 Made available under the Mozilla Public License 2.0
 https://spdx.org/licenses/MPL-2.0
 
-python 3.8
+python 3.9
 Copyright 2001-2021 Python Software Foundation. All rights reserved.
 Copyright 2000 BeOpen.com. All rights reserved.
 Copyright 1995-2000 Corporation for National Research Initiatives. All rights reserved.
@@ -531,7 +531,7 @@ Starting with Python 3.8.6, examples, recipes, and other code in the documentati
 https://spdx.org/licenses/0BSD
 Some software incorporated into Python is under different licenses. The licenses are listed with code falling under that license.
 See Licenses and Acknowledgements for Incorporated Software for an incomplete list of these licenses.
-https://docs.python.org/3.8/license.html#otherlicenses
+https://docs.python.org/3.9/license.html#otherlicenses
 
 Typing Extensions – Backported and Experimental Type Hints for Python
 Copyright 2021, The Python Typing Team

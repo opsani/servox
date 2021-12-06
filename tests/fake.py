@@ -7,6 +7,7 @@ import fastapi
 import statesman
 
 import servo
+import servo.api
 
 
 class StateMachine(statesman.HistoryMixin, statesman.StateMachine):

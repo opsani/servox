@@ -8,7 +8,7 @@ import pathlib
 import random
 import socket
 import string
-from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Generator, Iterator, List, Optional, Tuple, Union
 
 import chevron
 import devtools
@@ -16,6 +16,7 @@ import fastapi
 import filelock
 import httpx
 import kubetest
+import kubetest.client
 import pytest
 import typer.testing
 import uvloop
@@ -687,47 +688,34 @@ def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.obj
 
     return _pod_loader
 
+@pytest.fixture()
+def kubetest_teardown(kube: kubetest.client.TestClient) -> Generator[kubetest.client.TestClient, None, None]:
+    """
+    Kubetest's default teardown assumes the namespace was created and applied manifests will be cleaned up when the ns is deleted
+
+    This teardown method only needs to be used if a pre-existing namespace was used
+    """
+    # this is teardown only, yield for test run
+    yield
+    for obj in kube.pre_registered:
+        obj.delete()
+
 # NOTE: kubetest does not support CRD or CR objects, rollout fixtures utilize kubectl for needed setup
-# NOTE: session scope doesnt work under xdist, rollout CRD setup has been factored to be idempotent so running it
-#        multiple times does not cause issues (https://github.com/pytest-dev/pytest-xdist/issues/271)
 @pytest.fixture
-async def install_rollout_crds(tmp_path_factory: pytest.TempPathFactory, subprocess, kubeconfig):
-    # Use lock file to ensure CRD setup doesn't fail due to multiple xdist runners trying to do it at the same time
-    # https://github.com/pytest-dev/pytest-xdist#making-session-scoped-fixtures-execute-only-once
+async def verify_rollout_crd(subprocess, kubeconfig):
+    """Verify applied CRDs are the latest version"""
 
-    # get the temp directory shared by all workers
-    root_tmp_dir = tmp_path_factory.getbasetemp().parent
-    lock_file = root_tmp_dir / "argo_rollout_crd_apply.lock"
-    with filelock.FileLock(str(lock_file)):
-        # NOTE: Rollout CRDs are picky about the installation namespace
-        ns_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "namespace", "argo-rollouts" ]
-        exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
-        if exit_code != 0:
-            ns_cmd[2] = "create"
-            exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
-            assert exit_code == 0, f"argo-rollouts namespace creation failed: {stderr}"
+    rollouts_version_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "deployment", "argo-rollouts", "-n", "argo-rollouts", "-o", "jsonpath='{.spec.template.spec.containers[0].image}'" ]
+    exit_code, stdout, stderr = await subprocess(" ".join(rollouts_version_cmd), print_output=True, timeout=None)
+    assert exit_code == 0, f"Unable to get argo-rollouts controller Deployment: {stderr}"
 
-        rollout_crd_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", "argo-rollouts", "-f", "https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml"]
-        exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
-        assert exit_code == 0, f"argo-rollouts crd apply failed: {stderr}"
+    async with httpx.AsyncClient() as client:
+        latest_version = (await client.get("https://api.github.com/repos/argoproj/argo-rollouts/releases/latest")).json().get('tag_name')
 
-        wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=available", "--timeout=60s", "-n", "argo-rollouts", "deployment", "argo-rollouts" ]
-        exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
-        assert exit_code == 0, f"argo-rollouts wait for CRD controller available failed: {stderr}"
-
-    # NOTE: under xdist, we're unable to guarantee all tests using the CRD have finished running prior to teardown
-    # yield # Tests run
-
-    # rollout_crd_cmd[2] = "delete"
-    # exit_code, _, stderr = await subprocess(" ".join(rollout_crd_cmd), print_output=True, timeout=None)
-    # assert exit_code == 0, f"argo-rollouts crd delete failed: {stderr}"
-
-    # ns_cmd[2] = "delete"
-    # exit_code, _, stderr = await subprocess(" ".join(ns_cmd), print_output=True, timeout=None)
-    # assert exit_code == 0, f"argo-rollouts namespace delete failed: {stderr}"
+    assert latest_version in stdout[0], f"Installed rollout controller image ({stdout[0]}) out of date (latest={latest_version})"
 
 @pytest.fixture
-async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, install_rollout_crds):
+async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, verify_rollout_crd):
     """
     Apply the manifest of the target rollout being tested against
 
