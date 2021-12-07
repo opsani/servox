@@ -44,7 +44,8 @@ jobs:
         run: |
           DOCKER_IMAGE=opsani/servox
           VERSION=noop
-          BUILD_ARGS=""
+          PYTHON_VERSION=`cat .python-version`
+          BUILD_ARGS="PYTHON_VERSION=${PYTHON_VERSION}"
           if [ "${{ github.event_name }}" = "schedule" ]; then
             VERSION=nightly
           elif [[ $GITHUB_REF == refs/tags/* ]]; then
@@ -62,7 +63,7 @@ jobs:
             MINOR=${VERSION%.*}
             MAJOR=${MINOR%.*}
             TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
-            BUILD_ARGS="SERVO_ENV=production"
+            BUILD_ARGS="${BUILD_ARGS}\nSERVO_ENV=production"
           fi
           echo ::set-output name=version::${VERSION}
           echo ::set-output name=tags::${TAGS}
