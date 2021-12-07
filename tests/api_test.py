@@ -39,8 +39,9 @@ class TestDiagnosticStates:
         assert state == servo.api.DiagnosticStates.stop
 
 
-from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status
+from servo.api import CommandResponse, MeasureParams, Status, descriptor_to_adjustments
 from servo.types import Adjustment, Control
+
 
 def _check_measure_parse(obj: CommandResponse):
     assert isinstance(obj, CommandResponse)

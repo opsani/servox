@@ -30,9 +30,9 @@ from tabulate import tabulate
 from timeago import format as timeago
 
 import servo
-from servo.logging import logs_path
 import servo.runner
 import servo.utilities.yaml
+
 
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
@@ -1155,7 +1155,7 @@ class ServoCLI(CLI):
                 "--no-diagnostics",
                 help="Do not poll the Opsani API for diagnostics",
                 envvar="NO_DIAGNOSTICS",
-            ),            
+            ),
             interactive: Optional[bool] = typer.Option(
                 None,
                 "--interactive",
@@ -1255,7 +1255,7 @@ class ServoCLI(CLI):
                 "--interactive",
                 "-i",
                 help="Ask for confirmation before executing operations",
-            ),            
+            ),
             run: bool = typer.Option(
                 False,
                 "--run",
@@ -1503,7 +1503,7 @@ class ServoCLI(CLI):
             if ready:
                 if run:
                     poll = not no_poll
-                    diagnostics = not no_diagnostics                    
+                    diagnostics = not no_diagnostics
                     servo.runner.AssemblyRunner(context.assembly).run(poll=poll, diagnostics=diagnostics, interactive=bool(interactive))
                 elif not exit_on_success:
                     return

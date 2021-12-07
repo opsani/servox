@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import abc
-import asyncio
 import copy
 import datetime
 import enum
 import json
-import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import aiofiles
@@ -17,9 +15,9 @@ import httpx
 import pydantic
 
 import servo.errors
-from servo.logging import logs_path
 import servo.types
 import servo.utilities
+from servo.logging import logs_path
 
 USER_AGENT = "github.com/opsani/servox"
 
@@ -90,7 +88,7 @@ class Request(pydantic.BaseModel):
     class Config:
         json_encoders = {
             Events: lambda v: str(v),
-        }   
+        }
 class Status(pydantic.BaseModel):
     status: Statuses
     message: Optional[str] = None
@@ -210,7 +208,7 @@ class Mixin(abc.ABC):
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
-            raise ValueError(f"unknown error status: \"{status.status}\"")    
+            raise ValueError(f"unknown error status: \"{status.status}\"")
 
     def progress_request(
         self,
@@ -335,18 +333,18 @@ class Mixin(abc.ABC):
                 except pydantic.ValidationError as error:
                     # Should not raise due to improperly set diagnostic states
                     self.logger.trace(f"Improperly set diagnostic state {error}")
-                    return DiagnosticStates.withhold                        
+                    return DiagnosticStates.withhold
 
             except httpx.HTTPError as error:
                 # Should not raise on errors due to unset diagnostic states
                 if error.response.status_code == 404:
-                    self.logger.trace(f"Withholding diagnostics sending due to not set")   
-                    return DiagnosticStates.withhold                     
+                    self.logger.trace(f"Withholding diagnostics sending due to not set")
+                    return DiagnosticStates.withhold
                 else:
                     self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while requesting diagnostics: {error}")
                     self.logger.trace(_redacted_to_curl(error.request))
                     raise
-                                     
+
 
 
     async def _post_diagnostics(self, diagnostic_data: Diagnostics) -> Status:
