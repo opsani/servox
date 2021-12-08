@@ -57,6 +57,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: CPU
     memory: Memory
+    env: list[servo.EnvironmentSetting]
     static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
     envoy_sidecar_image: str = ENVOY_SIDECAR_IMAGE_TAG
@@ -111,6 +112,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     cpu=self.cpu,
                     memory=self.memory,
                     static_environment_variables=self.static_environment_variables,
+                    env=self.env,
                 )
             ],
         )
