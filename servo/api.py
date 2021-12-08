@@ -336,15 +336,13 @@ class Mixin(abc.ABC):
                     return DiagnosticStates.withhold
 
             except httpx.HTTPError as error:
-                # Should not raise on errors due to unset diagnostic states
+                # Should not raise on errors due to unset diagnostic states or /assets API issues?
                 if error.response.status_code == 404:
                     self.logger.trace(f"Withholding diagnostics sending due to not set")
-                    return DiagnosticStates.withhold
                 else:
                     self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while requesting diagnostics: {error}")
                     self.logger.trace(_redacted_to_curl(error.request))
-                    raise
-
+                return DiagnosticStates.withhold
 
 
     async def _post_diagnostics(self, diagnostic_data: Diagnostics) -> Status:

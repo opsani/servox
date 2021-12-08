@@ -198,6 +198,7 @@ async def test_diagnostics_request(monkeypatch, optimizer: servo.configuration.O
     ).mock(return_value=httpx.Response(200, text=f'{{"data": "WITHHOLD"}}'))
     request = await servo_runner._diagnostics_request()
     assert isinstance(request, servo.api.DiagnosticStates)
+    assert request == servo.api.DiagnosticStates.withhold
 
 @respx.mock
 async def test_diagnostics_post(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
@@ -211,7 +212,7 @@ async def test_diagnostics_post(monkeypatch, optimizer: servo.configuration.Opti
 
     put = respx.put(
         "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/assets/opsani.com/diagnostics-output"
-    ).mock(return_value=httpx.Response(200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'))
+    ).mock(return_value=httpx.Response(200, text=f'{{"status": "ok"}}'))
     diagnostic_data = servo.api.Diagnostics(configmap={'foo': 'bar'}, logs={'foo': 'bar'})
     response = await servo_runner._post_diagnostics(diagnostic_data)
 
@@ -230,7 +231,7 @@ async def test_diagnostics_reset(monkeypatch, optimizer: servo.configuration.Opt
 
     put = respx.put(
         "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/assets/opsani.com/diagnostics-check"
-    ).mock(return_value=httpx.Response(200, text=f'{{"status": "{servo.api.OptimizerStatuses.ok}"}}'))
+    ).mock(return_value=httpx.Response(200, text=f'{{"status": "ok"}}'))
     response = await servo_runner._reset_diagnostics()
 
     assert put.called
