@@ -3,8 +3,7 @@ import decimal
 import enum
 import functools
 import pydantic
-import pydantic.typing
-from typing import Any, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast
 
 from .core import BaseModel, HumanReadable, Numeric
 
@@ -411,7 +410,7 @@ def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
     else:
         return decimal.Decimal(str(float(step))) % decimal.Decimal(str(float(value))) == 0
 
-def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[callable[[Numeric], str]] = None) -> tuple(str, str):
+def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None) -> tuple[str, str]:
     if in_repr is None:
         # return string identity by default
         in_repr = lambda x: str(x)
@@ -480,7 +479,7 @@ class EnvironmentSetting(abc.ABC):
         ...
 
     @classmethod
-    def __get_validators__(cls: "EnvironmentSetting") -> pydantic.typing.CallableGenerator:
+    def __get_validators__(cls: "EnvironmentSetting") -> Generator[Callable[..., Any], None, None]:
         yield cls.validate
 
     @classmethod

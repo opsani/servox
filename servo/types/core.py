@@ -21,7 +21,6 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
-    cast,
     runtime_checkable,
 )
 

@@ -12,7 +12,7 @@ import pytest
 import servo
 import servo.connectors.kubernetes
 import tests.helpers
-from servo.types import _is_step_aligned, _suggest_step_aligned_values
+from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
 
 pytestmark = [
     pytest.mark.asyncio,
