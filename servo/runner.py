@@ -198,7 +198,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         while self._running:
             try:
                 self.logger.trace("Polling for diagnostics request")
-                
+
                 request = await self._diagnostics_request()
 
                 if request == servo.api.DiagnosticStates.withhold:
@@ -217,10 +217,10 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     raise
 
                 await asyncio.sleep(10)
-                
+
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
-                raise error     
+                raise error
 
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
@@ -255,7 +255,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     def run_main_loop(self, diagnostics: bool = True) -> None:
         if self._main_loop_task:
             self._main_loop_task.cancel()
-        
+
         if self._diagnostics_loop_task:
             self._diagnostics_loop_task.cancel()
 
@@ -268,14 +268,14 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
                 raise error  # Ensure that we surface the error for handling
 
-        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")        
+        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
-        
+
         if diagnostics:
             self._diagnostics_loop_task = asyncio.create_task(self.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
             self._diagnostics_loop_task.add_done_callback(_reraise_if_necessary)
         else:
-            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")                    
+            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
     async def run(self, *, poll: bool = True, diagnostics: bool = True) -> None:
         self._running = True
