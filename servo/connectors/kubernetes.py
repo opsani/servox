@@ -2859,7 +2859,10 @@ class CPU(servo.CPU):
         # Always return Core values in units of cores no matter how small
         for field in ("min", "max", "step", "value"):
             value: Optional[Core] = getattr(self, field)
-            o_dict["cpu"][field] = "{0:f}".format(value) if value is not None else None
+            # TODO switch back to string for sending to API
+            # o_dict["cpu"][field] = "{0:f}".format(value) if value is not None else None
+            o_dict["cpu"][field] = float(value) if value is not None else None
+
         return o_dict
 
 
