@@ -5,7 +5,7 @@ import functools
 import pydantic
 from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast
 
-from .core import BaseModel, HumanReadable, Numeric
+from .core import BaseModel, HumanReadable, Numeric, Unit
 
 class Setting(BaseModel, abc.ABC):
     """Setting is an abstract base class for models that represent adjustable
@@ -301,6 +301,9 @@ class CPU(RangeSetting):
     type derived thereof.
     """
 
+    def __init__(self, *args, **kwargs):
+        return super().__init__(unit=Unit.cores, *args, **kwargs)
+
     name = pydantic.Field(
         "cpu", const=True, description="Identifies the setting as a CPU setting."
     )
@@ -329,6 +332,9 @@ class Memory(RangeSetting):
     heuristics. Always representing memory resources as a Memory object or
     type derived thereof.
     """
+
+    def __init__(self, *args, **kwargs):
+        return super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
     name = pydantic.Field(
         "mem", const=True, description="Identifies the setting as a Memory setting."
@@ -477,6 +483,13 @@ class EnvironmentSetting(abc.ABC):
     @abc.abstractmethod
     def value(self) -> Optional[Numeric]:
         ...
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: dict[str, Any]) -> None:
+        sub_field_schemas = [EnvironmentRangeSetting.schema(), EnvironmentEnumSetting.schema()]
+        field_schema.update(
+            anyOf=sub_field_schemas
+        )
 
     @classmethod
     def __get_validators__(cls: "EnvironmentSetting") -> Generator[Callable[..., Any], None, None]:

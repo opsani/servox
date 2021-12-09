@@ -72,7 +72,7 @@ class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         assert list(config.dict().keys()) == [
-            'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory',
+            'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory', 'env',
             'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement'
         ]
 

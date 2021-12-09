@@ -881,7 +881,7 @@ class TestDataPoint:
         assert repr(data_point) == "DataPoint(throughput (rpm), (2020-01-21 12:00:01, 31337.0))"
 
 
-from servo.types import _is_step_aligned
+from servo.types.settings import _is_step_aligned
 
 
 @pytest.mark.parametrize(

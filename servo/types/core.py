@@ -584,6 +584,8 @@ class Unit(str, enum.Enum):
     percentage = "%"
     milliseconds = "ms"
     bytes = "bytes"
+    gibibytes = "GiB"
+    cores = "cores"
     requests_per_minute = "rpm"
     requests_per_second = "rps"
 
