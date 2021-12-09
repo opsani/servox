@@ -13,7 +13,6 @@ from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Generator, Ite
 import chevron
 import devtools
 import fastapi
-import filelock
 import httpx
 import kubetest
 import kubetest.client
