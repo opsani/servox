@@ -84,9 +84,11 @@ class TestConfig:
             "container: main\n"
             "service: app\n"
             "cpu:\n"
+            "  unit: cores\n"
             "  min: 250m\n"
             "  max: '4'\n"
             "memory:\n"
+            "  unit: GiB\n"
             "  min: 256.0Mi\n"
             "  max: 4.0Gi\n"
         )
@@ -96,16 +98,17 @@ class TestConfig:
         config.__optimizer__ = None
 
     def test_generate_kubernetes_config(self) -> None:
-        opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
-            namespace="test",
-            deployment="fiber-http",
-            container="fiber-http",
-            service="fiber-http",
-            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
-            memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
-            static_environment_variables={"FOO": "BAR", "BAZ": 1},
-            __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
-        )
+        kwargs = {}
+        kwargs.update(namespace="test")
+        kwargs.update(deployment="fiber-http")
+        kwargs.update(container="fiber-http")
+        kwargs.update(service="fiber-http")
+        kwargs.update(cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"))
+        kwargs.update(memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"))
+        kwargs.update(static_environment_variables={"FOO": "BAR", "BAZ": 1})
+        kwargs.update(__optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"))
+        opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(**kwargs)
+
         kubernetes_config = opsani_dev_config.generate_kubernetes_config()
         assert kubernetes_config.namespace == "test"
         assert kubernetes_config.deployments[0].namespace == "test"

@@ -287,7 +287,8 @@ class RangeSetting(Setting):
     def __opsani_repr__(self) -> dict:
         return {
             self.name: self.dict(
-                include={"type", "unit", "min", "max", "step", "pinned", "value"}
+                include={"type", "unit", "min", "max", "step", "pinned", "value"},
+                exclude_none=True
             )
         }
 
@@ -302,6 +303,8 @@ class CPU(RangeSetting):
     """
 
     def __init__(self, *args, **kwargs):
+        if "unit" in kwargs:
+            return super().__init__(*args, **kwargs)
         return super().__init__(unit=Unit.cores, *args, **kwargs)
 
     name = pydantic.Field(
@@ -334,6 +337,8 @@ class Memory(RangeSetting):
     """
 
     def __init__(self, *args, **kwargs):
+        if "unit" in kwargs:
+            return super().__init__(*args, **kwargs)
         return super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
     name = pydantic.Field(

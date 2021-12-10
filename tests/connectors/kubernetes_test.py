@@ -18,6 +18,7 @@ from kubernetes_asyncio import client
 from pydantic import BaseModel
 from pydantic.error_wrappers import ValidationError
 
+import servo
 import servo.connectors.kubernetes
 from servo.connectors.kubernetes import (
     CPU,
@@ -703,25 +704,26 @@ class TestReplicas:
     def replicas(self) -> servo.Replicas:
         return servo.Replicas(min=1, max=4)
 
-    def test_parsing(self, replicas) -> None:
+    def test_parsing(self, replicas: servo.Replicas) -> None:
         assert {
             "name": "replicas",
             "type": "range",
             "min": 1,
             "max": 4,
             "step": 1,
+            "unit": None,
             "value": None,
             "pinned": False,
         } == replicas.dict()
 
-    def test_to___opsani_repr__(self, replicas) -> None:
+    def test_to___opsani_repr__(self, replicas: servo.Replicas) -> None:
         replicas.value = 3
         assert replicas.__opsani_repr__() == {
             "replicas": {
-                "max": 4.0,
-                "min": 1.0,
+                "max": 4,
+                "min": 1,
                 "step": 1,
-                "value": 3.0,
+                "value": 3,
                 "type": "range",
                 "pinned": False,
             }
@@ -733,7 +735,7 @@ class TestCPU:
     def cpu(self) -> CPU:
         return CPU(min="125m", max="4000m", step="125m")
 
-    def test_parsing(self, cpu) -> None:
+    def test_parsing(self, cpu: CPU) -> None:
         assert {
             "name": "cpu",
             "type": "range",
@@ -741,6 +743,7 @@ class TestCPU:
             "max": 4000,
             "step": 125,
             "value": None,
+            "unit": "cores",
             "pinned": False,
             'request': None,
             'limit': None,
@@ -754,7 +757,7 @@ class TestCPU:
             ]
         } == cpu.dict()
 
-    def test_to___opsani_repr__(self, cpu) -> None:
+    def test_to___opsani_repr__(self, cpu: CPU) -> None:
         cpu.value = "3"
         assert cpu.__opsani_repr__() == {
             "cpu": {
@@ -762,6 +765,7 @@ class TestCPU:
                 "min": 0.125,
                 "step": 0.125,
                 "value": 3.0,
+                "unit": "cores",
                 "type": "range",
                 "pinned": False,
             }
@@ -825,12 +829,13 @@ class TestMemory:
     def memory(self) -> Memory:
         return Memory(min="0.25 GiB", max="4.0 GiB", step="128 MiB")
 
-    def test_parsing(self, memory) -> None:
+    def test_parsing(self, memory: Memory) -> None:
         assert {
             'name': 'mem',
             'type': 'range',
             'pinned': False,
             'value': None,
+            'unit': 'GiB',
             'min': 268435456,
             'max': 4294967296,
             'step': 134217728,
@@ -846,7 +851,7 @@ class TestMemory:
             ],
         } == memory.dict()
 
-    def test_to___opsani_repr__(self, memory) -> None:
+    def test_to___opsani_repr__(self, memory: Memory) -> None:
         memory.value = "3.0 GiB"
         assert memory.__opsani_repr__() == {
             "mem": {
@@ -854,6 +859,7 @@ class TestMemory:
                 "min": 0.25,
                 "step": 0.125,
                 "value": 3.0,
+                "unit": "GiB",
                 "type": "range",
                 "pinned": False,
             }
@@ -867,6 +873,7 @@ class TestMemory:
                 "min": 0.5,
                 "step": 0.125,
                 "value": 3.0,
+                "unit": "GiB",
                 "type": "range",
                 "pinned": False,
             }
