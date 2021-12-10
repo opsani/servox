@@ -54,9 +54,11 @@ async def test_generate_opsani_dev(project_path: pathlib.Path, subprocess) -> No
             "  container: main\n"
             "  service: app\n"
             "  cpu:\n"
+            "    unit: cores\n"
             "    min: 250m\n"
             "    max: '4'\n"
             "  memory:\n"
+            "    unit: GiB\n"
             "    min: 256.0Mi\n"
             "    max: 4.0Gi\n"
         )
