@@ -2824,6 +2824,9 @@ class Core(decimal.Decimal):
     def human_readable(self) -> str:
         return str(self)
 
+    def __opsani_repr__(self) -> float:
+        return float(self)
+
     @property
     def millicores(self) -> decimal.Decimal:
         return self * 1000
@@ -2861,7 +2864,7 @@ class CPU(servo.CPU):
             value: Optional[Core] = getattr(self, field)
             # TODO switch back to string for sending to API
             # o_dict["cpu"][field] = "{0:f}".format(value) if value is not None else None
-            o_dict["cpu"][field] = float(value) if value is not None else None
+            o_dict["cpu"][field] = value.__opsani_repr__() if value is not None else None
 
         return o_dict
 
@@ -2893,6 +2896,9 @@ class ShortByteSize(pydantic.ByteSize):
             sup = sup[0:-1]
         return sup
 
+    def __opsani_repr__(self) -> float:
+        return float(decimal.Decimal(self) / GiB)
+
 
 class Memory(servo.Memory):
     """
@@ -2915,8 +2921,8 @@ class Memory(servo.Memory):
 
         # normalize values into floating point Gibibyte units
         for field in ("min", "max", "step", "value"):
-            value = getattr(self, field)
-            o_dict["mem"][field] = float(value) / GiB if value is not None else None
+            value: Optional[ShortByteSize] = getattr(self, field)
+            o_dict["mem"][field] = value.__opsani_repr__() if value is not None else None
         return o_dict
 
 

@@ -1,4 +1,4 @@
-# TODO metrics server timestamps don't line up with time of query
+# TODO (may not require action) metrics server timestamps don't line up with time of query
 
 import asyncio
 from collections import defaultdict
@@ -82,7 +82,7 @@ class KubeMetricsConfiguration(servo.BaseConfiguration):
     container: Optional[str] = pydantic.Field(default=None, description="Name of the target resource container")
     # Optional config
     metrics_to_collect: List[SupportedKubeMetrics] = pydantic.Field(
-        default=[m.value for m in SupportedKubeMetrics], # TODO test servo schema
+        default=[m.value for m in SupportedKubeMetrics],
         description="Use this configuration to select which metrics are reported from this connector. Defaults to all supported metrics"
     )
     metric_collection_frequency: servo.Duration = pydantic.Field(
@@ -256,7 +256,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                         if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
                             pod: Pod = next((p for p in await target_resource.get_pods() if p.name == pod_name), None)
                             if pod is None:
-                                # TODO may need to skip these with continue depending on whether this comes up in testing
+                                # TODO (improvement) graceful fallback if k8s connectoer operations fail
                                 raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
                             restart_count = await pod.get_restart_count()
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value, value=restart_count)
@@ -287,7 +287,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                                 cpu_usage = Core.parse(target_container["usage"]["cpu"])
                                 cpu_saturation = 100 * cpu_usage / cpu_request
                             else:
-                                cpu_saturation = None # TODO return "NaN" string instead?
+                                cpu_saturation = None # TODO (clarify) return "NaN" string instead?
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_SATURATION.value, value=cpu_saturation)
 
                         mem_resources = target_resource_container.get_resource_requirements("memory")
@@ -311,7 +311,8 @@ class KubeMetricsConnector(servo.BaseConnector):
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
 
                 # Retrieve latest tuning state
-                target_resource_tuning_pod: Pod = next((p for p in await target_resource.get_pods() if p.name == f"{target_resource.name}-tuning"), None)
+                target_resource_tuning_pod_name = f"{target_resource.name}-tuning"
+                target_resource_tuning_pod: Pod = next((p for p in await target_resource.get_pods() if p.name == target_resource_tuning_pod_name), None)
                 if target_resource_tuning_pod:
                     target_resource_tuning_pod_container = _get_target_resource_container(self.config, target_resource_tuning_pod)
                     cpu_resources = target_resource_tuning_pod_container.get_resource_requirements("cpu")
@@ -321,12 +322,19 @@ class KubeMetricsConnector(servo.BaseConnector):
                     cpu_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
                     mem_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
 
+                restart_count = None
+                if SupportedKubeMetrics.TUNING_POD_RESTART_COUNT in target_metrics:
+                    if target_resource_tuning_pod is not None:
+                        restart_count = await target_resource_tuning_pod.get_restart_count()
+                    else:
+                        restart_count = 0
+
                 if any((m in TUNING_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
                     tuning_metrics = await cust_obj_api.list_namespaced_custom_object(
                         label_selector=f"{label_selector_str},opsani_role=tuning",
                         **METRICS_CUSTOM_OJBECT_CONST_ARGS
                     )
-                    # TODO: raise error if more than 1 tuning pod?
+                    # TODO: (potential improvement) raise error if more than 1 tuning pod?
                     for pod_entry in tuning_metrics["items"]:
                         pod_name = pod_entry["metadata"]["name"]
                         if pod_name != f"{target_resource.name}-tuning":
@@ -336,12 +344,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                             _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
                         )
 
-                        # TODO additional logic to get this metric without custom object response
-                        if SupportedKubeMetrics.TUNING_POD_RESTART_COUNT in target_metrics:
-                            if target_resource_tuning_pod is not None:
-                                restart_count = await target_resource_tuning_pod.get_restart_count()
-                            else:
-                                restart_count = None
+                        if restart_count is not None:
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value, value=restart_count)
 
                         target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
@@ -391,6 +394,15 @@ class KubeMetricsConnector(servo.BaseConnector):
                                 mem_saturation = None
                             _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_SATURATION.value, value=mem_saturation)
 
+                elif restart_count is not None:
+                    _append_data_point(
+                        datapoints_dicts=datapoints_dicts,
+                        pod_name=target_resource_tuning_pod_name,
+                        time=datetime.now(),
+                        metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value,
+                        value=restart_count
+                    )
+
             sleep_time = max(0, self.config.metric_collection_frequency.total_seconds() - (time.time() - iteration_start_time))
             await asyncio.sleep(sleep_time)
 
@@ -404,7 +416,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                     id=pod_name
                 ))
 
-        # TODO
+        # TODO (fix here and other connectors)
         # await asyncio.sleep(control.delay.total_seconds())
 
         measurement = servo.Measurement(readings=readings)
@@ -420,7 +432,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                     f"(found {', '.join(c['name'] for c in pod_metrics_list_item['containers'])})"
                 )
             return target_container
-        # TODO exclude opsani-envoy container by default?
+        # TODO (improvement) exclude opsani-envoy container by default?
         elif len(pod_metrics_list_item["containers"]) > 1:
             raise RuntimeError(
                 f"Found multiple containers ({', '.join((c['name'] for c in pod_metrics_list_item['containers']))}) in "
@@ -430,8 +442,10 @@ class KubeMetricsConnector(servo.BaseConnector):
             return pod_metrics_list_item["containers"][0]
 
 def _append_data_point(
-    datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]], pod_name: str, metric_name: str, time: datetime, value: Any
+    datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]], pod_name: str, metric_name: str, time: datetime, value: Union[Core, ShortByteSize, Any]
 ):
+    if isinstance(value, (Core, ShortByteSize)):
+        value = value.__opsani_repr__()
     datapoints_dicts[metric_name][pod_name].append(
         DataPoint(
             metric=_name_to_metric(metric_name),
@@ -461,7 +475,7 @@ def _get_target_resource_container(
         if target_resource_container is None:
             raise RuntimeError(f"Unable to locate container {config.container} in {target_resource.obj.kind} {target_resource.name}")
     elif len(target_resource.containers) > 1:
-        # TODO can support this with ID append
+        # TODO (improvement) can support this with ID append
         raise RuntimeError(f"Unable to derive metrics for multi-container resources")
     else:
         target_resource_container: Container = target_resource.containers[0]
