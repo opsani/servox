@@ -81,7 +81,6 @@ pytest-vscodedebug = "^0.1.0"
 pytest-html = "^3.1.1"
 bandit = "^1.7.0"
 watchgod = "^0.7"
-filelock = "^3.0.12"
 statesman = "^1.0.2.post1"
 
 [tool.poetry.scripts]
