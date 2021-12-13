@@ -1082,12 +1082,16 @@ class Pod(KubernetesModel):
         Returns:
             The total number of Container restarts.
         """
-        status = await self.get_status()
-        if status.container_statuses is None:
+        await self.refresh()
+        return self.restart_count
+
+    @property
+    def restart_count(self) -> int:
+        if self.obj.status is None or self.obj.status.container_statuses is None:
             return 0
 
         total = 0
-        for container_status in status.container_statuses:
+        for container_status in self.obj.status.container_statuses:
             total += container_status.restart_count
 
         return total

@@ -3,16 +3,19 @@ from __future__ import annotations
 import datetime
 from typing import Optional
 
+import servo
+
 __all__ = (
-    "BaseError",
-    "ServoError",
-    "ConnectorError",
-    "EventError",
-    "EventCancelledError",
     "AdjustmentFailedError",
     "AdjustmentRejectedError",
-    "UnexpectedEventError",
+    "BaseError",
+    "ConnectorError",
     "EventAbortedError",
+    "EventCancelledError",
+    "EventError",
+    "MeasurementFailedError",
+    "ServoError",
+    "UnexpectedEventError",
 )
 
 class BaseError(RuntimeError):
@@ -96,6 +99,14 @@ class UnexpectedEventError(EventError):
 
 class EventCancelledError(EventError):
     """The event was cancelled and processing was halted."""
+
+class MeasurementFailedError(EventError):
+    """A failure occurred while attempting to perform an measurement.
+
+    Measurement failures are potentially recoverable errors in which the
+    measurement was not fully collected due to a transient failure, lost
+    connection, interruption, etc. and be retried by the optimizer.
+    """
 
 class AdjustmentFailedError(EventError):
     """A failure occurred while attempting to perform an adjustment.

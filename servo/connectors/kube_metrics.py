@@ -30,6 +30,7 @@ from servo.types import DataPoint, Metric, TimeSeries
 
 import kubernetes_asyncio.client
 import kubernetes_asyncio.client.api_client
+import kubernetes_asyncio.client.exceptions
 import kubernetes_asyncio.config
 import kubernetes_asyncio.config.kube_config
 
@@ -232,176 +233,13 @@ class KubeMetricsConnector(servo.BaseConnector):
         while not progress.finished:
             iteration_start_time = time.time()
 
-            # Retrieve latest main state
-            await target_resource.refresh()
-            target_resource_container = _get_target_resource_container(self.config, target_resource)
-
-            async with kubernetes_asyncio.client.api_client.ApiClient() as api:
-                cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
-                label_selector_str = selector_string(target_resource.match_labels)
-
-                if any((m in MAIN_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
-                    main_metrics = await cust_obj_api.list_namespaced_custom_object(
-                        label_selector=f"{label_selector_str},opsani_role!=tuning",
-                        **METRICS_CUSTOM_OJBECT_CONST_ARGS
-                    )
-                    # NOTE items can be empty list
-                    for pod_entry in main_metrics["items"]:
-                        pod_name = pod_entry["metadata"]["name"]
-                        timestamp = isoparse(pod_entry["timestamp"])
-                        _append_data_point_for_pod = functools.partial(
-                            _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
-                        )
-
-                        if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
-                            pod: Pod = next((p for p in await target_resource.get_pods() if p.name == pod_name), None)
-                            if pod is None:
-                                # TODO (improvement) graceful fallback if k8s connectoer operations fail
-                                raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
-                            restart_count = await pod.get_restart_count()
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value, value=restart_count)
-
-                        target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
-                        if SupportedKubeMetrics.MAIN_CPU_USAGE in target_metrics:
-                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_USAGE.value, value=cpu_usage)
-
-                        if SupportedKubeMetrics.MAIN_MEM_USAGE in target_metrics:
-                            mem_usage=ShortByteSize.validate(target_container["usage"]["memory"])
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_USAGE.value, value=mem_usage)
-
-                        cpu_resources = target_resource_container.get_resource_requirements("cpu")
-                        if SupportedKubeMetrics.MAIN_CPU_REQUEST in target_metrics:
-                            if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
-                                cpu_request = Core.parse(cpu_request)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_REQUEST.value, value=cpu_request)
-
-                        if SupportedKubeMetrics.MAIN_CPU_LIMIT in target_metrics:
-                            if (cpu_limit := cpu_resources[ResourceRequirement.limit]) is not None:
-                                cpu_limit = Core.parse(cpu_limit)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_LIMIT.value, value=cpu_limit)
-
-                        if SupportedKubeMetrics.MAIN_CPU_SATURATION in target_metrics:
-                            if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
-                                cpu_request = Core.parse(cpu_request)
-                                cpu_usage = Core.parse(target_container["usage"]["cpu"])
-                                cpu_saturation = 100 * cpu_usage / cpu_request
-                            else:
-                                cpu_saturation = None # TODO (clarify) return "NaN" string instead?
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_SATURATION.value, value=cpu_saturation)
-
-                        mem_resources = target_resource_container.get_resource_requirements("memory")
-                        if SupportedKubeMetrics.MAIN_MEM_REQUEST in target_metrics:
-                            if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
-                                mem_request = ShortByteSize.validate(mem_request)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_REQUEST.value, value=mem_request)
-
-                        if SupportedKubeMetrics.MAIN_MEM_LIMIT in target_metrics:
-                            if (mem_limit := mem_resources[ResourceRequirement.limit]) is not None:
-                                mem_limit = ShortByteSize.validate(mem_limit)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_LIMIT.value, value=mem_limit)
-
-                        if SupportedKubeMetrics.MAIN_MEM_SATURATION in target_metrics:
-                            if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
-                                mem_request = ShortByteSize.validate(mem_request)
-                                mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
-                                mem_saturation = 100 * mem_usage / mem_request
-                            else:
-                                mem_saturation = None
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
-
-                # Retrieve latest tuning state
-                target_resource_tuning_pod_name = f"{target_resource.name}-tuning"
-                target_resource_tuning_pod: Pod = next((p for p in await target_resource.get_pods() if p.name == target_resource_tuning_pod_name), None)
-                if target_resource_tuning_pod:
-                    target_resource_tuning_pod_container = _get_target_resource_container(self.config, target_resource_tuning_pod)
-                    cpu_resources = target_resource_tuning_pod_container.get_resource_requirements("cpu")
-                    mem_resources = target_resource_container.get_resource_requirements("memory")
+            try:
+                await self.periodic_measure(target_resource=target_resource, target_metrics=target_metrics, datapoints_dicts=datapoints_dicts)
+            except kubernetes_asyncio.client.exceptions.ApiException as ae:
+                if ae.status == 404:
+                    raise servo.MeasurementFailedError(f"Resource not found, failing measurement: {ae.body}") from ae
                 else:
-                    target_resource_tuning_pod_container = None
-                    cpu_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
-                    mem_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
-
-                restart_count = None
-                if SupportedKubeMetrics.TUNING_POD_RESTART_COUNT in target_metrics:
-                    if target_resource_tuning_pod is not None:
-                        restart_count = await target_resource_tuning_pod.get_restart_count()
-                    else:
-                        restart_count = 0
-
-                if any((m in TUNING_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
-                    tuning_metrics = await cust_obj_api.list_namespaced_custom_object(
-                        label_selector=f"{label_selector_str},opsani_role=tuning",
-                        **METRICS_CUSTOM_OJBECT_CONST_ARGS
-                    )
-                    # TODO: (potential improvement) raise error if more than 1 tuning pod?
-                    for pod_entry in tuning_metrics["items"]:
-                        pod_name = pod_entry["metadata"]["name"]
-                        if pod_name != f"{target_resource.name}-tuning":
-                            raise RuntimeError(f"Got unexpected tuning pod name {pod_name}")
-                        timestamp = isoparse(pod_entry["timestamp"])
-                        _append_data_point_for_pod = functools.partial(
-                            _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
-                        )
-
-                        if restart_count is not None:
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value, value=restart_count)
-
-                        target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
-                        if SupportedKubeMetrics.TUNING_CPU_USAGE in target_metrics:
-                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_USAGE.value, value=cpu_usage)
-
-                        if SupportedKubeMetrics.TUNING_MEM_USAGE in target_metrics:
-                            mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_USAGE.value, value=mem_usage)
-
-                        if SupportedKubeMetrics.TUNING_CPU_REQUEST in target_metrics:
-                            if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
-                                cpu_request = Core.parse(cpu_request)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_REQUEST.value, value=cpu_request)
-
-                        if SupportedKubeMetrics.TUNING_CPU_LIMIT in target_metrics:
-                            if (cpu_limit := cpu_resources[ResourceRequirement.limit]) is not None:
-                                cpu_limit = Core.parse(cpu_limit)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_LIMIT.value, value=cpu_limit)
-
-                        if SupportedKubeMetrics.TUNING_CPU_SATURATION in target_metrics:
-                            if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
-                                cpu_request = Core.parse(cpu_request)
-                                cpu_usage = Core.parse(target_container["usage"]["cpu"])
-                                cpu_saturation = 100 * cpu_usage / cpu_request
-                            else:
-                                cpu_saturation = None
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_SATURATION.value, value=cpu_saturation)
-
-                        if SupportedKubeMetrics.TUNING_MEM_REQUEST in target_metrics:
-                            if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
-                                mem_request = ShortByteSize.validate(mem_request)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_REQUEST.value, value=mem_request)
-
-                        if SupportedKubeMetrics.TUNING_MEM_LIMIT in target_metrics:
-                            if (mem_limit := mem_resources[ResourceRequirement.limit]) is not None:
-                                mem_limit = ShortByteSize.validate(mem_limit)
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_LIMIT.value, value=mem_limit)
-
-                        if SupportedKubeMetrics.TUNING_MEM_SATURATION in target_metrics:
-                            if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
-                                mem_request = ShortByteSize.validate(mem_request)
-                                mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
-                                mem_saturation = 100 * mem_usage / mem_request
-                            else:
-                                mem_saturation = None
-                            _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_SATURATION.value, value=mem_saturation)
-
-                elif restart_count is not None:
-                    _append_data_point(
-                        datapoints_dicts=datapoints_dicts,
-                        pod_name=target_resource_tuning_pod_name,
-                        time=datetime.now(),
-                        metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value,
-                        value=restart_count
-                    )
+                    raise
 
             sleep_time = max(0, self.config.metric_collection_frequency.total_seconds() - (time.time() - iteration_start_time))
             await asyncio.sleep(sleep_time)
@@ -440,6 +278,183 @@ class KubeMetricsConnector(servo.BaseConnector):
             )
         else:
             return pod_metrics_list_item["containers"][0]
+
+    async def periodic_measure(
+        self,
+        target_resource: Union[Deployment, Rollout],
+        target_metrics: list[SupportedKubeMetrics],
+        datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]],
+    ) -> None:
+        # Retrieve latest main state
+        await target_resource.refresh()
+        target_resource_container = _get_target_resource_container(self.config, target_resource)
+
+        async with kubernetes_asyncio.client.api_client.ApiClient() as api:
+            cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
+            label_selector_str = selector_string(target_resource.match_labels)
+
+            if any((m in MAIN_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
+                main_metrics = await cust_obj_api.list_namespaced_custom_object(
+                    label_selector=f"{label_selector_str},opsani_role!=tuning",
+                    **METRICS_CUSTOM_OJBECT_CONST_ARGS
+                )
+                # NOTE items can be empty list
+                for pod_entry in main_metrics["items"]:
+                    pod_name = pod_entry["metadata"]["name"]
+                    timestamp = isoparse(pod_entry["timestamp"])
+                    _append_data_point_for_pod = functools.partial(
+                        _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
+                    )
+
+                    if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
+                        pod: Pod = next((p for p in await target_resource.get_pods() if p.name == pod_name), None)
+                        if pod is None:
+                            # TODO (improvement) graceful fallback if k8s connectoer operations fail
+                            raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
+                        restart_count = await pod.restart_count
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value, value=restart_count)
+
+                    target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
+                    if SupportedKubeMetrics.MAIN_CPU_USAGE in target_metrics:
+                        cpu_usage = Core.parse(target_container["usage"]["cpu"])
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_USAGE.value, value=cpu_usage)
+
+                    if SupportedKubeMetrics.MAIN_MEM_USAGE in target_metrics:
+                        mem_usage=ShortByteSize.validate(target_container["usage"]["memory"])
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_USAGE.value, value=mem_usage)
+
+                    cpu_resources = target_resource_container.get_resource_requirements("cpu")
+                    if SupportedKubeMetrics.MAIN_CPU_REQUEST in target_metrics:
+                        if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
+                            cpu_request = Core.parse(cpu_request)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_REQUEST.value, value=cpu_request)
+
+                    if SupportedKubeMetrics.MAIN_CPU_LIMIT in target_metrics:
+                        if (cpu_limit := cpu_resources[ResourceRequirement.limit]) is not None:
+                            cpu_limit = Core.parse(cpu_limit)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_LIMIT.value, value=cpu_limit)
+
+                    if SupportedKubeMetrics.MAIN_CPU_SATURATION in target_metrics:
+                        if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
+                            cpu_request = Core.parse(cpu_request)
+                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
+                            cpu_saturation = 100 * cpu_usage / cpu_request
+                        else:
+                            cpu_saturation = None # TODO (clarify) return "NaN" string instead?
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_CPU_SATURATION.value, value=cpu_saturation)
+
+                    mem_resources = target_resource_container.get_resource_requirements("memory")
+                    if SupportedKubeMetrics.MAIN_MEM_REQUEST in target_metrics:
+                        if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
+                            mem_request = ShortByteSize.validate(mem_request)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_REQUEST.value, value=mem_request)
+
+                    if SupportedKubeMetrics.MAIN_MEM_LIMIT in target_metrics:
+                        if (mem_limit := mem_resources[ResourceRequirement.limit]) is not None:
+                            mem_limit = ShortByteSize.validate(mem_limit)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_LIMIT.value, value=mem_limit)
+
+                    if SupportedKubeMetrics.MAIN_MEM_SATURATION in target_metrics:
+                        if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
+                            mem_request = ShortByteSize.validate(mem_request)
+                            mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
+                            mem_saturation = 100 * mem_usage / mem_request
+                        else:
+                            mem_saturation = None
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
+
+            # Retrieve latest tuning state
+            target_resource_tuning_pod_name = f"{target_resource.name}-tuning"
+            target_resource_tuning_pod: Pod = next((p for p in await target_resource.get_pods() if p.name == target_resource_tuning_pod_name), None)
+            if target_resource_tuning_pod:
+                target_resource_tuning_pod_container = _get_target_resource_container(self.config, target_resource_tuning_pod)
+                cpu_resources = target_resource_tuning_pod_container.get_resource_requirements("cpu")
+                mem_resources = target_resource_container.get_resource_requirements("memory")
+            else:
+                target_resource_tuning_pod_container = None
+                cpu_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
+                mem_resources = { ResourceRequirement.request: None, ResourceRequirement.limit: None }
+
+            restart_count = None
+            if SupportedKubeMetrics.TUNING_POD_RESTART_COUNT in target_metrics:
+                if target_resource_tuning_pod is not None:
+                    restart_count = await target_resource_tuning_pod.restart_count
+                else:
+                    restart_count = 0
+
+            if any((m in TUNING_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
+                tuning_metrics = await cust_obj_api.list_namespaced_custom_object(
+                    label_selector=f"{label_selector_str},opsani_role=tuning",
+                    **METRICS_CUSTOM_OJBECT_CONST_ARGS
+                )
+                # TODO: (potential improvement) raise error if more than 1 tuning pod?
+                for pod_entry in tuning_metrics["items"]:
+                    pod_name = pod_entry["metadata"]["name"]
+                    if pod_name != f"{target_resource.name}-tuning":
+                        raise RuntimeError(f"Got unexpected tuning pod name {pod_name}")
+                    timestamp = isoparse(pod_entry["timestamp"])
+                    _append_data_point_for_pod = functools.partial(
+                        _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
+                    )
+
+                    if restart_count is not None:
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value, value=restart_count)
+
+                    target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
+                    if SupportedKubeMetrics.TUNING_CPU_USAGE in target_metrics:
+                        cpu_usage = Core.parse(target_container["usage"]["cpu"])
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_USAGE.value, value=cpu_usage)
+
+                    if SupportedKubeMetrics.TUNING_MEM_USAGE in target_metrics:
+                        mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_USAGE.value, value=mem_usage)
+
+                    if SupportedKubeMetrics.TUNING_CPU_REQUEST in target_metrics:
+                        if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
+                            cpu_request = Core.parse(cpu_request)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_REQUEST.value, value=cpu_request)
+
+                    if SupportedKubeMetrics.TUNING_CPU_LIMIT in target_metrics:
+                        if (cpu_limit := cpu_resources[ResourceRequirement.limit]) is not None:
+                            cpu_limit = Core.parse(cpu_limit)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_LIMIT.value, value=cpu_limit)
+
+                    if SupportedKubeMetrics.TUNING_CPU_SATURATION in target_metrics:
+                        if (cpu_request := cpu_resources[ResourceRequirement.request]) is not None:
+                            cpu_request = Core.parse(cpu_request)
+                            cpu_usage = Core.parse(target_container["usage"]["cpu"])
+                            cpu_saturation = 100 * cpu_usage / cpu_request
+                        else:
+                            cpu_saturation = None
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_CPU_SATURATION.value, value=cpu_saturation)
+
+                    if SupportedKubeMetrics.TUNING_MEM_REQUEST in target_metrics:
+                        if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
+                            mem_request = ShortByteSize.validate(mem_request)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_REQUEST.value, value=mem_request)
+
+                    if SupportedKubeMetrics.TUNING_MEM_LIMIT in target_metrics:
+                        if (mem_limit := mem_resources[ResourceRequirement.limit]) is not None:
+                            mem_limit = ShortByteSize.validate(mem_limit)
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_LIMIT.value, value=mem_limit)
+
+                    if SupportedKubeMetrics.TUNING_MEM_SATURATION in target_metrics:
+                        if (mem_request := mem_resources[ResourceRequirement.request]) is not None:
+                            mem_request = ShortByteSize.validate(mem_request)
+                            mem_usage = ShortByteSize.validate(target_container["usage"]["memory"])
+                            mem_saturation = 100 * mem_usage / mem_request
+                        else:
+                            mem_saturation = None
+                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.TUNING_MEM_SATURATION.value, value=mem_saturation)
+
+            elif restart_count is not None:
+                _append_data_point(
+                    datapoints_dicts=datapoints_dicts,
+                    pod_name=target_resource_tuning_pod_name,
+                    time=datetime.now(),
+                    metric_name=SupportedKubeMetrics.TUNING_POD_RESTART_COUNT.value,
+                    value=restart_count
+                )
 
 def _append_data_point(
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]], pod_name: str, metric_name: str, time: datetime, value: Union[Core, ShortByteSize, Any]
