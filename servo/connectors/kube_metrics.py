@@ -311,7 +311,7 @@ class KubeMetricsConnector(servo.BaseConnector):
                         if pod is None:
                             # TODO (improvement) graceful fallback if k8s connectoer operations fail
                             raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
-                        restart_count = await pod.restart_count
+                        restart_count = pod.restart_count
                         _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value, value=restart_count)
 
                     target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
@@ -378,7 +378,7 @@ class KubeMetricsConnector(servo.BaseConnector):
             restart_count = None
             if SupportedKubeMetrics.TUNING_POD_RESTART_COUNT in target_metrics:
                 if target_resource_tuning_pod is not None:
-                    restart_count = await target_resource_tuning_pod.restart_count
+                    restart_count = target_resource_tuning_pod.restart_count
                 else:
                     restart_count = 0
 
