@@ -778,26 +778,31 @@ class PrometheusConnector(servo.BaseConnector):
             logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
             logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
 
-            @self.publish(CHANNEL, every=streaming_interval)
-            async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
-                report = []
-                client = Client(base_url=self.config.base_url)
-                responses = await asyncio.gather(
-                    *list(map(client.query, self.config.metrics)),
-                    return_exceptions=True
-                )
-                for response in responses:
-                    if isinstance(response, Exception):
-                        logger.error(f"failed querying Prometheus for metrics: {response}")
-                        continue
-
-                    if response.data:
-                        # NOTE: Instant queries return a single vector
-                        timestamp, value = response.data[0].value
-                        report.append((response.metric.name, timestamp.isoformat(), value))
-
-                await publisher(servo.pubsub.Message(json=report))
-                logger.debug(f"Published {len(report)} metrics.")
+            try:
+                @self.publish(CHANNEL, every=streaming_interval)
+                async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
+                    report = []
+                    client = Client(base_url=self.config.base_url)
+                    responses = await asyncio.gather(
+                        *list(map(client.query, self.config.metrics)),
+                        return_exceptions=True
+                    )
+                    for response in responses:
+                        if isinstance(response, Exception):
+                            logger.error(f"failed querying Prometheus for metrics: {response}")
+                            continue
+                        if response.data:
+                            # NOTE: Instant queries return a single vector
+                            timestamp, value = response.data[0].value
+                            report.append((response.metric.name, timestamp.isoformat(), value))
+                    await publisher(servo.pubsub.Message(json=report))
+                    logger.debug(f"Published {len(report)} metrics.")
+            except KeyError as e:
+                # Handling this KeyError makes self.startup() idempotent.
+                # This KeyError will be raised when self.startup() is executed more than once. The
+                # exception is raised from the registration of the above function as a publisher -
+                # the KeyError indicates that a publisher with the same name already exists.
+                self.logger.debug(f"{type(e)}: {str(e)})")
 
     @servo.on_event()
     async def check(

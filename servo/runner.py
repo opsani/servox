@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 import asyncio
 import functools
 import os
@@ -123,77 +124,84 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(devtools.pformat(cmd_response))
 
-        if cmd_response.command == servo.api.Commands.describe:
-            description = await self.describe(Control(**cmd_response.param.get("control", {})))
-            self.logger.success(
-                f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
-            )
-            self.logger.debug(devtools.pformat(description))
-
-            status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
-            return await self._post_event(servo.api.Events.describe, status.dict())
-
-        elif cmd_response.command == servo.api.Commands.measure:
-            try:
-                measurement = await self.measure(cmd_response.param)
+        try:
+            if cmd_response.command == servo.api.Commands.describe:
+                description = await self.describe(Control(**cmd_response.param.get("control", {})))
                 self.logger.success(
-                    f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
+                    f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
                 )
-                self.logger.trace(devtools.pformat(measurement))
-                param = measurement.__opsani_repr__()
-            except servo.errors.EventError as error:
-                self.logger.error(f"Measurement failed: {error}")
-                param = servo.api.Status.from_error(error).dict()
-                self.logger.error(f"Responding with {param}")
-                self.logger.opt(exception=error).debug("Measure failure details")
+                self.logger.debug(devtools.pformat(description))
 
-            return await self._post_event(servo.api.Events.measure, param)
+                status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
+                return await self._post_event(servo.api.Events.describe, status.dict())
 
-        elif cmd_response.command == servo.api.Commands.adjust:
-            adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
-            control = Control(**cmd_response.param.get("control", {}))
+            elif cmd_response.command == servo.api.Commands.measure:
+                try:
+                    measurement = await self.measure(cmd_response.param)
+                    self.logger.success(
+                        f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
+                    )
+                    self.logger.trace(devtools.pformat(measurement))
+                    param = measurement.__opsani_repr__()
+                except servo.errors.EventError as error:
+                    self.logger.error(f"Measurement failed: {error}")
+                    param = servo.api.Status.from_error(error).dict()
+                    self.logger.error(f"Responding with {param}")
+                    self.logger.opt(exception=error).debug("Measure failure details")
 
-            try:
-                description = await self.adjust(adjustments, control)
-                status = servo.api.Status.ok(state=description.__opsani_repr__())
+                return await self._post_event(servo.api.Events.measure, param)
 
-                components_count = len(description.components)
-                settings_count = sum(
-                    len(component.settings) for component in description.components
+            elif cmd_response.command == servo.api.Commands.adjust:
+                adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
+                control = Control(**cmd_response.param.get("control", {}))
+
+                try:
+                    description = await self.adjust(adjustments, control)
+                    status = servo.api.Status.ok(state=description.__opsani_repr__())
+
+                    components_count = len(description.components)
+                    settings_count = sum(
+                        len(component.settings) for component in description.components
+                    )
+                    self.logger.success(
+                        f"Adjusted: {components_count} components, {settings_count} settings"
+                    )
+                except servo.EventError as error:
+                    self.logger.error(f"Adjustment failed: {error}")
+                    status = servo.api.Status.from_error(error)
+                    self.logger.error(f"Responding with {status.dict()}")
+                    self.logger.opt(exception=error).debug("Adjust failure details")
+
+                return await self._post_event(servo.api.Events.adjust, status.dict())
+
+            elif cmd_response.command == servo.api.Commands.sleep:
+                # TODO: Model this
+                duration = Duration(cmd_response.param.get("duration", 120))
+                status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
+                reason = servo.utilities.key_paths.value_for_key_path(
+                    cmd_response.param, "data.reason", "unknown reason"
                 )
-                self.logger.success(
-                    f"Adjusted: {components_count} components, {settings_count} settings"
-                )
-            except servo.EventError as error:
-                self.logger.error(f"Adjustment failed: {error}")
-                status = servo.api.Status.from_error(error)
-                self.logger.error(f"Responding with {status.dict()}")
-                self.logger.opt(exception=error).debug("Adjust failure details")
+                msg = f"{status}: {reason}" if status else f"{reason}"
+                self.logger.info(f"Sleeping for {duration} ({msg}).")
+                await asyncio.sleep(duration.total_seconds())
 
-            return await self._post_event(servo.api.Events.adjust, status.dict())
-
-        elif cmd_response.command == servo.api.Commands.sleep:
-            # TODO: Model this
-            duration = Duration(cmd_response.param.get("duration", 120))
-            status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
-            reason = servo.utilities.key_paths.value_for_key_path(
-                cmd_response.param, "data.reason", "unknown reason"
-            )
-            msg = f"{status}: {reason}" if status else f"{reason}"
-            self.logger.info(f"Sleeping for {duration} ({msg}).")
-            await asyncio.sleep(duration.total_seconds())
-
-            # Return a status so we have a simple API contract
-            return servo.api.Status(status="ok", message=msg)
-        else:
-            raise ValueError(f"Unknown command '{cmd_response.command.value}'")
+                # Return a status so we have a simple API contract
+                return servo.api.Status(status="ok", message=msg)
+            else:
+                raise ValueError(f"Unknown command '{cmd_response.command.value}'")
+        finally:
+            self.logger.debug("at tail of runner.exec_command")
 
     # Main run loop for processing commands from the optimizer
+    # NOTE this is not an asyncio.loop, just a standard main() function
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
+        self.logger.debug("setting servo")
         _set_current_servo(self.servo)
+        self.logger.debug("set servo")
 
         while self._running:
+            self.logger.debug("still runner._running")
             try:
                 if self.interactive:
                     if not typer.confirm("Poll for next command?"):
@@ -201,7 +209,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                         await asyncio.sleep(60)
                         continue
 
+                self.logger.debug("awaiting exec_command")
                 status = await self.exec_command()
+                self.logger.debug("awaited exec_command")
                 if status.status == servo.api.OptimizerStatuses.unexpected_event:
                     self.logger.warning(
                         f"server reported unexpected event: {status.reason}"
@@ -219,8 +229,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 raise error
 
     def run_main_loop(self) -> None:
-        if self._main_loop_task:
+        if self._main_loop_task:  # i.e. if this isn't the first time the run_main_loop() has been called
             self._main_loop_task.cancel()
+            self.logger.debug("old main_loop_task cancelled")
+            if self.servo is not None:
+                loop = asyncio.get_event_loop()
+                loop.create_task(self.servo.dispatch_event(servo.Events.startup))
+                self.logger.debug("startup Event dispatched")
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
@@ -231,8 +246,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
                 raise error  # Ensure that we surface the error for handling
 
-        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
+        _uid = str(uuid.uuid4())[-6:]
+        main_loop_name = f"main loop for servo {self.optimizer.id} {_uid}"
+        self.logger.debug(f"creating new main loop: {main_loop_name}")
+        self._main_loop_task = asyncio.create_task(self.main_loop(), name=main_loop_name)
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
+        self.logger.debug(f"created new main loop: {main_loop_name}")
 
     async def run(self, *, poll: bool = True) -> None:
         self._running = True
@@ -304,6 +323,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
     def __init__(self, assembly: servo.Assembly, **kwargs) -> None:
+        # This allows <assembly> to be passed as a positional argument
         super().__init__(assembly=assembly, **kwargs)
 
     def _runner_for_servo(self, servo: servo.Servo) -> ServoRunner:
@@ -371,9 +391,12 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
                 self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+                [self.logger.debug(f"\t{task.get_name()}") for task in tasks]
                 [task.cancel() for task in tasks]
 
                 await asyncio.gather(*tasks, return_exceptions=True)
+                self.logger.trace("Cancelled tasks:")
+                [self.logger.trace(f"\t{task.get_name()} {'cancelled' if task.cancelled() else 'not cancelled'}") for task in tasks]
 
                 # Restart a fresh main loop
                 if poll:
@@ -397,7 +420,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 servo_runner = ServoRunner(servo_, interactive=interactive)
                 loop.create_task(servo_runner.run(poll=poll))
                 self.runners.append(servo_runner)
-
             loop.run_forever()
 
         finally:
