@@ -43,7 +43,7 @@ ENVOY_SIDECAR_LABELS = {
 ENVOY_SIDECAR_DEFAULT_PORT = 9980
 
 class CPU(servo.connectors.kubernetes.CPU):
-    step: servo.connectors.kubernetes.Millicore = "125m"
+    step: servo.connectors.kubernetes.Core = "125m"
 
 class Memory(servo.connectors.kubernetes.Memory):
     step: servo.connectors.kubernetes.ShortByteSize = "128 MiB"
@@ -374,7 +374,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         cpu_resource_value = cpu_resource_requirements.get(
             next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
         )
-        container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+        container_cpu_value = servo.connectors.kubernetes.Core.parse(cpu_resource_value)
 
         memory_resource_requirements = target_container.get_resource_requirements('memory')
         memory_resource_value = memory_resource_requirements.get(

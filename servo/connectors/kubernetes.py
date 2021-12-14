@@ -1101,12 +1101,16 @@ class Pod(KubernetesModel):
         Returns:
             The total number of Container restarts.
         """
-        status = await self.get_status()
-        if status.container_statuses is None:
+        await self.refresh()
+        return self.restart_count
+
+    @property
+    def restart_count(self) -> int:
+        if self.obj.status is None or self.obj.status.container_statuses is None:
             return 0
 
         total = 0
-        for container_status in status.container_statuses:
+        for container_status in self.obj.status.container_statuses:
             total += container_status.restart_count
 
         return total
@@ -2760,79 +2764,131 @@ class Rollout(KubernetesModel):
     async def rollout(self, *, timeout: Optional[servo.Duration] = None) -> None:
         raise NotImplementedError('To be implemented in future update')
 
-class Millicore(int):
+class Core(decimal.Decimal):
     """
-    The Millicore class represents one one-thousandth of a vCPU or hyperthread in Kubernetes.
+    The Core class represents one vCPU or hyperthread in Kubernetes.
+
+    Supports the following format specification (note values must be an exact match, any other specificiers are
+    fulfilled by the base Decimal class):
+    - n - nanocores (default for values < 1 microcore)
+    - u - microcores (default for values < 1 millicore)
+    - m - millicores (default for values < 1 core)
+    - c - cores (default for values > 1 core)
     """
 
     @classmethod
-    def __get_validators__(cls) -> pydantic.CallableGenerator:
+    def __get_validators__(cls) -> pydantic.types.CallableGenerator:
         yield cls.parse
 
     @classmethod
-    def parse(cls, v: pydantic.StrIntFloat) -> "Millicore":
+    def parse(cls, v: pydantic.types.StrIntFloat) -> "Core":
         """
-        Parses a string, integer, or float input value into Millicore units.
+        Parses a string, integer, or float input value into Core units.
 
         Returns:
-            The input value in Millicore units.
+            The input value in Core units.
 
         Raises:
             ValueError: Raised if the input cannot be parsed.
         """
-        if isinstance(v, str):
+        if isinstance(v, Core):
+            return v
+        # TODO lots of trailing zeros from this parsing
+        elif isinstance(v, str):
             if v[-1] == "m":
-                return cls(int(v[:-1]))
+                return cls(decimal.Decimal(str(v[:-1])) / 1000)
+            # Metrics server API returns usage in microcores and nanocores
+            elif v[-1] == "u":
+                return cls(decimal.Decimal(str(v[:-1])) / 1000000)
+            elif v[-1] == "n":
+                return cls(decimal.Decimal(str(v[:-1])) / 1000000000)
             else:
-                return cls(int(float(v) * 1000))
+                return cls(decimal.Decimal(str(v)))
         elif isinstance(v, (int, float, decimal.Decimal)):
-            return cls(int(float(v) * 1000))
+            return cls(decimal.Decimal(str(v)))
         else:
-            raise ValueError("could not parse millicore value")
+            raise ValueError(f"could not parse Core value {v}")
 
     def __str__(self) -> str:
-        if self % 1000 == 0:
-            return str(int(self) // 1000)
-        else:
-            return f"{int(self)}m"
+        return self.__format__()
 
-    def __float__(self) -> float:
-        return self / 1000.0
+    def __format__(self, specifier: str = None) -> str:
+        if not specifier:
+            specifier = "c"
+            if self.microcores < 1:
+                specifier = "n"
+            elif self.millicores < 1:
+                specifier = "u"
+            elif self < 1:
+                specifier = "m"
+
+        value = decimal.Decimal(self)
+        if specifier == "n":
+            value = self.nanocores
+        elif specifier == "u":
+            value = self.microcores
+        elif specifier == "m":
+            value = self.millicores
+        elif specifier == "c":
+            specifier = ""
+        else:
+            return super().__format__(specifier)
+
+        # strip the trailing zero and dot when present for consistent representation
+        str_val = re.sub(r"\.0*$", repl="", string=str(value))
+        return f"{str_val}{specifier}"
 
     def __eq__(self, other) -> bool:
-        if isinstance(other, str):
-            return str(self) == other
-        elif isinstance(other, float):
-            return float(self) == other
-        return super().__eq__(other)
+        if isinstance(other, (Core, decimal.Decimal)):
+            return decimal.Decimal(self) == decimal.Decimal(other)
+        else:
+            return self == Core.parse(other)
 
     def human_readable(self) -> str:
         return str(self)
 
+    def __opsani_repr__(self) -> float:
+        return float(self)
+
+    @property
+    def millicores(self) -> decimal.Decimal:
+        return self * 1000
+
+    @property
+    def microcores(self) -> decimal.Decimal:
+        return self * 1000000
+
+    @property
+    def nanocores(self) -> decimal.Decimal:
+        return self * 1000000000
+
 
 class CPU(servo.CPU):
     """
-    The CPU class models a Kubernetes CPU resource in Millicore units.
+    The CPU class models a Kubernetes CPU resource in Core units.
     """
 
-    min: Millicore
-    max: Millicore
-    step: Millicore
-    value: Optional[Millicore]
+    min: Core
+    max: Core
+    step: Core
+    value: Optional[Core]
 
     # Kubernetes resource requirements
-    request: Optional[Millicore]
-    limit: Optional[Millicore]
+    request: Optional[Core]
+    limit: Optional[Core]
     get: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
     set: pydantic.conlist(ResourceRequirement, min_items=1) = [ResourceRequirement.request, ResourceRequirement.limit]
 
     def __opsani_repr__(self) -> dict:
         o_dict = super().__opsani_repr__()
 
-        # normalize values into floats (see Millicore __float__)
+        # Always return Core values in units of cores no matter how small
         for field in ("min", "max", "step", "value"):
-            value = getattr(self, field)
-            o_dict["cpu"][field] = float(value) if value is not None else None
+            value: Optional[Core] = getattr(self, field)
+            # TODO switch back to string for sending to API
+            # o_dict["cpu"][field] = "{0:f}".format(value) if value is not None else None
+            o_dict["cpu"][field] = value.__opsani_repr__() if value is not None else None
+
         return o_dict
 
 
@@ -2863,6 +2919,9 @@ class ShortByteSize(pydantic.ByteSize):
             sup = sup[0:-1]
         return sup
 
+    def __opsani_repr__(self) -> float:
+        return float(decimal.Decimal(self) / GiB)
+
 
 class Memory(servo.Memory):
     """
@@ -2885,8 +2944,8 @@ class Memory(servo.Memory):
 
         # normalize values into floating point Gibibyte units
         for field in ("min", "max", "step", "value"):
-            value = getattr(self, field)
-            o_dict["mem"][field] = float(value) / GiB if value is not None else None
+            value: Optional[ShortByteSize] = getattr(self, field)
+            o_dict["mem"][field] = value.__opsani_repr__() if value is not None else None
         return o_dict
 
 
@@ -2901,7 +2960,10 @@ def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str,
             (isinstance(value, str) and value.replace('.', '', 1).isdigit())):
             value = f"{value}Gi"
     elif setting == "cpu":
-        value = str(Millicore.parse(value))
+        core_value = Core.parse(value)
+        if core_value % decimal.Decimal("0.001") != 0:
+            raise ValueError(f"Kubernetes does not support CPU precision lower than 1m (one millicore). Found {value}")
+        value = str(core_value)
     elif setting == "replicas":
         value = int(float(value))
     # TODO support for env var format descriptor
@@ -3118,7 +3180,7 @@ class DeploymentOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        value = Millicore.parse(value)
+        value = Core.parse(value)
         # NOTE: use safe_set to apply values that may be outside of the range
         return cpu.safe_set_value_copy(value)
 
@@ -3713,10 +3775,9 @@ class CanaryOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        value = Millicore.parse(value)
+        value = Core.parse(value)
         # NOTE: use safe_set to apply values that may be outside of the range
-        cpu = cpu.safe_set_value_copy(value)
-        return cpu
+        return cpu.safe_set_value_copy(value)
 
     @property
     def tuning_memory(self) -> Optional[Memory]:
@@ -3785,10 +3846,10 @@ class CanaryOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        millicores = Millicore.parse(value)
+        cores = Core.parse(value)
 
         # NOTE: use safe_set to accept values from mainline outside of our range
-        cpu: CPU = self.container_config.cpu.safe_set_value_copy(millicores)
+        cpu: CPU = self.container_config.cpu.safe_set_value_copy(cores)
         cpu.pinned = True
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)

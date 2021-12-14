@@ -8,6 +8,136 @@ The following software is bundled with the distributed docker images of this sof
 
 -----
 
+curl
+Copyright (c) 1996 - 2021, Daniel Stenberg, <daniel@haxx.se>, and many
+contributors, see the THANKS file.
+https://github.com/curl/curl/
+https://packages.debian.org/source/buster/curl
+Made available under hybrid ISC/ICU liscense
+https://spdx.org/licenses/ISC.html
+https://spdx.org/licenses/ICU.html
+
+Kubectl
+Copyright 2014-2021 The Kubernetes Authors
+https://github.com/kubernetes/kubectl
+https://kubernetes.io/docs/tasks/tools/#kubectl
+Made available under the Apache License 2.0
+https://spdx.org/licenses/Apache-2.0
+
+pip - The Python Package Installer
+Copyright (c) 2008-2021 The pip developers (see AUTHORS.txt file https://github.com/pypa/pip/blob/main/AUTHORS.txt)
+https://pip.pypa.io/
+https://github.com/pypa/pip
+https://pypi.org/project/pip/
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+pip includes the idna module whose initial developer is Kim Davies
+Copyright (c) 2013-2021, Kim Davies All rights reserved.
+pip includes the colorama module whose initial developer is Jonathan Hartley
+Copyright (c) 2010 Jonathan Hartley
+pip includes the packaging module whose initial developer is Donald Stufft and individual contributors
+Copyright (c) Donald Stufft and individual contributors
+pip includes the webencodings module whose initial developer is Simon Sapin
+Copyright (c) 2012 by Simon Sapin.
+pip includes the tenacity module whose initial developers are Étienne Bersac, Julien Danjou, Joshua Harlow, Ray Holder
+Copyright 2016 Étienne Bersac
+Copyright 2017 Elisey Zanko
+Copyright 2016-2018 Julien Danjou
+Copyright 2016 Joshua Harlow
+Copyright 2013-2014 Ray Holder
+pip includes the tomli module whose initial developer is Taneli Hukkinen
+Copyright (c) 2021 Taneli Hukkinen
+pip includes the six module whose initial developer is Benjamin Peterson
+Copyright (c) 2010-2020 Benjamin Peterson
+pip includes the html5lib module whose initial developer is James Graham and other contributors
+Copyright (c) 2006-2013 James Graham and other contributors
+pip includes the pep517 module whose initial developer is Thomas Kluyver
+Copyright (c) 2017 Thomas Kluyver
+pip includes the pkg_resources module whose initial developer is Jason R Coombs
+Copyright (C) 2016 Jason R Coombs <jaraco@jaraco.com>
+pip includes the urllib3 module whose initial developer is Andrey Petrov and contributors
+Copyright (c) 2008-2020 Andrey Petrov and contributors (see CONTRIBUTORS.txt)
+pip includes appdirs.py whose initial developers are ActiveState Software Inc. and Eddy Petrișor
+Copyright (c) 2010 ActiveState Software Inc.
+Copyright (c) 2013 Eddy Petrișor
+pip includes the requests module whose initial developer is Kenneth Reitz
+Copyright 2020 Kenneth Reitz
+pip includes the resolvelib module whose initial developer is Tzu-ping Chung
+Copyright (c) 2018, Tzu-ping Chung <uranusjr@gmail.com>
+pip includes the progress module whose initial developer is Giorgos Verigakis
+Copyright (c) 2012 Giorgos Verigakis <verigak@gmail.com>
+pip includes pyparsing.py whose initial developer is Paul T. McGuire
+Copyright (c) 2003-2019  Paul T. McGuire
+pip includes the distlib module whose initial developer is Vinay Sajip
+Copyright (C) 2012-2019 Vinay Sajip. Licensed to the Python Software Foundation under a contributor agreement. See LICENSE.txt and CONTRIBUTORS.txt.
+Copyright (C) 2012-2017 The Python Software Foundation.
+pip includes the cachecontrol module whose initial developer is Eric Larson
+Copyright 2015 Eric Larson
+pip includes the msgpack module whose initial developer is INADA Naoki
+Copyright (C) 2008-2011 INADA Naoki <songofacandy@gmail.com>
+pip includes the chardet module whose initial developers are Mark Pilgrim, Dan Blanchard, Ian Cordasco
+Copyright 2015, Mark Pilgrim, Dan Blanchard, Ian Cordasco
+pip includes distro.py whose initial developer is Nir Cohen
+Copyright 2015,2016,2017 Nir Cohen
+
+Poetry: Dependency Management for Python
+Copyright 2018 Sébastien Eustace
+https://python-poetry.org/
+https://github.com/python-poetry/poetry
+https://pypi.org/project/poetry/
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+
+python 3.9
+Copyright 2001-2021 Python Software Foundation. All rights reserved.
+Copyright 2000 BeOpen.com. All rights reserved.
+Copyright 1995-2000 Corporation for National Research Initiatives. All rights reserved.
+Copyright 1991-1995 Stichting Mathematisch Centrum. All rights reserved.
+https://docs.python.org/
+https://github.com/python/cpython
+Made available under the Python License 2.0
+https://spdx.org/licenses/Python-2.0
+Starting with Python 3.8.6, examples, recipes, and other code in the documentation are dual licensed under the PSF License Agreement and the Zero-Clause BSD license.
+https://spdx.org/licenses/0BSD
+Some software incorporated into Python is under different licenses. The licenses are listed with code falling under that license.
+See Licenses and Acknowledgements for Incorporated Software for an incomplete list of these licenses.
+https://docs.python.org/3.9/license.html#otherlicenses
+
+python docker file
+Copyright 2014 Docker, Inc.
+https://github.com/docker-library/python
+https://hub.docker.com/_/python
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+
+setuptools
+Copyright Jason R. Coombs
+https://setuptools.pypa.io/
+https://github.com/pypa/setuptools
+https://pypi.org/project/setuptools/
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+setuptools includes pyparsing.py whose initial developer is Paul T. McGuire
+Copyright 2003-2018  Paul T. McGuire
+setuptools includes the packaging module whose initial developers are Donald Stufft and individual contributors
+Copyright 2014-2019 Donald Stufft and individual contributors
+setuptools includes the distutils.command module whose initial developers include Martin von Löwis
+Copyright 2005, 2006 Martin von Löwis
+
+Vegeta
+Copyright 2013-2020 Tomás Senart
+https://github.com/tsenart/Vegeta
+https://pkg.go.dev/github.com/tsenart/vegeta/lib?utm_source=godoc
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+
+Vegeta Docker - Docker image for the Vegeta HTTP load testing tool.
+Copyright 2017 Peter Evans
+https://hub.docker.com/r/peterevans/vegeta
+https://github.com/peter-evans/vegeta-docker
+Made available under the MIT License
+https://spdx.org/licenses/MIT
+
 Responses
 Copyright 2015 David Cramer
 https://github.com/getsentry/responses
@@ -26,13 +156,6 @@ async-timeout
 Copyright 2016-2020 aio-libs collaboration.
 https://github.com/aio-libs/async-timeout
 https://pypi.org/project/async-timeout/
-Made available under the Apache License 2.0
-https://spdx.org/licenses/Apache-2.0
-
-Kubectl
-Copyright 2014-2021 The Kubernetes Authors
-https://github.com/kubernetes/kubectl
-https://kubernetes.io/docs/tasks/tools/#kubectl
 Made available under the Apache License 2.0
 https://spdx.org/licenses/Apache-2.0
 
@@ -300,70 +423,6 @@ https://pypi.org/project/loguru/
 Made available under the MIT License
 https://spdx.org/licenses/MIT
 
-pip - The Python Package Installer
-Copyright (c) 2008-2021 The pip developers (see AUTHORS.txt file https://github.com/pypa/pip/blob/main/AUTHORS.txt)
-https://pip.pypa.io/
-https://github.com/pypa/pip
-https://pypi.org/project/pip/
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-pip includes the idna module whose initial developer is Kim Davies
-Copyright (c) 2013-2021, Kim Davies All rights reserved.
-pip includes the colorama module whose initial developer is Jonathan Hartley
-Copyright (c) 2010 Jonathan Hartley
-pip includes the packaging module whose initial developer is Donald Stufft and individual contributors
-Copyright (c) Donald Stufft and individual contributors
-pip includes the webencodings module whose initial developer is Simon Sapin
-Copyright (c) 2012 by Simon Sapin.
-pip includes the tenacity module whose initial developers are Étienne Bersac, Julien Danjou, Joshua Harlow, Ray Holder
-Copyright 2016 Étienne Bersac
-Copyright 2017 Elisey Zanko
-Copyright 2016-2018 Julien Danjou
-Copyright 2016 Joshua Harlow
-Copyright 2013-2014 Ray Holder
-pip includes the tomli module whose initial developer is Taneli Hukkinen
-Copyright (c) 2021 Taneli Hukkinen
-pip includes the six module whose initial developer is Benjamin Peterson
-Copyright (c) 2010-2020 Benjamin Peterson
-pip includes the html5lib module whose initial developer is James Graham and other contributors
-Copyright (c) 2006-2013 James Graham and other contributors
-pip includes the pep517 module whose initial developer is Thomas Kluyver
-Copyright (c) 2017 Thomas Kluyver
-pip includes the pkg_resources module whose initial developer is Jason R Coombs
-Copyright (C) 2016 Jason R Coombs <jaraco@jaraco.com>
-pip includes the urllib3 module whose initial developer is Andrey Petrov and contributors
-Copyright (c) 2008-2020 Andrey Petrov and contributors (see CONTRIBUTORS.txt)
-pip includes appdirs.py whose initial developers are ActiveState Software Inc. and Eddy Petrișor
-Copyright (c) 2010 ActiveState Software Inc.
-Copyright (c) 2013 Eddy Petrișor
-pip includes the requests module whose initial developer is Kenneth Reitz
-Copyright 2020 Kenneth Reitz
-pip includes the resolvelib module whose initial developer is Tzu-ping Chung
-Copyright (c) 2018, Tzu-ping Chung <uranusjr@gmail.com>
-pip includes the progress module whose initial developer is Giorgos Verigakis
-Copyright (c) 2012 Giorgos Verigakis <verigak@gmail.com>
-pip includes pyparsing.py whose initial developer is Paul T. McGuire
-Copyright (c) 2003-2019  Paul T. McGuire
-pip includes the distlib module whose initial developer is Vinay Sajip
-Copyright (C) 2012-2019 Vinay Sajip. Licensed to the Python Software Foundation under a contributor agreement. See LICENSE.txt and CONTRIBUTORS.txt.
-Copyright (C) 2012-2017 The Python Software Foundation.
-pip includes the cachecontrol module whose initial developer is Eric Larson
-Copyright 2015 Eric Larson
-pip includes the msgpack module whose initial developer is INADA Naoki
-Copyright (C) 2008-2011 INADA Naoki <songofacandy@gmail.com>
-pip includes the chardet module whose initial developers are Mark Pilgrim, Dan Blanchard, Ian Cordasco
-Copyright 2015, Mark Pilgrim, Dan Blanchard, Ian Cordasco
-pip includes distro.py whose initial developer is Nir Cohen
-Copyright 2015,2016,2017 Nir Cohen
-
-Poetry: Dependency Management for Python
-Copyright 2018 Sébastien Eustace
-https://python-poetry.org/
-https://github.com/python-poetry/poetry
-https://pypi.org/project/poetry/
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-
 pydantic
 Copyright 2017, 2018, 2019, 2020, 2021 Samuel Colvin and other contributors
 https://pydantic-docs.helpmanual.io/
@@ -411,13 +470,6 @@ https://spdx.org/licenses/MIT
 Pyrsistent includes _toolz.py whose initial developer is Matthew Rocklin
 Copyright 2013 Matthew Rocklin
 
-python docker file
-Copyright 2014 Docker, Inc.
-https://github.com/docker-library/python
-https://hub.docker.com/_/python
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-
 pytz - World Timezone Definitions for Python
 Copyright 2003-2019 Stuart Bishop <stuart@stuartbishop.net>
 https://pythonhosted.org/pytz/
@@ -427,20 +479,6 @@ Made available under the MIT License
 https://spdx.org/licenses/MIT
 pytz includes the Time Zone Database (called tz, tzdb or zoneinfo) whose initial developers include The Regents of the University of California
 Copyright 1985, 1987, 1988, 1989, 1991 The Regents of the University of California.
-
-setuptools
-Copyright Jason R. Coombs
-https://setuptools.pypa.io/
-https://github.com/pypa/setuptools
-https://pypi.org/project/setuptools/
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-setuptools includes pyparsing.py whose initial developer is Paul T. McGuire
-Copyright 2003-2018  Paul T. McGuire
-setuptools includes the packaging module whose initial developers are Donald Stufft and individual contributors
-Copyright 2014-2019 Donald Stufft and individual contributors
-setuptools includes the distutils.command module whose initial developers include Martin von Löwis
-Copyright 2005, 2006 Martin von Löwis
 
 Six: Python 2 and 3 Compatibility Library
 Copyright 2010-2020 Benjamin Peterson
@@ -490,20 +528,6 @@ https://spdx.org/licenses/MIT
 urllib3 includes SecureTranport code based on the oscrypto library whose initial developer is Will Bond
 Copyright 2015-2016 Will Bond <will@wbond.net>
 
-Vegeta
-Copyright 2013-2020 Tomás Senart
-https://github.com/tsenart/Vegeta
-https://pkg.go.dev/github.com/tsenart/vegeta/lib?utm_source=godoc
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-
-Vegeta Docker - Docker image for the Vegeta HTTP load testing tool.
-Copyright 2017 Peter Evans
-https://hub.docker.com/r/peterevans/vegeta
-https://github.com/peter-evans/vegeta-docker
-Made available under the MIT License
-https://spdx.org/licenses/MIT
-
 wheel
 copyright 2012-2014 Daniel Holth <dholth@fastmail.fm> and contributors.
 https://github.com/pypa/wheel
@@ -517,21 +541,6 @@ https://github.com/certifi/python-certifi
 https://pypi.org/project/certifi/
 Made available under the Mozilla Public License 2.0
 https://spdx.org/licenses/MPL-2.0
-
-python 3.9
-Copyright 2001-2021 Python Software Foundation. All rights reserved.
-Copyright 2000 BeOpen.com. All rights reserved.
-Copyright 1995-2000 Corporation for National Research Initiatives. All rights reserved.
-Copyright 1991-1995 Stichting Mathematisch Centrum. All rights reserved.
-https://docs.python.org/
-https://github.com/python/cpython
-Made available under the Python License 2.0
-https://spdx.org/licenses/Python-2.0
-Starting with Python 3.8.6, examples, recipes, and other code in the documentation are dual licensed under the PSF License Agreement and the Zero-Clause BSD license.
-https://spdx.org/licenses/0BSD
-Some software incorporated into Python is under different licenses. The licenses are listed with code falling under that license.
-See Licenses and Acknowledgements for Incorporated Software for an incomplete list of these licenses.
-https://docs.python.org/3.9/license.html#otherlicenses
 
 Typing Extensions – Backported and Experimental Type Hints for Python
 Copyright 2021, The Python Typing Team
@@ -1561,3 +1570,24 @@ DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
 TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
 
 0. You just DO WHAT THE FUCK YOU WANT TO.
+
+-----
+
+ISC/ICU hybrid
+
+
+Permission to use, copy, modify, and distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright
+notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF THIRD PARTY RIGHTS. IN
+NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall not
+be used in advertising or otherwise to promote the sale, use or other dealings
+in this Software without prior written authorization of the copyright holder.
