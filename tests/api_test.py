@@ -25,19 +25,6 @@ class TestStatus:
         assert status.message == 'Command cancelled'
         assert status.status == 'cancelled'
 
-class TestDiagnosticStates:
-    def test_withhold_diagnostic_state(self) -> None:
-        state = servo.api.DiagnosticStates("WITHHOLD")
-        assert state == servo.api.DiagnosticStates.withhold
-
-    def test_send_diagnostic_state(self) -> None:
-        state = servo.api.DiagnosticStates("SEND")
-        assert state == servo.api.DiagnosticStates.send
-
-    def test_stop_diagnostic_state(self) -> None:
-        state = servo.api.DiagnosticStates("STOP")
-        assert state == servo.api.DiagnosticStates.stop
-
 
 from servo.api import CommandResponse, MeasureParams, Status, descriptor_to_adjustments
 from servo.types import Adjustment, Control
@@ -180,59 +167,3 @@ def test_parse_command_response_including_units_control(payload, validator) -> N
 
     obj = parse_obj_as(Union[CommandResponse, Status], payload)
     validator(obj)
-
-@respx.mock
-async def test_diagnostics_request(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
-
-    # Simulate running as a k8s pod
-    monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
-
-    # NOTE: Can't use servo_runner fixture; its init happens prior to setting of env var above
-    servo_runner = servo.runner.ServoRunner(servo.Servo(
-        config=servo.BaseServoConfiguration(name="archibald", optimizer=optimizer),
-        connectors=[], # Init empty servo
-    ))
-
-    request = respx.get(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/assets/opsani.com/diagnostics-check"
-    ).mock(return_value=httpx.Response(200, text=f'{{"data": "WITHHOLD"}}'))
-    request = await servo_runner._diagnostics_request()
-    assert isinstance(request, servo.api.DiagnosticStates)
-    assert request == servo.api.DiagnosticStates.withhold
-
-@respx.mock
-async def test_diagnostics_post(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
-
-    monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
-
-    servo_runner = servo.runner.ServoRunner(servo.Servo(
-        config=servo.BaseServoConfiguration(name="archibald", optimizer=optimizer),
-        connectors=[], # Init empty servo
-    ))
-
-    put = respx.put(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/assets/opsani.com/diagnostics-output"
-    ).mock(return_value=httpx.Response(200, text=f'{{"status": "ok"}}'))
-    diagnostic_data = servo.api.Diagnostics(configmap={'foo': 'bar'}, logs={'foo': 'bar'})
-    response = await servo_runner._post_diagnostics(diagnostic_data)
-
-    assert put.called
-    assert response.status == servo.api.OptimizerStatuses.ok
-
-@respx.mock
-async def test_diagnostics_reset(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
-
-    monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
-
-    servo_runner = servo.runner.ServoRunner(servo.Servo(
-        config=servo.BaseServoConfiguration(name="archibald", optimizer=optimizer),
-        connectors=[], # Init empty servo
-    ))
-
-    put = respx.put(
-        "https://api.opsani.com/accounts/dev.opsani.com/applications/servox/assets/opsani.com/diagnostics-check"
-    ).mock(return_value=httpx.Response(200, text=f'{{"status": "ok"}}'))
-    response = await servo_runner._reset_diagnostics()
-
-    assert put.called
-    assert response.status == servo.api.OptimizerStatuses.ok

@@ -71,15 +71,6 @@ class Commands(str, enum.Enum):
         else:
             raise ValueError(f"unknown command: {self}")
 
-class DiagnosticStates(str, enum.Enum):
-    withhold = "WITHHOLD"
-    send = "SEND"
-    stop = "STOP"
-
-class Diagnostics(pydantic.BaseModel):
-    configmap: Optional[Dict[str, Any]]
-    logs: Optional[Dict[str, Any]]
-
 
 class Request(pydantic.BaseModel):
     event: Union[Events, str]  # TODO: Needs to be rethought -- used adhoc in some cases
@@ -294,105 +285,6 @@ class Mixin(abc.ABC):
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
                 self.logger.trace(_redacted_to_curl(error.request))
                 raise
-
-    async def _get_diagnostics(self) -> Diagnostics:
-
-        async with aiofiles.open(logs_path, 'r') as log_file:
-            log_data_lines = await log_file.readlines()
-
-        # Format and strip emoji from logs :(
-        log_dict = {}
-        for line in log_data_lines[:4000]: # Limit to 4000 lines for <1 mb assets limit
-            time, msg = line.split('|', 1)
-            log_dict[time.strip()] = msg.strip().encode("ascii", "ignore").decode()
-
-        export_options = dict(exclude_unset=True, exclude_none=True)
-
-        # NOTE: Round-trip through JSON to produce primitives
-        config_dict = self.servo.config.json(**export_options)
-        config_data = json.loads(config_dict)
-
-        return Diagnostics(configmap=config_data, logs=log_dict)
-
-
-    async def _diagnostics_request(self) -> DiagnosticStates:
-        async with self.api_client() as client:
-            self.logger.trace(f"GET diagnostic request")
-            try:
-                response = await client.get("assets/opsani.com/diagnostics-check")
-                response.raise_for_status()
-                response_json = response.json()['data']
-                self.logger.trace(
-                    f"GET diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
-                )
-                self.logger.trace(_redacted_to_curl(response.request))
-                try:
-                    return pydantic.parse_obj_as(
-                        DiagnosticStates, response_json
-                    )
-                except pydantic.ValidationError as error:
-                    # Should not raise due to improperly set diagnostic states
-                    self.logger.trace(f"Improperly set diagnostic state {error}")
-                    return DiagnosticStates.withhold
-
-            except httpx.HTTPError as error:
-                # Should not raise on errors due to unset diagnostic states or /assets API issues?
-                if error.response.status_code == 404:
-                    self.logger.trace(f"Withholding diagnostics sending due to not set")
-                else:
-                    self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while requesting diagnostics: {error}")
-                    self.logger.trace(_redacted_to_curl(error.request))
-                return DiagnosticStates.withhold
-
-
-    async def _post_diagnostics(self, diagnostic_data: Diagnostics) -> Status:
-        async with self.api_client() as client:
-            self.logger.trace(f"POST diagnostic data: {devtools.pformat(diagnostic_data.json())}")
-
-            # Roundtrip to push into data key
-            diagnostic_dict = dict(data=diagnostic_data.dict())
-            try:
-                response = await client.put("assets/opsani.com/diagnostics-output", data=json.dumps(diagnostic_dict))
-                response.raise_for_status()
-                response_json = response.json()
-                self.logger.trace(
-                    f"POST diagnostic data response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
-                )
-                self.logger.trace(_redacted_to_curl(response.request))
-
-                return pydantic.parse_obj_as(
-                    Status, response_json
-                )
-
-            except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting diagnostics: {error}")
-                self.logger.trace(_redacted_to_curl(error.request))
-                raise
-
-    async def _reset_diagnostics(self) -> Status:
-        async with self.api_client() as client:
-            reset_request = (
-                dict(data=DiagnosticStates.withhold)
-                )
-            self.logger.trace(f"POST diagnostic reset: {devtools.pformat(json.dumps(reset_request))}")
-            try:
-                response = await client.put("assets/opsani.com/diagnostics-check", data=json.dumps(reset_request))
-                response.raise_for_status()
-                response_json = response.json()
-                self.logger.trace(
-                    f"POST diagnostic reset response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
-                )
-                self.logger.trace(_redacted_to_curl(response.request))
-
-                return pydantic.parse_obj_as(
-                    Status, response_json
-                )
-
-            except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while resetting diagnostics: {error}")
-                self.logger.trace(_redacted_to_curl(error.request))
-                raise
-
 
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     """Return a list of adjustment objects from an Opsani API app descriptor."""

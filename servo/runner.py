@@ -18,6 +18,7 @@ import typer
 
 import servo
 import servo.api
+import servo.telemetry
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
@@ -30,7 +31,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     _servo: servo.Servo = pydantic.PrivateAttr(None)
     _connected: bool = pydantic.PrivateAttr(False)
     _running: bool = pydantic.PrivateAttr(False)
-    _running_diagnostics: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     class Config:
@@ -51,10 +51,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     @property
     def running(self) -> bool:
         return self._running
-
-    @property
-    def running_diagnostics(self) -> bool:
-        return self._running_diagnostics
 
     @property
     def connected(self) -> bool:
@@ -193,35 +189,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         else:
             raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
-    async def diagnostics_check(self):
-
-        while self._running:
-            try:
-                self.logger.trace("Polling for diagnostics request")
-
-                request = await self._diagnostics_request()
-
-                if request == servo.api.DiagnosticStates.withhold:
-                    self.logger.trace("Withholding diagnostics")
-
-                elif request == servo.api.DiagnosticStates.send:
-                    self.logger.info(f"Diagnostics requested, gathering and sending")
-                    diagnostic_data = await self._get_diagnostics()
-                    send = await self._post_diagnostics(diagnostic_data)
-                    reset = await self._reset_diagnostics()
-
-                elif request == servo.api.DiagnosticStates.stop:
-                    self.logger.info(f"Received request to disable polling for diagnostics")
-                    asyncio.current_task().cancel()
-                else:
-                    raise
-
-                await asyncio.sleep(10)
-
-            except Exception as error:
-                self.logger.exception(f"failed with unrecoverable error: {error}")
-                raise error
-
     # Main run loop for processing commands from the optimizer
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
@@ -270,12 +237,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
-
-        if diagnostics:
-            self._diagnostics_loop_task = asyncio.create_task(self.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
-            self._diagnostics_loop_task.add_done_callback(_reraise_if_necessary)
-        else:
-            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
     async def run(self, *, poll: bool = True, diagnostics: bool = True) -> None:
         self._running = True
@@ -326,6 +287,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.run_main_loop(diagnostics=diagnostics)
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
+
+        if diagnostics:
+            diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
+            self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+        else:
+            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
