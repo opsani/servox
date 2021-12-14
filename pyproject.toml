@@ -36,6 +36,7 @@ colorama = "^0.4.4"
 pyfiglet = "^0.8.post1"
 curlify2 = "^1.0.0"
 kubernetes_asyncio = "^12.1.2"
+python-dateutil = "^2.8.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^6.2.4"
@@ -80,7 +81,6 @@ pytest-vscodedebug = "^0.1.0"
 pytest-html = "^3.1.1"
 bandit = "^1.7.0"
 watchgod = "^0.7"
-filelock = "^3.0.12"
 statesman = "^1.0.2.post1"
 
 [tool.poetry.scripts]
@@ -92,6 +92,7 @@ kubernetes = "servo.connectors.kubernetes:KubernetesConnector"
 prometheus = "servo.connectors.prometheus:PrometheusConnector"
 opsani_dev = "servo.connectors.opsani_dev:OpsaniDevConnector"
 scripts = "servo.connectors.scripts:ScriptsConnector"
+kube_metrics = "servo.connectors.kube_metrics:KubeMetricsConnector"
 
 [build-system]
 requires = ["poetry>=0.12"]
