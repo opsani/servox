@@ -224,10 +224,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         if self._main_loop_task:
             self._main_loop_task.cancel()
             self.logger.trace(f"task '{self._main_loop_task.get_name}' cancelled")
-            if self.servo is not None:
-                loop = asyncio.get_event_loop()
-                loop.create_task(self.servo.dispatch_event(servo.Events.startup))
-                self.logger.trace("startup event dispatched")
+            loop = asyncio.get_event_loop()
+            loop.create_task(self.servo.dispatch_event(servo.Events.startup))
+            self.logger.trace("startup event dispatched")
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
