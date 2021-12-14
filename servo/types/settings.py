@@ -237,16 +237,6 @@ class RangeSetting(Setting):
 
         return value
 
-    @pydantic.root_validator(skip_on_failure=True)
-    @classmethod
-    def _min_cannot_be_less_than_step(cls, values: dict) -> dict[str, Any]:
-        min, step = values["min"], values["step"]
-        # NOTE: some resources can scale to zero (e.g., Replicas)
-        if min != 0 and min < step:
-            raise ValueError(f'min cannot be less than step ({min} < {step})')
-
-        return values
-
     @pydantic.validator("max")
     @classmethod
     def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
@@ -269,6 +259,9 @@ class RangeSetting(Setting):
             values["max"],
             values["step"],
         )
+
+        if max_ and min_ and _is_step_aligned(max_ - min_, step):
+            return values
 
         for boundary in ('min', 'max'):
             value = values[boundary]
@@ -478,15 +471,22 @@ def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Opti
 
     return (lower_repr, upper_repr)
 
-class EnvironmentSetting(abc.ABC):
+class EnvironmentSetting(object):
+    __metaclass__ = abc.ABCMeta
+
     @property
     @abc.abstractmethod
-    def name(self) -> str:
+    def name(self) -> pydantic.Field:
         ...
 
     @property
     @abc.abstractmethod
-    def value(self) -> Optional[Numeric]:
+    def type(self) -> pydantic.Field:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def value(self) -> Optional[Union[Numeric,str]]:
         ...
 
     @classmethod
@@ -505,9 +505,9 @@ class EnvironmentSetting(abc.ABC):
         if isinstance(value, dict):
             _type = value.get('type')
             if _type == 'range':
-                return EnvironmentRangeSetting(value)
+                return EnvironmentRangeSetting(**value)
             elif _type == 'enum':
-                return EnvironmentEnumSetting(value)
+                return EnvironmentEnumSetting(**value)
             else:
                 raise ValueError(f'Unknown type for environment variable settings {_type}')
         else:
