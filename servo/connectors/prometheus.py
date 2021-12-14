@@ -777,8 +777,7 @@ class PrometheusConnector(servo.BaseConnector):
         if streaming_interval is not None:
             logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
             logger.info(f"Streaming Prometheus metrics every {streaming_interval}")
-
-            try:
+            if self.pubsub_exchange.get_channel(CHANNEL) is None:
                 @self.publish(CHANNEL, every=streaming_interval)
                 async def _publish_metrics(publisher: servo.pubsub.Publisher) -> None:
                     report = []
@@ -797,12 +796,6 @@ class PrometheusConnector(servo.BaseConnector):
                             report.append((response.metric.name, timestamp.isoformat(), value))
                     await publisher(servo.pubsub.Message(json=report))
                     logger.debug(f"Published {len(report)} metrics.")
-            except KeyError as e:
-                # Handling this KeyError makes self.startup() idempotent.
-                # This KeyError will be raised when self.startup() is executed more than once. The
-                # exception is raised from the registration of the above function as a publisher -
-                # the KeyError indicates that a publisher with the same name already exists.
-                self.logger.debug(f"{type(e)}: {str(e)})")
 
     @servo.on_event()
     async def check(
