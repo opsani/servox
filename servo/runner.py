@@ -193,12 +193,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     # NOTE this is not an asyncio.loop, just a standard main() function
     async def main_loop(self) -> None:
         # FIXME: We have seen exceptions from using `with self.servo.current()` crossing contexts
-        self.logger.debug("setting servo")
         _set_current_servo(self.servo)
-        self.logger.debug("set servo")
 
         while self._running:
-            self.logger.debug("still runner._running")
             try:
                 if self.interactive:
                     if not typer.confirm("Poll for next command?"):
@@ -206,9 +203,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                         await asyncio.sleep(60)
                         continue
 
-                self.logger.debug("awaiting exec_command")
                 status = await self.exec_command()
-                self.logger.debug("awaited exec_command")
                 if status.status == servo.api.OptimizerStatuses.unexpected_event:
                     self.logger.warning(
                         f"server reported unexpected event: {status.reason}"
@@ -226,13 +221,13 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 raise error
 
     def run_main_loop(self) -> None:
-        if self._main_loop_task:  # i.e. if this isn't the first time the run_main_loop() has been called
+        if self._main_loop_task:
             self._main_loop_task.cancel()
-            self.logger.debug("old main_loop_task cancelled")
+            self.logger.trace(f"task '{self._main_loop_task.get_name}' cancelled")
             if self.servo is not None:
                 loop = asyncio.get_event_loop()
                 loop.create_task(self.servo.dispatch_event(servo.Events.startup))
-                self.logger.debug("startup Event dispatched")
+                self.logger.trace("startup event dispatched")
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
@@ -248,7 +243,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.debug(f"creating new main loop: {main_loop_name}")
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=main_loop_name)
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
-        self.logger.debug(f"created new main loop: {main_loop_name}")
 
     async def run(self, *, poll: bool = True) -> None:
         self._running = True
@@ -320,7 +314,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
     def __init__(self, assembly: servo.Assembly, **kwargs) -> None:
-        # This allows <assembly> to be passed as a positional argument
+        # Defining an __init__ explicitly within a pydantic.BaseModel as we've done here allows the
+        # <assembly> argument to be passed as a positional argument. It's entirely to facilitate the
+        # clarity of code in blocks that create AssemblyRunner objects.
         super().__init__(assembly=assembly, **kwargs)
 
     def _runner_for_servo(self, servo: servo.Servo) -> ServoRunner:
@@ -388,7 +384,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     t for t in asyncio.all_tasks() if t is not asyncio.current_task()
                 ]
                 self.logger.info(f"Cancelling {len(tasks)} outstanding tasks")
-                [self.logger.debug(f"\t{task.get_name()}") for task in tasks]
+                [self.logger.trace(f"\t{task.get_name()}") for task in tasks]
                 [task.cancel() for task in tasks]
 
                 await asyncio.gather(*tasks, return_exceptions=True)
@@ -418,7 +414,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 loop.create_task(servo_runner.run(poll=poll))
                 self.runners.append(servo_runner)
             loop.run_forever()
-
         finally:
             loop.close()
 
