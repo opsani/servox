@@ -502,7 +502,9 @@ class EnvironmentSetting(object):
 
     @classmethod
     def validate(cls: "EnvironmentSetting", value: Any) -> Union["EnvironmentEnumSetting", "EnvironmentRangeSetting"]:
-        if isinstance(value, dict):
+        if issubclass(type(value), EnvironmentSetting):
+            return value
+        elif isinstance(value, dict):
             _type = value.get('type')
             if _type == 'range':
                 return EnvironmentRangeSetting(**value)
