@@ -124,73 +124,70 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.info(f"What's Next? => {cmd_response.command}")
         self.logger.trace(devtools.pformat(cmd_response))
 
-        try:
-            if cmd_response.command == servo.api.Commands.describe:
-                description = await self.describe(Control(**cmd_response.param.get("control", {})))
+        if cmd_response.command == servo.api.Commands.describe:
+            description = await self.describe(Control(**cmd_response.param.get("control", {})))
+            self.logger.success(
+                f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
+            )
+            self.logger.debug(devtools.pformat(description))
+
+            status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
+            return await self._post_event(servo.api.Events.describe, status.dict())
+
+        elif cmd_response.command == servo.api.Commands.measure:
+            try:
+                measurement = await self.measure(cmd_response.param)
                 self.logger.success(
-                    f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
+                    f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
                 )
-                self.logger.debug(devtools.pformat(description))
+                self.logger.trace(devtools.pformat(measurement))
+                param = measurement.__opsani_repr__()
+            except servo.errors.EventError as error:
+                self.logger.error(f"Measurement failed: {error}")
+                param = servo.api.Status.from_error(error).dict()
+                self.logger.error(f"Responding with {param}")
+                self.logger.opt(exception=error).debug("Measure failure details")
 
-                status = servo.api.Status.ok(descriptor=description.__opsani_repr__())
-                return await self._post_event(servo.api.Events.describe, status.dict())
+            return await self._post_event(servo.api.Events.measure, param)
 
-            elif cmd_response.command == servo.api.Commands.measure:
-                try:
-                    measurement = await self.measure(cmd_response.param)
-                    self.logger.success(
-                        f"Measured: {len(measurement.readings)} readings, {len(measurement.annotations)} annotations"
-                    )
-                    self.logger.trace(devtools.pformat(measurement))
-                    param = measurement.__opsani_repr__()
-                except servo.errors.EventError as error:
-                    self.logger.error(f"Measurement failed: {error}")
-                    param = servo.api.Status.from_error(error).dict()
-                    self.logger.error(f"Responding with {param}")
-                    self.logger.opt(exception=error).debug("Measure failure details")
+        elif cmd_response.command == servo.api.Commands.adjust:
+            adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
+            control = Control(**cmd_response.param.get("control", {}))
 
-                return await self._post_event(servo.api.Events.measure, param)
+            try:
+                description = await self.adjust(adjustments, control)
+                status = servo.api.Status.ok(state=description.__opsani_repr__())
 
-            elif cmd_response.command == servo.api.Commands.adjust:
-                adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
-                control = Control(**cmd_response.param.get("control", {}))
-
-                try:
-                    description = await self.adjust(adjustments, control)
-                    status = servo.api.Status.ok(state=description.__opsani_repr__())
-
-                    components_count = len(description.components)
-                    settings_count = sum(
-                        len(component.settings) for component in description.components
-                    )
-                    self.logger.success(
-                        f"Adjusted: {components_count} components, {settings_count} settings"
-                    )
-                except servo.EventError as error:
-                    self.logger.error(f"Adjustment failed: {error}")
-                    status = servo.api.Status.from_error(error)
-                    self.logger.error(f"Responding with {status.dict()}")
-                    self.logger.opt(exception=error).debug("Adjust failure details")
-
-                return await self._post_event(servo.api.Events.adjust, status.dict())
-
-            elif cmd_response.command == servo.api.Commands.sleep:
-                # TODO: Model this
-                duration = Duration(cmd_response.param.get("duration", 120))
-                status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
-                reason = servo.utilities.key_paths.value_for_key_path(
-                    cmd_response.param, "data.reason", "unknown reason"
+                components_count = len(description.components)
+                settings_count = sum(
+                    len(component.settings) for component in description.components
                 )
-                msg = f"{status}: {reason}" if status else f"{reason}"
-                self.logger.info(f"Sleeping for {duration} ({msg}).")
-                await asyncio.sleep(duration.total_seconds())
+                self.logger.success(
+                    f"Adjusted: {components_count} components, {settings_count} settings"
+                )
+            except servo.EventError as error:
+                self.logger.error(f"Adjustment failed: {error}")
+                status = servo.api.Status.from_error(error)
+                self.logger.error(f"Responding with {status.dict()}")
+                self.logger.opt(exception=error).debug("Adjust failure details")
 
-                # Return a status so we have a simple API contract
-                return servo.api.Status(status="ok", message=msg)
-            else:
-                raise ValueError(f"Unknown command '{cmd_response.command.value}'")
-        finally:
-            self.logger.debug("at tail of runner.exec_command")
+            return await self._post_event(servo.api.Events.adjust, status.dict())
+
+        elif cmd_response.command == servo.api.Commands.sleep:
+            # TODO: Model this
+            duration = Duration(cmd_response.param.get("duration", 120))
+            status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
+            reason = servo.utilities.key_paths.value_for_key_path(
+                cmd_response.param, "data.reason", "unknown reason"
+            )
+            msg = f"{status}: {reason}" if status else f"{reason}"
+            self.logger.info(f"Sleeping for {duration} ({msg}).")
+            await asyncio.sleep(duration.total_seconds())
+
+            # Return a status so we have a simple API contract
+            return servo.api.Status(status="ok", message=msg)
+        else:
+            raise ValueError(f"Unknown command '{cmd_response.command.value}'")
 
     # Main run loop for processing commands from the optimizer
     # NOTE this is not an asyncio.loop, just a standard main() function
