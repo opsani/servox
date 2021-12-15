@@ -219,7 +219,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.exception(f"failed with unrecoverable error: {error}")
                 raise error
 
-    def run_main_loop(self, diagnostics: bool = True) -> None:
+    def run_main_loop(self) -> None:
         if self._main_loop_task:
             self._main_loop_task.cancel()
 
@@ -238,7 +238,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
 
-    async def run(self, *, poll: bool = True, diagnostics: bool = True) -> None:
+    async def run(self, *, poll: bool = True) -> None:
         self._running = True
 
         _set_current_servo(self.servo)
@@ -284,7 +284,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.logger.exception("exception encountered during connect")
 
         if poll:
-            self.run_main_loop(diagnostics=diagnostics)
+            self.run_main_loop()
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
 
@@ -389,6 +389,13 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 if poll:
                     runner = self._runner_for_servo(servo.current_servo())
                     runner.run_main_loop()
+
+                if not servo.current_servo().config.no_diagnostics:
+                    diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
+                    self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+                else:
+                    self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
+
             else:
                 self.logger.error(
                     f"unrecognized exception passed to progress exception handler: {error}"
