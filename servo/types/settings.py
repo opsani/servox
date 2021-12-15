@@ -3,7 +3,7 @@ import decimal
 import enum
 import functools
 import pydantic
-from typing import Any, Callable, Generator, Optional, Type, TypeVar, Union, cast
+from typing import Any, Callable, Generator, Optional, Type, TypeVar, Union, cast, get_origin
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
 
@@ -256,7 +256,7 @@ class RangeSetting(Setting):
             values["step"],
         )
 
-        if max_ and min_:
+        if max_ is not None and min_ is not None:
             diff = max_ - min_
             if step == 0 and diff == 0:
                 pass
@@ -269,14 +269,16 @@ class RangeSetting(Setting):
             elif step == 0:
                 raise ValueError(f"step cannot be zero")
 
-            if diff == step or (decimal.Decimal(str(float(diff))) % decimal.Decimal(str(float(step))) == 0):
+            if _is_step_aligned(diff, step):
                 return values
             else:
                 smaller_range, larger_range = _suggest_step_aligned_values(diff, step)
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
+                # try new error handling and fall back to old if bugs
                 try:
-                    # try new error handling and fall back to old if bugs
                     value_type = cls.get_setting_type()
+                    if get_origin(value_type) is Union:
+                        value_type = str
                     cast_diff, lower_min, upper_min, lower_max, upper_max = (
                         value_type(v) for v in
                         (diff, max_ - smaller_range, max_ - larger_range, min_ + smaller_range, min_ + larger_range)
@@ -307,6 +309,9 @@ class RangeSetting(Setting):
                 exclude_none=True
             )
         }
+
+def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
+    return value == step or (decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0)
 
 class CPU(RangeSetting):
     """CPU is a Setting that describes an adjustable range of values for CPU
