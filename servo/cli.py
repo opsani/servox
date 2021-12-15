@@ -1145,6 +1145,11 @@ class ServoCLI(CLI):
                 help="Verify all checks pass before running",
                 envvar="SERVO_RUN_CHECK",
             ),
+            no_poll: Optional[bool] = typer.Option(
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
+            ),
             interactive: Optional[bool] = typer.Option(
                 None,
                 "--interactive",
@@ -1479,8 +1484,7 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    poll = not no_poll
-                    servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
+                    servo.runner.AssemblyRunner(context.assembly).run()
                 elif not exit_on_success:
                     return
 
