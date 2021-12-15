@@ -784,10 +784,12 @@ class TestCPU:
         assert serialization["max"] == "4"
         assert serialization["step"] == "125m"
 
-    def test_min_cannot_be_less_than_step(self) -> None:
-        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (125m < 250m)')):
+    def test_cpu_must_be_step_aligned(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min/max difference is not step aligned: 3.875 is not a multiple of 250m')):
             CPU(min="125m", max=4.0, step=0.250)
 
+    def test_min_can_be_less_than_step(self) -> None:
+        CPU(min="125m", max=4.125, step=0.250)
 
 class TestCore:
     @pytest.mark.parametrize(
@@ -898,9 +900,12 @@ class TestMemory:
         assert serialization["max"] == "4.0Gi"
         assert serialization["step"] == "128.0Mi"
 
-    def test_min_cannot_be_less_than_step(self) -> None:
-        with pytest.raises(ValueError, match=re.escape('min cannot be less than step (33554432 < 268435456)')):
-            Memory(min="32 MiB", max=4.0, step=268435456)
+    def test_mem_must_be_step_aligned(self) -> None:
+        with pytest.raises(ValueError, match=re.escape('min/max difference is not step aligned: 3.96875Gi is not a multiple of 256Mi')):
+            Memory(min="32 MiB", max=4.0, step="256MiB")
+
+    def test_min_can_be_less_than_step(self) -> None:
+        Memory(min="32 MiB", max=4.03125, step="256MiB")
 
 def test_millicpu():
     class Model(pydantic.BaseModel):

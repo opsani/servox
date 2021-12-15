@@ -3,7 +3,7 @@ import decimal
 import enum
 import functools
 import pydantic
-from typing import Any, Callable, Generator, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Generator, Optional, Type, TypeVar, Union, cast
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
 
@@ -88,9 +88,13 @@ class Setting(BaseModel, abc.ABC):
             raise pydantic.ValidationError([error_], self.__class__)
 
     @classmethod
+    def get_setting_type(cls) -> Type[Any]:
+        return cls.__fields__["value"].type_
+
+    @classmethod
     def human_readable(cls, value: Any) -> str:
         try:
-            output_type = cls.__fields__["value"].type_
+            output_type = cls.get_setting_type()
             casted_value = output_type(value)
             if isinstance(casted_value, HumanReadable):
                 return cast(HumanReadable, casted_value).human_readable()
@@ -229,14 +233,6 @@ class RangeSetting(Setting):
 
         return values
 
-    @pydantic.validator("step")
-    @classmethod
-    def _step_cannot_be_zero(cls, value: Numeric) -> Numeric:
-        if not value:
-            raise ValueError(f"step cannot be zero")
-
-        return value
-
     @pydantic.validator("max")
     @classmethod
     def _max_must_define_valid_range(cls, max_: Numeric, values) -> Numeric:
@@ -260,16 +256,43 @@ class RangeSetting(Setting):
             values["step"],
         )
 
-        if max_ and min_ and _is_step_aligned(max_ - min_, step):
-            return values
-
-        for boundary in ('min', 'max'):
-            value = values[boundary]
-            if value and not _is_step_aligned(value, step):
-                suggested_lower, suggested_upper = _suggest_step_aligned_values(value, step, in_repr=cls.human_readable)
+        if max_ and min_:
+            diff = max_ - min_
+            if step == 0 and diff == 0:
+                pass
+            elif step != 0 and diff == 0:
                 desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
                 raise ValueError(
-                    f"{desc} {boundary} is not step aligned: {cls.human_readable(value)} is not a multiple of {cls.human_readable(step)} (consider {suggested_lower} or {suggested_upper})."
+                    f"step must be zero when min equals max: step {step} cannot step from {min_} to {max_} "
+                    "(consider using the pinned attribute of settings if you have a value you don't want changed)"
+                )
+            elif step == 0:
+                raise ValueError(f"step cannot be zero")
+
+            if diff == step or (decimal.Decimal(str(float(diff))) % decimal.Decimal(str(float(step))) == 0):
+                return values
+            else:
+                smaller_range, larger_range = _suggest_step_aligned_values(diff, step)
+                desc = f"{cls.__name__}({repr(name)} {cls.human_readable(min_)}-{cls.human_readable(max_)}, {cls.human_readable(step)})"
+                try:
+                    # try new error handling and fall back to old if bugs
+                    value_type = cls.get_setting_type()
+                    cast_diff, lower_min, upper_min, lower_max, upper_max = (
+                        value_type(v) for v in
+                        (diff, max_ - smaller_range, max_ - larger_range, min_ + smaller_range, min_ + larger_range)
+                    )
+                except:
+                    import servo
+                    servo.logger.exception(f"Failed to apply new formatting to derived RangeSetting validation")
+                    raise ValueError(
+                        f"{desc} min/max difference is not step aligned: {diff} is not a multiple of {step} (consider "
+                        f"min {max_ - smaller_range} or {max_ - larger_range}, max {min_ + smaller_range} or {min_ + larger_range})."
+                    )
+
+                raise ValueError(
+                    f"{desc} min/max difference is not step aligned: {cast_diff} is not a multiple of {step} (consider "
+                    f"min {lower_min} or {upper_min}, max {lower_max} "
+                    f"or {upper_max})."
                 )
 
         return values
@@ -406,18 +429,10 @@ class InstanceType(EnumSetting):
         description="The unit of instance types identifying the provider.",
     )
 
-def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
-    if value == step:
-        return True
-    elif value > step:
-        return decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
-    else:
-        return decimal.Decimal(str(float(step))) % decimal.Decimal(str(float(value))) == 0
-
 def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None) -> tuple[str, str]:
     if in_repr is None:
-        # return string identity by default
-        in_repr = lambda x: str(x)
+        # return raw data for further processing
+        in_repr = lambda x: x
 
     # declare numeric and textual representations
     parser = functools.partial(pydantic.parse_obj_as, value.__class__)

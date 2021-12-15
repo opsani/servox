@@ -2913,6 +2913,7 @@ class ShortByteSize(pydantic.ByteSize):
         return super().validate(v)
 
     def human_readable(self) -> str:
+        """NOTE: only represents precision up to 1 decimal place (see pydantic's human_readable)"""
         sup = super().human_readable()
         # Remove the 'B' suffix to align with Kubernetes units (`GiB` -> `Gi`)
         if sup[-1] == 'B' and sup[-2].isalpha():
@@ -2921,6 +2922,16 @@ class ShortByteSize(pydantic.ByteSize):
 
     def __opsani_repr__(self) -> float:
         return float(decimal.Decimal(self) / GiB)
+
+    def __str__(self) -> str:
+        num = decimal.Decimal(self)
+        units = ['B', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi']
+        for unit in units:
+            if abs(num) < 1024:
+                return f'{num:f}{unit}'
+            num /= 1024
+
+        return f"{num:f}Ei"
 
 
 class Memory(servo.Memory):

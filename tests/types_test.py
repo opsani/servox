@@ -624,10 +624,10 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 3, 1, None),
-            (1, 1, 1, None),
+            (1, 1, 1, "step must be zero when min equals max: step 1 cannot step from 1 to 1"),
             (1, 0, 1, "min cannot be greater than max (1 > 0)"),
             (1.0, 3.0, 1.0, None),
-            (1.0, 2.0, 3.0, "min cannot be less than step (1.0 < 3.0)"),
+            (1.0, 2.0, 3.0, None),
             (1.0, 0.0, 1.0, "min cannot be greater than max (1.0 > 0.0)"),
         ],
     )
@@ -641,7 +641,7 @@ class TestRangeSetting:
             assert error
             assert "1 validation error for RangeSetting" in str(error.value)
             assert error.value.errors()[0]["type"] == "value_error"
-            assert error.value.errors()[0]["msg"] == error_message
+            assert error.value.errors()[0]["msg"].startswith(error_message)
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
 
@@ -685,7 +685,7 @@ class TestRangeSetting:
             RangeSetting(name="range", min=0, max=10, step=0)
 
     def test_min_can_equal_max(self) -> None:
-        RangeSetting(name="range", min=5, max=5, step=1)
+        RangeSetting(name="range", min=5, max=5, step=0)
 
 
 
