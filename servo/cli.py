@@ -1145,17 +1145,6 @@ class ServoCLI(CLI):
                 help="Verify all checks pass before running",
                 envvar="SERVO_RUN_CHECK",
             ),
-            no_poll: Optional[bool] = typer.Option(
-                None,
-                "--no-poll",
-                help="Do not poll the Opsani API for commands",
-            ),
-            no_diagnostics: Optional[bool] = typer.Option(
-                None,
-                "--no-diagnostics",
-                help="Do not poll the Opsani API for diagnostics",
-                envvar="NO_DIAGNOSTICS",
-            ),
             interactive: Optional[bool] = typer.Option(
                 None,
                 "--interactive",
@@ -1174,8 +1163,7 @@ class ServoCLI(CLI):
 
             if context.assembly:
                 poll = not no_poll
-                diagnostics = not no_diagnostics
-                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, diagnostics=diagnostics, interactive=bool(interactive))
+                servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
             else:
                 raise typer.Abort("failed to assemble servo")
 
@@ -1238,17 +1226,6 @@ class ServoCLI(CLI):
                 "-d",
                 help="Delay duration. Requires --wait",
                 metavar="[DURATION]",
-            ),
-            no_poll: Optional[bool] = typer.Option(
-                None,
-                "--no-poll",
-                help="Do not poll the Opsani API for commands",
-            ),
-            no_diagnostics: Optional[bool] = typer.Option(
-                None,
-                "--no-diagnostics",
-                help="Do not poll the Opsani API for diagnostics",
-                envvar="NO_DIAGNOSTICS",
             ),
             interactive: Optional[bool] = typer.Option(
                 None,
@@ -1503,8 +1480,7 @@ class ServoCLI(CLI):
             if ready:
                 if run:
                     poll = not no_poll
-                    diagnostics = not no_diagnostics
-                    servo.runner.AssemblyRunner(context.assembly).run(poll=poll, diagnostics=diagnostics, interactive=bool(interactive))
+                    servo.runner.AssemblyRunner(context.assembly).run(poll=poll, interactive=bool(interactive))
                 elif not exit_on_success:
                     return
 

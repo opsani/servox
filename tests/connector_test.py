@@ -1023,6 +1023,7 @@ def test_vegeta_cli_generate_with_defaults(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
+        'no_diagnostics': False,
         'settings': {
             'backoff': {
                 '__default__': {'max_time': '10m'},'connect': {'max_time': '1h'}

@@ -288,7 +288,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
 
-        if diagnostics:
+        if not servo.current_servo().config.no_diagnostics:
             diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
             self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
         else:
