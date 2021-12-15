@@ -26,7 +26,7 @@ class TestStatus:
         assert status.status == 'cancelled'
 
 
-from servo.api import CommandResponse, MeasureParams, Status, descriptor_to_adjustments
+from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status
 from servo.types import Adjustment, Control
 
 
