@@ -188,8 +188,8 @@ class TestIntegration:
         async def test_target_container_resources_outside_of_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            config.cpu.min = "4000m"
             config.cpu.max = "5000m"
+            config.cpu.min = "4000m"
             config.memory.min = "2GiB"
             config.memory.min = "4GiB"
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
@@ -387,8 +387,8 @@ class TestRolloutIntegration:
         async def test_rollout_check_rsrc_limits_fails(
             self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            rollout_config.cpu.min = "4000m"
             rollout_config.cpu.max = "5000m"
+            rollout_config.cpu.min = "4000m"
             rollout_config.memory.min = "2GiB"
             rollout_config.memory.min = "4GiB"
             result = await rollout_checks.run_one(id=f"check_target_container_resources_within_limits")

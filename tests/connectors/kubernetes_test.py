@@ -1863,7 +1863,7 @@ class TestKubernetesResourceRequirementsIntegration:
         memory_requirements = container.get_resource_requirements('memory')
 
         assert cpu_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1'
-        assert memory_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1073741824'
+        assert memory_requirements[servo.connectors.kubernetes.ResourceRequirement.limit] == '1Gi'
 
     @pytest.mark.applymanifests("../manifests/resource_requirements",
                                 files=["fiber-http_no_cpu_limit.yaml"])
