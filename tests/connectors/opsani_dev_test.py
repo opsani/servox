@@ -191,7 +191,7 @@ class TestIntegration:
             config.cpu.max = "5000m"
             config.cpu.min = "4000m"
             config.memory.min = "2GiB"
-            config.memory.min = "4GiB"
+            config.memory.max = "4GiB"
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 
@@ -390,7 +390,7 @@ class TestRolloutIntegration:
             rollout_config.cpu.max = "5000m"
             rollout_config.cpu.min = "4000m"
             rollout_config.memory.min = "2GiB"
-            rollout_config.memory.min = "4GiB"
+            rollout_config.memory.max = "4GiB"
             result = await rollout_checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 
