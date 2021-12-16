@@ -4,10 +4,8 @@ import abc
 import copy
 import datetime
 import enum
-import json
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import aiofiles
 import backoff
 import curlify2
 import devtools
@@ -80,6 +78,8 @@ class Request(pydantic.BaseModel):
         json_encoders = {
             Events: lambda v: str(v),
         }
+
+
 class Status(pydantic.BaseModel):
     status: Statuses
     message: Optional[str] = None

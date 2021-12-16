@@ -33,6 +33,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     _running: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
     _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -238,6 +239,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
 
+        if not servo.current_servo().config.no_diagnostics:
+            diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
+            self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+        else:
+            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
+
     async def run(self, *, poll: bool = True) -> None:
         self._running = True
 
@@ -288,11 +295,6 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
 
-        if not servo.current_servo().config.no_diagnostics:
-            diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
-            self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
-        else:
-            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
@@ -389,12 +391,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 if poll:
                     runner = self._runner_for_servo(servo.current_servo())
                     runner.run_main_loop()
-
-                if not servo.current_servo().config.no_diagnostics:
-                    diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
-                    self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
-                else:
-                    self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
             else:
                 self.logger.error(
