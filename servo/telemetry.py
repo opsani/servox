@@ -106,7 +106,8 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
                 elif request == DiagnosticStates.stop:
                     self.logger.info(f"Received request to disable polling for diagnostics")
-                    asyncio.current_task().cancel()
+                    self.servo.config.no_diagnostics = True
+                    self._running = False
                 else:
                     raise
 
