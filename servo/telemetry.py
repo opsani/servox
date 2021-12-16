@@ -124,8 +124,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         raw_logs = logs.encode("ascii", "ignore").decode()
 
         # Limit + truncate per 1MiB /assets limit
-        log_data_lines = list(filter(None, raw_logs[-ONE_MiB:].split("\n")[1:]))
-
+        log_data_lines = filter(None, raw_logs[-ONE_MiB:].split("\n")[1:])
         log_dict = {}
 
         for line in log_data_lines:
