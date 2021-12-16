@@ -306,14 +306,6 @@ class KubeMetricsConnector(servo.BaseConnector):
                         _append_data_point, datapoints_dicts=datapoints_dicts, pod_name=pod_name, time=timestamp
                     )
 
-                    if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
-                        pod: Pod = next((p for p in await target_resource.get_pods() if p.name == pod_name), None)
-                        if pod is None:
-                            # TODO (improvement) graceful fallback if k8s connectoer operations fail
-                            raise RuntimeError(f"Unable to find pod {pod_name} in pods for {target_resource.obj.kind} {target_resource.name}")
-                        restart_count = pod.restart_count
-                        _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value, value=restart_count)
-
                     target_container = self._get_target_container_metrics(pod_metrics_list_item=pod_entry)
                     if SupportedKubeMetrics.MAIN_CPU_USAGE in target_metrics:
                         cpu_usage = Core.parse(target_container["usage"]["cpu"])
@@ -362,6 +354,20 @@ class KubeMetricsConnector(servo.BaseConnector):
                         else:
                             mem_saturation = None
                         _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
+
+            else:
+                timestamp = datetime.now()
+
+            if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
+                _append_data_point_for_time = functools.partial(
+                    _append_data_point, datapoints_dicts=datapoints_dicts, time=timestamp
+                )
+                for pod in await target_resource.get_pods():
+                    _append_data_point_for_time(
+                        pod_name=pod.name,
+                        metric_name=SupportedKubeMetrics.MAIN_POD_RESTART_COUNT.value,
+                        value=pod.restart_count
+                    )
 
             # Retrieve latest tuning state
             target_resource_tuning_pod_name = f"{target_resource.name}-tuning"
