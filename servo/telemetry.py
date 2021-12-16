@@ -91,7 +91,6 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         while self._running:
             try:
                 self.logger.trace("Polling for diagnostics request")
-
                 request = await self._diagnostics_request()
 
                 if request == DiagnosticStates.withhold:
