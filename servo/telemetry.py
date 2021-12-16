@@ -112,9 +112,9 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
                 await asyncio.sleep(60)
 
-            except Exception as error:
-                self.logger.exception(f"failed with unrecoverable error: {error}")
-                raise error
+            except Exception:
+                self.logger.exception(f"Diagnostics check failed with unrecoverable error") # exception logger logs the exception object
+                self._running = False
 
     async def _get_diagnostics(self) -> Diagnostics:
 
