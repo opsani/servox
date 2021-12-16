@@ -71,8 +71,8 @@ class Telemetry(pydantic.BaseModel):
 
 class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
-    _servo: servo.Servo = pydantic.PrivateAttr(None)
-    _running: bool = pydantic.PrivateAttr(False)
+    servo: servo.Servo = None
+    _running: bool = False
 
     def __init__(self, servo: servo.Servo) -> None: # noqa: D10
         self.servo = servo
