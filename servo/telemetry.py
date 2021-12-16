@@ -101,8 +101,8 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
                     self.logger.info(f"Diagnostics requested, gathering and sending")
                     diagnostic_data = await self._get_diagnostics()
 
-                    send = await self._put_diagnostics(diagnostic_data)
-                    reset = await self._reset_diagnostics()
+                    await self._put_diagnostics(diagnostic_data)
+                    await self._reset_diagnostics()
 
                 elif request == DiagnosticStates.stop:
                     self.logger.info(f"Received request to disable polling for diagnostics")
