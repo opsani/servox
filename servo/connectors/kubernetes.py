@@ -769,7 +769,7 @@ class Container(servo.logging.Mixin):
             # Filter out vars with the same name as the ones we are setting
             new_vars = [v for v in new_vars if v.name != variable_name]
 
-        new_vars.extend(V1EnvVar(name=variable_name, value=value))
+        new_vars.append(V1EnvVar(name=variable_name, value=value))
         self.obj.env = new_vars
 
     @property
