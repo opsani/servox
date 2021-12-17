@@ -530,6 +530,30 @@ class EnvironmentSetting(Setting):
         return self.literal or self.name
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
+
+    # TODO promote sticky value typing to general settings types
+    _value_type: type = pydantic.PrivateAttr(None)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if self._value_type is None and self.value is not None:
+            self._value_type = type(self.value)
+
+    @property
+    def value(self) -> Optional[Numeric]:
+        return super().value
+
+    @property.setter
+    def value(self, new_value: Any) -> None:
+        if self._value_type is not None:
+            new_value = self._value_type(new_value)
+
+        super().value = new_value
+
+        if self._value_type is None:
+            self._value_type = type(self.value)
+
     # ENV Var values are almost always represented as a str, override value parsing to accomodate
     value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
