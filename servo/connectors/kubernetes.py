@@ -761,7 +761,9 @@ class Container(servo.logging.Mixin):
         return None
 
     def set_environment_variable(self, variable_name: str, value: Any) -> None:
-        if "valueFrom" in value:
+        # V1EnvVar value type is str so value will be converted eventually. Might as well do it up front
+        val_str = str(value)
+        if "valueFrom" in val_str:
             raise ValueError("Adjustment of valueFrom variables is not supported yet")
 
         new_vars: list[V1EnvVar] = self.obj.env or []
@@ -769,7 +771,7 @@ class Container(servo.logging.Mixin):
             # Filter out vars with the same name as the ones we are setting
             new_vars = [v for v in new_vars if v.name != variable_name]
 
-        new_vars.append(V1EnvVar(name=variable_name, value=value))
+        new_vars.append(V1EnvVar(name=variable_name, value=val_str))
         self.obj.env = new_vars
 
     @property
