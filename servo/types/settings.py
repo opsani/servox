@@ -43,9 +43,9 @@ class Setting(BaseModel, abc.ABC):
             new_setting = self.copy()
             new_setting.value = value
             return new_setting
-        except ValueError as ve:
+        except ValueError:
             import servo
-            servo.logger.error(f"Failed to parse safe_set value {value}")
+            servo.logger.exception(f"Failed to parse safe_set value {repr(value)}")
             return self.copy(update={"value": value})
 
     def summary(self) -> str:
@@ -491,23 +491,7 @@ def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Opti
 
     return (lower_repr, upper_repr)
 
-class EnvironmentSetting(object):
-    __metaclass__ = abc.ABCMeta
-
-    @property
-    @abc.abstractmethod
-    def name(self) -> pydantic.Field:
-        ...
-
-    @property
-    @abc.abstractmethod
-    def type(self) -> pydantic.Field:
-        ...
-
-    @property
-    @abc.abstractmethod
-    def value(self) -> Optional[Union[Numeric,str]]:
-        ...
+class EnvironmentSetting(Setting):
 
     @classmethod
     def __modify_schema__(cls, field_schema: dict[str, Any]) -> None:
@@ -546,7 +530,10 @@ class EnvironmentSetting(object):
         return self.literal or self.name
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
-    pass
+    # ENV Var values are almost always represented as a str, override value parsing to accomodate
+    value: Optional[Union[float, int]] = pydantic.Field(
+        None, description="The optional value of the setting as reported by the servo"
+    )
 
 class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass
