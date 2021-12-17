@@ -89,6 +89,7 @@ class FastFailObserver(pydantic.BaseModel):
 
             if metric_value.is_nan() or threshold_value.is_nan():
                 self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold))
+                continue
 
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
