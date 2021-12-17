@@ -145,6 +145,13 @@ https://pypi.org/project/responses/
 Made available under the Apache License 2.0
 https://spdx.org/licenses/Apache-2.0
 
+aiofiles - file support for asyncio
+Copyright 2017-2021  Tin Tvrtkovic.
+https://github.com/Tinche/aiofiles
+https://pypi.org/project/aiofiles/
+Made available under the Apache License 2.0
+https://spdx.org/licenses/Apache-2.0
+
 aiohttp - Async http client/server framework
 Copyright 2013-2020 aio-libs collaboration.
 https://github.com/aio-libs/aiohttp

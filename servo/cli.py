@@ -33,6 +33,7 @@ import servo
 import servo.runner
 import servo.utilities.yaml
 
+
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
     ops = "Operational Commands"
@@ -1231,6 +1232,12 @@ class ServoCLI(CLI):
                 help="Delay duration. Requires --wait",
                 metavar="[DURATION]",
             ),
+            interactive: Optional[bool] = typer.Option(
+                None,
+                "--interactive",
+                "-i",
+                help="Ask for confirmation before executing operations",
+            ),
             run: bool = typer.Option(
                 False,
                 "--run",
@@ -1477,7 +1484,7 @@ class ServoCLI(CLI):
             # Return instead of exiting if we are being invoked
             if ready:
                 if run:
-                    servo.runner.AssemblyRunner(context.assembly).run()
+                    servo.runner.AssemblyRunner(context.assembly).run(interactive=bool(interactive))
                 elif not exit_on_success:
                     return
 

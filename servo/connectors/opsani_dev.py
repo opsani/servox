@@ -9,6 +9,7 @@ import pydantic
 
 import servo
 import servo.connectors.kubernetes
+import servo.connectors.kube_metrics
 import servo.connectors.prometheus
 
 KUBERNETES_PERMISSIONS = [
@@ -215,6 +216,22 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
             ],
+            **kwargs,
+        )
+
+    def generate_kube_metrics_config(
+        self, **kwargs
+    ) -> servo.connectors.kube_metrics.KubeMetricsConfiguration:
+        """Generate a configuration for running an Opsani Dev optimization under servo.connectors.kubernetes.
+
+        Returns:
+            A Kubernetes connector configuration object.
+        """
+        return servo.connectors.kube_metrics.KubeMetricsConfiguration(
+            namespace=self.namespace,
+            name=self.deployment or self.rollout,
+            kind="Deployment" if self.deployment else "Rollout",
+            container=self.container,
             **kwargs,
         )
 
@@ -967,6 +984,20 @@ class OpsaniDevConnector(servo.BaseConnector):
                 config=self.config.generate_prometheus_config(),
             ),
         )
+        km_config = self.config.generate_kube_metrics_config()
+        # NOTE: connector should technically be attached prior to running checks but k8s connector attached above takes care of necessary setup for check
+        if (check := await servo.connectors.kube_metrics.KubeMetricsChecks(config=km_config).run_one(id="check_metrics_api")).success:
+            await servo_.add_connector(
+                "opsani-dev:kube-metrics",
+                servo.connectors.kube_metrics.KubeMetricsConnector(
+                    optimizer=self.optimizer,
+                    config=km_config
+                ),
+            )
+        else:
+            self.logger.warning(
+                f"Omitting kube_metrics connector from opsani_dev assembly due to failed check {check.name}: {check.message}"
+            )
 
     @servo.on_event()
     async def check(
