@@ -6,7 +6,7 @@ import logging
 import os
 import platform
 import pydantic
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 import aiofiles
 import asyncio
@@ -37,15 +37,15 @@ class DiagnosticStates(str, enum.Enum):
 
 
 class Diagnostics(pydantic.BaseModel):
-    configmap: Optional[Dict[str, Any]]
-    logs: Optional[Dict[str, Any]]
+    configmap: Optional[dict[str, Any]]
+    logs: Optional[dict[str, Any]]
 
 
 class Telemetry(pydantic.BaseModel):
     """Class and convenience methods for storage of arbitrary servo metadata
     """
 
-    _values: Dict[str, str] = pydantic.PrivateAttr(default_factory=dict)
+    _values: dict[str, str] = pydantic.PrivateAttr(default_factory=dict)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -68,7 +68,7 @@ class Telemetry(pydantic.BaseModel):
 
 
     @property
-    def values(self) -> Dict[str, Dict[str, str]]:
+    def values(self) -> dict[str, dict[str, str]]:
         # TODO return copy to ensure read only?
         return self._values
 
@@ -82,7 +82,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         self.servo = servo
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
+    def api_client_options(self) -> dict[str, Any]:
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
@@ -141,6 +141,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
             except:
                 log_dict[list(log_dict.keys())[-1]] += line
 
+        # TODO: Re-evaluate roundtripping through JSON required to produce primitives
         config_dict = self.servo.config.json(exclude_unset=True, exclude_none=True)
         config_data = json.loads(config_dict)
 
