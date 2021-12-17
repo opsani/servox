@@ -47,7 +47,7 @@ class TestDiagnosticStates:
         assert state == servo.telemetry.DiagnosticStates.stop
 
 @respx.mock
-async def test_diagnostics_request(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
+async def test_diagnostics_request_200(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
 
     # Simulate running as a k8s pod
     monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
@@ -61,6 +61,25 @@ async def test_diagnostics_request(monkeypatch, optimizer: servo.configuration.O
     request = respx.get(
         f"https://api.opsani.com/accounts/dev.opsani.com/applications/servox/{servo.telemetry.DIAGNOSTICS_CHECK_ENDPOINT}"
     ).mock(return_value=httpx.Response(200, text=f'{{"data": "WITHHOLD"}}'))
+    request = await servo.telemetry.DiagnosticsHandler(servo_runner.servo)._diagnostics_api(method="GET", endpoint=servo.telemetry.DIAGNOSTICS_CHECK_ENDPOINT, output_model=servo.telemetry.DiagnosticStates)
+    assert isinstance(request, servo.telemetry.DiagnosticStates)
+    assert request == servo.telemetry.DiagnosticStates.withhold
+
+@respx.mock
+async def test_diagnostics_request_404(monkeypatch, optimizer: servo.configuration.Optimizer) -> None:
+
+    # Simulate running as a k8s pod
+    monkeypatch.setenv("POD_NAMESPACE", "test-namespace")
+
+    # NOTE: Can't use servo_runner fixture; its init happens prior to setting of env var above
+    servo_runner = servo.runner.ServoRunner(servo.Servo(
+        config=servo.BaseServoConfiguration(name="archibald", optimizer=optimizer),
+        connectors=[], # Init empty servo
+    ))
+
+    request = respx.get(
+        f"https://api.opsani.com/accounts/dev.opsani.com/applications/servox/{servo.telemetry.DIAGNOSTICS_CHECK_ENDPOINT}"
+    ).mock(return_value=httpx.Response(404, text=f'{{"data": "WITHHOLD"}}'))
     request = await servo.telemetry.DiagnosticsHandler(servo_runner.servo)._diagnostics_api(method="GET", endpoint=servo.telemetry.DIAGNOSTICS_CHECK_ENDPOINT, output_model=servo.telemetry.DiagnosticStates)
     assert isinstance(request, servo.telemetry.DiagnosticStates)
     assert request == servo.telemetry.DiagnosticStates.withhold
