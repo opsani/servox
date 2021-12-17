@@ -998,6 +998,7 @@ class OpsaniDevConnector(servo.BaseConnector):
             self.logger.warning(
                 f"Omitting kube_metrics connector from opsani_dev assembly due to failed check {check.name}: {check.message}"
             )
+            self.logger.opt(exception=check.exception).debug("Failed kube_metrics check exception")
 
     @servo.on_event()
     async def check(
