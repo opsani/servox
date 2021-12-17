@@ -544,7 +544,7 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     def value(self) -> Optional[Numeric]:
         return super().value
 
-    @property.setter
+    @value.setter
     def value(self, new_value: Any) -> None:
         if self._value_type is not None:
             new_value = self._value_type(new_value)
