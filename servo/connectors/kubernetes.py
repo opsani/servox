@@ -755,6 +755,10 @@ class Container(servo.logging.Mixin):
 
         self.resources = resources
 
+    @property
+    def env(self) -> Optional[list[V1EnvVar]]:
+        return self.obj.env
+
     def get_environment_variable(self, variable_name: str) -> Optional[str]:
         if self.obj.env:
             return next(iter(v.value or f"valueFrom: {v.value_from}" for v in cast(Iterable[V1EnvVar], self.obj.env) if v.name == variable_name), None)
@@ -3542,7 +3546,7 @@ class CanaryOptimization(BaseOptimization):
             raise
 
         # TODO: logging the wrong values -- should be coming from the podtemplatespec?
-        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
+        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}, env: {self.tuning_container.env}")
 
     @property
     def namespace(self) -> str:
@@ -3894,6 +3898,7 @@ class CanaryOptimization(BaseOptimization):
         for env_setting in self.container_config.env or []:
             if env_val := self.main_container.get_environment_variable(env_setting.name):
                 env_setting = env_setting.safe_set_value_copy(env_val)
+            env_setting.pinned = True
             env.append(env_setting)
 
         return env or None
