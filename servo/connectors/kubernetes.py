@@ -3311,7 +3311,8 @@ class DeploymentOptimization(BaseOptimization):
             self.deployment.replicas = value
 
         elif env_setting := servo.find_setting(self.container_config.env, setting_name):
-            self.container.set_environment_variable(env_setting.variable_name, value)
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise RuntimeError(
@@ -3522,7 +3523,8 @@ class CanaryOptimization(BaseOptimization):
                 )
 
         elif env_setting := servo.find_setting(self.container_config.env, setting_name):
-            self.pod_template_spec_container.set_environment_variable(env_setting.variable_name, value)
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.pod_template_spec_container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise servo.AdjustmentFailedError(
