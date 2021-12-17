@@ -189,7 +189,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
             except httpx.HTTPError as error:
                 if error.response.status_code < 500:
-                    self.logger.trace(f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}")
+                    self.logger.debug(f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}")
                     return DiagnosticStates.withhold
                 else:
                     self.logger.trace(servo.api._redacted_to_curl(error.request))
