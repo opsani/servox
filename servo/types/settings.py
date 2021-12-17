@@ -531,7 +531,7 @@ class EnvironmentSetting(Setting):
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     # ENV Var values are almost always represented as a str, override value parsing to accomodate
-    value: Optional[Union[float, int]] = pydantic.Field(
+    value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
 

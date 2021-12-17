@@ -1624,7 +1624,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
             assert "Deployment fiber-http pod(s) crash restart detected: fiber-http-" in str(rejection_info.value)
             assert rejection_info.value.reason == "unstable"
         except AssertionError as e:
-            if "Found 1 unready pod(s) for deployment fiber-http" in set(rejection_info.value):
+            if "Found 1 unready pod(s) for deployment fiber-http" in str(rejection_info.value):
                 pytest.xfail("Restart count update took too long")
             raise e from rejection_info.value
 
