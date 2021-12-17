@@ -329,7 +329,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     def running(self) -> bool:
         return self._running
 
-    def run(self, *, poll: bool = True, diagnostics: bool = True, interactive: bool = False) -> None:
+    def run(self, *, poll: bool = True, interactive: bool = False) -> None:
         """Asynchronously run all servos active within the assembly.
 
         Running the assembly takes over the current event loop and schedules a `ServoRunner` instance for each servo active in the assembly.

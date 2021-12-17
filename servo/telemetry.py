@@ -1,42 +1,45 @@
 from __future__ import annotations
 
-import os
-import platform
-from typing import Dict
-import pydantic
 import enum
 import json
 import logging
+import os
+import platform
+import pydantic
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import asyncio
 import aiofiles
+import asyncio
 import backoff
 import devtools
 import httpx
 import pydantic
-from semver import b
 
 import servo
 import servo.api
-from servo.logging import logs_path
-from servo.types import JSON_FORMAT
-
+from servo.logging import InterceptHandler, logs_path
 
 ONE_MiB = 1048576
 DIAGNOSTICS_MAX_RETRIES = 20
 
-# Intercept backoff decorator logs
+DIAGNOSTICS_CHECK_ENDPOINT = "assets/opsani.com/diagnostics-check"
+DIAGNOSTICS_OUTPUT_ENDPOINT = "assets/opsani.com/diagnostics-output"
+
+# Intercept backoff decorator logs, only log on giveup
 logging.getLogger('diagnostics-backoff').setLevel(logging.ERROR)
+logging.getLogger('diagnostics-backoff').addHandler(InterceptHandler())
+
 
 class DiagnosticStates(str, enum.Enum):
     withhold = "WITHHOLD"
     send = "SEND"
     stop = "STOP"
 
+
 class Diagnostics(pydantic.BaseModel):
     configmap: Optional[Dict[str, Any]]
     logs: Optional[Dict[str, Any]]
+
 
 class Telemetry(pydantic.BaseModel):
     """Class and convenience methods for storage of arbitrary servo metadata
@@ -69,6 +72,7 @@ class Telemetry(pydantic.BaseModel):
         # TODO return copy to ensure read only?
         return self._values
 
+
 class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
     servo: servo.Servo = None
@@ -82,7 +86,6 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
-
     async def diagnostics_check(self):
 
         self._running = True
@@ -90,7 +93,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         while self._running:
             try:
                 self.logger.trace("Polling for diagnostics request")
-                request = await self._diagnostics_request()
+                request = await self._diagnostics_api(method="GET", endpoint=DIAGNOSTICS_CHECK_ENDPOINT, output_model=DiagnosticStates)
 
                 if request == DiagnosticStates.withhold:
                     self.logger.trace("Withholding diagnostics")
@@ -99,8 +102,11 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
                     self.logger.info(f"Diagnostics requested, gathering and sending")
                     diagnostic_data = await self._get_diagnostics()
 
-                    await self._put_diagnostics(diagnostic_data)
-                    await self._reset_diagnostics()
+                    await self._diagnostics_api(method="PUT", endpoint=DIAGNOSTICS_OUTPUT_ENDPOINT, output_model=servo.api.Status, json=diagnostic_data.dict())
+
+                    # Reset diagnostics check state to withhold
+                    reset_state = DiagnosticStates.withhold
+                    await self._diagnostics_api(method="PUT", endpoint=DIAGNOSTICS_CHECK_ENDPOINT, output_model=servo.api.Status, json=reset_state)
 
                 elif request == DiagnosticStates.stop:
                     self.logger.info(f"Received request to disable polling for diagnostics")
@@ -117,14 +123,14 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
 
     async def _get_diagnostics(self) -> Diagnostics:
 
-        async with aiofiles.open(logs_path, 'r') as log_file:
+        async with aiofiles.open(servo.logging.logs_path, 'r') as log_file:
             logs = await log_file.read()
 
         # Strip emoji from logs :(
         raw_logs = logs.encode("ascii", "ignore").decode()
 
-        # Limit + truncate per 1MiB /assets limit
-        log_data_lines = filter(None, raw_logs[-ONE_MiB:].split("\n")[1:])
+        # Limit + truncate per 1MiB /assets limit, allowing ample room for configmap
+        log_data_lines = filter(None, raw_logs[-ONE_MiB-10000:].split("\n")[1:])
         log_dict = {}
 
         for line in log_data_lines:
@@ -144,85 +150,41 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         backoff.expo,
         httpx.HTTPError,
         max_time=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_time(),
-        max_tries=DIAGNOSTICS_MAX_RETRIES,
-        logger='diagnostics-backoff',
-        on_giveup=lambda x: asyncio.current_task().cancel()
-    )
-    async def _diagnostics_request(self) -> DiagnosticStates:
-        async with self.api_client() as client:
-            self.logger.trace(f"GET diagnostic request")
-            try:
-                # response = await client.get("https://www.fsjdiofjdsiofjisdofjiosdjfosd.com")
-                response = await client.get("assets/opsani.com/diagnostics-check")
-                response.raise_for_status()
-                response_json = response.json()['data']
-                self.logger.trace(
-                    f"GET diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
-                )
-                self.logger.trace(servo.api._redacted_to_curl(response.request))
-                try:
-                    return pydantic.parse_obj_as(
-                        DiagnosticStates, response_json
-                    )
-                except pydantic.ValidationError as error:
-                    # Should not raise due to improperly set diagnostic states
-                    self.logger.trace(f"Improperly set diagnostic state {error}")
-                    return DiagnosticStates.withhold
-
-            except httpx.HTTPError as error:
-                self.logger.trace(servo.api._redacted_to_curl(error.request))
-                raise
-
-    async def _put_diagnostics(self, diagnostic_data: Diagnostics) -> servo.api.Status:
-
-        async with self.api_client() as client:
-            self.logger.trace(f"POST diagnostic data: {devtools.pformat(diagnostic_data.json())}")
-
-            # Push into data key
-            data = json.dumps(
-                dict(data=diagnostic_data.dict())
-                )
-            return await self._diagnostics_api(client, "assets/opsani.com/diagnostics-output", data)
-
-
-    async def _reset_diagnostics(self) -> servo.api.Status:
-
-        async with self.api_client() as client:
-
-            # Push into data key
-            reset_request = json.dumps(
-                dict(data=DiagnosticStates.withhold)
-                )
-            return await self._diagnostics_api(client, "assets/opsani.com/diagnostics-check", reset_request)
-
-
-    @backoff.on_exception(
-        backoff.expo,
-        httpx.HTTPError,
-        max_time=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_time(),
         max_tries=lambda: DIAGNOSTICS_MAX_RETRIES,
         logger='diagnostics-backoff',
         on_giveup=lambda x: asyncio.current_task().cancel()
     )
-    async def _diagnostics_api(self, client: httpx.AsyncClient, endpoint: str, data: Optional[JSON_FORMAT]=None) -> servo.api.Status:
+    async def _diagnostics_api(
+        self,
+        method: str,
+        endpoint: str,
+        output_model: pydantic.BaseModel,
+        json: Optional[dict] = None,
+    ) -> Union[DiagnosticStates, servo.api.Status]:
 
-            self.logger.trace(f"Diagnostics : {devtools.pformat(data)}")
+        async with self.api_client() as client:
+            self.logger.trace(f"{method} diagnostic request")
             try:
-                response = await client.put(endpoint, data=data)
+                response = await client.request(method=method, url=endpoint, json=dict(data=json))
                 response.raise_for_status()
                 response_json = response.json()
+
+                # Handle /diagnostics-check retrieval
+                if 'data' in response_json:
+                    response_json = response_json['data']
+
                 self.logger.trace(
-                    f"Diagnostics API response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
+                    f"{method} diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
                 self.logger.trace(servo.api._redacted_to_curl(response.request))
-
-                return pydantic.parse_obj_as(
-                    servo.api.Status, response_json
-                )
-
-            except pydantic.ValidationError as error:
-                # Should not raise due to improperly set diagnostic states
-                self.logger.trace(f"Improperly set diagnostic state {error}")
+                try:
+                    return pydantic.parse_obj_as(
+                        output_model, response_json
+                    )
+                except pydantic.ValidationError as error:
+                    # Should not raise due to improperly set diagnostic states
+                    self.logger.exception(f"Malformed diagnostic {method} response", level_id="DEBUG")
+                    return DiagnosticStates.withhold
 
             except httpx.HTTPError as error:
                 self.logger.trace(servo.api._redacted_to_curl(error.request))
