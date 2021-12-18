@@ -46,6 +46,8 @@ class Setting(BaseModel, abc.ABC):
         except ValueError:
             import servo
             servo.logger.exception(f"Failed to parse safe_set value {repr(value)}")
+            if (vt := getattr(self, 'value_type', None)) is not None:
+                value = vt(value)
             return self.copy(update={"value": value})
 
     def summary(self) -> str:
@@ -530,34 +532,29 @@ class EnvironmentSetting(Setting):
         return self.literal or self.name
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
-
-    # TODO promote sticky value typing to general settings types
-    _value_type: type = pydantic.PrivateAttr(None)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        if self._value_type is None and self.value is not None:
-            self._value_type = type(self.value)
-
-    @property
-    def value(self) -> Optional[Numeric]:
-        return super().value
-
-    @value.setter
-    def value(self, new_value: Any) -> None:
-        if self._value_type is not None:
-            new_value = self._value_type(new_value)
-
-        super().value = new_value
-
-        if self._value_type is None:
-            self._value_type = type(self.value)
-
     # ENV Var values are almost always represented as a str, override value parsing to accomodate
     value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
+
+    # TODO promote to RangeSetting base
+    value_type: Optional[Union[Type[int], Type[float]]] = pydantic.Field(
+        None, description="The optional data type of the value of the setting"
+    )
+
+    @pydantic.validator("value_type", pre=True)
+    def _set_value_type_to_type(cls, value: Any) -> Union[Type[int], Type[float]]:
+        if value == 'int':
+            return int
+        if value == 'float':
+            return float
+        return value
+
+    @pydantic.validator('value')
+    def _cast_value_to_value_type(cls, value: Any, values: dict) -> Optional[Union[pydantic.StrictInt, float]]:
+        if value is not None and (value_type := values.get('value_type')) is not None:
+            return value_type(value)
+        return value
 
 class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass
