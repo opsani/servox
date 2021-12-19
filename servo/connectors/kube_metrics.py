@@ -152,6 +152,7 @@ class KubeMetricsChecks(servo.BaseChecks):
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
             await cust_obj_api.list_namespaced_custom_object(
                 label_selector=selector_string(target_resource.match_labels),
+                namespace=self.config.namespace,
                 **METRICS_CUSTOM_OJBECT_CONST_ARGS
             )
 
@@ -167,7 +168,6 @@ class KubeMetricsChecks(servo.BaseChecks):
 METRICS_CUSTOM_OJBECT_CONST_ARGS = dict(
     group="metrics.k8s.io",
     version="v1beta1",
-    namespace="bank-of-anthos-opsani",
     plural="pods",
 )
 
@@ -296,6 +296,7 @@ class KubeMetricsConnector(servo.BaseConnector):
             if any((m in MAIN_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
                 main_metrics = await cust_obj_api.list_namespaced_custom_object(
                     label_selector=f"{label_selector_str},opsani_role!=tuning",
+                    namespace=self.config.namespace,
                     **METRICS_CUSTOM_OJBECT_CONST_ARGS
                 )
                 # NOTE items can be empty list
@@ -391,6 +392,7 @@ class KubeMetricsConnector(servo.BaseConnector):
             if any((m in TUNING_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
                 tuning_metrics = await cust_obj_api.list_namespaced_custom_object(
                     label_selector=f"{label_selector_str},opsani_role=tuning",
+                    namespace=self.config.namespace,
                     **METRICS_CUSTOM_OJBECT_CONST_ARGS
                 )
                 # TODO: (potential improvement) raise error if more than 1 tuning pod?

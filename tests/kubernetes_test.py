@@ -12,7 +12,7 @@ import pytest
 import servo
 import servo.connectors.kubernetes
 import tests.helpers
-from servo.types import _is_step_aligned, _suggest_step_aligned_values
+from servo.types.settings import _is_step_aligned, _suggest_step_aligned_values
 
 pytestmark = [
     pytest.mark.asyncio,
@@ -525,15 +525,15 @@ def test_step_alignment_calculations_cpu(value, step, expected_lower, expected_u
     assert _is_step_aligned(servo.connectors.kubernetes.Core.parse(upper), step_cores)
 
 def test_cpu_not_step_aligned() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4.1, 125m) max is not step aligned: 4.1 is not a multiple of 125m (consider 4 or 4.125).")):
+    with pytest.raises(pydantic.ValidationError, match=re.escape("CPU('cpu' 250m-4.1, 125m) min/max difference is not step aligned: 3.85 is not a multiple of 125m (consider min 350m or 225m, max 4 or 4.125).")):
         servo.connectors.kubernetes.CPU(
             min="250m", max="4100m", step="125m"
         )
 
 def test_memory_not_step_aligned() -> None:
-    with pytest.raises(pydantic.ValidationError, match=re.escape("Memory('mem' 256.0Mi-4.1Gi, 128.0Mi) max is not step aligned: 4.1Gi is not a multiple of 128.0Mi (consider 4.0Gi or 4.5Gi).")):
+    with pytest.raises(pydantic.ValidationError, match=re.escape("Memory('mem' 256.0Mi-4.1Gi, 128.0Mi) min/max difference is not step aligned: 3.8125Gi is not a multiple of 128Mi (consider min 320Mi or 192Mi, max 4Gi or 4.125Gi).")):
         servo.connectors.kubernetes.Memory(
-            min="256.0MiB", max="4.1GiB", step="128.0MiB"
+            min="256.0MiB", max="4.0625GiB", step="128.0MiB"
         )
 
 

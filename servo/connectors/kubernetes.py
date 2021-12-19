@@ -45,6 +45,8 @@ import kubernetes_asyncio.client
 import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.client.exceptions
 import kubernetes_asyncio.client.models
+from kubernetes_asyncio.client.models.v1_container import V1Container
+from kubernetes_asyncio.client.models.v1_env_var import V1EnvVar
 import kubernetes_asyncio.watch
 import pydantic
 
@@ -642,8 +644,8 @@ class Container(servo.logging.Mixin):
     """
 
     def __init__(self, api_object, pod) -> None: # noqa: D107
-        self.obj = api_object
-        self.pod = pod
+        self.obj: V1Container = api_object
+        self.pod: Pod = pod
 
     @property
     def name(self) -> str:
@@ -752,6 +754,29 @@ class Container(servo.logging.Mixin):
             setattr(resources, requirement.resources_key, resource_to_values)
 
         self.resources = resources
+
+    @property
+    def env(self) -> Optional[list[V1EnvVar]]:
+        return self.obj.env
+
+    def get_environment_variable(self, variable_name: str) -> Optional[str]:
+        if self.obj.env:
+            return next(iter(v.value or f"valueFrom: {v.value_from}" for v in cast(Iterable[V1EnvVar], self.obj.env) if v.name == variable_name), None)
+        return None
+
+    def set_environment_variable(self, variable_name: str, value: Any) -> None:
+        # V1EnvVar value type is str so value will be converted eventually. Might as well do it up front
+        val_str = str(value)
+        if "valueFrom" in val_str:
+            raise ValueError("Adjustment of valueFrom variables is not supported yet")
+
+        new_vars: list[V1EnvVar] = self.obj.env or []
+        if new_vars:
+            # Filter out vars with the same name as the ones we are setting
+            new_vars = [v for v in new_vars if v.name != variable_name]
+
+        new_vars.append(V1EnvVar(name=variable_name, value=val_str))
+        self.obj.env = new_vars
 
     @property
     def ports(self) -> List[kubernetes_asyncio.client.V1ContainerPort]:
@@ -2894,6 +2919,7 @@ class ShortByteSize(pydantic.ByteSize):
         return super().validate(v)
 
     def human_readable(self) -> str:
+        """NOTE: only represents precision up to 1 decimal place (see pydantic's human_readable)"""
         sup = super().human_readable()
         # Remove the 'B' suffix to align with Kubernetes units (`GiB` -> `Gi`)
         if sup[-1] == 'B' and sup[-2].isalpha():
@@ -2902,6 +2928,16 @@ class ShortByteSize(pydantic.ByteSize):
 
     def __opsani_repr__(self) -> float:
         return float(decimal.Decimal(self) / GiB)
+
+    def __str__(self) -> str:
+        num = decimal.Decimal(self)
+        units = ['B', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi']
+        for unit in units:
+            if abs(num) < 1024:
+                return f'{num:f}{unit}'
+            num /= 1024
+
+        return f"{num:f}Ei"
 
 
 class Memory(servo.Memory):
@@ -2947,7 +2983,7 @@ def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str,
         value = str(core_value)
     elif setting == "replicas":
         value = int(float(value))
-
+    # TODO support for env var format descriptor
     return setting, value
 
 class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
@@ -3161,10 +3197,9 @@ class DeploymentOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        # NOTE: use copy + update to apply values that may be outside of the range
         value = Core.parse(value)
-        cpu = cpu.copy(update={"value": value})
-        return cpu
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return cpu.safe_set_value_copy(value)
 
     @property
     def memory(self) -> Memory:
@@ -3180,10 +3215,20 @@ class DeploymentOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
-        # NOTE: use copy + update to apply values that may be outside of the range
         value = ShortByteSize.validate(value)
-        memory = memory.copy(update={"value": value})
-        return memory
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return memory.safe_set_value_copy(value)
+
+    @property
+    def env(self) -> Optional[list[servo.EnvironmentSetting]]:
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def replicas(self) -> servo.Replicas:
@@ -3229,8 +3274,11 @@ class DeploymentOptimization(BaseOptimization):
         )
 
     def to_components(self) -> List[servo.Component]:
+        settings=[self.cpu, self.memory, self.replicas]
+        if env := self.env:
+            settings.extend(env)
         return [
-            servo.Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
+            servo.Component(name=self.name, settings=settings)
         ]
 
     def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
@@ -3243,6 +3291,7 @@ class DeploymentOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
+        env_setting: Optional[servo.EnvironmentSetting] = None # Declare type since type not compatible with :=
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -3260,6 +3309,10 @@ class DeploymentOptimization(BaseOptimization):
             # NOTE: Assign to the config to trigger validations
             self.deployment_config.replicas.value = value
             self.deployment.replicas = value
+
+        elif env_setting := servo.find_setting(self.container_config.env, setting_name):
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise RuntimeError(
@@ -3447,6 +3500,7 @@ class CanaryOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
+        env_setting: Optional[servo.EnvironmentSetting] = None # Declare type since type not compatible with :=
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -3467,6 +3521,10 @@ class CanaryOptimization(BaseOptimization):
                 servo.logger.warning(
                     f'ignored attempt to set replicas to "{value}"'
                 )
+
+        elif env_setting := servo.find_setting(self.container_config.env, setting_name):
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.pod_template_spec_container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise servo.AdjustmentFailedError(
@@ -3490,7 +3548,7 @@ class CanaryOptimization(BaseOptimization):
             raise
 
         # TODO: logging the wrong values -- should be coming from the podtemplatespec?
-        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
+        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}, env: {self.tuning_container.env}")
 
     @property
     def namespace(self) -> str:
@@ -3737,9 +3795,8 @@ class CanaryOptimization(BaseOptimization):
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
         value = Core.parse(value)
-        # NOTE: use copy + update to apply values that may be outside of the range
-        cpu = cpu.copy(update={"value": value})
-        return cpu
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return cpu.safe_set_value_copy(value)
 
     @property
     def tuning_memory(self) -> Optional[Memory]:
@@ -3759,9 +3816,23 @@ class CanaryOptimization(BaseOptimization):
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
         value = ShortByteSize.validate(value)
-        # NOTE: use copy + update to apply values that may be outside of the range
-        memory = memory.copy(update={"value": value})
+        # NOTE: use safe_set to apply values that may be outside of the range
+        memory = memory.safe_set_value_copy(value)
         return memory
+
+    @property
+    def tuning_env(self) -> Optional[list[servo.EnvironmentSetting]]:
+        if not self.tuning_pod:
+            return None
+
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.tuning_container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def tuning_replicas(self) -> servo.Replicas:
@@ -3796,8 +3867,9 @@ class CanaryOptimization(BaseOptimization):
         )
         cores = Core.parse(value)
 
-        # NOTE: use copy + update to accept values from mainline outside of our range
-        cpu = self.container_config.cpu.copy(update={"pinned": True, "value": cores})
+        # NOTE: use safe_set to accept values from mainline outside of our range
+        cpu: CPU = self.container_config.cpu.safe_set_value_copy(cores)
+        cpu.pinned = True
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)
         return cpu
@@ -3814,11 +3886,24 @@ class CanaryOptimization(BaseOptimization):
         )
         short_byte_size = ShortByteSize.validate(value)
 
-        # NOTE: use copy + update to accept values from mainline outside of our range
-        memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
+        # NOTE: use safe_set to accept values from mainline outside of our range
+        memory = self.container_config.memory.safe_set_value_copy(value)
+        memory.pinned = True
         memory.request = resource_requirements.get(ResourceRequirement.request)
         memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
+
+    @property
+    def main_env(self) -> list[servo.EnvironmentSetting]:
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.main_container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env_setting.pinned = True
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def main_replicas(self) -> servo.Replicas:
@@ -3854,23 +3939,23 @@ class CanaryOptimization(BaseOptimization):
         Note that all settings on the target are implicitly pinned because only the canary
         is to be modified during optimization.
         """
+        main_settings = [
+            self.main_cpu,
+            self.main_memory,
+            self.main_replicas,
+        ]
+        if main_env := self.main_env:
+            main_settings.extend(main_env)
+        tuning_settings = [
+            self.tuning_cpu,
+            self.tuning_memory,
+            self.tuning_replicas,
+        ]
+        if tuning_env := self.tuning_env:
+            tuning_settings.extend(tuning_env)
         return [
-            servo.Component(
-                name=self.main_name,
-                settings=[
-                    self.main_cpu,
-                    self.main_memory,
-                    self.main_replicas,
-                ],
-            ),
-            servo.Component(
-                name=self.name,
-                settings=[
-                    self.tuning_cpu,
-                    self.tuning_memory,
-                    self.tuning_replicas,
-                ],
-            ),
+            servo.Component(name=self.main_name, settings=main_settings),
+            servo.Component(name=self.name, settings=tuning_settings),
         ]
 
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -3906,7 +3991,11 @@ class CanaryOptimization(BaseOptimization):
                         f"cannot rollback a tuning Pod: falling back to shutdown: {error}"
                     )
 
-                await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                try:
+                    await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                except asyncio.exceptions.TimeoutError:
+                    self.logger.exception(level="TRACE")
+                    raise RuntimeError(f"Time out after {self.timeout} waiting for tuning pod shutdown")
 
                 # create a new canary against baseline
                 self.logger.info(
@@ -4212,14 +4301,6 @@ ContainerTagName.__doc__ = (
 )
 
 
-class EnvironmentConfiguration(servo.BaseConfiguration):
-    ...
-
-
-class CommandConfiguration(servo.BaseConfiguration):
-    ...
-
-
 class ContainerConfiguration(servo.BaseConfiguration):
     """
     The ContainerConfiguration class models the configuration of an optimizeable container within a Kubernetes Deployment.
@@ -4230,7 +4311,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[List[str]]  # (adjustable environment variables) TODO: create model...
+    env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]] = None
     static_environment_variables: Optional[Dict[str, str]]
 
 

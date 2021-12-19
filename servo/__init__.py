@@ -39,7 +39,10 @@ from .events import *
 from .logging import *
 from .pubsub import *
 from .servo import *
-from .types import *
+from .types.api import *
+from .types.core import *
+from .types.settings import *
+from .types.slo import *
 from .utilities import *
 
 # Resolve forward references
