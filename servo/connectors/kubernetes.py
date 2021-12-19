@@ -3991,7 +3991,11 @@ class CanaryOptimization(BaseOptimization):
                         f"cannot rollback a tuning Pod: falling back to shutdown: {error}"
                     )
 
-                await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                try:
+                    await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                except asyncio.exceptions.TimeoutError:
+                    self.logger.exception(level="TRACE")
+                    raise RuntimeError(f"Time out after {self.timeout} waiting for tuning pod shutdown")
 
                 # create a new canary against baseline
                 self.logger.info(
@@ -4307,7 +4311,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[List[servo.EnvironmentSetting]] = None
+    env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]] = None
     static_environment_variables: Optional[Dict[str, str]]
 
 

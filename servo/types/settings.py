@@ -2,8 +2,10 @@ import abc
 import decimal
 import enum
 import functools
+from inspect import isclass
 import pydantic
-from typing import Any, Callable, Generator, Optional, Type, TypeVar, Union, cast, get_origin
+import pydantic.fields
+from typing import Annotated, Any, Callable, Generator, Literal, Optional, Type, TypeVar, Union, cast, get_origin
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
 
@@ -126,7 +128,7 @@ class EnumSetting(Setting):
         ValidationError: Raised if any field fails validation.
     """
 
-    type = pydantic.Field(
+    type: Literal["enum"] = pydantic.Field(
         "enum",
         const=True,
         description="Identifies the setting as an enumeration setting.",
@@ -176,7 +178,7 @@ class RangeSetting(Setting):
         ValidationError: Raised if any field fails validation.
     """
 
-    type = pydantic.Field(
+    type: Literal["range"] = pydantic.Field(
         "range", const=True, description="Identifies the setting as a range setting."
     )
     min: Numeric = pydantic.Field(
@@ -494,34 +496,6 @@ def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Opti
     return (lower_repr, upper_repr)
 
 class EnvironmentSetting(Setting):
-
-    @classmethod
-    def __modify_schema__(cls, field_schema: dict[str, Any]) -> None:
-        sub_field_schemas = [EnvironmentRangeSetting.schema(), EnvironmentEnumSetting.schema()]
-        field_schema.update(
-            anyOf=sub_field_schemas
-        )
-
-    @classmethod
-    def __get_validators__(cls: "EnvironmentSetting") -> Generator[Callable[..., Any], None, None]:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls: "EnvironmentSetting", value: Any) -> Union["EnvironmentEnumSetting", "EnvironmentRangeSetting"]:
-        if issubclass(type(value), EnvironmentSetting):
-            return value
-        elif isinstance(value, dict):
-            _type = value.get('type')
-            if _type == 'range':
-                return EnvironmentRangeSetting(**value)
-            elif _type == 'enum':
-                return EnvironmentEnumSetting(**value)
-            else:
-                raise ValueError(f'Unknown type for environment variable settings {_type}')
-        else:
-            raise ValueError(f'Unable to parse Environment setting, cannot get type from {type(value)} value "{value}"')
-
-
     literal: Optional[str] = pydantic.Field(
         None, description="(Optional) The environment variable name as used in the target system (this allows name to be "
                          "set to a human readable string). Defaults to configured name when literal is not configured"
@@ -531,14 +505,35 @@ class EnvironmentSetting(Setting):
     def variable_name(self) -> str:
         return self.literal or self.name
 
+class NumericType(Type):
+    @classmethod
+    def __get_validators__(cls) -> Generator[Callable[..., Any], None, None]:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value, field: pydantic.fields.ModelField):
+        if isclass(value) and issubclass(value, (int, float)):
+            return value
+
+        if value == 'int':
+            return int
+        if value == 'float':
+            return float
+
+        raise ValueError(f"Unrecognized numeric type {repr(value)}")
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: dict[str, Any]):
+        field_schema.update(anyOf=['int', 'float'])
+
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     # ENV Var values are almost always represented as a str, override value parsing to accomodate
     value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
         None, description="The optional value of the setting as reported by the servo"
     )
 
-    # TODO promote to RangeSetting base
-    value_type: Optional[Union[Type[int], Type[float]]] = pydantic.Field(
+    # # TODO promote to RangeSetting base
+    value_type: NumericType = pydantic.Field(
         None, description="The optional data type of the value of the setting"
     )
 
@@ -558,6 +553,8 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
 
 class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass
+
+PydanticEnvironmentSettingAnnotation = Annotated[Union[EnvironmentRangeSetting, EnvironmentEnumSetting], pydantic.Field(discriminator='type')]
 
 # TODO unused references to this stub in test (TestCommandConfiguration)
 # class CommandConfiguration(servo.BaseConfiguration):
