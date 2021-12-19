@@ -17,6 +17,24 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). Releases are
 versioned in accordance with [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] "electric orchestra" - 2021-12-18
+
+### Added
+
+- Kubernetes metrics connector for reporting Pod metrics from kubernetes metrics server [#369](https://github.com/opsani/servox/pull/369)
+- Ability to upload logs and configuration for tech support [#373](https://github.com/opsani/servox/pull/373)
+- Support for describing and adjusting kubernetes container environment variables [#375](https://github.com/opsani/servox/pull/375)
+
+### Changed
+
+- Updated project to python 3.9.7 [#367](https://github.com/opsani/servox/pull/367)
+- No longer using custom kubernetes_asyncio package [#368](https://github.com/opsani/servox/pull/368)
+- The Opsani Dev connector attaches the Kubernetes Metrics connector if we're able to list pod metrics [#379](https://github.com/opsani/servox/pull/379)
+
+### Fixed
+
+- Relaxed python version dependency requirements [#372](https://github.com/opsani/servox/pull/372)
+
 ## [0.11.1] "preposterous ports" - 2021-11-19
 
 ### Fixed
