@@ -30,7 +30,6 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
-    Sequence,
     Tuple,
     Type,
     Union,
@@ -46,11 +45,14 @@ import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.client.exceptions
 import kubernetes_asyncio.client.models
 from kubernetes_asyncio.client.models.v1_container import V1Container
+from kubernetes_asyncio.client.models.v1_container_status import V1ContainerStatus
 from kubernetes_asyncio.client.models.v1_env_var import V1EnvVar
 import kubernetes_asyncio.watch
 import pydantic
 
 import servo
+from servo.telemetry import ONE_MiB
+from servo.types.kubernetes import *
 
 class Condition(servo.logging.Mixin):
     """A Condition is a convenience wrapper around a function and its arguments
@@ -1005,7 +1007,41 @@ class Pod(KubernetesModel):
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
-    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
+    async def get_logs_for_container_statuses(
+        self,
+        container_statuses: list[V1ContainerStatus],
+        limit_bytes: int = ONE_MiB,
+        logs_selector: ContainerLogOptions = ContainerLogOptions.both,
+    ) -> list[str]:
+        """
+        Get container logs from the current pod for the container's whose statuses are provided in the list
+
+        Args:
+            container_statuses (list[V1ContainerStatus]): The name of the Container.
+            limit_bytes (int): Maximum bytes to provide per log (NOTE: this will be 2x per container )
+            logs_selector (ContainerLogOptions): "previous", "current", or "both"
+
+        Returns:
+            list[str]: List of logs per container in the same order as the list of container_statuses
+        """
+        api_client: kubernetes_asyncio.client.CoreV1Api
+        async with self.api_client() as api_client:
+            read_logs_partial = functools.partial(api_client.read_namespaced_pod_log,
+                name=self.name,
+                namespace=self.namespace,
+                limit_bytes=limit_bytes,
+            )
+            if logs_selector == ContainerLogOptions.both:
+                return [
+                    f"previous (crash):\n {await read_logs_partial(container=cs.name, previous=True)} \n\n--- \n\n"
+                    f"current (latest):\n {await read_logs_partial(container=cs.name, previous=False)}"
+                    for cs in container_statuses
+                ]
+            else:
+                previous = True if logs_selector == ContainerLogOptions.previous else False
+                return [ await read_logs_partial(container=cs.name, previous=previous) for cs in container_statuses ]
+
+    async def raise_for_status(self, adjustments: List[servo.Adjustment], include_container_logs = False) -> None:
         """Raise an exception if the Pod status is not not ready."""
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
@@ -1026,11 +1062,23 @@ class Pod(KubernetesModel):
                 if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]:
                     raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
 
-        restarted_container_statuses = list(filter(lambda cont_stat: cont_stat.restart_count > 0, (status.container_statuses or [])))
+        restarted_container_statuses: List[V1ContainerStatus] = [
+            cont_stat for cont_stat in status.container_statuses or [] if cont_stat.restart_count > 0
+        ]
         if restarted_container_statuses:
-            container_messages = list(map(lambda cont_stat: f"{cont_stat.name} x{cont_stat.restart_count}", restarted_container_statuses))
+            container_logs: list[str] = ["DISABLED" for _ in restarted_container_statuses]
+            if include_container_logs: # TODO enable logs config on per container basis
+                container_logs = self.get_logs_for_container_statuses(restarted_container_statuses)
+            container_messages = [
+                (
+                    f"{cont_stat.name} x{cont_stat.restart_count}"
+                    f"{'' if not include_container_logs else f' container logs {container_logs[idx]}'}"
+                )
+                for idx, cont_stat in enumerate(restarted_container_statuses)
+            ]
             raise servo.AdjustmentRejectedError(
-                f"Tuning optimization {self.name} crash restart detected on container(s): {', '.join(container_messages)}",
+                # NOTE: have to use format to for newline (backslash) insertion
+                f"Tuning optimization {self.name} crash restart detected on container(s): ""{}".format(', \n'.join(container_messages)),
                 reason="unstable"
             )
 
@@ -2031,7 +2079,7 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
-    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
+    async def raise_for_status(self, adjustments: List[servo.Adjustment], include_container_logs = False) -> None:
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
         self.logger.trace(f"current deployment status is {status}")
@@ -2043,13 +2091,13 @@ class Deployment(KubernetesModel):
 
         # Check for failure conditions
         self._check_conditions(status.conditions)
-        await self.raise_for_failed_pod_adjustments(adjustments=adjustments)
+        await self.raise_for_failed_pod_adjustments(adjustments=adjustments, include_container_logs=include_container_logs)
 
         # Catchall
         self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
         raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
 
-    async def raise_for_failed_pod_adjustments(self, adjustments: List[servo.Adjustment]):
+    async def raise_for_failed_pod_adjustments(self, adjustments: List[servo.Adjustment], include_container_logs = False):
         pods = await self.get_latest_pods()
         self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
@@ -2087,14 +2135,33 @@ class Deployment(KubernetesModel):
                 reason="image-pull-failed"
             )
 
-        restarted_pods_container_statuses = [
+        restarted_pods_container_statuses: list[tuple[Pod, V1ContainerStatus]] = [
             (pod, cont_stat) for pod in pods for cont_stat in (pod.obj.status.container_statuses or [])
             if cont_stat.restart_count > 0
         ]
         if restarted_pods_container_statuses:
+            container_logs: list[str] = ["DISABLED" for _ in range(len(restarted_pods_container_statuses))]
+            if include_container_logs: # TODO enable logs config on per container basis
+                # Reduce api requests to 1 per pod then fan back out into per container status list
+                curpod = restarted_pods_container_statuses[0][0]
+                curstats = []
+                for pod, container_status in restarted_pods_container_statuses:
+                    if pod == curpod:
+                        curstats.append(container_status)
+                    else:
+                        # Set up for next pod in list
+                        container_logs.extend(curpod.get_logs_for_container_statuses(curstats))
+                        curpod = pod
+                        curstats = [container_status]
+                # Get statuses for the last (or only) pod in the list
+                container_logs.extend(curpod.get_logs_for_container_statuses(curstats))
+
             pod_to_counts = collections.defaultdict(list)
-            for pod_cont_stat in restarted_pods_container_statuses:
-                pod_to_counts[pod_cont_stat[0].obj.metadata.name].append(f"{pod_cont_stat[1].name} x{pod_cont_stat[1].restart_count}")
+            for idx, (pod, cont_stat) in enumerate(restarted_pods_container_statuses):
+                pod_to_counts[pod.obj.metadata.name].append(
+                    f"{cont_stat.name} x{cont_stat.restart_count} "
+                    f"{'' if not include_container_logs else f' container logs {container_logs[idx]}'}"
+                )
 
             pod_message = ", ".join(map(
                 lambda kv_tup: f"{kv_tup[0]} - {'; '.join(kv_tup[1])}",
@@ -2111,6 +2178,7 @@ class Deployment(KubernetesModel):
             if cond.type == "Ready" and cond.status == "False"
         ]
         if unready_pod_conds:
+            # TODO get container logs here as well. Not sure if the needed api call will cause 404s with certain unready reasons (eg. container not created)
             pod_message = ", ".join(map(
                 lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
                 unready_pod_conds
@@ -3373,7 +3441,10 @@ class DeploymentOptimization(BaseOptimization):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.deployment.raise_for_status(adjustments=self.adjustments)
+        await self.deployment.raise_for_status(
+            adjustments=self.adjustments,
+            include_container_logs=self.deployment_config.container_logs_in_error_status
+        )
 
 
 # TODO: Break down into CanaryDeploymentOptimization and CanaryContainerOptimization
@@ -4022,7 +4093,10 @@ class CanaryOptimization(BaseOptimization):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.tuning_pod.raise_for_status(adjustments=self.adjustments)
+        await self.tuning_pod.raise_for_status(
+            adjustments=self.adjustments,
+            include_container_logs=self.target_controller_config.container_logs_in_error_status
+        )
 
 
     class Config:
@@ -4436,6 +4510,9 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     )
     timeout: Optional[servo.Duration] = pydantic.Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
+    )
+    container_logs_in_error_status: bool = pydantic.Field(
+        False, description="Enable to include container logs in error message"
     )
 
     @pydantic.validator("on_failure")
