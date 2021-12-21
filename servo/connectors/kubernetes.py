@@ -3826,7 +3826,7 @@ class CanaryOptimization(BaseOptimization):
                     await t
                     servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
 
-            await self.raise_for_status()
+            await self.raise_for_status(tuning_pod=tuning_pod)
 
         # Load the in memory model for various convenience accessors
         await tuning_pod.refresh()
@@ -4091,9 +4091,11 @@ class CanaryOptimization(BaseOptimization):
         )
         return is_ready and restart_count == 0
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, tuning_pod = None) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.tuning_pod.raise_for_status(
+        if tuning_pod is None:
+            tuning_pod = self.tuning_pod
+        await tuning_pod.raise_for_status(
             adjustments=self.adjustments,
             include_container_logs=self.target_controller_config.container_logs_in_error_status
         )
