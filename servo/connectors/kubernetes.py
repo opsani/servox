@@ -3826,7 +3826,7 @@ class CanaryOptimization(BaseOptimization):
                     await t
                     servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
 
-            await tuning_pod.raise_for_status(adjustments=self.adjustments)
+            await self.raise_for_status()
 
         # Load the in memory model for various convenience accessors
         await tuning_pod.refresh()

@@ -143,7 +143,7 @@ class KubeMetricsChecks(servo.BaseChecks):
                         )
                         assert (
                             access_review.status.allowed
-                        ), f'Not allowed to "{verb}" resource "{resource}"'
+                        ), f'Not allowed to "{verb}" resource "{resource}" in group "{permission.group}"'
 
     @servo.require('Metrics API connectivity')
     async def check_metrics_api(self) -> None:
