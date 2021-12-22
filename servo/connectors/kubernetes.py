@@ -1068,7 +1068,7 @@ class Pod(KubernetesModel):
         if restarted_container_statuses:
             container_logs: list[str] = ["DISABLED" for _ in restarted_container_statuses]
             if include_container_logs: # TODO enable logs config on per container basis
-                container_logs = self.get_logs_for_container_statuses(restarted_container_statuses)
+                container_logs = await self.get_logs_for_container_statuses(restarted_container_statuses)
             container_messages = [
                 (
                     f"{cont_stat.name} x{cont_stat.restart_count}"
@@ -2150,11 +2150,11 @@ class Deployment(KubernetesModel):
                         curstats.append(container_status)
                     else:
                         # Set up for next pod in list
-                        container_logs.extend(curpod.get_logs_for_container_statuses(curstats))
+                        container_logs.extend(await curpod.get_logs_for_container_statuses(curstats))
                         curpod = pod
                         curstats = [container_status]
                 # Get statuses for the last (or only) pod in the list
-                container_logs.extend(curpod.get_logs_for_container_statuses(curstats))
+                container_logs.extend(await curpod.get_logs_for_container_statuses(curstats))
 
             pod_to_counts = collections.defaultdict(list)
             for idx, (pod, cont_stat) in enumerate(restarted_pods_container_statuses):

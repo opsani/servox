@@ -6,6 +6,7 @@ from typing import AsyncIterator
 
 import freezegun
 import httpx
+import kubetest.client
 import pydantic
 import pytest
 import pytz
@@ -373,8 +374,8 @@ class TestPrometheusIntegration:
         )
 
     @pytest.fixture(autouse=True)
-    def _wait_for_cluster(self, kube) -> None:
-        kube.wait_for_registered()
+    def _wait_for_cluster(self, kube: kubetest.client.TestClient) -> None:
+        kube.wait_for_registered(timeout=1800)
 
     async def test_targets(
         self,
