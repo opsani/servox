@@ -1077,8 +1077,8 @@ class Pod(KubernetesModel):
                 for idx, cont_stat in enumerate(restarted_container_statuses)
             ]
             raise servo.AdjustmentRejectedError(
-                # NOTE: have to use format to for newline (backslash) insertion
-                f"Tuning optimization {self.name} crash restart detected on container(s): ""{}".format(', \n'.join(container_messages)),
+                # NOTE: cant use f-string with newline (backslash) insertion
+                (f"Tuning optimization {self.name} crash restart detected on container(s): " + ", \n".join(container_messages)),
                 reason="unstable"
             )
 
@@ -1093,7 +1093,15 @@ class Pod(KubernetesModel):
                 )
 
             if cond.type == "Ready" and cond.status == "False":
-                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
+                rejection_message = cond.message
+                if include_container_logs and cond.reason == "ContainersNotReady":
+                    unready_container_statuses: List[V1ContainerStatus] = [
+                        cont_stat for cont_stat in status.container_statuses or [] if not cont_stat.ready
+                    ]
+                    container_logs = await self.get_logs_for_container_statuses(unready_container_statuses)
+                    # NOTE: cant use f-string with newline (backslash) insertion
+                    rejection_message = (f"{rejection_message} container logs " + "\n\n--- \n\n".join(container_logs))
+                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {rejection_message}", reason="start-failed")
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -2178,13 +2186,23 @@ class Deployment(KubernetesModel):
             if cond.type == "Ready" and cond.status == "False"
         ]
         if unready_pod_conds:
-            # TODO get container logs here as well. Not sure if the needed api call will cause 404s with certain unready reasons (eg. container not created)
-            pod_message = ", ".join(map(
-                lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
-                unready_pod_conds
-            ))
+            pod_messages = []
+            for pod, cond in unready_pod_conds:
+                pod_message = f"{pod.obj.metadata.name} - (reason {cond.reason}) {cond.message}"
+
+                # TODO expand criteria for safely getting container logs and/or implement graceful fallback
+                if include_container_logs and cond.reason == "ContainersNotReady":
+                    unready_container_statuses: List[V1ContainerStatus] = [
+                        cont_stat for cont_stat in pod.obj.status.container_statuses or [] if not cont_stat.ready
+                    ]
+                    container_logs = await pod.get_logs_for_container_statuses(unready_container_statuses)
+                    # NOTE: cant use f-string with newline (backslash) insertion
+                    pod_message = (f"{pod_message} container logs " + "\n\n--- \n\n".join(container_logs))
+
+                pod_messages.append(pod_message)
+
             raise servo.AdjustmentRejectedError(
-                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {', '.join(pod_messages)}",
                 reason="start-failed"
             )
 
