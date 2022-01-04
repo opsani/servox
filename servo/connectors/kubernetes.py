@@ -1007,6 +1007,22 @@ class Pod(KubernetesModel):
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
+    async def _try_get_container_log(self, api_client: kubernetes_asyncio.client.CoreV1Api, container: str, limit_bytes: int = ONE_MiB, previous = False) -> str:
+        """Get logs for a container while handling common error cases (eg. Not Found)"""
+        try:
+            return await api_client.read_namespaced_pod_log(
+                name=self.name,
+                namespace=self.namespace,
+                container=container,
+                limit_bytes=limit_bytes,
+                previous=previous,
+            )
+        except kubernetes_asyncio.client.exceptions.ApiException as ae:
+            if ae.body.kind == "Status" and ae.body.code == 400 and (ae.body.message or "").endswith("not found"):
+                return "Logs not found"
+
+            raise
+
     async def get_logs_for_container_statuses(
         self,
         container_statuses: list[V1ContainerStatus],
@@ -1026,11 +1042,7 @@ class Pod(KubernetesModel):
         """
         api_client: kubernetes_asyncio.client.CoreV1Api
         async with self.api_client() as api_client:
-            read_logs_partial = functools.partial(api_client.read_namespaced_pod_log,
-                name=self.name,
-                namespace=self.namespace,
-                limit_bytes=limit_bytes,
-            )
+            read_logs_partial = functools.partial(self._try_get_container_log, api_client=api_client, limit_bytes=limit_bytes)
             if logs_selector == ContainerLogOptions.both:
                 return [
                     f"previous (crash):\n {await read_logs_partial(container=cs.name, previous=True)} \n\n--- \n\n"
@@ -1038,7 +1050,7 @@ class Pod(KubernetesModel):
                     for cs in container_statuses
                 ]
             else:
-                previous = True if logs_selector == ContainerLogOptions.previous else False
+                previous = (logs_selector == ContainerLogOptions.previous)
                 return [ await read_logs_partial(container=cs.name, previous=previous) for cs in container_statuses ]
 
     async def raise_for_status(self, adjustments: List[servo.Adjustment], include_container_logs = False) -> None:
