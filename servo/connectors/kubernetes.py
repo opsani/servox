@@ -1018,8 +1018,10 @@ class Pod(KubernetesModel):
                 previous=previous,
             )
         except kubernetes_asyncio.client.exceptions.ApiException as ae:
-            if ae.body.kind == "Status" and ae.body.code == 400 and (ae.body.message or "").endswith("not found"):
-                return "Logs not found"
+            if ae.status == 400:
+                status: kubernetes_asyncio.client.models.V1Status = api_client.api_client.deserialize(ae.body, "V1Status")
+                if (status.message or "").endswith("not found"):
+                    return "Logs not found"
 
             raise
 
