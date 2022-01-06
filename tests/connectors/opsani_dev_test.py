@@ -73,7 +73,7 @@ class TestConfig:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         assert list(config.dict().keys()) == [
             'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory', 'env',
-            'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement'
+            'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement', 'container_logs_in_error_status'
         ]
 
     def test_generate_yaml(self) -> None:
