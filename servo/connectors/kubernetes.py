@@ -3,6 +3,7 @@
 from __future__ import annotations, print_function
 
 import abc
+import aiohttp.client_exceptions
 import asyncio
 import collections
 import contextlib
@@ -958,6 +959,13 @@ class Pod(KubernetesModel):
                 body=options,
             )
 
+    @backoff.on_exception(
+        backoff.expo,
+        aiohttp.client_exceptions.ClientConnectorError,
+        max_time=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_time(),
+        max_tries=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_tries(),
+        giveup=lambda e: e.response.status_code != 111
+    )
     async def refresh(self) -> None:
         """Refresh the underlying Kubernetes Pod resource."""
         async with self.api_client() as api_client:
@@ -4014,11 +4022,8 @@ class CanaryOptimization(BaseOptimization):
 
 
     async def is_ready(self) -> bool:
-        is_ready, restart_count = await asyncio.gather(
-            self.tuning_pod.is_ready(),
-            self.tuning_pod.get_restart_count()
-        )
-        return is_ready and restart_count == 0
+        is_ready = await self.tuning_pod.is_ready()
+        return is_ready and self.tuning_pod.restart_count == 0
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
@@ -4775,63 +4780,70 @@ class KubernetesConnector(servo.BaseConnector):
     async def adjust(
         self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
     ) -> servo.Description:
-        state = await self._create_optimizations()
+        try:
+            state = await self._create_optimizations()
 
-        # Apply the adjustments and emit progress status
-        progress_logger = lambda p: self.logger.info(
-            p.annotate(f"waiting up to {p.timeout} for adjustments to be applied...", prefix=False),
-            progress=p.progress,
-        )
-        progress = servo.EventProgress(timeout=self.config.timeout)
-        future = asyncio.create_task(state.apply(adjustments))
-        future.add_done_callback(lambda _: progress.trigger())
-
-        await asyncio.gather(
-            future,
-            progress.watch(progress_logger),
-        )
-
-        # Handle settlement
-        settlement = control.settlement or self.config.settlement
-        if settlement:
-            self.logger.info(
-                f"Settlement duration of {settlement} requested, waiting for pods to settle..."
-            )
-            progress = servo.DurationProgress(settlement)
+            # Apply the adjustments and emit progress status
             progress_logger = lambda p: self.logger.info(
-                p.annotate(f"waiting {settlement} for pods to settle...", False),
+                p.annotate(f"waiting up to {p.timeout} for adjustments to be applied...", prefix=False),
                 progress=p.progress,
             )
-            async def readiness_monitor() -> None:
-                while not progress.finished:
-                    if not await state.is_ready():
-                        # Raise a specific exception if the optimization defines one
-                        try:
-                            await state.raise_for_status()
-                        except servo.AdjustmentRejectedError as e:
-                            # Update rejections with start-failed to indicate the initial rollout was successful
-                            if e.reason == "start-failed":
-                                e.reason = "unstable"
-                            raise
-
-                    await asyncio.sleep(servo.Duration('50ms').total_seconds())
+            progress = servo.EventProgress(timeout=self.config.timeout)
+            future = asyncio.create_task(state.apply(adjustments))
+            future.add_done_callback(lambda _: progress.trigger())
 
             await asyncio.gather(
+                future,
                 progress.watch(progress_logger),
-                readiness_monitor()
-            )
-            if not await state.is_ready():
-                self.logger.warning("Rejection triggered without running error handler")
-                raise servo.AdjustmentRejectedError(
-                    "Optimization target became unready after adjustment settlement period (WARNING: error handler was not run)",
-                    reason="unstable"
-                )
-            self.logger.info(
-                f"Settlement duration of {settlement} has elapsed, resuming optimization."
             )
 
-        description = state.to_description()
-        return description
+            # Handle settlement
+            settlement = control.settlement or self.config.settlement
+            if settlement:
+                self.logger.info(
+                    f"Settlement duration of {settlement} requested, waiting for pods to settle..."
+                )
+                progress = servo.DurationProgress(settlement)
+                progress_logger = lambda p: self.logger.info(
+                    p.annotate(f"waiting {settlement} for pods to settle...", False),
+                    progress=p.progress,
+                )
+                async def readiness_monitor() -> None:
+                    while not progress.finished:
+                        if not await state.is_ready():
+                            # Raise a specific exception if the optimization defines one
+                            try:
+                                await state.raise_for_status()
+                            except servo.AdjustmentRejectedError as e:
+                                # Update rejections with start-failed to indicate the initial rollout was successful
+                                if e.reason == "start-failed":
+                                    e.reason = "unstable"
+                                raise
+
+                        await asyncio.sleep(servo.Duration('50ms').total_seconds())
+
+                await asyncio.gather(
+                    progress.watch(progress_logger),
+                    readiness_monitor()
+                )
+                if not await state.is_ready():
+                    self.logger.warning("Rejection triggered without running error handler")
+                    raise servo.AdjustmentRejectedError(
+                        "Optimization target became unready after adjustment settlement period (WARNING: error handler was not run)",
+                        reason="unstable"
+                    )
+                self.logger.info(
+                    f"Settlement duration of {settlement} has elapsed, resuming optimization."
+                )
+
+            description = state.to_description()
+            return description
+
+        except aiohttp.client_exceptions.ClientConnectorError as ce:
+            if "Connection refused" in str(ce):
+                raise servo.AdjustmentFailedError("Connection to Kubernetes API server refused") from ce
+
+            raise
 
     @servo.on_event()
     async def check(
