@@ -9,6 +9,7 @@ import pydantic
 
 import servo
 import servo.connectors.kubernetes
+import servo.connectors.kube_metrics
 import servo.connectors.prometheus
 
 KUBERNETES_PERMISSIONS = [
@@ -43,7 +44,7 @@ ENVOY_SIDECAR_LABELS = {
 ENVOY_SIDECAR_DEFAULT_PORT = 9980
 
 class CPU(servo.connectors.kubernetes.CPU):
-    step: servo.connectors.kubernetes.Millicore = "125m"
+    step: servo.connectors.kubernetes.Core = "125m"
 
 class Memory(servo.connectors.kubernetes.Memory):
     step: servo.connectors.kubernetes.ShortByteSize = "128 MiB"
@@ -57,12 +58,16 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     port: Optional[Union[pydantic.StrictInt, str]] = None
     cpu: CPU
     memory: Memory
+    env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]]
     static_environment_variables: Optional[Dict[str, str]]
     prometheus_base_url: str = PROMETHEUS_SIDECAR_BASE_URL
     envoy_sidecar_image: str = ENVOY_SIDECAR_IMAGE_TAG
     timeout: servo.Duration = "5m"
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
+    )
+    container_logs_in_error_status: bool = pydantic.Field(
+        False, description="Enable to include container logs in error message"
     )
 
     @pydantic.root_validator
@@ -111,6 +116,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     cpu=self.cpu,
                     memory=self.memory,
                     static_environment_variables=self.static_environment_variables,
+                    env=self.env,
                 )
             ],
         )
@@ -126,6 +132,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             timeout=self.timeout,
             settlement=self.settlement,
+            container_logs_in_error_status=self.container_logs_in_error_status,
             **main_arg,
             **kwargs,
         )
@@ -213,6 +220,22 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                     query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
                 ),
             ],
+            **kwargs,
+        )
+
+    def generate_kube_metrics_config(
+        self, **kwargs
+    ) -> servo.connectors.kube_metrics.KubeMetricsConfiguration:
+        """Generate a configuration for running an Opsani Dev optimization under servo.connectors.kubernetes.
+
+        Returns:
+            A Kubernetes connector configuration object.
+        """
+        return servo.connectors.kube_metrics.KubeMetricsConfiguration(
+            namespace=self.namespace,
+            name=self.deployment or self.rollout,
+            kind="Deployment" if self.deployment else "Rollout",
+            container=self.container,
             **kwargs,
         )
 
@@ -372,7 +395,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
         cpu_resource_value = cpu_resource_requirements.get(
             next(filter(lambda r: cpu_resource_requirements[r] is not None, self.config.cpu.get), None)
         )
-        container_cpu_value = servo.connectors.kubernetes.Millicore.parse(cpu_resource_value)
+        container_cpu_value = servo.connectors.kubernetes.Core.parse(cpu_resource_value)
 
         memory_resource_requirements = target_container.get_resource_requirements('memory')
         memory_resource_value = memory_resource_requirements.get(
@@ -965,6 +988,21 @@ class OpsaniDevConnector(servo.BaseConnector):
                 config=self.config.generate_prometheus_config(),
             ),
         )
+        km_config = self.config.generate_kube_metrics_config()
+        # NOTE: connector should technically be attached prior to running checks but k8s connector attached above takes care of necessary setup for check
+        if (check := await servo.connectors.kube_metrics.KubeMetricsChecks(config=km_config).run_one(id="check_metrics_api")).success:
+            await servo_.add_connector(
+                "opsani-dev:kube-metrics",
+                servo.connectors.kube_metrics.KubeMetricsConnector(
+                    optimizer=self.optimizer,
+                    config=km_config
+                ),
+            )
+        else:
+            self.logger.warning(
+                f"Omitting kube_metrics connector from opsani_dev assembly due to failed check {check.name}: {check.message}"
+            )
+            self.logger.opt(exception=check.exception).debug("Failed kube_metrics check exception")
 
     @servo.on_event()
     async def check(

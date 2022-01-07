@@ -72,8 +72,8 @@ class TestConfig:
     def test_generate(self) -> None:
         config = servo.connectors.opsani_dev.OpsaniDevConfiguration.generate()
         assert list(config.dict().keys()) == [
-            'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory',
-            'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement'
+            'description', 'namespace', 'deployment', 'rollout', 'container', 'service','port', 'cpu', 'memory', 'env',
+            'static_environment_variables', 'prometheus_base_url', 'envoy_sidecar_image', 'timeout', 'settlement', 'container_logs_in_error_status'
         ]
 
     def test_generate_yaml(self) -> None:
@@ -84,9 +84,11 @@ class TestConfig:
             "container: main\n"
             "service: app\n"
             "cpu:\n"
+            "  unit: cores\n"
             "  min: 250m\n"
             "  max: '4'\n"
             "memory:\n"
+            "  unit: GiB\n"
             "  min: 256.0Mi\n"
             "  max: 4.0Gi\n"
         )
@@ -96,16 +98,17 @@ class TestConfig:
         config.__optimizer__ = None
 
     def test_generate_kubernetes_config(self) -> None:
-        opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
-            namespace="test",
-            deployment="fiber-http",
-            container="fiber-http",
-            service="fiber-http",
-            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
-            memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"),
-            static_environment_variables={"FOO": "BAR", "BAZ": 1},
-            __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345")
-        )
+        kwargs = {}
+        kwargs.update(namespace="test")
+        kwargs.update(deployment="fiber-http")
+        kwargs.update(container="fiber-http")
+        kwargs.update(service="fiber-http")
+        kwargs.update(cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"))
+        kwargs.update(memory=servo.connectors.kubernetes.Memory(min="128 MiB", max="4.0 GiB", step="128 MiB"))
+        kwargs.update(static_environment_variables={"FOO": "BAR", "BAZ": 1})
+        kwargs.update(__optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"))
+        opsani_dev_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(**kwargs)
+
         kubernetes_config = opsani_dev_config.generate_kubernetes_config()
         assert kubernetes_config.namespace == "test"
         assert kubernetes_config.deployments[0].namespace == "test"
@@ -185,10 +188,10 @@ class TestIntegration:
         async def test_target_container_resources_outside_of_limits(
             self, kube, checks: servo.connectors.opsani_dev.OpsaniDevChecks, config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            config.cpu.min = "4000m"
             config.cpu.max = "5000m"
+            config.cpu.min = "4000m"
             config.memory.min = "2GiB"
-            config.memory.min = "4GiB"
+            config.memory.max = "4GiB"
             result = await checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 
@@ -384,10 +387,10 @@ class TestRolloutIntegration:
         async def test_rollout_check_rsrc_limits_fails(
             self, kube, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks, rollout_config: servo.connectors.opsani_dev.OpsaniDevConfiguration
         ) -> None:
-            rollout_config.cpu.min = "4000m"
             rollout_config.cpu.max = "5000m"
+            rollout_config.cpu.min = "4000m"
             rollout_config.memory.min = "2GiB"
-            rollout_config.memory.min = "4GiB"
+            rollout_config.memory.max = "4GiB"
             result = await rollout_checks.run_one(id=f"check_target_container_resources_within_limits")
             assert result.exception
 

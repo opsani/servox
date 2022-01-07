@@ -489,6 +489,10 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     An optional list of connector names or a mapping of connector names to connector class names
     """
 
+    no_diagnostics: bool = pydantic.Field(
+        default=False, description="Do not poll the Opsani API for diagnostics"
+    )
+
     settings: Optional[CommonConfiguration] = pydantic.Field(
         default_factory=lambda: CommonConfiguration(),
         description="Configuration of the Servo connector",

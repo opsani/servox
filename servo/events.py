@@ -632,7 +632,7 @@ class Mixin:
         yield cls.validate
 
     @classmethod
-    def validate(cls: Mixin, value: Any) -> None:
+    def validate(cls: Mixin, value: Any) -> Mixin:
         if not isinstance(value, Mixin):
             raise TypeError(f"field (type {type(value)}) must be instance of events.Mixin")
 

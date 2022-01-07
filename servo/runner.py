@@ -18,6 +18,7 @@ import typer
 
 import servo
 import servo.api
+import servo.telemetry
 import servo.configuration
 import servo.utilities.key_paths
 import servo.utilities.strings
@@ -31,6 +32,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     _connected: bool = pydantic.PrivateAttr(False)
     _running: bool = pydantic.PrivateAttr(False)
     _main_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
+    _diagnostics_loop_task: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
 
     class Config:
         arbitrary_types_allowed = True
@@ -225,6 +227,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             loop = asyncio.get_event_loop()
             loop.create_task(self.servo.dispatch_event(servo.Events.startup))
 
+        if self._diagnostics_loop_task:
+            self._diagnostics_loop_task.cancel()
+
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
                 if not task.cancelled():
@@ -238,6 +243,12 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.debug(f"creating new main loop: {main_loop_name}")
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=main_loop_name)
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
+
+        if not servo.current_servo().config.no_diagnostics:
+            diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
+            self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+        else:
+            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
 
     async def run(self, *, poll: bool = True) -> None:
         self._running = True
@@ -288,6 +299,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             self.run_main_loop()
         else:
             self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
+
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
@@ -390,6 +402,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 if poll:
                     runner = self._runner_for_servo(servo.current_servo())
                     runner.run_main_loop()
+
             else:
                 self.logger.error(
                     f"unrecognized exception passed to progress exception handler: {error}"

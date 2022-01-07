@@ -336,7 +336,7 @@ class TestShow:
             assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-1", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
+            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1, unit=cores\\)\\s+adjust", result.stdout)
 
         def test_components_by_name(
             self, cli_runner: CliRunner, servo_cli: Typer
@@ -346,7 +346,7 @@ class TestShow:
             assert re.search("COMPONENT\\s+SETTINGS\\s+CONNECTOR", result.stdout)
             assert re.search("dev.opsani.com/multi-servox-1", result.stdout) is None
             assert re.search("dev.opsani.com/multi-servox-2", result.stdout)
-            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1\\)\\s+adjust", result.stdout)
+            assert re.search("main\\s+cpu=3 RangeSetting\\(range=\\[0..10\\], step=1, unit=cores\\)\\s+adjust", result.stdout)
 
         def test_events(
             self, cli_runner: CliRunner, servo_cli: Typer

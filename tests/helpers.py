@@ -84,7 +84,7 @@ class AdjustConnector(BaseConnector):
         return [
             Component(
                 name="main",
-                settings=[RangeSetting(name="cpu", min=0, max=10, step=1, value=3)],
+                settings=[RangeSetting(name="cpu", min=0, max=10, step=1, value=3, unit="cores")],
             )
         ]
 

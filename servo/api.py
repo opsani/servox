@@ -15,6 +15,7 @@ import pydantic
 import servo.errors
 import servo.types
 import servo.utilities
+from servo.logging import logs_path
 
 USER_AGENT = "github.com/opsani/servox"
 
@@ -284,7 +285,6 @@ class Mixin(abc.ABC):
                 self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
                 self.logger.trace(_redacted_to_curl(error.request))
                 raise
-
 
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     """Return a list of adjustment objects from an Opsani API app descriptor."""
