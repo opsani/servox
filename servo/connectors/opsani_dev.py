@@ -66,6 +66,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     settlement: Optional[servo.Duration] = pydantic.Field(
         description="Duration to observe the application after an adjust to ensure the deployment is stable. May be overridden by optimizer supplied `control.adjust.settlement` value."
     )
+    container_logs_in_error_status: bool = pydantic.Field(
+        False, description="Enable to include container logs in error message"
+    )
 
     @pydantic.root_validator
     def check_deployment_and_rollout(cls, values):
@@ -129,6 +132,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             description="Update the namespace, deployment, etc. to match your Kubernetes cluster",
             timeout=self.timeout,
             settlement=self.settlement,
+            container_logs_in_error_status=self.container_logs_in_error_status,
             **main_arg,
             **kwargs,
         )
