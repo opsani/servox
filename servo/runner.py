@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 import asyncio
 import functools
 import os
@@ -223,10 +222,8 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     def run_main_loop(self) -> None:
         if self._main_loop_task:
             self._main_loop_task.cancel()
-            self.logger.trace(f"task '{self._main_loop_task.get_name}' cancelled")
             loop = asyncio.get_event_loop()
             loop.create_task(self.servo.dispatch_event(servo.Events.startup))
-            self.logger.trace("startup event dispatched")
 
         def _reraise_if_necessary(task: asyncio.Task) -> None:
             try:
@@ -237,8 +234,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
                 raise error  # Ensure that we surface the error for handling
 
-        _uid = str(uuid.uuid4())[-6:]
-        main_loop_name = f"main loop for servo {self.optimizer.id} {_uid}"
+        main_loop_name = f"main loop for servo {self.optimizer.id}"
         self.logger.debug(f"creating new main loop: {main_loop_name}")
         self._main_loop_task = asyncio.create_task(self.main_loop(), name=main_loop_name)
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
