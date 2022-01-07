@@ -697,6 +697,13 @@ class TestAssembly:
                         },
                     ],
                 },
+                'no_diagnostics': {
+                     'default': False,
+                     'description': 'Do not poll the Opsani API for diagnostics',
+                     'env_names': ['SERVO_NO_DIAGNOSTICS'],
+                     'title': 'No Diagnostics',
+                     'type': 'boolean',
+                },
                 'settings': {
                     'title': 'Settings',
                     'description': 'Configuration of the Servo connector',

@@ -1,4 +1,5 @@
 import pytest
+
 import servo
 import servo.api
 
@@ -25,6 +26,7 @@ class TestStatus:
 
 from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status
 from servo.types import Adjustment, Control
+
 
 def _check_measure_parse(obj: CommandResponse):
     assert isinstance(obj, CommandResponse)

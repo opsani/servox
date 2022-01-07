@@ -30,7 +30,6 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
-    Sequence,
     Tuple,
     Type,
     Union,
@@ -45,10 +44,15 @@ import kubernetes_asyncio.client
 import kubernetes_asyncio.client.api_client
 import kubernetes_asyncio.client.exceptions
 import kubernetes_asyncio.client.models
+from kubernetes_asyncio.client.models.v1_container import V1Container
+from kubernetes_asyncio.client.models.v1_container_status import V1ContainerStatus
+from kubernetes_asyncio.client.models.v1_env_var import V1EnvVar
 import kubernetes_asyncio.watch
 import pydantic
 
 import servo
+from servo.telemetry import ONE_MiB
+from servo.types.kubernetes import *
 
 class Condition(servo.logging.Mixin):
     """A Condition is a convenience wrapper around a function and its arguments
@@ -642,8 +646,8 @@ class Container(servo.logging.Mixin):
     """
 
     def __init__(self, api_object, pod) -> None: # noqa: D107
-        self.obj = api_object
-        self.pod = pod
+        self.obj: V1Container = api_object
+        self.pod: Pod = pod
 
     @property
     def name(self) -> str:
@@ -752,6 +756,29 @@ class Container(servo.logging.Mixin):
             setattr(resources, requirement.resources_key, resource_to_values)
 
         self.resources = resources
+
+    @property
+    def env(self) -> Optional[list[V1EnvVar]]:
+        return self.obj.env
+
+    def get_environment_variable(self, variable_name: str) -> Optional[str]:
+        if self.obj.env:
+            return next(iter(v.value or f"valueFrom: {v.value_from}" for v in cast(Iterable[V1EnvVar], self.obj.env) if v.name == variable_name), None)
+        return None
+
+    def set_environment_variable(self, variable_name: str, value: Any) -> None:
+        # V1EnvVar value type is str so value will be converted eventually. Might as well do it up front
+        val_str = str(value)
+        if "valueFrom" in val_str:
+            raise ValueError("Adjustment of valueFrom variables is not supported yet")
+
+        new_vars: list[V1EnvVar] = self.obj.env or []
+        if new_vars:
+            # Filter out vars with the same name as the ones we are setting
+            new_vars = [v for v in new_vars if v.name != variable_name]
+
+        new_vars.append(V1EnvVar(name=variable_name, value=val_str))
+        self.obj.env = new_vars
 
     @property
     def ports(self) -> List[kubernetes_asyncio.client.V1ContainerPort]:
@@ -980,7 +1007,56 @@ class Pod(KubernetesModel):
         self.logger.trace(f"unable to find ready=true, continuing to wait...")
         return False
 
-    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
+    async def _try_get_container_log(self, api_client: kubernetes_asyncio.client.CoreV1Api, container: str, limit_bytes: int = ONE_MiB, previous = False) -> str:
+        """Get logs for a container while handling common error cases (eg. Not Found)"""
+        try:
+            return await api_client.read_namespaced_pod_log(
+                name=self.name,
+                namespace=self.namespace,
+                container=container,
+                limit_bytes=limit_bytes,
+                previous=previous,
+            )
+        except kubernetes_asyncio.client.exceptions.ApiException as ae:
+            if ae.status == 400:
+                ae.data = ae.body
+                status: kubernetes_asyncio.client.models.V1Status = api_client.api_client.deserialize(ae, "V1Status")
+                if (status.message or "").endswith("not found"):
+                    return "Logs not found"
+
+            raise
+
+    async def get_logs_for_container_statuses(
+        self,
+        container_statuses: list[V1ContainerStatus],
+        limit_bytes: int = ONE_MiB,
+        logs_selector: ContainerLogOptions = ContainerLogOptions.both,
+    ) -> list[str]:
+        """
+        Get container logs from the current pod for the container's whose statuses are provided in the list
+
+        Args:
+            container_statuses (list[V1ContainerStatus]): The name of the Container.
+            limit_bytes (int): Maximum bytes to provide per log (NOTE: this will be 2x per container )
+            logs_selector (ContainerLogOptions): "previous", "current", or "both"
+
+        Returns:
+            list[str]: List of logs per container in the same order as the list of container_statuses
+        """
+        api_client: kubernetes_asyncio.client.CoreV1Api
+        async with self.api_client() as api_client:
+            read_logs_partial = functools.partial(self._try_get_container_log, api_client=api_client, limit_bytes=limit_bytes)
+            if logs_selector == ContainerLogOptions.both:
+                return [
+                    f"previous (crash):\n {await read_logs_partial(container=cs.name, previous=True)} \n\n--- \n\n"
+                    f"current (latest):\n {await read_logs_partial(container=cs.name, previous=False)}"
+                    for cs in container_statuses
+                ]
+            else:
+                previous = (logs_selector == ContainerLogOptions.previous)
+                return [ await read_logs_partial(container=cs.name, previous=previous) for cs in container_statuses ]
+
+    async def raise_for_status(self, adjustments: List[servo.Adjustment], include_container_logs = False) -> None:
         """Raise an exception if the Pod status is not not ready."""
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
@@ -1001,11 +1077,23 @@ class Pod(KubernetesModel):
                 if cont_stat.state and cont_stat.state.waiting and cont_stat.state.waiting.reason in ["ImagePullBackOff", "ErrImagePull"]:
                     raise servo.AdjustmentFailedError("Container image pull failure detected", reason="image-pull-failed")
 
-        restarted_container_statuses = list(filter(lambda cont_stat: cont_stat.restart_count > 0, (status.container_statuses or [])))
+        restarted_container_statuses: List[V1ContainerStatus] = [
+            cont_stat for cont_stat in status.container_statuses or [] if cont_stat.restart_count > 0
+        ]
         if restarted_container_statuses:
-            container_messages = list(map(lambda cont_stat: f"{cont_stat.name} x{cont_stat.restart_count}", restarted_container_statuses))
+            container_logs: list[str] = ["DISABLED" for _ in restarted_container_statuses]
+            if include_container_logs: # TODO enable logs config on per container basis
+                container_logs = await self.get_logs_for_container_statuses(restarted_container_statuses)
+            container_messages = [
+                (
+                    f"{cont_stat.name} x{cont_stat.restart_count}"
+                    f"{'' if not include_container_logs else f' container logs {container_logs[idx]}'}"
+                )
+                for idx, cont_stat in enumerate(restarted_container_statuses)
+            ]
             raise servo.AdjustmentRejectedError(
-                f"Tuning optimization {self.name} crash restart detected on container(s): {', '.join(container_messages)}",
+                # NOTE: cant use f-string with newline (backslash) insertion
+                (f"Tuning optimization {self.name} crash restart detected on container(s): " + ", \n".join(container_messages)),
                 reason="unstable"
             )
 
@@ -1020,7 +1108,15 @@ class Pod(KubernetesModel):
                 )
 
             if cond.type == "Ready" and cond.status == "False":
-                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {cond.message}", reason="start-failed")
+                rejection_message = cond.message
+                if include_container_logs and cond.reason == "ContainersNotReady":
+                    unready_container_statuses: List[V1ContainerStatus] = [
+                        cont_stat for cont_stat in status.container_statuses or [] if not cont_stat.ready
+                    ]
+                    container_logs = await self.get_logs_for_container_statuses(unready_container_statuses)
+                    # NOTE: cant use f-string with newline (backslash) insertion
+                    rejection_message = (f"{rejection_message} container logs " + "\n\n--- \n\n".join(container_logs))
+                raise servo.AdjustmentRejectedError(f"(reason {cond.reason}) {rejection_message}", reason="start-failed")
 
             # we only care about the condition type 'ready'
             if cond.type.lower() != "ready":
@@ -2006,7 +2102,7 @@ class Deployment(KubernetesModel):
                         f"unknown deployment status condition: {condition.status}"
                     )
 
-    async def raise_for_status(self, adjustments: List[servo.Adjustment]) -> None:
+    async def raise_for_status(self, adjustments: List[servo.Adjustment], include_container_logs = False) -> None:
         # NOTE: operate off of current state, assuming you have checked is_ready()
         status = self.obj.status
         self.logger.trace(f"current deployment status is {status}")
@@ -2018,13 +2114,13 @@ class Deployment(KubernetesModel):
 
         # Check for failure conditions
         self._check_conditions(status.conditions)
-        await self.raise_for_failed_pod_adjustments(adjustments=adjustments)
+        await self.raise_for_failed_pod_adjustments(adjustments=adjustments, include_container_logs=include_container_logs)
 
         # Catchall
         self.logger.trace(f"unable to map deployment status to exception. Deployment: {self.obj}")
         raise RuntimeError(f"Unknown Deployment status for '{self.name}': {status}")
 
-    async def raise_for_failed_pod_adjustments(self, adjustments: List[servo.Adjustment]):
+    async def raise_for_failed_pod_adjustments(self, adjustments: List[servo.Adjustment], include_container_logs = False):
         pods = await self.get_latest_pods()
         self.logger.trace(f"latest pod(s) status {list(map(lambda p: p.obj.status, pods))}")
         unschedulable_pods = [
@@ -2062,14 +2158,33 @@ class Deployment(KubernetesModel):
                 reason="image-pull-failed"
             )
 
-        restarted_pods_container_statuses = [
+        restarted_pods_container_statuses: list[tuple[Pod, V1ContainerStatus]] = [
             (pod, cont_stat) for pod in pods for cont_stat in (pod.obj.status.container_statuses or [])
             if cont_stat.restart_count > 0
         ]
         if restarted_pods_container_statuses:
+            container_logs: list[str] = ["DISABLED" for _ in range(len(restarted_pods_container_statuses))]
+            if include_container_logs: # TODO enable logs config on per container basis
+                # Reduce api requests to 1 per pod then fan back out into per container status list
+                curpod = restarted_pods_container_statuses[0][0]
+                curstats = []
+                for pod, container_status in restarted_pods_container_statuses:
+                    if pod == curpod:
+                        curstats.append(container_status)
+                    else:
+                        # Set up for next pod in list
+                        container_logs.extend(await curpod.get_logs_for_container_statuses(curstats))
+                        curpod = pod
+                        curstats = [container_status]
+                # Get statuses for the last (or only) pod in the list
+                container_logs.extend(await curpod.get_logs_for_container_statuses(curstats))
+
             pod_to_counts = collections.defaultdict(list)
-            for pod_cont_stat in restarted_pods_container_statuses:
-                pod_to_counts[pod_cont_stat[0].obj.metadata.name].append(f"{pod_cont_stat[1].name} x{pod_cont_stat[1].restart_count}")
+            for idx, (pod, cont_stat) in enumerate(restarted_pods_container_statuses):
+                pod_to_counts[pod.obj.metadata.name].append(
+                    f"{cont_stat.name} x{cont_stat.restart_count} "
+                    f"{'' if not include_container_logs else f' container logs {container_logs[idx]}'}"
+                )
 
             pod_message = ", ".join(map(
                 lambda kv_tup: f"{kv_tup[0]} - {'; '.join(kv_tup[1])}",
@@ -2086,12 +2201,23 @@ class Deployment(KubernetesModel):
             if cond.type == "Ready" and cond.status == "False"
         ]
         if unready_pod_conds:
-            pod_message = ", ".join(map(
-                lambda pod_cond: f"{pod_cond[0].obj.metadata.name} - (reason {pod_cond[1].reason}) {pod_cond[1].message}",
-                unready_pod_conds
-            ))
+            pod_messages = []
+            for pod, cond in unready_pod_conds:
+                pod_message = f"{pod.obj.metadata.name} - (reason {cond.reason}) {cond.message}"
+
+                # TODO expand criteria for safely getting container logs and/or implement graceful fallback
+                if include_container_logs and cond.reason == "ContainersNotReady":
+                    unready_container_statuses: List[V1ContainerStatus] = [
+                        cont_stat for cont_stat in pod.obj.status.container_statuses or [] if not cont_stat.ready
+                    ]
+                    container_logs = await pod.get_logs_for_container_statuses(unready_container_statuses)
+                    # NOTE: cant use f-string with newline (backslash) insertion
+                    pod_message = (f"{pod_message} container logs " + "\n\n--- \n\n".join(container_logs))
+
+                pod_messages.append(pod_message)
+
             raise servo.AdjustmentRejectedError(
-                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {pod_message}",
+                f"Found {len(unready_pod_conds)} unready pod(s) for deployment {self.name}: {', '.join(pod_messages)}",
                 reason="start-failed"
             )
 
@@ -2894,6 +3020,7 @@ class ShortByteSize(pydantic.ByteSize):
         return super().validate(v)
 
     def human_readable(self) -> str:
+        """NOTE: only represents precision up to 1 decimal place (see pydantic's human_readable)"""
         sup = super().human_readable()
         # Remove the 'B' suffix to align with Kubernetes units (`GiB` -> `Gi`)
         if sup[-1] == 'B' and sup[-2].isalpha():
@@ -2902,6 +3029,16 @@ class ShortByteSize(pydantic.ByteSize):
 
     def __opsani_repr__(self) -> float:
         return float(decimal.Decimal(self) / GiB)
+
+    def __str__(self) -> str:
+        num = decimal.Decimal(self)
+        units = ['B', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi']
+        for unit in units:
+            if abs(num) < 1024:
+                return f'{num:f}{unit}'
+            num /= 1024
+
+        return f"{num:f}Ei"
 
 
 class Memory(servo.Memory):
@@ -2947,7 +3084,7 @@ def _normalize_adjustment(adjustment: servo.Adjustment) -> Tuple[str, Union[str,
         value = str(core_value)
     elif setting == "replicas":
         value = int(float(value))
-
+    # TODO support for env var format descriptor
     return setting, value
 
 class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
@@ -3161,10 +3298,9 @@ class DeploymentOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
-        # NOTE: use copy + update to apply values that may be outside of the range
         value = Core.parse(value)
-        cpu = cpu.copy(update={"value": value})
-        return cpu
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return cpu.safe_set_value_copy(value)
 
     @property
     def memory(self) -> Memory:
@@ -3180,10 +3316,20 @@ class DeploymentOptimization(BaseOptimization):
         value = resource_requirements.get(
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
-        # NOTE: use copy + update to apply values that may be outside of the range
         value = ShortByteSize.validate(value)
-        memory = memory.copy(update={"value": value})
-        return memory
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return memory.safe_set_value_copy(value)
+
+    @property
+    def env(self) -> Optional[list[servo.EnvironmentSetting]]:
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def replicas(self) -> servo.Replicas:
@@ -3229,8 +3375,11 @@ class DeploymentOptimization(BaseOptimization):
         )
 
     def to_components(self) -> List[servo.Component]:
+        settings=[self.cpu, self.memory, self.replicas]
+        if env := self.env:
+            settings.extend(env)
         return [
-            servo.Component(name=self.name, settings=[self.cpu, self.memory, self.replicas])
+            servo.Component(name=self.name, settings=settings)
         ]
 
     def adjust(self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()) -> None:
@@ -3243,6 +3392,7 @@ class DeploymentOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
+        env_setting: Optional[servo.EnvironmentSetting] = None # Declare type since type not compatible with :=
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -3260,6 +3410,10 @@ class DeploymentOptimization(BaseOptimization):
             # NOTE: Assign to the config to trigger validations
             self.deployment_config.replicas.value = value
             self.deployment.replicas = value
+
+        elif env_setting := servo.find_setting(self.container_config.env, setting_name):
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise RuntimeError(
@@ -3320,7 +3474,10 @@ class DeploymentOptimization(BaseOptimization):
 
     async def raise_for_status(self) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.deployment.raise_for_status(adjustments=self.adjustments)
+        await self.deployment.raise_for_status(
+            adjustments=self.adjustments,
+            include_container_logs=self.deployment_config.container_logs_in_error_status
+        )
 
 
 # TODO: Break down into CanaryDeploymentOptimization and CanaryContainerOptimization
@@ -3447,6 +3604,7 @@ class CanaryOptimization(BaseOptimization):
         self.adjustments.append(adjustment)
         setting_name, value = _normalize_adjustment(adjustment)
         self.logger.info(f"adjusting {setting_name} to {value}")
+        env_setting: Optional[servo.EnvironmentSetting] = None # Declare type since type not compatible with :=
 
         if setting_name in ("cpu", "memory"):
             # NOTE: use copy + update to apply values that may be outside of the range
@@ -3467,6 +3625,10 @@ class CanaryOptimization(BaseOptimization):
                 servo.logger.warning(
                     f'ignored attempt to set replicas to "{value}"'
                 )
+
+        elif env_setting := servo.find_setting(self.container_config.env, setting_name):
+            env_setting = env_setting.safe_set_value_copy(value)
+            self.pod_template_spec_container.set_environment_variable(env_setting.variable_name, env_setting.value)
 
         else:
             raise servo.AdjustmentFailedError(
@@ -3490,7 +3652,7 @@ class CanaryOptimization(BaseOptimization):
             raise
 
         # TODO: logging the wrong values -- should be coming from the podtemplatespec?
-        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}")
+        servo.logger.success(f"Built new tuning pod with container resources: {self.tuning_container.resources}, env: {self.tuning_container.env}")
 
     @property
     def namespace(self) -> str:
@@ -3697,7 +3859,7 @@ class CanaryOptimization(BaseOptimization):
                     await t
                     servo.logger.debug(f"Cancelled Task: {t}, progress: {progress}")
 
-            await tuning_pod.raise_for_status(adjustments=self.adjustments)
+            await self.raise_for_status(tuning_pod=tuning_pod)
 
         # Load the in memory model for various convenience accessors
         await tuning_pod.refresh()
@@ -3737,9 +3899,8 @@ class CanaryOptimization(BaseOptimization):
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.cpu.get), None)
         )
         value = Core.parse(value)
-        # NOTE: use copy + update to apply values that may be outside of the range
-        cpu = cpu.copy(update={"value": value})
-        return cpu
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return cpu.safe_set_value_copy(value)
 
     @property
     def tuning_memory(self) -> Optional[Memory]:
@@ -3759,9 +3920,23 @@ class CanaryOptimization(BaseOptimization):
             next(filter(lambda r: resource_requirements[r] is not None, self.container_config.memory.get), None)
         )
         value = ShortByteSize.validate(value)
-        # NOTE: use copy + update to apply values that may be outside of the range
-        memory = memory.copy(update={"value": value})
+        # NOTE: use safe_set to apply values that may be outside of the range
+        memory = memory.safe_set_value_copy(value)
         return memory
+
+    @property
+    def tuning_env(self) -> Optional[list[servo.EnvironmentSetting]]:
+        if not self.tuning_pod:
+            return None
+
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.tuning_container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def tuning_replicas(self) -> servo.Replicas:
@@ -3796,8 +3971,9 @@ class CanaryOptimization(BaseOptimization):
         )
         cores = Core.parse(value)
 
-        # NOTE: use copy + update to accept values from mainline outside of our range
-        cpu = self.container_config.cpu.copy(update={"pinned": True, "value": cores})
+        # NOTE: use safe_set to accept values from mainline outside of our range
+        cpu: CPU = self.container_config.cpu.safe_set_value_copy(cores)
+        cpu.pinned = True
         cpu.request = resource_requirements.get(ResourceRequirement.request)
         cpu.limit = resource_requirements.get(ResourceRequirement.limit)
         return cpu
@@ -3814,11 +3990,24 @@ class CanaryOptimization(BaseOptimization):
         )
         short_byte_size = ShortByteSize.validate(value)
 
-        # NOTE: use copy + update to accept values from mainline outside of our range
-        memory = self.container_config.memory.copy(update={"pinned": True, "value": short_byte_size})
+        # NOTE: use safe_set to accept values from mainline outside of our range
+        memory = self.container_config.memory.safe_set_value_copy(value)
+        memory.pinned = True
         memory.request = resource_requirements.get(ResourceRequirement.request)
         memory.limit = resource_requirements.get(ResourceRequirement.limit)
         return memory
+
+    @property
+    def main_env(self) -> list[servo.EnvironmentSetting]:
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.main_container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env_setting.pinned = True
+            env.append(env_setting)
+
+        return env or None
 
     @property
     def main_replicas(self) -> servo.Replicas:
@@ -3854,23 +4043,23 @@ class CanaryOptimization(BaseOptimization):
         Note that all settings on the target are implicitly pinned because only the canary
         is to be modified during optimization.
         """
+        main_settings = [
+            self.main_cpu,
+            self.main_memory,
+            self.main_replicas,
+        ]
+        if main_env := self.main_env:
+            main_settings.extend(main_env)
+        tuning_settings = [
+            self.tuning_cpu,
+            self.tuning_memory,
+            self.tuning_replicas,
+        ]
+        if tuning_env := self.tuning_env:
+            tuning_settings.extend(tuning_env)
         return [
-            servo.Component(
-                name=self.main_name,
-                settings=[
-                    self.main_cpu,
-                    self.main_memory,
-                    self.main_replicas,
-                ],
-            ),
-            servo.Component(
-                name=self.name,
-                settings=[
-                    self.tuning_cpu,
-                    self.tuning_memory,
-                    self.tuning_replicas,
-                ],
-            ),
+            servo.Component(name=self.main_name, settings=main_settings),
+            servo.Component(name=self.name, settings=tuning_settings),
         ]
 
     async def rollback(self, error: Optional[Exception] = None) -> None:
@@ -3906,7 +4095,11 @@ class CanaryOptimization(BaseOptimization):
                         f"cannot rollback a tuning Pod: falling back to shutdown: {error}"
                     )
 
-                await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                try:
+                    await asyncio.wait_for(self.shutdown(), timeout=self.timeout.total_seconds())
+                except asyncio.exceptions.TimeoutError:
+                    self.logger.exception(level="TRACE")
+                    raise RuntimeError(f"Time out after {self.timeout} waiting for tuning pod shutdown")
 
                 # create a new canary against baseline
                 self.logger.info(
@@ -3931,9 +4124,14 @@ class CanaryOptimization(BaseOptimization):
         )
         return is_ready and restart_count == 0
 
-    async def raise_for_status(self) -> None:
+    async def raise_for_status(self, tuning_pod = None) -> None:
         """Raise an exception if in an unhealthy state."""
-        await self.tuning_pod.raise_for_status(adjustments=self.adjustments)
+        if tuning_pod is None:
+            tuning_pod = self.tuning_pod
+        await tuning_pod.raise_for_status(
+            adjustments=self.adjustments,
+            include_container_logs=self.target_controller_config.container_logs_in_error_status
+        )
 
 
     class Config:
@@ -4212,14 +4410,6 @@ ContainerTagName.__doc__ = (
 )
 
 
-class EnvironmentConfiguration(servo.BaseConfiguration):
-    ...
-
-
-class CommandConfiguration(servo.BaseConfiguration):
-    ...
-
-
 class ContainerConfiguration(servo.BaseConfiguration):
     """
     The ContainerConfiguration class models the configuration of an optimizeable container within a Kubernetes Deployment.
@@ -4230,7 +4420,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[List[str]]  # (adjustable environment variables) TODO: create model...
+    env: Optional[list[servo.PydanticEnvironmentSettingAnnotation]] = None
     static_environment_variables: Optional[Dict[str, str]]
 
 
@@ -4355,6 +4545,9 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     )
     timeout: Optional[servo.Duration] = pydantic.Field(
         description="Time interval to wait before considering Kubernetes operations to have failed."
+    )
+    container_logs_in_error_status: bool = pydantic.Field(
+        False, description="Enable to include container logs in error message"
     )
 
     @pydantic.validator("on_failure")
