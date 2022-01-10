@@ -438,12 +438,15 @@ def kubeconfig_path_from_config(config) -> Union[pathlib.Path, pathlib.PurePath]
 
 @pytest.fixture
 def kubeconfig(request) -> Union[pathlib.Path, pathlib.PurePath]:
-    """Return the path to a kubeconfig file to use when running integration tests.
+    """Return the path to a kubeconfig file to use when running tests. (an empty file will be created if none exists)
 
     To avoid inadvertantly interacting with clusters not explicitly configured
     for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
     """
-    return kubeconfig_path_from_config(request.session.config)
+    retval = kubeconfig_path_from_config(request.session.config)
+    if not retval.exists():
+        retval.write_text("")
+    return retval
 
 
 @pytest.fixture
@@ -475,7 +478,7 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optio
             )
 
 @pytest.fixture
-async def minikube(request, subprocess, kubeconfig: str) -> str:
+async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
     """Run tests within a local minikube profile.
 
     The profile name is determined using the parametrized `minikube_profile` marker
