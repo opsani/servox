@@ -495,7 +495,7 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
         profile = "servox"
 
     # Start minikube and configure environment
-    exit_code, _, stderr = await subprocess(f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --keep-context=true --wait=true", print_output=True,)
+    exit_code, _, stderr = await subprocess(f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --wait=true", print_output=True,)
     if exit_code != 0:
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}: {stderr}")
 
