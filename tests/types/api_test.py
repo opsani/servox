@@ -1,3 +1,4 @@
+import datetime
 import pytest
 
 from servo.types.core import DataPoint, TimeSeries, Unit
@@ -20,7 +21,7 @@ class TestMeasurement:
 
     def test_rejects_empty_data_point(self, metric: Metric) -> None:
         with pytest.raises(ValueError) as e:
-            readings = [DataPoint(metric, datetime.now(), None)]
+            readings = [DataPoint(metric, datetime.datetime.now(), None)]
             Measurement(readings=readings)
         assert e
         assert "none is not an allowed value" in str(e.value)
@@ -35,8 +36,8 @@ class TestMeasurement:
     @pytest.mark.xfail
     def test_rejects_mismatched_time_series_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2)]),
-            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2), (datetime.now(), 3)], id="foo")
+            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]),
+            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2), (datetime.datetime.now(), 3)], id="foo")
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)
@@ -49,7 +50,7 @@ class TestMeasurement:
     @pytest.mark.xfail
     def test_rejects_mixed_empty_and_nonempty_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(metric, [(datetime.now(), 1), (datetime.now(), 2)]),
+            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]),
             TimeSeries(metric=metric, data_points=[]),
         ]
         with pytest.raises(ValueError) as e:
@@ -63,10 +64,10 @@ class TestMeasurement:
     def test_rejects_mixed_types_of_readings(self, metric: Metric) -> None:
         readings = [
             TimeSeries(metric, [
-                DataPoint(metric, datetime.now(), 1),
-                DataPoint(metric, datetime.now(), 2),
+                DataPoint(metric, datetime.datetime.now(), 1),
+                DataPoint(metric, datetime.datetime.now(), 2),
             ]),
-            DataPoint(metric, datetime.now(), 123),
+            DataPoint(metric, datetime.datetime.now(), 123),
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)

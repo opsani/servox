@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 from time import sleep
 
 import freezegun
@@ -24,7 +25,8 @@ def kube_metrics_config() -> KubeMetricsConfiguration:
 def kube_metrics_connector(kube_metrics_config: KubeMetricsConfiguration) -> KubeMetricsConnector:
     return KubeMetricsConnector(config=kube_metrics_config)
 
-async def test_attach(kube_metrics_connector: KubeMetricsConnector, servo_runner: ServoRunner):
+async def test_attach(kube_metrics_connector: KubeMetricsConnector, servo_runner: ServoRunner, kubeconfig: pathlib.Path):
+    kube_metrics_connector.config.kubeconfig = str(kubeconfig)
     await servo_runner.servo.add_connector("kube_metrics", kube_metrics_connector)
 
 def test_metrics(kube_metrics_connector: KubeMetricsConnector):
@@ -66,13 +68,18 @@ async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.c
         async with kubernetes_asyncio.client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api)
             while True:
-                result = await cust_obj_api.list_namespaced_custom_object(
-                    label_selector=deployment.label_selector,
-                    namespace=kube.namespace,
-                    **METRICS_CUSTOM_OJBECT_CONST_ARGS
-                )
-                if result.get('items'): # items present and non-empty
-                    break
+                try:
+                    result = await cust_obj_api.list_namespaced_custom_object(
+                        label_selector=deployment.label_selector,
+                        namespace=kube.namespace,
+                        **METRICS_CUSTOM_OJBECT_CONST_ARGS
+                    )
+                    if result.get('items'): # items present and non-empty
+                        break
+                except kubernetes_asyncio.client.exceptions.ApiException as e:
+                    if e.status == 503:
+                        continue # Takes a bit to start in GH runners???
+                    raise
     await asyncio.wait_for(wait_for_scrape(), timeout=60)
 
     await connector.periodic_measure(

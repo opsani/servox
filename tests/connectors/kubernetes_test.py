@@ -587,8 +587,8 @@ class TestResourceRequirement:
     @pytest.mark.parametrize(
         "requirement, val",
         [
-            (ResourceRequirement.limit, "limit"),
-            (ResourceRequirement.request, "request"),
+            (ResourceRequirement.limit, "limits"),
+            (ResourceRequirement.request, "requests"),
         ],
     )
     def test_resource_key(self, requirement: ResourceRequirement, val) -> None:

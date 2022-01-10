@@ -1,5 +1,4 @@
-from datetime import datetime, timedelta
-
+import datetime
 import freezegun
 import pydantic
 import pytest
@@ -13,7 +12,7 @@ class TestDuration:
         assert duration.total_seconds() == 120
 
     def test_init_with_timedelta(self) -> None:
-        td = timedelta(seconds=120)
+        td = datetime.timedelta(seconds=120)
         duration = Duration(td)
         assert duration.total_seconds() == 120
 
@@ -36,7 +35,7 @@ class TestDuration:
 
     def test_eq_timedelta(self) -> None:
         duration = Duration(18_000)
-        assert duration == timedelta(hours=5)
+        assert duration == datetime.timedelta(hours=5)
 
     def test_eq_numeric(self) -> None:
         duration = Duration("5h")
@@ -186,7 +185,7 @@ class TestTimeSeries:
     def time_series(self) -> DataPoint:
         metric = Metric("throughput", Unit.requests_per_minute)
         values = (31337.0, 666.0, 187.0, 420.0, 69.0)
-        points = list(map(lambda v: DataPoint(metric, datetime.now(), v), values))
+        points = list(map(lambda v: DataPoint(metric, datetime.datetime.now(), v), values))
         return TimeSeries(metric, points)
 
     def test_len(self, time_series: TimeSeries) -> None:
@@ -212,8 +211,8 @@ class TestTimeSeries:
 
     def test_timespan(self, time_series: TimeSeries) -> None:
         assert time_series.timespan == (
-            datetime(2020, 1, 21, 12, 0, 1),
-            datetime(2020, 1, 21, 12, 40, 1)
+            datetime.datetime(2020, 1, 21, 12, 0, 1),
+            datetime.datetime(2020, 1, 21, 12, 40, 1)
         )
 
     def test_duration(self, time_series: TimeSeries) -> None:
@@ -235,13 +234,13 @@ class TestDataPoint:
     @freezegun.freeze_time("2020-01-21 12:00:01")
     def data_point(self) -> DataPoint:
         metric = Metric("throughput", Unit.requests_per_minute)
-        return DataPoint(metric, datetime.now(), 31337.0)
+        return DataPoint(metric, datetime.datetime.now(), 31337.0)
 
     def test_iteration(self, data_point: DataPoint) -> None:
-        assert tuple(iter(data_point)) == (datetime(2020, 1, 21, 12, 0, 1), 31337.0)
+        assert tuple(iter(data_point)) == (datetime.datetime(2020, 1, 21, 12, 0, 1), 31337.0)
 
     def test_indexing(self, data_point: DataPoint) -> None:
-        assert data_point[0] == datetime(2020, 1, 21, 12, 0, 1)
+        assert data_point[0] == datetime.datetime(2020, 1, 21, 12, 0, 1)
         assert data_point[1] == 31337.0
         with pytest.raises(KeyError, match='index out of bounds: 3 not in \\(0, 1\\)'):
             data_point[3]
