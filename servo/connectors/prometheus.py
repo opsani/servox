@@ -773,6 +773,7 @@ class PrometheusConnector(servo.BaseConnector):
     @servo.on_event()
     async def startup(self) -> None:
         # Continuously publish a stream of metrics broadcasting every N seconds
+        # Should run idempotently
         streaming_interval = self.config.streaming_interval
         if streaming_interval is not None:
             logger = servo.logger.bind(component=f"{self.name} -> {CHANNEL}")
