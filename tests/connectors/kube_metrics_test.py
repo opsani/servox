@@ -25,8 +25,7 @@ def kube_metrics_config() -> KubeMetricsConfiguration:
 def kube_metrics_connector(kube_metrics_config: KubeMetricsConfiguration) -> KubeMetricsConnector:
     return KubeMetricsConnector(config=kube_metrics_config)
 
-async def test_attach(kube_metrics_connector: KubeMetricsConnector, servo_runner: ServoRunner, kubeconfig: pathlib.Path):
-    kube_metrics_connector.config.kubeconfig = str(kubeconfig)
+async def test_attach(kube_metrics_connector: KubeMetricsConnector, servo_runner: ServoRunner, minikube: str):
     await servo_runner.servo.add_connector("kube_metrics", kube_metrics_connector)
 
 def test_metrics(kube_metrics_connector: KubeMetricsConnector):
