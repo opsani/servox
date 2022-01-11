@@ -10,11 +10,9 @@ def values_for_keys(obj: dict, *keys: Sequence[str]) -> List[Any]:
     return list(map(obj.get, *keys))
 
 
-DEFAULT_SENTINEL = object()
-
 
 def value_for_key_path(
-    obj: object, key_path: str, default: Any = DEFAULT_SENTINEL
+    obj: object, key_path: str, default: Any = ...
 ) -> Any:
     """Return the value of a property at a given key path relative to a given object.
 
@@ -30,7 +28,7 @@ def value_for_key_path(
         Any: The value at the given key path.
     """
     if hasattr(obj, key_path):
-        if default is not DEFAULT_SENTINEL:
+        if default is not ...:
             return getattr(obj, key_path, default)
         else:
             return getattr(obj, key_path)
@@ -38,10 +36,10 @@ def value_for_key_path(
         return obj[key_path]
     elif "." in key_path:
         parent_key, child_key = key_path.split(".", 2)
-        child = value_for_key_path(obj, parent_key, default)
+        child = value_for_key_path(obj, parent_key, {})
         return value_for_key_path(child, child_key, default)
     else:
-        if default is not DEFAULT_SENTINEL:
+        if default is not ...:
             return default
         else:
             raise ValueError(f"unknown key-path '{key_path}'")
