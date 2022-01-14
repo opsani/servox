@@ -497,6 +497,10 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
     # Start minikube and configure environment
     exit_code, _, stderr = await subprocess(f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --wait=true", print_output=True,)
     if exit_code != 0:
+        if exit_code in [50, 80]:
+            # https://github.com/kubernetes/minikube/issues/10357
+            pytest.xfail("Minikube failed start")
+
         raise RuntimeError(f"failed running minikube: exited with status code {exit_code}: {stderr}")
 
     # Yield the profile name
