@@ -80,6 +80,7 @@ async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.c
                         continue # Takes a bit to start in GH runners???
                     raise
     await asyncio.wait_for(wait_for_scrape(), timeout=60)
+    await asyncio.sleep(1) # sometimes only one container has been scraped, add a bit of buffer to prevent this
 
     await connector.periodic_measure(
         target_resource=deployment,
@@ -185,6 +186,7 @@ class TestKubeMetricsConnectorIntegration:
                     if result.get('items'): # items present and non-empty
                         break
         await asyncio.wait_for(wait_for_scrape(), timeout=60)
+        await asyncio.sleep(1) # sometimes only one container has been scraped, add a bit of buffer to prevent this
 
         kube_metrics_connector.config.metric_collection_frequency = servo.Duration("1s")
         result = await kube_metrics_connector.measure()
