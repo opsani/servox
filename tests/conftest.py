@@ -174,7 +174,7 @@ MINIKUBE_PROFILE_INI = (
 ROLLOUT_MANIFEST_INI = (
     'rollout_manifest: mark tests using argo rollouts to apply the manifest from'
     'the specified path in the first marker argument. Eg.'
-    '@pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")'
+    '@pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout.yaml")'
 )
 
 def pytest_configure(config) -> None:
@@ -438,12 +438,15 @@ def kubeconfig_path_from_config(config) -> Union[pathlib.Path, pathlib.PurePath]
 
 @pytest.fixture
 def kubeconfig(request) -> Union[pathlib.Path, pathlib.PurePath]:
-    """Return the path to a kubeconfig file to use when running integration tests.
+    """Return the path to a kubeconfig file to use when running tests. (an empty file will be created if none exists)
 
     To avoid inadvertantly interacting with clusters not explicitly configured
     for development, we suppress the kubetest default of using ~/.kube/kubeconfig.
     """
-    return kubeconfig_path_from_config(request.session.config)
+    retval = kubeconfig_path_from_config(request.session.config)
+    if not retval.exists():
+        retval.write_text("")
+    return retval
 
 
 @pytest.fixture
@@ -473,6 +476,41 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optio
             raise FileNotFoundError(
                 f"kubeconfig file not found: configure a test cluster and add kubeconfig: {kubeconfig}"
             )
+
+@pytest.fixture
+async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
+    """Run tests within a local minikube profile.
+
+    The profile name is determined using the parametrized `minikube_profile` marker
+    or else uses "default".
+    """
+    marker = request.node.get_closest_marker("minikube_profile")
+    addons = ""
+    if marker:
+        assert len(marker.args) == 1, f"minikube_profile marker accepts a single argument but received: {repr(marker.args)}"
+        profile = marker.args[0]
+        if profile == "metrics-server":
+            addons = "--addons metrics-server "
+    else:
+        profile = "servox"
+
+    # Start minikube and configure environment
+    exit_code, _, stderr = await subprocess(f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --wait=true", print_output=True,)
+    if exit_code != 0:
+        if exit_code in [50, 80]:
+            # https://github.com/kubernetes/minikube/issues/10357
+            pytest.xfail("Minikube failed start")
+
+        raise RuntimeError(f"failed running minikube: exited with status code {exit_code}: {stderr}")
+
+    # Yield the profile name
+    try:
+        yield profile
+
+    finally:
+        exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True)
+        if exit_code != 0:
+            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
 
 @pytest.fixture()
 async def subprocess() -> tests.helpers.Subprocess:

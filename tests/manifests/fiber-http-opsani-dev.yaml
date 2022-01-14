@@ -65,6 +65,9 @@ spec:
           # would typically be the `targetPort` of the Service defined
           # below.
           - containerPort: 8480
+        env:
+        - name: INIT_MEMORY_SIZE
+          value: 32MB
 
       # Opsani Envoy Sidecar
       # Provides metrics for consumption by the Opsani Servo
