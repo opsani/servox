@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+import urllib3.exceptions
 
 import freezegun
 import kubetest.client
@@ -50,7 +51,11 @@ MAIN_METRICS = [
 @pytest.mark.minikube_profile.with_args("metrics-server")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.client.TestClient, servo_runner: ServoRunner):
-    kube.wait_for_registered()
+    try:
+        kube.wait_for_registered()
+    except urllib3.exceptions.MaxRetryError as e:
+        pytest.xfail(f"Connection refused: {e}")
+
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(lambda: defaultdict(list))
     connector = KubeMetricsConnector(config=KubeMetricsConfiguration(
         name="fiber-http",
