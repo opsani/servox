@@ -74,13 +74,13 @@ async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.c
                         **METRICS_CUSTOM_OJBECT_CONST_ARGS
                     )
                     if result.get('items'): # items present and non-empty
-                        break
+                        if any(any(c['name'] == "fiber-http" for c in i["containers"]) for i in result['items'] ):
+                            break
                 except kubernetes_asyncio.client.exceptions.ApiException as e:
                     if e.status == 503:
                         continue # Takes a bit to start in GH runners???
                     raise
     await asyncio.wait_for(wait_for_scrape(), timeout=60)
-    await asyncio.sleep(1) # sometimes only one container has been scraped, add a bit of buffer to prevent this
 
     await connector.periodic_measure(
         target_resource=deployment,
