@@ -16,34 +16,6 @@ async def servo_image(request) -> str:
     return image
 
 @pytest.fixture
-async def minikube(request, subprocess, kubeconfig: str) -> str:
-    """Run tests within a local minikube profile.
-
-    The profile name is determined using the parametrized `minikube_profile` marker
-    or else uses "default".
-    """
-    marker = request.node.get_closest_marker("minikube_profile")
-    if marker:
-        assert len(marker.args) == 1, f"minikube_profile marker accepts a single argument but received: {repr(marker.args)}"
-        profile = marker.args[0]
-    else:
-        profile = "servox"
-
-    # Start minikube and configure environment
-    exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube start -p {profile} --interactive=false --keep-context=true --wait=true", print_output=True,)
-    if exit_code != 0:
-        raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-
-    # Yield the profile name
-    try:
-        yield profile
-
-    finally:
-        exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True)
-        if exit_code != 0:
-            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
-
-@pytest.fixture
 async def minikube_servo_image(minikube: str, servo_image: str, subprocess) -> str:
     """Asynchronously build a Docker image from the current working copy and cache it into the minikube repository."""
     exit_code, _, _ = await subprocess(f"minikube cache add -p {minikube} {servo_image}", print_output=True)
@@ -84,7 +56,7 @@ async def kind(request, subprocess, kubeconfig: str, kubecontext: str) -> str:
         if not os.getenv("GITHUB_ACTIONS"):
             exit_code, _, _ = await subprocess(f"kind delete cluster --name {cluster} --kubeconfig {kubeconfig}", print_output=True)
             if exit_code != 0:
-                raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+                raise RuntimeError(f"failed running kind delete: exited with status code {exit_code}")
 
 # TODO: Replace this with a callable like: `kind.create(), kind.delete(), with kind.cluster() as ...`
 # TODO: add markers for the image, cluster name.
