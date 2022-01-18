@@ -1531,7 +1531,7 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         return kube.namespace
 
     @pytest.fixture
-    def config(config: KubernetesConfiguration) -> KubernetesConfiguration:
+    def config(self, config: KubernetesConfiguration) -> KubernetesConfiguration:
         config.container_logs_in_error_status = True
         return config
 
