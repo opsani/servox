@@ -700,7 +700,7 @@ class Container(servo.logging.Mixin):
         """
         self.obj.resources = resources
 
-    def get_resource_requirements(self, name: str) -> Dict[ResourceRequirement, Optional[str]]:
+    def get_resource_requirements(self, resource_type: str) -> Dict[ResourceRequirement, Optional[str]]:
         """Return a dictionary mapping resource requirements to values for a given resource (e.g., cpu or memory).
 
         This method is safe to call for containers that do not define any resource requirements (e.g., the `resources` property is None).
@@ -710,7 +710,7 @@ class Container(servo.logging.Mixin):
         the `ResourceRequirement.limit` key.
 
         Args:
-            name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
+            resource_type: The type of resource to get the requirements of (e.g., "cpu" or "memory").
 
         Returns:
             A dictionary mapping ResourceRequirement enum members to optional string values.
@@ -721,13 +721,13 @@ class Container(servo.logging.Mixin):
             # Get the 'requests' or 'limits' nested structure
             requirement_subdict = getattr(resources, requirement.resources_key, {})
             if requirement_subdict:
-                requirements[requirement] = requirement_subdict.get(name)
+                requirements[requirement] = requirement_subdict.get(resource_type)
             else:
                 requirements[requirement] = None
 
         return requirements
 
-    def set_resource_requirements(self, name: str, requirements: Dict[ResourceRequirement, Optional[str]]) -> None:
+    def set_resource_requirements(self, resource_type: str, requirements: dict[ResourceRequirement, Optional[str]]) -> None:
         """Sets resource requirements on the container for the values in the given dictionary.
 
         If no resources have been defined yet, a resources model is provisioned.
@@ -736,7 +736,7 @@ class Container(servo.logging.Mixin):
         ResourceRequirement keys that are not present in the dict are not modified.
 
         Args:
-            name: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
+            resource_type: The name of the resource to set the requirements of (e.g., "cpu" or "memory").
             requirements: A dict mapping requirements to target values (e.g., `{ResourceRequirement.request: '500m', ResourceRequirement.limit: '2000m'})
         """
         resources: kubernetes_asyncio.client.V1ResourceRequirements = copy.copy(
@@ -750,9 +750,9 @@ class Container(servo.logging.Mixin):
 
             if value is not None:
                 # NOTE: Coerce to string as values are headed into Kubernetes resource model
-                resource_to_values[name] = str(value)
+                resource_to_values[resource_type] = str(value)
             else:
-                resource_to_values.pop(name, None)
+                resource_to_values.pop(resource_type, None)
             setattr(resources, requirement.resources_key, resource_to_values)
 
         self.resources = resources
