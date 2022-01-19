@@ -511,7 +511,7 @@ class NumericType(Type):
         yield cls.validate
 
     @classmethod
-    def validate(cls, value, field: pydantic.fields.ModelField):
+    def validate(cls, value, field: pydantic.fields.ModelField = None):
         if isclass(value) and issubclass(value, (int, float)):
             return value
 
@@ -527,14 +527,14 @@ class NumericType(Type):
         field_schema.update(anyOf=['int', 'float'])
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
-    # ENV Var values are almost always represented as a str, override value parsing to accomodate
-    value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
-        None, description="The optional value of the setting as reported by the servo"
-    )
-
     # # TODO promote to RangeSetting base
     value_type: NumericType = pydantic.Field(
         None, description="The optional data type of the value of the setting"
+    )
+
+    # ENV Var values are almost always represented as a str, override value parsing to accomodate
+    value: Optional[Union[pydantic.StrictInt, float]] = pydantic.Field(
+        None, description="The optional value of the setting as reported by the servo"
     )
 
     @pydantic.validator("value_type", pre=True)
@@ -545,11 +545,11 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
             return float
         return value
 
-    @pydantic.validator('value')
-    def _cast_value_to_value_type(cls, value: Any, values: dict) -> Optional[Union[pydantic.StrictInt, float]]:
-        if value is not None and (value_type := values.get('value_type')) is not None:
-            return value_type(value)
-        return value
+    @pydantic.root_validator
+    def _cast_value_to_value_type(cls, values: dict) -> dict:
+        if (value := values.get('value')) is not None and (value_type := values.get('value_type')) is not None:
+            values['value'] = value_type(value)
+        return values
 
 class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass

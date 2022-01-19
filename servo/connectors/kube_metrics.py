@@ -214,7 +214,7 @@ class KubeMetricsConnector(servo.BaseConnector):
 
     @servo.on_event()
     async def measure(self,
-        metrics: List[str] = None,
+        metrics: List[str] = [m.value for m in SupportedKubeMetrics],
         control: servo.types.Control = servo.types.Control()
     ) -> servo.Measurement:
         target_metrics = [m for m in self.config.metrics_to_collect if m.value in metrics]
@@ -292,6 +292,7 @@ class KubeMetricsConnector(servo.BaseConnector):
         async with kubernetes_asyncio.client.api_client.ApiClient() as api:
             cust_obj_api = kubernetes_asyncio.client.CustomObjectsApi(api_client=api)
             label_selector_str = selector_string(target_resource.match_labels)
+            timestamp = datetime.now()
 
             if any((m in MAIN_METRICS_REQUIRE_CUST_OBJ for m in target_metrics)):
                 main_metrics = await cust_obj_api.list_namespaced_custom_object(
@@ -355,9 +356,6 @@ class KubeMetricsConnector(servo.BaseConnector):
                         else:
                             mem_saturation = None
                         _append_data_point_for_pod(metric_name=SupportedKubeMetrics.MAIN_MEM_SATURATION.value, value=mem_saturation)
-
-            else:
-                timestamp = datetime.now()
 
             if SupportedKubeMetrics.MAIN_POD_RESTART_COUNT in target_metrics:
                 _append_data_point_for_time = functools.partial(

@@ -453,6 +453,7 @@ class EventProgress(BaseProgress):
 
         Return False if there is no timeout configured or the progress has not been started.
         """
+        if self.timeout == 0 and self.started: return True
         if not self.timeout or not self.started: return False
         return Duration.since(self.started_at) >= self.timeout
 

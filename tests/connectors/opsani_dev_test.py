@@ -133,7 +133,7 @@ class TestConfig:
 
 
 @pytest.mark.applymanifests(
-    "opsani_dev",
+    "../manifests/opsani_dev",
     files=[
         "deployment.yaml",
         "service.yaml",
@@ -328,7 +328,7 @@ class TestResourceRequirementsIntegration:
         assert result.success, f"Expected success but got: {result}"
 
 @pytest.mark.applymanifests(
-    "opsani_dev",
+    "../manifests/opsani_dev",
     files=[
         "service.yaml",
         "prometheus.yaml",
@@ -361,8 +361,8 @@ class TestRolloutIntegration:
             os.environ.pop('POD_NAMESPACE', None)
 
     @pytest.mark.parametrize((), [
-        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")),
-        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"))
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout.yaml")),
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"))
     ])
     class TestChecksOriginalState:
         @pytest.mark.parametrize(
@@ -419,8 +419,8 @@ class TestRolloutIntegration:
 
     class TestChecksOriginalStateCustomManifests:
         @pytest.mark.parametrize((), [
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_mem.yaml")),
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref_no_mem.yaml"))
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout_no_mem.yaml")),
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_mem.yaml"))
         ])
         async def test_rollout_check_mem_requirements_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
@@ -429,8 +429,8 @@ class TestRolloutIntegration:
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.parametrize((), [
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml")),
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref_no_cpu_limit.yaml"))
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout_no_cpu_limit.yaml")),
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_cpu_limit.yaml"))
         ])
         async def test_rollout_check_cpu_limit_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
@@ -440,8 +440,8 @@ class TestRolloutIntegration:
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.parametrize((), [
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")),
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"))
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout_no_selector.yaml")),
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"))
         ])
         async def test_check_rollout_selector_labels_fails(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
@@ -454,8 +454,8 @@ class TestRolloutIntegration:
             assert result.exception, f"Expected exception but got: {result}"
 
         @pytest.mark.parametrize((), [
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout_no_selector.yaml")),
-            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"))
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout_no_selector.yaml")),
+            pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref_no_selector.yaml"))
         ])
         async def test_check_rollout_selector_in_cluster(
             self, rollout_checks: servo.connectors.opsani_dev.OpsaniDevRolloutChecks
@@ -467,8 +467,8 @@ class TestRolloutIntegration:
         # NOTE: Prometheus checks are redundant in this case, covered by standard integration tests
 
     @pytest.mark.parametrize((), [
-        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout.yaml")),
-        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/connectors/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"))
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout.yaml")),
+        pytest.param(marks=pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout-workload-ref.yaml"))
     ])
     class TestChecksUpdateState:
         @pytest.fixture(autouse=True)
@@ -535,7 +535,7 @@ class TestRolloutIntegration:
     # TODO: port TestInstall class to rollouts by refactoring deployment specific helper code
 
 @pytest.mark.applymanifests(
-    "opsani_dev",
+    "../manifests/opsani_dev",
     files=[
         "deployment.yaml",
         "service.yaml",
