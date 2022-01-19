@@ -1531,6 +1531,11 @@ class TestKubernetesConnectorIntegrationUnreadyCmd:
         return kube.namespace
 
     @pytest.fixture
+    def config(self, config: KubernetesConfiguration) -> KubernetesConfiguration:
+        config.container_logs_in_error_status = True
+        return config
+
+    @pytest.fixture
     def kubetest_deployment(self, kube: kubetest.client.TestClient, rootpath: pathlib.Path) -> KubetestDeployment:
         deployment = kube.load_deployment(rootpath.joinpath("tests/manifests/fiber-http-opsani-dev.yaml"))
         deployment.obj.spec.template.spec.termination_grace_period_seconds = 10

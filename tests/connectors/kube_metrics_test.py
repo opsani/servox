@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+import urllib3.exceptions
 
 import freezegun
 import kubetest.client
@@ -50,7 +51,11 @@ MAIN_METRICS = [
 @pytest.mark.minikube_profile.with_args("metrics-server")
 @pytest.mark.applymanifests("../manifests", files=["fiber-http-opsani-dev.yaml"])
 async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.client.TestClient, servo_runner: ServoRunner):
-    kube.wait_for_registered()
+    try:
+        kube.wait_for_registered()
+    except urllib3.exceptions.MaxRetryError as e:
+        pytest.xfail(f"Connection refused: {e}")
+
     datapoints_dicts: Dict[str, Dict[str, List[DataPoint]]] = defaultdict(lambda: defaultdict(list))
     connector = KubeMetricsConnector(config=KubeMetricsConfiguration(
         name="fiber-http",
@@ -74,13 +79,13 @@ async def test_periodic_measure(kubeconfig: str, minikube: str, kube: kubetest.c
                         **METRICS_CUSTOM_OJBECT_CONST_ARGS
                     )
                     if result.get('items'): # items present and non-empty
-                        break
+                        if any(any(c['name'] == "fiber-http" for c in i["containers"]) for i in result['items'] ):
+                            break
                 except kubernetes_asyncio.client.exceptions.ApiException as e:
                     if e.status == 503:
                         continue # Takes a bit to start in GH runners???
                     raise
     await asyncio.wait_for(wait_for_scrape(), timeout=60)
-    await asyncio.sleep(1) # sometimes only one container has been scraped, add a bit of buffer to prevent this
 
     await connector.periodic_measure(
         target_resource=deployment,
