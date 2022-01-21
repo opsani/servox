@@ -131,13 +131,11 @@ class TestPrometheusConfiguration:
             "  query: rate(http_requests_total[5m])\n"
             "  step: 1m\n"
             "  absent: ignore\n"
-            "  eager: null\n"
             "- name: error_rate\n"
             "  unit: '%'\n"
             "  query: rate(errors[5m])\n"
             "  step: 1m\n"
             "  absent: ignore\n"
-            "  eager: null\n"
             "targets: null\n"
             "fast_fail:\n"
             "  disabled: 0\n"
@@ -538,7 +536,6 @@ class TestPrometheusIntegration:
                             query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
                             step="5s",
                             absent="ignore",
-                            eager="20s"
                         ),
                         PrometheusMetric(
                             "error_rate",
@@ -891,7 +888,6 @@ class TestConnector:
         assert len(description.metrics) == 1
         metrics = description.metrics[0]
         assert metrics.absent == "ignore"
-        assert metrics.eager is None
 
     @respx.mock
     async def test_measure(self, connector) -> None:
@@ -917,7 +913,6 @@ class TestConnector:
                 query='throughput',
                 step=servo.Duration('5s'),
                 absent="ignore",
-                eager=None,
             )
         ]
 
