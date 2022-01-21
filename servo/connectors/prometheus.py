@@ -1008,4 +1008,3 @@ def _chart_delta(a, b, unit) -> str:
         return f"📉{delta}{unit}"
     else:
         return f"📈+{delta}{unit}"
-
