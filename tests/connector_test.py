@@ -73,7 +73,7 @@ class TestOptimizer:
             (None, "https://api.opsani.com/accounts/example.com/applications/my-app/"),
             ("http://localhost:1234", "http://localhost:1234"),
         ],
-        ids=(f"target-{i}" for i in itertools.count())
+        ids=(f"target-{i}" for i in itertools.count()),
     )
     def test_api_url(self, url, expected_api_url) -> None:
         optimizer = Optimizer(id="example.com/my-app", token="123456", __url__=url)
@@ -187,9 +187,7 @@ class TestVegetaConfiguration:
         assert s.rate == "0"
 
     def test_validate_rate_no_time_unit(self) -> None:
-        s = VegetaConfiguration(
-            rate="500", target="GET http://example.com"
-        )
+        s = VegetaConfiguration(rate="500", target="GET http://example.com")
         assert s.rate == "500"
 
     def test_validate_rate_integer(self) -> None:
@@ -197,16 +195,12 @@ class TestVegetaConfiguration:
         assert s.rate == "500"
 
     def test_validate_rate_connections_over_time(self) -> None:
-        s = VegetaConfiguration(
-            rate="500/1s", target="GET http://example.com"
-        )
+        s = VegetaConfiguration(rate="500/1s", target="GET http://example.com")
         assert s.rate == "500/1s"
 
     def test_validate_rate_raises_when_invalid(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaConfiguration(
-                rate="INVALID", target="GET http://example.com"
-            )
+            VegetaConfiguration(rate="INVALID", target="GET http://example.com")
         assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("rate",)
         assert (
@@ -215,9 +209,7 @@ class TestVegetaConfiguration:
 
     def test_validate_rate_raises_when_invalid_duration(self) -> None:
         with pytest.raises(ValidationError) as e:
-            VegetaConfiguration(
-                rate="500/1zxzczc", target="GET http://example.com"
-            )
+            VegetaConfiguration(rate="500/1zxzczc", target="GET http://example.com")
         assert "1 validation error for VegetaConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("rate",)
         assert (
@@ -231,25 +223,19 @@ class TestVegetaConfiguration:
         assert s.duration == timedelta(seconds=0)
 
     def test_validate_duration_seconds(self) -> None:
-        s = VegetaConfiguration(
-            rate="0", target="GET http://example.com"
-        )
+        s = VegetaConfiguration(rate="0", target="GET http://example.com")
         s._duration = "1s"
         assert s.duration == timedelta(seconds=1)
 
     def test_validate_duration_hours_minutes_and_seconds(self) -> None:
-        s = VegetaConfiguration(
-            rate="0", target="GET http://example.com"
-        )
+        s = VegetaConfiguration(rate="0", target="GET http://example.com")
         s._duration = "1h35m20s"
         assert s.duration == timedelta(seconds=5720)
 
     def test_validate_duration_invalid(self) -> None:
         with pytest.raises(ValueError, match="Invalid duration 'INVALID'"):
-            c = VegetaConfiguration(
-                rate="0", target="GET http://example.com"
-            )
-            c._duration="INVALID"
+            c = VegetaConfiguration(rate="0", target="GET http://example.com")
+            c._duration = "INVALID"
             c.duration
 
     def test_validate_target_with_http_format(self) -> None:
@@ -329,7 +315,7 @@ class TestVegetaConfiguration:
                 "X-Account-ID: 99\n"
             ),
         ],
-        ids=(f"target-{i}" for i in itertools.count())
+        ids=(f"target-{i}" for i in itertools.count()),
     )
     def test_validate_target_http_valid_cases(self, http_target):
         s = VegetaConfiguration(
@@ -396,7 +382,7 @@ class TestVegetaConfiguration:
                 "invalid target: JUMP http://goku:9090/things",
             ],
         ],
-        ids=(f"target-{i}" for i in itertools.count())
+        ids=(f"target-{i}" for i in itertools.count()),
     )
     def test_validate_target_http_invalid_cases(self, http_target, error_message):
         with pytest.raises(ValidationError) as e:
@@ -496,9 +482,7 @@ class TestVegetaConfiguration:
 class TestVegetaConnector:
     @pytest.fixture
     def vegeta_connector(self) -> VegetaConnector:
-        config = VegetaConfiguration(
-            rate="50/1s", target="GET http://localhost:8080"
-        )
+        config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
         return VegetaConnector(config=config)
 
     @pytest.fixture(autouse=True)
@@ -529,9 +513,7 @@ class TestVegetaConnector:
 
 
 def test_init_vegeta_connector() -> None:
-    config = VegetaConfiguration(
-        rate="50/1s", target="GET http://localhost:8080"
-    )
+    config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
     connector = VegetaConnector(config=config)
     assert connector is not None
 
@@ -548,9 +530,7 @@ def test_init_connector_no_version_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.version = None
-        config = VegetaConfiguration(
-            rate="50/1s", target="GET http://localhost:8080"
-        )
+        config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
         connector = FakeConnector(config=config, path="whatever")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "version must be provided"
@@ -562,9 +542,7 @@ def test_init_connector_invalid_version_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.version = "invalid"
-        config = VegetaConfiguration(
-            rate="50/1s", target="GET http://localhost:8080"
-        )
+        config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
         connector = FakeConnector(config=config, path="whatever", version="b")
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "invalid is not valid SemVer string"
@@ -575,9 +553,7 @@ def test_init_connector_parses_version_string() -> None:
         pass
 
     FakeConnector.version = "0.5.0"
-    config = VegetaConfiguration(
-        rate="50/1s", target="GET http://localhost:8080"
-    )
+    config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
     connector = FakeConnector(config=config, path="whatever")
     assert connector.version is not None
     assert connector.version == Version.parse("0.5.0")
@@ -589,35 +565,27 @@ def test_init_connector_no_name_raises() -> None:
 
     with pytest.raises(ValidationError) as e:
         FakeConnector.name = None
-        config = VegetaConfiguration(
-            rate="50/1s", target="GET http://localhost:8080"
-        )
+        config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
         connector = FakeConnector(config=config, path="test", name=None)
     assert e.value.errors()[0]["loc"] == ("__root__",)
     assert e.value.errors()[0]["msg"] == "name must be provided"
 
 
 def test_vegeta_default_name() -> None:
-    config = VegetaConfiguration(
-        rate="50/1s", target="GET http://localhost:8080"
-    )
+    config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
     connector = VegetaConnector(config=config)
     assert connector.name == "vegeta"
 
 
 def test_vegeta_config_override() -> None:
-    config = VegetaConfiguration(
-        rate="50/1s", target="GET http://localhost:8080"
-    )
+    config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
     connector = VegetaConnector(config=config, name="monkey")
     assert connector.name == "monkey"
 
 
 def test_vegeta_name_invalid() -> None:
     with pytest.raises(ValidationError) as e:
-        config = VegetaConfiguration(
-            rate="50/1s", target="GET http://localhost:8080"
-        )
+        config = VegetaConfiguration(rate="50/1s", target="GET http://localhost:8080")
         connector = VegetaConnector(configuration=config, name="THIS IS NOT COOL")
     error_messages = list(map(lambda error: error["msg"], e.value.errors()))
     assert (
@@ -694,178 +662,181 @@ def test_vegeta_cli_schema_json(
     servo_cli: ServoCLI, cli_runner: CliRunner, optimizer_env: None
 ) -> None:
     result = cli_runner.invoke(servo_cli, "schema vegeta")
-    assert result.exit_code == 0, f"failed with non-zero exit status (stdout={result.stdout}, stderr={result.stderr})"
+    assert (
+        result.exit_code == 0
+    ), f"failed with non-zero exit status (stdout={result.stdout}, stderr={result.stderr})"
     schema = json.loads(result.stdout)
     assert schema == {
-        'title': 'Vegeta Connector Configuration Schema',
-        'description': 'Configuration of the Vegeta connector',
-        'type': 'object',
-        'properties': {
-            'description': {
-                'title': 'Description',
-                'description': 'An optional description of the configuration.',
-                'env_names': [
-                    'VEGETA_DESCRIPTION',
+        "title": "Vegeta Connector Configuration Schema",
+        "description": "Configuration of the Vegeta connector",
+        "type": "object",
+        "properties": {
+            "description": {
+                "title": "Description",
+                "description": "An optional description of the configuration.",
+                "env_names": [
+                    "VEGETA_DESCRIPTION",
                 ],
-                'type': 'string',
+                "type": "string",
             },
-            'rate': {
-                'title': 'Rate',
-                'description': (
-                    'Specifies the request rate per time unit to issue against the targets. Given in the format of req'
-                    'uest/time unit.'
+            "rate": {
+                "title": "Rate",
+                "description": (
+                    "Specifies the request rate per time unit to issue against the targets. Given in the format of req"
+                    "uest/time unit."
                 ),
-                'env_names': [
-                    'VEGETA_RATE',
+                "env_names": [
+                    "VEGETA_RATE",
                 ],
-                'type': 'string',
+                "type": "string",
             },
-            'format': {
-                'description': (
-                    'Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do'
-                    'cs for details.'
+            "format": {
+                "description": (
+                    "Specifies the format of the targets input. Valid values are http and json. Refer to the Vegeta do"
+                    "cs for details."
                 ),
-                'default': 'http',
-                'env_names': [
-                    'VEGETA_FORMAT',
+                "default": "http",
+                "env_names": [
+                    "VEGETA_FORMAT",
                 ],
-                'allOf': [
+                "allOf": [
                     {
-                        '$ref': '#/definitions/TargetFormat',
+                        "$ref": "#/definitions/TargetFormat",
                     },
                 ],
             },
-            'target': {
-                'title': 'Target',
-                'description': (
-                    'Specifies a single formatted Vegeta target to load. See the format option to learn about availabl'
-                    'e target formats. This option is exclusive of the targets option and will provide a target to Veg'
-                    'eta via stdin.'
+            "target": {
+                "title": "Target",
+                "description": (
+                    "Specifies a single formatted Vegeta target to load. See the format option to learn about availabl"
+                    "e target formats. This option is exclusive of the targets option and will provide a target to Veg"
+                    "eta via stdin."
                 ),
-                'env_names': [
-                    'VEGETA_TARGET',
+                "env_names": [
+                    "VEGETA_TARGET",
                 ],
-                'type': 'string',
+                "type": "string",
             },
-            'targets': {
-                'title': 'Targets',
-                'description': (
-                    'Specifies the file from which to read targets. See the format option to learn about available tar'
-                    'get formats. This option is exclusive of the target option and will provide targets to via throug'
-                    'h a file on disk.'
+            "targets": {
+                "title": "Targets",
+                "description": (
+                    "Specifies the file from which to read targets. See the format option to learn about available tar"
+                    "get formats. This option is exclusive of the target option and will provide targets to via throug"
+                    "h a file on disk."
                 ),
-                'env_names': [
-                    'VEGETA_TARGETS',
+                "env_names": [
+                    "VEGETA_TARGETS",
                 ],
-                'format': 'file-path',
-                'type': 'string',
+                "format": "file-path",
+                "type": "string",
             },
-            'connections': {
-                'title': 'Connections',
-                'description': 'Specifies the maximum number of idle open connections per target host.',
-                'default': 10000,
-                'env_names': [
-                    'VEGETA_CONNECTIONS',
+            "connections": {
+                "title": "Connections",
+                "description": "Specifies the maximum number of idle open connections per target host.",
+                "default": 10000,
+                "env_names": [
+                    "VEGETA_CONNECTIONS",
                 ],
-                'type': 'integer',
+                "type": "integer",
             },
-            'workers': {
-                'title': 'Workers',
-                'description': (
-                    'Specifies the initial number of workers used in the attack. The workers will automatically increa'
-                    'se to achieve the target request rate, up to max-workers.'
+            "workers": {
+                "title": "Workers",
+                "description": (
+                    "Specifies the initial number of workers used in the attack. The workers will automatically increa"
+                    "se to achieve the target request rate, up to max-workers."
                 ),
-                'default': 10,
-                'env_names': [
-                    'VEGETA_WORKERS',
+                "default": 10,
+                "env_names": [
+                    "VEGETA_WORKERS",
                 ],
-                'type': 'integer',
+                "type": "integer",
             },
-            'max_workers': {
-                'title': 'Max Workers',
-                'description': (
-                    'The maximum number of workers used to sustain the attack. This can be used to control the concurr'
-                    'ency of the attack to simulate a target number of clients.'
+            "max_workers": {
+                "title": "Max Workers",
+                "description": (
+                    "The maximum number of workers used to sustain the attack. This can be used to control the concurr"
+                    "ency of the attack to simulate a target number of clients."
                 ),
-                'env_names': [
-                    'VEGETA_MAX_WORKERS',
+                "env_names": [
+                    "VEGETA_MAX_WORKERS",
                 ],
-                'type': 'integer',
+                "type": "integer",
             },
-            'max_body': {
-                'title': 'Max Body',
-                'description': (
-                    'Specifies the maximum number of bytes to capture from the body of each response. Remaining unread'
-                    ' bytes will be fully read but discarded.'
+            "max_body": {
+                "title": "Max Body",
+                "description": (
+                    "Specifies the maximum number of bytes to capture from the body of each response. Remaining unread"
+                    " bytes will be fully read but discarded."
                 ),
-                'default': -1,
-                'env_names': [
-                    'VEGETA_MAX_BODY',
+                "default": -1,
+                "env_names": [
+                    "VEGETA_MAX_BODY",
                 ],
-                'type': 'integer',
+                "type": "integer",
             },
-            'http2': {
-                'title': 'Http2',
-                'description': 'Specifies whether to enable HTTP/2 requests to servers which support it.',
-                'default': True,
-                'env_names': [
-                    'VEGETA_HTTP2',
+            "http2": {
+                "title": "Http2",
+                "description": "Specifies whether to enable HTTP/2 requests to servers which support it.",
+                "default": True,
+                "env_names": [
+                    "VEGETA_HTTP2",
                 ],
-                'type': 'boolean',
+                "type": "boolean",
             },
-            'keepalive': {
-                'title': 'Keepalive',
-                'description': 'Specifies whether to reuse TCP connections between HTTP requests.',
-                'default': True,
-                'env_names': [
-                    'VEGETA_KEEPALIVE',
+            "keepalive": {
+                "title": "Keepalive",
+                "description": "Specifies whether to reuse TCP connections between HTTP requests.",
+                "default": True,
+                "env_names": [
+                    "VEGETA_KEEPALIVE",
                 ],
-                'type': 'boolean',
+                "type": "boolean",
             },
-            'insecure': {
-                'title': 'Insecure',
-                'description': 'Specifies whether to ignore invalid server TLS certificates.',
-                'default': False,
-                'env_names': [
-                    'VEGETA_INSECURE',
+            "insecure": {
+                "title": "Insecure",
+                "description": "Specifies whether to ignore invalid server TLS certificates.",
+                "default": False,
+                "env_names": [
+                    "VEGETA_INSECURE",
                 ],
-                'type': 'boolean',
+                "type": "boolean",
             },
-            'reporting_interval': {
-                'title': 'Reporting Interval',
-                'description': 'How often to report metrics during a measurement cycle.',
-                'default': '15s',
-                'env_names': [
-                    'VEGETA_REPORTING_INTERVAL',
+            "reporting_interval": {
+                "title": "Reporting Interval",
+                "description": "How often to report metrics during a measurement cycle.",
+                "default": "15s",
+                "env_names": [
+                    "VEGETA_REPORTING_INTERVAL",
                 ],
-                'type': 'string',
-                'format': 'duration',
-                'pattern': (
-                    '([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]'
-                    '+us)?([\\d\\.]+ns)?'
+                "type": "string",
+                "format": "duration",
+                "pattern": (
+                    "([\\d\\.]+y)?([\\d\\.]+mm)?(([\\d\\.]+w)?[\\d\\.]+d)?([\\d\\.]+h)?([\\d\\.]+m)?([\\d\\.]+s)?([\\d\\.]+ms)?([\\d\\.]"
+                    "+us)?([\\d\\.]+ns)?"
                 ),
-                'examples': [
-                    '300ms',
-                    '5m',
-                    '2h45m',
-                    '72h3m0.5s',
+                "examples": [
+                    "300ms",
+                    "5m",
+                    "2h45m",
+                    "72h3m0.5s",
                 ],
             },
         },
-        'required': ['rate'],
-        'additionalProperties': False,
-        'definitions': {
-            'TargetFormat': {
-                'title': 'TargetFormat',
-                'description': 'An enumeration.',
-                'enum': [
-                    'http',
-                    'json',
+        "required": ["rate"],
+        "additionalProperties": False,
+        "definitions": {
+            "TargetFormat": {
+                "title": "TargetFormat",
+                "description": "An enumeration.",
+                "enum": [
+                    "http",
+                    "json",
                 ],
-                'type': 'string',
+                "type": "string",
             },
         },
     }
+
 
 @pytest.mark.xfail
 def test_vegeta_cli_schema_text(servo_cli: ServoCLI, cli_runner: CliRunner) -> None:
@@ -1023,10 +994,11 @@ def test_vegeta_cli_generate_with_defaults(
     config_file = tmp_path / "vegeta.yaml"
     config = yaml.full_load(config_file.read_text())
     assert config == {
-        'no_diagnostics': False,
-        'settings': {
-            'backoff': {
-                '__default__': {'max_time': '10m'},'connect': {'max_time': '1h'}
+        "no_diagnostics": False,
+        "settings": {
+            "backoff": {
+                "__default__": {"max_time": "10m"},
+                "connect": {"max_time": "1h"},
             }
         },
         "vegeta": {
@@ -1439,17 +1411,22 @@ class TestConnectorEvents:
         assert result.connector == connector
         assert result.value == 12345
 
-    async def test_event_dispatch_context_manager(self, mocker: pytest_mock.MockFixture) -> None:
+    async def test_event_dispatch_context_manager(
+        self, mocker: pytest_mock.MockFixture
+    ) -> None:
         config = BaseConfiguration.construct()
         connector = TestConnectorEvents.FakeConnector(config=config)
         messages = set()
 
         async with connector.dispatch_event(_events["example_event"]) as event:
+
             @event.subscribe
             async def _subscriber(message: servo.pubsub.Message) -> None:
                 messages.add(f"Decorator Message: {message.text}")
 
-            event.subscribe(lambda message: messages.add(f"Lambda Message: {message.text}"))
+            event.subscribe(
+                lambda message: messages.add(f"Lambda Message: {message.text}")
+            )
 
             async def _iterator() -> None:
                 async for message in event.channel:
@@ -1466,43 +1443,41 @@ class TestConnectorEvents:
 
             async def _poke() -> None:
                 for i in range(5):
-                    await event.channel.publish(servo.pubsub.Message(text=f"Message {i}"))
+                    await event.channel.publish(
+                        servo.pubsub.Message(text=f"Message {i}")
+                    )
 
             connector.pubsub_exchange.start()
             await asyncio.gather(
-                _poke(),
-                _iterator(),
-                event(),
-                _context_manager(),
-                _iterate_event()
+                _poke(), _iterator(), event(), _context_manager(), _iterate_event()
             )
-            assert messages == {'Decorator Message: Message 0',
-                'Decorator Message: Message 1',
-                'Decorator Message: Message 2',
-                'Decorator Message: Message 3',
-                'Decorator Message: Message 4',
-                'Iterator Message: Message 0',
-                'Iterator Message: Message 1',
-                'Iterator Message: Message 2',
-                'Iterator Message: Message 3',
-                'Iterator Message: Message 4',
-                'Lambda Message: Message 0',
-                'Lambda Message: Message 1',
-                'Lambda Message: Message 2',
-                'Lambda Message: Message 3',
-                'Lambda Message: Message 4',
-                'Context Manager Message: Message 0',
-                'Context Manager Message: Message 1',
-                'Context Manager Message: Message 2',
-                'Context Manager Message: Message 3',
-                'Context Manager Message: Message 4',
-                'Iterate Event Message: Message 0',
-                'Iterate Event Message: Message 1',
-                'Iterate Event Message: Message 2',
-                'Iterate Event Message: Message 3',
-                'Iterate Event Message: Message 4'
+            assert messages == {
+                "Decorator Message: Message 0",
+                "Decorator Message: Message 1",
+                "Decorator Message: Message 2",
+                "Decorator Message: Message 3",
+                "Decorator Message: Message 4",
+                "Iterator Message: Message 0",
+                "Iterator Message: Message 1",
+                "Iterator Message: Message 2",
+                "Iterator Message: Message 3",
+                "Iterator Message: Message 4",
+                "Lambda Message: Message 0",
+                "Lambda Message: Message 1",
+                "Lambda Message: Message 2",
+                "Lambda Message: Message 3",
+                "Lambda Message: Message 4",
+                "Context Manager Message: Message 0",
+                "Context Manager Message: Message 1",
+                "Context Manager Message: Message 2",
+                "Context Manager Message: Message 3",
+                "Context Manager Message: Message 4",
+                "Iterate Event Message: Message 0",
+                "Iterate Event Message: Message 1",
+                "Iterate Event Message: Message 2",
+                "Iterate Event Message: Message 3",
+                "Iterate Event Message: Message 4",
             }
-
 
     def test_event_context_str_comparison(self) -> None:
         assert _events is not None
@@ -1519,7 +1494,9 @@ async def test_logging() -> None:
     request = respx.post(
         "https://api.opsani.com/accounts/example.com/applications/my-app/servo",
     ).mock(httpx.Response(200, json={"status": "ok"}))
-    config = BaseConfiguration(__optimizer__=Optimizer(id="example.com/my-app", token="123456"))
+    config = BaseConfiguration(
+        __optimizer__=Optimizer(id="example.com/my-app", token="123456")
+    )
     assert config.__optimizer__, "expected to have config.__optimizer__"
     assert config.optimizer, "expected to have config.__optimizer__"
     connector = MeasureConnector(config=config)
@@ -1528,9 +1505,13 @@ async def test_logging() -> None:
     assert connector.config.__optimizer__, "expected to have config.__optimizer__"
     assert connector.optimizer, "expected to have config.__optimizer__"
 
-    config = servox.configuration.CommonConfiguration(proxies="http://localhost:1234", ssl_verify=False)
+    config = servox.configuration.CommonConfiguration(
+        proxies="http://localhost:1234", ssl_verify=False
+    )
     optimizer = Optimizer(id="test.com/foo", token="12345")
-    servo = servox.Servo(config={"settings": config, "optimizer": optimizer}, connectors=[])
+    servo = servox.Servo(
+        config={"settings": config, "optimizer": optimizer}, connectors=[]
+    )
 
     with servo.current():
         with connector.current():
@@ -1585,6 +1566,7 @@ def test_logger_binds_connector_name() -> None:
     record = messages[0].record
     assert record["extra"]["connector"].name == "measure"
 
+
 class TestPubSub:
     class PubSubConnector(MeasureConnector):
         async def _create_publisher(self, *, name: Optional[str] = None) -> None:
@@ -1592,13 +1574,17 @@ class TestPubSub:
             async def _publisher(publisher: servo.pubsub.Publisher) -> None:
                 await publisher(servo.pubsub.Message(json={"throughput": "31337rps"}))
 
-        async def _create_subscriber(self, callback, *, name: Optional[str] = None) -> None:
+        async def _create_subscriber(
+            self, callback, *, name: Optional[str] = None
+        ) -> None:
             @self.subscribe("metrics", name=name)
-            async def _subscriber(message: servo.pubsub.Message, channel: servo.pubsub.Channel) -> None:
+            async def _subscriber(
+                message: servo.pubsub.Message, channel: servo.pubsub.Channel
+            ) -> None:
                 callback(message, channel)
 
     @pytest.fixture
-    async def connector(self) -> 'TestPubSub.PubSubConnector':
+    async def connector(self) -> "TestPubSub.PubSubConnector":
         pubsub_connector = TestPubSub.PubSubConnector(
             optimizer=Optimizer(id="example.com/my-app", token="123456"),
             config=BaseConfiguration(),
@@ -1611,8 +1597,11 @@ class TestPubSub:
             pubsub_connector.cancel_subscribers()
             await pubsub_connector.pubsub_exchange.shutdown()
 
-    async def test_pubsub(self, connector: 'TestPubSub.PubSubConnector', mocker: pytest_mock.MockFixture) -> None:
+    async def test_pubsub(
+        self, connector: "TestPubSub.PubSubConnector", mocker: pytest_mock.MockFixture
+    ) -> None:
         notifications = []
+
         def _callback(message, channel) -> None:
             notification = f"Message #{len(notifications)} '{message.text}' (channel: '{channel.name}')"
             notifications.append(notification)
@@ -1623,21 +1612,24 @@ class TestPubSub:
         await asyncio.sleep(0.2)
         assert len(notifications) > 10
         assert notifications[0:5] == [
-            "Message #0 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
-            "Message #1 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
-            "Message #2 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
-            "Message #3 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
-            "Message #4 \'{\"throughput\": \"31337rps\"}\' (channel: 'metrics')",
+            "Message #0 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
+            "Message #1 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
+            "Message #2 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
+            "Message #3 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
+            "Message #4 '{\"throughput\": \"31337rps\"}' (channel: 'metrics')",
         ]
 
+
 def test_name_for_connector_class() -> None:
-    name = servo.connector._name_for_connector_class(servo.connectors.kubernetes.KubernetesConnector)
-    assert name == 'kubernetes'
+    name = servo.connector._name_for_connector_class(
+        servo.connectors.kubernetes.KubernetesConnector
+    )
+    assert name == "kubernetes"
 
-    camel_case_class = type('CamelCaseConnector', (servo.connector.BaseConnector,), {})
+    camel_case_class = type("CamelCaseConnector", (servo.connector.BaseConnector,), {})
     name = servo.connector._name_for_connector_class(camel_case_class)
-    assert name == 'camel_case'
+    assert name == "camel_case"
 
-    acronym_class = type('ACRONYMConnector', (servo.connector.BaseConnector,), {})
+    acronym_class = type("ACRONYMConnector", (servo.connector.BaseConnector,), {})
     name = servo.connector._name_for_connector_class(acronym_class)
-    assert name == 'acronym'
+    assert name == "acronym"

@@ -4,7 +4,19 @@ import dataclasses
 import inspect
 import typing
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import servo.utilities.strings
 
@@ -153,7 +165,7 @@ class CallableDescriptor:
 def assert_equal_callable_descriptors(
     *descriptors: Tuple[CallableDescriptor, ...],
     name: Optional[str] = None,
-    callable_description: str = "callable"
+    callable_description: str = "callable",
 ) -> None:
     """Validate that the given collection of callable descriptors have equivalent type signatures."""
     if not descriptors:
@@ -166,21 +178,16 @@ def assert_equal_callable_descriptors(
     reference_descriptor = descriptors[0]
 
     # Build the reference params
-    reference_parameters: typing.Mapping[
-        str, inspect.Parameter
-    ] = dict(
+    reference_parameters: typing.Mapping[str, inspect.Parameter] = dict(
         filter(
             lambda item: item[0] not in {"self", "cls"},
-            reference_descriptor.signature.parameters.items()
+            reference_descriptor.signature.parameters.items(),
         )
     )
     reference_positional_parameters = list(
         filter(
             lambda param: param.kind
-            in [
-                inspect.Parameter.POSITIONAL_ONLY,
-                inspect.Parameter.VAR_POSITIONAL
-            ],
+            in [inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.VAR_POSITIONAL],
             reference_parameters.values(),
         )
     )
@@ -215,12 +222,10 @@ def assert_equal_callable_descriptors(
 
     # Compare each descriptor and raise on mismatch
     for descriptor in descriptors[1:]:
-        descriptor_parameters: typing.Mapping[
-            str, inspect.Parameter
-        ] = dict(
+        descriptor_parameters: typing.Mapping[str, inspect.Parameter] = dict(
             filter(
                 lambda item: item[0] not in {"self", "cls"},
-                descriptor.signature.parameters.items()
+                descriptor.signature.parameters.items(),
             )
         )
         descriptor_positional_parameters = list(
@@ -261,7 +266,7 @@ def assert_equal_callable_descriptors(
                 )
             )
             raise TypeError(
-                f"invalid {callable_description} \"{name}\": encountered unexpected {_quanitfy_parameters(extra_param_names)} \"{servo.utilities.strings.join_to_series(extra_param_names)}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
+                f'invalid {callable_description} "{name}": encountered unexpected {_quanitfy_parameters(extra_param_names)} "{servo.utilities.strings.join_to_series(extra_param_names)}" in callable signature "{descriptor.signature}", expected "{reference_descriptor.signature}"'
             )
 
         # Check for extraneous keyword parameters on the handler
@@ -280,7 +285,7 @@ def assert_equal_callable_descriptors(
         )
         if extraneous_keywords:
             raise TypeError(
-                f"invalid {callable_description} \"{name}\": encountered unexpected {_quanitfy_parameters(extraneous_keywords)} \"{servo.utilities.strings.join_to_series(extraneous_keywords)}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
+                f'invalid {callable_description} "{name}": encountered unexpected {_quanitfy_parameters(extraneous_keywords)} "{servo.utilities.strings.join_to_series(extraneous_keywords)}" in callable signature "{descriptor.signature}", expected "{reference_descriptor.signature}"'
             )
 
         # Iterate the event signature parameters and see if the handler's signature satisfies each one
@@ -300,7 +305,7 @@ def assert_equal_callable_descriptors(
                         != inspect.Parameter.VAR_POSITIONAL
                     ):
                         raise TypeError(
-                            f"invalid {callable_description} \"{name}\": missing required parameter \"{parameter_name}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
+                            f'invalid {callable_description} "{name}": missing required parameter "{parameter_name}" in callable signature "{descriptor.signature}", expected "{reference_descriptor.signature}"'
                         )
 
                 descriptor_parameter = descriptor_positional_parameters[index]
@@ -354,7 +359,7 @@ def assert_equal_callable_descriptors(
                         != inspect.Parameter.VAR_KEYWORD
                     ):
                         raise TypeError(
-                            f"invalid {callable_description} \"{name}\": missing required parameter \"{parameter_name}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature}\""
+                            f'invalid {callable_description} "{name}": missing required parameter "{parameter_name}" in callable signature "{descriptor.signature}", expected "{reference_descriptor.signature}"'
                         )
 
             elif reference_parameter.kind == inspect.Parameter.VAR_KEYWORD:
@@ -380,7 +385,7 @@ def assert_equal_callable_descriptors(
                 assert_equal_types(reference_return_type, descriptor_return_type)
             except TypeError as e:
                 raise TypeError(
-                    f"invalid {callable_description} \"{name}\": incompatible return type annotation \"{descriptor.signature.return_annotation}\" in callable signature \"{descriptor.signature}\", expected \"{reference_descriptor.signature.return_annotation}\""
+                    f'invalid {callable_description} "{name}": incompatible return type annotation "{descriptor.signature.return_annotation}" in callable signature "{descriptor.signature}", expected "{reference_descriptor.signature.return_annotation}"'
                 ) from e
 
 
@@ -404,15 +409,21 @@ def assert_equal_types(*types_: List[Type]) -> None:
 
         # Handle subclass equality (origin must be checked first to ensure non-subscripted comparison)
         # Handle comparison built-in type used as annotation (in which case origin is None)
-        if (type_origin is None and comparable_origin is None
-            and issubclass(comparable_type, type_)):
+        if (
+            type_origin is None
+            and comparable_origin is None
+            and issubclass(comparable_type, type_)
+        ):
             continue
 
         # Handle special forms
         if type_origin == comparable_origin and type_origin in {Union, Tuple}:
             pass
         else:
-            if None in (type_origin, comparable_origin) or issubclass(comparable_origin, type_origin) is False:
+            if (
+                None in (type_origin, comparable_origin)
+                or issubclass(comparable_origin, type_origin) is False
+            ):
                 raise TypeError(
                     f"Incompatible type annotations: expected {repr(type_)}, but found {repr(comparable_type)}"
                 )
@@ -431,6 +442,7 @@ def assert_equal_types(*types_: List[Type]) -> None:
             raise TypeError(
                 f"Incompatible type annotations: expected {repr(type_)}, but found {repr(type_arg)}"
             )
+
 
 def _quanitfy_parameters(params: Sequence[Any]) -> str:
     assert params, "cannot quantify empty parameters"

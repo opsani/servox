@@ -9,6 +9,7 @@ from .core import BaseModel, DataPoint, Duration, Metric, Numeric, Readings, Tim
 from .settings import Setting
 from .slo import SloInput
 
+
 class Component(BaseModel):
     """Component objects describe optimizable applications or services that
     expose adjustable settings.
@@ -23,7 +24,9 @@ class Component(BaseModel):
 component.
     """
 
-    def __init__(self, name: str, settings: list[Setting], **kwargs) -> None: # noqa: D107
+    def __init__(
+        self, name: str, settings: list[Setting], **kwargs
+    ) -> None:  # noqa: D107
         super().__init__(name=name, settings=settings, **kwargs)
 
     def get_setting(self, name: str) -> Optional[Setting]:
@@ -44,12 +47,14 @@ component.
             settings_dict["settings"].update(setting.__opsani_repr__())
         return {self.name: settings_dict}
 
+
 class UserData(BaseModel):
     slo: Optional[SloInput] = None
 
     class Config(BaseModel.Config):
         # Support connector level experimentation without needing to update core servox code
         extra = pydantic.Extra.allow
+
 
 class Control(BaseModel):
     """Control objects model parameters returned by the optimizer that govern
@@ -280,9 +285,12 @@ class Adjustment(BaseModel):
     """The name of the setting to be adjusted.
     """
 
-    value: Union[Numeric, str]  # Numeric must come first so e.g. 42:int is not coerced to '42':str
+    value: Union[
+        Numeric, str
+    ]  # Numeric must come first so e.g. 42:int is not coerced to '42':str
     """The value to be applied to the setting being adjusted.
     """
+
     @property
     def selector(self) -> str:
         """Returns a fully qualified string identifier for accessing the referenced resource."""

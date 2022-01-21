@@ -54,10 +54,10 @@ class Filter:
     NOTE: The level on the sink needs to be set to 0.
     """
 
-    def __init__(self, level="INFO") -> None: # noqa: D107
+    def __init__(self, level="INFO") -> None:  # noqa: D107
         self.level = level
 
-    def __call__(self, record) -> bool: # noqa: D102
+    def __call__(self, record) -> bool:  # noqa: D102
         levelno = logger.level(self.level).no
         return record["level"].no >= levelno
 
@@ -80,7 +80,7 @@ class ProgressHandler:
         exception_handler: Optional[
             Callable[[Dict[str, Any], Exception], Union[None, Awaitable[None]]]
         ] = None,
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
         self._exception_handler = exception_handler
@@ -111,9 +111,7 @@ class ProgressHandler:
                 record,
             )
 
-        event_context: Optional[
-            servo.events.EventContext
-        ] = servo.current_event()
+        event_context: Optional[servo.events.EventContext] = servo.current_event()
         operation = extra.get("operation", None)
         if not operation:
             if not event_context:
@@ -159,10 +157,12 @@ class ProgressHandler:
             try:
                 progress = await self._queue.get()
                 if progress is None:
-                    logger.info(f"retrieved None from progress queue. halting progress reporting")
+                    logger.info(
+                        f"retrieved None from progress queue. halting progress reporting"
+                    )
                     break
 
-                if int(progress['progress']) == 100:
+                if int(progress["progress"]) == 100:
                     logger.debug(f"eliding 100% progress event: {progress}")
                     continue
 
@@ -173,7 +173,9 @@ class ProgressHandler:
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # pylint: disable=broad-except
-                logger.warning(f"encountered exception while processing progress logging: {repr(progress)} => {repr(error)}")
+                logger.warning(
+                    f"encountered exception while processing progress logging: {repr(progress)} => {repr(error)}"
+                )
                 if self._exception_handler:
                     try:
                         if asyncio.iscoroutinefunction(self._exception_handler):
@@ -181,10 +183,14 @@ class ProgressHandler:
                         else:
                             self._exception_handler(progress, error)
                     except Exception as inner_error:
-                        logger.critical(f"encountered an exception while attempting to handle a progress reporting exception: {repr(progress)} => {repr(inner_error)} from {repr(error)}")
+                        logger.critical(
+                            f"encountered an exception while attempting to handle a progress reporting exception: {repr(progress)} => {repr(inner_error)} from {repr(error)}"
+                        )
                         raise inner_error from error
                 else:
-                    logger.warning(f"ignoring exception raised during progress reporting due to lack of handler: {repr(error)}")
+                    logger.warning(
+                        f"ignoring exception raised during progress reporting due to lack of handler: {repr(error)}"
+                    )
             finally:
                 self._queue.task_done()
 
@@ -231,7 +237,7 @@ DEFAULT_FORMAT = (
 class Formatter:
     """A logging formatter that is aware of assemblies, servos, and connectors."""
 
-    def __call__(self, record: dict) -> str: # noqa: D107
+    def __call__(self, record: dict) -> str:  # noqa: D107
         """Format a log message with contextual information about the servo assembly."""
         extra = record["extra"]
 
@@ -244,9 +250,7 @@ class Formatter:
         # Respect an explicit component
         if not "component" in record["extra"]:
             # Favor explicit connector from the extra dict or use the context var
-            if connector := extra.get(
-                "connector", servo.current_connector()
-            ):
+            if connector := extra.get("connector", servo.current_connector()):
                 component = connector.name
             else:
                 component = "servo"

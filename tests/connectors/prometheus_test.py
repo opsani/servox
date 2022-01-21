@@ -159,7 +159,7 @@ class TestPrometheusConfiguration:
                 PrometheusMetric(
                     "error_rate",
                     servo.Unit.percentage,
-                    query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[1m]))",
+                    query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m]))',
                     absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
                     step="1m",
                 ),
@@ -174,7 +174,7 @@ class TestPrometheusRequest:
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
             query="go_memstats_heap_inuse_bytes",
-            step="1m"
+            step="1m",
         )
         assert query.url, "request URL should not be nil"
         assert (
@@ -188,7 +188,7 @@ class TestPrometheusRequest:
             start=datetime.datetime.now(),
             end=datetime.datetime.now() + Duration("36h"),
             query="go_memstats_heap_inuse_bytes",
-            step='1m'
+            step="1m",
         )
 
         assert request.url
@@ -196,6 +196,7 @@ class TestPrometheusRequest:
             str(request.url)
             == "/query_range?query=go_memstats_heap_inuse_bytes&start=1577836800.0&end=1577966400.0&step=1m"
         )
+
 
 def targets_response_() -> dict:
     return {
@@ -227,9 +228,11 @@ def targets_response_() -> dict:
         },
     }
 
+
 @pytest.fixture()
 def targets_response() -> dict:
     return targets_response_()
+
 
 class TestPrometheusChecks:
     @pytest.fixture
@@ -268,10 +271,9 @@ class TestPrometheusChecks:
         with respx.mock(
             base_url="http://localhost:9090", assert_all_called=False
         ) as respx_mock:
-            respx_mock.get(
-                "/api/v1/targets",
-                name="targets"
-            ).mock(return_value=httpx.Response(200, json=targets_response))
+            respx_mock.get("/api/v1/targets", name="targets").mock(
+                return_value=httpx.Response(200, json=targets_response)
+            )
 
             respx_mock.get(
                 re.compile(r"/api/v1/query_range.+"),
@@ -300,7 +302,9 @@ class TestPrometheusChecks:
     @respx.mock
     async def test_check_base_url_failing(self, checks) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(status_code=503))
+            request = respx_mock.get("/api/v1/targets").mock(
+                return_value=httpx.Response(status_code=503)
+            )
             check = await checks.check_base_url()
             assert request.called
             assert check
@@ -338,7 +342,9 @@ class TestPrometheusChecks:
     @respx.mock
     async def test_check_targets(self, checks, targets, success, message) -> str:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets))
+            request = respx_mock.get("/api/v1/targets").mock(
+                httpx.Response(200, json=targets)
+            )
             check = await checks.check_targets()
             assert check
             assert check.name == "Active targets"
@@ -356,6 +362,7 @@ class TestPrometheusChecks:
 # Targets with init container
 # Querying for data that is null
 # Querying for data that is partially null
+
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("kubernetes_asyncio_config")
@@ -387,8 +394,7 @@ class TestPrometheusIntegration:
             config = PrometheusConfiguration.generate(base_url=url)
             connector = PrometheusConnector(config=config, optimizer=optimizer)
             targets = await asyncio.wait_for(
-                asyncio.gather(connector.targets()),
-                timeout=10
+                asyncio.gather(connector.targets()), timeout=10
             )
             debug(targets)
 
@@ -407,19 +413,19 @@ class TestPrometheusIntegration:
                 query="invalid_metric OR on() vector(0)",
                 start=datetime.datetime.now() - Duration("3h"),
                 end=datetime.datetime.now(),
-                step="30s"
+                step="30s",
             )
-            async with httpx.AsyncClient(base_url=url + '/api/v1/') as client:
+            async with httpx.AsyncClient(base_url=url + "/api/v1/") as client:
                 response = await client.get(query.url)
                 assert response.status_code == 200
                 result = response.json()
 
-                assert result['status'] == 'success'
-                assert result['data']['resultType'] == 'matrix'
-                assert len(result['data']['result']) == 1
-                vector = result['data']['result'][0]
-                assert vector['metric'] == {}
-                assert vector['values'][0][1] == '0'
+                assert result["status"] == "success"
+                assert result["data"]["resultType"] == "matrix"
+                assert len(result["data"]["result"]) == 1
+                vector = result["data"]["result"][0]
+                assert vector["metric"] == {}
+                assert vector["values"][0][1] == "0"
 
     async def test_instant_query_empty_returns_zero_vector(
         self,
@@ -428,11 +434,11 @@ class TestPrometheusIntegration:
     ) -> None:
         kube.wait_for_registered()
         async with kube_port_forward("deploy/prometheus", 9090) as url:
-            metric=PrometheusMetric(
+            metric = PrometheusMetric(
                 "invalid_metric",
                 Unit.count,
                 query="invalid_metric",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
             )
             client = servo.connectors.prometheus.Client(base_url=url)
             response = await client.query(metric)
@@ -448,8 +454,8 @@ class TestPrometheusIntegration:
         "absent, readings",
         [
             ("ignore", []),
-            ("zero", [('throughput', '15s', 0.0), ('error_rate', '15s', 0.0)]),
-        ]
+            ("zero", [("throughput", "15s", 0.0), ("error_rate", "15s", 0.0)]),
+        ],
     )
     @pytest.mark.applymanifests(
         "../manifests",
@@ -463,7 +469,7 @@ class TestPrometheusIntegration:
         kube,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
         absent,
-        readings
+        readings,
     ) -> None:
         # NOTE: What we are going to do here is deploy Prometheus and fiber-http with no traffic source,
         # port forward so we can talk to them, and then spark up the connector.
@@ -486,7 +492,7 @@ class TestPrometheusIntegration:
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.percentage,
-                            query="sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!=\"tuning\", envoy_response_code_class=~\"4|5\"}[5s]))",
+                            query='sum(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[5s]))',
                             absent=absent,
                             step="5s",
                         ),
@@ -495,11 +501,18 @@ class TestPrometheusIntegration:
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
                 measurement = await asyncio.wait_for(
                     connector.measure(control=servo.Control(duration="15s")),
-                    timeout=25 # NOTE: Always make timeout exceed control duration
+                    timeout=25,  # NOTE: Always make timeout exceed control duration
                 )
                 assert measurement is not None
-                assert list(map(lambda r: (r.metric.name, str(r.duration), r.max.value), measurement.readings)) == readings
-
+                assert (
+                    list(
+                        map(
+                            lambda r: (r.metric.name, str(r.duration), r.max.value),
+                            measurement.readings,
+                        )
+                    )
+                    == readings
+                )
 
     @pytest.mark.applymanifests(
         "../manifests",
@@ -535,45 +548,49 @@ class TestPrometheusIntegration:
                         PrometheusMetric(
                             "throughput",
                             servo.Unit.requests_per_second,
-                            query='sum(rate(envoy_cluster_upstream_rq_total[15s]))',
+                            query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
                             step="5s",
                             absent="ignore",
-                            eager="20s"
+                            eager="20s",
                         ),
                         PrometheusMetric(
                             "error_rate",
                             servo.Unit.percentage,
                             query=f'sum(rate(envoy_cluster_upstream_rq_xx{{envoy_response_code_class=~"4|5"}}[15s]))',
                             step="5s",
-                            absent="ignore"
+                            absent="ignore",
                         ),
                     ],
                 )
 
                 # TODO: Replace this with the load tester fixture
                 async def burst_traffic() -> None:
-                    burst_until = datetime.datetime.now() + datetime.timedelta(seconds=15)
+                    burst_until = datetime.datetime.now() + datetime.timedelta(
+                        seconds=15
+                    )
                     async with httpx.AsyncClient(base_url=fiber_url) as client:
-                        servo.logger.info(f"Bursting traffic to {fiber_url} for 15 seconds...")
+                        servo.logger.info(
+                            f"Bursting traffic to {fiber_url} for 15 seconds..."
+                        )
                         count = 0
                         while datetime.datetime.now() < burst_until:
                             response = await client.get("/")
                             response.raise_for_status()
                             count += 1
-                        servo.logger.success(f"Bursted {count} requests to {fiber_url} over 15 seconds.")
+                        servo.logger.success(
+                            f"Bursted {count} requests to {fiber_url} over 15 seconds."
+                        )
 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
-                event_loop.call_later(
-                    15,
-                    asyncio.create_task,
-                    burst_traffic()
-                )
+                event_loop.call_later(15, asyncio.create_task, burst_traffic())
                 measurement = await asyncio.wait_for(
                     connector.measure(control=servo.Control(duration="10m")),
-                    timeout=300 # NOTE: if we haven't returned in 5 minutes all is lost
+                    timeout=300,  # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
-                assert len(measurement) == 1, "expected one TimeSeries (error_rate should be absent)"
+                assert (
+                    len(measurement) == 1
+                ), "expected one TimeSeries (error_rate should be absent)"
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
@@ -584,14 +601,16 @@ class TestPrometheusIntegration:
                 assert time_series[-1].value == 0.0
 
     @pytest.fixture
-    def tuning_config(self, kube) -> servo.connectors.kubernetes.KubernetesConfiguration:
+    def tuning_config(
+        self, kube
+    ) -> servo.connectors.kubernetes.KubernetesConfiguration:
         return servo.connectors.kubernetes.KubernetesConfiguration(
             namespace=kube.namespace,
             timeout="60s",
             deployments=[
                 servo.connectors.kubernetes.DeploymentConfiguration(
                     name="fiber-http",
-                    strategy = "canary",
+                    strategy="canary",
                     replicas=Replicas(
                         min=0,
                         max=1,
@@ -599,8 +618,20 @@ class TestPrometheusIntegration:
                     containers=[
                         servo.connectors.kubernetes.ContainerConfiguration(
                             name="fiber-http",
-                            cpu=servo.connectors.kubernetes.CPU(min="125m", max="875m", step="125m", request="250m", limit="250m"),
-                            memory=servo.connectors.kubernetes.Memory(min="128MiB", max="0.75GiB", step="32MiB", request="256MiB", limit="256MiB"),
+                            cpu=servo.connectors.kubernetes.CPU(
+                                min="125m",
+                                max="875m",
+                                step="125m",
+                                request="250m",
+                                limit="250m",
+                            ),
+                            memory=servo.connectors.kubernetes.Memory(
+                                min="128MiB",
+                                max="0.75GiB",
+                                step="32MiB",
+                                request="256MiB",
+                                limit="256MiB",
+                            ),
                         )
                     ],
                 )
@@ -619,19 +650,24 @@ class TestPrometheusIntegration:
         kubetest_teardown,
         optimizer: servo.Optimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
-        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration
+        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration,
     ) -> None:
         # NOTE: TODO add notes
         servo.logging.set_level("DEBUG")
         # Create a tuning instance
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_or_rollout_config=tuning_config.deployments[0], timeout=tuning_config.timeout
+            deployment_or_rollout_config=tuning_config.deployments[0],
+            timeout=tuning_config.timeout,
         )
         async with canary_opt.temporary_tuning_pod() as _:
             async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
                 # Ugly workaround for lack of load balancing on port forward
-                async with kube_port_forward("deploy/fiber-http", 9980) as main_fiber_url:
-                    async with kube_port_forward("pod/fiber-http-tuning", 9980) as tuning_fiber_url:
+                async with kube_port_forward(
+                    "deploy/fiber-http", 9980
+                ) as main_fiber_url:
+                    async with kube_port_forward(
+                        "pod/fiber-http-tuning", 9980
+                    ) as tuning_fiber_url:
                         config = PrometheusConfiguration.generate(
                             base_url=prometheus_url,
                             metrics=[
@@ -654,11 +690,18 @@ class TestPrometheusIntegration:
 
                         # TODO: Replace this with the load tester fixture
                         sending_traffic = True
+
                         async def send_traffic() -> None:
                             # Ugly workaround for lack of load balancing on port forward
-                            async with httpx.AsyncClient(base_url=main_fiber_url) as main_client:
-                                async with httpx.AsyncClient(base_url=tuning_fiber_url) as tuning_client:
-                                    servo.logger.info(f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}...")
+                            async with httpx.AsyncClient(
+                                base_url=main_fiber_url
+                            ) as main_client:
+                                async with httpx.AsyncClient(
+                                    base_url=tuning_fiber_url
+                                ) as tuning_client:
+                                    servo.logger.info(
+                                        f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}..."
+                                    )
                                     count = 0
                                     try:
                                         while sending_traffic:
@@ -668,32 +711,39 @@ class TestPrometheusIntegration:
                                             response.raise_for_status()
                                             count += 1
                                     finally:
-                                        servo.logger.success(f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}.")
+                                        servo.logger.success(
+                                            f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}."
+                                        )
 
                         config.fast_fail.period = Duration("20s")
-                        connector = PrometheusConnector(config=config, optimizer=optimizer)
+                        connector = PrometheusConnector(
+                            config=config, optimizer=optimizer
+                        )
                         control = Control(
                             duration="10s",
                             warmup="10s",
-                            userdata=UserData(slo=SloInput(conditions=[
-                                SloCondition(
-                                    metric="tuning_p50_latency",
-                                    threshold=0.3,
-                                ),
-                                SloCondition(
-                                    metric="tuning_p50_latency",
-                                    threshold_metric="main_p50_latency",
-                                    threshold_multiplier=1.1,
+                            userdata=UserData(
+                                slo=SloInput(
+                                    conditions=[
+                                        SloCondition(
+                                            metric="tuning_p50_latency",
+                                            threshold=0.3,
+                                        ),
+                                        SloCondition(
+                                            metric="tuning_p50_latency",
+                                            threshold_metric="main_p50_latency",
+                                            threshold_multiplier=1.1,
+                                        ),
+                                    ]
                                 )
-                            ]))
+                            ),
                         )
                         # Send traffic in the background
                         traffic_task = asyncio.create_task(send_traffic())
 
                         try:
                             measurement = await asyncio.wait_for(
-                                connector.measure(control=control),
-                                timeout=90
+                                connector.measure(control=control), timeout=90
                             )
                             assert measurement
                         finally:
@@ -712,20 +762,25 @@ class TestPrometheusIntegration:
         kubetest_teardown,
         optimizer: servo.Optimizer,
         kube_port_forward: Callable[[str, int], AsyncIterator[str]],
-        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration
+        tuning_config: servo.connectors.kubernetes.KubernetesConfiguration,
     ) -> None:
         # NOTE: TODO add notes
         servo.logging.set_level("DEBUG")
         # Create a tuning instance
         canary_opt = await servo.connectors.kubernetes.CanaryOptimization.create(
-            deployment_or_rollout_config=tuning_config.deployments[0], timeout=tuning_config.timeout
+            deployment_or_rollout_config=tuning_config.deployments[0],
+            timeout=tuning_config.timeout,
         )
 
         async with canary_opt.temporary_tuning_pod() as _:
             async with kube_port_forward("deploy/prometheus", 9090) as prometheus_url:
                 # Ugly workaround for lack of load balancing on port forward
-                async with kube_port_forward("deploy/fiber-http", 9980) as main_fiber_url:
-                    async with kube_port_forward("pod/fiber-http-tuning", 9980) as tuning_fiber_url:
+                async with kube_port_forward(
+                    "deploy/fiber-http", 9980
+                ) as main_fiber_url:
+                    async with kube_port_forward(
+                        "pod/fiber-http-tuning", 9980
+                    ) as tuning_fiber_url:
                         config = PrometheusConfiguration.generate(
                             base_url=prometheus_url,
                             metrics=[
@@ -748,11 +803,18 @@ class TestPrometheusIntegration:
 
                         # TODO: Replace this with the load tester fixture
                         sending_traffic = True
+
                         async def send_traffic() -> None:
                             # Ugly workaround for lack of load balancing on port forward
-                            async with httpx.AsyncClient(base_url=main_fiber_url) as main_client:
-                                async with httpx.AsyncClient(base_url=tuning_fiber_url) as tuning_client:
-                                    servo.logger.info(f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}...")
+                            async with httpx.AsyncClient(
+                                base_url=main_fiber_url
+                            ) as main_client:
+                                async with httpx.AsyncClient(
+                                    base_url=tuning_fiber_url
+                                ) as tuning_client:
+                                    servo.logger.info(
+                                        f"Sending traffic to {main_fiber_url} and {tuning_fiber_url}..."
+                                    )
                                     count = 0
                                     try:
                                         while sending_traffic:
@@ -762,56 +824,88 @@ class TestPrometheusIntegration:
                                             response.raise_for_status()
                                             count += 1
                                     finally:
-                                        servo.logger.success(f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}.")
+                                        servo.logger.success(
+                                            f"Sent {count} requests to {main_fiber_url} and {tuning_fiber_url}."
+                                        )
 
                         config.fast_fail.skip = Duration("14s")
                         config.fast_fail.period = Duration("2s")
-                        connector = PrometheusConnector(config=config, optimizer=optimizer)
+                        connector = PrometheusConnector(
+                            config=config, optimizer=optimizer
+                        )
                         control = Control(
                             duration="10s",
                             warmup="10s",
-                            userdata=UserData(slo=SloInput(conditions=[
-                                SloCondition(
-                                    metric="tuning_p50_latency",
-                                    threshold=0.2,
-                                    trigger_count=2,
-                                    trigger_window=2,
-                                ),
-                                SloCondition(
-                                    metric="tuning_p50_latency",
-                                    threshold_metric="main_p50_latency",
-                                    threshold_multiplier=0.9,
-                                    trigger_count=2,
-                                    trigger_window=2,
+                            userdata=UserData(
+                                slo=SloInput(
+                                    conditions=[
+                                        SloCondition(
+                                            metric="tuning_p50_latency",
+                                            threshold=0.2,
+                                            trigger_count=2,
+                                            trigger_window=2,
+                                        ),
+                                        SloCondition(
+                                            metric="tuning_p50_latency",
+                                            threshold_metric="main_p50_latency",
+                                            threshold_multiplier=0.9,
+                                            trigger_count=2,
+                                            trigger_window=2,
+                                        ),
+                                    ]
                                 )
-                            ]))
+                            ),
                         )
                         # Send traffic in the background
                         traffic_task = asyncio.create_task(send_traffic())
 
                         date_matcher = r"[\s0-9-:.]*"
                         float_matcher = r"[0-9.]*"
-                        error_text = (re.escape("SLO violation(s) observed: (tuning_p50_latency below 0.2)[") + date_matcher
-                            + "SLO failed metric value " + float_matcher + re.escape(" was not below threshold value 0.2, ") + date_matcher
-                            + "SLO failed metric value " + float_matcher + re.escape(" was not below threshold value 0.2], ")
-                            + re.escape("(tuning_p50_latency below main_p50_latency)[") + date_matcher +" SLO failed metric value "
-                            + float_matcher + " was not below threshold value " + float_matcher + ", " + date_matcher
-                            + " SLO failed metric value " + float_matcher + " was not below threshold value " + float_matcher
-                            + re.escape("]"))
+                        error_text = (
+                            re.escape(
+                                "SLO violation(s) observed: (tuning_p50_latency below 0.2)["
+                            )
+                            + date_matcher
+                            + "SLO failed metric value "
+                            + float_matcher
+                            + re.escape(" was not below threshold value 0.2, ")
+                            + date_matcher
+                            + "SLO failed metric value "
+                            + float_matcher
+                            + re.escape(" was not below threshold value 0.2], ")
+                            + re.escape("(tuning_p50_latency below main_p50_latency)[")
+                            + date_matcher
+                            + " SLO failed metric value "
+                            + float_matcher
+                            + " was not below threshold value "
+                            + float_matcher
+                            + ", "
+                            + date_matcher
+                            + " SLO failed metric value "
+                            + float_matcher
+                            + " was not below threshold value "
+                            + float_matcher
+                            + re.escape("]")
+                        )
 
                         try:
-                            with pytest.raises(servo.errors.EventAbortedError, match=error_text):
+                            with pytest.raises(
+                                servo.errors.EventAbortedError, match=error_text
+                            ):
                                 measurement = await asyncio.wait_for(
-                                    connector.measure(control=control),
-                                    timeout=90
+                                    connector.measure(control=control), timeout=90
                                 )
                                 debug(measurement)
                         finally:
                             sending_traffic = False
                             await traffic_task
 
+
 def empty_targets_response() -> Dict[str, Any]:
-    return json.load("{'status': 'success', 'data': {'activeTargets': [], 'droppedTargets': []}}")
+    return json.load(
+        "{'status': 'success', 'data': {'activeTargets': [], 'droppedTargets': []}}"
+    )
+
 
 class TestCLI:
     class TestTargets:
@@ -839,23 +933,42 @@ class TestCLI:
             return PrometheusConnector(config=config)
 
         @respx.mock
-        def test_one_active_connector(self, targets_response, optimizer_env: None, connector: PrometheusConnector, config: PrometheusConfiguration, servo_cli: servo.cli.ServoCLI, cli_runner: typer.testing.CliRunner, tmp_path: pathlib.Path) -> None:
+        def test_one_active_connector(
+            self,
+            targets_response,
+            optimizer_env: None,
+            connector: PrometheusConnector,
+            config: PrometheusConfiguration,
+            servo_cli: servo.cli.ServoCLI,
+            cli_runner: typer.testing.CliRunner,
+            tmp_path: pathlib.Path,
+        ) -> None:
             with respx.mock(base_url="http://localhost:9090") as respx_mock:
-                request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets_response))
+                request = respx_mock.get("/api/v1/targets").mock(
+                    httpx.Response(200, json=targets_response)
+                )
 
                 config_file = tmp_path / "servo.yaml"
                 import tests.helpers  # TODO: Turn into fixtures!
+
                 tests.helpers.write_config_yaml({"prometheus": config}, config_file)
 
-                result = cli_runner.invoke(servo_cli, "prometheus targets", catch_exceptions=False)
-                assert result.exit_code == 0, f"expected exit status 0, got {result.exit_code}: stdout={result.stdout}, stderr={result.stderr}"
+                result = cli_runner.invoke(
+                    servo_cli, "prometheus targets", catch_exceptions=False
+                )
+                assert (
+                    result.exit_code == 0
+                ), f"expected exit status 0, got {result.exit_code}: stdout={result.stdout}, stderr={result.stderr}"
                 assert request.called
-                assert "opsani-envoy-sidecars  up        http://192.168.95.123:9901/stats/prometheus" in result.stdout
-
+                assert (
+                    "opsani-envoy-sidecars  up        http://192.168.95.123:9901/stats/prometheus"
+                    in result.stdout
+                )
 
         async def test_multiple_active_connector(self) -> None:
             # TODO: Put config into tmpdir with two connectors, invoke both, invoke each one
             ...
+
 
 # CLI TESTS:
 # Test without active target
@@ -895,16 +1008,15 @@ class TestConnector:
 
     @respx.mock
     async def test_measure(self, connector) -> None:
-        respx.mock.get(
-            re.compile(r"/api/v1/query_range.+"),
-            name="query",
-        ).mock(return_value=httpx.Response(200, json={
-            "status": "success",
-            "data": {
-                "resultType": "matrix",
-                "result": []
-            }
-        }))
+        respx.mock.get(re.compile(r"/api/v1/query_range.+"), name="query",).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "status": "success",
+                    "data": {"resultType": "matrix", "result": []},
+                },
+            )
+        )
         measurement = await connector.measure(control=servo.Control(duration="0.0001s"))
         assert measurement is not None
 
@@ -912,10 +1024,10 @@ class TestConnector:
         metrics = connector.metrics()
         assert metrics == [
             PrometheusMetric(
-                name='test',
+                name="test",
                 unit=servo.Unit.requests_per_minute,
-                query='throughput',
-                step=servo.Duration('5s'),
+                query="throughput",
+                step=servo.Duration("5s"),
                 absent="ignore",
                 eager=None,
             )
@@ -927,19 +1039,28 @@ class TestConnector:
         results = await connector.check()
         assert results
         assert len(results) > 0
-        assert results[0].id == 'check_base_url'
+        assert results[0].id == "check_base_url"
 
     @respx.mock
-    async def test_one_active_connector(self, connector: PrometheusConnector, targets_response) -> None:
+    async def test_one_active_connector(
+        self, connector: PrometheusConnector, targets_response
+    ) -> None:
         with respx.mock(base_url="http://localhost:9090") as respx_mock:
-            request = respx_mock.get("/api/v1/targets").mock(return_value=httpx.Response(200, json=targets_response))
+            request = respx_mock.get("/api/v1/targets").mock(
+                return_value=httpx.Response(200, json=targets_response)
+            )
             targets = await connector.targets()
             assert request.called
             assert len(targets) == 1
-            assert targets.active[0].pool == 'opsani-envoy-sidecars'
-            assert targets.active[0].url == 'http://192.168.95.123:9901/stats/prometheus'
-            assert targets.active[0].health == 'up'
-            assert str(targets.active[0].last_scraped_at) == '2020-09-09 10:04:02.662498+00:00'
+            assert targets.active[0].pool == "opsani-envoy-sidecars"
+            assert (
+                targets.active[0].url == "http://192.168.95.123:9901/stats/prometheus"
+            )
+            assert targets.active[0].health == "up"
+            assert (
+                str(targets.active[0].last_scraped_at)
+                == "2020-09-09 10:04:02.662498+00:00"
+            )
 
 
 class TestInstantVector:
@@ -948,20 +1069,22 @@ class TestInstantVector:
         return pydantic.parse_obj_as(
             servo.connectors.prometheus.InstantVector,
             {
-                'metric': {},
-                'value': [
+                "metric": {},
+                "value": [
                     1607989427.782,
-                    '19.8',
+                    "19.8",
                 ],
-            }
+            },
         )
 
     def test_parse(self, vector) -> None:
         assert vector
         assert vector.metric == {}
         assert vector.value == (
-            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
-            19.8
+            datetime.datetime(
+                2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+            ),
+            19.8,
         )
 
     def test_len(self, vector) -> None:
@@ -972,9 +1095,12 @@ class TestInstantVector:
         assert vector
         for sample in vector:
             assert sample == (
-                datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
-                19.8
+                datetime.datetime(
+                    2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+                ),
+                19.8,
             )
+
 
 class TestRangeVector:
     @pytest.fixture
@@ -992,7 +1118,7 @@ class TestRangeVector:
                     [1595142481.024, "3594504"],
                     [1595152585.055, "31337"],
                 ],
-            }
+            },
         )
 
     def test_parse(self, vector) -> None:
@@ -1003,9 +1129,24 @@ class TestRangeVector:
             "job": "prometheus",
         }
         assert vector.values == [
-            (datetime.datetime(2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
-            (datetime.datetime(2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
-            (datetime.datetime(2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc), 31337.0),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc
+                ),
+                3594504.0,
+            ),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc
+                ),
+                3594504.0,
+            ),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc
+                ),
+                31337.0,
+            ),
         ]
 
     def test_len(self, vector) -> None:
@@ -1015,42 +1156,74 @@ class TestRangeVector:
     def test_iterate(self, vector) -> None:
         assert vector
         expected = [
-            (datetime.datetime(2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
-            (datetime.datetime(2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc), 3594504.0),
-            (datetime.datetime(2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc), 31337.0),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 7, 7, 1, 24000, tzinfo=datetime.timezone.utc
+                ),
+                3594504.0,
+            ),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 7, 8, 1, 24000, tzinfo=datetime.timezone.utc
+                ),
+                3594504.0,
+            ),
+            (
+                datetime.datetime(
+                    2020, 7, 19, 9, 56, 25, 55000, tzinfo=datetime.timezone.utc
+                ),
+                31337.0,
+            ),
         ]
         for sample in vector:
             assert sample == expected.pop(0)
         assert not expected
 
+
 class TestResultPrimitives:
     def test_scalar(self) -> None:
-        output = pydantic.parse_obj_as(servo.connectors.prometheus.Scalar, [1607989427.782, '1234'])
+        output = pydantic.parse_obj_as(
+            servo.connectors.prometheus.Scalar, [1607989427.782, "1234"]
+        )
         assert output
         assert output == (
-            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
-            1234.0
+            datetime.datetime(
+                2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+            ),
+            1234.0,
         )
 
     def test_string(self) -> None:
-        output = pydantic.parse_obj_as(servo.connectors.prometheus.String, [1607989427.782, 'whatever'])
+        output = pydantic.parse_obj_as(
+            servo.connectors.prometheus.String, [1607989427.782, "whatever"]
+        )
         assert output
         assert output == (
-            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
-            'whatever'
+            datetime.datetime(
+                2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+            ),
+            "whatever",
         )
 
     def test_scalar_parses_as_string(self) -> None:
-        output = pydantic.parse_obj_as(servo.connectors.prometheus.String, [1607989427.782, '1234.56'])
+        output = pydantic.parse_obj_as(
+            servo.connectors.prometheus.String, [1607989427.782, "1234.56"]
+        )
         assert output
         assert output == (
-            datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc),
-            '1234.56'
+            datetime.datetime(
+                2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+            ),
+            "1234.56",
         )
 
     def test_string_does_not_parse_as_scalar(self) -> None:
-        with pytest.raises(pydantic.ValidationError, match="value is not a valid float"):
-            pydantic.parse_obj_as(servo.connectors.prometheus.Scalar, [1607989427.782, 'thug_life'])
+        with pytest.raises(
+            pydantic.ValidationError, match="value is not a valid float"
+        ):
+            pydantic.parse_obj_as(
+                servo.connectors.prometheus.Scalar, [1607989427.782, "thug_life"]
+            )
 
 
 class TestData:
@@ -1058,25 +1231,25 @@ class TestData:
         @pytest.fixture
         def obj(self):
             return {
-                "resultType" : "vector",
-                "result" : [
+                "resultType": "vector",
+                "result": [
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "prometheus",
-                            "instance" : "localhost:9090"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "prometheus",
+                            "instance": "localhost:9090",
                         },
-                        "value": [ 1435781451.781, "1" ]
+                        "value": [1435781451.781, "1"],
                     },
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "node",
-                            "instance" : "localhost:9100"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "node",
+                            "instance": "localhost:9100",
                         },
-                        "value" : [ 1435781451.781, "0" ]
-                    }
-                ]
+                        "value": [1435781451.781, "0"],
+                    },
+                ],
             }
 
         def test_parse(self, obj) -> None:
@@ -1091,39 +1264,41 @@ class TestData:
             for vector in data:
                 assert isinstance(vector, servo.connectors.prometheus.InstantVector)
                 assert vector.metric["__name__"] == "up"
-                assert vector.value[0] == datetime.datetime(2015, 7, 1, 20, 10, 51, 781000, tzinfo=datetime.timezone.utc)
+                assert vector.value[0] == datetime.datetime(
+                    2015, 7, 1, 20, 10, 51, 781000, tzinfo=datetime.timezone.utc
+                )
 
     class TestMatrix:
         @pytest.fixture
         def obj(self):
             return {
-                "resultType" : "matrix",
-                "result" : [
+                "resultType": "matrix",
+                "result": [
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "prometheus",
-                            "instance" : "localhost:9090"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "prometheus",
+                            "instance": "localhost:9090",
                         },
-                        "values" : [
-                            [ 1435781430.781, "1" ],
-                            [ 1435781445.781, "1" ],
-                            [ 1435781460.781, "1" ]
-                        ]
+                        "values": [
+                            [1435781430.781, "1"],
+                            [1435781445.781, "1"],
+                            [1435781460.781, "1"],
+                        ],
                     },
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "node",
-                            "instance" : "localhost:9091"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "node",
+                            "instance": "localhost:9091",
                         },
-                        "values" : [
-                            [ 1435781430.781, "0" ],
-                            [ 1435781445.781, "0" ],
-                            [ 1435781460.781, "1" ]
-                        ]
-                    }
-                ]
+                        "values": [
+                            [1435781430.781, "0"],
+                            [1435781445.781, "0"],
+                            [1435781460.781, "1"],
+                        ],
+                    },
+                ],
             }
 
         def test_parse(self, obj) -> None:
@@ -1137,12 +1312,46 @@ class TestData:
             assert data
 
             values = [
-                [(datetime.datetime(2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc), 1.0,),
-                 (datetime.datetime(2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc), 1.0,),
-                 (datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc), 1.0,),],
-                [(datetime.datetime(2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc), 0.0,),
-                 (datetime.datetime(2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc), 0.0,),
-                 (datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc), 1.0,),]
+                [
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        1.0,
+                    ),
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        1.0,
+                    ),
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        1.0,
+                    ),
+                ],
+                [
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 10, 30, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        0.0,
+                    ),
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 10, 45, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        0.0,
+                    ),
+                    (
+                        datetime.datetime(
+                            2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc
+                        ),
+                        1.0,
+                    ),
+                ],
             ]
             for vector in data:
                 assert isinstance(vector, servo.connectors.prometheus.RangeVector)
@@ -1154,10 +1363,7 @@ class TestData:
     class TestScalar:
         @pytest.fixture
         def obj(self):
-            return {
-                "resultType" : "scalar",
-                "result" : [1435781460.781, "1"]
-            }
+            return {"resultType": "scalar", "result": [1435781460.781, "1"]}
 
         def test_parse(self, obj) -> None:
             data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
@@ -1169,16 +1375,15 @@ class TestData:
             data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
             assert data
             for scalar in data:
-                assert scalar[0] == datetime.datetime(2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc)
+                assert scalar[0] == datetime.datetime(
+                    2015, 7, 1, 20, 11, 0, 781000, tzinfo=datetime.timezone.utc
+                )
                 assert scalar[1] == 1.0
 
     class TestString:
         @pytest.fixture
         def obj(self):
-            return {
-                "resultType" : "string",
-                "result" : [1607989427.782, 'thug_life']
-            }
+            return {"resultType": "string", "result": [1607989427.782, "thug_life"]}
 
         def test_parse(self, obj) -> None:
             data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
@@ -1190,7 +1395,9 @@ class TestData:
             data = pydantic.parse_obj_as(servo.connectors.prometheus.Data, obj)
             assert data
             for string in data:
-                assert string[0] == datetime.datetime(2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc)
+                assert string[0] == datetime.datetime(
+                    2020, 12, 14, 23, 43, 47, 782000, tzinfo=datetime.timezone.utc
+                )
                 assert string[1] == "thug_life"
 
 
@@ -1199,6 +1406,7 @@ def config() -> PrometheusConfiguration:
     return PrometheusConfiguration(
         base_url="http://prometheus.io/some/path/", metrics=[]
     )
+
 
 class TestResponse:
     def test_parsing_error(self, config) -> None:
@@ -1211,42 +1419,45 @@ class TestResponse:
         query = servo.connectors.prometheus.InstantQuery(
             base_url=config.base_url,
             query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
-            step="10s"
+            step="10s",
         )
-        response = servo.connectors.prometheus.BaseResponse.parse_obj(dict(request=query, **obj))
+        response = servo.connectors.prometheus.BaseResponse.parse_obj(
+            dict(request=query, **obj)
+        )
         assert response.status == "error"
-        assert response.error == { "type": "failure", "message": "couldn't hang" }
+        assert response.error == {"type": "failure", "message": "couldn't hang"}
 
     def test_parsing_vector_result(self, query) -> None:
         obj = {
-            "status" : "success",
-            "data" : {
-                "resultType" : "vector",
-                "result" : [
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "prometheus",
-                            "instance" : "localhost:9090"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "prometheus",
+                            "instance": "localhost:9090",
                         },
-                        "value": [ 1435781451.781, "1" ]
+                        "value": [1435781451.781, "1"],
                     },
                     {
-                        "metric" : {
-                            "__name__" : "up",
-                            "job" : "node",
-                            "instance" : "localhost:9100"
+                        "metric": {
+                            "__name__": "up",
+                            "job": "node",
+                            "instance": "localhost:9100",
                         },
-                        "value" : [ 1435781451.781, "0" ]
-                    }
-                ]
-            }
+                        "value": [1435781451.781, "0"],
+                    },
+                ],
+            },
         }
-        response = servo.connectors.prometheus.BaseResponse.parse_obj(dict(request=query, **obj))
+        response = servo.connectors.prometheus.BaseResponse.parse_obj(
+            dict(request=query, **obj)
+        )
         assert response.status == "success"
         assert response.error is None
         assert response.warnings is None
-
 
     def test_parsing_matrix_result(self, config, query) -> None:
         obj = {
@@ -1268,15 +1479,18 @@ class TestResponse:
                 ],
             },
         }
-        if response := servo.connectors.prometheus.BaseResponse.parse_obj(dict(request=query, **obj)):
+        if response := servo.connectors.prometheus.BaseResponse.parse_obj(
+            dict(request=query, **obj)
+        ):
             assert response.status == "success"
             assert response.error is None
             assert response.warnings is None
 
+
 class TestError:
     @pytest.fixture
     def data(self) -> Dict[str, str]:
-        return { "errorType": "failure", "error": "couldn't hang" }
+        return {"errorType": "failure", "error": "couldn't hang"}
 
     def test_parsing(self, data) -> None:
         error = servo.connectors.prometheus.Error.parse_obj(data)
@@ -1294,8 +1508,9 @@ def query(config):
     return servo.connectors.prometheus.InstantQuery(
         base_url=config.base_url,
         query='rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[10s])',
-        step="10s"
+        step="10s",
     )
+
 
 class TestAbsentMetrics:
     @pytest.fixture
@@ -1306,10 +1521,10 @@ class TestAbsentMetrics:
         or if the metric doesn't exist.
         """
         return {
-            'status': 'success',
-            'data': {
-                'resultType': 'matrix',
-                'result': [],
+            "status": "success",
+            "data": {
+                "resultType": "matrix",
+                "result": [],
             },
         }
 
@@ -1321,10 +1536,10 @@ class TestAbsentMetrics:
         or if the metric doesn't exist.
         """
         return {
-            'status': 'success',
-            'data': {
-                'resultType': 'vector',
-                'result': [],
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [],
             },
         }
 
@@ -1332,15 +1547,15 @@ class TestAbsentMetrics:
     def absent_metric_query_response(self) -> Dict:
         """Returned by Prometheus from an absent(metric) query when the metric is absent."""
         return {
-            'status': 'success',
-            'data': {
-                'resultType': 'vector',
-                'result': [
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [
                     {
-                        'metric': {},
-                        'value': [
+                        "metric": {},
+                        "value": [
                             1608522635.537,
-                            '1',
+                            "1",
                         ],
                     },
                 ],
@@ -1351,10 +1566,10 @@ class TestAbsentMetrics:
     def present_metric_query_response(self) -> Dict:
         """Returned by Prometheus from an absent(metric) query when the metric is present."""
         return {
-            'status': 'success',
-            'data': {
-                'resultType': 'vector',
-                'result': [],
+            "status": "success",
+            "data": {
+                "resultType": "vector",
+                "result": [],
             },
         }
 
@@ -1364,11 +1579,12 @@ class TestAbsentMetrics:
             id="servox.opsani.com/tests",
             token="00000000-0000-0000-0000-000000000000",
         )
-        config = PrometheusConfiguration.generate(base_url='https://localhost:9090')
+        config = PrometheusConfiguration.generate(base_url="https://localhost:9090")
         return PrometheusConnector(config=config, optimizer=optimizer)
 
     @pytest.fixture
-    def routes(self,
+    def routes(
+        self,
         empty_range_query_response,
         absent_metric_query_response,
         present_metric_query_response,
@@ -1376,50 +1592,42 @@ class TestAbsentMetrics:
         respx.get(
             "https://localhost:9090/api/v1/query_range",
             params={"query": "empty_metric"},
-            name="range_query_for_empty_metric"
+            name="range_query_for_empty_metric",
         ).mock(
             return_value=httpx.Response(
-                status_code=200,
-                json=empty_range_query_response
+                status_code=200, json=empty_range_query_response
             )
         )
         respx.get(
             "https://localhost:9090/api/v1/query_range",
             params={"query": "empty_metric or on() vector(0)"},
-            name="range_query_for_empty_metric_or_zero_vector"
+            name="range_query_for_empty_metric_or_zero_vector",
         ).mock(
             return_value=httpx.Response(
-                status_code=200,
-                json=empty_range_query_response
+                status_code=200, json=empty_range_query_response
             )
         )
 
-
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
+    @pytest.mark.parametrize(
+        "absent",
+        list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)),
+    )
     @respx.mock
     async def test_that_empty_range_query_triggers_absent_check(
-        self,
-        connector,
-        absent,
-        routes,
-        absent_metric_query_response
+        self, connector, absent, routes, absent_metric_query_response
     ) -> None:
         metric = PrometheusMetric(
-            "empty_metric",
-            Unit.count,
-            query="empty_metric",
-            absent=absent
+            "empty_metric", Unit.count, query="empty_metric", absent=absent
         )
         assert metric.query
 
         respx.get(
             "https://localhost:9090/api/v1/query",
             params={"query": "absent(empty_metric)"},
-            name="instant_query_for_absent_empty_metric"
+            name="instant_query_for_absent_empty_metric",
         ).mock(
             return_value=httpx.Response(
-                status_code=200,
-                json=absent_metric_query_response
+                status_code=200, json=absent_metric_query_response
             )
         )
 
@@ -1427,7 +1635,10 @@ class TestAbsentMetrics:
         end = start + Duration("36h")
 
         if absent == servo.connectors.prometheus.AbsentMetricPolicy.fail:
-            with pytest.raises(RuntimeError, match="Required metric 'empty_metric' is absent from Prometheus"):
+            with pytest.raises(
+                RuntimeError,
+                match="Required metric 'empty_metric' is absent from Prometheus",
+            ):
                 await connector._query_prometheus(metric, start, end)
 
             assert respx.routes["range_query_for_empty_metric"].called
@@ -1451,31 +1662,25 @@ class TestAbsentMetrics:
             else:
                 assert False, "unhandled case"
 
-
-    @pytest.mark.parametrize("absent", list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)))
+    @pytest.mark.parametrize(
+        "absent",
+        list(map(lambda ab: ab, servo.connectors.prometheus.AbsentMetricPolicy)),
+    )
     @respx.mock
     async def test_that_present_metric_returns_empty_results(
-        self,
-        connector,
-        absent,
-        routes,
-        present_metric_query_response
+        self, connector, absent, routes, present_metric_query_response
     ) -> None:
         metric = PrometheusMetric(
-            "empty_metric",
-            Unit.count,
-            query="empty_metric",
-            absent=absent
+            "empty_metric", Unit.count, query="empty_metric", absent=absent
         )
 
         respx.get(
             "https://localhost:9090/api/v1/query",
             params={"query": "absent(empty_metric)"},
-            name="instant_query_for_absent_empty_metric"
+            name="instant_query_for_absent_empty_metric",
         ).mock(
             return_value=httpx.Response(
-                status_code=200,
-                json=present_metric_query_response
+                status_code=200, json=present_metric_query_response
             )
         )
 
@@ -1500,28 +1705,24 @@ class TestAbsentMetrics:
 
     class TestAbsentZero:
         async def test_range_query_includes_or_on_vector(self) -> None:
-            metric=PrometheusMetric(
+            metric = PrometheusMetric(
                 "envoy_cluster_upstream_rq_total",
                 Unit.count,
                 query="envoy_cluster_upstream_rq_total",
-                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
             )
             assert metric.build_query().endswith("or on() vector(0)")
 
+
 class TestClient:
     def test_base_url_is_rstripped(self):
-        client = Client(
-            base_url="http://prometheus.io/some/path/"
-        )
+        client = Client(base_url="http://prometheus.io/some/path/")
         assert client.base_url == "http://prometheus.io/some/path"
 
     def test_api_url(self):
-        client = Client(
-            base_url="http://prometheus.default.svc.cluster.local:9090"
-        )
-        assert (
-            client.url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
-        )
+        client = Client(base_url="http://prometheus.default.svc.cluster.local:9090")
+        assert client.url == "http://prometheus.default.svc.cluster.local:9090/api/v1"
+
 
 class TestInstantQuery:
     @pytest.fixture
@@ -1532,49 +1733,56 @@ class TestInstantQuery:
         )
 
     def test_params(self, query) -> None:
-        assert query.params == {'query': 'testing', 'time': '1579608001.0'}
+        assert query.params == {"query": "testing", "time": "1579608001.0"}
 
     def test_url(self, query) -> None:
-        assert query.url == '/query?query=testing&time=1579608001.0'
+        assert query.url == "/query?query=testing&time=1579608001.0"
+
 
 class TestTargetsRequest:
     def test_(self) -> None:
         request = servo.connectors.prometheus.TargetsRequest()
-        assert request.endpoint == '/targets'
+        assert request.endpoint == "/targets"
         assert request.state is None
-        assert request.param_attrs == ('state', )
+        assert request.param_attrs == ("state",)
         assert request.params == {}
+
 
 @respx.mock
 async def test_list_targets() -> None:
     client = Client(base_url="http://localhost:9090/")
     with respx.mock(base_url=client.base_url) as respx_mock:
-        request = respx_mock.get("/api/v1/targets").mock(httpx.Response(200, json=targets_response_()))
+        request = respx_mock.get("/api/v1/targets").mock(
+            httpx.Response(200, json=targets_response_())
+        )
         response = await client.list_targets()
         assert response.data.active_targets
         assert len(response.data.active_targets) == 1
         target = response.data.active_targets[0]
         assert target == servo.connectors.prometheus.ActiveTarget(
-            scrapePool='opsani-envoy-sidecars',
-            scrapeUrl='http://192.168.95.123:9901/stats/prometheus',
-            globalUrl='http://192.168.95.123:9901/stats/prometheus',
-            health='up',
+            scrapePool="opsani-envoy-sidecars",
+            scrapeUrl="http://192.168.95.123:9901/stats/prometheus",
+            globalUrl="http://192.168.95.123:9901/stats/prometheus",
+            health="up",
             labels={
-                'app': 'web',
-                'instance': '192.168.95.123:9901',
-                'job': 'opsani-envoy-sidecars',
-                'pod_template_hash': '6f756468f6',
+                "app": "web",
+                "instance": "192.168.95.123:9901",
+                "job": "opsani-envoy-sidecars",
+                "pod_template_hash": "6f756468f6",
             },
             discoveredLabels={
-                '__address__': '192.168.95.123:9901',
-                '__metrics_path__': '/metrics',
-                '__scheme__': 'http',
-                'job': 'opsani-envoy-sidecars',
+                "__address__": "192.168.95.123:9901",
+                "__metrics_path__": "/metrics",
+                "__scheme__": "http",
+                "job": "opsani-envoy-sidecars",
             },
-            lastScrape=datetime.datetime(2020, 9, 9, 10, 4, 2, 662498, tzinfo=datetime.timezone.utc),
-            lastScrapeDuration=Duration('13ms974us'),
-            lastError='',
+            lastScrape=datetime.datetime(
+                2020, 9, 9, 10, 4, 2, 662498, tzinfo=datetime.timezone.utc
+            ),
+            lastScrapeDuration=Duration("13ms974us"),
+            lastError="",
         )
+
 
 class TestTargetData:
     @pytest.mark.parametrize(
@@ -1585,17 +1793,17 @@ class TestTargetData:
             (
                 [servo.connectors.prometheus.ActiveTarget.construct()],
                 [servo.connectors.prometheus.DroppedTarget.construct()],
-                2
+                2,
             ),
             (
                 [
                     servo.connectors.prometheus.ActiveTarget.construct(),
                     servo.connectors.prometheus.ActiveTarget.construct(),
-                    servo.connectors.prometheus.ActiveTarget.construct()
+                    servo.connectors.prometheus.ActiveTarget.construct(),
                 ],
                 None,
-                3
-            )
+                3,
+            ),
         ],
     )
     def test_len(self, active_targets, dropped_targets, total_len) -> None:

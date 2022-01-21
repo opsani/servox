@@ -15,7 +15,7 @@ _associations = weakref.WeakKeyDictionary()
 class Mixin:
     """Provides support for virtual attributes."""
 
-    def __init__(self, *args, **kwargs) -> None: # noqa: D107
+    def __init__(self, *args, **kwargs) -> None:  # noqa: D107
         # NOTE: we are not hashable until after init
         super().__init__(*args, **kwargs)
         _associations[self] = {}
@@ -59,7 +59,7 @@ class Mixin:
 
 
 @runtime_checkable
-class Associative(Protocol): # pragma: no cover
+class Associative(Protocol):  # pragma: no cover
     """A protocol that describes objects that support associations."""
 
     def _set_association(self, name: str, obj: Any) -> None:

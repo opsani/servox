@@ -10,7 +10,19 @@ import inspect
 import sys
 import types
 import weakref
-from typing import Any, AsyncContextManager, Awaitable, Callable, Dict, List, Optional, Sequence, Type, TypeVar, Union
+from typing import (
+    Any,
+    AsyncContextManager,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import pydantic
 import pydantic.typing
@@ -37,6 +49,7 @@ __all__ = [
 
 # Context vars for asyncio tasks managed by run_event_handlers
 _current_context_var = contextvars.ContextVar("servox.current_event", default=None)
+
 
 def current_event() -> Optional[EventContext]:
     """
@@ -75,7 +88,7 @@ class Event(pydantic.BaseModel):
 
     def __init__(
         self, name: str, signature: inspect.Signature, *args, **kwargs
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         _signature_cache[name] = signature
         super().__init__(name=name, *args, **kwargs)
 
@@ -217,12 +230,11 @@ class EventContext(pydantic.BaseModel):
     def current(self):
         """A context manager that sets the current connector context."""
         try:
-          token = _current_context_var.set(self)
-          yield self
+            token = _current_context_var.set(self)
+            yield self
 
         finally:
             _current_context_var.reset(token)
-
 
     def __str__(self):
         if self.preposition == Preposition.on:
@@ -520,7 +532,7 @@ def event_handler(
         handler_module = sys.modules[handler_mod_name] if handler_mod_name else None
 
         if preposition in (Preposition.before, Preposition.on):
-            ref_signature=event.signature
+            ref_signature = event.signature
             if preposition == Preposition.before:
                 # 'before' event takes same args as 'on' event, but returns None
                 ref_signature = ref_signature.replace(return_annotation="None")
@@ -538,7 +550,9 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                callable_description="event handler" if preposition == Preposition.on else "before event handler"
+                callable_description="event handler"
+                if preposition == Preposition.on
+                else "before event handler",
             )
         elif preposition == Preposition.after:
             after_handler_signature = inspect.Signature.from_callable(__after_handler)
@@ -556,7 +570,7 @@ def event_handler(
                     localns=handler_localns,
                 ),
                 name=name,
-                callable_description="after event handler"
+                callable_description="after event handler",
             )
         else:
             assert "Undefined preposition value"
@@ -616,7 +630,7 @@ class Mixin:
         *args,
         __connectors__: List[Mixin] = None,
         **kwargs,
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         super().__init__(
             *args,
             **kwargs,
@@ -634,12 +648,16 @@ class Mixin:
     @classmethod
     def validate(cls: Mixin, value: Any) -> Mixin:
         if not isinstance(value, Mixin):
-            raise TypeError(f"field (type {type(value)}) must be instance of events.Mixin")
+            raise TypeError(
+                f"field (type {type(value)}) must be instance of events.Mixin"
+            )
 
         # Ideally, the name property would be part of an abstract base but pydantic doesn't play nice with abc
         # https://github.com/samuelcolvin/pydantic/discussions/2410
         if (not hasattr(value, "name")) or not isinstance(value.name, str):
-            raise TypeError(f"events.Mixin inheritors must define a name property of type str (found {type(getattr(value, 'name', None))})")
+            raise TypeError(
+                f"events.Mixin inheritors must define a name property of type str (found {type(getattr(value, 'name', None))})"
+            )
 
         return value
 
@@ -751,20 +769,24 @@ class Mixin:
         event = get_event(event) if isinstance(event, str) else event
 
         if include is not None:
-            included_names = list(map(lambda c: c if isinstance(c, str) else c.name, include))
-            connectors = list(
-                filter(lambda c: c.name in included_names, connectors)
+            included_names = list(
+                map(lambda c: c if isinstance(c, str) else c.name, include)
             )
+            connectors = list(filter(lambda c: c.name in included_names, connectors))
 
         if exclude is not None:
-            excluded_names = list(map(lambda c: c if isinstance(c, str) else c.name, exclude))
+            excluded_names = list(
+                map(lambda c: c if isinstance(c, str) else c.name, exclude)
+            )
             connectors = list(
                 filter(lambda c: c.name not in excluded_names, connectors)
             )
 
         # Validate that we are dispatching to connectors that are in our graph
         if not set(connectors).issubset(self.__connectors__):
-            raise ValueError(f"invalid target connectors: cannot dispatch events to connectors that are in the active servo")
+            raise ValueError(
+                f"invalid target connectors: cannot dispatch events to connectors that are in the active servo"
+            )
 
         return _DispatchEvent(
             connectors=connectors,
@@ -831,17 +853,20 @@ class Mixin:
                         results.append(result)
 
                     except Exception as error:
-                        if (isinstance(error, servo.errors.EventCancelledError) and
-                            preposition != Preposition.before):
+                        if (
+                            isinstance(error, servo.errors.EventCancelledError)
+                            and preposition != Preposition.before
+                        ):
                             if return_exceptions:
-                                self.logger.warning(f"Cannot cancel an event from an {preposition} handler: event dispatched")
+                                self.logger.warning(
+                                    f"Cannot cancel an event from an {preposition} handler: event dispatched"
+                                )
                             else:
                                 cause = error
                                 error = TypeError(
                                     f"Cannot cancel an event from an {preposition} handler"
                                 )
                                 error.__cause__ = cause
-
 
                         # Annotate the exception and reraise to halt execution
                         error.__event_result__ = EventResult(
@@ -861,6 +886,7 @@ class Mixin:
 
 
 _is_base_class_defined = True
+
 
 class _DispatchEvent:
     def __init__(
@@ -927,10 +953,7 @@ class _DispatchEvent:
         # NOTE: If we are awaited, make the caller wait on run() instead
         return self.run().__await__()
 
-    def subscribe(
-        self,
-        *args
-    ):
+    def subscribe(self, *args):
         """Subscribe to the Event dispatch operation.
 
         This method is usable as a callable, context manager, or decorator.
@@ -945,9 +968,10 @@ class _DispatchEvent:
         else:
             return subscriber_method(*args)
 
-
     async def __aenter__(self) -> None:
-        self._channel = self._parent.pubsub_exchange.create_channel(f'servo.events.{self.event.name}.{id(self)}')
+        self._channel = self._parent.pubsub_exchange.create_channel(
+            f"servo.events.{self.event.name}.{id(self)}"
+        )
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -971,12 +995,18 @@ class _DispatchEvent:
             for connector in self._connectors:
                 try:
                     results = await connector.run_event_handlers(
-                        self.event, Preposition.before, *self._args, return_exceptions=False, **self._kwargs
+                        self.event,
+                        Preposition.before,
+                        *self._args,
+                        return_exceptions=False,
+                        **self._kwargs,
                     )
 
                 except servo.errors.EventCancelledError as error:
                     # Return an empty result set
-                    servo.logger.warning(f"event cancelled by before event handler on connector \"{connector.name}\": {error}")
+                    servo.logger.warning(
+                        f'event cancelled by before event handler on connector "{connector.name}": {error}'
+                    )
                     return []
 
         # Invoke the on event handlers and gather results
@@ -985,7 +1015,11 @@ class _DispatchEvent:
                 # A single responder has been requested
                 for connector in self._connectors:
                     results = await connector.run_event_handlers(
-                        self.event, Preposition.on, *self._args, return_exceptions=self._return_exceptions, **self._kwargs
+                        self.event,
+                        Preposition.on,
+                        *self._args,
+                        return_exceptions=self._return_exceptions,
+                        **self._kwargs,
                     )
                     if results:
                         break
@@ -994,7 +1028,11 @@ class _DispatchEvent:
                     *list(
                         map(
                             lambda c: c.run_event_handlers(
-                                self.event, Preposition.on, return_exceptions=self._return_exceptions, *self._args, **self._kwargs
+                                self.event,
+                                Preposition.on,
+                                return_exceptions=self._return_exceptions,
+                                *self._args,
+                                **self._kwargs,
                             ),
                             self._connectors,
                         )
@@ -1020,15 +1058,9 @@ class _DispatchEvent:
         if self.channel:
             await self.channel.close()
 
-        return (
-            next(iter(results), None) if self._first
-            else results
-        )
+        return next(iter(results), None) if self._first else results
 
     async def __call__(self) -> Union[Optional[EventResult], List[EventResult]]:
         self._results = await self.run()
 
-        return (
-            next(iter(self.results), None) if self._first
-            else self.results
-        )
+        return next(iter(self.results), None) if self._first else self.results

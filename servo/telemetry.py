@@ -26,8 +26,8 @@ DIAGNOSTICS_CHECK_ENDPOINT = "assets/opsani.com/diagnostics-check"
 DIAGNOSTICS_OUTPUT_ENDPOINT = "assets/opsani.com/diagnostics-output"
 
 # Intercept backoff decorator logs, only log on giveup
-logging.getLogger('diagnostics-backoff').setLevel(logging.ERROR)
-logging.getLogger('diagnostics-backoff').addHandler(InterceptHandler())
+logging.getLogger("diagnostics-backoff").setLevel(logging.ERROR)
+logging.getLogger("diagnostics-backoff").addHandler(InterceptHandler())
 
 
 class DiagnosticStates(str, enum.Enum):
@@ -42,8 +42,7 @@ class Diagnostics(pydantic.BaseModel):
 
 
 class Telemetry(pydantic.BaseModel):
-    """Class and convenience methods for storage of arbitrary servo metadata
-    """
+    """Class and convenience methods for storage of arbitrary servo metadata"""
 
     _values: dict[str, str] = pydantic.PrivateAttr(default_factory=dict)
 
@@ -66,7 +65,6 @@ class Telemetry(pydantic.BaseModel):
         """Safely remove an arbitrary key from telemetry metadata"""
         self._values.pop(key, None)
 
-
     @property
     def values(self) -> dict[str, dict[str, str]]:
         # TODO return copy to ensure read only?
@@ -78,7 +76,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
     servo: servo.Servo = None
     _running: bool = False
 
-    def __init__(self, servo: servo.Servo) -> None: # noqa: D10
+    def __init__(self, servo: servo.Servo) -> None:  # noqa: D10
         self.servo = servo
 
     @property
@@ -93,7 +91,11 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         while self._running:
             try:
                 self.logger.trace("Polling for diagnostics request")
-                request = await self._diagnostics_api(method="GET", endpoint=DIAGNOSTICS_CHECK_ENDPOINT, output_model=DiagnosticStates)
+                request = await self._diagnostics_api(
+                    method="GET",
+                    endpoint=DIAGNOSTICS_CHECK_ENDPOINT,
+                    output_model=DiagnosticStates,
+                )
 
                 if request == DiagnosticStates.withhold:
                     self.logger.trace("Withholding diagnostics")
@@ -102,14 +104,26 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
                     self.logger.info(f"Diagnostics requested, gathering and sending")
                     diagnostic_data = await self._get_diagnostics()
 
-                    await self._diagnostics_api(method="PUT", endpoint=DIAGNOSTICS_OUTPUT_ENDPOINT, output_model=servo.api.Status, json=diagnostic_data.dict())
+                    await self._diagnostics_api(
+                        method="PUT",
+                        endpoint=DIAGNOSTICS_OUTPUT_ENDPOINT,
+                        output_model=servo.api.Status,
+                        json=diagnostic_data.dict(),
+                    )
 
                     # Reset diagnostics check state to withhold
                     reset_state = DiagnosticStates.withhold
-                    await self._diagnostics_api(method="PUT", endpoint=DIAGNOSTICS_CHECK_ENDPOINT, output_model=servo.api.Status, json=reset_state)
+                    await self._diagnostics_api(
+                        method="PUT",
+                        endpoint=DIAGNOSTICS_CHECK_ENDPOINT,
+                        output_model=servo.api.Status,
+                        json=reset_state,
+                    )
 
                 elif request == DiagnosticStates.stop:
-                    self.logger.info(f"Received request to disable polling for diagnostics")
+                    self.logger.info(
+                        f"Received request to disable polling for diagnostics"
+                    )
                     self.servo.config.no_diagnostics = True
                     self._running = False
                 else:
@@ -118,25 +132,27 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
                 await asyncio.sleep(60)
 
             except Exception:
-                self.logger.exception(f"Diagnostics check failed with unrecoverable error") # exception logger logs the exception object
+                self.logger.exception(
+                    f"Diagnostics check failed with unrecoverable error"
+                )  # exception logger logs the exception object
                 self._running = False
 
     async def _get_diagnostics(self) -> Diagnostics:
 
-        async with aiofiles.open(servo.logging.logs_path, 'r') as log_file:
+        async with aiofiles.open(servo.logging.logs_path, "r") as log_file:
             logs = await log_file.read()
 
         # Strip emoji from logs :(
         raw_logs = logs.encode("ascii", "ignore").decode()
 
         # Limit + truncate per 1MiB /assets limit, allowing ample room for configmap
-        log_data_lines = filter(None, raw_logs[-ONE_MiB-10000:].split("\n")[1:])
+        log_data_lines = filter(None, raw_logs[-ONE_MiB - 10000 :].split("\n")[1:])
         log_dict = {}
 
         for line in log_data_lines:
             # Handle rare multi-line logs e.g. from self.tuning_container.resources
             try:
-                time, msg = line.split('|', 1)
+                time, msg = line.split("|", 1)
                 log_dict[time.strip()] = msg.strip()
             except:
                 log_dict[list(log_dict.keys())[-1]] += line
@@ -150,10 +166,11 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_time(),
+        max_time=lambda: servo.current_servo()
+        and servo.current_servo().config.settings.backoff.max_time(),
         max_tries=lambda: DIAGNOSTICS_MAX_RETRIES,
-        logger='diagnostics-backoff',
-        on_giveup=lambda x: asyncio.current_task().cancel()
+        logger="diagnostics-backoff",
+        on_giveup=lambda x: asyncio.current_task().cancel(),
     )
     async def _diagnostics_api(
         self,
@@ -166,30 +183,34 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         async with self.api_client() as client:
             self.logger.trace(f"{method} diagnostic request")
             try:
-                response = await client.request(method=method, url=endpoint, json=dict(data=json))
+                response = await client.request(
+                    method=method, url=endpoint, json=dict(data=json)
+                )
                 response.raise_for_status()
                 response_json = response.json()
 
                 # Handle /diagnostics-check retrieval
-                if 'data' in response_json:
-                    response_json = response_json['data']
+                if "data" in response_json:
+                    response_json = response_json["data"]
 
                 self.logger.trace(
                     f"{method} diagnostic request response ({response.status_code} {response.reason_phrase}): {devtools.pformat(response_json)}"
                 )
                 self.logger.trace(servo.api._redacted_to_curl(response.request))
                 try:
-                    return pydantic.parse_obj_as(
-                        output_model, response_json
-                    )
+                    return pydantic.parse_obj_as(output_model, response_json)
                 except pydantic.ValidationError as error:
                     # Should not raise due to improperly set diagnostic states
-                    self.logger.exception(f"Malformed diagnostic {method} response", level_id="DEBUG")
+                    self.logger.exception(
+                        f"Malformed diagnostic {method} response", level_id="DEBUG"
+                    )
                     return DiagnosticStates.withhold
 
             except httpx.HTTPError as error:
                 if error.response.status_code < 500:
-                    self.logger.debug(f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}")
+                    self.logger.debug(
+                        f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}"
+                    )
                     return DiagnosticStates.withhold
                 else:
                     self.logger.trace(servo.api._redacted_to_curl(error.request))

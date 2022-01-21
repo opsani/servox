@@ -65,6 +65,7 @@ async def test_cancel_repeating_task(optimizer: Optimizer):
     await asyncio.sleep(0.001)
     assert task.cancelled()
 
+
 async def test_cancel_repeating_tasks(optimizer: Optimizer):
     connector = RepeatingConnector(config=BaseConfiguration(), optimizer=optimizer)
     task1 = connector.start_repeating_task(
@@ -77,7 +78,10 @@ async def test_cancel_repeating_tasks(optimizer: Optimizer):
     await asyncio.sleep(0.001)
     assert task1.cancelled()
     assert task2.cancelled()
-    assert connector.repeating_tasks == {'report_progress1': task1, 'report_progress2': task2}
+    assert connector.repeating_tasks == {
+        "report_progress1": task1,
+        "report_progress2": task2,
+    }
 
 
 async def test_cancel_repeating_task_name_doesnt_exist(optimizer: Optimizer):

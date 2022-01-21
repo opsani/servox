@@ -101,6 +101,7 @@ async def test_raises_on_invalid_signature() -> None:
         == """invalid check "check_invalid": incompatible return type annotation "<class 'int'>" in callable signature "() -> int", expected "<class 'servo.checks.Check'>\""""
     )
 
+
 async def test_raises_on_invalid_return_type() -> None:
     class MeasureChecks(BaseChecks):
         def check_invalid(self) -> Check:
@@ -218,7 +219,9 @@ def test_valid_check_decorator_return_values(return_value, success, message) -> 
         (
             123,
             ValueError,
-            ('caught exception (ValueError): check method returned unexpected value of type "int"'),
+            (
+                'caught exception (ValueError): check method returned unexpected value of type "int"'
+            ),
         ),
         (
             (False, 187),
@@ -893,5 +896,6 @@ async def test_warnings() -> None:
             "Something may not be quite right",
         ],
     ]
+
 
 # TODO: add tests for default checks

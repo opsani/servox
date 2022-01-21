@@ -9,13 +9,12 @@ import servo.pubsub
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
+
 class TestVegeta:
     @pytest.fixture
     def connector(self) -> servo.connectors.vegeta.VegetaConnector:
         config = servo.connectors.vegeta.VegetaConfiguration(
-            rate="50/1s",
-            target="GET http://localhost:8080",
-            reporting_interval="500ms"
+            rate="50/1s", target="GET http://localhost:8080", reporting_interval="500ms"
         )
         return servo.connectors.vegeta.VegetaConnector(config=config)
 
@@ -26,11 +25,13 @@ class TestVegeta:
             debug("Vegeta Reported: ", message.json())
             reports.append(message.json())
 
-        subscriber = connector.pubsub_exchange.create_subscriber("loadgen.vegeta", callback=_callback)
+        subscriber = connector.pubsub_exchange.create_subscriber(
+            "loadgen.vegeta", callback=_callback
+        )
         connector.pubsub_exchange.start()
         measurement = await asyncio.wait_for(
             connector.measure(control=servo.Control(duration="5s")),
-            timeout=7 # NOTE: Always make timeout exceed control duration
+            timeout=7,  # NOTE: Always make timeout exceed control duration
         )
         assert len(reports) > 5
 
@@ -48,7 +49,6 @@ class TestVegeta:
         await connector.measure(control=servo.Control(duration="3s"))
         task.cancel()
         assert len(reports) > 5
-
 
     async def test_subscribe_via_connector(self, connector) -> None:
         ...

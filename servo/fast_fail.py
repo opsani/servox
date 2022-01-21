@@ -16,11 +16,13 @@ import servo.types
 
 SLO_FAILED_REASON = "slo-violation"
 
+
 class SloOutcomeStatus(str, enum.Enum):
     passed = "passed"
     failed = "failed"
     missing_metric = "missing_metric"
     missing_threshold = "missing_threshold"
+
 
 class SloOutcome(pydantic.BaseModel):
     status: SloOutcomeStatus
@@ -47,9 +49,14 @@ class SloOutcome(pydantic.BaseModel):
 class FastFailObserver(pydantic.BaseModel):
     config: servo.configuration.FastFailConfiguration
     input: servo.types.SloInput
-    metrics_getter: Callable[[datetime.datetime, datetime.datetime], Awaitable[Dict[str, List[servo.types.Reading]]]]
+    metrics_getter: Callable[
+        [datetime.datetime, datetime.datetime],
+        Awaitable[Dict[str, List[servo.types.Reading]]],
+    ]
 
-    _results: Dict[servo.types.SloCondition, List[SloOutcome]] = pydantic.PrivateAttr(default=collections.defaultdict(list))
+    _results: Dict[servo.types.SloCondition, List[SloOutcome]] = pydantic.PrivateAttr(
+        default=collections.defaultdict(list)
+    )
 
     async def observe(self, progress: servo.EventProgress) -> None:
         if progress.elapsed < self.config.skip:
@@ -59,18 +66,26 @@ class FastFailObserver(pydantic.BaseModel):
         metrics = await self.metrics_getter(checked_at - self.config.span, checked_at)
         self.check_readings(metrics=metrics, checked_at=checked_at)
 
-    def check_readings(self, metrics: Dict[str, List[servo.types.Reading]], checked_at: datetime.datetime) -> None:
+    def check_readings(
+        self,
+        metrics: Dict[str, List[servo.types.Reading]],
+        checked_at: datetime.datetime,
+    ) -> None:
         failures: Dict[servo.types.SloCondition, List[SloOutcome]] = {}
         for condition in self.input.conditions:
             result_args = dict(checked_at=checked_at)
             # Evaluate target metric
             metric_readings = metrics.get(condition.metric)
             if not metric_readings:
-                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.missing_metric))
+                self._results[condition].append(
+                    SloOutcome(**result_args, status=SloOutcomeStatus.missing_metric)
+                )
                 continue
 
             metric_value = _get_scalar_from_readings(metric_readings)
-            result_args.update(metric_value=metric_value, metric_readings=metric_readings)
+            result_args.update(
+                metric_value=metric_value, metric_readings=metric_readings
+            )
 
             # Evaluate threshold
             threshold_readings = None
@@ -79,49 +94,79 @@ class FastFailObserver(pydantic.BaseModel):
             elif condition.threshold_metric is not None:
                 threshold_readings = metrics.get(condition.threshold_metric)
                 if not threshold_readings:
-                    self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold))
+                    self._results[condition].append(
+                        SloOutcome(
+                            **result_args, status=SloOutcomeStatus.missing_threshold
+                        )
+                    )
                     continue
 
                 threshold_scalar = _get_scalar_from_readings(threshold_readings)
                 threshold_value = threshold_scalar * condition.threshold_multiplier
 
-            result_args.update(threshold_value=threshold_value, threshold_readings=threshold_readings)
+            result_args.update(
+                threshold_value=threshold_value, threshold_readings=threshold_readings
+            )
 
             if metric_value.is_nan() or threshold_value.is_nan():
-                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold))
+                self._results[condition].append(
+                    SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold)
+                )
                 continue
 
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
             if check_passed_op(metric_value, threshold_value):
-                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.passed))
+                self._results[condition].append(
+                    SloOutcome(**result_args, status=SloOutcomeStatus.passed)
+                )
             else:
-                self._results[condition].append(SloOutcome(**result_args, status=SloOutcomeStatus.failed))
+                self._results[condition].append(
+                    SloOutcome(**result_args, status=SloOutcomeStatus.failed)
+                )
 
             # Update window by slicing last n items from list where n is trigger_window
-            self._results[condition] = self._results[condition][-condition.trigger_window:]
+            self._results[condition] = self._results[condition][
+                -condition.trigger_window :
+            ]
 
-            if len(list(filter(lambda res: res.status == SloOutcomeStatus.failed, self._results[condition]))) >= condition.trigger_count:
+            if (
+                len(
+                    list(
+                        filter(
+                            lambda res: res.status == SloOutcomeStatus.failed,
+                            self._results[condition],
+                        )
+                    )
+                )
+                >= condition.trigger_count
+            ):
                 failures[condition] = self._results[condition]
 
         servo.logger.debug(f"SLO results: {devtools.pformat(self._results)}")
 
         # Log the latest results
-        last_results_buckets: Dict[SloOutcomeStatus, List[str]] = collections.defaultdict(list)
+        last_results_buckets: Dict[
+            SloOutcomeStatus, List[str]
+        ] = collections.defaultdict(list)
         for condition, results_list in self._results.items():
             last_result = results_list[-1]
             last_results_buckets[last_result.status].append(str(condition))
 
         last_results_messages: List[str] = []
         for status, condition_str_list in last_results_buckets.items():
-            last_results_messages.append(f"x{len(condition_str_list)} {status} [{', '.join(condition_str_list)}]")
+            last_results_messages.append(
+                f"x{len(condition_str_list)} {status} [{', '.join(condition_str_list)}]"
+            )
 
-        servo.logger.info(f"SLO statuses from last check: {', '.join(last_results_messages)}")
+        servo.logger.info(
+            f"SLO statuses from last check: {', '.join(last_results_messages)}"
+        )
 
         if failures:
             raise servo.errors.EventAbortedError(
                 f"SLO violation(s) observed: {_get_results_str(failures)}",
-                reason=SLO_FAILED_REASON
+                reason=SLO_FAILED_REASON,
             )
 
 
@@ -134,7 +179,10 @@ def _get_keep_operator(keep: servo.types.SloKeep):
     else:
         raise ValueError(f"Unknown SloKeep type {keep}")
 
-def _get_scalar_from_readings(metric_readings: List[servo.types.Reading]) -> decimal.Decimal:
+
+def _get_scalar_from_readings(
+    metric_readings: List[servo.types.Reading],
+) -> decimal.Decimal:
     instance_values = []
     for reading in metric_readings:
         # TODO: NewRelic APM returns 0 for missing metrics. Will need optional config to ignore 0 values
@@ -142,7 +190,9 @@ def _get_scalar_from_readings(metric_readings: List[servo.types.Reading]) -> dec
         if isinstance(reading, servo.types.DataPoint):
             instance_values.append(decimal.Decimal(reading.value))
         elif isinstance(reading, servo.types.TimeSeries):
-            timeseries_values = list(map(lambda dp: decimal.Decimal(dp.value), reading.data_points))
+            timeseries_values = list(
+                map(lambda dp: decimal.Decimal(dp.value), reading.data_points)
+            )
             if len(timeseries_values) > 1:
                 instance_values.append(statistics.mean(timeseries_values))
             else:
@@ -155,9 +205,12 @@ def _get_scalar_from_readings(metric_readings: List[servo.types.Reading]) -> dec
     else:
         return decimal.Decimal(instance_values[0])
 
+
 def _get_results_str(results: Dict[servo.types.SloCondition, List[SloOutcome]]) -> str:
     fmt_outcomes = []
     for condition, outcome_list in results.items():
-        outcome_str_list = list(map(lambda outcome: outcome.to_message(condition), outcome_list))
+        outcome_str_list = list(
+            map(lambda outcome: outcome.to_message(condition), outcome_list)
+        )
         fmt_outcomes.append(f"{condition}[{', '.join(outcome_str_list)}]")
     return ", ".join(fmt_outcomes)

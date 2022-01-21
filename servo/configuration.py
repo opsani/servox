@@ -261,6 +261,7 @@ class BaseConfiguration(AbstractBaseConfiguration):
     An optional textual description of the configuration stanza useful for differentiating
     between configurations within assemblies.
     """
+
     description: Optional[str] = pydantic.Field(
         None, description="An optional description of the configuration."
     )
@@ -269,7 +270,12 @@ class BaseConfiguration(AbstractBaseConfiguration):
         default_factory=lambda: CommonConfiguration(),
     )
 
-    def __init__(self, __optimizer__: Optional[Optimizer] = None, __settings__: Optional[CommonConfiguration] = None, **kwargs) -> None:
+    def __init__(
+        self,
+        __optimizer__: Optional[Optimizer] = None,
+        __settings__: Optional[CommonConfiguration] = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self.__optimizer__ = __optimizer__
         if __settings__:
@@ -294,6 +300,7 @@ BaseConfiguration.__fields__["description"].field_info.extra["env_names"] = set(
     map(str.upper, env_names)
 )
 
+
 class BackoffSettings(AbstractBaseConfiguration):
     """
     BackoffSettings objects model configuration of backoff and retry policies.
@@ -310,6 +317,7 @@ class BackoffSettings(AbstractBaseConfiguration):
     """
     The maximum number of retry attempts to make before giving up.
     """
+
 
 class Timeouts(AbstractBaseConfiguration):
     """Timeouts models the configuration of timeouts for the HTTPX library, which provides HTTP networking capabilities to the
@@ -343,7 +351,7 @@ class Timeouts(AbstractBaseConfiguration):
         self,
         timeout: Optional[Union[str, int, float, servo.types.Duration]] = None,
         **kwargs,
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         for attr in ("connect", "read", "write", "pool"):
             if not attr in kwargs:
                 kwargs[attr] = timeout
@@ -355,12 +363,14 @@ ProxyKey = pydantic.constr(regex=r"^(https?|all)://")
 
 class BackoffContexts(str, enum.Enum):
     """An enumeration that defines the default set of backoff contexts."""
+
     default = "__default__"
     connect = "connect"
 
 
 class BackoffConfigurations(pydantic.BaseModel):
     """A mapping of named backoff configurations."""
+
     __root__: Dict[str, BackoffSettings]
 
     @pydantic.root_validator(pre=True)
@@ -370,7 +380,7 @@ class BackoffConfigurations(pydantic.BaseModel):
             if len(values) != 1 or (
                 len(values) == 1 and values.get("__root__", None) is None
             ):
-                return { "__root__": values }
+                return {"__root__": values}
 
         return values
 
@@ -383,20 +393,18 @@ class BackoffConfigurations(pydantic.BaseModel):
     def get(self, context: str, default: Any = None) -> BackoffSettings:
         return self.__root__.get(context, default)
 
-    def max_time(self, context: str = BackoffContexts.default) -> Optional[servo.types.Duration]:
+    def max_time(
+        self, context: str = BackoffContexts.default
+    ) -> Optional[servo.types.Duration]:
         """Return the maximum amount of time to wait before giving up."""
         return (
-            self.get(context, None) or
-            self.get(BackoffContexts.default)
+            self.get(context, None) or self.get(BackoffContexts.default)
         ).max_time.total_seconds()
 
     def max_tries(self, context: str = BackoffContexts.default) -> Optional[int]:
         """Return the maximum number of calls to attempt to the target before
         giving up."""
-        return (
-            self.get(context, None) or
-            self.get(BackoffContexts.default)
-        ).max_tries
+        return (self.get(context, None) or self.get(BackoffContexts.default)).max_tries
 
 
 class CommonConfiguration(AbstractBaseConfiguration):
@@ -545,7 +553,10 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
             connectors = decoded_value
 
         # import late until dependencies are untangled
-        from servo.connector import _normalize_connectors, _routes_for_connectors_descriptor
+        from servo.connector import (
+            _normalize_connectors,
+            _routes_for_connectors_descriptor,
+        )
 
         connectors = _normalize_connectors(connectors)
         # NOTE: Will raise if descriptor is invalid, failing validation
@@ -557,6 +568,7 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
         extra = pydantic.Extra.forbid
         title = "Abstract Servo Configuration Schema"
         env_prefix = "SERVO_"
+
 
 class FastFailConfiguration(pydantic.BaseSettings):
     """Configuration providing support for fast fail behavior which returns early
@@ -577,8 +589,8 @@ class FastFailConfiguration(pydantic.BaseSettings):
     class Config:
         extra = pydantic.Extra.forbid
 
-    @pydantic.validator('span', pre=True, always=True)
+    @pydantic.validator("span", pre=True, always=True)
     def span_defaults_to_period(cls, v, *, values, **kwargs):
         if v is None:
-            return values['period']
+            return values["period"]
         return v

@@ -37,7 +37,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
     class Config:
         arbitrary_types_allowed = True
 
-    def __init__(self, servo_: servo, **kwargs) -> None: # noqa: D10
+    def __init__(self, servo_: servo, **kwargs) -> None:  # noqa: D10
         super().__init__(**kwargs)
         self._servo = servo_
 
@@ -74,7 +74,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(servo.Events.describe, control=control)
+        results: List[servo.EventResult] = await self.servo.dispatch_event(
+            servo.Events.describe, control=control
+        )
         for result in results:
             description = result.value
             aggregate_description.components.extend(description.components)
@@ -126,7 +128,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.trace(devtools.pformat(cmd_response))
 
         if cmd_response.command == servo.api.Commands.describe:
-            description = await self.describe(Control(**cmd_response.param.get("control", {})))
+            description = await self.describe(
+                Control(**cmd_response.param.get("control", {}))
+            )
             self.logger.success(
                 f"Described: {len(description.components)} components, {len(description.metrics)} metrics"
             )
@@ -152,7 +156,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             return await self._post_event(servo.api.Events.measure, param)
 
         elif cmd_response.command == servo.api.Commands.adjust:
-            adjustments = servo.api.descriptor_to_adjustments(cmd_response.param["state"])
+            adjustments = servo.api.descriptor_to_adjustments(
+                cmd_response.param["state"]
+            )
             control = Control(**cmd_response.param.get("control", {}))
 
             try:
@@ -177,7 +183,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         elif cmd_response.command == servo.api.Commands.sleep:
             # TODO: Model this
             duration = Duration(cmd_response.param.get("duration", 120))
-            status = servo.utilities.key_paths.value_for_key_path(cmd_response.param, "data.status", None)
+            status = servo.utilities.key_paths.value_for_key_path(
+                cmd_response.param, "data.status", None
+            )
             reason = servo.utilities.key_paths.value_for_key_path(
                 cmd_response.param, "data.reason", "unknown reason"
             )
@@ -210,11 +218,17 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                     )
 
             except (httpx.TimeoutException, httpx.HTTPStatusError) as error:
-                self.logger.warning(f"command execution failed HTTP client error: {error}")
+                self.logger.warning(
+                    f"command execution failed HTTP client error: {error}"
+                )
 
             except pydantic.ValidationError as error:
-                self.logger.warning(f"command execution failed with model validation error: {error}")
-                self.logger.opt(exception=error).debug("Pydantic model failed validation")
+                self.logger.warning(
+                    f"command execution failed with model validation error: {error}"
+                )
+                self.logger.opt(exception=error).debug(
+                    "Pydantic model failed validation"
+                )
 
             except Exception as error:
                 self.logger.exception(f"failed with unrecoverable error: {error}")
@@ -232,18 +246,29 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 if not task.cancelled():
                     task.result()
             except Exception as error:  # pylint: disable=broad-except
-                self.logger.error(f"Exiting from servo main loop do to error: {error} (task={task})")
-                self.logger.opt(exception=error).trace(f"Exception raised by task {task}")
+                self.logger.error(
+                    f"Exiting from servo main loop do to error: {error} (task={task})"
+                )
+                self.logger.opt(exception=error).trace(
+                    f"Exception raised by task {task}"
+                )
                 raise error  # Ensure that we surface the error for handling
 
-        self._main_loop_task = asyncio.create_task(self.main_loop(), name=f"main loop for servo {self.optimizer.id}")
+        self._main_loop_task = asyncio.create_task(
+            self.main_loop(), name=f"main loop for servo {self.optimizer.id}"
+        )
         self._main_loop_task.add_done_callback(_reraise_if_necessary)
 
         if not servo.current_servo().config.no_diagnostics:
             diagnostics_handler = servo.telemetry.DiagnosticsHandler(self.servo)
-            self._diagnostics_loop_task = asyncio.create_task(diagnostics_handler.diagnostics_check(), name=f"diagnostics for servo {self.optimizer.id}")
+            self._diagnostics_loop_task = asyncio.create_task(
+                diagnostics_handler.diagnostics_check(),
+                name=f"diagnostics for servo {self.optimizer.id}",
+            )
         else:
-            self.logger.info(f"Servo runner initialized with diagnostics polling disabled")
+            self.logger.info(
+                f"Servo runner initialized with diagnostics polling disabled"
+            )
 
     async def run(self, *, poll: bool = True) -> None:
         self._running = True
@@ -260,6 +285,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             asyncio.create_task(self.shutdown(loop))
 
         try:
+
             @backoff.on_exception(
                 backoff.expo,
                 httpx.HTTPError,
@@ -269,14 +295,18 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             )
             async def connect() -> None:
                 self.logger.info("Saying HELLO.", end=" ")
-                await self._post_event(servo.api.Events.hello, dict(
-                    agent=servo.api.user_agent(),
-                    telemetry=self.servo.telemetry.values
-                ))
+                await self._post_event(
+                    servo.api.Events.hello,
+                    dict(
+                        agent=servo.api.user_agent(),
+                        telemetry=self.servo.telemetry.values,
+                    ),
+                )
                 self._connected = True
 
-
-            self.logger.info(f"Connecting to Opsani Optimizer @ {self.optimizer.url}...")
+            self.logger.info(
+                f"Connecting to Opsani Optimizer @ {self.optimizer.url}..."
+            )
             if self.interactive:
                 typer.confirm("Connect to the optimizer?", abort=True)
 
@@ -293,8 +323,9 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         if poll:
             self.run_main_loop()
         else:
-            self.logger.warning(f"Servo runner initialized with polling disabled -- command loop is not running")
-
+            self.logger.warning(
+                f"Servo runner initialized with polling disabled -- command loop is not running"
+            )
 
     async def shutdown(self, *, reason: Optional[str] = None) -> None:
         """Shutdown the running servo."""
@@ -304,6 +335,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
                 await self._post_event(servo.api.Events.goodbye, dict(reason=reason))
         except Exception:
             self.logger.exception(f"Exception occurred during GOODBYE request")
+
 
 class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     assembly: servo.Assembly
@@ -323,7 +355,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             if runner.servo == servo:
                 return runner
 
-        raise KeyError(f"no runner was found for the servo: \"{servo}\"")
+        raise KeyError(f'no runner was found for the servo: "{servo}"')
 
     @property
     def running(self) -> bool:
@@ -359,10 +391,15 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"failed progress reporting -- no current servo context is established (kwargs={devtools.pformat(kwargs)})"
                 )
 
-        async def handle_progress_exception(progress: Dict[str, Any], error: Exception) -> None:
+        async def handle_progress_exception(
+            progress: Dict[str, Any], error: Exception
+        ) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
-            if isinstance(error, (servo.errors.UnexpectedEventError, servo.errors.EventCancelledError)):
+            if isinstance(
+                error,
+                (servo.errors.UnexpectedEventError, servo.errors.EventCancelledError),
+            ):
                 if isinstance(error, servo.errors.UnexpectedEventError):
                     self.logger.error(
                         "servo has lost synchronization with the optimizer: restarting"
@@ -373,7 +410,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     )
 
                     # Post a status to resolve the operation
-                    operation = progress['operation']
+                    operation = progress["operation"]
                     status = servo.api.Status.from_error(error)
                     self.logger.error(f"Responding with {status.dict()}")
                     runner = self._runner_for_servo(servo.current_servo())
@@ -397,7 +434,6 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                     f"unrecognized exception passed to progress exception handler: {error}"
                 )
 
-
         self.progress_handler = servo.logging.ProgressHandler(
             _report_progress, self.logger.warning, handle_progress_exception
         )
@@ -417,34 +453,60 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             loop.close()
 
     def _display_banner(self) -> None:
-        fonts = ['slant', 'banner3', 'bigchief', 'cosmic', 'speed', 'nancyj', 'fourtops',
-                 'contessa', 'doom', 'broadway', 'acrobatic', 'trek', 'eftirobot', 'roman']
-        color_map = {'RED': colorama.Fore.RED, 'GREEN': colorama.Fore.GREEN,
-                     'YELLOW': colorama.Fore.YELLOW, 'BLUE': colorama.Fore.BLUE,
-                     'MAGENTA': colorama.Fore.MAGENTA, 'CYAN': colorama.Fore.CYAN,
-                     'RAINBOW': colorama.Fore.MAGENTA}
+        fonts = [
+            "slant",
+            "banner3",
+            "bigchief",
+            "cosmic",
+            "speed",
+            "nancyj",
+            "fourtops",
+            "contessa",
+            "doom",
+            "broadway",
+            "acrobatic",
+            "trek",
+            "eftirobot",
+            "roman",
+        ]
+        color_map = {
+            "RED": colorama.Fore.RED,
+            "GREEN": colorama.Fore.GREEN,
+            "YELLOW": colorama.Fore.YELLOW,
+            "BLUE": colorama.Fore.BLUE,
+            "MAGENTA": colorama.Fore.MAGENTA,
+            "CYAN": colorama.Fore.CYAN,
+            "RAINBOW": colorama.Fore.MAGENTA,
+        }
         terminal_size = shutil.get_terminal_size()
 
         # Generate an awesome banner for this launch
-        font = os.getenv('SERVO_BANNER_FONT', random.choice(fonts))
-        color_name = os.getenv('SERVO_BANNER_COLOR')
+        font = os.getenv("SERVO_BANNER_FONT", random.choice(fonts))
+        color_name = os.getenv("SERVO_BANNER_COLOR")
         # coinflip unless we have been directly configured from the env
         rainbow = (
-            bool(random.getrandbits(1)) if color_name is None
-            else (color_name.upper() == 'RAINBOW')
+            bool(random.getrandbits(1))
+            if color_name is None
+            else (color_name.upper() == "RAINBOW")
         )
 
         figlet = pyfiglet.Figlet(font=font, width=terminal_size.columns)
-        banner = figlet.renderText('ServoX').rstrip()
+        banner = figlet.renderText("ServoX").rstrip()
 
         if rainbow:
             # Rainbow it
-            colored_banner = [random.choice(list(color_map.values())) + char for char in banner]
-            typer.echo(''.join(colored_banner), color=True)
+            colored_banner = [
+                random.choice(list(color_map.values())) + char for char in banner
+            ]
+            typer.echo("".join(colored_banner), color=True)
         else:
             # Flat single color
-            color = (color_map[color_name.upper()] if color_name else random.choice(list(color_map.values())))
-            typer.echo(f'{color}{banner}', color=True)
+            color = (
+                color_map[color_name.upper()]
+                if color_name
+                else random.choice(list(color_map.values()))
+            )
+            typer.echo(f"{color}{banner}", color=True)
 
         secho = functools.partial(typer.secho, color=True)
         types = servo.Assembly.all_connector_types()
@@ -453,7 +515,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         names = []
         for c in types:
             name = typer.style(
-                servo.utilities.strings.commandify(c.__default_name__), fg=typer.colors.CYAN, bold=False
+                servo.utilities.strings.commandify(c.__default_name__),
+                fg=typer.colors.CYAN,
+                bold=False,
             )
             version = typer.style(str(c.version), fg=typer.colors.WHITE, bold=True)
             names.append(f"{name}-{version}")
@@ -492,7 +556,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 )
                 secho(f"proxies: {proxies}")
         else:
-            servo_count = typer.style(str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE)
+            servo_count = typer.style(
+                str(len(self.assembly.servos)), bold=True, fg=typer.colors.WHITE
+            )
             secho(f"servos:   {servo_count}")
 
         secho(reset=True)
@@ -511,11 +577,15 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             self.logger.info(f"Shutting down servo...")
         else:
             self.logger.info(f"Shutting down {len(self.runners)} running servos...")
-        for fut in asyncio.as_completed(list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0):
+        for fut in asyncio.as_completed(
+            list(map(lambda r: r.shutdown(reason=reason), self.runners)), timeout=30.0
+        ):
             try:
                 await fut
             except Exception as error:
-                self.logger.critical(f"Failed servo runner shutdown with error: {error}")
+                self.logger.critical(
+                    f"Failed servo runner shutdown with error: {error}"
+                )
 
         # Shutdown the assembly and the servos it contains
         self.logger.debug("Dispatching shutdown event...")
@@ -545,7 +615,9 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
         loop.stop()
 
     def _handle_exception(self, loop: asyncio.AbstractEventLoop, context: dict) -> None:
-        self.logger.debug(f"asyncio exception handler triggered with context: {context}")
+        self.logger.debug(
+            f"asyncio exception handler triggered with context: {context}"
+        )
 
         exception = context.get("exception", None)
         logger = self.logger.opt(exception=exception)
@@ -554,15 +626,11 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
             logger.warning(f"ignoring asyncio.CancelledError exception")
             pass
         elif loop.is_closed():
-            logger.critical(
-                "Ignoring exception -- the event loop is closed."
-            )
+            logger.critical("Ignoring exception -- the event loop is closed.")
         elif self.running:
             logger.critical(
                 "Shutting down due to unhandled exception in asyncio event loop..."
             )
             loop.create_task(self._shutdown(loop))
         else:
-            logger.critical(
-                "Ignoring exception -- the assembly is not running"
-            )
+            logger.critical("Ignoring exception -- the assembly is not running")

@@ -22,13 +22,16 @@ USER_AGENT = "github.com/opsani/servox"
 
 class OptimizerStatuses(str, enum.Enum):
     """An enumeration of status types sent by the optimizer."""
+
     ok = "ok"
     invalid = "invalid"
     unexpected_event = "unexpected-event"
     cancelled = "cancel"
 
+
 class ServoStatuses(str, enum.Enum):
     """An enumeration of status types sent from the servo."""
+
     ok = "ok"
     failed = "failed"
     rejected = "rejected"
@@ -44,6 +47,7 @@ class Reasons(str, enum.Enum):
     unknown = "unknown"
     unstable = "unstable"
 
+
 class Events(str, enum.Enum):
     hello = "HELLO"
     whats_next = "WHATS_NEXT"
@@ -51,6 +55,7 @@ class Events(str, enum.Enum):
     measure = "MEASUREMENT"
     adjust = "ADJUSTMENT"
     goodbye = "GOODBYE"
+
 
 class Commands(str, enum.Enum):
     describe = "DESCRIBE"
@@ -88,7 +93,9 @@ class Status(pydantic.BaseModel):
     descriptor: Optional[Dict[str, Any]] = None
 
     @classmethod
-    def ok(cls, message: Optional[str] = None, reason: str = Reasons.success, **kwargs) -> "Status":
+    def ok(
+        cls, message: Optional[str] = None, reason: str = Reasons.success, **kwargs
+    ) -> "Status":
         """Return a success (status="ok") status object."""
         return cls(status=ServoStatuses.ok, message=message, reason=reason, **kwargs)
 
@@ -114,8 +121,11 @@ class Status(pydantic.BaseModel):
     ) -> pydantic.DictStrAny:
         return super().dict(exclude_unset=exclude_unset, **kwargs)
 
+
 class SleepResponse(pydantic.BaseModel):
     pass
+
+
 # SleepResponse '{"cmd": "SLEEP", "param": {"duration": 60, "data": {"reason": "no active optimization pipeline"}}}'
 
 # Instructions from servo on what to measure
@@ -131,7 +141,7 @@ class MeasureParams(pydantic.BaseModel):
 
         return value
 
-    @pydantic.validator('metrics', each_item=True, pre=True)
+    @pydantic.validator("metrics", each_item=True, pre=True)
     def _map_metrics(cls, v) -> str:
         if isinstance(v, servo.Metric):
             return v.name
@@ -199,7 +209,7 @@ class Mixin(abc.ABC):
         elif status.status == OptimizerStatuses.invalid:
             servo.logger.warning(f"progress report was rejected as invalid")
         else:
-            raise ValueError(f"unknown error status: \"{status.status}\"")
+            raise ValueError(f'unknown error status: "{status.status}"')
 
     def progress_request(
         self,
@@ -251,7 +261,9 @@ class Mixin(abc.ABC):
     def _is_fatal_status_code(error: Exception) -> bool:
         if isinstance(error, httpx.HTTPStatusError):
             if error.response.status_code < 500:
-                servo.logger.warning(f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}")
+                servo.logger.warning(
+                    f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}"
+                )
                 return True
 
         return False
@@ -259,14 +271,18 @@ class Mixin(abc.ABC):
     @backoff.on_exception(
         backoff.expo,
         httpx.HTTPError,
-        max_time=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_time(),
-        max_tries=lambda: servo.current_servo() and servo.current_servo().config.settings.backoff.max_tries(),
-        giveup=_is_fatal_status_code
+        max_time=lambda: servo.current_servo()
+        and servo.current_servo().config.settings.backoff.max_time(),
+        max_tries=lambda: servo.current_servo()
+        and servo.current_servo().config.settings.backoff.max_tries(),
+        giveup=_is_fatal_status_code,
     )
     async def _post_event(self, event: Events, param) -> Union[CommandResponse, Status]:
         async with self.api_client() as client:
             event_request = Request(event=event, param=param)
-            self.logger.trace(f"POST event request: {devtools.pformat(event_request.json())}")
+            self.logger.trace(
+                f"POST event request: {devtools.pformat(event_request.json())}"
+            )
 
             try:
                 response = await client.post("servo", data=event_request.json())
@@ -282,9 +298,12 @@ class Mixin(abc.ABC):
                 )
 
             except httpx.HTTPError as error:
-                self.logger.error(f"HTTP error \"{error.__class__.__name__}\" encountered while posting \"{event}\" event: {error}")
+                self.logger.error(
+                    f'HTTP error "{error.__class__.__name__}" encountered while posting "{event}" event: {error}'
+                )
                 self.logger.trace(_redacted_to_curl(error.request))
                 raise
+
 
 def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     """Return a list of adjustment objects from an Opsani API app descriptor."""
@@ -300,15 +319,19 @@ def descriptor_to_adjustments(descriptor: dict) -> List[servo.types.Adjustment]:
     return adjustments
 
 
-def adjustments_to_descriptor(adjustments: List[servo.types.Adjustment]) -> Dict[str, Any]:
+def adjustments_to_descriptor(
+    adjustments: List[servo.types.Adjustment],
+) -> Dict[str, Any]:
     components = {}
-    descriptor = { "state": { "application": { "components": components }}}
+    descriptor = {"state": {"application": {"components": components}}}
 
     for adjustment in adjustments:
         if not adjustment.component_name in components:
-            components[adjustment.component_name] = { "settings": {} }
+            components[adjustment.component_name] = {"settings": {}}
 
-        components[adjustment.component_name]["settings"][adjustment.setting_name] = { "value": adjustment.value }
+        components[adjustment.component_name]["settings"][adjustment.setting_name] = {
+            "value": adjustment.value
+        }
 
     return descriptor
 
@@ -318,16 +341,15 @@ def user_agent() -> str:
 
 
 def _redacted_to_curl(request: httpx.Request) -> str:
-    """Pass through to curlify2.to_curl that redacts the authorization in the headers
-    """
-    if (auth_header := request.headers.get('authorization')) is None:
+    """Pass through to curlify2.to_curl that redacts the authorization in the headers"""
+    if (auth_header := request.headers.get("authorization")) is None:
         return curlify2.to_curl(request)
 
     req_copy = copy.copy(request)
     req_copy.headers = copy.deepcopy(request.headers)
     if "Bearer" in auth_header:
-        req_copy.headers['authorization'] = "Bearer [REDACTED]"
+        req_copy.headers["authorization"] = "Bearer [REDACTED]"
     else:
-        req_copy.headers['authorization'] = "[REDACTED]"
+        req_copy.headers["authorization"] = "[REDACTED]"
 
     return curlify2.to_curl(req_copy)

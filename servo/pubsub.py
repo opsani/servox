@@ -40,20 +40,20 @@ import yaml as yaml_
 import servo.types
 
 __all__ = [
-    'BaseSubscription',
-    'Callback',
-    'Channel',
-    'Exchange',
-    'Message',
-    'Metadata',
-    'Mixin',
-    'Publisher',
-    'Subscriber',
-    'Subscription',
-    'Transformer',
-    'Filter',
-    'Splitter',
-    'Aggregator'
+    "BaseSubscription",
+    "Callback",
+    "Channel",
+    "Exchange",
+    "Message",
+    "Metadata",
+    "Mixin",
+    "Publisher",
+    "Subscriber",
+    "Subscription",
+    "Transformer",
+    "Filter",
+    "Splitter",
+    "Aggregator",
 ]
 
 Metadata = Dict[str, str]
@@ -62,9 +62,9 @@ MessageContent = Union[str, bytes, ByteStream]
 
 
 class MimeTypes(str, enum.Enum):
-    text = 'text/plain'
-    json = 'application/json'
-    yaml = 'application/x-yaml'
+    text = "text/plain"
+    json = "application/json"
+    yaml = "application/x-yaml"
 
 
 class Message(pydantic.BaseModel):
@@ -89,9 +89,12 @@ class Message(pydantic.BaseModel):
         yaml: A YAML serializable object to set as message content. Defaults `content_type`
             to `application/x-yaml` if omitted.
     """
+
     content: bytes
     content_type: str
-    created_at: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = pydantic.Field(
+        default_factory=datetime.datetime.now
+    )
     metadata: Metadata = {}
 
     # Private cache attributes
@@ -105,25 +108,31 @@ class Message(pydantic.BaseModel):
         json: Optional[Any] = None,
         yaml: Optional[Any] = None,
         metadata: Metadata = {},
-        **kwargs
+        **kwargs,
     ) -> Message:
         if len(list(filter(None, [content, text, json, yaml]))) > 1:
-            raise ValueError(f"only one argument of content, text, json, or yaml can be given")
+            raise ValueError(
+                f"only one argument of content, text, json, or yaml can be given"
+            )
 
         if text is not None and not isinstance(text, str):
-            raise ValueError(f"Text Messages can only be created with `str` content: got '{text.__class__.__name__}'")
+            raise ValueError(
+                f"Text Messages can only be created with `str` content: got '{text.__class__.__name__}'"
+            )
 
         if content is None:
             if text is not None:
                 content = text.encode()
             elif json is not None:
                 content = (
-                    json.json() if (hasattr(json, 'json') and callable(json.json))
+                    json.json()
+                    if (hasattr(json, "json") and callable(json.json))
                     else json_.dumps(json)
                 )
             elif yaml is not None:
                 content = (
-                    yaml.yaml() if (hasattr(yaml, 'yaml') and callable(yaml.yaml))
+                    yaml.yaml()
+                    if (hasattr(yaml, "yaml") and callable(yaml.yaml))
                     else yaml_.dump(yaml)
                 )
 
@@ -147,7 +156,9 @@ class Message(pydantic.BaseModel):
             else:
                 decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
                 decoder.decode(content)
-                self._text = "".join([decoder.decode(self.content), decoder.decode(b"", True)])
+                self._text = "".join(
+                    [decoder.decode(self.content), decoder.decode(b"", True)]
+                )
 
         return self._text
 
@@ -170,7 +181,7 @@ ChannelName = pydantic.constr(
 
 class _ExchangeChildModel(pydantic.BaseModel):
     _exchange: Exchange = pydantic.PrivateAttr(None)
-    __slots__ = ('__weakref__')  # NOTE: Pydantic and weakref both use __slots__
+    __slots__ = "__weakref__"  # NOTE: Pydantic and weakref both use __slots__
 
     def __init__(self, *args, exchange: Exchange, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -197,9 +208,12 @@ class Channel(_ExchangeChildModel):
         created_at: The date and time that the Channel was created.
         exchange: The pub/sub Exchange that the Channel belongs to.
     """
+
     name: ChannelName
     description: Optional[str] = None
-    created_at: datetime.datetime = pydantic.Field(default_factory=datetime.datetime.now)
+    created_at: datetime.datetime = pydantic.Field(
+        default_factory=datetime.datetime.now
+    )
     _closed: bool = pydantic.PrivateAttr(False)
 
     async def publish(self, message: Message) -> None:
@@ -255,12 +269,8 @@ class Channel(_ExchangeChildModel):
         iterator.yield_channel = False
         return iterator
 
-    def __hash__(self): # noqa: D105
-        return hash(
-            (
-                self.name,
-            )
-        )
+    def __hash__(self):  # noqa: D105
+        return hash((self.name,))
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, str):
@@ -269,7 +279,9 @@ class Channel(_ExchangeChildModel):
         return super().__eq__(other)
 
 
-_current_context_var = contextvars.ContextVar("servo.pubsub.current_message", default=None)
+_current_context_var = contextvars.ContextVar(
+    "servo.pubsub.current_message", default=None
+)
 
 
 def current_message() -> Optional[Tuple[Message, Channel]]:
@@ -289,13 +301,14 @@ class Exchange(pydantic.BaseModel):
 
     Exchange objects are asynchronously iterable and will yield every Message published.
     """
+
     _channels: Set[Channel] = pydantic.PrivateAttr(set())
     _publishers: List[Publisher] = pydantic.PrivateAttr([])
     _subscribers: List[Subscriber] = pydantic.PrivateAttr([])
     _transformers: List[Transformer] = pydantic.PrivateAttr([])
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
     _queue_processor: Optional[asyncio.Task] = pydantic.PrivateAttr(None)
-    __slots__ = ('__weakref__')  # NOTE: Pydantic and weakref both use __slots__
+    __slots__ = "__weakref__"  # NOTE: Pydantic and weakref both use __slots__
 
     def start(self) -> None:
         """Start exchanging Messages between Publishers and Subscribers."""
@@ -333,7 +346,9 @@ class Exchange(pydantic.BaseModel):
         """
         iterator = _current_iterator()
         if iterator is not None:
-            subscribers = list(filter(lambda s: s.subscription.selector == '*', self._subscribers))
+            subscribers = list(
+                filter(lambda s: s.subscription.selector == "*", self._subscribers)
+            )
             if iterator.subscriber not in subscribers:
                 raise RuntimeError(f"Attempted to stop an inactive iterator")
             iterator.stop()
@@ -342,8 +357,10 @@ class Exchange(pydantic.BaseModel):
 
     def __aiter__(self):  # noqa: D105
         if not self.running:
-            raise RuntimeError(f"Cannot iterate messages in an Exchange that is not running")
-        subscriber = self.create_subscriber('*')
+            raise RuntimeError(
+                f"Cannot iterate messages in an Exchange that is not running"
+            )
+        subscriber = self.create_subscriber("*")
         iterator: _Iterator = subscriber.__aiter__()
         return iterator
 
@@ -364,12 +381,18 @@ class Exchange(pydantic.BaseModel):
             reset_token = _current_context_var.set((message, channel))
 
             # Process all transformers serially
-            servo.logger.trace(f"Processing message with {len(self._transformers)} transformers: {message}")
+            servo.logger.trace(
+                f"Processing message with {len(self._transformers)} transformers: {message}"
+            )
             for transformer in self._transformers:
                 message = await transformer(message, channel)
-                servo.logger.trace(f"Transfomer {transformer} returned transformed message: {message}")
+                servo.logger.trace(
+                    f"Transfomer {transformer} returned transformed message: {message}"
+                )
                 if message is None:
-                    servo.logger.warning(f"Transfomer {transformer} cancelled delivery of message")
+                    servo.logger.warning(
+                        f"Transfomer {transformer} cancelled delivery of message"
+                    )
                     return
 
             # Broadcast to all subscribers
@@ -377,10 +400,10 @@ class Exchange(pydantic.BaseModel):
                 *list(
                     map(
                         lambda subscriber: subscriber(message, channel),
-                        self._subscribers
+                        self._subscribers,
                     )
                 ),
-                return_exceptions=True
+                return_exceptions=True,
             )
 
             # Log failures without aborting
@@ -449,15 +472,11 @@ class Exchange(pydantic.BaseModel):
         Raises:
             ValueError: Raised if the Channel specified does not exist in the Exchange.
         """
-        channel_ = (
-            self.get_channel(channel) if isinstance(channel, str) else channel
-        )
+        channel_ = self.get_channel(channel) if isinstance(channel, str) else channel
         if channel_ is None:
             raise ValueError(f"no such Channel: {channel}")
 
-        await self._queue.put(
-            (message, channel_)
-        )
+        await self._queue.put((message, channel_))
 
     def create_publisher(self, *channels: List[Union[Channel, str]]) -> Publisher:
         """Create a new Publisher bound to one or more Channels.
@@ -476,7 +495,9 @@ class Exchange(pydantic.BaseModel):
         """
         for channel in channels:
             if not isinstance(channel, (Channel, str)):
-                raise TypeError(f"channel argument must be a `str` or `Channel`, got: {channel.__class__.__name__}")
+                raise TypeError(
+                    f"channel argument must be a `str` or `Channel`, got: {channel.__class__.__name__}"
+                )
 
         channels_ = []
         for channel in channels:
@@ -509,7 +530,7 @@ class Exchange(pydantic.BaseModel):
         selector: Selector,
         *,
         timeout: Optional[servo.types.DurationDescriptor] = None,
-        until_done: Optional[servo.types.Futuristic] = None
+        until_done: Optional[servo.types.Futuristic] = None,
     ) -> AsyncContextManager[Subscriber]:
         """An async context manager for subscribing to Messages in the Exchange.
 
@@ -525,7 +546,9 @@ class Exchange(pydantic.BaseModel):
         Yields:
             Subscriber: The block temporary subscriber.
         """
-        subscriber = self.create_subscriber(selector, timeout=timeout, until_done=until_done)
+        subscriber = self.create_subscriber(
+            selector, timeout=timeout, until_done=until_done
+        )
         try:
             yield subscriber
         finally:
@@ -537,7 +560,7 @@ class Exchange(pydantic.BaseModel):
         *,
         callback: Optional[Callback] = None,
         timeout: Optional[servo.types.DurationDescriptor] = None,
-        until_done: Optional[servo.types.Futuristic] = None
+        until_done: Optional[servo.types.Futuristic] = None,
     ) -> Subscriber:
         """Create and return a new Subscriber with the given selector.
 
@@ -551,7 +574,9 @@ class Exchange(pydantic.BaseModel):
             A new Subscriber object listening for Messages.
         """
         subscription = Subscription(selector=selector)
-        subscriber = Subscriber(exchange=self, subscription=subscription, callback=callback)
+        subscriber = Subscriber(
+            exchange=self, subscription=subscription, callback=callback
+        )
         self._subscribers.append(subscriber)
 
         # Handle async affordances
@@ -565,8 +590,7 @@ class Exchange(pydantic.BaseModel):
 
         if timeout is not None:
             asyncio.get_event_loop().call_later(
-                servo.Duration(timeout).total_seconds(),
-                _cancelizer
+                servo.Duration(timeout).total_seconds(), _cancelizer
             )
 
         return subscriber
@@ -615,20 +639,28 @@ class Exchange(pydantic.BaseModel):
         """
         self._transformers.remove(transformer)
 
-    def _subscribers_to_channel(self, channel: Channel, *, exclusive: bool = False) -> List[Subscriber]:
+    def _subscribers_to_channel(
+        self, channel: Channel, *, exclusive: bool = False
+    ) -> List[Subscriber]:
         if exclusive:
-            return list(filter(lambda s: s.subscription.selector == channel.name, self._subscribers))
+            return list(
+                filter(
+                    lambda s: s.subscription.selector == channel.name, self._subscribers
+                )
+            )
         else:
-            return list(filter(lambda s: s.subscription.matches(channel), self._subscribers))
+            return list(
+                filter(lambda s: s.subscription.matches(channel), self._subscribers)
+            )
 
     def __repr_args__(self) -> pydantic.ReprArgs:
         return [
-            ('running', self.running),
-            ('channel_names', list(map(lambda c: c.name, self._channels))),
-            ('publisher_count', len(self._publishers)),
-            ('subscriber_count', len(self._subscribers)),
-            ('transformer_count', len(self._transformers)),
-            ('queue_size', self._queue.qsize()),
+            ("running", self.running),
+            ("channel_names", list(map(lambda c: c.name, self._channels))),
+            ("publisher_count", len(self._publishers)),
+            ("subscriber_count", len(self._subscribers)),
+            ("transformer_count", len(self._transformers)),
+            ("queue_size", self._queue.qsize()),
         ]
 
     def __eq__(self, other) -> bool:
@@ -689,18 +721,21 @@ class Subscription(BaseSubscription):
     Attributes:
         selector: A string glob or regular expression pattern for matching Channels.
     """
+
     selector: Selector
 
-    @pydantic.validator('selector', pre=True)
+    @pydantic.validator("selector", pre=True)
     def _expand_selector_regex(cls, v: str) -> Union[str, Pattern]:
-        if isinstance(v, str) and v.startswith('/') and v.endswith('/'):
+        if isinstance(v, str) and v.startswith("/") and v.endswith("/"):
             return re.compile(v[1:-1])
 
         return v
 
     @property
     def is_pattern(self) -> bool:
-        return isinstance(self.selector, re.Pattern) or not re.match(ChannelName.regex, self.selector)
+        return isinstance(self.selector, re.Pattern) or not re.match(
+            ChannelName.regex, self.selector
+        )
 
     def matches(self, channel: Channel, message: Optional[Message] = None) -> bool:
         """Return True if the channel and message matches the subscription.
@@ -721,7 +756,9 @@ class Subscription(BaseSubscription):
         raise ValueError(f"unknown selector type: {selector.__class__.__name__}")
 
 
-_current_iterator_var = contextvars.ContextVar("servo.pubsub._Iterator.current", default=None)
+_current_iterator_var = contextvars.ContextVar(
+    "servo.pubsub._Iterator.current", default=None
+)
 
 
 class _Iterator(pydantic.BaseModel):
@@ -740,18 +777,14 @@ class _Iterator(pydantic.BaseModel):
 
     def stop(self) -> None:
         self._stopped = True
-        self._queue.put_nowait(
-            None
-        )
+        self._queue.put_nowait(None)
 
     @property
     def stopped(self) -> bool:
         return self._stopped
 
     async def __call__(self, message: Message, channel: Channel) -> None:
-        await self._queue.put(
-            (message, channel)
-        )
+        await self._queue.put((message, channel))
 
     def _stop_iteration(self) -> None:
         _current_context_var.reset(self._message_reset_token)
@@ -772,12 +805,8 @@ class _Iterator(pydantic.BaseModel):
         else:
             return message_context[0]
 
-    def __hash__(self): # noqa: D105
-        return hash(
-            (
-                id(self),
-            )
-        )
+    def __hash__(self):  # noqa: D105
+        return hash((id(self),))
 
 
 Callback = Callable[[Message, Channel], Union[None, Awaitable[None]]]
@@ -815,6 +844,7 @@ class Subscriber(_ExchangeChildModel):
                 subscriber.cancel()
             ```
     """
+
     subscription: Subscription
     callback: Optional[Callback]
     _event: asyncio.Event = pydantic.PrivateAttr(default_factory=asyncio.Event)
@@ -890,7 +920,6 @@ class Subscriber(_ExchangeChildModel):
                 else:
                     raise TypeError(f"Incorrect callback")
 
-
             for _, iterator in enumerate(self._iterators):
                 if iterator.stopped:
                     self._iterators.remove(iterator)
@@ -922,10 +951,13 @@ class Publisher(_ExchangeChildModel):
         exchange: The pub/sub Exchange that the Publisher belongs to.
         channels: The Channels that the Publisher publishes Messages to.
     """
+
     channels: pydantic.conlist(Channel, min_items=1)
 
-    async def __call__(self, message: Message, *channels: List[Union[Channel, str]]) -> None:
-        for channel in (channels or self.channels):
+    async def __call__(
+        self, message: Message, *channels: List[Union[Channel, str]]
+    ) -> None:
+        for channel in channels or self.channels:
             if channel_ := self._find_channel(channel):
                 await self.exchange.publish(message, channel_)
             else:
@@ -935,7 +967,9 @@ class Publisher(_ExchangeChildModel):
         return next(filter(lambda c: c == channel, self.channels), None)
 
 
-TransformerCallback = Callable[[Message, Channel], Union[Optional[Message], Awaitable[Optional[Message]]]]
+TransformerCallback = Callable[
+    [Message, Channel], Union[Optional[Message], Awaitable[Optional[Message]]]
+]
 
 
 class Transformer(abc.ABC, pydantic.BaseModel):
@@ -957,8 +991,7 @@ class Transformer(abc.ABC, pydantic.BaseModel):
 
     @abc.abstractmethod
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
-        """Transforms a published Message before delivery to Subscribers.
-        """
+        """Transforms a published Message before delivery to Subscribers."""
 
 
 class Filter(Transformer):
@@ -996,14 +1029,14 @@ class Filter(Transformer):
             exchange.add_transformer(upper_filter)
             ```
     """
+
     callback: TransformerCallback
 
     def __init__(self, callback: TransformerCallback, *args, **kwargs) -> None:
         super().__init__(callback=callback, *args, **kwargs)
 
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
-        """Called to transform Message
-        """
+        """Called to transform Message"""
         if asyncio.iscoroutinefunction(self.callback):
             return await self.callback(message, channel)
         else:
@@ -1013,7 +1046,7 @@ class Filter(Transformer):
         arbitrary_types_allowed = True
 
 
-SplitterCallback = Callable[['Splitter', Message, Channel], Awaitable[None]]
+SplitterCallback = Callable[["Splitter", Message, Channel], Awaitable[None]]
 
 
 class Splitter(Transformer):
@@ -1046,15 +1079,17 @@ class Splitter(Transformer):
             exchange.add_transformer(splitter)
             ```
     """
+
     callback: SplitterCallback
     channels: pydantic.conlist(Channel, min_items=1)
 
-    def __init__(self, callback: SplitterCallback, *channels: List[Channel], **kwargs) -> None:
+    def __init__(
+        self, callback: SplitterCallback, *channels: List[Channel], **kwargs
+    ) -> None:
         super().__init__(callback=callback, channels=channels, **kwargs)
 
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
-        """Called to transform Message
-        """
+        """Called to transform Message"""
         await self.callback(self, message, channel)
         return message
 
@@ -1063,7 +1098,7 @@ class Splitter(Transformer):
         return next(filter(lambda m: m.name == name, self._channels))
 
 
-AggregatorCallback = Callable[['Aggregator', Message, Channel], Awaitable[None]]
+AggregatorCallback = Callable[["Aggregator", Message, Channel], Awaitable[None]]
 
 
 class Aggregator(Transformer):
@@ -1105,6 +1140,7 @@ class Aggregator(Transformer):
             exchange.add_transformer(aggregator)
             ```
     """
+
     from_channels: pydantic.conlist(Channel, min_items=2)
     to_channel: Channel
     callback: AggregatorCallback
@@ -1116,12 +1152,26 @@ class Aggregator(Transformer):
     _channel_state: Dict[Channel, int] = pydantic.PrivateAttr({})
     _repeating_task: Optional[Message] = pydantic.PrivateAttr(None)
 
-    def __init__(self, from_channels: List[Channel], to_channel: Channel, callback: AggregatorCallback, every: Optional[servo.types.DurationDescriptor] = None, **kwargs) -> None:
-        every = (servo.Duration(every) if every is not None else None)
-        super().__init__(from_channels=from_channels, to_channel=to_channel, callback=callback, every=every, **kwargs)
+    def __init__(
+        self,
+        from_channels: List[Channel],
+        to_channel: Channel,
+        callback: AggregatorCallback,
+        every: Optional[servo.types.DurationDescriptor] = None,
+        **kwargs,
+    ) -> None:
+        every = servo.Duration(every) if every is not None else None
+        super().__init__(
+            from_channels=from_channels,
+            to_channel=to_channel,
+            callback=callback,
+            every=every,
+            **kwargs,
+        )
         self._reset()
 
         if every is not None:
+
             async def repeating_async_fn() -> None:
                 while True:
                     await self.publish()
@@ -1158,7 +1208,9 @@ class Aggregator(Transformer):
     async def publish(self) -> None:
         """Publish the current aggregate Message state to the output Channel."""
         if self.message is not None:
-            servo.logger.trace(f"Publishing message to channel {self.to_channel.name}: {self.message}")
+            servo.logger.trace(
+                f"Publishing message to channel {self.to_channel.name}: {self.message}"
+            )
             await self.to_channel.publish(self.message)
             self._last_published_at = datetime.datetime.now()
             self._reset()
@@ -1167,14 +1219,16 @@ class Aggregator(Transformer):
 
     @no_type_check
     def __setattr__(self, name, value):  # noqa: C901 (ignore complexity)
-        if name == 'message':
-            return object.__setattr__(self, '_message', value)
+        if name == "message":
+            return object.__setattr__(self, "_message", value)
 
         return super().__setattr__(name, value)
 
     async def __call__(self, message: Message, channel: Channel) -> Optional[Message]:
         if channel not in self.from_channels:
-            servo.logger.trace(f"Ignoring Aggregator call: {channel.name} is not being aggregated")
+            servo.logger.trace(
+                f"Ignoring Aggregator call: {channel.name} is not being aggregated"
+            )
             return message
 
         # Increment the message counter
@@ -1183,22 +1237,29 @@ class Aggregator(Transformer):
 
         await self.callback(self, message, channel)
 
-        servo.logger.debug(f"Aggregated message to channel {channel.name}. Channel message counter state is now {self._channel_state}")
+        servo.logger.debug(
+            f"Aggregated message to channel {channel.name}. Channel message counter state is now {self._channel_state}"
+        )
 
         if 0 not in self._channel_state.values():
-            servo.logger.debug(f"Publishing aggregated message because all aggregation channel have sent at least one message: {self._channel_state}")
+            servo.logger.debug(
+                f"Publishing aggregated message because all aggregation channel have sent at least one message: {self._channel_state}"
+            )
             await self.publish()
 
         return message
 
     def __repr_args__(self) -> pydantic.ReprArgs:
         return [
-            ('from_channels', list(map(lambda c: c.name, self.from_channels))),
-            ('to_channel', self.to_channel.name),
-            ('every', self.every),
-            ('message', self.message),
-            ('last_published_at', self.last_published_at),
-            ('channel_message_count', dict(map(lambda i: (i[0].name, i[1]), self._channel_state.items()))),
+            ("from_channels", list(map(lambda c: c.name, self.from_channels))),
+            ("to_channel", self.to_channel.name),
+            ("every", self.every),
+            ("message", self.message),
+            ("last_published_at", self.last_published_at),
+            (
+                "channel_message_count",
+                dict(map(lambda i: (i[0].name, i[1]), self._channel_state.items())),
+            ),
         ]
 
     class Config:
@@ -1212,7 +1273,7 @@ class _PublisherMethod:
         channels: List[Union[Channel, str]],
         *,
         every: Optional[servo.types.DurationDescriptor] = None,
-        name: Optional[str] = None
+        name: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.pubsub_exchange = parent.pubsub_exchange
@@ -1231,7 +1292,11 @@ class _PublisherMethod:
 
         publisher = self.pubsub_exchange.create_publisher(*self.channels)
         if self.every is not None:
-            duration = self.every if isinstance(self.every, servo.Duration) else servo.Duration(self.every)
+            duration = (
+                self.every
+                if isinstance(self.every, servo.Duration)
+                else servo.Duration(self.every)
+            )
         else:
             duration = None
 
@@ -1249,7 +1314,9 @@ class _PublisherMethod:
 
     async def __aenter__(self) -> None:
         if self.every is not None:
-            raise TypeError(f"Cannot create repeating publisher when used as a context manager: `every` must be None")
+            raise TypeError(
+                f"Cannot create repeating publisher when used as a context manager: `every` must be None"
+            )
 
         self.publisher = self.pubsub_exchange.create_publisher(*self.channels)
         return self.publisher
@@ -1259,15 +1326,14 @@ class _PublisherMethod:
 
     def __await__(self):
         # NOTE: If we are awaited, make the caller wait on publish() instead
-        channel = (
-            self.pubsub_exchange.get_channel(self.channels[1])
-            or self.pubsub_exchange.create_channel(self.channels[1])
-        )
+        channel = self.pubsub_exchange.get_channel(
+            self.channels[1]
+        ) or self.pubsub_exchange.create_channel(self.channels[1])
         return channel.publish(self.channels[0]).__await__()
 
 
 def _random_string() -> str:
-    characters = string.ascii_lowercase + string.digits + '-'
+    characters = string.ascii_lowercase + string.digits + "-"
     return "".join(random.choice(characters) for i in range(32))
 
 
@@ -1286,8 +1352,9 @@ class _ChannelMethod:
     def _random_unique_channel_name(self) -> str:
         while True:
             name = _random_string()
-            if (self.pubsub_exchange.get_channel(name) is None
-                and re.match(ChannelName.regex, name)):
+            if self.pubsub_exchange.get_channel(name) is None and re.match(
+                ChannelName.regex, name
+            ):
                 return name
 
     async def __aenter__(self) -> None:
@@ -1305,6 +1372,7 @@ class _ChannelMethod:
             await self.channel.close()
             self.pubsub_exchange.remove_channel(self.channel)
 
+
 class _SubscriberMethod:
     def __init__(
         self,
@@ -1312,7 +1380,7 @@ class _SubscriberMethod:
         selector: Selector,
         name: Optional[str] = None,
         timeout: Optional[servo.types.DurationDescriptor] = None,
-        until_done: Optional[servo.types.Futuristic] = None
+        until_done: Optional[servo.types.Futuristic] = None,
     ) -> None:
         super().__init__()
         self.pubsub_exchange = parent.pubsub_exchange
@@ -1360,9 +1428,10 @@ class Mixin(pydantic.BaseModel):
     Attributes:
         pubsub_exchange: The pub/sub Exchange that the object belongs to.
     """
+
     __private_attributes__ = {
-        '_publishers_map': pydantic.PrivateAttr({}),
-        '_subscribers_map': pydantic.PrivateAttr({}),
+        "_publishers_map": pydantic.PrivateAttr({}),
+        "_subscribers_map": pydantic.PrivateAttr({}),
     }
     pubsub_exchange: Exchange = pydantic.Field(default_factory=Exchange)
 
@@ -1370,14 +1439,10 @@ class Mixin(pydantic.BaseModel):
         super().__init__(*args, **kwargs)
 
         # NOTE: Assign the exchange directly as Pydantic will copy it
-        if exchange := kwargs.get('pubsub_exchange'):
+        if exchange := kwargs.get("pubsub_exchange"):
             self.pubsub_exchange = exchange
 
-    def channel(
-        self,
-        name: Optional[str] = None,
-        description: Optional[str] = None
-    ):
+    def channel(self, name: Optional[str] = None, description: Optional[str] = None):
         """A context manager for retrieving pub/sub Channels.
 
         Retrieves a Channel with find-or-create semantics from the Exchange. If
@@ -1395,11 +1460,7 @@ class Mixin(pydantic.BaseModel):
                 unique name is generated.
             description: An optional textual description of the Channel.
         """
-        return _ChannelMethod(
-            self,
-            name=name,
-            description=description
-        )
+        return _ChannelMethod(self, name=name, description=description)
 
     def subscribe(
         self,
@@ -1407,7 +1468,7 @@ class Mixin(pydantic.BaseModel):
         *,
         name: Optional[str] = None,
         timeout: Optional[servo.types.DurationDescriptor] = None,
-        until_done: Optional[asyncio.Future] = None
+        until_done: Optional[asyncio.Future] = None,
     ):
         """Create a Subscriber in the pub/sub Exchange.
 
@@ -1448,11 +1509,7 @@ class Mixin(pydantic.BaseModel):
             ```
         """
         return _SubscriberMethod(
-            self,
-            selector=selector,
-            name=name,
-            timeout=timeout,
-            until_done=until_done
+            self, selector=selector, name=name, timeout=timeout, until_done=until_done
         )
 
     def cancel_subscribers(self, *names: List[str]) -> None:
@@ -1468,7 +1525,8 @@ class Mixin(pydantic.BaseModel):
             KeyError: Raised if there is no subscriber with the given name.
         """
         subscribers = (
-            list(map(self._subscribers_map.get, names)) if names
+            list(map(self._subscribers_map.get, names))
+            if names
             else self._subscribers_map.values()
         )
 
@@ -1485,7 +1543,7 @@ class Mixin(pydantic.BaseModel):
         self,
         *channels: List[Union[Channel, str]],
         every: Optional[servo.types.DurationDescriptor] = None,
-        name: Optional[str] = None
+        name: Optional[str] = None,
     ) -> None:
         """Create a Publisher in the pub/sub Exchange.
 
@@ -1556,7 +1614,8 @@ class Mixin(pydantic.BaseModel):
             KeyError: Raised if there is no publishers with the given name.
         """
         publisher_tuples = (
-            list(map(self._publishers_map.get, names)) if names
+            list(map(self._publishers_map.get, names))
+            if names
             else self._publishers_map.values()
         )
 
@@ -1573,6 +1632,7 @@ class Mixin(pydantic.BaseModel):
 def _current_iterator() -> Optional[AsyncIterator]:
     return servo.pubsub._current_iterator_var.get()
 
+
 Splitter.update_forward_refs()
 Aggregator.update_forward_refs()
 Channel.update_forward_refs()
@@ -1587,8 +1647,8 @@ def _error_watcher(task: asyncio.Task) -> None:
             loop = asyncio.get_event_loop()
             servo.logger.exception(f"Publisher task failed with exception: {exception}")
             context = {
-                'future': task,
-                'exception': exception,
-                'message': f"Publisher Task failed with exception: {exception}",
+                "future": task,
+                "exception": exception,
+                "message": f"Publisher Task failed with exception: {exception}",
             }
             loop.call_exception_handler(context)

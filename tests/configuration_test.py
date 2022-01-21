@@ -24,40 +24,52 @@ async def test_config(servo_yaml: pathlib.Path) -> None:
         config_file=servo_yaml, optimizer=optimizer
     )
 
+
 @pytest.mark.parametrize(
-    ('name'),
-    [
-        'a',
-        '1234',
-        'app-name',
-        'APP-NAME',
-        'name',
-        'this.that.the.other'
-    ]
+    ("name"), ["a", "1234", "app-name", "APP-NAME", "name", "this.that.the.other"]
 )
 def test_validate_name(name: str):
     # will raise on failure
-    servo.configuration.Optimizer(id=f'test.com/{name}', token='foo')
+    servo.configuration.Optimizer(id=f"test.com/{name}", token="foo")
+
 
 def test_optimizer_from_string() -> None:
-    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    optimizer = servo.configuration.Optimizer.parse_obj(
+        {"id": "dev.opsani.com/awesome-app", "token": "8675309"}
+    )
     assert isinstance(optimizer, servo.configuration.Optimizer)
-    assert optimizer.organization == 'dev.opsani.com'
-    assert optimizer.name == 'awesome-app'
+    assert optimizer.organization == "dev.opsani.com"
+    assert optimizer.name == "awesome-app"
+
 
 def test_setting_url() -> None:
-    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    optimizer = servo.configuration.Optimizer.parse_obj(
+        {"id": "dev.opsani.com/awesome-app", "token": "8675309"}
+    )
     assert isinstance(optimizer, servo.configuration.Optimizer)
-    assert optimizer.organization == 'dev.opsani.com'
-    assert optimizer.name == 'awesome-app'
+    assert optimizer.organization == "dev.opsani.com"
+    assert optimizer.name == "awesome-app"
+
 
 def test_token_exports_to_json() -> None:
-    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309'})
+    optimizer = servo.configuration.Optimizer.parse_obj(
+        {"id": "dev.opsani.com/awesome-app", "token": "8675309"}
+    )
     assert isinstance(optimizer, servo.configuration.Optimizer)
     parsed_optimizer = json.loads(optimizer.json())
-    assert parsed_optimizer['token'] == '8675309'
+    assert parsed_optimizer["token"] == "8675309"
+
 
 def test_base_url_stripping() -> None:
-    optimizer = servo.configuration.Optimizer.parse_obj({'id': 'dev.opsani.com/awesome-app', 'token': '8675309', 'base_url': 'https://foo.opsani.com/'})
-    assert optimizer.base_url == 'https://foo.opsani.com'
-    assert optimizer.url == 'https://foo.opsani.com/accounts/dev.opsani.com/applications/awesome-app/'
+    optimizer = servo.configuration.Optimizer.parse_obj(
+        {
+            "id": "dev.opsani.com/awesome-app",
+            "token": "8675309",
+            "base_url": "https://foo.opsani.com/",
+        }
+    )
+    assert optimizer.base_url == "https://foo.opsani.com"
+    assert (
+        optimizer.url
+        == "https://foo.opsani.com/accounts/dev.opsani.com/applications/awesome-app/"
+    )
