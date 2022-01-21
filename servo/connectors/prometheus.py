@@ -50,8 +50,6 @@ class PrometheusMetric(servo.Metric):
             The number of data points within the query result is equal to the duration between the
             start and end times divided by the step. May be a numeric value or Golang duration string.
         absent: The behavior to apply when the queried metric is absent.
-        eager: The duration to observe the metric and eagerly return a measurement if it does not change.
-            Defaults to `None`, disabling eager measurements.
     """
     query: str = None
     step: servo.Duration = "1m"
