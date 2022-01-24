@@ -982,10 +982,16 @@ class PrometheusConnector(servo.BaseConnector):
             fast_fail_progress = servo.EventProgress(
                 timeout=measurement_duration, settlement=eager_settlement
             )
-            fast_fail_progress = servo.EventProgress(timeout=measurement_duration, settlement=None)
+            fast_fail_progress = servo.EventProgress(
+                timeout=measurement_duration, settlement=None
+            )
             gather_tasks = [
                 asyncio.create_task(progress.watch(self.observe)),
-                asyncio.create_task(fast_fail_progress.watch(fast_fail_observer.observe, every=self.config.fast_fail.period))
+                asyncio.create_task(
+                    fast_fail_progress.watch(
+                        fast_fail_observer.observe, every=self.config.fast_fail.period
+                    )
+                ),
             ]
             try:
                 await asyncio.gather(*gather_tasks)
@@ -1016,7 +1022,9 @@ class PrometheusConnector(servo.BaseConnector):
     async def observe(self, progress: servo.EventProgress) -> None:
 
         return self.logger.info(
-            progress.annotate(f"measuring Prometheus metrics for {progress.timeout}", False),
+            progress.annotate(
+                f"measuring Prometheus metrics for {progress.timeout}", False
+            ),
             progress=progress.progress,
         )
 

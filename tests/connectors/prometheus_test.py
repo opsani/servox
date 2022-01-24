@@ -582,7 +582,7 @@ class TestPrometheusIntegration:
                 event_loop.call_later(30, asyncio.create_task, burst_traffic())
                 measurement = await asyncio.wait_for(
                     connector.measure(control=servo.Control(duration="5m")),
-                    timeout=360 # NOTE: if we haven't returned in 5 minutes all is lost
+                    timeout=360,  # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
                 assert len(measurement) == 1
