@@ -83,6 +83,7 @@ pytest-html = "^3.1.1"
 bandit = "^1.7.0"
 watchgod = "^0.7"
 statesman = "^1.0.2.post1"
+black = "^21.12b0"
 
 [tool.poetry.scripts]
 servo = "servo.entry_points:run_cli"

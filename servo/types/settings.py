@@ -5,9 +5,22 @@ import functools
 from inspect import isclass
 import pydantic
 import pydantic.fields
-from typing import Annotated, Any, Callable, Generator, Literal, Optional, Type, TypeVar, Union, cast, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    Generator,
+    Literal,
+    Optional,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    get_origin,
+)
 
 from .core import BaseModel, HumanReadable, Numeric, Unit
+
 
 class Setting(BaseModel, abc.ABC):
     """Setting is an abstract base class for models that represent adjustable
@@ -47,8 +60,9 @@ class Setting(BaseModel, abc.ABC):
             return new_setting
         except ValueError:
             import servo
+
             servo.logger.exception(f"Failed to parse safe_set value {repr(value)}")
-            if (vt := getattr(self, 'value_type', None)) is not None:
+            if (vt := getattr(self, "value_type", None)) is not None:
                 value = vt(value)
             return self.copy(update={"value": value})
 
@@ -111,9 +125,11 @@ class Setting(BaseModel, abc.ABC):
         validate_all = True
         validate_assignment = True
 
+
 # Helper methods for working with lists of settings
 def find_setting(settings: list[Setting], setting_name: str) -> Optional[Setting]:
     return next(iter(s for s in settings if s.name == setting_name), None)
+
 
 class EnumSetting(Setting):
     """EnumSetting objects describe a fixed set of values that can be applied to an
@@ -153,7 +169,9 @@ class EnumSetting(Setting):
         return values
 
     def summary(self) -> str:
-        return f"{self.__class__.__name__}(values={repr(self.values)}, unit={self.unit})"
+        return (
+            f"{self.__class__.__name__}(values={repr(self.values)}, unit={self.unit})"
+        )
 
     def __opsani_repr__(self) -> dict:
         return {
@@ -246,13 +264,17 @@ class RangeSetting(Setting):
 
         min_ = values["min"]
         if min_ > max_:
-            raise ValueError(f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})")
+            raise ValueError(
+                f"min cannot be greater than max ({cls.human_readable(min_)} > {cls.human_readable(max_)})"
+            )
 
         return max_
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def _min_and_max_must_be_step_aligned(cls, values: dict[str, Any]) -> dict[str, Any]:
+    def _min_and_max_must_be_step_aligned(
+        cls, values: dict[str, Any]
+    ) -> dict[str, Any]:
         name, min_, max_, step = (
             values["name"],
             values["min"],
@@ -284,12 +306,21 @@ class RangeSetting(Setting):
                     if get_origin(value_type) is Union:
                         value_type = str
                     cast_diff, lower_min, upper_min, lower_max, upper_max = (
-                        value_type(v) for v in
-                        (diff, max_ - smaller_range, max_ - larger_range, min_ + smaller_range, min_ + larger_range)
+                        value_type(v)
+                        for v in (
+                            diff,
+                            max_ - smaller_range,
+                            max_ - larger_range,
+                            min_ + smaller_range,
+                            min_ + larger_range,
+                        )
                     )
                 except:
                     import servo
-                    servo.logger.exception(f"Failed to apply new formatting to derived RangeSetting validation")
+
+                    servo.logger.exception(
+                        f"Failed to apply new formatting to derived RangeSetting validation"
+                    )
                     raise ValueError(
                         f"{desc} min/max difference is not step aligned: {diff} is not a multiple of {step} (consider "
                         f"min {max_ - smaller_range} or {max_ - larger_range}, max {min_ + smaller_range} or {min_ + larger_range})."
@@ -310,12 +341,16 @@ class RangeSetting(Setting):
         return {
             self.name: self.dict(
                 include={"type", "unit", "min", "max", "step", "pinned", "value"},
-                exclude_none=True
+                exclude_none=True,
             )
         }
 
+
 def _is_step_aligned(value: Numeric, step: Numeric) -> bool:
-    return value == step or (decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0)
+    return value == step or (
+        decimal.Decimal(str(float(value))) % decimal.Decimal(str(float(step))) == 0
+    )
+
 
 class CPU(RangeSetting):
     """CPU is a Setting that describes an adjustable range of values for CPU
@@ -438,14 +473,19 @@ class InstanceType(EnumSetting):
         description="The unit of instance types identifying the provider.",
     )
 
-def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None) -> tuple[str, str]:
+
+def _suggest_step_aligned_values(
+    value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None
+) -> tuple[str, str]:
     if in_repr is None:
         # return raw data for further processing
         in_repr = lambda x: x
 
     # declare numeric and textual representations
     parser = functools.partial(pydantic.parse_obj_as, value.__class__)
-    value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(str(float(step)))
+    value_dec, step_dec = decimal.Decimal(str(float(value))), decimal.Decimal(
+        str(float(step))
+    )
     lower_bound, upper_bound = value_dec, value_dec
     value_repr, lower_repr, upper_repr = in_repr(parser(value_dec)), None, None
 
@@ -495,15 +535,18 @@ def _suggest_step_aligned_values(value: Numeric, step: Numeric, *, in_repr: Opti
 
     return (lower_repr, upper_repr)
 
+
 class EnvironmentSetting(Setting):
     literal: Optional[str] = pydantic.Field(
-        None, description="(Optional) The environment variable name as used in the target system (this allows name to be "
-                         "set to a human readable string). Defaults to configured name when literal is not configured"
+        None,
+        description="(Optional) The environment variable name as used in the target system (this allows name to be "
+        "set to a human readable string). Defaults to configured name when literal is not configured",
     )
 
     @property
     def variable_name(self) -> str:
         return self.literal or self.name
+
 
 class NumericType(Type):
     @classmethod
@@ -515,16 +558,17 @@ class NumericType(Type):
         if isclass(value) and issubclass(value, (int, float)):
             return value
 
-        if value == 'int':
+        if value == "int":
             return int
-        if value == 'float':
+        if value == "float":
             return float
 
         raise ValueError(f"Unrecognized numeric type {repr(value)}")
 
     @classmethod
     def __modify_schema__(cls, field_schema: dict[str, Any]):
-        field_schema.update(anyOf=['int', 'float'])
+        field_schema.update(anyOf=["int", "float"])
+
 
 class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
     # # TODO promote to RangeSetting base
@@ -539,22 +583,29 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
 
     @pydantic.validator("value_type", pre=True)
     def _set_value_type_to_type(cls, value: Any) -> Union[Type[int], Type[float]]:
-        if value == 'int':
+        if value == "int":
             return int
-        if value == 'float':
+        if value == "float":
             return float
         return value
 
     @pydantic.root_validator
     def _cast_value_to_value_type(cls, values: dict) -> dict:
-        if (value := values.get('value')) is not None and (value_type := values.get('value_type')) is not None:
-            values['value'] = value_type(value)
+        if (value := values.get("value")) is not None and (
+            value_type := values.get("value_type")
+        ) is not None:
+            values["value"] = value_type(value)
         return values
+
 
 class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass
 
-PydanticEnvironmentSettingAnnotation = Annotated[Union[EnvironmentRangeSetting, EnvironmentEnumSetting], pydantic.Field(discriminator='type')]
+
+PydanticEnvironmentSettingAnnotation = Annotated[
+    Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
+    pydantic.Field(discriminator="type"),
+]
 
 # TODO unused references to this stub in test (TestCommandConfiguration)
 # class CommandConfiguration(servo.BaseConfiguration):

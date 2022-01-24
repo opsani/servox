@@ -202,7 +202,6 @@ def test_equal_callable_descriptors() -> None:
     sig1 = inspect.Signature.from_callable(test_one)
     sig2 = inspect.Signature.from_callable(test_two)
 
-
     with pytest.raises(TypeError) as e:
         servo.utilities.inspect.assert_equal_callable_descriptors(
             servo.utilities.inspect.CallableDescriptor(
@@ -212,7 +211,10 @@ def test_equal_callable_descriptors() -> None:
                 signature=sig2, globalns=globals(), localns=locals()
             ),
         )
-    assert str(e.value) == 'invalid callable "() -> Dict": incompatible return type annotation "typing.Dict[str, typing.Any]" in callable signature "() -> Dict[str, Any]", expected "typing.Dict"'
+    assert (
+        str(e.value)
+        == 'invalid callable "() -> Dict": incompatible return type annotation "typing.Dict[str, typing.Any]" in callable signature "() -> Dict[str, Any]", expected "typing.Dict"'
+    )
 
     servo.utilities.inspect.assert_equal_callable_descriptors(
         servo.utilities.inspect.CallableDescriptor(
@@ -236,7 +238,9 @@ def test_equal_callable_descriptors() -> None:
     # servo.utilities.inspect.assert_equal_callable_descriptors()
     # ...
 
+
 MaybeNumeric = Optional[Union[float, int]]
+
 
 @pytest.mark.parametrize(
     "types_, error_message",
@@ -252,26 +256,44 @@ MaybeNumeric = Optional[Union[float, int]]
         ([Any, List[str]], None),
         ([List[Any], List[str]], None),
         ([Dict[str, Any], Dict[str, int]], None),
-
         # Subclassing
         ([OneClass, TwoClass], None),
         ([List[OneClass], List[TwoClass]], None),
         ([Dict[str, OneClass], Dict[str, TwoClass]], None),
-
         # Special forms
         ([MaybeNumeric, MaybeNumeric], None),
         ([MaybeNumeric, Optional[Union[int, float]]], None),
-
         # ---
         # Failure cases
-        ([dict, int], "Incompatible type annotations: expected <class 'dict'>, but found <class 'int'>"),
-        ([Dict[str, int], dict], "Incompatible type annotations: expected typing.Dict[str, int], but found <class 'dict'>"),
-        ([List[str], List[int]], "Incompatible type annotations: expected typing.List[str], but found <class 'str'>"),
-        ([MaybeNumeric, float], "Incompatible type annotations: expected typing.Union[float, int, NoneType], but found <class 'float'>"),
-        ([dict, Dict[str, Any]], "Incompatible type annotations: expected <class 'dict'>, but found typing.Dict[str, typing.Any]"),
-        ([TwoClass, MaybeNumeric], "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found typing.Union[float, int, NoneType]"),
-        ([TwoClass, OneClass], "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found <class 'inspect_test.OneClass'>"),
-    ]
+        (
+            [dict, int],
+            "Incompatible type annotations: expected <class 'dict'>, but found <class 'int'>",
+        ),
+        (
+            [Dict[str, int], dict],
+            "Incompatible type annotations: expected typing.Dict[str, int], but found <class 'dict'>",
+        ),
+        (
+            [List[str], List[int]],
+            "Incompatible type annotations: expected typing.List[str], but found <class 'str'>",
+        ),
+        (
+            [MaybeNumeric, float],
+            "Incompatible type annotations: expected typing.Union[float, int, NoneType], but found <class 'float'>",
+        ),
+        (
+            [dict, Dict[str, Any]],
+            "Incompatible type annotations: expected <class 'dict'>, but found typing.Dict[str, typing.Any]",
+        ),
+        (
+            [TwoClass, MaybeNumeric],
+            "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found typing.Union[float, int, NoneType]",
+        ),
+        (
+            [TwoClass, OneClass],
+            "Incompatible type annotations: expected <class 'inspect_test.TwoClass'>, but found <class 'inspect_test.OneClass'>",
+        ),
+    ],
 )
 def test_assert_equal_types(types_: List[Type], error_message: Optional[str]) -> None:
     if error_message:

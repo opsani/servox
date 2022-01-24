@@ -8,20 +8,20 @@ class TestStatus:
     def test_adjustment_rejected_from_error(self) -> None:
         error = servo.errors.AdjustmentRejectedError("foo")
         status = servo.api.Status.from_error(error)
-        assert status.message == 'foo'
-        assert status.status == 'rejected'
+        assert status.message == "foo"
+        assert status.status == "rejected"
 
     def test_event_aborted_from_error(self) -> None:
         error = servo.errors.EventAbortedError("bar")
         status = servo.api.Status.from_error(error)
-        assert status.message == 'bar'
-        assert status.status == 'aborted'
+        assert status.message == "bar"
+        assert status.status == "aborted"
 
     def test_event_cancelled_from_error(self) -> None:
         error = servo.errors.EventCancelledError("Command cancelled")
         status = servo.api.Status.from_error(error)
-        assert status.message == 'Command cancelled'
-        assert status.status == 'cancelled'
+        assert status.message == "Command cancelled"
+        assert status.status == "cancelled"
 
 
 from servo.api import descriptor_to_adjustments, CommandResponse, MeasureParams, Status
@@ -44,6 +44,7 @@ def _check_measure_parse(obj: CommandResponse):
         "latency_min",
     ]
 
+
 def _check_adjust_parse(obj: CommandResponse):
     assert isinstance(obj, CommandResponse)
     adjustments = descriptor_to_adjustments(obj.param["state"])
@@ -53,12 +54,12 @@ def _check_adjust_parse(obj: CommandResponse):
         adj_strs.append(str(a))
 
     assert adj_strs == [
-        'main.cpu=1.0',
-        'main.mem=1.0',
-        'main.replicas=2.0',
-        'tuning.cpu=1.0',
-        'tuning.mem=1.0',
-        'tuning.replicas=1.0'
+        "main.cpu=1.0",
+        "main.mem=1.0",
+        "main.replicas=2.0",
+        "tuning.cpu=1.0",
+        "tuning.mem=1.0",
+        "tuning.replicas=1.0",
     ]
 
     control = Control.parse_obj(obj.param["control"])
@@ -66,7 +67,7 @@ def _check_adjust_parse(obj: CommandResponse):
 
 
 @pytest.mark.parametrize(
-    ('validator', 'payload'),
+    ("validator", "payload"),
     [
         (
             _check_measure_parse,
@@ -123,40 +124,26 @@ def _check_adjust_parse(obj: CommandResponse):
                             "components": {
                                 "main": {
                                     "settings": {
-                                        "cpu": {
-                                            "value": 1.0
-                                        },
-                                        "mem": {
-                                            "value": 1.0
-                                        },
-                                        "replicas": {
-                                            "value": 2.0
-                                        }
+                                        "cpu": {"value": 1.0},
+                                        "mem": {"value": 1.0},
+                                        "replicas": {"value": 2.0},
                                     }
                                 },
                                 "tuning": {
                                     "settings": {
-                                        "cpu": {
-                                            "value": 1.0
-                                        },
-                                        "mem": {
-                                            "value": 1.0
-                                        },
-                                        "replicas": {
-                                            "value": 1.0
-                                        }
+                                        "cpu": {"value": 1.0},
+                                        "mem": {"value": 1.0},
+                                        "replicas": {"value": 1.0},
                                     }
-                                }
+                                },
                             }
                         }
                     },
-                    "control": {
-                        "settlement": 60
-                    }
-                }
+                    "control": {"settlement": 60},
+                },
             },
-        )
-    ]
+        ),
+    ],
 )
 def test_parse_command_response_including_units_control(payload, validator) -> None:
     from typing import Union

@@ -4,11 +4,7 @@ from typing import Any, Callable, Generator, Type
 import pydantic
 import pydantic.validators
 
-__all__ = [
-    "prepend_pydantic_validator",
-    "append_pydantic_validator",
-    "extra"
-]
+__all__ = ["prepend_pydantic_validator", "append_pydantic_validator", "extra"]
 
 
 def prepend_pydantic_validator(

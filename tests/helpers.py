@@ -7,7 +7,17 @@ import json
 import os
 import pathlib
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional, Type, Union
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+)
 
 import fastapi
 import kubernetes_asyncio.client
@@ -22,7 +32,15 @@ from servo.connector import BaseConnector
 from servo.events import after_event, before_event, on_event
 from servo.logging import logger
 from servo.servo import Events
-from servo.types import Component, DataPoint, Description, Measurement, Metric, RangeSetting, Unit
+from servo.types import (
+    Component,
+    DataPoint,
+    Description,
+    Measurement,
+    Metric,
+    RangeSetting,
+    Unit,
+)
 from servo.utilities import SubprocessResult, Timeout, stream_subprocess_shell
 
 
@@ -30,14 +48,8 @@ class MeasureConnector(BaseConnector):
     @on_event()
     async def metrics(self) -> List[Metric]:
         return [
-            Metric(
-                name="throughput",
-                unit=Unit.requests_per_minute
-            ),
-            Metric(
-                name="error_rate",
-                unit=Unit.requests_per_minute
-            )
+            Metric(name="throughput", unit=Unit.requests_per_minute),
+            Metric(name="error_rate", unit=Unit.requests_per_minute),
         ]
 
     @on_event()
@@ -46,7 +58,9 @@ class MeasureConnector(BaseConnector):
         return Description(metrics=metrics)
 
     @before_event(Events.measure)
-    def before_measure(self, *, metrics: List[str] = None, control: servo.Control = servo.Control()) -> None:
+    def before_measure(
+        self, *, metrics: List[str] = None, control: servo.Control = servo.Control()
+    ) -> None:
         pass
 
     @on_event()
@@ -63,7 +77,7 @@ class MeasureConnector(BaseConnector):
                     metric=Metric(
                         name="Some Metric",
                         unit=Unit.requests_per_minute,
-                    )
+                    ),
                 )
             ]
         )
@@ -84,13 +98,19 @@ class AdjustConnector(BaseConnector):
         return [
             Component(
                 name="main",
-                settings=[RangeSetting(name="cpu", min=0, max=10, step=1, value=3, unit="cores")],
+                settings=[
+                    RangeSetting(
+                        name="cpu", min=0, max=10, step=1, value=3, unit="cores"
+                    )
+                ],
             )
         ]
 
     @on_event()
     async def adjust(
-        self, adjustments: List[servo.Adjustment], control: servo.Control = servo.Control()
+        self,
+        adjustments: List[servo.Adjustment],
+        control: servo.Control = servo.Control(),
     ) -> servo.Description:
         return await self.describe()
 
@@ -241,7 +261,9 @@ class FakeAPI(uvicorn.Server):
             await server.stop()
     """
 
-    def __init__(self, app: fastapi.FastAPI, host: str = '127.0.0.1', port: int = 8000) -> None:
+    def __init__(
+        self, app: fastapi.FastAPI, host: str = "127.0.0.1", port: int = 8000
+    ) -> None:
         """Initialize a FakeAPI instance by mounting a FastAPI app and starting Uvicorn.
 
         Args:
@@ -274,7 +296,9 @@ class FakeAPI(uvicorn.Server):
 
 
 @contextlib.asynccontextmanager
-async def kubernetes_asyncio_client_overrides(**kwargs) -> AsyncIterator[kubernetes_asyncio.client.Configuration]:
+async def kubernetes_asyncio_client_overrides(
+    **kwargs,
+) -> AsyncIterator[kubernetes_asyncio.client.Configuration]:
     """Override fields on the default kubernetes_asyncio.client.Configuration within the context.
 
     Fields are set directly on a copy of the original configuration using `setattr`. Refer to documentation
@@ -293,6 +317,7 @@ async def kubernetes_asyncio_client_overrides(**kwargs) -> AsyncIterator[kuberne
 
     finally:
         kubernetes_asyncio.client.Configuration.set_default(original_config)
+
 
 async def build_docker_image(
     tag: str = "opsani/servox:edge",

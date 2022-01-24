@@ -64,8 +64,15 @@ Tag = pydantic.constr(
     strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$"
 )
 
+
 class CheckError(RuntimeError):
-    def __init__(self, message: str, *, hint: Optional[str] = None, remedy: Optional[Callable[[], None]] = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        hint: Optional[str] = None,
+        remedy: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__(message)
         self.hint = hint
         self.remedy = remedy
@@ -198,20 +205,17 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
 
     @property
     def failed(self) -> bool:
-        """Return a boolean value that indicates if the check failed.
-        """
+        """Return a boolean value that indicates if the check failed."""
         return not self.success and not self.warning
 
     @property
     def critical(self) -> bool:
-        """Return a boolean value that indicates if the check is of critical severity.
-        """
+        """Return a boolean value that indicates if the check is of critical severity."""
         return self.severity == ErrorSeverity.critical
 
     @property
     def warning(self) -> bool:
-        """Return a boolean value that indicates if the check is of warning severity.
-        """
+        """Return a boolean value that indicates if the check is of warning severity."""
         return self.severity == ErrorSeverity.warning
 
     @pydantic.validator("created_at", pre=True, always=True)
@@ -304,6 +308,7 @@ def check(
         )
 
         if asyncio.iscoroutinefunction(fn):
+
             @functools.wraps(fn)
             async def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
@@ -311,6 +316,7 @@ def check(
                 return check
 
         else:
+
             @functools.wraps(fn)
             def run_check(*args, **kwargs) -> Check:
                 check = __check__.copy()
@@ -558,13 +564,17 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 spec = getattr(method, "__check__", None)
                 if spec:
                     # once all filtered methods are removed, only run non-decorated
-                    if not spec.critical or not filtered_methods or (matching and matching.exclusive):
+                    if (
+                        not spec.critical
+                        or not filtered_methods
+                        or (matching and matching.exclusive)
+                    ):
                         continue
 
             check = await method() if asyncio.iscoroutinefunction(method) else method()
             if not isinstance(check, Check):
                 raise TypeError(
-                    f"invalid check \"{method_name}\": expected return type \"Check\" but handler returned \"{check.__class__.__name__}\""
+                    f'invalid check "{method_name}": expected return type "Check" but handler returned "{check.__class__.__name__}"'
                 )
 
             checks.append(check)
@@ -624,7 +634,8 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                 id=id,
                 name=name,
                 exclusive=skip_requirements,
-            ), halt_on=halt_on
+            ),
+            halt_on=halt_on,
         )
         if not results:
             for attr in ("id", "name"):
@@ -690,14 +701,14 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
                     localns=handler_localns,
                 ),
                 name=name,
-                callable_description="check"
+                callable_description="check",
             )
 
             yield (name, method)
 
     def __init__(
         self, config: servo.configuration.BaseConfiguration, *args, **kwargs
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         super().__init__(config=config, *args, **kwargs)
 
     async def _expand_multichecks(self) -> List[types.MethodType]:
@@ -949,7 +960,7 @@ def _validate_multicheck_handler(fn: MultiCheckHandler) -> None:
             localns=handler_localns,
         ),
         name=fn.__name__,
-        callable_description="multicheck handler"
+        callable_description="multicheck handler",
     )
 
 
@@ -995,6 +1006,7 @@ def multicheck(
     Raises:
         TypeError: Raised if the signature of the decorated function is incompatible.
     """
+
     def decorator(fn_: MultiCheckHandler) -> MultiCheckExpander:
         _validate_multicheck_handler(fn_)
 

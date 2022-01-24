@@ -1,4 +1,3 @@
-
 import asyncio
 import pathlib
 
@@ -15,6 +14,7 @@ import tests.fake
 import tests.helpers
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
+
 
 @pytest.fixture()
 async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
@@ -43,7 +43,10 @@ def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
 
-async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.runner.AssemblyRunner):
+
+async def test_assembly_shutdown_with_non_running_servo(
+    assembly_runner: servo.runner.AssemblyRunner,
+):
     event_loop = asyncio.get_event_loop()
 
     # NOTE: using the pytest_mocker fixture for mocking the event loop can cause side effects with pytest-asyncio
@@ -51,9 +54,10 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
     #   By using unittest.mock, we can ensure the event_loop is restored before exiting this method
 
     # Event loop is already running from pytest setup, runner trying to run the loop again produces an error
-    with unittest.mock.patch.object(event_loop, 'run_forever', return_value=None):
+    with unittest.mock.patch.object(event_loop, "run_forever", return_value=None):
         # run_forever no longer blocks causing loop.close() to be called immediately, stop runner from closing it to prevent errors
-        with unittest.mock.patch.object(event_loop, 'close', return_value=None):
+        with unittest.mock.patch.object(event_loop, "close", return_value=None):
+
             async def wait_for_servo_running():
                 while not assembly_runner.assembly.servos[0].is_running:
                     await asyncio.sleep(0.01)
@@ -61,7 +65,10 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
             try:
                 assembly_runner.run()
             except ValueError as e:
-                if "add_signal_handler() can only be called from the main thread" in str(e):
+                if (
+                    "add_signal_handler() can only be called from the main thread"
+                    in str(e)
+                ):
                     # https://github.com/pytest-dev/pytest-xdist/issues/620
                     pytest.xfail("not running in the main thread")
                 else:
@@ -79,16 +86,18 @@ async def test_assembly_shutdown_with_non_running_servo(assembly_runner: servo.r
                 # Teardown runner asyncio tasks so they don't raise errors when the loop is closed by pytest
                 await assembly_runner._shutdown(event_loop)
 
+
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     """Return an unstarted servo runner."""
     return servo.runner.ServoRunner(assembly.servos[0])
 
+
 @pytest.fixture
 async def running_servo(
     event_loop: asyncio.AbstractEventLoop,
     servo_runner: servo.runner.ServoRunner,
-    fakeapi_url: str
+    fakeapi_url: str,
 ) -> servo.runner.ServoRunner:
     """Start, run, and yield a servo runner.
 
@@ -112,6 +121,7 @@ async def running_servo(
         # [task.cancel() for task in tasks]
 
         # await asyncio.gather(*tasks, return_exceptions=True)
+
 
 # TODO: Switch this over to using a FakeAPI
 @pytest.mark.xfail(reason="too brittle.")
@@ -151,12 +161,15 @@ async def test_out_of_order_operations(servo_runner: servo.runner.ServoRunner) -
 
     servo_runner.logger.info("test logging", operation="ADJUST", progress=55)
 
+
 async def test_hello(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
-    fastapi_app: 'tests.OpsaniAPI',
+    fastapi_app: "tests.OpsaniAPI",
 ) -> None:
-    static_optimizer = tests.fake.StaticOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
+    static_optimizer = tests.fake.StaticOptimizer(
+        id="dev.opsani.com/big-in-japan", token="31337"
+    )
     await static_optimizer.request_description()
     fastapi_app.optimizer = static_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
@@ -169,6 +182,7 @@ async def test_hello(
 
     param = dict(descriptor=description.__opsani_repr__(), status="ok")
     response = await servo_runner._post_event(servo.api.Events.describe, param)
+
 
 # async def test_describe() -> None:
 #     pass
@@ -203,10 +217,11 @@ async def test_hello(
 #     ...
 #     # fire up runner.run and check .run, etc.
 
+
 async def test_authorization_redacted(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
-    fastapi_app: 'tests.OpsaniAPI',
+    fastapi_app: "tests.OpsaniAPI",
 ) -> None:
     static_optimizer = tests.fake.StaticOptimizer(
         id="dev.opsani.com/servox-integration-tests",
@@ -230,24 +245,26 @@ async def test_authorization_redacted(
 async def test_control_sent_on_adjust(
     servo_runner: servo.runner.ServoRunner,
     fakeapi_url: str,
-    fastapi_app: 'tests.OpsaniAPI',
-    mocker: pytest_mock.MockFixture
+    fastapi_app: "tests.OpsaniAPI",
+    mocker: pytest_mock.MockFixture,
 ) -> None:
-    sequenced_optimizer = tests.fake.SequencedOptimizer(id='dev.opsani.com/big-in-japan', token='31337')
-    control = servo.Control(settlement='10s')
-    await sequenced_optimizer.recommend_adjustments(adjustments=[], control=control),
-    sequenced_optimizer.sequence(
-        sequenced_optimizer.done()
+    sequenced_optimizer = tests.fake.SequencedOptimizer(
+        id="dev.opsani.com/big-in-japan", token="31337"
     )
+    control = servo.Control(settlement="10s")
+    await sequenced_optimizer.recommend_adjustments(adjustments=[], control=control),
+    sequenced_optimizer.sequence(sequenced_optimizer.done())
     fastapi_app.optimizer = sequenced_optimizer
     servo_runner.servo.optimizer.base_url = fakeapi_url
 
     adjust_connector = servo_runner.servo.get_connector("adjust")
-    event_handler = adjust_connector.get_event_handlers("adjust", servo.events.Preposition.on)[0]
+    event_handler = adjust_connector.get_event_handlers(
+        "adjust", servo.events.Preposition.on
+    )[0]
     spy = mocker.spy(event_handler, "handler")
 
     async def wait_for_optimizer_done():
-        while fastapi_app.optimizer.state.name != 'done':
+        while fastapi_app.optimizer.state.name != "done":
             await asyncio.sleep(0.01)
 
     await servo_runner.run()
@@ -256,11 +273,16 @@ async def test_control_sent_on_adjust(
 
     spy.assert_called_once_with(adjust_connector, [], control)
 
+
 # TODO: This doesn't need to be integration test
-async def test_adjustment_rejected(mocker, servo_runner: servo.runner.ServoRunner) -> None:
+async def test_adjustment_rejected(
+    mocker, servo_runner: servo.runner.ServoRunner
+) -> None:
     connector = servo_runner.servo.get_connector("adjust")
     with servo.utilities.pydantic.extra(connector):
-        on_handler = connector.get_event_handlers("adjust", servo.events.Preposition.on)[0]
+        on_handler = connector.get_event_handlers(
+            "adjust", servo.events.Preposition.on
+        )[0]
         mock = mocker.patch.object(on_handler, "handler")
         mock.side_effect = servo.errors.AdjustmentRejectedError()
         await servo_runner.servo.startup()

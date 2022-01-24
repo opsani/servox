@@ -7,7 +7,18 @@ import itertools
 import math
 import operator
 import re
-from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Type, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import httpx
 import pydantic
@@ -20,7 +31,8 @@ import servo.fast_fail
 
 DEFAULT_BASE_URL = "http://prometheus:9090"
 API_PATH = "/api/v1"
-CHANNEL = 'metrics.prometheus'
+CHANNEL = "metrics.prometheus"
+
 
 class AbsentMetricPolicy(str, enum.Enum):
     """An enumeration of behaviors for handling absent metrics.
@@ -35,10 +47,12 @@ class AbsentMetricPolicy(str, enum.Enum):
         warn: Log a warning message when an absent metric is encountered.
         fail: Raise a runtime exception when an absent metric is encountered.
     """
+
     ignore = "ignore"
     zero = "zero"
     warn = "warn"
     fail = "fail"
+
 
 class PrometheusMetric(servo.Metric):
     """A metric that can be measured by querying Prometheus.
@@ -51,6 +65,7 @@ class PrometheusMetric(servo.Metric):
             start and end times divided by the step. May be a numeric value or Golang duration string.
         absent: The behavior to apply when the queried metric is absent.
     """
+
     query: str = None
     step: servo.Duration = "1m"
     absent: AbsentMetricPolicy = AbsentMetricPolicy.ignore
@@ -91,19 +106,26 @@ class ActiveTarget(pydantic.BaseModel):
         last_scrape_duration: The amount of time that the last scrape took to complete.
         last_error: The last error that occurred during scraping (if any).
     """
-    pool: str = pydantic.Field(..., alias='scrapePool')
-    url: str = pydantic.Field(..., alias='scrapeUrl')
-    global_url: str = pydantic.Field(..., alias='globalUrl')
-    health: Literal['up', 'down', 'unknown']
+
+    pool: str = pydantic.Field(..., alias="scrapePool")
+    url: str = pydantic.Field(..., alias="scrapeUrl")
+    global_url: str = pydantic.Field(..., alias="globalUrl")
+    health: Literal["up", "down", "unknown"]
     labels: Optional[Dict[str, str]]
-    discovered_labels: Optional[Dict[str, str]] = pydantic.Field(..., alias='discoveredLabels')
-    last_scraped_at: Optional[datetime.datetime] = pydantic.Field(..., alias='lastScrape')
-    last_scrape_duration: Optional[servo.Duration] = pydantic.Field(..., alias='lastScrapeDuration')
-    last_error: Optional[str] = pydantic.Field(..., alias='lastError')
+    discovered_labels: Optional[Dict[str, str]] = pydantic.Field(
+        ..., alias="discoveredLabels"
+    )
+    last_scraped_at: Optional[datetime.datetime] = pydantic.Field(
+        ..., alias="lastScrape"
+    )
+    last_scrape_duration: Optional[servo.Duration] = pydantic.Field(
+        ..., alias="lastScrapeDuration"
+    )
+    last_error: Optional[str] = pydantic.Field(..., alias="lastError")
 
     def is_healthy(self) -> bool:
         """Return True if the target is healthy."""
-        return self.health == 'up'
+        return self.health == "up"
 
 
 class DroppedTarget(pydantic.BaseModel):
@@ -114,7 +136,10 @@ class DroppedTarget(pydantic.BaseModel):
     ### Attributes:
         discovered_labels: The set of labels discovered about the dropped target.
     """
-    discovered_labels: Optional[Dict[str, str]] = pydantic.Field(..., alias='discoveredLabels')
+
+    discovered_labels: Optional[Dict[str, str]] = pydantic.Field(
+        ..., alias="discoveredLabels"
+    )
 
 
 class BaseRequest(pydantic.BaseModel, abc.ABC):
@@ -124,6 +149,7 @@ class BaseRequest(pydantic.BaseModel, abc.ABC):
     The `param_attrs` attribute must return a sequence of attribute names
     that are to be serialized into request parameters.
     """
+
     endpoint: str
     param_attrs: Sequence[str]
 
@@ -134,6 +160,7 @@ class BaseRequest(pydantic.BaseModel, abc.ABC):
         The values serialized as parameters is determined by the sequence
             of attribute names returned by param_attrs attribute.
         """
+
         def _param_for_attr(attr: str) -> Optional[Tuple[str, str]]:
             value = getattr(self, attr)
             if not value:
@@ -152,9 +179,10 @@ class BaseRequest(pydantic.BaseModel, abc.ABC):
 
 class TargetsStateFilter(str, enum.Enum):
     """An enumeration of states to filter Prometheus targets by."""
-    active = 'active'
-    dropped = 'dropped'
-    any = 'any'
+
+    active = "active"
+    dropped = "dropped"
+    any = "any"
 
 
 class TargetsRequest(BaseRequest):
@@ -165,9 +193,10 @@ class TargetsRequest(BaseRequest):
         state: Target state to optionally filter by. One of
             `active`, `dropped`, or `any`.
     """
+
     endpoint: str = pydantic.Field("/targets", const=True)
     state: Optional[TargetsStateFilter] = None
-    param_attrs: Tuple[str] = pydantic.Field(('state', ), const=True)
+    param_attrs: Tuple[str] = pydantic.Field(("state",), const=True)
 
 
 class QueryRequest(BaseRequest, abc.ABC):
@@ -177,6 +206,7 @@ class QueryRequest(BaseRequest, abc.ABC):
         query: A PromQL string to be evaluated by Prometheus.
         timeout: The maximum amount of time to consume while evaluating the query.
     """
+
     query: str
     timeout: Optional[servo.Duration]
 
@@ -189,8 +219,9 @@ class InstantQuery(QueryRequest):
         time: An optional time value to evaluate the query at. `None` defers to the
             server current time when the query is evaluated.
     """
+
     endpoint: str = pydantic.Field("/query", const=True)
-    param_attrs: Tuple[str] = pydantic.Field(('query', 'time', 'timeout'), const=True)
+    param_attrs: Tuple[str] = pydantic.Field(("query", "time", "timeout"), const=True)
     time: Optional[datetime.datetime] = None
 
 
@@ -205,8 +236,11 @@ class RangeQuery(QueryRequest):
             points for. A step of '5m' would return a measurement for the metric every five
             minutes across the queried time range, determining the number of data points returned.
     """
+
     endpoint: str = pydantic.Field("/query_range", const=True)
-    param_attrs: Tuple[str] = pydantic.Field(('query', 'start', 'end', 'step', 'timeout'), const=True)
+    param_attrs: Tuple[str] = pydantic.Field(
+        ("query", "start", "end", "step", "timeout"), const=True
+    )
     start: datetime.datetime
     end: datetime.datetime
     step: servo.Duration
@@ -240,6 +274,7 @@ class ResultType(str, enum.Enum):
         scalar: A result consisting of a time and a numeric value encoded as a string.
         string: A result consisting of a time and a string value.
     """
+
     matrix = "matrix"
     vector = "vector"
     scalar = "scalar"
@@ -261,6 +296,7 @@ class BaseVector(abc.ABC, pydantic.BaseModel):
     Attributes:
         metric: The Prometheus metric name and labels.
     """
+
     metric: Dict[str, str]
 
     @abc.abstractmethod
@@ -281,13 +317,14 @@ class InstantVector(BaseVector):
     ### Attributes:
         value: The time and value of the metric measured.
     """
+
     value: Scalar
 
     def __len__(self) -> int:
         return 1
 
     def __iter__(self) -> Scalar:
-        return iter((self.value, ))
+        return iter((self.value,))
 
 
 class RangeVector(BaseVector):
@@ -299,6 +336,7 @@ class RangeVector(BaseVector):
     ### Attributes:
         values: A sequence of time and value pairs of the metric across the measured range.
     """
+
     values: List[Scalar]
 
     def __len__(self) -> int:
@@ -313,6 +351,7 @@ class Status(str, enum.Enum):
 
     See https://prometheus.io/docs/prometheus/latest/querying/api/#format-overview
     """
+
     success = "success"
     error = "error"
 
@@ -324,8 +363,9 @@ class Error(pydantic.BaseModel):
         type: The type of error that occurred.
         message: A textual description of the error.
     """
-    type: str = pydantic.Field(..., alias='errorType')
-    message: str = pydantic.Field(..., alias='error')
+
+    type: str = pydantic.Field(..., alias="errorType")
+    message: str = pydantic.Field(..., alias="error")
 
 
 class QueryData(pydantic.BaseModel):
@@ -339,7 +379,8 @@ class QueryData(pydantic.BaseModel):
         result_type: The type of result returned by the query.
         result: The query result. The type is polymorphic based on the result type.
     """
-    result_type: ResultType = pydantic.Field(..., alias='resultType')
+
+    result_type: ResultType = pydantic.Field(..., alias="resultType")
     result: Union[List[InstantVector], List[RangeVector], Scalar, String]
 
     def __len__(self) -> int:
@@ -354,7 +395,7 @@ class QueryData(pydantic.BaseModel):
         if self.is_vector:
             return iter(self.result)
         elif self.is_value:
-            return iter((self.result, ))
+            return iter((self.result,))
         else:
             raise TypeError(f"unknown data type '{self.result_type}'")
 
@@ -364,12 +405,19 @@ class QueryData(pydantic.BaseModel):
     @property
     def is_vector(self) -> bool:
         """Returns True when the result is a vector or matrix."""
-        return self.result_type in (servo.connectors.prometheus.ResultType.vector, servo.connectors.prometheus.ResultType.matrix)
+        return self.result_type in (
+            servo.connectors.prometheus.ResultType.vector,
+            servo.connectors.prometheus.ResultType.matrix,
+        )
 
     @property
     def is_value(self) -> bool:
         """Returns True when the result is a scalar or string."""
-        return self.result_type in (servo.connectors.prometheus.ResultType.scalar, servo.connectors.prometheus.ResultType.string)
+        return self.result_type in (
+            servo.connectors.prometheus.ResultType.scalar,
+            servo.connectors.prometheus.ResultType.string,
+        )
+
 
 class TargetData(pydantic.BaseModel):
     """The data component of a response from the targets endpoint of the Prometheus HTTP API.
@@ -378,8 +426,11 @@ class TargetData(pydantic.BaseModel):
         active_targets: The active targets being scraped by Prometheus.
         dropped_targets: Targets that were previously active but are no longer being scraped.
     """
+
     active_targets: Optional[List[ActiveTarget]] = pydantic.Field(alias="activeTargets")
-    dropped_targets: Optional[List[DroppedTarget]] = pydantic.Field(alias="droppedTargets")
+    dropped_targets: Optional[List[DroppedTarget]] = pydantic.Field(
+        alias="droppedTargets"
+    )
 
     def __len__(self) -> int:
         return len(list(iter(self)))
@@ -405,6 +456,7 @@ class BaseResponse(pydantic.BaseModel, abc.ABC):
         error: A description of the error triggering query failure, if any.
         warnings: A list of warnings returned during query evaluation, if any.
     """
+
     request: BaseRequest
     status: Status
     data: Data
@@ -413,14 +465,18 @@ class BaseResponse(pydantic.BaseModel, abc.ABC):
 
     @pydantic.root_validator(pre=True)
     def _parse_error(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if error := dict(filter(lambda item: item[0].startswith("error"), values.items())):
+        if error := dict(
+            filter(lambda item: item[0].startswith("error"), values.items())
+        ):
             values["error"] = error
         return values
 
     def raise_for_error(self) -> None:
         """Raise an error if the request was not successful."""
         if self.status == Status.error:
-            raise RuntimeError(f"Prometheus query request failed with error '{self.error.type}': {self.error.message}")
+            raise RuntimeError(
+                f"Prometheus query request failed with error '{self.error.type}': {self.error.message}"
+            )
 
 
 class TargetsResponse(BaseResponse):
@@ -430,6 +486,7 @@ class TargetsResponse(BaseResponse):
     cumulative of the active and dropped targets collections. Utilize the `active` and `dropped`
     attributes to focus on a particular collection of targets.
     """
+
     data: TargetData
 
     def __len__(self) -> int:
@@ -455,6 +512,7 @@ class MetricResponse(BaseResponse):
     ### Attributes:
         metric: The metric that was queried for.
     """
+
     metric: PrometheusMetric
 
     def results(self) -> Optional[List[servo.Reading]]:
@@ -471,15 +529,13 @@ class MetricResponse(BaseResponse):
         results_ = []
         for result in self.data:
             if self.data.is_vector:
-                results_.append(
-                    self._time_series_from_vector(result)
-                )
+                results_.append(self._time_series_from_vector(result))
             elif self.data.is_value:
-                results_.append(
-                    servo.DataPoint(self.metric, **result)
-                )
+                results_.append(servo.DataPoint(self.metric, **result))
             else:
-                raise TypeError(f"unknown Result type '{result.__class__.name}' encountered")
+                raise TypeError(
+                    f"unknown Result type '{result.__class__.name}' encountered"
+                )
 
         return results_
 
@@ -487,7 +543,10 @@ class MetricResponse(BaseResponse):
         instance = vector.metric.get("instance")
         job = vector.metric.get("job")
         annotation = " ".join(
-            map(lambda m: "=".join(m), sorted(vector.metric.items(), key=operator.itemgetter(0)))
+            map(
+                lambda m: "=".join(m),
+                sorted(vector.metric.items(), key=operator.itemgetter(0)),
+            )
         )
         return servo.TimeSeries(
             self.metric,
@@ -513,8 +572,11 @@ class Client(pydantic.BaseModel):
     ### Attributes:
         base_url: The base URL for connecting to Prometheus.
     """
+
     base_url: pydantic.AnyHttpUrl
-    _normalize_base_url = pydantic.validator('base_url', allow_reuse=True)(_rstrip_slash)
+    _normalize_base_url = pydantic.validator("base_url", allow_reuse=True)(
+        _rstrip_slash
+    )
 
     @property
     def url(self) -> str:
@@ -527,7 +589,7 @@ class Client(pydantic.BaseModel):
         time: Optional[datetime.datetime] = None,
         *,
         timeout: Optional[servo.DurationDescriptor] = None,
-        method: Literal['GET', 'POST'] = 'GET'
+        method: Literal["GET", "POST"] = "GET",
     ) -> BaseResponse:
         """Send an instant query to Prometheus for evaluation and return the response.
 
@@ -563,7 +625,7 @@ class Client(pydantic.BaseModel):
         step: servo.Duration = None,
         *,
         timeout: Optional[servo.DurationDescriptor] = None,
-        method: Literal['GET', 'POST'] = 'GET'
+        method: Literal["GET", "POST"] = "GET",
     ) -> BaseResponse:
         """Send a range query to Prometheus for evaluation and return the response."""
         if isinstance(promql, PrometheusMetric):
@@ -586,39 +648,55 @@ class Client(pydantic.BaseModel):
         )
         return await self.send_request(method, query, response_type)
 
-    async def list_targets(self, state: Optional[TargetsStateFilter] = None) -> TargetsResponse:
+    async def list_targets(
+        self, state: Optional[TargetsStateFilter] = None
+    ) -> TargetsResponse:
         """List the targets discovered by Prometheus.
 
-            ### Args:
-                state: Optionally filter by active or dropped target state.
+        ### Args:
+            state: Optionally filter by active or dropped target state.
         """
-        return await self.send_request("GET", TargetsRequest(state=state), TargetsResponse)
+        return await self.send_request(
+            "GET", TargetsRequest(state=state), TargetsResponse
+        )
 
-    async def check_is_metric_absent(self, queryable: Union[str, PrometheusMetric]) -> bool:
+    async def check_is_metric_absent(
+        self, queryable: Union[str, PrometheusMetric]
+    ) -> bool:
         """Check if the metric referenced in a Prometheus expression is absent."""
         query = (
-            f"absent({queryable.query})" if isinstance(queryable, PrometheusMetric)
+            f"absent({queryable.query})"
+            if isinstance(queryable, PrometheusMetric)
             else f"absent({queryable})"
         )
         response = await self.query(query)
         servo.logger.debug(f"Absent metric introspection returned {query}: {response}")
         if response.data:
-            if response.data.result_type != servo.connectors.prometheus.ResultType.vector:
-                raise TypeError(f"expected a vector result but found {response.data.result_type}")
+            if (
+                response.data.result_type
+                != servo.connectors.prometheus.ResultType.vector
+            ):
+                raise TypeError(
+                    f"expected a vector result but found {response.data.result_type}"
+                )
             if len(response.data) != 1:
-                raise ValueError(f"expected a single result vector but found {len(response.data)}")
+                raise ValueError(
+                    f"expected a single result vector but found {len(response.data)}"
+                )
             result = next(iter(response.data))
             return int(result.value[1]) == 1
 
         else:
-            servo.logger.info(f"Metric '{query}' is present in Prometheus but returned an empty result set")
+            servo.logger.info(
+                f"Metric '{query}' is present in Prometheus but returned an empty result set"
+            )
             return False
 
     async def send_request(
         self,
-        method: Literal['GET', 'POST'],
+        method: Literal["GET", "POST"],
         request: QueryRequest,
-        response_type: Type[BaseResponse] = BaseResponse
+        response_type: Type[BaseResponse] = BaseResponse,
     ) -> BaseResponse:
         """Send a request to the Prometheus HTTP API and return the response.
 
@@ -633,7 +711,8 @@ class Client(pydantic.BaseModel):
         async with httpx.AsyncClient(base_url=self.url) as client:
             try:
                 kwargs = (
-                    dict(params=request.params) if method == 'GET'
+                    dict(params=request.params)
+                    if method == "GET"
                     else dict(data=request.params)
                 )
                 http_request = client.build_request(method, request.endpoint, **kwargs)
@@ -650,13 +729,16 @@ class Client(pydantic.BaseModel):
                 )
                 raise
 
+
 class PrometheusConfiguration(servo.BaseConfiguration):
     """PrometheusConfiguration objects describe how PrometheusConnector objects
     capture measurements from the Prometheus metrics server.
     """
 
     base_url: pydantic.AnyHttpUrl = DEFAULT_BASE_URL
-    _normalize_base_url = pydantic.validator('base_url', allow_reuse=True)(_rstrip_slash)
+    _normalize_base_url = pydantic.validator("base_url", allow_reuse=True)(
+        _rstrip_slash
+    )
     """The base URL for accessing the Prometheus metrics API.
 
     The URL must point to the root of the Prometheus deployment. Resource paths
@@ -676,7 +758,9 @@ class PrometheusConfiguration(servo.BaseConfiguration):
     scraped by the Prometheus instance being queried.
     """
 
-    fast_fail: servo.configuration.FastFailConfiguration = pydantic.Field(default_factory=servo.configuration.FastFailConfiguration)
+    fast_fail: servo.configuration.FastFailConfiguration = pydantic.Field(
+        default_factory=servo.configuration.FastFailConfiguration
+    )
     """Configuration sub section for fast fail behavior. Defines toggle and timing of SLO observation"""
 
     @classmethod
@@ -688,25 +772,28 @@ class PrometheusConfiguration(servo.BaseConfiguration):
             A default configuration for PrometheusConnector objects.
         """
         return cls(
-            **{**dict(
-                description="Update the base_url and metrics to match your Prometheus configuration",
-                metrics=[
-                    PrometheusMetric(
-                        "throughput",
-                        servo.Unit.requests_per_second,
-                        query="rate(http_requests_total[5m])",
-                        absent=AbsentMetricPolicy.ignore,
-                        step="1m",
-                    ),
-                    PrometheusMetric(
-                        "error_rate",
-                        servo.Unit.percentage,
-                        query="rate(errors[5m])",
-                        absent=AbsentMetricPolicy.ignore,
-                        step="1m",
-                    ),
-                ],
-            ), **kwargs}
+            **{
+                **dict(
+                    description="Update the base_url and metrics to match your Prometheus configuration",
+                    metrics=[
+                        PrometheusMetric(
+                            "throughput",
+                            servo.Unit.requests_per_second,
+                            query="rate(http_requests_total[5m])",
+                            absent=AbsentMetricPolicy.ignore,
+                            step="1m",
+                        ),
+                        PrometheusMetric(
+                            "error_rate",
+                            servo.Unit.percentage,
+                            query="rate(errors[5m])",
+                            absent=AbsentMetricPolicy.ignore,
+                            step="1m",
+                        ),
+                    ],
+                ),
+                **kwargs,
+            }
         )
 
 
@@ -716,6 +803,7 @@ class PrometheusChecks(servo.BaseChecks):
     ### Attributes:
         config: The connector configuration being checked.
     """
+
     config: PrometheusConfiguration
 
     @property
@@ -730,15 +818,14 @@ class PrometheusChecks(servo.BaseChecks):
     @servo.multicheck('Run query "{item.escaped_query}"')
     async def check_queries(self) -> Tuple[Iterable, servo.CheckHandler]:
         """Checks that all metrics have valid, well-formed PromQL queries."""
+
         async def query_for_metric(metric: PrometheusMetric) -> str:
             start, end = (
                 datetime.datetime.now() - datetime.timedelta(minutes=10),
                 datetime.datetime.now(),
             )
 
-            self.logger.trace(
-                f"Querying Prometheus (`{metric.query}`)"
-            )
+            self.logger.trace(f"Querying Prometheus (`{metric.query}`)")
             response = await self._client.query_range(metric, start, end)
             return f"returned {len(response.data)} results"
 
@@ -765,6 +852,7 @@ class PrometheusConnector(servo.BaseConnector):
     ### Attributes:
         config: The configuration of the connector instance.
     """
+
     config: PrometheusConfiguration
 
     @servo.on_event()
@@ -781,17 +869,21 @@ class PrometheusConnector(servo.BaseConnector):
                 client = Client(base_url=self.config.base_url)
                 responses = await asyncio.gather(
                     *list(map(client.query, self.config.metrics)),
-                    return_exceptions=True
+                    return_exceptions=True,
                 )
                 for response in responses:
                     if isinstance(response, Exception):
-                        logger.error(f"failed querying Prometheus for metrics: {response}")
+                        logger.error(
+                            f"failed querying Prometheus for metrics: {response}"
+                        )
                         continue
 
                     if response.data:
                         # NOTE: Instant queries return a single vector
                         timestamp, value = response.data[0].value
-                        report.append((response.metric.name, timestamp.isoformat(), value))
+                        report.append(
+                            (response.metric.name, timestamp.isoformat(), value)
+                        )
 
                 await publisher(servo.pubsub.Message(json=report))
                 logger.debug(f"Published {len(report)} metrics.")
@@ -871,7 +963,11 @@ class PrometheusConnector(servo.BaseConnector):
         progress = servo.EventProgress(timeout=measurement_duration, settlement=None)
 
         # Handle fast fail metrics
-        if self.config.fast_fail.disabled == 0 and control.userdata and control.userdata.slo:
+        if (
+            self.config.fast_fail.disabled == 0
+            and control.userdata
+            and control.userdata.slo
+        ):
             self.logger.info(
                 "Fast Fail enabled, the following SLO Conditions will be monitored during measurement: "
                 f"{', '.join(map(str, control.userdata.slo.conditions))}"
@@ -879,7 +975,12 @@ class PrometheusConnector(servo.BaseConnector):
             fast_fail_observer = servo.fast_fail.FastFailObserver(
                 config=self.config.fast_fail,
                 input=control.userdata.slo,
-                metrics_getter=functools.partial(self._query_slo_metrics, metrics=metrics__)
+                metrics_getter=functools.partial(
+                    self._query_slo_metrics, metrics=metrics__
+                ),
+            )
+            fast_fail_progress = servo.EventProgress(
+                timeout=measurement_duration, settlement=eager_settlement
             )
             fast_fail_progress = servo.EventProgress(timeout=measurement_duration, settlement=None)
             gather_tasks = [
@@ -924,7 +1025,9 @@ class PrometheusConnector(servo.BaseConnector):
     ) -> List[servo.TimeSeries]:
         client = Client(base_url=self.config.base_url)
         response: MetricResponse = await client.query_range(metric, start, end)
-        self.logger.trace(f"Got response data type {response.__class__} for metric {metric}: {response}")
+        self.logger.trace(
+            f"Got response data type {response.__class__} for metric {metric}: {response}"
+        )
         response.raise_for_error()
 
         if response.data:
@@ -941,21 +1044,31 @@ class PrometheusConnector(servo.BaseConnector):
                             f"Found absent metric for query (`{metric.query}`)"
                         )
                     elif metric.absent == AbsentMetricPolicy.fail:
-                        servo.logger.error(f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')")
-                        raise RuntimeError(f"Required metric '{metric.name}' is absent from Prometheus")
+                        servo.logger.error(
+                            f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')"
+                        )
+                        raise RuntimeError(
+                            f"Required metric '{metric.name}' is absent from Prometheus"
+                        )
                     else:
-                        raise ValueError(f"unknown metric absent value: {metric.absent}")
+                        raise ValueError(
+                            f"unknown metric absent value: {metric.absent}"
+                        )
 
             return []
 
-    async def _query_slo_metrics(self, start: datetime, end: datetime, metrics: List[PrometheusMetric]) -> Dict[str, List[servo.TimeSeries]]:
+    async def _query_slo_metrics(
+        self, start: datetime, end: datetime, metrics: List[PrometheusMetric]
+    ) -> Dict[str, List[servo.TimeSeries]]:
         """Query prometheus for the provided metrics and return mapping of metric names to their corresponding readings"""
         readings = await asyncio.gather(
             *list(map(lambda m: self._query_prometheus(m, start, end), metrics))
         )
         return dict(map(lambda tup: (tup[0].name, tup[1]), zip(metrics, readings)))
 
+
 app = servo.cli.ConnectorCLI(PrometheusConnector, help="Metrics from Prometheus")
+
 
 @app.command()
 def targets(
@@ -978,25 +1091,31 @@ def targets(
             [
                 target.pool,
                 target.health,
-                f"{target.url} ({target.global_url})" if target.url != target.global_url else target.url,
+                f"{target.url} ({target.global_url})"
+                if target.url != target.global_url
+                else target.url,
                 "\n".join(labels),
-                f"{target.last_scraped_at:%Y-%m-%d %H:%M:%S} ({servo.cli.timeago(target.last_scraped_at, pytz.utc.localize(datetime.datetime.now()))} in {target.last_scrape_duration})" if target.last_scraped_at else "-",
+                f"{target.last_scraped_at:%Y-%m-%d %H:%M:%S} ({servo.cli.timeago(target.last_scraped_at, pytz.utc.localize(datetime.datetime.now()))} in {target.last_scrape_duration})"
+                if target.last_scraped_at
+                else "-",
                 target.last_error or "-",
             ]
         )
 
     servo.cli.print_table(table, headers)
 
+
 def _delta(a, b):
-    if (a == b):
+    if a == b:
         return 0
     elif (a < 0) and (b < 0) or (a > 0) and (b > 0):
-        if (a < b):
-            return (abs(abs(a) - abs(b)))
+        if a < b:
+            return abs(abs(a) - abs(b))
         else:
             return -(abs(abs(a) - abs(b)))
     else:
-        return math.copysign((abs(a) + abs(b)),b)
+        return math.copysign((abs(a) + abs(b)), b)
+
 
 def _chart_delta(a, b, unit) -> str:
     delta = _delta(round(a), round(b))

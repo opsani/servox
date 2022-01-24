@@ -12,7 +12,17 @@ import contextlib
 import contextvars
 import importlib
 import re
-from typing import Any, ClassVar, Generator, Iterable, Optional, Set, Tuple, Type, get_type_hints
+from typing import (
+    Any,
+    ClassVar,
+    Generator,
+    Iterable,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    get_type_hints,
+)
 
 import loguru
 import pkg_resources
@@ -35,6 +45,7 @@ __all__ = [
 
 
 _current_context_var = contextvars.ContextVar("servox.current_connector", default=None)
+
 
 def current_connector() -> Optional["BaseConnector"]:
     """Return the active connector for the current execution context.
@@ -117,7 +128,9 @@ class BaseConnector(
 
     ##
     # Shared telemetry metadata
-    telemetry: servo.telemetry.Telemetry = pydantic.Field(default_factory=servo.telemetry.Telemetry)
+    telemetry: servo.telemetry.Telemetry = pydantic.Field(
+        default_factory=servo.telemetry.Telemetry
+    )
 
     ##
     # Validators
@@ -165,12 +178,12 @@ class BaseConnector(
 
     @classmethod
     def version_summary(cls) -> str:
-        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        cryptonym_ = f' "{cls.cryptonym}"' if cls.cryptonym else ""
         return f"{cls.full_name} v{cls.version}{cryptonym_}"
 
     @classmethod
     def summary(cls) -> str:
-        cryptonym_ = f" \"{cls.cryptonym}\"" if cls.cryptonym else ""
+        cryptonym_ = f' "{cls.cryptonym}"' if cls.cryptonym else ""
         return (
             f"{cls.full_name} v{cls.version}{cryptonym_} ({cls.maturity})\n"
             f"{cls.description}\n"
@@ -178,7 +191,7 @@ class BaseConnector(
             f"Licensed under the terms of {cls.license}"
         )
 
-    def __init_subclass__(cls: Type["BaseConnector"], **kwargs) -> None: # noqa: D105
+    def __init_subclass__(cls: Type["BaseConnector"], **kwargs) -> None:  # noqa: D105
         super().__init_subclass__(**kwargs)
 
         _connector_subclasses.add(cls)
@@ -193,7 +206,7 @@ class BaseConnector(
         *args,
         name: Optional[str] = None,
         **kwargs,
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         name = name if name is not None else self.__class__.__default_name__
         super().__init__(
             *args,
@@ -201,7 +214,7 @@ class BaseConnector(
             **kwargs,
         )
 
-    def __hash__(self): # noqa: D105
+    def __hash__(self):  # noqa: D105
         return hash(
             (
                 self.name,
@@ -210,7 +223,7 @@ class BaseConnector(
         )
 
     @property
-    def api_client_options(self) -> Dict[str, Any]: # noqa: D105
+    def api_client_options(self) -> Dict[str, Any]:  # noqa: D105
         if not self.optimizer:
             raise RuntimeError(
                 f"cannot construct API client: optimizer is not configured"
@@ -238,8 +251,8 @@ class BaseConnector(
     def current(self):
         """A context manager that sets the current connector context."""
         try:
-          token = _current_context_var.set(self)
-          yield self
+            token = _current_context_var.set(self)
+            yield self
 
         finally:
             _current_context_var.reset(token)
@@ -313,6 +326,7 @@ def _name_for_connector_class(cls: Type[BaseConnector]) -> Optional[str]:
             return name
     return None
 
+
 #####
 
 ENTRY_POINT_GROUP = "servo.connectors"
@@ -321,7 +335,7 @@ ENTRY_POINT_GROUP = "servo.connectors"
 class ConnectorLoader:
     """Discover and load connectors via Python setuptools entry points."""
 
-    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None: # noqa: D107
+    def __init__(self, group: str = ENTRY_POINT_GROUP) -> None:  # noqa: D107
         self.group = group
 
     def iter_entry_points(self) -> Generator[pkg_resources.EntryPoint, None, None]:
@@ -388,7 +402,7 @@ def _routes_for_connectors_descriptor(connectors) -> Dict[str, "BaseConnector"]:
             elif connector_class := _connector_class_from_string(connector):
                 connector_routes[connector_class.__default_name__] = connector_class
             else:
-                raise ValueError(f"no connector found for the identifier \"{connector}\"")
+                raise ValueError(f'no connector found for the identifier "{connector}"')
 
         return connector_routes
 

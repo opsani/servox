@@ -7,7 +7,19 @@ import contextlib
 import datetime
 import pathlib
 import time
-from typing import IO, Any, Awaitable, Callable, Dict, List, NamedTuple, Optional, TypeVar, Union, cast
+from typing import (
+    IO,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    NamedTuple,
+    Optional,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import loguru
 
@@ -263,14 +275,13 @@ async def stream_subprocess_shell(
     end = time.time()
     duration = Duration(end - start)
     if result == 0:
-        loguru.logger.success(
-            f"Subprocess succeeded in {duration} (`{cmd}`)"
-        )
+        loguru.logger.success(f"Subprocess succeeded in {duration} (`{cmd}`)")
     else:
         loguru.logger.error(
             f"Subprocess failed with return code {result} in {duration} (`{cmd}`)"
         )
     return result
+
 
 async def stream_subprocess_output(
     process: asyncio.subprocess.Process,
@@ -295,13 +306,15 @@ async def stream_subprocess_output(
     if process.stdout:
         tasks.append(
             asyncio.create_task(
-                _read_lines_from_output_stream(process.stdout, stdout_callback), name="stdout"
+                _read_lines_from_output_stream(process.stdout, stdout_callback),
+                name="stdout",
             )
         )
     if process.stderr:
         tasks.append(
             asyncio.create_task(
-                _read_lines_from_output_stream(process.stderr, stderr_callback), name="stderr"
+                _read_lines_from_output_stream(process.stderr, stderr_callback),
+                name="stderr",
             )
         )
 
@@ -310,10 +323,7 @@ async def stream_subprocess_output(
     )
     try:
         # Gather the stream output tasks and the parent process
-        gather_task = asyncio.gather(
-            *tasks,
-            process.wait()
-        )
+        gather_task = asyncio.gather(*tasks, process.wait())
         await asyncio.wait_for(gather_task, timeout=timeout_in_seconds)
 
     except (asyncio.TimeoutError, asyncio.CancelledError):
