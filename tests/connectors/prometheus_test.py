@@ -560,17 +560,13 @@ class TestPrometheusIntegration:
                         servo.logger.success(f"Bursted {count} requests to {fiber_url} over 15 seconds.")
 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
-                event_loop.call_later(
-                    15,
-                    asyncio.create_task,
-                    burst_traffic()
-                )
+                event_loop.call_later(30, asyncio.create_task, burst_traffic())
                 measurement = await asyncio.wait_for(
-                    connector.measure(control=servo.Control(duration="10m")),
-                    timeout=300 # NOTE: if we haven't returned in 5 minutes all is lost
+                    connector.measure(control=servo.Control(duration="5m")),
+                    timeout=360 # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
-                assert len(measurement) == 1, "expected one TimeSeries (error_rate should be absent)"
+                assert len(measurement) == 1
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
