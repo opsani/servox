@@ -5,6 +5,7 @@ import re
 from servo.types.settings import *
 from servo.types.settings import _is_step_aligned
 
+
 class BasicSetting(Setting):
     name = "foo"
     type = "bar"
@@ -190,6 +191,7 @@ class TestEnumSetting:
             == "invalid value: 'three' is not in the values list ['one', 'two']"
         )
 
+
 class TestRangeSetting:
     def test_type(self) -> None:
         setting = RangeSetting(name="bar", min=0.0, max=1.0, step=0.1)
@@ -206,7 +208,12 @@ class TestRangeSetting:
         assert error.value.errors()[0]["msg"] == "unexpected value; permitted: 'range'"
 
     def test_validate_step_alignment_suggestion(self) -> None:
-        with pytest.raises(pydantic.ValidationError, match=re.escape("RangeSetting('invalid' 3.0-11.0, 3.0) min/max difference is not step aligned: 8.0 is not a multiple of 3.0 (consider min 5.0 or 2.0, max 9.0 or 12.0).")):
+        with pytest.raises(
+            pydantic.ValidationError,
+            match=re.escape(
+                "RangeSetting('invalid' 3.0-11.0, 3.0) min/max difference is not step aligned: 8.0 is not a multiple of 3.0 (consider min 5.0 or 2.0, max 9.0 or 12.0)."
+            ),
+        ):
             RangeSetting(name="invalid", min=3.0, max=11.0, step=3.0)
 
     @pytest.mark.parametrize(
@@ -335,10 +342,20 @@ class TestRangeSetting:
         ("min", "max", "step", "error_message"),
         [
             (1, 3, 1, None),
-            (1, 1, 1, "step must be zero when min equals max: step 1 cannot step from 1 to 1"),
+            (
+                1,
+                1,
+                1,
+                "step must be zero when min equals max: step 1 cannot step from 1 to 1",
+            ),
             (1, 0, 1, "min cannot be greater than max (1 > 0)"),
             (1.0, 3.0, 1.0, None),
-            (1.0, 2.0, 3.0, "RangeSetting('invalid' 1.0-2.0, 3.0) min/max difference is not step aligned"),
+            (
+                1.0,
+                2.0,
+                3.0,
+                "RangeSetting('invalid' 1.0-2.0, 3.0) min/max difference is not step aligned",
+            ),
             (1.0, 0.0, 1.0, "min cannot be greater than max (1.0 > 0.0)"),
         ],
     )
@@ -356,9 +373,7 @@ class TestRangeSetting:
         else:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
 
-    def test_validation_on_value_mutation(
-        self
-    ) -> None:
+    def test_validation_on_value_mutation(self) -> None:
         setting = RangeSetting(name="range", min=0, max=10, step=1)
         with pytest.raises(pydantic.ValidationError) as error:
             setting.value = 25
@@ -367,7 +382,10 @@ class TestRangeSetting:
         assert "1 validation error for RangeSetting" in str(error.value)
         assert error.value.errors()[0]["loc"] == ("__root__",)
         assert error.value.errors()[0]["type"] == "value_error"
-        assert error.value.errors()[0]["msg"] == "invalid value: 25 is outside of the range 0-10"
+        assert (
+            error.value.errors()[0]["msg"]
+            == "invalid value: 25 is outside of the range 0-10"
+        )
 
     @pytest.mark.parametrize(
         ("min", "max", "step", "error_message"),
@@ -392,12 +410,11 @@ class TestRangeSetting:
             RangeSetting(name="valid", min=min, max=max, step=step, value=1)
 
     def test_step_cannot_be_zero(self) -> None:
-        with pytest.raises(ValueError, match='step cannot be zero') as error:
+        with pytest.raises(ValueError, match="step cannot be zero") as error:
             RangeSetting(name="range", min=0, max=10, step=0)
 
     def test_min_can_equal_max(self) -> None:
         RangeSetting(name="range", min=5, max=5, step=0)
-
 
 
 class TestCPU:
@@ -493,6 +510,7 @@ class TestReplicas:
             error.value.errors()[0]["msg"] == "unexpected value; permitted: 'replicas'"
         )
 
+
 class TestInstanceType:
     def test_is_enum_setting(self) -> None:
         assert issubclass(InstanceType, EnumSetting)
@@ -518,6 +536,7 @@ class TestInstanceType:
         assert field.required == False
         assert field.allow_none == False
 
+
 @pytest.mark.parametrize(
     "value, step, aligned",
     [
@@ -534,32 +553,38 @@ class TestInstanceType:
         (0, 0, True),
         (1, 1, True),
         (0.1, 0.1, True),
-    ]
+    ],
 )
 def test_step_alignment(value, step, aligned) -> None:
     qualifier = "to" if aligned else "not to"
-    assert _is_step_aligned(value, step) == aligned, f"Expected value {value} {qualifier} be aligned with step {step}"
+    assert (
+        _is_step_aligned(value, step) == aligned
+    ), f"Expected value {value} {qualifier} be aligned with step {step}"
+
 
 @pytest.mark.parametrize(
     "input, expected_type",
     [
         ("int", int),
         ("float", float),
-    ]
+    ],
 )
 def test_numeric_type(input, expected_type):
     assert NumericType.validate(input) == expected_type
+
 
 class TestEnvironmentSettings:
     @pytest.mark.parametrize(
         "expected_value, min, max, step, value, value_type",
         [
             (3.0, 0, 5, 1, "3", None),
-            (3,   0, 5, 1, "3", "int"),
+            (3, 0, 5, 1, "3", "int"),
             (3.0, 0, 5, 1, "3", "float"),
-        ]
+        ],
     )
-    def test_environment_range_setting(self, expected_value, min, max, step, value, value_type):
+    def test_environment_range_setting(
+        self, expected_value, min, max, step, value, value_type
+    ):
         test_value = EnvironmentRangeSetting(
             name="test", min=min, max=max, step=step, value=value, value_type=value_type
         ).value
@@ -570,9 +595,12 @@ class TestEnvironmentSettings:
         [
             ("TEST1", None, "TEST1"),
             ("TEST2", "LITERAL", "LITERAL"),
-        ]
+        ],
     )
     def test_environment_enum_setting(self, name, literal, expected_name):
-        assert EnvironmentEnumSetting(
-            name=name, literal=literal, value="TEST", values=["TEST", "TSET"]
-        ).variable_name == expected_name
+        assert (
+            EnvironmentEnumSetting(
+                name=name, literal=literal, value="TEST", values=["TEST", "TSET"]
+            ).variable_name
+            == expected_name
+        )

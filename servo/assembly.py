@@ -18,7 +18,7 @@ import servo.pubsub
 import servo.servo
 import servo.telemetry
 
-__all__ = ["Assembly", 'current_assembly']
+__all__ = ["Assembly", "current_assembly"]
 
 
 _current_context_var = contextvars.ContextVar("servox.current_assembly", default=None)
@@ -92,7 +92,9 @@ class Assembly(pydantic.BaseModel):
                 configs.append({})
 
         if len(configs) > 1 and optimizer is not None:
-            raise ValueError("cannot configure a multi-servo assembly with a single optimizer")
+            raise ValueError(
+                "cannot configure a multi-servo assembly with a single optimizer"
+            )
 
         # Set up the event bus and pub/sub exchange
         pubsub_exchange = servo.pubsub.Exchange()
@@ -100,9 +102,7 @@ class Assembly(pydantic.BaseModel):
         for config in configs:
             # TODO: Needs to be public / have a better name
             # TODO: We need to index the env vars here for multi-servo
-            servo_config_model, routes = _create_config_model(
-                config=config, env=env
-            )
+            servo_config_model, routes = _create_config_model(config=config, env=env)
             servo_config = servo_config_model.parse_obj(config)
             if not servo_config.optimizer:
                 servo_config.optimizer = optimizer
@@ -168,7 +168,9 @@ class Assembly(pydantic.BaseModel):
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         prepositions: servo.events.Preposition = (
-            servo.events.Preposition.before | servo.events.Preposition.on | servo.events.Preposition.after
+            servo.events.Preposition.before
+            | servo.events.Preposition.on
+            | servo.events.Preposition.after
         ),
         return_exceptions: bool = False,
         **kwargs,
@@ -185,7 +187,7 @@ class Assembly(pydantic.BaseModel):
                         include=include,
                         exclude=exclude,
                         prepositions=prepositions,
-                        **kwargs
+                        **kwargs,
                     ),
                     self.servos,
                 )
@@ -242,27 +244,27 @@ class Assembly(pydantic.BaseModel):
     async def startup(self):
         """Notify all servos that the assembly is starting up."""
         await asyncio.gather(
-                *list(
-                    map(
-                        lambda s: s.startup(),
-                        self.servos,
-                    )
+            *list(
+                map(
+                    lambda s: s.startup(),
+                    self.servos,
                 )
             )
+        )
 
     async def shutdown(self):
         """Notify all servos that the assembly is shutting down."""
         await asyncio.gather(
-                *list(
-                    map(
-                        lambda s: s.shutdown(),
-                        filter(
-                            lambda s: s.is_running,
-                            self.servos,
-                        )
-                    )
+            *list(
+                map(
+                    lambda s: s.shutdown(),
+                    filter(
+                        lambda s: s.is_running,
+                        self.servos,
+                    ),
                 )
             )
+        )
 
 
 def _discover_connectors() -> Set[Type[servo.connector.BaseConnector]]:
@@ -321,10 +323,11 @@ def _create_config_model_from_routes(
 
     return servo_config_model
 
+
 # TODO: This needs a public API and better name. Prolly moves to configuration module
 def _create_config_model(
     *,
-    config: Dict[str, Any], # TODO: Could be optional?
+    config: Dict[str, Any],  # TODO: Could be optional?
     routes: Dict[str, Type[servo.connector.BaseConnector]] = None,
     env: Optional[Dict[str, str]] = os.environ,
 ) -> Tuple[
@@ -339,15 +342,14 @@ def _create_config_model(
         # NOTE: If `connectors` key is present in the config, require the keys to be present
         connectors_value = config.get("connectors", None)
         if connectors_value:
-            routes = servo.connector._routes_for_connectors_descriptor(
-                connectors_value
-            )
+            routes = servo.connector._routes_for_connectors_descriptor(connectors_value)
             require_fields = True
 
     servo_config_model = _create_config_model_from_routes(
         routes, require_fields=require_fields
     )
     return servo_config_model, routes
+
 
 # TODO: Move to the strings utility module
 def _normalize_name(name: str) -> str:

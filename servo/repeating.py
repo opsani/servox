@@ -21,10 +21,10 @@ class Mixin(pydantic.BaseModel):
     """Provides convenience interfaces for working with asyncrhonously repeating tasks."""
 
     __private_attributes__ = {
-        '_repeating_tasks': pydantic.PrivateAttr({}),
+        "_repeating_tasks": pydantic.PrivateAttr({}),
     }
 
-    def __init_subclass__(cls, **kwargs) -> None: # noqa: D105
+    def __init_subclass__(cls, **kwargs) -> None:  # noqa: D105
         super().__init_subclass__(**kwargs)
 
         repeaters = {}
@@ -34,7 +34,7 @@ class Mixin(pydantic.BaseModel):
 
         cls.__repeaters__ = repeaters
 
-    def __init__(self, *args, **kwargs) -> None: # noqa: D107
+    def __init__(self, *args, **kwargs) -> None:  # noqa: D107
         super().__init__(*args, **kwargs)
 
         # Start tasks for any methods decorated via `repeating`
@@ -48,7 +48,7 @@ class Mixin(pydantic.BaseModel):
         name: str,
         every: Every,
         function: Union[Callable[[None], None], Awaitable[None]],
-        time_correction: bool=False,
+        time_correction: bool = False,
     ) -> asyncio.Task:
         """Start a repeating task with the given name and duration.
 
@@ -78,20 +78,26 @@ class Mixin(pydantic.BaseModel):
                     function()
                 else:
                     if asyncio.iscoroutine(function):
-                        TypeError(f"function={function} must be Awaitable or Callable, but has "
+                        TypeError(
+                            f"function={function} must be Awaitable or Callable, but has "
                             f"type(function)={type(function)}. A developer may have invoked the "
-                            "async function while/prior to passing it in here.")
+                            "async function while/prior to passing it in here."
+                        )
 
-                    raise TypeError(f"function={function} must be Awaitable or Callable, but has "
-                        f"type(function)={type(function)}.")
+                    raise TypeError(
+                        f"function={function} must be Awaitable or Callable, but has "
+                        f"type(function)={type(function)}."
+                    )
                 t1 = time.time()
                 sleep_time = every.total_seconds()
                 if time_correction:
-                    sleep_time = max(sleep_time - (t1 -t0), 0)
+                    sleep_time = max(sleep_time - (t1 - t0), 0)
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                 else:
-                    await asyncio.sleep(float_info.epsilon)  # this is a concurrency failsafe.
+                    await asyncio.sleep(
+                        float_info.epsilon
+                    )  # this is a concurrency failsafe.
 
         asyncio_task = asyncio.create_task(repeating_async_fn(), name=task_name)
         self._repeating_tasks[name] = asyncio_task
@@ -130,6 +136,7 @@ class Mixin(pydantic.BaseModel):
     def repeating_tasks(self) -> Dict[str, asyncio.Task]:
         """Return a dictionary of repeating tasks keyed by task name."""
         return self._repeating_tasks
+
 
 def repeating(every: Every, *, name=None) -> Callable[[NoneCallable], NoneCallable]:
     """Decorate a function for repeated execution on a given duration.

@@ -6,11 +6,11 @@ import toml
 
 
 def __get_version() -> Optional[str]:
-    path = pathlib.Path(__file__).resolve().parents[1] / 'pyproject.toml'
+    path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
 
     if path.exists():
         pyproject = toml.loads(open(str(path)).read())
-        return pyproject['tool']['poetry']['version']
+        return pyproject["tool"]["poetry"]["version"]
     else:
         try:
             return importlib.metadata.version("servox")
@@ -18,6 +18,7 @@ def __get_version() -> Optional[str]:
             pass
 
     return None
+
 
 __version__ = __get_version() or "0.0.0"
 __cryptonym__ = "electric orchestra"

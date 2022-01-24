@@ -8,7 +8,18 @@ import pathlib
 import random
 import socket
 import string
-from typing import AsyncGenerator, AsyncIterator, Callable, Dict, Generator, Iterator, List, Optional, Tuple, Union
+from typing import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Dict,
+    Generator,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import chevron
 import devtools
@@ -31,6 +42,7 @@ builtins.debug = devtools.debug
 # Render all manifests as Mustache templates by default
 kubetest.manifest.__render__ = chevron.render
 
+
 def pytest_report_header(config) -> str:
     try:
         for connector in servo.connector.ConnectorLoader().load():
@@ -43,9 +55,11 @@ def pytest_report_header(config) -> str:
     names = list(
         map(
             lambda c: f"{c.__default_name__}-{c.version}",
-                servo.Assembly.all_connector_types())
+            servo.Assembly.all_connector_types(),
+        )
     )
     return "servo connectors: " + ", ".join(names)
+
 
 @pytest.fixture
 def event_loop_policy(request) -> str:
@@ -59,13 +73,17 @@ def event_loop_policy(request) -> str:
     """
     marker = request.node.get_closest_marker("event_loop_policy")
     if marker:
-        assert len(marker.args) == 1, f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
+        assert (
+            len(marker.args) == 1
+        ), f"event_loop_policy marker accepts a single argument but received: {repr(marker.args)}"
         event_loop_policy = marker.args[0]
     else:
         event_loop_policy = "uvloop"
 
     valid_policies = ("default", "uvloop")
-    assert event_loop_policy in valid_policies, f"invalid event_loop_policy marker: \"{event_loop_policy}\" is not in {repr(valid_policies)}"
+    assert (
+        event_loop_policy in valid_policies
+    ), f'invalid event_loop_policy marker: "{event_loop_policy}" is not in {repr(valid_policies)}'
 
     return event_loop_policy
 
@@ -81,28 +99,32 @@ def event_loop(event_loop_policy: str) -> Iterator[asyncio.AbstractEventLoop]:
     elif event_loop_policy == "uvloop":
         uvloop.install()
     else:
-        raise ValueError(f"invalid event loop policy: \"{event_loop_policy}\"")
+        raise ValueError(f'invalid event loop policy: "{event_loop_policy}"')
 
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
+
 def pytest_addoption(parser) -> None:
     """Add pytest options for running tests of various types."""
     parser.addoption(
-        "-I", "--integration",
+        "-I",
+        "--integration",
         action="store_true",
         default=False,
         help="enable integration tests",
     )
     parser.addoption(
-        "-S", "--system",
+        "-S",
+        "--system",
         action="store_true",
         default=False,
         help="enable system tests",
     )
     parser.addoption(
-        "-T", "--type",
+        "-T",
+        "--type",
         action="store",
         metavar="TYPE",
         help="only run tests of the type TYPE.",
@@ -117,6 +139,7 @@ class TestType(str, enum.Enum):
     @classmethod
     def names(cls) -> List[str]:
         return cls.__members__.keys()
+
 
 class Environment(str, enum.Enum):
     docker = "Docker"
@@ -134,7 +157,7 @@ class Environment(str, enum.Enum):
         return cls.__members__.keys()
 
     @property
-    def parents(self) -> List['Environment']:
+    def parents(self) -> List["Environment"]:
         if self in {Environment.compose, Environment.kind, Environment.minikube}:
             return [Environment.docker]
         elif self in {Environment.eks, Environment.gke, Environment.aks}:
@@ -142,40 +165,42 @@ class Environment(str, enum.Enum):
         else:
             return []
 
+
 UNIT_INI = (
-    'unit: marks the test as a unit test. Unit tests are fast, highly localized, and '
-    'have no external dependencies. Tests without an explicit type mark are considered '
-    'unit tests for convenience.'
+    "unit: marks the test as a unit test. Unit tests are fast, highly localized, and "
+    "have no external dependencies. Tests without an explicit type mark are considered "
+    "unit tests for convenience."
 )
 INTEGRATION_INI = (
-    'integration: marks the test as an integration test. Integration tests have external '
-    'dependencies that can be orchestrated by the test suite. They are much slower than '
-    'unit tests but provide interaction with external components. '
+    "integration: marks the test as an integration test. Integration tests have external "
+    "dependencies that can be orchestrated by the test suite. They are much slower than "
+    "unit tests but provide interaction with external components. "
 )
 SYSTEM_INI = (
-    'system: marks the test as system test. System tests are run in specific environments '
-    'and execute functionality end to end. They are very slow and resource intensive, but '
-    'are capable of verifying that the product meets requirements as specified from a user '
-    'perspective.'
+    "system: marks the test as system test. System tests are run in specific environments "
+    "and execute functionality end to end. They are very slow and resource intensive, but "
+    "are capable of verifying that the product meets requirements as specified from a user "
+    "perspective."
 )
 EVENT_LOOP_POLICY_INI = (
-    'event_loop_policy: marks async tests to run under a parametrized asyncio '
-    'runloop policy. There are two event loop policies available: default and uvloop. '
-    'The `default` policy is the standard event loop behavior provided with asyncio. '
-    'The `uvloop` policy is a high performance event loop. Certain tests may fail '
-    'due to interactions between uvloop and the pytest output capture mechanism. '
-    'The `event_loop_policy` fixture determines what event loop policy is registered '
-    'at runtime and respects the value of this marker.'
+    "event_loop_policy: marks async tests to run under a parametrized asyncio "
+    "runloop policy. There are two event loop policies available: default and uvloop. "
+    "The `default` policy is the standard event loop behavior provided with asyncio. "
+    "The `uvloop` policy is a high performance event loop. Certain tests may fail "
+    "due to interactions between uvloop and the pytest output capture mechanism. "
+    "The `event_loop_policy` fixture determines what event loop policy is registered "
+    "at runtime and respects the value of this marker."
 )
 MINIKUBE_PROFILE_INI = (
-    'minikube_profile: marks tests using minikube to run under the profile specified'
-    'in the first marker argument. Eg. pytest.mark.minikube_profile.with_args(MINIKUBE_PROFILE)'
+    "minikube_profile: marks tests using minikube to run under the profile specified"
+    "in the first marker argument. Eg. pytest.mark.minikube_profile.with_args(MINIKUBE_PROFILE)"
 )
 ROLLOUT_MANIFEST_INI = (
-    'rollout_manifest: mark tests using argo rollouts to apply the manifest from'
-    'the specified path in the first marker argument. Eg.'
+    "rollout_manifest: mark tests using argo rollouts to apply the manifest from"
+    "the specified path in the first marker argument. Eg."
     '@pytest.mark.rollout_manifest.with_args("tests/manifests/opsani_dev/argo_rollouts/rollout.yaml")'
 )
+
 
 def pytest_configure(config) -> None:
     """Register custom markers for use in the test suite."""
@@ -189,9 +214,9 @@ def pytest_configure(config) -> None:
     # Add generic description for all environments
     for key, value in Environment.__members__.items():
         config.addinivalue_line(
-            "markers",
-            f'{key}: marks the test as runnable on {value}.'
+            "markers", f"{key}: marks the test as runnable on {value}."
         )
+
 
 def pytest_runtest_setup(item):
     # NOTE: If integration is selected but theres no kubeconfig, fail them clearly
@@ -201,19 +226,18 @@ def pytest_runtest_setup(item):
         config_path = kubeconfig_path_from_config(item.config)
         if not config_path.exists():
             pytest.fail(
-                f'Cannot run {type_mark.name} tests: '
-                f'kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}\n '
-                'Hint: See README.md and run `make test-kubeconfig`'
+                f"Cannot run {type_mark.name} tests: "
+                f"kubeconfig file not found: configure a test cluster and create kubeconfig at: {config_path}\n "
+                "Hint: See README.md and run `make test-kubeconfig`"
             )
+
 
 def selected_types_for_item(item) -> Optional[List[TestType]]:
     type_option = item.config.getoption("-T")
     if not type_option:
         return None
 
-    matches = list(
-        filter(lambda t: t.startswith(type_option), TestType.names())
-    )
+    matches = list(filter(lambda t: t.startswith(type_option), TestType.names()))
     if matches:
         if len(matches) > 1:
             item.warn(
@@ -222,7 +246,7 @@ def selected_types_for_item(item) -> Optional[List[TestType]]:
                 )
             )
     else:
-        type_names = ', '.join(list(TestType.names()))
+        type_names = ", ".join(list(TestType.names()))
         item.warn(
             pytest.PytestWarning(
                 f"--type argument '{type_option}' does not match any test type: {type_names}"
@@ -278,13 +302,17 @@ def pytest_collection_modifyitems(config, items) -> None:
             if type_mark.name not in selected_types:
                 deselected_items.append(item)
         else:
-            if ((type_mark.name == TestType.integration and not config.getoption("--integration"))
-                or (type_mark.name == TestType.system and not config.getoption("--system"))):
-                    item.add_marker(
-                        pytest.mark.skip(
-                            reason=f"{type_mark.name} tests not enabled. Run with --{type_mark.name} to enable"
-                        )
+            if (
+                type_mark.name == TestType.integration
+                and not config.getoption("--integration")
+            ) or (
+                type_mark.name == TestType.system and not config.getoption("--system")
+            ):
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason=f"{type_mark.name} tests not enabled. Run with --{type_mark.name} to enable"
                     )
+                )
 
         if item not in deselected_items:
             selected_items.append(item)
@@ -345,10 +373,15 @@ def stub_servo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
             )
         )
     )
-    config = {"connectors": ["measure", "adjust"], "measure": measure_config_json, "adjust": {}}
+    config = {
+        "connectors": ["measure", "adjust"],
+        "measure": measure_config_json,
+        "adjust": {},
+    }
     config = yaml.dump(config)
     config_path.write_text(config)
     return config_path
+
 
 @pytest.fixture()
 def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -372,7 +405,7 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
         "optimizer": optimizer1_config_json,
         "connectors": ["measure", "adjust"],
         "measure": measure_config_json,
-        "adjust": {}
+        "adjust": {},
     }
     optimizer2 = servo.Optimizer(id="dev.opsani.com/multi-servox-2", token="987654321")
     optimizer2_config_json = json.loads(
@@ -384,7 +417,7 @@ def stub_multiservo_yaml(tmp_path: pathlib.Path) -> pathlib.Path:
         "optimizer": optimizer2_config_json,
         "connectors": ["measure", "adjust"],
         "measure": measure_config_json,
-        "adjust": {}
+        "adjust": {},
     }
     config_yaml = yaml.dump_all([config1, config2])
     config_path.write_text(config_yaml)
@@ -408,6 +441,7 @@ def clean_environment() -> Callable[[None], None]:
     Returns:
         A callable that can be used to clean the environment on-demand.
     """
+
     def _clean_environment():
         for key, value in os.environ.copy().items():
             if key.startswith("SERVO_") or key.startswith("OPSANI_"):
@@ -423,18 +457,18 @@ def random_string() -> str:
     letters = string.ascii_letters
     return "".join(random.choice(letters) for i in range(32))
 
+
 @pytest.fixture
 def rootpath(pytestconfig) -> pathlib.Path:
     return pytestconfig.rootpath
 
+
 def kubeconfig_path_from_config(config) -> Union[pathlib.Path, pathlib.PurePath]:
-    config_opt = config.getoption('kube_config') or "tests/kubeconfig"
+    config_opt = config.getoption("kube_config") or "tests/kubeconfig"
     path = pathlib.Path(config_opt).expanduser()
-    config_path = (
-        path if path.is_absolute()
-        else config.rootpath.joinpath(path)
-    )
+    config_path = path if path.is_absolute() else config.rootpath.joinpath(path)
     return config_path
+
 
 @pytest.fixture
 def kubeconfig(request) -> Union[pathlib.Path, pathlib.PurePath]:
@@ -450,13 +484,17 @@ def kubeconfig(request) -> Union[pathlib.Path, pathlib.PurePath]:
 
 
 @pytest.fixture
-async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optional[str]) -> None:
+async def kubernetes_asyncio_config(
+    request, kubeconfig: str, kubecontext: Optional[str]
+) -> None:
     """Initialize the kubernetes_asyncio config module with the kubeconfig fixture path."""
     import logging
 
     import kubernetes_asyncio.config
 
-    if request.session.config.getoption('in_cluster') or os.getenv("KUBERNETES_SERVICE_HOST"):
+    if request.session.config.getoption("in_cluster") or os.getenv(
+        "KUBERNETES_SERVICE_HOST"
+    ):
         kubernetes_asyncio.config.load_incluster_config()
     else:
         kubeconfig = kubeconfig or os.getenv("KUBECONFIG")
@@ -467,15 +505,16 @@ async def kubernetes_asyncio_config(request, kubeconfig: str, kubecontext: Optio
                 context=kubecontext,
             )
         else:
-            log = logging.getLogger('kubetest')
+            log = logging.getLogger("kubetest")
             log.error(
-                'unable to interact with cluster: kube fixture used without kube config '
-                'set. the config may be set with the flags --kube-config or --in-cluster or by'
-                'an env var KUBECONFIG or custom kubeconfig fixture definition.'
+                "unable to interact with cluster: kube fixture used without kube config "
+                "set. the config may be set with the flags --kube-config or --in-cluster or by"
+                "an env var KUBECONFIG or custom kubeconfig fixture definition."
             )
             raise FileNotFoundError(
                 f"kubeconfig file not found: configure a test cluster and add kubeconfig: {kubeconfig}"
             )
+
 
 @pytest.fixture
 async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
@@ -487,7 +526,9 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
     marker = request.node.get_closest_marker("minikube_profile")
     addons = ""
     if marker:
-        assert len(marker.args) == 1, f"minikube_profile marker accepts a single argument but received: {repr(marker.args)}"
+        assert (
+            len(marker.args) == 1
+        ), f"minikube_profile marker accepts a single argument but received: {repr(marker.args)}"
         profile = marker.args[0]
         if profile == "metrics-server":
             addons = "--addons metrics-server "
@@ -495,32 +536,44 @@ async def minikube(request, subprocess, kubeconfig: pathlib.Path) -> str:
         profile = "servox"
 
     # Start minikube and configure environment
-    exit_code, _, stderr = await subprocess(f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --wait=true", print_output=True,)
+    exit_code, _, stderr = await subprocess(
+        f"KUBECONFIG={kubeconfig} minikube start {addons}-p {profile} --interactive=false --wait=true",
+        print_output=True,
+    )
     if exit_code != 0:
         if exit_code in [50, 80]:
             # https://github.com/kubernetes/minikube/issues/10357
             pytest.xfail("Minikube failed start")
 
-        raise RuntimeError(f"failed running minikube: exited with status code {exit_code}: {stderr}")
+        raise RuntimeError(
+            f"failed running minikube: exited with status code {exit_code}: {stderr}"
+        )
 
     # Yield the profile name
     try:
         yield profile
 
     finally:
-        exit_code, _, _ = await subprocess(f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True)
+        exit_code, _, _ = await subprocess(
+            f"KUBECONFIG={kubeconfig} minikube stop -p {profile}", print_output=True
+        )
         if exit_code != 0:
-            raise RuntimeError(f"failed running minikube: exited with status code {exit_code}")
+            raise RuntimeError(
+                f"failed running minikube: exited with status code {exit_code}"
+            )
+
 
 @pytest.fixture()
 async def subprocess() -> tests.helpers.Subprocess:
     """Return an asynchronous executor for testing subprocesses."""
     return tests.helpers.Subprocess()
 
+
 @pytest.fixture()
 def random_duration() -> servo.Duration:
     seconds = random.randrange(30, 600)
     return servo.Duration(seconds=seconds)
+
 
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
@@ -535,30 +588,36 @@ def fastapi_app() -> fastapi.FastAPI:
     To interact from the FastAPI app within your tests, invoke the `fakeapi_url`
     fixture to obtain the base URL for a running instance of your fastapi app.
     """
-    raise NotImplementedError(f"incomplete fixture implementation: build a FastAPI fixture modeling the system you want to fake")
+    raise NotImplementedError(
+        f"incomplete fixture implementation: build a FastAPI fixture modeling the system you want to fake"
+    )
+
 
 @pytest.fixture
-async def fakeapi_url(fastapi_app: fastapi.FastAPI, unused_tcp_port: int) -> AsyncGenerator[str, None]:
+async def fakeapi_url(
+    fastapi_app: fastapi.FastAPI, unused_tcp_port: int
+) -> AsyncGenerator[str, None]:
     """Run a FakeAPI server as a pytest fixture and yield the base URL for accessing it."""
     server = tests.helpers.FakeAPI(app=fastapi_app, port=unused_tcp_port)
     await server.start()
     yield server.base_url
     await server.stop()
 
+
 @pytest.fixture
 async def fakeapi_client(fakeapi_url: str) -> AsyncIterator[httpx.AsyncClient]:
     """Yield an httpx client configured to interact with a FakeAPI server."""
     async with httpx.AsyncClient(
         headers={
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
         },
         base_url=fakeapi_url,
     ) as client:
         yield client
 
 
-
 ######
+
 
 @pytest.fixture()
 async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
@@ -573,7 +632,6 @@ async def assembly(servo_yaml: pathlib.Path) -> servo.assembly.Assembly:
     optimizer = servo.Optimizer(
         id="servox.opsani.com/tests",
         token="00000000-0000-0000-0000-000000000000",
-
     )
     assembly_ = await servo.assembly.Assembly.assemble(
         config_file=servo_yaml, optimizer=optimizer
@@ -586,14 +644,17 @@ def assembly_runner(assembly: servo.Assembly) -> servo.runner.AssemblyRunner:
     """Return an unstarted assembly runner."""
     return servo.runner.AssemblyRunner(assembly)
 
+
 @pytest.fixture
 async def servo_runner(assembly: servo.Assembly) -> servo.runner.ServoRunner:
     """Return an unstarted servo runner."""
     return servo.runner.ServoRunner(assembly.servos[0])
 
+
 @pytest.fixture
 def fastapi_app() -> fastapi.FastAPI:
     return tests.fake.api
+
 
 ## Kubernetes Port Forwarding
 
@@ -638,14 +699,22 @@ async def kubectl_ports_forwarded(
         - service/[NAME]
         - svc/[NAME]
     """
+
     def _identifier_for_target(target: ForwardingTarget) -> str:
         if isinstance(target, str):
             return target
-        elif isinstance(target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)):
+        elif isinstance(
+            target, (kubetest.objects.Pod, servo.connectors.kubernetes.Pod)
+        ):
             return f"pod/{target.name}"
-        elif isinstance(target, (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment)):
+        elif isinstance(
+            target,
+            (kubetest.objects.Deployment, servo.connectors.kubernetes.Deployment),
+        ):
             return f"deployment/{target.name}"
-        elif isinstance(target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)):
+        elif isinstance(
+            target, (kubetest.objects.Service, servo.connectors.kubernetes.Service)
+        ):
             return f"service/{target.name}"
         else:
             raise TypeError(f"unknown target: {repr(target)}")
@@ -658,7 +727,7 @@ async def kubectl_ports_forwarded(
         tests.helpers.Subprocess.shell(
             f"kubectl --kubeconfig={kubeconfig} {context_arg} port-forward --namespace {namespace} {identifier} {ports_arg}",
             event=event,
-            print_output=True
+            print_output=True,
         )
     )
 
@@ -676,12 +745,15 @@ async def kubectl_ports_forwarded(
             yield url
         else:
             # Build a mapping of from target ports to the forwarded URL
-            ports_to_urls = dict(map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports))
+            ports_to_urls = dict(
+                map(lambda p: (p[1], f"http://localhost:{p[0]}"), ports)
+            )
             yield ports_to_urls
     finally:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+
 
 @pytest.fixture()
 async def kube_port_forward(
@@ -691,6 +763,7 @@ async def kube_port_forward(
     kubecontext: Optional[str],
 ) -> Callable[[ForwardingTarget, List[int]], AsyncIterator[str]]:
     """A pytest fixture that returns an async generator for port forwarding to a remote kubernetes deployment, pod, or service."""
+
     def _port_forwarder(target: ForwardingTarget, *remote_ports: int):
         kube.wait_for_registered()
         ports = list(map(lambda port: (unused_tcp_port_factory(), port), remote_ports))
@@ -699,15 +772,18 @@ async def kube_port_forward(
             *ports,
             namespace=kube.namespace,
             kubeconfig=kubeconfig,
-            context=kubecontext
+            context=kubecontext,
         )
 
     return _port_forwarder
 
 
 @pytest.fixture
-def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.objects.Pod]:
+def pod_loader(
+    kube: kubetest.client.TestClient,
+) -> Callable[[str], kubetest.objects.Pod]:
     """A pytest fixture that returns a callable for loading a kubernetes pod reference."""
+
     def _pod_loader(deployment: str) -> kubetest.objects.Pod:
         kube.wait_for_registered()
 
@@ -725,8 +801,11 @@ def pod_loader(kube: kubetest.client.TestClient) -> Callable[[str], kubetest.obj
 
     return _pod_loader
 
+
 @pytest.fixture()
-def kubetest_teardown(kube: kubetest.client.TestClient) -> Generator[kubetest.client.TestClient, None, None]:
+def kubetest_teardown(
+    kube: kubetest.client.TestClient,
+) -> Generator[kubetest.client.TestClient, None, None]:
     """
     Kubetest's default teardown assumes the namespace was created and applied manifests will be cleaned up when the ns is deleted
 
@@ -737,22 +816,50 @@ def kubetest_teardown(kube: kubetest.client.TestClient) -> Generator[kubetest.cl
     for obj in kube.pre_registered:
         obj.delete()
 
+
 # NOTE: kubetest does not support CRD or CR objects, rollout fixtures utilize kubectl for needed setup
 @pytest.fixture
 async def verify_rollout_crd(subprocess, kubeconfig):
     """Verify applied CRDs are the latest version"""
 
-    rollouts_version_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "get", "deployment", "argo-rollouts", "-n", "argo-rollouts", "-o", "jsonpath='{.spec.template.spec.containers[0].image}'" ]
-    exit_code, stdout, stderr = await subprocess(" ".join(rollouts_version_cmd), print_output=True, timeout=None)
-    assert exit_code == 0, f"Unable to get argo-rollouts controller Deployment: {stderr}"
+    rollouts_version_cmd = [
+        "kubectl",
+        f"--kubeconfig={kubeconfig}",
+        "get",
+        "deployment",
+        "argo-rollouts",
+        "-n",
+        "argo-rollouts",
+        "-o",
+        "jsonpath='{.spec.template.spec.containers[0].image}'",
+    ]
+    exit_code, stdout, stderr = await subprocess(
+        " ".join(rollouts_version_cmd), print_output=True, timeout=None
+    )
+    assert (
+        exit_code == 0
+    ), f"Unable to get argo-rollouts controller Deployment: {stderr}"
 
     async with httpx.AsyncClient() as client:
-        latest_version = (await client.get("https://api.github.com/repos/argoproj/argo-rollouts/releases/latest")).json().get('tag_name')
+        latest_version = (
+            (
+                await client.get(
+                    "https://api.github.com/repos/argoproj/argo-rollouts/releases/latest"
+                )
+            )
+            .json()
+            .get("tag_name")
+        )
 
-    assert latest_version in stdout[0], f"Installed rollout controller image ({stdout[0]}) out of date (latest={latest_version})"
+    assert (
+        latest_version in stdout[0]
+    ), f"Installed rollout controller image ({stdout[0]}) out of date (latest={latest_version})"
+
 
 @pytest.fixture
-async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, verify_rollout_crd):
+async def manage_rollout(
+    request, kube, rootpath, kubeconfig, subprocess, verify_rollout_crd
+):
     """
     Apply the manifest of the target rollout being tested against
 
@@ -761,17 +868,43 @@ async def manage_rollout(request, kube, rootpath, kubeconfig, subprocess, verify
     """
     marker = request.node.get_closest_marker("rollout_manifest")
     if marker:
-        assert len(marker.args) == 1, f"rollout_manifest marker accepts a single argument but received: {repr(marker.args)}"
+        assert (
+            len(marker.args) == 1
+        ), f"rollout_manifest marker accepts a single argument but received: {repr(marker.args)}"
         manifest = marker.args[0]
     else:
         manifest = "tests/manifests/argo_rollouts/fiber-http-opsani-dev.yaml"
 
-    rollout_cmd = ["kubectl", f"--kubeconfig={kubeconfig}", "apply", "-n", kube.namespace, "-f", str(rootpath / manifest)]
-    exit_code, _, stderr = await subprocess(" ".join(rollout_cmd), print_output=True, timeout=None)
+    rollout_cmd = [
+        "kubectl",
+        f"--kubeconfig={kubeconfig}",
+        "apply",
+        "-n",
+        kube.namespace,
+        "-f",
+        str(rootpath / manifest),
+    ]
+    exit_code, _, stderr = await subprocess(
+        " ".join(rollout_cmd), print_output=True, timeout=None
+    )
     assert exit_code == 0, f"argo-rollouts CR manifest apply failed: {stderr}"
 
-    wait_cmd = [ "kubectl", f"--kubeconfig={kubeconfig}", "wait", "--for=condition=completed", "--timeout=60s", "-n", kube.namespace, "rollout", "fiber-http" ]
-    exit_code, _, stderr = await subprocess(" ".join(wait_cmd), print_output=True, timeout=None)
-    assert exit_code == 0, f"argo-rollouts CR manifest wait for available failed: {stderr}"
+    wait_cmd = [
+        "kubectl",
+        f"--kubeconfig={kubeconfig}",
+        "wait",
+        "--for=condition=completed",
+        "--timeout=60s",
+        "-n",
+        kube.namespace,
+        "rollout",
+        "fiber-http",
+    ]
+    exit_code, _, stderr = await subprocess(
+        " ".join(wait_cmd), print_output=True, timeout=None
+    )
+    assert (
+        exit_code == 0
+    ), f"argo-rollouts CR manifest wait for available failed: {stderr}"
 
     # NOTE: it is assumed kubetest will handle the needed teardown of the rollout

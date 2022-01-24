@@ -161,6 +161,7 @@ NoneCallable = TypeVar("NoneCallable", bound=Callable[[None], None])
 # Describing time durations in various forms is very common
 DurationDescriptor = Union[datetime.timedelta, str, Numeric]
 
+
 class Duration(datetime.timedelta):
     """
     Duration is a subclass of datetime.timedelta that is serialized as a Golang duration string.
@@ -201,7 +202,7 @@ class Duration(datetime.timedelta):
 
     def __init__(
         self, duration: Union[str, datetime.timedelta, Numeric] = 0, **kwargs
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         # Add a type signature so we don't get warning from linters. Implementation is not used (see __new__)
         ...
 
@@ -268,7 +269,9 @@ class BaseProgress(abc.ABC, BaseModel):
             RuntimeError: Raised if the object has already been started.
         """
         if self.started:
-            raise RuntimeError("cannot start a progress object that has already been started")
+            raise RuntimeError(
+                "cannot start a progress object that has already been started"
+            )
         self.started_at = datetime.datetime.now()
 
     @property
@@ -315,8 +318,11 @@ class BaseProgress(abc.ABC, BaseModel):
         Args:
             duration: The Duration on which to yield progress updates.
         """
+
         class _Iterator:
-            def __init__(self, progress: servo.BaseProgress, duration: servo.Duration) -> None:
+            def __init__(
+                self, progress: servo.BaseProgress, duration: servo.Duration
+            ) -> None:
                 self.progress = progress
                 self.duration = duration
 
@@ -382,13 +388,14 @@ class BaseProgress(abc.ABC, BaseModel):
     async def wait(self) -> None:
         """Asynchronously wait for the progress to finish."""
 
+
 class DurationProgress(BaseProgress):
     """DurationProgress objects track progress across a fixed time duration."""
 
     duration: Duration
     """The duration of the operation for which progress is being tracked."""
 
-    def __init__(self, duration: "Duration" = 0, **kwargs) -> None: # noqa: D107
+    def __init__(self, duration: "Duration" = 0, **kwargs) -> None:  # noqa: D107
         super().__init__(duration=duration, **kwargs)
 
     @property
@@ -431,7 +438,12 @@ class EventProgress(BaseProgress):
     _settlement_timer: Optional[asyncio.TimerHandle] = pydantic.PrivateAttr(None)
     _settlement_started_at: Optional[datetime.datetime] = pydantic.PrivateAttr(None)
 
-    def __init__(self, timeout: Optional["Duration"] = None, settlement: Optional["Duration"] = None, **kwargs) -> None: # noqa: D107
+    def __init__(
+        self,
+        timeout: Optional["Duration"] = None,
+        settlement: Optional["Duration"] = None,
+        **kwargs,
+    ) -> None:  # noqa: D107
         super().__init__(timeout=timeout, settlement=settlement, **kwargs)
 
     def complete(self) -> None:
@@ -453,8 +465,10 @@ class EventProgress(BaseProgress):
 
         Return False if there is no timeout configured or the progress has not been started.
         """
-        if self.timeout == 0 and self.started: return True
-        if not self.timeout or not self.started: return False
+        if self.timeout == 0 and self.started:
+            return True
+        if not self.timeout or not self.started:
+            return False
         return Duration.since(self.started_at) >= self.timeout
 
     @property
@@ -474,8 +488,7 @@ class EventProgress(BaseProgress):
         if self.settlement:
             self._settlement_started_at = datetime.datetime.now()
             self._settlement_timer = asyncio.get_event_loop().call_later(
-                self.settlement.total_seconds(),
-                self.complete
+                self.settlement.total_seconds(), self.complete
             )
         else:
             self.complete()
@@ -501,10 +514,7 @@ class EventProgress(BaseProgress):
             TimeoutError: Raised if the timeout elapses before the event is triggered.
         """
         timeout = self.timeout.total_seconds() if self.timeout else None
-        await asyncio.wait_for(
-            self._event.wait(),
-            timeout=timeout
-        )
+        await asyncio.wait_for(self._event.wait(), timeout=timeout)
 
     @property
     def settling(self) -> bool:
@@ -515,7 +525,9 @@ class EventProgress(BaseProgress):
     def settlement_remaining(self) -> Optional[Duration]:
         """Return the amount of settlement time remaining before completion."""
         if self.settling:
-            duration = Duration(self.settlement - Duration.since(self._settlement_started_at))
+            duration = Duration(
+                self.settlement - Duration.since(self._settlement_started_at)
+            )
             return duration if duration.total_seconds() >= 0 else None
         else:
             return None
@@ -536,13 +548,13 @@ class EventProgress(BaseProgress):
             return 100.0
         elif self.started:
             if self.settling:
-                return (
-                    min(100.0, 100.0 * (Duration.since(self._settlement_started_at) / self.settlement))
+                return min(
+                    100.0,
+                    100.0
+                    * (Duration.since(self._settlement_started_at) / self.settlement),
                 )
             elif self.timeout:
-                return (
-                    min(100.0, 100.0 * (self.elapsed / self.timeout))
-                )
+                return min(100.0, 100.0 * (self.elapsed / self.timeout))
 
         # NOTE: Without a timeout or settlement duration we advance from 0 to 100. Like a true gangsta
         return 0.0
@@ -561,6 +573,7 @@ class EventProgress(BaseProgress):
 
         return await super().watch(notify, every)
 
+
 class Unit(str, enum.Enum):
     """An enumeration of standard units of measure for metrics.
 
@@ -578,6 +591,7 @@ class Unit(str, enum.Enum):
         requests_per_minute: Application throughput in terms of requests processed per minute.
         requests_per_second: Application throughput in terms of requests processed per second.
     """
+
     float = ""
     int = ""
     count = ""
@@ -595,6 +609,7 @@ class Unit(str, enum.Enum):
             return f"<{self.__class__.__name__}.{self.name}: '{self.value}'>"
         else:
             return f"{self.__class__.__name__}.{self.name}"
+
 
 class Metric(BaseModel):
     """Metric objects model optimizeable value types in a specific Unit of measure.
@@ -615,7 +630,9 @@ class Metric(BaseModel):
     """The unit that the metric is measured in (e.g., requests per second).
     """
 
-    def __init__(self, name: str, unit: Unit = Unit.float, **kwargs) -> None: # noqa: D107
+    def __init__(
+        self, name: str, unit: Unit = Unit.float, **kwargs
+    ) -> None:  # noqa: D107
         super().__init__(name=name, unit=unit, **kwargs)
 
     def __hash__(self):
@@ -653,7 +670,9 @@ class DataPoint(BaseModel):
     value: float
     """The value that was measured for the metric."""
 
-    def __init__(self, metric: Metric, time: datetime.datetime, value: float, **kwargs) -> None: # noqa: D107
+    def __init__(
+        self, metric: Metric, time: datetime.datetime, value: float, **kwargs
+    ) -> None:  # noqa: D107
         super().__init__(metric=metric, time=time, value=value, **kwargs)
 
     def __iter__(self):
@@ -678,6 +697,7 @@ class DataPoint(BaseModel):
         abbrv = f" ({self.unit.value})" if self.unit.value else ""
         return f"DataPoint({self.metric.name}{abbrv}, ({self.time}, {self.value}))"
 
+
 class NormalizationPolicy(str, enum.Enum):
     """NormalizationPolicy is an enumeration that describes how measurements
     are normalized before being reported to the optimizer.
@@ -690,9 +710,11 @@ class NormalizationPolicy(str, enum.Enum):
             data points across all time series in the measurement are dropped.
         fill: Time series in the measurement are brought into alignment by
     """
+
     passthrough = "passthrough"
     intersect = "intersect"
     fill = "fill"
+
 
 class TimeSeries(BaseModel):
     """TimeSeries objects models a sequence of data points containing
@@ -711,6 +733,7 @@ class TimeSeries(BaseModel):
             server from which the readings were taken, version info about the upstream
             metrics provider, etc.).
     """
+
     metric: Metric = pydantic.Field(...)
     data_points: List[DataPoint] = pydantic.Field(...)
     id: Optional[str] = None
@@ -719,7 +742,7 @@ class TimeSeries(BaseModel):
 
     def __init__(
         self, metric: Metric, data_points: List[DataPoint], **kwargs
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         data_points_ = sorted(data_points, key=lambda p: p.time)
         super().__init__(metric=metric, data_points=data_points_, **kwargs)
 
@@ -762,7 +785,9 @@ class TimeSeries(BaseModel):
 
     def __repr_args__(self):
         args = super().__repr_args__()
-        additional = dict(map(lambda attr: (attr, getattr(self, attr)), ('timespan', 'duration')))
+        additional = dict(
+            map(lambda attr: (attr, getattr(self, attr)), ("timespan", "duration"))
+        )
         return {**dict(args), **additional}.items()
 
 
@@ -797,6 +822,7 @@ class OpsaniRepr(Protocol):
         """
         ...
 
+
 # Common output formats
 YAML_FORMAT = "yaml"
 JSON_FORMAT = "json"
@@ -821,6 +847,7 @@ class AbstractOutputFormat(str, enum.Enum):
             return None
         else:
             raise RuntimeError("no lexer configured for output format {self.value}")
+
 
 HTTP_METHODS = (
     "GET",
@@ -867,9 +894,11 @@ class ErrorSeverity(str, enum.Enum):
     that you get a single failure that identifies the root cause.
     """
 
+
 # An `asyncio.Future` or an object that can be wrapped into an `asyncio.Future`
 # via `asyncio.ensure_future()`. See `isfuturistic()`.
 Futuristic = Union[asyncio.Future, Awaitable]
+
 
 def isfuturistic(obj: Any) -> bool:
     """Returns True when obj is an asyncio Future or can be wrapped into one.
@@ -878,6 +907,4 @@ def isfuturistic(obj: Any) -> bool:
     that accept awaitables such as `asyncio.gather` and `asyncio.wait_for`
     without triggering a `TypeError`.
     """
-    return (asyncio.isfuture(obj)
-            or asyncio.iscoroutine(obj)
-            or inspect.isawaitable(obj))
+    return asyncio.isfuture(obj) or asyncio.iscoroutine(obj) or inspect.isawaitable(obj)

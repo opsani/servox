@@ -18,12 +18,13 @@ __all__ = (
     "UnexpectedEventError",
 )
 
+
 class BaseError(RuntimeError):
     """The base class for all errors in the servo package."""
 
     def __init__(
         self,
-        message: str = '',
+        message: str = "",
         reason: Optional[str] = None,
         *args,
         assembly: Optional[servo.Assembly] = None,
@@ -35,6 +36,7 @@ class BaseError(RuntimeError):
 
         # Use the context vars to infer the assembly, servo, connector, and event
         import servo
+
         self._reason = reason
         self._assembly = assembly or servo.current_assembly()
         self._servo = servo_ or servo.current_servo()
@@ -76,29 +78,38 @@ class BaseError(RuntimeError):
         """The event that was executing when the error occurred."""
         return self._event
 
+
 class ServoError(BaseError):
     """An error occurred within a servo."""
+
     @property
     def servo(self) -> servo.Servo:
         return self._servo
 
+
 class ConnectorError(ServoError):
     """An error occurred within a connector."""
+
     @property
     def connector(self) -> servo.Connector:
         return self._connector
 
+
 class EventError(ConnectorError):
     """An error occurred during the processing of an event by a connector."""
+
     @property
     def event(self) -> servo.Event:
         return self._event
 
+
 class UnexpectedEventError(EventError):
     """The optimizer reported that an unexpected error was submitted."""
 
+
 class EventCancelledError(EventError):
     """The event was cancelled and processing was halted."""
+
 
 class MeasurementFailedError(EventError):
     """A failure occurred while attempting to perform an measurement.
@@ -108,6 +119,7 @@ class MeasurementFailedError(EventError):
     connection, interruption, etc. and be retried by the optimizer.
     """
 
+
 class AdjustmentFailedError(EventError):
     """A failure occurred while attempting to perform an adjustment.
 
@@ -115,6 +127,7 @@ class AdjustmentFailedError(EventError):
     adjustment was not fully applied due to a transient failure, lost
     connection, interruption, etc. and be retried by the optimizer.
     """
+
 
 class AdjustmentRejectedError(AdjustmentFailedError):
     """The adjustment was irrecoverably rejected when applied.
@@ -124,6 +137,7 @@ class AdjustmentRejectedError(AdjustmentFailedError):
     other such definitive error condition is encountered that excludes the
     applied configuration from further consideration by the optimizer.
     """
+
 
 class EventAbortedError(EventError):
     """Abort the currently running event

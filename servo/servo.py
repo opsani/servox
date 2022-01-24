@@ -21,10 +21,11 @@ import servo.types
 import servo.utilities
 import servo.utilities.pydantic
 
-__all__ = ['Servo', 'Events', 'current_servo']
+__all__ = ["Servo", "Events", "current_servo"]
 
 
 _current_context_var = contextvars.ContextVar("servox.current_servo", default=None)
+
 
 def current_servo() -> Optional["Servo"]:
     """Return the active servo for the current execution context.
@@ -32,6 +33,7 @@ def current_servo() -> Optional["Servo"]:
     The value is managed by a contextvar and is concurrency safe.
     """
     return _current_context_var.get(None)
+
 
 def _set_current_servo(servo_: Optional["Servo"]) -> None:
     """Set the active servo for the current execution context.
@@ -117,7 +119,9 @@ class _EventDefinitions(Protocol):
         ...
 
     @servo.events.event(Events.describe)
-    async def describe(self, control: servo.types.Control = servo.types.Control()) -> servo.types.Description:
+    async def describe(
+        self, control: servo.types.Control = servo.types.Control()
+    ) -> servo.types.Description:
         ...
 
     @servo.events.event(Events.adjust)
@@ -194,28 +198,29 @@ class Servo(servo.connector.BaseConnector):
 
     _running: bool = pydantic.PrivateAttr(False)
 
-    async def dispatch_event(self, *args, **kwargs) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+    async def dispatch_event(
+        self, *args, **kwargs
+    ) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
         with self.current():
             return await super().dispatch_event(*args, **kwargs)
 
     def __init__(
         self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
-    ) -> None: # noqa: D107
+    ) -> None:  # noqa: D107
         super().__init__(*args, connectors=[], **kwargs)
 
         # Ensure the connectors refer to the same objects by identity (required for eventing)
         self.connectors.extend(connectors)
 
         # associate shared config with our children
-        for connector in (connectors + [self]):
+        for connector in connectors + [self]:
             connector._global_config = self.config.settings
 
     @pydantic.root_validator()
     def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if values["name"] == "servo" and values.get('config'):
-            values["name"] = (
-                values["config"].name
-                or getattr(values["config"].optimizer, 'id', 'servo')
+        if values["name"] == "servo" and values.get("config"):
+            values["name"] = values["config"].name or getattr(
+                values["config"].optimizer, "id", "servo"
             )
 
         return values
@@ -240,7 +245,9 @@ class Servo(servo.connector.BaseConnector):
 
         self._running = True
 
-        await self.dispatch_event(Events.startup, _prepositions=servo.events.Preposition.on)
+        await self.dispatch_event(
+            Events.startup, _prepositions=servo.events.Preposition.on
+        )
 
         # Start up the pub/sub exchange
         if not self.pubsub_exchange.running:
@@ -267,7 +274,9 @@ class Servo(servo.connector.BaseConnector):
 
     def get_connector(
         self, name: Union[str, Sequence[str]]
-    ) -> Optional[Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]]:
+    ) -> Optional[
+        Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]
+    ]:
         """Return one or more connectors by name.
 
         This is a convenience method equivalent to iterating `connectors` and comparing by name.
@@ -327,7 +336,9 @@ class Servo(servo.connector.BaseConnector):
         # Start the connector if we are running
         if self.is_running:
             await self.dispatch_event(
-                Events.startup, include=[connector], _prepositions=servo.events.Preposition.on
+                Events.startup,
+                include=[connector],
+                _prepositions=servo.events.Preposition.on,
             )
 
     async def remove_connector(
@@ -359,7 +370,9 @@ class Servo(servo.connector.BaseConnector):
         # Shut the connector down if we are running
         if self.is_running:
             await self.dispatch_event(
-                Events.shutdown, include=[connector_], _prepositions=servo.events.Preposition.on
+                Events.shutdown,
+                include=[connector_],
+                _prepositions=servo.events.Preposition.on,
             )
 
         await self.dispatch_event(Events.detach, self, include=[connector])
@@ -397,7 +410,9 @@ class Servo(servo.connector.BaseConnector):
     async def check(
         self,
         matching: Optional[servo.checks.CheckFilter],
-        halt_on: Optional[servo.types.ErrorSeverity] = servo.types.ErrorSeverity.critical,
+        halt_on: Optional[
+            servo.types.ErrorSeverity
+        ] = servo.types.ErrorSeverity.critical,
     ) -> List[servo.checks.Check]:
         """Check that the servo is ready to perform optimization.
 
@@ -433,8 +448,8 @@ class Servo(servo.connector.BaseConnector):
     def current(self):
         """A context manager that sets the current servo context."""
         try:
-          token = _current_context_var.set(self)
-          yield self
+            token = _current_context_var.set(self)
+            yield self
 
         finally:
             _current_context_var.reset(token)

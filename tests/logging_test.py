@@ -121,7 +121,9 @@ class TestFormatting:
 
     def test_connector_context_var(self, messages):
         servo.connector._current_context_var.set(self)
-        servo.events._current_context_var.set(servo.events.EventContext.from_str("before:adjust"))
+        servo.events._current_context_var.set(
+            servo.events.EventContext.from_str("before:adjust")
+        )
         logger.info("Test")
         message = messages[0]
         assert message.record["message"] == "Test"

@@ -269,6 +269,7 @@ class VegetaConfiguration(servo.BaseConfiguration):
             {TargetFormat: lambda t: t.value()}
         )
 
+
 class VegetaChecks(servo.BaseChecks):
     config: VegetaConfiguration
     reports: Optional[List[VegetaReport]] = None
@@ -340,7 +341,7 @@ class VegetaConnector(servo.BaseConnector):
         self.logger.info(summary)
 
         # Run the load generator, publishing metrics for interested subscribers
-        async with self.publish('loadgen.vegeta') as publisher:
+        async with self.publish("loadgen.vegeta") as publisher:
             _, vegeta_reports = await _run_vegeta(
                 config=self.config, warmup_until=warmup_until, publisher=publisher
             )
@@ -413,7 +414,9 @@ async def _run_vegeta(
 
 def _build_vegeta_command(config: VegetaConfiguration) -> str:
     if not config.duration:
-        raise ValueError(f"invalid vegeta configuration: duration must be set (duration='{config.duration}')")
+        raise ValueError(
+            f"invalid vegeta configuration: duration must be set (duration='{config.duration}')"
+        )
 
     vegeta_attack_args = list(
         map(
@@ -485,9 +488,7 @@ def _time_series_readings_from_vegeta_reports(
         data_points: List[servo.DataPoint] = []
         for report in vegeta_reports:
             value = servo.value_for_key_path(report.dict(by_alias=True), key)
-            data_points.append(
-                servo.DataPoint(metric, report.end, value)
-            )
+            data_points.append(servo.DataPoint(metric, report.end, value))
 
         readings.append(servo.TimeSeries(metric, data_points))
 

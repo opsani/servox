@@ -4,6 +4,7 @@ import pytest
 from servo.types.core import DataPoint, TimeSeries, Unit
 from servo.types.api import *
 
+
 def test_adjustment_str() -> None:
     adjustment = Adjustment(component_name="web", setting_name="cpu", value=1.25)
     assert adjustment.__str__() == "web.cpu=1.25"
@@ -13,6 +14,7 @@ def test_adjustment_str() -> None:
         f"[adjustments=({', '.join(list(map(str, [adjustment])))})]"
         == "[adjustments=(web.cpu=1.25)]"
     )
+
 
 class TestMeasurement:
     @pytest.fixture
@@ -36,8 +38,18 @@ class TestMeasurement:
     @pytest.mark.xfail
     def test_rejects_mismatched_time_series_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]),
-            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2), (datetime.datetime.now(), 3)], id="foo")
+            TimeSeries(
+                metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]
+            ),
+            TimeSeries(
+                metric,
+                [
+                    (datetime.datetime.now(), 1),
+                    (datetime.datetime.now(), 2),
+                    (datetime.datetime.now(), 3),
+                ],
+                id="foo",
+            ),
         ]
         with pytest.raises(ValueError) as e:
             Measurement(readings=readings)
@@ -50,7 +62,9 @@ class TestMeasurement:
     @pytest.mark.xfail
     def test_rejects_mixed_empty_and_nonempty_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]),
+            TimeSeries(
+                metric, [(datetime.datetime.now(), 1), (datetime.datetime.now(), 2)]
+            ),
             TimeSeries(metric=metric, data_points=[]),
         ]
         with pytest.raises(ValueError) as e:
@@ -63,10 +77,13 @@ class TestMeasurement:
 
     def test_rejects_mixed_types_of_readings(self, metric: Metric) -> None:
         readings = [
-            TimeSeries(metric, [
-                DataPoint(metric, datetime.datetime.now(), 1),
-                DataPoint(metric, datetime.datetime.now(), 2),
-            ]),
+            TimeSeries(
+                metric,
+                [
+                    DataPoint(metric, datetime.datetime.now(), 1),
+                    DataPoint(metric, datetime.datetime.now(), 2),
+                ],
+            ),
             DataPoint(metric, datetime.datetime.now(), 123),
         ]
         with pytest.raises(ValueError) as e:
@@ -76,6 +93,7 @@ class TestMeasurement:
             'all readings must be of the same type: expected "TimeSeries" but found "DataPoint"'
             in str(e.value)
         )
+
 
 class TestControl:
     def test_validation_fails_if_delay_past_do_not_agree(self) -> None:

@@ -15,9 +15,15 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         ready = statesman.InitialState("Ready")
         analyzing = "Analyzing"
 
-        awaiting_description = "Awaiting Description" # issued a DESCRIBE, waiting for description
-        awaiting_measurement = "Awaiting Measurement" # issued a MEASURE, waiting for measurement
-        awaiting_adjustment = "Awaiting Adjustment" # issued an ADJUST, waiting for confirmation
+        awaiting_description = (
+            "Awaiting Description"  # issued a DESCRIBE, waiting for description
+        )
+        awaiting_measurement = (
+            "Awaiting Measurement"  # issued a MEASURE, waiting for measurement
+        )
+        awaiting_adjustment = (
+            "Awaiting Adjustment"  # issued an ADJUST, waiting for confirmation
+        )
 
         done = "Done"
         failed = "Failed"
@@ -40,7 +46,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         elif self.state in (StateMachine.States.done, StateMachine.States.failed):
             return servo.api.Commands.sleep
         else:
-            servo.logging.logger.error(f"in non-operational state ({self.state}): cannot command servo meaningfully")
+            servo.logging.logger.error(
+                f"in non-operational state ({self.state}): cannot command servo meaningfully"
+            )
             return servo.api.Commands.sleep
 
     @statesman.enter_state(States.ready)
@@ -59,23 +67,30 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
 
     @statesman.enter_state(States.awaiting_description)
     async def _enter_awaiting_description(self) -> None:
-        self.command_response = servo.api.CommandResponse(cmd=servo.api.Commands.describe, param={})
+        self.command_response = servo.api.CommandResponse(
+            cmd=servo.api.Commands.describe, param={}
+        )
 
     @statesman.enter_state(States.awaiting_measurement)
-    async def _enter_awaiting_measurement(self, metrics: List[servo.Metric] = [], control: servo.Control = servo.Control()) -> None:
+    async def _enter_awaiting_measurement(
+        self, metrics: List[servo.Metric] = [], control: servo.Control = servo.Control()
+    ) -> None:
         self.command_response = servo.api.CommandResponse(
             cmd=servo.api.Commands.measure,
-            param=servo.api.MeasureParams(metrics=metrics, control=control)
+            param=servo.api.MeasureParams(metrics=metrics, control=control),
         )
 
     @statesman.enter_state(States.awaiting_adjustment)
-    async def _enter_awaiting_adjustment(self, adjustments: List[servo.types.Adjustment] = [], control: servo.Control = servo.Control()) -> None:
+    async def _enter_awaiting_adjustment(
+        self,
+        adjustments: List[servo.types.Adjustment] = [],
+        control: servo.Control = servo.Control(),
+    ) -> None:
         descriptor = servo.api.adjustments_to_descriptor(adjustments)
         descriptor["control"] = control.dict(exclude_unset=True)
 
         self.command_response = servo.api.CommandResponse(
-            cmd=servo.api.Commands.adjust,
-            param=descriptor
+            cmd=servo.api.Commands.adjust, param=descriptor
         )
 
     @statesman.exit_state([States.awaiting_measurement, States.awaiting_adjustment])
@@ -86,7 +101,10 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _sleep(self) -> None:
         self.command_response = servo.api.CommandResponse(
             cmd=servo.api.Commands.sleep,
-            param={"duration": 60, "data": {"reason": "no active optimization pipeline"}}
+            param={
+                "duration": 60,
+                "data": {"reason": "no active optimization pipeline"},
+            },
         )
 
     @statesman.event(States.__any__, States.ready)
@@ -94,7 +112,11 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         """Reset the Optimizer to an initial ready state."""
         servo.logging.logger.info("Resetting Optimizer")
 
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
+    @statesman.event(
+        States.__any__,
+        States.__active__,
+        transition_type=statesman.Transition.Types.internal,
+    )
     async def say_hello(self) -> servo.api.Status:
         """Say hello to a servo that has connected and greeted us.
 
@@ -104,13 +126,25 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
         self.connected = True
         return servo.api.Status.ok()
 
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
+    @statesman.event(
+        States.__any__,
+        States.__active__,
+        transition_type=statesman.Transition.Types.internal,
+    )
     async def ask_whats_next(self) -> servo.api.CommandResponse:
         """Answer an inquiry about what the next command to be executed is."""
-        servo.logging.logger.info(f"Asking What's Next? => {self.command}: {self.command_response}")
-        return self.command_response or servo.api.CommandResponse(cmd=self.command, param={})
+        servo.logging.logger.info(
+            f"Asking What's Next? => {self.command}: {self.command_response}"
+        )
+        return self.command_response or servo.api.CommandResponse(
+            cmd=self.command, param={}
+        )
 
-    @statesman.event(States.__any__, States.__active__, transition_type=statesman.Transition.Types.internal)
+    @statesman.event(
+        States.__any__,
+        States.__active__,
+        transition_type=statesman.Transition.Types.internal,
+    )
     async def say_goodbye(self) -> servo.api.Status:
         """Say goodbye to a servo that is disconnecting and has bid us farewell.
 
@@ -123,7 +157,9 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _guard_progress_tracking(self, *, progress: Optional[int] = None) -> bool:
         if isinstance(progress, int) and progress < 100:
             if self.progress and progress < self.progress:
-                raise ValueError(f"progress cannot go backward: new progress value of {progress} is less than existing progress value of {self.progress}")
+                raise ValueError(
+                    f"progress cannot go backward: new progress value of {progress} is less than existing progress value of {self.progress}"
+                )
             self.progress = progress
             return False
 
@@ -140,8 +176,12 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     async def _validate_description(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Description: {description}")
 
-    @statesman.event(States.awaiting_description, States.analyzing, guard=_validate_description)
-    async def submit_description(self, description: servo.Description) -> servo.api.Status:
+    @statesman.event(
+        States.awaiting_description, States.analyzing, guard=_validate_description
+    )
+    async def submit_description(
+        self, description: servo.Description
+    ) -> servo.api.Status:
         """Submit a Description to the optimizer for analysis."""
         servo.logging.logger.info(f"Received Description: {description}")
         self.description = description
@@ -151,15 +191,23 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     # Measure
 
     @statesman.event([States.ready, States.analyzing], States.awaiting_measurement)
-    async def request_measurement(self, metrics: List[servo.Metric], control: servo.Control) -> None:
+    async def request_measurement(
+        self, metrics: List[servo.Metric], control: servo.Control
+    ) -> None:
         """Request a Measurement from the servo."""
         servo.logging.logger.info(f"Requesting Measurement ({metrics}, {control})")
 
     async def _validate_measurement(self, measurement: servo.Measurement) -> None:
         servo.logging.logger.info(f"Validating Measurement: {measurement}")
 
-    @statesman.event(States.awaiting_measurement, States.analyzing, guard=[_guard_progress_tracking, _validate_measurement])
-    async def submit_measurement(self, measurement: servo.Measurement) -> servo.api.Status:
+    @statesman.event(
+        States.awaiting_measurement,
+        States.analyzing,
+        guard=[_guard_progress_tracking, _validate_measurement],
+    )
+    async def submit_measurement(
+        self, measurement: servo.Measurement
+    ) -> servo.api.Status:
         """Submit a Measurement to the optimizer for analysis."""
         servo.logging.logger.info(f"Received Measurement: {measurement}")
         return servo.api.Status.ok()
@@ -168,15 +216,27 @@ class StateMachine(statesman.HistoryMixin, statesman.StateMachine):
     # Adjust
 
     @statesman.event([States.ready, States.analyzing], States.awaiting_adjustment)
-    async def recommend_adjustments(self, adjustments: List[servo.types.Adjustment], control: servo.Control = servo.Control()) -> None:
+    async def recommend_adjustments(
+        self,
+        adjustments: List[servo.types.Adjustment],
+        control: servo.Control = servo.Control(),
+    ) -> None:
         """Recommend Adjustments to the Servo."""
-        servo.logging.logger.info(f"Recommending Adjustments ({adjustments}, {control})")
+        servo.logging.logger.info(
+            f"Recommending Adjustments ({adjustments}, {control})"
+        )
 
     async def _validate_adjustments(self, description: servo.Description) -> None:
         servo.logging.logger.info(f"Validating Adjustment: {description}")
 
-    @statesman.event(States.awaiting_adjustment, States.analyzing, guard=[_guard_progress_tracking, _validate_adjustments])
-    async def complete_adjustments(self, description: servo.Description) -> servo.api.Status:
+    @statesman.event(
+        States.awaiting_adjustment,
+        States.analyzing,
+        guard=[_guard_progress_tracking, _validate_adjustments],
+    )
+    async def complete_adjustments(
+        self, description: servo.Description
+    ) -> servo.api.Status:
         """Complete Adjustment."""
         servo.logging.logger.info(f"Adjustment Completed: {description}")
         return servo.api.Status.ok()
@@ -215,11 +275,13 @@ class AbstractOptimizer(StateMachine, abc.ABC):
         """Advance the optimizer to the next state."""
         ...
 
+
 class StaticOptimizer(AbstractOptimizer):
     """A fake optimizer that requires manual state changes."""
 
     async def next_transition(self, *args, **kwargs) -> Optional[statesman.Transition]:
         return None
+
 
 class SequencedOptimizer(statesman.SequencingMixin, AbstractOptimizer):
     """A fake optimizer that executes state transitions in a specific order."""
@@ -233,6 +295,7 @@ class SequencedOptimizer(statesman.SequencingMixin, AbstractOptimizer):
                 # No more states -- finish optimization
                 await self.done()
 
+
 class RandomOptimizer(AbstractOptimizer):
     """A fake optimizer that executes state transitions in random order."""
 
@@ -243,6 +306,7 @@ class RandomOptimizer(AbstractOptimizer):
         transitionable = random.choice(self._queue)
         self._queue.remove(transitionable)
         return await transitionable
+
 
 class ChaosOptimizer(AbstractOptimizer):
     """A fake optimizer that generates chaos.
@@ -255,20 +319,22 @@ class ChaosOptimizer(AbstractOptimizer):
         pass
 
 
-
-
-
 #########
+
 
 class OpsaniAPI(fastapi.FastAPI):
     optimizer: Optional[AbstractOptimizer] = None
 
     # TODO: Update for multi-servo?
 
+
 api = OpsaniAPI()
 
+
 @api.post("/accounts/{account}/applications/{app}/servo")
-async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[servo.api.Status, servo.api.CommandResponse]:
+async def servo_get(
+    account: str, app: str, ev: servo.api.Request
+) -> Union[servo.api.Status, servo.api.CommandResponse]:
     assert api.optimizer, "an optimizer must be assigned to the OpsaniAPI instance"
     if ev.event == servo.api.Events.hello:
         return await api.optimizer.say_hello()
@@ -285,6 +351,7 @@ async def servo_get(account: str, app: str, ev: servo.api.Request) -> Union[serv
     else:
         raise ValueError(f"unknown event: {ev.event}")
 
+
 ##
 # Utilities
 
@@ -297,22 +364,13 @@ COMPONENTS = [
     servo.Component(
         "fake-app",
         settings=[
-            servo.CPU(
-                min=1,
-                max=5
-            ),
-            servo.Memory(
-                min=0.25,
-                max=8.0,
-                step=0.125
-            ),
-            servo.Replicas(
-                min=1,
-                max=10
-            )
-        ]
+            servo.CPU(min=1, max=5),
+            servo.Memory(min=0.25, max=8.0, step=0.125),
+            servo.Replicas(min=1, max=10),
+        ],
     )
 ]
+
 
 def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeric]:
     if isinstance(setting, servo.RangeSetting):
@@ -322,6 +380,7 @@ def _random_value_for_setting(setting: servo.Setting) -> Union[str, servo.Numeri
         return random.choice(setting.values)
     else:
         raise ValueError(f"unexpected setting: {repr(setting)}")
+
 
 def _random_description() -> servo.Description:
     components = COMPONENTS.copy()
