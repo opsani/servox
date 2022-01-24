@@ -16,7 +16,7 @@ include = ["README.md", "CHANGELOG.md"]
 python = ">=3.8,<=3.9.7"
 pydantic = "1.8.2"
 loguru = "^0.5.1"
-httpx = "^0.17.0"
+httpx = ">=0.17,<0.22"
 python-dotenv = ">=0.15,<0.20"
 semver = "^2.10.1"
 pyaml = "^20.4.0"
