@@ -979,7 +979,7 @@ class PrometheusConnector(servo.BaseConnector):
                     self._query_slo_metrics, metrics=metrics__
                 ),
             )
-            fast_fail_progress = servo.EventProgress(
+            fast_fail_progress = servo.EventProgress(timeout=measurement_duration)
                 timeout=measurement_duration, settlement=None
             )
             gather_tasks = [
