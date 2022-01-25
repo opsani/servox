@@ -64,14 +64,11 @@ class PrometheusMetric(servo.Metric):
             The number of data points within the query result is equal to the duration between the
             start and end times divided by the step. May be a numeric value or Golang duration string.
         absent: The behavior to apply when the queried metric is absent.
-        eager: The duration to observe the metric and eagerly return a measurement if it does not change.
-            Defaults to `None`, disabling eager measurements.
     """
 
     query: str = None
     step: servo.Duration = "1m"
     absent: AbsentMetricPolicy = AbsentMetricPolicy.ignore
-    eager: Optional[servo.Duration] = None
 
     def build_query(self) -> str:
         """Build and return a complete Prometheus query string.
@@ -963,29 +960,7 @@ class PrometheusConnector(servo.BaseConnector):
             f"Measuring {len(metrics__)} metrics for {measurement_duration}: {servo.utilities.join_to_series(measuring_names)}"
         )
 
-        # Handle eager metrics
-        eager_metrics = list(filter(lambda m: m.eager, metrics__))
-        eager_settlement = (
-            max(eager_metrics, key=operator.attrgetter("eager")).eager
-            if eager_metrics
-            else None
-        )
-        eager_observer = EagerMetricObserver(
-            base_url=self.config.base_url, metrics=eager_metrics, start=start, end=end
-        )
-        if eager_metrics:
-            servo.logger.info(
-                f"Observing values of {len(eager_metrics)} eager metrics: measurement will return after {eager_settlement} of stability"
-            )
-        else:
-            servo.logger.debug(
-                f"No eager metrics found: measurement will proceed for full duration of {measurement_duration}"
-            )
-
-        # Allow the maximum settlement time of eager metrics to elapse before eager return (None runs full duration)
-        progress = servo.EventProgress(
-            timeout=measurement_duration, settlement=eager_settlement
-        )
+        progress = servo.EventProgress(timeout=measurement_duration, settlement=None)
 
         # Handle fast fail metrics
         if (
@@ -1004,11 +979,9 @@ class PrometheusConnector(servo.BaseConnector):
                     self._query_slo_metrics, metrics=metrics__
                 ),
             )
-            fast_fail_progress = servo.EventProgress(
-                timeout=measurement_duration, settlement=eager_settlement
-            )
+            fast_fail_progress = servo.EventProgress(timeout=measurement_duration)
             gather_tasks = [
-                asyncio.create_task(progress.watch(eager_observer.observe)),
+                asyncio.create_task(progress.watch(self.observe)),
                 asyncio.create_task(
                     fast_fail_progress.watch(
                         fast_fail_observer.observe, every=self.config.fast_fail.period
@@ -1022,7 +995,7 @@ class PrometheusConnector(servo.BaseConnector):
                 await asyncio.gather(*gather_tasks, return_exceptions=True)
                 raise
         else:
-            await progress.watch(eager_observer.observe)
+            await progress.watch(self.observe)
 
         # Capture the measurements
         self.logger.info(f"Querying Prometheus for {len(metrics__)} metrics...")
@@ -1040,6 +1013,15 @@ class PrometheusConnector(servo.BaseConnector):
         client = Client(base_url=self.config.base_url)
         response = await client.list_targets()
         return response
+
+    async def observe(self, progress: servo.EventProgress) -> None:
+
+        return self.logger.info(
+            progress.annotate(
+                f"measuring Prometheus metrics for {progress.timeout}", False
+            ),
+            progress=progress.progress,
+        )
 
     async def _query_prometheus(
         self, metric: PrometheusMetric, start: datetime, end: datetime
@@ -1146,159 +1128,3 @@ def _chart_delta(a, b, unit) -> str:
         return f"📉{delta}{unit}"
     else:
         return f"📈+{delta}{unit}"
-
-
-class EagerMetricObserver(pydantic.BaseModel):
-    base_url: pydantic.AnyHttpUrl
-    metrics: List[servo.Metric]
-    start: datetime.datetime
-    end: datetime.datetime
-    data_points: Dict[servo.Metric, servo.DataPoint] = {}
-
-    async def observe(self, progress: servo.EventProgress) -> None:
-        if not self.metrics:
-            # bail if there are no eager metrics to observe
-            servo.logger.info(
-                progress.annotate(
-                    f"measuring Prometheus metrics for {progress.timeout}", False
-                ),
-                progress=progress.progress,
-            )
-            return
-
-        servo.logger.info(
-            progress.annotate(
-                f"measuring Prometheus metrics for up to {progress.timeout} (eager reporting when stable for {progress.settlement})...",
-                False,
-            ),
-            progress=progress.progress,
-        )
-        if progress.timed_out:
-            servo.logger.info(
-                f"measurement duration of {progress.timeout} elapsed: reporting metrics"
-            )
-            progress.complete()
-            return
-        else:
-            for metric in self.metrics:
-                active_data_point = self.data_points.get(metric)
-                readings = await self._query_prometheus(metric)
-                if readings:
-                    data_point: servo.DataPoint = readings[0][-1]
-                    servo.logger.trace(
-                        f"Prometheus returned reading for the `{metric.name}` metric: {data_point}"
-                    )
-                    if data_point.value > 0:
-                        if active_data_point is None:
-                            active_data_point = data_point
-                            servo.logger.success(
-                                progress.annotate(
-                                    f"read `{metric.name}` metric value of {round(active_data_point.value)}{metric.unit}, awaiting {progress.settlement} before reporting"
-                                )
-                            )
-                            progress.trigger()
-                        elif data_point.value != active_data_point.value:
-                            previous_reading = active_data_point
-                            active_data_point = data_point
-                            delta_str = _chart_delta(
-                                previous_reading.value,
-                                active_data_point.value,
-                                metric.unit,
-                            )
-                            if progress.settling:
-                                servo.logger.success(
-                                    progress.annotate(
-                                        f"read updated `{metric.name}` metric value of {round(active_data_point[1])}{metric.unit} ({delta_str}) during settlement, resetting to capture more data"
-                                    )
-                                )
-                                progress.reset()
-                            else:
-                                # TODO: Should this just complete? How would we get here...
-                                servo.logger.success(
-                                    progress.annotate(
-                                        f"read updated `{metric.name}` metric value of {round(active_data_point[1])}{metric.unit} ({delta_str}), awaiting {progress.settlement} before reporting"
-                                    )
-                                )
-                                progress.trigger()
-                        else:
-                            servo.logger.debug(
-                                f"metric `{metric.name}` has not changed value, ignoring (reading={active_data_point}, num_readings={len(readings[0].data_points)})"
-                            )
-                    else:
-                        if active_data_point:
-                            # NOTE: If we had a value and fall back to zero it could be a burst
-                            if not progress.settling:
-                                servo.logger.warning(
-                                    f"metric `{metric.name}` has fallen to zero from {active_data_point[1]}: may indicate a bursty traffic pattern. Will report eagerly if metric remains zero after {progress.settlement}"
-                                )
-                                progress.trigger()
-                            else:
-                                # NOTE: We are waiting out settlement
-                                servo.logger.warning(
-                                    f"metric `{metric.name}` has fallen to zero. Will report eagerly if metric remains zero in {progress.settlement_remaining}"
-                                )
-                        else:
-                            servo.logger.debug(
-                                f"Prometheus returned zero value for the `{metric.name}` metric"
-                            )
-                else:
-                    if active_data_point:
-                        servo.logger.warning(
-                            progress.annotate(
-                                f"Prometheus returned no readings for the `{metric.name}` metric"
-                            )
-                        )
-                    else:
-                        # NOTE: generally only happens on initialization and we don't care
-                        servo.logger.trace(
-                            progress.annotate(
-                                f"Prometheus returned no readings for the `{metric.name}` metric"
-                            )
-                        )
-
-            if not progress.completed and not progress.timed_out:
-                max_step_metric = max(
-                    self.metrics, key=operator.attrgetter("step"), default=None
-                )
-                servo.logger.debug(
-                    f"sleeping for {max_step_metric.step} to allow metrics to aggregate"
-                )
-                await asyncio.sleep(max_step_metric.step.total_seconds())
-
-    async def _query_prometheus(
-        self, metric: PrometheusMetric
-    ) -> List[servo.TimeSeries]:
-        # TODO: Duplicating controller functionality. Refactor. Likely becomes boundary for Promethean library
-        client = Client(base_url=self.base_url)
-        response = await client.query_range(metric, self.start, self.end)
-        servo.logger.trace(
-            f"Got response data type {response.__class__} for metric {metric}: {response}"
-        )
-        response.raise_for_error()
-
-        if response.data:
-            return response.results()
-        else:
-            # Handle absent metric cases
-            if metric.absent in {AbsentMetricPolicy.ignore, AbsentMetricPolicy.zero}:
-                # NOTE: metric zeroing is handled at the query level
-                pass
-            else:
-                if await client.check_is_metric_absent(metric):
-                    if metric.absent == AbsentMetricPolicy.warn:
-                        servo.logger.warning(
-                            f"Found absent metric for query (`{metric.query}`)"
-                        )
-                    elif metric.absent == AbsentMetricPolicy.fail:
-                        servo.logger.error(
-                            f"Required metric '{metric.name}' is absent from Prometheus (query='{metric.query}')"
-                        )
-                        raise RuntimeError(
-                            f"Required metric '{metric.name}' is absent from Prometheus"
-                        )
-                    else:
-                        raise ValueError(
-                            f"unknown metric absent value: {metric.absent}"
-                        )
-
-            return []
