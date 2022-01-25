@@ -1,12 +1,12 @@
 {
     "workbench.colorCustomizations": {
-        // For ext stuart.unique-window-colors, can be removed
+        "_comment": "For ext stuart.unique-window-colors, can be removed",
         "activityBar.background": "#24320E",
         "titleBar.activeBackground": "#324613",
         "titleBar.activeForeground": "#F7FBF1"
     },
     "python.analysis.diagnosticSeverityOverrides": {
-        "reportUnusedCoroutine": "information",
+        "reportUnusedCoroutine": "information"
     },
     "python.formatting.provider": "black",
     "editor.formatOnSave": true,
