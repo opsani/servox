@@ -1,4 +1,5 @@
 import datetime
+import devtools
 import json
 import pathlib
 import re
@@ -585,7 +586,7 @@ class TestPrometheusIntegration:
                     timeout=360,  # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
-                assert len(measurement) == 1
+                assert len(measurement) == 1, devtools.pprint(measurement)
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
