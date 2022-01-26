@@ -1,4 +1,5 @@
 import datetime
+import devtools
 import json
 import pathlib
 import re
@@ -131,13 +132,11 @@ class TestPrometheusConfiguration:
             "  query: rate(http_requests_total[5m])\n"
             "  step: 1m\n"
             "  absent: ignore\n"
-            "  eager: null\n"
             "- name: error_rate\n"
             "  unit: '%'\n"
             "  query: rate(errors[5m])\n"
             "  step: 1m\n"
             "  absent: ignore\n"
-            "  eager: null\n"
             "targets: null\n"
             "fast_fail:\n"
             "  disabled: 0\n"
@@ -551,7 +550,6 @@ class TestPrometheusIntegration:
                             query="sum(rate(envoy_cluster_upstream_rq_total[15s]))",
                             step="5s",
                             absent="ignore",
-                            eager="20s",
                         ),
                         PrometheusMetric(
                             "error_rate",
@@ -582,15 +580,13 @@ class TestPrometheusIntegration:
                         )
 
                 connector = PrometheusConnector(config=config, optimizer=optimizer)
-                event_loop.call_later(15, asyncio.create_task, burst_traffic())
+                event_loop.call_later(30, asyncio.create_task, burst_traffic())
                 measurement = await asyncio.wait_for(
-                    connector.measure(control=servo.Control(duration="10m")),
-                    timeout=300,  # NOTE: if we haven't returned in 5 minutes all is lost
+                    connector.measure(control=servo.Control(duration="5m")),
+                    timeout=360,  # NOTE: if we haven't returned in 5 minutes all is lost
                 )
                 assert measurement
-                assert (
-                    len(measurement) == 1
-                ), "expected one TimeSeries (error_rate should be absent)"
+                assert len(measurement) == 1, devtools.pprint(measurement)
                 time_series = measurement[0]
 
                 # Check that the readings are zero on both sides of the measurement but not in between
@@ -1004,7 +1000,6 @@ class TestConnector:
         assert len(description.metrics) == 1
         metrics = description.metrics[0]
         assert metrics.absent == "ignore"
-        assert metrics.eager is None
 
     @respx.mock
     async def test_measure(self, connector) -> None:
@@ -1029,7 +1024,6 @@ class TestConnector:
                 query="throughput",
                 step=servo.Duration("5s"),
                 absent="ignore",
-                eager=None,
             )
         ]
 
