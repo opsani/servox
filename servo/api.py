@@ -264,7 +264,7 @@ class Mixin(abc.ABC):
             if error.response.status_code < 500:
                 servo.logger.error(
                     f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) "
-                    f"for url: {error.request.url} \n\n Response: {devtools.pformat(error.response)}"
+                    f"for url: {error.request.url} \n\n Response: {devtools.pformat(error.response.text)}"
                 )
                 return True
 
