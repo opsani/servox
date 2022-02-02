@@ -3,7 +3,7 @@ from typing import Any, List, Sequence
 __all__ = ["values_for_keys", "value_for_key_path"]
 
 
-def values_for_keys(obj: dict, *keys: Sequence[str]) -> List[Any]:
+def values_for_keys(obj: dict[Any, Any], *keys: Sequence[str]) -> list[Any]:
     """
     Return a list of values from an object with a given sequence of keys.
     """

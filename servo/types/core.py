@@ -211,7 +211,7 @@ class Duration(datetime.timedelta):
         yield cls.validate
 
     @classmethod
-    def __modify_schema__(cls, field_schema: dict) -> None:
+    def __modify_schema__(cls, field_schema: dict[Any, Any]) -> None:
         field_schema.update(
             type="string",
             format="duration",
@@ -816,7 +816,7 @@ class OpsaniRepr(Protocol):
     requests.
     """
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         """Return a representation of the object serialized for use in Opsani
         API requests.
         """
