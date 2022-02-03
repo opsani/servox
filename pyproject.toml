@@ -22,7 +22,7 @@ semver = "^2.10.1"
 pyaml = "^20.4.0"
 tabulate = "^0.8.7"
 pygments = "^2.6.1"
-devtools = "^0.6.0"
+devtools = "^0.8.0"
 backoff = "^1.10.0"
 typer = "^0.3.0"
 bullet = "^2.1.0"
@@ -139,3 +139,19 @@ pylint = ["-*"]
 [tool.flakehell.exceptions."tests/"]
 pycodestyle = ["-*"]
 pyflakes = ["-*"]
+
+[tool.mypy]
+python_version = 3.9
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+#ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "devtools",
+    "curlify2",
+    "backoff"
+]
+ignore_missing_imports = true

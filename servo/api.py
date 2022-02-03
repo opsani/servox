@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import abc
 import copy
-import datetime
+from datetime import datetime, timedelta
 import enum
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import backoff
 import curlify2
@@ -16,6 +16,9 @@ import servo.errors
 import servo.types
 import servo.utilities
 from servo.logging import logs_path
+
+if TYPE_CHECKING:
+    from pydantic.typing import DictStrAny
 
 USER_AGENT = "github.com/opsani/servox"
 
@@ -118,7 +121,7 @@ class Status(pydantic.BaseModel):
         *,
         exclude_unset: bool = True,
         **kwargs,
-    ) -> pydantic.DictStrAny:
+    ) -> DictStrAny:
         return super().dict(exclude_unset=exclude_unset, **kwargs)
 
 
@@ -234,14 +237,14 @@ class Mixin(abc.ABC):
             progress = progress * 100
 
         # Calculate runtime
-        runtime = servo.types.Duration(datetime.datetime.now() - started_at)
+        runtime = servo.types.Duration(datetime.now() - started_at)
 
         # Produce human readable and remaining time in seconds values (if given)
         if time_remaining:
             if isinstance(time_remaining, (int, float)):
                 time_remaining_in_seconds = time_remaining
                 time_remaining = servo.types.Duration(time_remaining_in_seconds)
-            elif isinstance(time_remaining, datetime.timedelta):
+            elif isinstance(time_remaining, timedelta):
                 time_remaining_in_seconds = time_remaining.total_seconds()
             else:
                 raise ValueError(

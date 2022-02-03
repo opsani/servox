@@ -107,7 +107,15 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """The relative importance of the check determining failure handling.
     """
 
-    tags: Optional[Set[Tag]]
+    tags: Optional[set[str]] = pydantic.conset(
+        item_type=pydantic.constr(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=32,
+            regex="^([0-9a-z\\.-])*$",
+        ),
+        min_items=0,
+    )
     """
     An optional set of tags for filtering checks.
 
