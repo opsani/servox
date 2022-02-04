@@ -7,7 +7,7 @@ logic.
 """
 
 import weakref
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 _associations: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 

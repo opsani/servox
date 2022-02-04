@@ -12,7 +12,7 @@ import pathlib
 import sys
 import time
 import traceback
-from typing import Any, Awaitable, Callable, Dict, Optional, Union
+from typing import Any, Awaitable, Callable, Optional
 
 import loguru
 
@@ -75,17 +75,17 @@ class ProgressHandler:
 
     def __init__(
         self,
-        progress_reporter: Callable[[Dict[Any, Any]], Union[None, Awaitable[None]]],
-        error_reporter: Optional[Callable[[str], Union[None, Awaitable[None]]]] = None,
+        progress_reporter: Callable[[dict[Any, Any]], Optional[Awaitable[None]]],
+        error_reporter: Optional[Callable[[str], Optional[Awaitable[None]]]] = None,
         exception_handler: Optional[
-            Callable[[Dict[str, Any], Exception], Union[None, Awaitable[None]]]
+            Callable[[dict[str, Any], Exception], Optional[Awaitable[None]]]
         ] = None,
     ) -> None:  # noqa: D107
         self._progress_reporter = progress_reporter
         self._error_reporter = error_reporter
         self._exception_handler = exception_handler
-        self._queue = asyncio.Queue()
-        self._queue_processor = None
+        self._queue: asyncio.Queue[Any] = asyncio.Queue()
+        self._queue_processor: Optional[asyncio.Task[Any]] = None
 
     async def sink(self, message: loguru.Message) -> None:
         """Enqueue asynchronous tasks for reporting status of operations in progress.
@@ -194,7 +194,7 @@ class ProgressHandler:
             finally:
                 self._queue.task_done()
 
-    async def _report_error(self, message: str, record) -> None:
+    async def _report_error(self, message: str, record: loguru.Message.Record) -> None:
         """Report an error message about processing a log message annotated with a `progress` attribute."""
         message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:

@@ -1,4 +1,4 @@
-from typing import Any, List, Sequence
+from typing import Any, Sequence
 
 __all__ = ["values_for_keys", "value_for_key_path"]
 
@@ -13,9 +13,7 @@ def values_for_keys(obj: dict[Any, Any], *keys: Sequence[str]) -> list[Any]:
 DEFAULT_SENTINEL = object()
 
 
-def value_for_key_path(
-    obj: object, key_path: str, default: Any = DEFAULT_SENTINEL
-) -> Any:
+def value_for_key_path(obj: Any, key_path: str, default: Any = DEFAULT_SENTINEL) -> Any:
     """Return the value of a property at a given key path relative to a given object.
 
     Args:

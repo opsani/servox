@@ -8,8 +8,6 @@ from typing import (
     Any,
     Callable,
     ChainMap,
-    Dict,
-    List,
     Optional,
     Sequence,
     Tuple,
@@ -33,7 +31,7 @@ __all__ = [
 
 
 def get_instance_methods(
-    obj, *, stop_at_parent: Optional[Type[Any]] = None
+    obj: Any, *, stop_at_parent: Optional[Type[Any]] = None
 ) -> dict[str, Callable]:
     """Return a mapping of method names to method callables in method definition order.
 
