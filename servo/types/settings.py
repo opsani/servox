@@ -475,7 +475,7 @@ class InstanceType(EnumSetting):
 
 
 def _suggest_step_aligned_values(
-    value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None
+    value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], Union[str, float, int]]] = None
 ) -> tuple[str, str]:
     if in_repr is None:
         # return raw data for further processing

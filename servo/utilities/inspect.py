@@ -7,6 +7,7 @@ import warnings
 from typing import (
     Any,
     Callable,
+    ChainMap,
     Dict,
     List,
     Optional,
@@ -53,8 +54,8 @@ def get_instance_methods(
         A dictionary of methods in definition order.
     """
     cls = obj if inspect.isclass(obj) else obj.__class__
-    methods = collections.ChainMap()
-    stopped = False
+    methods: ChainMap = collections.ChainMap()
+    stopped: bool = False
 
     # search for instance specific methods before traversing the class hierarchy
     if not inspect.isclass(obj):
@@ -156,7 +157,7 @@ def resolve_type_annotations(
 class CallableDescriptor:
     """A data class that describes the runtime context of a callable."""
 
-    signature: inspect.signature
+    signature: inspect.Signature
     module: Optional[str] = None
     globalns: Optional[dict[str, Any]] = None
     localns: Optional[dict[str, Any]] = None

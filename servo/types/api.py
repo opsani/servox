@@ -240,12 +240,12 @@ class Measurement(BaseModel):
     def __iter__(self):
         return iter(self.readings)
 
-    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+    def __getitem__(self, index: int) -> Union[DataPoint, TimeSeries]:
         if not isinstance(index, int):
             raise TypeError("readings can only be retrieved by integer index")
         return self.readings[index]
 
-    def __opsani_repr__(self) -> dict[str, dict[str, dict[str, Any]]]:
+    def __opsani_repr__(self) -> dict[str, dict[str, Any]]:
         readings = {}
 
         for reading in self.readings:
