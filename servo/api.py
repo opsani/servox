@@ -12,6 +12,7 @@ import devtools
 import httpx
 import pydantic
 
+import servo
 import servo.errors
 import servo.types
 import servo.utilities
@@ -261,11 +262,10 @@ class Mixin(abc.ABC):
     def _is_fatal_status_code(error: Exception) -> bool:
         if isinstance(error, httpx.HTTPStatusError):
             if error.response.status_code < 500:
-                servo.logger.warning(
-                    f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) for url: {error.request.url}"
+                servo.logger.error(
+                    f"Giving up on non-retryable HTTP status code {error.response.status_code} ({error.response.reason_phrase}) "
                 )
                 return True
-
         return False
 
     @backoff.on_exception(
@@ -299,7 +299,8 @@ class Mixin(abc.ABC):
 
             except httpx.HTTPError as error:
                 self.logger.error(
-                    f'HTTP error "{error.__class__.__name__}" encountered while posting "{event}" event: {error}'
+                    f'HTTP error "{error.__class__.__name__}" encountered while posting "{event}" event: {error}, for '
+                    f"url {error.request.url} \n\n Response: {devtools.pformat(error.response.text)}"
                 )
                 self.logger.trace(_redacted_to_curl(error.request))
                 raise
