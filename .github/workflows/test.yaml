@@ -113,6 +113,7 @@ jobs:
     - name: Run mypy
       run: |
         source .venv/bin/activate
+        # NOTE: We just to get a report from mypy (not fail at the plethora), so success is forced
         mypy servo/ || true
     - uses: actions/upload-artifact@v2
       with:
