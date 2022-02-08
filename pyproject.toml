@@ -14,7 +14,7 @@ include = ["README.md", "CHANGELOG.md"]
 
 [tool.poetry.dependencies]
 python = ">=3.8,<=3.9.7"
-pydantic = "^1.8.2"
+pydantic = "1.8.2"
 loguru = "^0.5.1"
 httpx = "^0.17.0"
 python-dotenv = ">=0.15,<0.20"
@@ -139,19 +139,3 @@ pylint = ["-*"]
 [tool.flakehell.exceptions."tests/"]
 pycodestyle = ["-*"]
 pyflakes = ["-*"]
-
-[tool.mypy]
-python_version = 3.9
-warn_redundant_casts = true
-warn_unused_ignores = true
-check_untyped_defs = true
-disallow_untyped_defs = true
-#ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-    "devtools",
-    "curlify2",
-    "backoff"
-]
-ignore_missing_imports = true

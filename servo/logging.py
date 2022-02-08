@@ -194,7 +194,7 @@ class ProgressHandler:
             finally:
                 self._queue.task_done()
 
-    async def _report_error(self, message: str, record: loguru.Message.Record) -> None:
+    async def _report_error(self, message: str, record: loguru.Record) -> None:
         """Report an error message about processing a log message annotated with a `progress` attribute."""
         message = f"!!! WARNING: {record['name']}:{record['file'].name}:{record['line']} | servo.logging.ProgressHandler - {message}"
         if self._error_reporter:
