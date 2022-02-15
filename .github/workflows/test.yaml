@@ -50,7 +50,7 @@ jobs:
           path: ~/.local
           key: poetry-${{ runner.os }}-1.1.7a-python-${{ steps.setup-python.outputs.python-version }}
       - name: Install and configure Poetry
-        uses: snok/install-poetry@v1.1.8
+        uses: snok/install-poetry@v1.3
         if: steps.cached-poetry.outputs.cache-hit != 'true'
         with:
           version: 1.1.7
