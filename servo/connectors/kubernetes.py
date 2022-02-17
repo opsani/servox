@@ -2662,7 +2662,7 @@ class RolloutStatus(RolloutBaseModel):
     aborted_at: Optional[datetime.datetime]
     available_replicas: Optional[int]
     blue_green: RolloutBlueGreenStatus
-    canary: Any  #  TODO type this out if connector needs to interact with it
+    canary: Any  # TODO type this out if connector needs to interact with it
     collision_count: Optional[int]
     conditions: List[RolloutStatusCondition]
     controller_pause: Optional[bool]
@@ -3581,6 +3581,244 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 
     class Config:
         arbitrary_types_allowed = True
+
+
+class NoOptimization(BaseOptimization):
+    """
+    The NoOptimization class implements a bare-bones configuration meant for use in metrics collecting without
+    applying or adjusting any target, e.g. when optimization is handled via an external connector such as HPA.
+    """
+
+    deployment_config: "DeploymentConfiguration"
+    deployment: Deployment
+    container_config: "ContainerConfiguration"
+    container: Container
+
+    # State for tuning resources
+    tuning_pod: Optional[Pod]
+    tuning_container: Optional[Container]
+
+    @classmethod
+    async def create(
+        cls, config: "DeploymentConfiguration", **kwargs
+    ) -> "NoOptimization":
+        deployment = await Deployment.read(config.name, config.namespace)
+
+        replicas = config.replicas.copy()
+        replicas.value = deployment.replicas
+
+        # FIXME: Currently only supporting one container
+        for container_config in config.containers:
+            container = deployment.find_container(container_config.name)
+            if not container:
+                names = servo.utilities.strings.join_to_series(
+                    list(map(lambda c: c.name, deployment.containers))
+                )
+                raise ValueError(
+                    f'no container named "{container_config.name}" exists in the Pod (found {names})'
+                )
+
+            if container_config.static_environment_variables:
+                raise NotImplementedError(
+                    "Configurable environment variables are not currently supported under Deployment optimization (saturation mode)"
+                )
+
+            name = container_config.alias or (
+                f"{deployment.name}/{container.name}" if container else deployment.name
+            )
+            return cls(
+                name=name,
+                deployment_config=config,
+                deployment=deployment,
+                container_config=container_config,
+                container=container,
+                **kwargs,
+            )
+
+    @property
+    def cpu(self) -> CPU:
+        """
+        Return the current CPU setting for the optimization.
+        """
+        cpu = self.container_config.cpu.copy()
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.container.get_resource_requirements("cpu")
+        cpu.request = resource_requirements.get(ResourceRequirement.request)
+        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
+        value = resource_requirements.get(
+            next(
+                filter(
+                    lambda r: resource_requirements[r] is not None,
+                    self.container_config.cpu.get,
+                ),
+                None,
+            )
+        )
+        value = Core.parse(value)
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return cpu.safe_set_value_copy(value)
+
+    @property
+    def memory(self) -> Memory:
+        """
+        Return the current Memory setting for the optimization.
+        """
+        memory = self.container_config.memory.copy()
+
+        # Determine the value in priority order from the config
+        resource_requirements = self.container.get_resource_requirements("memory")
+        memory.request = resource_requirements.get(ResourceRequirement.request)
+        memory.limit = resource_requirements.get(ResourceRequirement.limit)
+        value = resource_requirements.get(
+            next(
+                filter(
+                    lambda r: resource_requirements[r] is not None,
+                    self.container_config.memory.get,
+                ),
+                None,
+            )
+        )
+        value = ShortByteSize.validate(value)
+        # NOTE: use safe_set to apply values that may be outside of the range
+        return memory.safe_set_value_copy(value)
+
+    @property
+    def env(self) -> Optional[list[servo.EnvironmentSetting]]:
+        env: list[servo.EnvironmentSetting] = []
+        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
+        for env_setting in self.container_config.env or []:
+            if env_val := self.container.get_environment_variable(env_setting.name):
+                env_setting = env_setting.safe_set_value_copy(env_val)
+            env.append(env_setting)
+
+        return env or None
+
+    @property
+    def replicas(self) -> servo.Replicas:
+        """
+        Return the current Replicas setting for the optimization.
+        """
+        replicas = self.deployment_config.replicas.copy()
+        replicas.value = self.deployment.replicas
+        return replicas
+
+    @property
+    def on_failure(self) -> FailureMode:
+        """
+        Return the configured failure behavior. If not set explicitly, this will be cascaded
+        from the base kubernetes configuration (or its default)
+        """
+        return self.deployment_config.on_failure
+
+    async def rollback(self, error: Optional[Exception] = None) -> None:
+        """
+        Initiates an asynchronous rollback to a previous version of the Deployment.
+
+        Args:
+            error: An optional error that triggered the rollback.
+        """
+        self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
+        await asyncio.wait_for(
+            self.deployment.rollback(),
+            timeout=self.timeout.total_seconds(),
+        )
+
+    async def shutdown(self, error: Optional[Exception] = None) -> None:
+        """
+        Initiates the asynchronous deletion of all pods in the Deployment under optimization.
+
+        Args:
+            error: An optional error that triggered the destruction.
+        """
+        self.logger.info(f"adjustment failed: shutting down deployment's pods...")
+        await asyncio.wait_for(
+            self.deployment.scale_to_zero(),
+            timeout=self.timeout.total_seconds(),
+        )
+
+    def to_components(self) -> List[servo.Component]:
+        settings = [self.cpu, self.memory, self.replicas]
+        if env := self.env:
+            settings.extend(env)
+        return [servo.Component(name=self.name, settings=settings)]
+
+    def adjust(
+        self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()
+    ) -> None:
+        pass
+
+    async def apply(self) -> None:
+        pass
+
+    @property
+    def target_controller_config(
+        self,
+    ) -> Union["DeploymentConfiguration", "RolloutConfiguration"]:
+        return self.deployment_config or self.rollout_config
+
+    @property
+    def target_controller(self) -> Union[Deployment, Rollout]:
+        return self.deployment or self.rollout
+
+    @property
+    def target_controller_type(self) -> str:
+        return type(self.target_controller).__name__
+
+    @property
+    def namespace(self) -> str:
+        return self.target_controller_config.namespace
+
+    @property
+    def tuning_pod_name(self) -> str:
+        """
+        Return the name of tuning Pod for this optimization.
+        """
+        return f"{self.target_controller_config.name}-tuning"
+
+    async def delete_tuning_pod(
+        self, *, raise_if_not_found: bool = True
+    ) -> Optional[Pod]:
+        """
+        Delete the tuning Pod.
+        """
+        try:
+            # TODO: Provide context manager or standard read option that handle not found? Lots of duplication on not found/conflict handling...
+            tuning_pod = await Pod.read(self.tuning_pod_name, self.namespace)
+            self.logger.info(
+                f"Deleting tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'..."
+            )
+            await tuning_pod.delete()
+            await tuning_pod.wait_until_deleted()
+            self.logger.info(
+                f"Deleted tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'."
+            )
+
+            self.tuning_pod = None
+            self.tuning_container = None
+            return tuning_pod
+
+        except kubernetes_asyncio.client.exceptions.ApiException as e:
+            if e.status != 404 or e.reason != "Not Found" and raise_if_not_found:
+                raise
+
+            self.tuning_pod = None
+            self.tuning_container = None
+
+        return None
+
+    async def is_ready(self) -> bool:
+        is_ready, restart_count = await asyncio.gather(
+            self.deployment.is_ready(), self.deployment.get_restart_count()
+        )
+        return is_ready and restart_count == 0
+
+    async def raise_for_status(self) -> None:
+        """Raise an exception if in an unhealthy state."""
+        await self.deployment.raise_for_status(
+            adjustments=self.adjustments,
+            include_container_logs=self.deployment_config.container_logs_in_error_status,
+        )
 
 
 class DeploymentOptimization(BaseOptimization):
@@ -4647,34 +4885,44 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for deployment_or_rollout_config in (config.deployments or []) + (
             config.rollouts or []
         ):
-            if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
-                if isinstance(deployment_or_rollout_config, RolloutConfiguration):
-                    raise NotImplementedError(
-                        "Saturation mode not currently supported on Argo Rollouts"
+            if not config.no_tuning:
+                if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
+                    if isinstance(deployment_or_rollout_config, RolloutConfiguration):
+                        raise NotImplementedError(
+                            "Saturation mode not currently supported on Argo Rollouts"
+                        )
+                    optimization = await DeploymentOptimization.create(
+                        deployment_or_rollout_config,
+                        timeout=deployment_or_rollout_config.timeout,
                     )
-                optimization = await DeploymentOptimization.create(
+                    deployment_or_rollout = optimization.deployment
+                    container = optimization.container
+                elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
+                    optimization = await CanaryOptimization.create(
+                        deployment_or_rollout_config,
+                        timeout=deployment_or_rollout_config.timeout,
+                    )
+                    deployment_or_rollout = optimization.target_controller
+                    container = optimization.main_container
+
+                    # Ensure the canary is available
+                    # TODO: We don't want to do this implicitly but this is a first step
+                    if not optimization.tuning_pod:
+                        servo.logger.info("Creating new tuning pod...")
+                        await optimization.create_tuning_pod()
+                else:
+                    raise ValueError(
+                        f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
+                    )
+
+            elif config.no_tuning:
+                optimization = await NoOptimization.create(
                     deployment_or_rollout_config,
                     timeout=deployment_or_rollout_config.timeout,
                 )
                 deployment_or_rollout = optimization.deployment
                 container = optimization.container
-            elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
-                optimization = await CanaryOptimization.create(
-                    deployment_or_rollout_config,
-                    timeout=deployment_or_rollout_config.timeout,
-                )
-                deployment_or_rollout = optimization.target_controller
-                container = optimization.main_container
-
-                # Ensure the canary is available
-                # TODO: We don't want to do this implicitly but this is a first step
-                if not optimization.tuning_pod:
-                    servo.logger.info("Creating new tuning pod...")
-                    await optimization.create_tuning_pod()
-            else:
-                raise ValueError(
-                    f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
-                )
+                await optimization.delete_tuning_pod(raise_if_not_found=False)
 
             optimizations.append(optimization)
 
@@ -4931,6 +5179,10 @@ class OptimizationStrategy(str, enum.Enum):
     adjustments to it instead of the Deployment itself.
     """
 
+    none = "none"
+    """The none strategy implements bare-bones servo infrastructure for monitoring only, without native adjustments.
+    """
+
 
 class BaseOptimizationStrategyConfiguration(pydantic.BaseModel):
     type: OptimizationStrategy = pydantic.Field(..., const=True)
@@ -4951,6 +5203,10 @@ class DefaultOptimizationStrategyConfiguration(BaseOptimizationStrategyConfigura
 class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
     type = pydantic.Field(OptimizationStrategy.canary, const=True)
     alias: Optional[ContainerTagName]
+
+
+class NoOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
+    type = pydantic.Field(OptimizationStrategy.none, const=True)
 
 
 class FailureMode(str, enum.Enum):
@@ -5043,6 +5299,9 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
+    no_tuning: bool = pydantic.Field(
+        False, description="Enable to prevent native adjustments via a canary/deployment strategy"
+    )
 
     @pydantic.validator("on_failure")
     def validate_failure_mode(cls, v):
@@ -5058,6 +5317,7 @@ StrategyTypes = Union[
     OptimizationStrategy,
     DefaultOptimizationStrategyConfiguration,
     CanaryOptimizationStrategyConfiguration,
+    NoOptimizationStrategyConfiguration,
 ]
 
 
@@ -5198,11 +5458,12 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             kubernetes_asyncio.config.load_incluster_config()
         else:
             raise RuntimeError(
-                f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found"
+                f"unable to configure Kubernetes client: no kubeconfig file nor in-cluster environment variables found"
             )
 
 
 KubernetesOptimizations.update_forward_refs()
+NoOptimization.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 

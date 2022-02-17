@@ -76,6 +76,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
+    no_tuning: bool = False
 
     @pydantic.root_validator
     def check_deployment_and_rollout(cls, values):
@@ -106,16 +107,30 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
-        main_config = servo.connectors.kubernetes.DeploymentConfiguration(
-            name=(self.deployment or self.rollout),
-            strategy=servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
-                type=servo.connectors.kubernetes.OptimizationStrategy.canary,
-                alias="tuning",
-            ),
-            replicas=servo.Replicas(
+        if not self.no_tuning:
+            strategy = (
+                servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
+                    type=servo.connectors.kubernetes.OptimizationStrategy.canary,
+                )
+            )
+            replicas = servo.Replicas(
                 min=0,
                 max=1,
-            ),
+            )
+
+        elif self.no_tuning:
+            strategy = servo.connectors.kubernetes.NoOptimizationStrategyConfiguration(
+                type=servo.connectors.kubernetes.OptimizationStrategy.none,
+            )
+            replicas = servo.Replicas(
+                min=0,
+                max=100,
+            )
+
+        main_config = servo.connectors.kubernetes.DeploymentConfiguration(
+            name=(self.deployment or self.rollout),
+            strategy=strategy,
+            replicas=replicas,
             containers=[
                 servo.connectors.kubernetes.ContainerConfiguration(
                     name=self.container,
@@ -144,6 +159,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             timeout=self.timeout,
             settlement=self.settlement,
             container_logs_in_error_status=self.container_logs_in_error_status,
+            no_tuning=self.no_tuning,
             **main_arg,
             **kwargs,
         )
@@ -157,80 +173,84 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Prometheus connector configuration object.
         """
+        metrics = [
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_instance_count",
+                servo.types.Unit.count,
+                query='sum(envoy_cluster_membership_healthy{opsani_role!="tuning"})',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_instance_count",
+                servo.types.Unit.count,
+                query='envoy_cluster_membership_healthy{opsani_role="tuning"}',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "total_request_rate",
+                servo.types.Unit.requests_per_second,
+                query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_request_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_request_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m]))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_success_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"2|3"}[1m])))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_success_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"2|3"}[1m])))',
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_error_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m])))',
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_error_rate",
+                servo.types.Unit.requests_per_second,
+                query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m])))',
+                absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_p90_latency",
+                servo.types.Unit.milliseconds,
+                query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_p90_latency",
+                servo.types.Unit.milliseconds,
+                query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "main_p50_latency",
+                servo.types.Unit.milliseconds,
+                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
+            ),
+            servo.connectors.prometheus.PrometheusMetric(
+                "tuning_p50_latency",
+                servo.types.Unit.milliseconds,
+                query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
+            ),
+        ]
+        if self.no_tuning:
+            metrics = list(filter(lambda m: 'opsani_role="tuning"' not in m.query, metrics))
+
         return servo.connectors.prometheus.PrometheusConfiguration(
             description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
             base_url=PROMETHEUS_SIDECAR_BASE_URL,
             streaming_interval="10s",
-            metrics=[
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_instance_count",
-                    servo.types.Unit.count,
-                    query='sum(envoy_cluster_membership_healthy{opsani_role!="tuning"})',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_instance_count",
-                    servo.types.Unit.count,
-                    query='envoy_cluster_membership_healthy{opsani_role="tuning"}',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "total_request_rate",
-                    servo.types.Unit.requests_per_second,
-                    query="sum(rate(envoy_cluster_upstream_rq_total[1m]))",
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_request_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role!="tuning"}[1m]))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_request_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(rate(envoy_cluster_upstream_rq_total{opsani_role="tuning"}[1m]))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_success_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"2|3"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_success_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"2|3"}[1m])))',
-                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_error_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role!="tuning", envoy_response_code_class=~"4|5"}[1m])))',
-                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_error_rate",
-                    servo.types.Unit.requests_per_second,
-                    query='avg(sum by(kubernetes_pod_name)(rate(envoy_cluster_upstream_rq_xx{opsani_role="tuning", envoy_response_code_class=~"4|5"}[1m])))',
-                    absent=servo.connectors.prometheus.AbsentMetricPolicy.zero,
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_p90_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_p90_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.9,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "main_p50_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role!="tuning"}[1m])))',
-                ),
-                servo.connectors.prometheus.PrometheusMetric(
-                    "tuning_p50_latency",
-                    servo.types.Unit.milliseconds,
-                    query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
-                ),
-            ],
+            metrics=metrics,
             **kwargs,
         )
 
@@ -242,11 +262,16 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
+        metrics = [m.value for m in list(servo.connectors.kube_metrics.SupportedKubeMetrics)]
+        if self.no_tuning:
+            metrics = list(filter(lambda m: "tuning" not in m, metrics))
+
         return servo.connectors.kube_metrics.KubeMetricsConfiguration(
             namespace=self.namespace,
             name=self.deployment or self.rollout,
             kind="Deployment" if self.deployment else "Rollout",
             container=self.container,
+            metrics_to_collect=metrics,
             **kwargs,
         )
 
@@ -267,7 +292,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     @property
     @abc.abstractmethod
     def controller_class(
-        self,
+            self,
     ) -> Type[
         Union[
             servo.connectors.kubernetes.Deployment, servo.connectors.kubernetes.Rollout
@@ -917,30 +942,35 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
 
     @servo.check("Tuning pod is running")
     async def check_tuning_is_running(self) -> None:
-        # Generate a KubernetesConfiguration to initialize the optimization class
-        kubernetes_config = self.config.generate_kubernetes_config()
-        controller_config = self._get_generated_controller_config(kubernetes_config)
-        optimization = await servo.connectors.kubernetes.CanaryOptimization.create(
-            controller_config, timeout=kubernetes_config.timeout
-        )
 
-        # Ensure the tuning pod is available
-        try:
-            if optimization.tuning_pod is None:
-                servo.logger.info(
-                    f"Creating tuning pod '{optimization.tuning_pod_name}'"
-                )
-                await optimization.create_tuning_pod()
-            else:
-                servo.logger.info(
-                    f"Found existing tuning pod '{optimization.tuning_pod_name}'"
-                )
+        if not self.config.no_tuning:
+            # Generate a KubernetesConfiguration to initialize the optimization class
+            kubernetes_config = self.config.generate_kubernetes_config()
+            controller_config = self._get_generated_controller_config(kubernetes_config)
+            optimization = await servo.connectors.kubernetes.CanaryOptimization.create(
+                controller_config, timeout=kubernetes_config.timeout
+            )
 
-        except Exception as error:
-            servo.logger.exception("Failed creating tuning Pod: {error}")
-            raise servo.checks.CheckError(
-                f"could not find tuning pod '{optimization.tuning_pod_name}''"
-            ) from error
+            # Ensure the tuning pod is available
+            try:
+                if optimization.tuning_pod is None:
+                    servo.logger.info(
+                        f"Creating tuning pod '{optimization.tuning_pod_name}'"
+                    )
+                    await optimization.create_tuning_pod()
+                else:
+                    servo.logger.info(
+                        f"Found existing tuning pod '{optimization.tuning_pod_name}'"
+                    )
+
+            except Exception as error:
+                servo.logger.exception("Failed creating tuning Pod: {error}")
+                raise servo.checks.CheckError(
+                    f"could not find tuning pod '{optimization.tuning_pod_name}''"
+                ) from error
+
+        elif self.config.no_tuning:
+            servo.logger.info(f"Skipping tuning pod check as no_tuning is set")
 
     @servo.check("Pods are processing traffic")
     async def check_traffic_metrics(self) -> str:

@@ -99,6 +99,7 @@ class TestConfig:
             "timeout",
             "settlement",
             "container_logs_in_error_status",
+            "no_tuning"
         ]
 
     def test_generate_yaml(self) -> None:
