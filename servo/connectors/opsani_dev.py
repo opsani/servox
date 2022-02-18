@@ -76,7 +76,10 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
-    no_tuning: bool = False
+    no_tuning: bool = pydantic.Field(
+        False,
+        description="Enable to prevent native adjustments via a canary/deployment strategy",
+    )
 
     @pydantic.root_validator
     def check_deployment_and_rollout(cls, values):
@@ -244,7 +247,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             ),
         ]
         if self.no_tuning:
-            metrics = list(filter(lambda m: 'opsani_role="tuning"' not in m.query, metrics))
+            metrics = list(
+                filter(lambda m: 'opsani_role="tuning"' not in m.query, metrics)
+            )
 
         return servo.connectors.prometheus.PrometheusConfiguration(
             description="A sidecar configuration for aggregating metrics from Envoy sidecar proxies.",
@@ -262,7 +267,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
-        metrics = [m.value for m in list(servo.connectors.kube_metrics.SupportedKubeMetrics)]
+        metrics = [
+            m.value for m in list(servo.connectors.kube_metrics.SupportedKubeMetrics)
+        ]
         if self.no_tuning:
             metrics = list(filter(lambda m: "tuning" not in m, metrics))
 
@@ -292,7 +299,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     @property
     @abc.abstractmethod
     def controller_class(
-            self,
+        self,
     ) -> Type[
         Union[
             servo.connectors.kubernetes.Deployment, servo.connectors.kubernetes.Rollout

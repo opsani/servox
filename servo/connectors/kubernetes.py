@@ -3330,8 +3330,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-MiB = 2 ** 20
-GiB = 2 ** 30
+MiB = 2**20
+GiB = 2**30
 
 
 class ShortByteSize(pydantic.ByteSize):
@@ -4886,7 +4886,10 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
             config.rollouts or []
         ):
             if not config.no_tuning:
-                if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
+                if (
+                    deployment_or_rollout_config.strategy
+                    == OptimizationStrategy.default
+                ):
                     if isinstance(deployment_or_rollout_config, RolloutConfiguration):
                         raise NotImplementedError(
                             "Saturation mode not currently supported on Argo Rollouts"
@@ -4897,7 +4900,9 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                     )
                     deployment_or_rollout = optimization.deployment
                     container = optimization.container
-                elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
+                elif (
+                    deployment_or_rollout_config.strategy == OptimizationStrategy.canary
+                ):
                     optimization = await CanaryOptimization.create(
                         deployment_or_rollout_config,
                         timeout=deployment_or_rollout_config.timeout,
@@ -5300,7 +5305,8 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
         False, description="Enable to include container logs in error message"
     )
     no_tuning: bool = pydantic.Field(
-        False, description="Enable to prevent native adjustments via a canary/deployment strategy"
+        False,
+        description="Enable to prevent native adjustments via a canary/deployment strategy",
     )
 
     @pydantic.validator("on_failure")
