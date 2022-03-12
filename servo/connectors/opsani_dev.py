@@ -703,7 +703,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     ##
     # Kubernetes Controller edits
 
-    @servo.checks.require(
+    @servo.checks.check(
         "{self.controller_type_name} PodSpec has expected annotations"
     )
     async def check_controller_annotations(self) -> None:
@@ -736,7 +736,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
                 remedy=lambda: _stream_remedy_command(command),
             )
 
-    @servo.checks.require("{self.controller_type_name} PodSpec has expected labels")
+    @servo.checks.check("{self.controller_type_name} PodSpec has expected labels")
     async def check_controller_labels(self) -> None:
         controller = await self.controller_class.read(
             self.config_controller_name, self.config.namespace
@@ -770,7 +770,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
                 remedy=lambda: _stream_remedy_command(command),
             )
 
-    @servo.checks.require("{self.controller_type_name} has Envoy sidecar container")
+    @servo.checks.check("{self.controller_type_name} has Envoy sidecar container")
     async def check_controller_envoy_sidecars(self) -> None:
         controller = await self.controller_class.read(
             self.config_controller_name, self.config.namespace
@@ -799,7 +799,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             remedy=lambda: _stream_remedy_command(command),
         )
 
-    @servo.checks.require("Pods have Envoy sidecar containers")
+    @servo.checks.check("Pods have Envoy sidecar containers")
     async def check_pod_envoy_sidecars(self) -> None:
         controller = await self.controller_class.read(
             self.config_controller_name, self.config.namespace
@@ -823,7 +823,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     ##
     # Connecting the dots
 
-    @servo.require("Prometheus is discovering targets")
+    @servo.check("Prometheus is discovering targets")
     async def check_prometheus_targets(self) -> None:
         pod = await self._read_servo_pod()
         if pod is None:
@@ -878,7 +878,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             )
         return f"{metric.name}={value}{metric.unit}"
 
-    @servo.check("Traffic is proxied through Envoy")
+    @servo.checks.require("Traffic is proxied through Envoy")
     async def check_service_proxy(self) -> str:
         proxy_service_port = ENVOY_SIDECAR_DEFAULT_PORT  # TODO: move to configuration
         service = await servo.connectors.kubernetes.Service.read(
