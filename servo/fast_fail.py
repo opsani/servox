@@ -15,11 +15,13 @@ import servo.configuration
 import servo.types
 
 SLO_FAILED_REASON = "slo-violation"
+SLO_MINIMUM_VALUE = 0.25
 
 
 class SloOutcomeStatus(str, enum.Enum):
     passed = "passed"
     failed = "failed"
+    skipped = "skipped"
     missing_metric = "missing_metric"
     missing_threshold = "missing_threshold"
 
@@ -41,6 +43,8 @@ class SloOutcome(pydantic.BaseModel):
             message = "SLO passed"
         elif self.status == SloOutcomeStatus.failed:
             message = f"SLO failed metric value {self.metric_value} was not {condition.keep} threshold value {self.threshold_value}"
+        elif self.status == SloOutcomeStatus.skipped:
+            message = f"Skipping SLO {condition.metric} due to near-zero value of {self.metric_value} with a threshold value {self.threshold_value}"
         else:
             message = f"Uncrecognized outcome status {self.status}"
         return f"{self.checked_at} {message}"
@@ -116,7 +120,13 @@ class FastFailObserver(pydantic.BaseModel):
 
             # Check target against threshold
             check_passed_op = _get_keep_operator(condition.keep)
-            if check_passed_op(metric_value, threshold_value):
+            if (float(threshold_value) == 0) and (
+                0 < metric_value <= SLO_MINIMUM_VALUE
+            ):
+                self._results[condition].append(
+                    SloOutcome(**result_args, status=SloOutcomeStatus.skipped)
+                )
+            elif check_passed_op(metric_value, threshold_value):
                 self._results[condition].append(
                     SloOutcome(**result_args, status=SloOutcomeStatus.passed)
                 )

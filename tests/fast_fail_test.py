@@ -57,7 +57,7 @@ def test_non_unique_conditions() -> None:
     )
 
 
-def test_trigget_count_greter_than_window() -> None:
+def test_trigger_count_greater_than_window() -> None:
     with pytest.raises(pydantic.ValidationError) as err_info:
         SloCondition(
             metric="test",
@@ -315,3 +315,35 @@ def test_data_point_slos_fail(
         observer.check_readings(slo_check_readings, checked_at)
 
     assert str(err_info.value) == error_str
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [0.05, 0.35, 0.01, 0.03],
+            [0.0, 0.0, 0.0, 0.0],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [0.24],
+            [0.0],
+        ),
+    ],
+)
+def test_data_point_slos_skip(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[float],
+    tuning_values: List[float],
+) -> None:
+    slo_check_readings: Dict[str, List[DataPoint]] = {
+        metric.name: _make_data_point_list(metric, values),
+        tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
