@@ -234,7 +234,12 @@ class Group(click.Group, ContextMixin):
             section = getattr(command, "section", Section.commands)
 
             commands = sections_of_commands.get(section, [])
-            commands.append((command_name, command,))
+            commands.append(
+                (
+                    command_name,
+                    command,
+                )
+            )
             sections_of_commands[section] = commands
 
         for section, commands in sections_of_commands.items():
@@ -244,7 +249,10 @@ class Group(click.Group, ContextMixin):
             limit = formatter.width - 6 - max(len(cmd[0]) for cmd in commands)
 
             # Sort the connector and other commands as ordering isn't explicit
-            if section in (Section.connectors, Section.other,):
+            if section in (
+                Section.connectors,
+                Section.other,
+            ):
                 commands = sorted(commands)
 
             rows = []
@@ -310,7 +318,10 @@ class CLI(typer.Typer, servo.logging.Mixin):
         return decorator
 
     def callback(
-        self, *args, cls: Optional[Type[click.Command]] = None, **kwargs,
+        self,
+        *args,
+        cls: Optional[Type[click.Command]] = None,
+        **kwargs,
     ) -> Callable[[typer.models.CommandFunctionType], typer.models.CommandFunctionType]:
         # NOTE: Override the default to inject our Command class
         if cls is None:
@@ -409,7 +420,9 @@ class CLI(typer.Typer, servo.logging.Mixin):
             help="Name of the servo to use",
         ),
         limit: Optional[int] = typer.Option(
-            None, "--limit", help="Limit multi-servo concurrency",
+            None,
+            "--limit",
+            help="Limit multi-servo concurrency",
         ),
         log_level: LogLevel = typer.Option(
             LogLevel.info,
@@ -773,7 +786,10 @@ class ServoCLI(CLI):
         @self.command(section=Section.assembly)
         def init(
             context: Context,
-            dotenv: bool = typer.Option(True, help="Generate .env file",),
+            dotenv: bool = typer.Option(
+                True,
+                help="Generate .env file",
+            ),
         ) -> None:
             """
             Initialize a servo assembly
@@ -938,9 +954,18 @@ class ServoCLI(CLI):
                 "-c",
                 help="Display output by connector instead of event",
             ),
-            before: bool = typer.Option(None, help="Display before event handlers",),
-            on: bool = typer.Option(None, help="Display on event handlers",),
-            after: bool = typer.Option(None, help="Display after event handlers",),
+            before: bool = typer.Option(
+                None,
+                help="Display before event handlers",
+            ),
+            on: bool = typer.Option(
+                None,
+                help="Display on event handlers",
+            ),
+            after: bool = typer.Option(
+                None,
+                help="Display after event handlers",
+            ),
         ) -> None:
             """
             Display event handler info
@@ -1002,7 +1027,10 @@ class ServoCLI(CLI):
                     headers = ["CONNECTOR", "EVENTS"]
                     connector_types_by_name = dict(
                         map(
-                            lambda handler: (handler.connector_type.name, connector,),
+                            lambda handler: (
+                                handler.connector_type.name,
+                                connector,
+                            ),
                             event_handlers,
                         )
                     )
@@ -1098,7 +1126,9 @@ class ServoCLI(CLI):
         self.add_cli(show_cli, section=Section.assembly)
 
         @self.command("list", section=Section.assembly)
-        def list_(context: Context,) -> None:
+        def list_(
+            context: Context,
+        ) -> None:
             """List servos in the assembly"""
             headers = ["NAME", "OPTIMIZER", "DESCRIPTION"]
             table = []
@@ -1154,7 +1184,9 @@ class ServoCLI(CLI):
                 envvar="SERVO_RUN_CHECK",
             ),
             no_poll: Optional[bool] = typer.Option(
-                None, "--no-poll", help="Do not poll the Opsani API for commands",
+                None,
+                "--no-poll",
+                help="Do not poll the Opsani API for commands",
             ),
             interactive: Optional[bool] = typer.Option(
                 None,
@@ -1193,7 +1225,8 @@ class ServoCLI(CLI):
         def check(
             context: Context,
             connectors: Optional[List[str]] = typer.Argument(
-                None, help="Connectors to check",
+                None,
+                help="Connectors to check",
             ),
             name: Optional[List[str]] = typer.Option(
                 False, "--name", "-n", help="Filter by name"
@@ -1214,7 +1247,10 @@ class ServoCLI(CLI):
                 False, "--verbose", "-v", help="Display verbose output"
             ),
             quiet: bool = typer.Option(
-                False, "--quiet", "-q", help="Do not echo generated output to stdout",
+                False,
+                "--quiet",
+                "-q",
+                help="Do not echo generated output to stdout",
             ),
             progressive: bool = typer.Option(
                 False,
@@ -1243,10 +1279,14 @@ class ServoCLI(CLI):
                 help="Ask for confirmation before executing operations",
             ),
             run: bool = typer.Option(
-                False, "--run", help="Run the servo when checks pass",
+                False,
+                "--run",
+                help="Run the servo when checks pass",
             ),
             remedy: bool = typer.Option(
-                False, "--remedy", help="Attempt to automatically remedy failures",
+                False,
+                "--remedy",
+                help="Attempt to automatically remedy failures",
             ),
             exit_on_success: bool = typer.Option(True, hidden=True),
         ) -> None:
@@ -1364,9 +1404,11 @@ class ServoCLI(CLI):
                                     failure = check
                                     servo.logger.warning(
                                         f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                                    )
+                                    ) 
                                     if failure.hint:
-                                        servo.logger.info(f"Hint: {failure.hint}")
+                                        servo.logger.info(
+                                            f"Hint: {failure.hint}"
+                                        ) 
 
                                     if failure.remedy:
                                         if asyncio.iscoroutinefunction(failure.remedy):
@@ -1619,10 +1661,14 @@ class ServoCLI(CLI):
                 callback=self.duration_callback,
             ),
             verbose: bool = typer.Option(
-                False, "--verbose", "-v", help="Display verbose output",
+                False,
+                "--verbose",
+                "-v",
+                help="Display verbose output",
             ),
             humanize: bool = typer.Option(
-                True, help="Display human readable output for units",
+                True,
+                help="Display human readable output for units",
             ),
         ) -> None:
             """
@@ -2181,7 +2227,10 @@ class ServoCLI(CLI):
                 help="Output file to validate",
             ),
             quiet: bool = typer.Option(
-                False, "--quiet", "-q", help="Do not echo generated output to stdout",
+                False,
+                "--quiet",
+                "-q",
+                help="Do not echo generated output to stdout",
             ),
         ) -> None:
             """Validate a configuration"""
@@ -2252,10 +2301,15 @@ class ServoCLI(CLI):
                 help="Exclude connectors descriptor in generated output",
             ),
             quiet: bool = typer.Option(
-                False, "--quiet", "-q", help="Do not echo generated output to stdout",
+                False,
+                "--quiet",
+                "-q",
+                help="Do not echo generated output to stdout",
             ),
             force: bool = typer.Option(
-                False, "--force", help="Overwrite output file without prompting",
+                False,
+                "--force",
+                help="Overwrite output file without prompting",
             ),
             append: bool = typer.Option(
                 False,
@@ -2335,10 +2389,14 @@ class ServoCLI(CLI):
         def version(
             context: Context,
             connector: Optional[str] = typer.Argument(
-                None, help="Display version for a connector",
+                None,
+                help="Display version for a connector",
             ),
             short: bool = typer.Option(
-                False, "--short", "-s", help="Display short version details",
+                False,
+                "--short",
+                "-s",
+                help="Display short version details",
             ),
             format: VersionOutputFormat = typer.Option(
                 VersionOutputFormat.text, "--format", "-f", help="Select output format"

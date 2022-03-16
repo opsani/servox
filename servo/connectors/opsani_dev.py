@@ -19,7 +19,9 @@ KUBERNETES_PERMISSIONS = [
         verbs=["get", "list", "watch", "update", "patch"],
     ),
     servo.connectors.kubernetes.PermissionSet(
-        group="", resources=["namespaces"], verbs=["get"],
+        group="",
+        resources=["namespaces"],
+        verbs=["get"],
     ),
     servo.connectors.kubernetes.PermissionSet(
         group="",
@@ -110,7 +112,10 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 type=servo.connectors.kubernetes.OptimizationStrategy.canary,
                 alias="tuning",
             ),
-            replicas=servo.Replicas(min=0, max=1,),
+            replicas=servo.Replicas(
+                min=0,
+                max=1,
+            ),
             containers=[
                 servo.connectors.kubernetes.ContainerConfiguration(
                     name=self.container,
@@ -331,18 +336,22 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
             for permission in self.required_permissions:
                 for resource in permission.resources:
                     for verb in permission.verbs:
-                        attributes = kubernetes_asyncio.client.models.V1ResourceAttributes(
-                            namespace=self.config.namespace,
-                            group=permission.group,
-                            resource=resource,
-                            verb=verb,
+                        attributes = (
+                            kubernetes_asyncio.client.models.V1ResourceAttributes(
+                                namespace=self.config.namespace,
+                                group=permission.group,
+                                resource=resource,
+                                verb=verb,
+                            )
                         )
 
                         spec = kubernetes_asyncio.client.models.V1SelfSubjectAccessReviewSpec(
                             resource_attributes=attributes
                         )
-                        review = kubernetes_asyncio.client.models.V1SelfSubjectAccessReview(
-                            spec=spec
+                        review = (
+                            kubernetes_asyncio.client.models.V1SelfSubjectAccessReview(
+                                spec=spec
+                            )
                         )
                         access_review = await v1.create_self_subject_access_review(
                             body=review
@@ -694,7 +703,9 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     ##
     # Kubernetes Controller edits
 
-    @servo.checks.check("{self.controller_type_name} PodSpec has expected annotations")
+    @servo.checks.check(
+        "{self.controller_type_name} PodSpec has expected annotations"
+    )
     async def check_controller_annotations(self) -> None:
         controller = await self.controller_class.read(
             self.config_controller_name, self.config.namespace
