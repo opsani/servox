@@ -1390,7 +1390,6 @@ class ServoCLI(CLI):
                                 lambda a, b: a + b.value, results, []
                             )
                             failure = None
-                            print(f"checks: {checks}")
                             for check in checks:
                                 if check.success:
                                     # FIXME: This should hold Check objects but hashing isn't matching
@@ -1403,9 +1402,6 @@ class ServoCLI(CLI):
                                         passing.add(check.id)
                                 else:
                                     failure = check
-                                    # if failure.severity == servo.ErrorSeverity.critical:
-                                    #     break
-                                    # if failur e:
                                     servo.logger.warning(
                                         f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
                                     ) 
@@ -1440,50 +1436,11 @@ class ServoCLI(CLI):
                                                 )
                                         else:
                                             task.cancel()
-                                    # break
 
-                            ready = failure is None
-                            # if failure:
-                            #     servo.logger.warning(
-                            #         f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                            #     )  # , component=failure.id)
-                            #     # typer.echo(f"Check '{failure.name}' failed ({len(passing)} passed): {failure.message}")
-                            #     if failure.hint:
-                            #         servo.logger.info(
-                            #             f"Hint: {failure.hint}"
-                            #         )  # , component=failure.id)
-                            #         # typer.echo(f"  Hint: {failure.hint}")
-
-                            #     if failure.remedy:
-                            #         if asyncio.iscoroutinefunction(failure.remedy):
-                            #             task = asyncio.create_task(failure.remedy())
-                            #         elif asyncio.iscoroutine(failure.remedy):
-                            #             task = asyncio.create_task(failure.remedy)
-                            #         else:
-
-                            #             async def fn() -> None:
-                            #                 result = failure.remedy()
-                            #                 if asyncio.iscoroutine(result):
-                            #                     await result
-
-                            #             task = asyncio.create_task(fn())
-
-                            #         if remedy:
-                            #             servo.logger.info(
-                            #                 "💡 Attempting to apply remedy..."
-                            #             )
-                            #             try:
-                            #                 await asyncio.wait_for(task, 10.0)
-                            #             except asyncio.TimeoutError as error:
-                            #                 servo.logger.warning(
-                            #                     "💡 Remedy attempt timed out after 10s"
-                            #                 )
-                            #         else:
-                            #             task.cancel()
-                            # else:
-                            #     nothing is left failing, spike the football
-                            #     servo.logger.info("🔥 All checks passed.")
-                                # typer.echo(f"🔥 All checks are now passing.")
+                            ready = False
+                            if not failure:
+                                servo.logger.info("🔥 All checks passed.")
+                                ready = True
                         else:
                             typer.echo(f"WARNING: No checks found -- returning.")
                     else:
