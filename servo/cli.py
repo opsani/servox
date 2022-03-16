@@ -1404,11 +1404,9 @@ class ServoCLI(CLI):
                                     failure = check
                                     servo.logger.warning(
                                         f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                                    ) 
+                                    )
                                     if failure.hint:
-                                        servo.logger.info(
-                                            f"Hint: {failure.hint}"
-                                        ) 
+                                        servo.logger.info(f"Hint: {failure.hint}")
 
                                     if failure.remedy:
                                         if asyncio.iscoroutinefunction(failure.remedy):

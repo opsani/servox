@@ -703,9 +703,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     ##
     # Kubernetes Controller edits
 
-    @servo.checks.check(
-        "{self.controller_type_name} PodSpec has expected annotations"
-    )
+    @servo.checks.check("{self.controller_type_name} PodSpec has expected annotations")
     async def check_controller_annotations(self) -> None:
         controller = await self.controller_class.read(
             self.config_controller_name, self.config.namespace
