@@ -1237,6 +1237,9 @@ class ServoCLI(CLI):
             tag: Optional[List[str]] = typer.Option(
                 False, "--tag", "-t", help="Filter by tag"
             ),
+            check_halting: bool = typer.Option(
+                False, "--check-halting", "-v", help="Display verbose output"
+            ),
             halt_on: Optional[servo.ErrorSeverity] = typer.Option(
                 servo.ErrorSeverity.critical,
                 "--halt-on",
@@ -1434,8 +1437,9 @@ class ServoCLI(CLI):
                                                 )
                                         else:
                                             task.cancel()
+                                    if check_halting:
+                                        break
 
-                            ready = False
                             if not failure:
                                 servo.logger.info("🔥 All checks passed.")
                                 ready = True
