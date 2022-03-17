@@ -1238,7 +1238,10 @@ class ServoCLI(CLI):
                 False, "--tag", "-t", help="Filter by tag"
             ),
             check_halting: bool = typer.Option(
-                False, "--check-halting", "-v", help="Display verbose output"
+                False,
+                "--check-halting",
+                "-v",
+                help="Halt to wait for each checks success",
             ),
             halt_on: Optional[servo.ErrorSeverity] = typer.Option(
                 servo.ErrorSeverity.critical,
