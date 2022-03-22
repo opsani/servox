@@ -44,7 +44,7 @@ jobs:
           python-version: ${{ steps.python-version.outputs.python-version }}
           architecture: x64
       - name: Set up Poetry cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cached-poetry
         with:
           path: ~/.local
@@ -63,7 +63,7 @@ jobs:
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
       - name: Set up dependencies cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cached-poetry-dependencies
         with:
           path: .venv
@@ -75,7 +75,7 @@ jobs:
         run: poetry install --no-interaction --no-root
       # NOTE: Install our root project into the venv cache without busting it
       - name: Set up root + dependencies cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         id: cached-project
         with:
           path: .venv
@@ -102,7 +102,7 @@ jobs:
         python-version: ${{ needs.setup_build.outputs.python-version }}
         architecture: x64
     - name: Set up root + dependencies cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cached-project
       with:
         path: .venv
@@ -155,7 +155,7 @@ jobs:
         tar xfz vegeta_12.8.4_linux_amd64.tar.gz
         sudo mv vegeta /usr/local/bin/vegeta
     - name: Set up root + dependencies cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cached-project
       with:
         path: .venv
@@ -211,7 +211,7 @@ jobs:
         python-version: ${{ needs.setup_build.outputs.python-version }}
         architecture: x64
     - name: Set up Poetry cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cached-poetry
       with:
         path: ~/.local
@@ -220,7 +220,7 @@ jobs:
       run: |
         echo "$HOME/.local/bin" >> $GITHUB_PATH
     - name: Set up root + dependencies cache
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       id: cached-project
       with:
         path: .venv
