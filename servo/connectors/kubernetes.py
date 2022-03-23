@@ -3586,17 +3586,13 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
 class NoOptimization(BaseOptimization):
     """
     The NoOptimization class implements a bare-bones configuration meant for use in metrics collecting without
-    applying or adjusting any target, e.g. when optimization is handled via an external connector such as HPA.
+    applying or adjusting any target, e.g. when optimization is handled via an external component such as HPA.
     """
 
     deployment_config: "DeploymentConfiguration"
     deployment: Deployment
     container_config: "ContainerConfiguration"
     container: Container
-
-    # State for tuning resources
-    tuning_pod: Optional[Pod]
-    tuning_container: Optional[Container]
 
     @classmethod
     async def create(
@@ -3620,7 +3616,7 @@ class NoOptimization(BaseOptimization):
 
             if container_config.static_environment_variables:
                 raise NotImplementedError(
-                    "Configurable environment variables are not currently supported under Deployment optimization (saturation mode)"
+                    "Configurable environment variables are not currently supported under under NoOptimization"
                 )
 
             name = container_config.alias or (
@@ -3768,44 +3764,6 @@ class NoOptimization(BaseOptimization):
     @property
     def namespace(self) -> str:
         return self.target_controller_config.namespace
-
-    @property
-    def tuning_pod_name(self) -> str:
-        """
-        Return the name of tuning Pod for this optimization.
-        """
-        return f"{self.target_controller_config.name}-tuning"
-
-    async def delete_tuning_pod(
-        self, *, raise_if_not_found: bool = True
-    ) -> Optional[Pod]:
-        """
-        Delete the tuning Pod.
-        """
-        try:
-            # TODO: Provide context manager or standard read option that handle not found? Lots of duplication on not found/conflict handling...
-            tuning_pod = await Pod.read(self.tuning_pod_name, self.namespace)
-            self.logger.info(
-                f"Deleting tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'..."
-            )
-            await tuning_pod.delete()
-            await tuning_pod.wait_until_deleted()
-            self.logger.info(
-                f"Deleted tuning Pod '{tuning_pod.name}' from namespace '{tuning_pod.namespace}'."
-            )
-
-            self.tuning_pod = None
-            self.tuning_container = None
-            return tuning_pod
-
-        except kubernetes_asyncio.client.exceptions.ApiException as e:
-            if e.status != 404 or e.reason != "Not Found" and raise_if_not_found:
-                raise
-
-            self.tuning_pod = None
-            self.tuning_container = None
-
-        return None
 
     async def is_ready(self) -> bool:
         is_ready, restart_count = await asyncio.gather(
@@ -4885,7 +4843,7 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for deployment_or_rollout_config in (config.deployments or []) + (
             config.rollouts or []
         ):
-            if not config.no_tuning:
+            if config.create_tuning_pod:
                 if (
                     deployment_or_rollout_config.strategy
                     == OptimizationStrategy.default
@@ -4920,14 +4878,13 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
                         f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
                     )
 
-            elif config.no_tuning:
+            else:
                 optimization = await NoOptimization.create(
                     deployment_or_rollout_config,
                     timeout=deployment_or_rollout_config.timeout,
                 )
                 deployment_or_rollout = optimization.deployment
                 container = optimization.container
-                await optimization.delete_tuning_pod(raise_if_not_found=False)
 
             optimizations.append(optimization)
 
@@ -5304,9 +5261,9 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
-    no_tuning: bool = pydantic.Field(
-        False,
-        description="Enable to prevent native adjustments via a canary/deployment strategy",
+    create_tuning_pod: bool = pydantic.Field(
+        True,
+        description="Disable to prevent native adjustments via a canary strategy",
     )
 
     @pydantic.validator("on_failure")

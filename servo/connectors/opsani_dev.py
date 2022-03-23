@@ -76,9 +76,9 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
-    no_tuning: bool = pydantic.Field(
-        False,
-        description="Enable to prevent native adjustments via a canary/deployment strategy",
+    create_tuning_pod: bool = pydantic.Field(
+        True,
+        description="Disable to prevent a canary strategy",
     )
 
     @pydantic.root_validator
@@ -110,7 +110,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
-        if not self.no_tuning:
+        if self.create_tuning_pod:
             strategy = (
                 servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
                     type=servo.connectors.kubernetes.OptimizationStrategy.canary,
@@ -121,13 +121,13 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 max=1,
             )
 
-        elif self.no_tuning:
+        else:
             strategy = servo.connectors.kubernetes.NoOptimizationStrategyConfiguration(
                 type=servo.connectors.kubernetes.OptimizationStrategy.none,
             )
             replicas = servo.Replicas(
                 min=0,
-                max=100,
+                max=1000,
             )
 
         main_config = servo.connectors.kubernetes.DeploymentConfiguration(
@@ -162,7 +162,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             timeout=self.timeout,
             settlement=self.settlement,
             container_logs_in_error_status=self.container_logs_in_error_status,
-            no_tuning=self.no_tuning,
+            create_tuning_pod=self.create_tuning_pod,
             **main_arg,
             **kwargs,
         )
@@ -246,7 +246,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 query='avg(histogram_quantile(0.5,rate(envoy_cluster_upstream_rq_time_bucket{opsani_role="tuning"}[1m])))',
             ),
         ]
-        if self.no_tuning:
+        if not self.create_tuning_pod:
             metrics = list(
                 filter(lambda m: 'opsani_role="tuning"' not in m.query, metrics)
             )
@@ -270,7 +270,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         metrics = [
             m.value for m in list(servo.connectors.kube_metrics.SupportedKubeMetrics)
         ]
-        if self.no_tuning:
+        if not self.create_tuning_pod:
             metrics = list(filter(lambda m: "tuning" not in m, metrics))
 
         return servo.connectors.kube_metrics.KubeMetricsConfiguration(
@@ -950,7 +950,7 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
     @servo.check("Tuning pod is running")
     async def check_tuning_is_running(self) -> None:
 
-        if not self.config.no_tuning:
+        if self.config.create_tuning_pod:
             # Generate a KubernetesConfiguration to initialize the optimization class
             kubernetes_config = self.config.generate_kubernetes_config()
             controller_config = self._get_generated_controller_config(kubernetes_config)
@@ -976,8 +976,8 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
                     f"could not find tuning pod '{optimization.tuning_pod_name}''"
                 ) from error
 
-        elif self.config.no_tuning:
-            servo.logger.info(f"Skipping tuning pod check as no_tuning is set")
+        else:
+            servo.logger.info(f"Skipping tuning pod check as create_tuning_pod is disabled")
 
     @servo.check("Pods are processing traffic")
     async def check_traffic_metrics(self) -> str:
