@@ -3583,202 +3583,6 @@ class BaseOptimization(abc.ABC, pydantic.BaseModel, servo.logging.Mixin):
         arbitrary_types_allowed = True
 
 
-class NoOptimization(BaseOptimization):
-    """
-    The NoOptimization class implements a bare-bones configuration meant for use in metrics collecting without
-    applying or adjusting any target, e.g. when optimization is handled via an external component such as HPA.
-    """
-
-    deployment_config: "DeploymentConfiguration"
-    deployment: Deployment
-    container_config: "ContainerConfiguration"
-    container: Container
-
-    @classmethod
-    async def create(
-        cls, config: "DeploymentConfiguration", **kwargs
-    ) -> "NoOptimization":
-        deployment = await Deployment.read(config.name, config.namespace)
-
-        replicas = config.replicas.copy()
-        replicas.value = deployment.replicas
-
-        # FIXME: Currently only supporting one container
-        for container_config in config.containers:
-            container = deployment.find_container(container_config.name)
-            if not container:
-                names = servo.utilities.strings.join_to_series(
-                    list(map(lambda c: c.name, deployment.containers))
-                )
-                raise ValueError(
-                    f'no container named "{container_config.name}" exists in the Pod (found {names})'
-                )
-
-            if container_config.static_environment_variables:
-                raise NotImplementedError(
-                    "Configurable environment variables are not currently supported under under NoOptimization"
-                )
-
-            name = container_config.alias or (
-                f"{deployment.name}/{container.name}" if container else deployment.name
-            )
-            return cls(
-                name=name,
-                deployment_config=config,
-                deployment=deployment,
-                container_config=container_config,
-                container=container,
-                **kwargs,
-            )
-
-    @property
-    def cpu(self) -> CPU:
-        """
-        Return the current CPU setting for the optimization.
-        """
-        cpu = self.container_config.cpu.copy()
-
-        # Determine the value in priority order from the config
-        resource_requirements = self.container.get_resource_requirements("cpu")
-        cpu.request = resource_requirements.get(ResourceRequirement.request)
-        cpu.limit = resource_requirements.get(ResourceRequirement.limit)
-        value = resource_requirements.get(
-            next(
-                filter(
-                    lambda r: resource_requirements[r] is not None,
-                    self.container_config.cpu.get,
-                ),
-                None,
-            )
-        )
-        value = Core.parse(value)
-        # NOTE: use safe_set to apply values that may be outside of the range
-        return cpu.safe_set_value_copy(value)
-
-    @property
-    def memory(self) -> Memory:
-        """
-        Return the current Memory setting for the optimization.
-        """
-        memory = self.container_config.memory.copy()
-
-        # Determine the value in priority order from the config
-        resource_requirements = self.container.get_resource_requirements("memory")
-        memory.request = resource_requirements.get(ResourceRequirement.request)
-        memory.limit = resource_requirements.get(ResourceRequirement.limit)
-        value = resource_requirements.get(
-            next(
-                filter(
-                    lambda r: resource_requirements[r] is not None,
-                    self.container_config.memory.get,
-                ),
-                None,
-            )
-        )
-        value = ShortByteSize.validate(value)
-        # NOTE: use safe_set to apply values that may be outside of the range
-        return memory.safe_set_value_copy(value)
-
-    @property
-    def env(self) -> Optional[list[servo.EnvironmentSetting]]:
-        env: list[servo.EnvironmentSetting] = []
-        env_setting: Union[servo.EnvironmentRangeSetting, servo.EnvironmentEnumSetting]
-        for env_setting in self.container_config.env or []:
-            if env_val := self.container.get_environment_variable(env_setting.name):
-                env_setting = env_setting.safe_set_value_copy(env_val)
-            env.append(env_setting)
-
-        return env or None
-
-    @property
-    def replicas(self) -> servo.Replicas:
-        """
-        Return the current Replicas setting for the optimization.
-        """
-        replicas = self.deployment_config.replicas.copy()
-        replicas.value = self.deployment.replicas
-        return replicas
-
-    @property
-    def on_failure(self) -> FailureMode:
-        """
-        Return the configured failure behavior. If not set explicitly, this will be cascaded
-        from the base kubernetes configuration (or its default)
-        """
-        return self.deployment_config.on_failure
-
-    async def rollback(self, error: Optional[Exception] = None) -> None:
-        """
-        Initiates an asynchronous rollback to a previous version of the Deployment.
-
-        Args:
-            error: An optional error that triggered the rollback.
-        """
-        self.logger.info(f"adjustment failed: rolling back deployment... ({error})")
-        await asyncio.wait_for(
-            self.deployment.rollback(),
-            timeout=self.timeout.total_seconds(),
-        )
-
-    async def shutdown(self, error: Optional[Exception] = None) -> None:
-        """
-        Initiates the asynchronous deletion of all pods in the Deployment under optimization.
-
-        Args:
-            error: An optional error that triggered the destruction.
-        """
-        self.logger.info(f"adjustment failed: shutting down deployment's pods...")
-        await asyncio.wait_for(
-            self.deployment.scale_to_zero(),
-            timeout=self.timeout.total_seconds(),
-        )
-
-    def to_components(self) -> List[servo.Component]:
-        settings = [self.cpu, self.memory, self.replicas]
-        if env := self.env:
-            settings.extend(env)
-        return [servo.Component(name=self.name, settings=settings)]
-
-    def adjust(
-        self, adjustment: servo.Adjustment, control: servo.Control = servo.Control()
-    ) -> None:
-        pass
-
-    async def apply(self) -> None:
-        pass
-
-    @property
-    def target_controller_config(
-        self,
-    ) -> Union["DeploymentConfiguration", "RolloutConfiguration"]:
-        return self.deployment_config or self.rollout_config
-
-    @property
-    def target_controller(self) -> Union[Deployment, Rollout]:
-        return self.deployment or self.rollout
-
-    @property
-    def target_controller_type(self) -> str:
-        return type(self.target_controller).__name__
-
-    @property
-    def namespace(self) -> str:
-        return self.target_controller_config.namespace
-
-    async def is_ready(self) -> bool:
-        is_ready, restart_count = await asyncio.gather(
-            self.deployment.is_ready(), self.deployment.get_restart_count()
-        )
-        return is_ready and restart_count == 0
-
-    async def raise_for_status(self) -> None:
-        """Raise an exception if in an unhealthy state."""
-        await self.deployment.raise_for_status(
-            adjustments=self.adjustments,
-            include_container_logs=self.deployment_config.container_logs_in_error_status,
-        )
-
-
 class DeploymentOptimization(BaseOptimization):
     """
     The DeploymentOptimization class implements an optimization strategy based on directly reconfiguring a Kubernetes
@@ -4843,48 +4647,34 @@ class KubernetesOptimizations(pydantic.BaseModel, servo.logging.Mixin):
         for deployment_or_rollout_config in (config.deployments or []) + (
             config.rollouts or []
         ):
-            if config.create_tuning_pod:
-                if (
-                    deployment_or_rollout_config.strategy
-                    == OptimizationStrategy.default
-                ):
-                    if isinstance(deployment_or_rollout_config, RolloutConfiguration):
-                        raise NotImplementedError(
-                            "Saturation mode not currently supported on Argo Rollouts"
-                        )
-                    optimization = await DeploymentOptimization.create(
-                        deployment_or_rollout_config,
-                        timeout=deployment_or_rollout_config.timeout,
+            if deployment_or_rollout_config.strategy == OptimizationStrategy.default:
+                if isinstance(deployment_or_rollout_config, RolloutConfiguration):
+                    raise NotImplementedError(
+                        "Saturation mode not currently supported on Argo Rollouts"
                     )
-                    deployment_or_rollout = optimization.deployment
-                    container = optimization.container
-                elif (
-                    deployment_or_rollout_config.strategy == OptimizationStrategy.canary
-                ):
-                    optimization = await CanaryOptimization.create(
-                        deployment_or_rollout_config,
-                        timeout=deployment_or_rollout_config.timeout,
-                    )
-                    deployment_or_rollout = optimization.target_controller
-                    container = optimization.main_container
-
-                    # Ensure the canary is available
-                    # TODO: We don't want to do this implicitly but this is a first step
-                    if not optimization.tuning_pod:
-                        servo.logger.info("Creating new tuning pod...")
-                        await optimization.create_tuning_pod()
-                else:
-                    raise ValueError(
-                        f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
-                    )
-
-            else:
-                optimization = await NoOptimization.create(
+                optimization = await DeploymentOptimization.create(
                     deployment_or_rollout_config,
                     timeout=deployment_or_rollout_config.timeout,
                 )
                 deployment_or_rollout = optimization.deployment
                 container = optimization.container
+            elif deployment_or_rollout_config.strategy == OptimizationStrategy.canary:
+                optimization = await CanaryOptimization.create(
+                    deployment_or_rollout_config,
+                    timeout=deployment_or_rollout_config.timeout,
+                )
+                deployment_or_rollout = optimization.target_controller
+                container = optimization.main_container
+
+                # Ensure the canary is available
+                # TODO: We don't want to do this implicitly but this is a first step
+                if not optimization.tuning_pod:
+                    servo.logger.info("Creating new tuning pod...")
+                    await optimization.create_tuning_pod()
+            else:
+                raise ValueError(
+                    f"unknown optimization strategy: {deployment_or_rollout_config.strategy}"
+                )
 
             optimizations.append(optimization)
 
@@ -5167,10 +4957,6 @@ class CanaryOptimizationStrategyConfiguration(BaseOptimizationStrategyConfigurat
     alias: Optional[ContainerTagName]
 
 
-class NoOptimizationStrategyConfiguration(BaseOptimizationStrategyConfiguration):
-    type = pydantic.Field(OptimizationStrategy.none, const=True)
-
-
 class FailureMode(str, enum.Enum):
     """
     The FailureMode enumeration defines how to handle a failed adjustment of a Kubernetes resource.
@@ -5280,7 +5066,6 @@ StrategyTypes = Union[
     OptimizationStrategy,
     DefaultOptimizationStrategyConfiguration,
     CanaryOptimizationStrategyConfiguration,
-    NoOptimizationStrategyConfiguration,
 ]
 
 
@@ -5426,7 +5211,6 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
 
 
 KubernetesOptimizations.update_forward_refs()
-NoOptimization.update_forward_refs()
 DeploymentOptimization.update_forward_refs()
 CanaryOptimization.update_forward_refs()
 

@@ -77,8 +77,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         False, description="Enable to include container logs in error message"
     )
     create_tuning_pod: bool = pydantic.Field(
-        True,
-        description="Disable to prevent a canary strategy",
+        True, description="Disable to prevent a canary strategy",
     )
 
     @pydantic.root_validator
@@ -110,24 +109,33 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         Returns:
             A Kubernetes connector configuration object.
         """
+        strategy: Union[
+            servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration,
+            servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration,
+        ] = servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration()
+
         if self.create_tuning_pod:
-            strategy = (
-                servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
-                    type=servo.connectors.kubernetes.OptimizationStrategy.canary,
-                )
+            strategy = servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
+                type=servo.connectors.kubernetes.OptimizationStrategy.canary,
+                alias="tuning",
             )
+
             replicas = servo.Replicas(
                 min=0,
                 max=1,
+                pinned=True  # NOTE always pinned for now
             )
 
         else:
-            strategy = servo.connectors.kubernetes.NoOptimizationStrategyConfiguration(
-                type=servo.connectors.kubernetes.OptimizationStrategy.none,
-            )
+            # NOTE: currently assuming we NEVER want to adjust the main deployment with the opsani_dev connector
+            # TODO: Do we ever need to support opsani dev bootstrapping of non-canary adjusted optimization of deployments?
+            self.cpu.pinned = True
+            self.memory.pinned = True
+
             replicas = servo.Replicas(
                 min=0,
-                max=1000,
+                max=99999,
+                pinned=True
             )
 
         main_config = servo.connectors.kubernetes.DeploymentConfiguration(
@@ -977,7 +985,9 @@ class BaseOpsaniDevChecks(servo.BaseChecks, abc.ABC):
                 ) from error
 
         else:
-            servo.logger.info(f"Skipping tuning pod check as create_tuning_pod is disabled")
+            servo.logger.info(
+                f"Skipping tuning pod check as create_tuning_pod is disabled"
+            )
 
     @servo.check("Pods are processing traffic")
     async def check_traffic_metrics(self) -> str:
