@@ -77,7 +77,8 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         False, description="Enable to include container logs in error message"
     )
     create_tuning_pod: bool = pydantic.Field(
-        True, description="Disable to prevent a canary strategy",
+        True,
+        description = "Disable to prevent a canary strategy",
     )
 
     @pydantic.root_validator
@@ -120,11 +121,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
                 alias="tuning",
             )
 
-            replicas = servo.Replicas(
-                min=0,
-                max=1,
-                pinned=True  # NOTE always pinned for now
-            )
+            replicas = servo.Replicas(min=0, max=1, pinned=True)
 
         else:
             # NOTE: currently assuming we NEVER want to adjust the main deployment with the opsani_dev connector
@@ -132,11 +129,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
             self.cpu.pinned = True
             self.memory.pinned = True
 
-            replicas = servo.Replicas(
-                min=0,
-                max=99999,
-                pinned=True
-            )
+            replicas = servo.Replicas(min=0, max=99999, pinned=True)
 
         main_config = servo.connectors.kubernetes.DeploymentConfiguration(
             name=(self.deployment or self.rollout),
