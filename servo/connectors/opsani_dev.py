@@ -78,7 +78,7 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
     )
     create_tuning_pod: bool = pydantic.Field(
         True,
-        description = "Disable to prevent a canary strategy",
+        description="Disable to prevent a canary strategy",
     )
 
     @pydantic.root_validator
@@ -116,9 +116,11 @@ class OpsaniDevConfiguration(servo.BaseConfiguration):
         ] = servo.connectors.kubernetes.DefaultOptimizationStrategyConfiguration()
 
         if self.create_tuning_pod:
-            strategy = servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
-                type=servo.connectors.kubernetes.OptimizationStrategy.canary,
-                alias="tuning",
+            strategy = (
+                servo.connectors.kubernetes.CanaryOptimizationStrategyConfiguration(
+                    type=servo.connectors.kubernetes.OptimizationStrategy.canary,
+                    alias="tuning",
+                )
             )
 
             replicas = servo.Replicas(min=0, max=1, pinned=True)
