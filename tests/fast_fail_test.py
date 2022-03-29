@@ -197,7 +197,7 @@ def test_timeseries_slos_pass(
         ),
     ],
 )
-def test_timeseries_slos_skip(
+def test_timeseries_slos_skip_zero_metric(
     observer: FastFailObserver,
     checked_at: datetime,
     metric: Metric,
@@ -326,7 +326,7 @@ def test_data_point_slos_pass(
         ),
     ],
 )
-def test_data_point_slos_skip(
+def test_data_point_slos_skip_zero_metric(
     observer: FastFailObserver,
     checked_at: datetime,
     metric: Metric,
