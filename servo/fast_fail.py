@@ -119,20 +119,24 @@ class FastFailObserver(pydantic.BaseModel):
 
                 if self.config.zero_handling and float(threshold_value) == 0:
                     self._results[condition].append(
-                        SloOutcome(**result_args, status=SloOutcomeStatus.missing_threshold)
+                        SloOutcome(
+                            **result_args, status=SloOutcomeStatus.missing_threshold
+                        )
                     )
                     continue
 
                 elif (float(threshold_value) == 0) and (
-                        0 < metric_value <= condition.slo_metric_minimum
+                    0 < metric_value <= condition.slo_metric_minimum
                 ):
                     self._results[condition].append(
-                        SloOutcome(**result_args, status=SloOutcomeStatus.zero_threshold)
+                        SloOutcome(
+                            **result_args, status=SloOutcomeStatus.zero_threshold
+                        )
                     )
                     continue
 
                 elif (float(metric_value) == 0) and (
-                        0 < threshold_value <= condition.slo_treshold_minimum
+                    0 < threshold_value <= condition.slo_treshold_minimum
                 ):
                     self._results[condition].append(
                         SloOutcome(**result_args, status=SloOutcomeStatus.zero_metric)
