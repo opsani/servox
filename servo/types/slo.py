@@ -24,7 +24,7 @@ class SloCondition(BaseModel):
     trigger_window: pydantic.conint(ge=1, multiple_of=1) = None
     threshold: Optional[decimal.Decimal]
     threshold_metric: Optional[str]
-    slo_threshold_minimum: float = 0.25
+    slo_threshold_minimum: Optional[float] = 0.25
 
     @pydantic.root_validator
     @classmethod
