@@ -35,7 +35,7 @@ __all__ = (
 )
 
 
-_DEFAULT_LIMIT = 2 ** 16  # 64 KiB
+_DEFAULT_LIMIT = 2**16  # 64 KiB
 
 
 # Type definition for streaming output callbacks.
