@@ -725,7 +725,7 @@ class TestPrometheusIntegration:
                                         SloCondition(
                                             metric="tuning_p50_latency",
                                             threshold=0.3,
-                                            slo_minimum_threshold=None,
+                                            slo_threshold_minimum=None,
                                         ),
                                         SloCondition(
                                             metric="tuning_p50_latency",
@@ -842,7 +842,7 @@ class TestPrometheusIntegration:
                                             threshold=0.2,
                                             trigger_count=2,
                                             trigger_window=2,
-                                            slo_minimum_threshold=None,
+                                            slo_threshold_minimum=None,
                                         ),
                                         SloCondition(
                                             metric="tuning_p50_latency",
