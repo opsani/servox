@@ -213,6 +213,44 @@ def test_timeseries_slos_skip_zero_metric(
 
 
 @pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [[0.0, 0.0, 0.0, 0.0]],
+            [[0.05, 0.35, 0.01, 0.03]],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            [
+                [0.05, 0.35, 0.01, 0.03],
+                [0.05, 0.35, 0.01, 0.03]
+            ],
+        ),
+    ],
+)
+def test_timeseries_slos_skip_zero_threshold(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[List[float]],
+    tuning_values: List[List[float]],
+) -> None:
+    slo_check_readings: Dict[str, List[TimeSeries]] = {
+        metric.name: _make_time_series_list(metric, values),
+        tuning_metric.name: _make_time_series_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
     "checked_at, values, tuning_values, error_str",
     [
         (
@@ -325,6 +363,38 @@ def test_data_point_slos_pass(
     ],
 )
 def test_data_point_slos_skip_zero_metric(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[float],
+    tuning_values: List[float],
+) -> None:
+    slo_check_readings: Dict[str, List[DataPoint]] = {
+        metric.name: _make_data_point_list(metric, values),
+        tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [0.0, 0.0, 0.0, 0.0],
+            [0.05, 0.35, 0.01, 0.03],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [0.0],
+            [0.24],
+        ),
+    ],
+)
+def test_data_point_slos_skip_zero_threshold(
     observer: FastFailObserver,
     checked_at: datetime,
     metric: Metric,
