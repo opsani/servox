@@ -4931,10 +4931,6 @@ class OptimizationStrategy(str, enum.Enum):
     adjustments to it instead of the Deployment itself.
     """
 
-    none = "none"
-    """The none strategy implements bare-bones servo infrastructure for monitoring only, without native adjustments.
-    """
-
 
 class BaseOptimizationStrategyConfiguration(pydantic.BaseModel):
     type: OptimizationStrategy = pydantic.Field(..., const=True)
