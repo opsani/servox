@@ -51,6 +51,22 @@ def config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
 
 
 @pytest.fixture
+def no_tuning_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
+    return servo.connectors.opsani_dev.OpsaniDevConfiguration(
+        namespace=kube.namespace,
+        deployment="fiber-http",
+        container="fiber-http",
+        service="fiber-http",
+        cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
+        memory=servo.connectors.kubernetes.Memory(
+            min="128 MiB", max="4.0 GiB", step="128 MiB"
+        ),
+        create_tuning_pod=False,
+        __optimizer__=servo.configuration.Optimizer(id="test.com/foo", token="12345"),
+    )
+
+
+@pytest.fixture
 def rollout_config(kube) -> servo.connectors.opsani_dev.OpsaniDevConfiguration:
     return servo.connectors.opsani_dev.OpsaniDevConfiguration(
         namespace=kube.namespace,
@@ -70,6 +86,13 @@ def checks(
     config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
 ) -> servo.connectors.opsani_dev.OpsaniDevChecks:
     return servo.connectors.opsani_dev.OpsaniDevChecks(config=config)
+
+
+@pytest.fixture
+def no_tuning_checks(
+    no_tuning_config: servo.connectors.opsani_dev.OpsaniDevConfiguration,
+) -> servo.connectors.opsani_dev.OpsaniDevChecks:
+    return servo.connectors.opsani_dev.OpsaniDevChecks(config=no_tuning_config)
 
 
 @pytest.fixture
@@ -99,6 +122,7 @@ class TestConfig:
             "timeout",
             "settlement",
             "container_logs_in_error_status",
+            "create_tuning_pod",
         ]
 
     def test_generate_yaml(self) -> None:
@@ -160,6 +184,25 @@ class TestConfig:
         assert kubernetes_config.deployments[0].containers[
             0
         ].static_environment_variables == {"FOO": "BAR", "BAZ": "1"}
+
+    def test_generate_no_tuning_config(self) -> None:
+        no_tuning_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
+            namespace="test",
+            rollout="fiber-http",
+            container="fiber-http",
+            service="fiber-http",
+            cpu=servo.connectors.kubernetes.CPU(min="125m", max="4000m", step="125m"),
+            memory=servo.connectors.kubernetes.Memory(
+                min="128 MiB", max="4.0 GiB", step="128 MiB"
+            ),
+            create_tuning_pod=False,
+            __optimizer__=servo.configuration.Optimizer(
+                id="test.com/foo", token="12345"
+            ),
+        )
+        no_tuning_k_config = no_tuning_config.generate_kubernetes_config()
+        assert no_tuning_config.create_tuning_pod == False
+        assert no_tuning_k_config.create_tuning_pod == False
 
     def test_generate_rollout_config(self) -> None:
         rollout_config = servo.connectors.opsani_dev.OpsaniDevConfiguration(
@@ -345,6 +388,311 @@ class TestIntegration:
                 assert not check.success
                 assert check.message is not None
                 assert isinstance(check.exception, httpx.HTTPStatusError)
+
+
+@pytest.mark.applymanifests(
+    "../manifests/opsani_dev",
+    files=[
+        "deployment.yaml",
+        "service.yaml",
+        "prometheus.yaml",
+    ],
+)
+@pytest.mark.integration
+@pytest.mark.usefixtures("kubeconfig", "kubernetes_asyncio_config")
+class TestNoTuningIntegration:
+    @pytest.fixture(autouse=True)
+    async def load_manifests(
+        self,
+        kube,
+        kubeconfig,
+        kubernetes_asyncio_config,
+        no_tuning_checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+    ) -> None:
+        kube.wait_for_registered()
+        no_tuning_checks.config.namespace = kube.namespace
+
+        # Fake out the servo metadata in the environment
+        # These env vars are set by our manifests
+        deployment = kube.get_deployments()["servo"]
+        pod = deployment.get_pods()[0]
+        try:
+            os.environ["POD_NAME"] = pod.name
+            os.environ["POD_NAMESPACE"] = kube.namespace
+
+            yield
+
+        finally:
+            os.environ.pop("POD_NAME", None)
+            os.environ.pop("POD_NAMESPACE", None)
+
+    @pytest.mark.namespace(create=False, name="test-process")
+    async def test_no_tuning_process(
+        self,
+        kube,
+        kubetest_teardown,
+        no_tuning_checks: servo.connectors.opsani_dev.OpsaniDevChecks,
+        kube_port_forward: Callable[[str, int], AsyncContextManager[str]],
+        load_generator: Callable[[], "LoadGenerator"],
+    ) -> None:
+        # Deploy fiber-http with annotations and Prometheus will start scraping it
+        envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
+        async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
+            # Connect the checks to our port forward interface
+            no_tuning_checks.config.prometheus_base_url = prometheus_base_url
+
+            deployment = await servo.connectors.kubernetes.Deployment.read(
+                no_tuning_checks.config.deployment, no_tuning_checks.config.namespace
+            )
+            assert (
+                deployment
+            ), f"failed loading deployment '{no_tuning_checks.config.deployment}' in namespace '{no_tuning_checks.config.namespace}'"
+
+            prometheus_config = (
+                servo.connectors.prometheus.PrometheusConfiguration.generate(
+                    base_url=prometheus_base_url
+                )
+            )
+            prometheus_connector = servo.connectors.prometheus.PrometheusConnector(
+                config=prometheus_config
+            )
+
+            ## Step 1
+            servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
+            async with assert_check_raises_in_context(
+                servo.checks.CheckError,
+                match="Deployment 'fiber-http' is missing annotations",
+            ) as assertion:
+                assertion.set(
+                    no_tuning_checks.run_one(id=f"check_controller_annotations")
+                )
+
+            # Add a subset of the required annotations to catch partial setup cases
+            async with change_to_resource(deployment):
+                await add_annotations_to_podspec_of_deployment(
+                    deployment,
+                    {
+                        "prometheus.opsani.com/path": "/stats/prometheus",
+                        "prometheus.opsani.com/port": "9901",
+                        "servo.opsani.com/optimizer": no_tuning_checks.config.optimizer.id,
+                    },
+                )
+            await assert_check_raises(
+                no_tuning_checks.run_one(id=f"check_controller_annotations"),
+                servo.checks.CheckError,
+                re.escape(
+                    "Deployment 'fiber-http' is missing annotations: prometheus.opsani.com/scheme, prometheus.opsani.com/scrape"
+                ),
+            )
+
+            # Fill in the missing annotations
+            async with change_to_resource(deployment):
+                await add_annotations_to_podspec_of_deployment(
+                    deployment,
+                    {
+                        "prometheus.opsani.com/scrape": "true",
+                        "prometheus.opsani.com/scheme": "http",
+                    },
+                )
+            await assert_check(
+                no_tuning_checks.run_one(id=f"check_controller_annotations")
+            )
+
+            # Step 2: Verify the labels are set on the Deployment pod spec
+            servo.logger.critical("Step 2 - Label the Deployment PodSpec")
+            await assert_check_raises(
+                no_tuning_checks.run_one(id=f"check_controller_labels"),
+                servo.checks.CheckError,
+                re.escape(
+                    "Deployment 'fiber-http' is missing labels: servo.opsani.com/optimizer=test.com_foo, sidecar.opsani.com/type=envoy"
+                ),
+            )
+
+            async with change_to_resource(deployment):
+                await add_labels_to_podspec_of_deployment(
+                    deployment,
+                    {
+                        "sidecar.opsani.com/type": "envoy",
+                        "servo.opsani.com/optimizer": servo.connectors.kubernetes.dns_labelize(
+                            no_tuning_checks.config.optimizer.id
+                        ),
+                    },
+                )
+            await assert_check(no_tuning_checks.run_one(id=f"check_controller_labels"))
+
+            # Step 3
+            servo.logger.critical("Step 3 - Inject Envoy sidecar container")
+            await assert_check_raises(
+                no_tuning_checks.run_one(id=f"check_controller_envoy_sidecars"),
+                servo.checks.CheckError,
+                re.escape(
+                    "Deployment 'fiber-http' pod template spec does not include envoy sidecar container ('opsani-envoy')"
+                ),
+            )
+
+            # servo.logging.set_level("DEBUG")
+            async with change_to_resource(deployment):
+                servo.logger.info(
+                    f"injecting Envoy sidecar to Deployment {deployment.name} PodSpec"
+                )
+                await deployment.inject_sidecar(
+                    "opsani-envoy",
+                    "opsani/envoy-proxy:latest",
+                    service="fiber-http",
+                )
+
+            await wait_for_check_to_pass(
+                functools.partial(
+                    no_tuning_checks.run_one, id=f"check_controller_envoy_sidecars"
+                )
+            )
+            await wait_for_check_to_pass(
+                functools.partial(
+                    no_tuning_checks.run_one, id=f"check_pod_envoy_sidecars"
+                )
+            )
+
+            # Step 4
+            servo.logger.critical(
+                "Step 4 - Check that Prometheus is discovering and scraping annotated Pods"
+            )
+            servo.logger.info("waiting for Prometheus to scrape our Pods")
+
+            async def wait_for_targets_to_be_scraped() -> List[
+                servo.connectors.prometheus.ActiveTarget
+            ]:
+                servo.logger.info(f"Waiting for Prometheus scrape Pod targets...")
+                # NOTE: Prometheus is on a 5s scrape interval
+                scraped_since = pytz.utc.localize(datetime.datetime.now())
+                while True:
+                    targets = await prometheus_connector.targets()
+                    if targets:
+                        if not any(
+                            filter(
+                                lambda t: t.last_scraped_at is None
+                                or t.last_scraped_at < scraped_since,
+                                targets.active,
+                            )
+                        ):
+                            # NOTE: filter targets to match our namespace in
+                            # case there are other things running in the cluster
+                            return list(
+                                filter(
+                                    lambda t: t.labels["kubernetes_namespace"]
+                                    == kube.namespace,
+                                    targets.active,
+                                )
+                            )
+
+            await wait_for_targets_to_be_scraped()
+            await assert_check(no_tuning_checks.run_one(id=f"check_prometheus_targets"))
+
+            # Step 5
+            servo.logger.critical(
+                "Step 5 - Check that traffic metrics are coming in from Envoy"
+            )
+            await assert_check_raises(
+                no_tuning_checks.run_one(id=f"check_envoy_sidecar_metrics"),
+                servo.checks.CheckError,
+                re.escape("Envoy is not reporting any traffic to Prometheus"),
+            )
+
+            servo.logger.info(
+                f"Sending test traffic to Envoy through deploy/fiber-http"
+            )
+            async with kube_port_forward(
+                "deploy/fiber-http", envoy_proxy_port
+            ) as envoy_url:
+                await load_generator(envoy_url).run_until(
+                    wait_for_check_to_pass(
+                        functools.partial(
+                            no_tuning_checks.run_one, id=f"check_envoy_sidecar_metrics"
+                        )
+                    )
+                )
+
+            # Let Prometheus scrape to see the traffic
+            await wait_for_targets_to_be_scraped()
+            await wait_for_check_to_pass(
+                functools.partial(
+                    no_tuning_checks.run_one, id=f"check_prometheus_targets"
+                )
+            )
+
+            # Step 6
+            servo.logger.critical("Step 6 - Proxy Service traffic through Envoy")
+            await assert_check_raises(
+                no_tuning_checks.run_one(id=f"check_service_proxy"),
+                servo.checks.CheckError,
+                re.escape(
+                    f"service 'fiber-http' is not routing traffic through Envoy sidecar on port {envoy_proxy_port}"
+                ),
+            )
+
+            # Update the port to point to the sidecar
+            service = await servo.connectors.kubernetes.Service.read(
+                "fiber-http", no_tuning_checks.config.namespace
+            )
+            service.ports[0].target_port = envoy_proxy_port
+            async with change_to_resource(service):
+                await service.patch()
+            await wait_for_check_to_pass(
+                functools.partial(no_tuning_checks.run_one, id=f"check_service_proxy")
+            )
+
+            # Send traffic through the service and verify it shows up in Envoy
+            port = service.ports[0].port
+            servo.logger.info(
+                f"Sending test traffic through proxied Service fiber-http on port {port}"
+            )
+
+            async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                await load_generator(envoy_url).run_until(
+                    wait_for_targets_to_be_scraped()
+                )
+
+            # Let Prometheus scrape to see the traffic
+            await assert_check(no_tuning_checks.run_one(id=f"check_prometheus_targets"))
+
+            # Step 7
+            servo.logger.critical("Step 7 - Start Deployment Optimization")
+
+            kubernetes_config = no_tuning_checks.config.generate_kubernetes_config()
+            no_tuning_opt = (
+                await servo.connectors.kubernetes.DeploymentOptimization.create(
+                    config=kubernetes_config.deployments[0],
+                    timeout=kubernetes_config.timeout,
+                )
+            )
+
+            # Step 8
+            servo.logger.critical(
+                "Step 8 - Verify Service traffic makes it through Envoy and gets aggregated by Prometheus"
+            )
+            async with kube_port_forward(f"service/fiber-http", port) as service_url:
+                await load_generator(service_url).run_until(
+                    wait_for_targets_to_be_scraped()
+                )
+
+            # NOTE it can take more than 2 scrapes before the tuning pod would appear if it was going to
+            scrapes_remaining = 3
+            targets = await wait_for_targets_to_be_scraped()
+            while len(targets) != 2 and scrapes_remaining > 0:
+                targets = await wait_for_targets_to_be_scraped()
+                scrapes_remaining -= 1
+
+            assert len(targets) == 2
+            tuning = list(filter(lambda t: "opsani_role" in t.labels, targets))
+            assert len(tuning) == 0
+
+            # NOTE Just ensures this test gets waved along when create_tuning_pod is False
+            await assert_check(no_tuning_checks.run_one(id=f"check_tuning_is_running"))
+
+            # Cancel outstanding tasks
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            [task.cancel() for task in tasks]
+
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.mark.integration

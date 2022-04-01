@@ -2662,7 +2662,7 @@ class RolloutStatus(RolloutBaseModel):
     aborted_at: Optional[datetime.datetime]
     available_replicas: Optional[int]
     blue_green: RolloutBlueGreenStatus
-    canary: Any  #  TODO type this out if connector needs to interact with it
+    canary: Any  # TODO type this out if connector needs to interact with it
     collision_count: Optional[int]
     conditions: List[RolloutStatusCondition]
     controller_pause: Optional[bool]
@@ -3330,8 +3330,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-MiB = 2 ** 20
-GiB = 2 ** 30
+MiB = 2**20
+GiB = 2**30
 
 
 class ShortByteSize(pydantic.ByteSize):
@@ -5043,6 +5043,10 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     container_logs_in_error_status: bool = pydantic.Field(
         False, description="Enable to include container logs in error message"
     )
+    create_tuning_pod: bool = pydantic.Field(
+        True,
+        description="Disable to prevent a canary strategy with tuning pod adjustments",
+    )
 
     @pydantic.validator("on_failure")
     def validate_failure_mode(cls, v):
@@ -5198,7 +5202,7 @@ class KubernetesConfiguration(BaseKubernetesConfiguration):
             kubernetes_asyncio.config.load_incluster_config()
         else:
             raise RuntimeError(
-                f"unable to configure Kubernetes client: no kubeconfig file nor in-cluser environment variables found"
+                f"unable to configure Kubernetes client: no kubeconfig file nor in-cluster environment variables found"
             )
 
 
