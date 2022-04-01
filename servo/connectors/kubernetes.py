@@ -5045,7 +5045,7 @@ class BaseKubernetesConfiguration(servo.BaseConfiguration):
     )
     create_tuning_pod: bool = pydantic.Field(
         True,
-        description="Disable to prevent native adjustments via a canary strategy",
+        description="Disable to prevent a canary strategy with tuning pod adjustments",
     )
 
     @pydantic.validator("on_failure")
