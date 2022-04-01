@@ -426,7 +426,7 @@ class TestNoTuningIntegration:
             os.environ.pop("POD_NAME", None)
             os.environ.pop("POD_NAMESPACE", None)
 
-    @pytest.mark.namespace(create=False, name="test-process")
+    @pytest.mark.namespace(create=False, name="test-no-tuning")
     async def test_no_tuning_process(
         self,
         kube,
