@@ -109,7 +109,7 @@ class License(enum.Enum):
                 return env
         raise NameError(f'No license identified by "{identifier}".')
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.value
 
 
@@ -148,7 +148,7 @@ class Maturity(enum.Enum):
                 return env
         raise NameError(f'No maturity level identified by "{identifier}".')
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.value
 
 
@@ -176,7 +176,8 @@ class Duration(datetime.timedelta):
         cls,
         duration: Union[str, Numeric, datetime.timedelta] = 0,
         **kwargs,
-    ):
+    ) -> datetime.timedelta:
+
         seconds = kwargs.pop("seconds", 0)
         microseconds = kwargs.pop("microseconds", 0)
 
@@ -211,7 +212,7 @@ class Duration(datetime.timedelta):
         yield cls.validate
 
     @classmethod
-    def __modify_schema__(cls, field_schema: dict) -> None:
+    def __modify_schema__(cls, field_schema: dict[Any, Any]) -> None:
         field_schema.update(
             type="string",
             format="duration",
@@ -234,12 +235,12 @@ class Duration(datetime.timedelta):
         """Returns a Duration object representing the elapsed time since a given start time."""
         return cls(datetime.datetime.now() - time)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return servo.utilities.duration_str.timedelta_to_duration_str(
             self, extended=True
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Duration('{self}')"
 
     def __eq__(self, other) -> bool:
@@ -329,7 +330,7 @@ class BaseProgress(abc.ABC, BaseModel):
             def __aiter__(self):  # noqa: D105
                 return self
 
-            async def __anext__(self):
+            async def __anext__(self) -> Optional[int]:
                 while True:
                     if self.progress.finished:
                         raise StopAsyncIteration
@@ -340,7 +341,7 @@ class BaseProgress(abc.ABC, BaseModel):
         self.start()
         return _Iterator(self, servo.Duration(duration))
 
-    async def __aenter__(self) -> None:
+    async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -357,7 +358,7 @@ class BaseProgress(abc.ABC, BaseModel):
         """Return the total time elapsed since progress tracking was started as a Duration value."""
         return Duration.since(self.started_at) if self.started else None
 
-    def annotate(self, str_to_annotate: str, prefix=True) -> str:
+    def annotate(self, str_to_annotate: str, prefix: bool = True) -> str:
         """Return a string annotated with details about progress status.
 
         Args:
@@ -752,7 +753,7 @@ class TimeSeries(BaseModel):
     def __iter__(self):
         return iter(self.data_points)
 
-    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+    def __getitem__(self, index: int) -> servo.DataPoint:
         if not isinstance(index, int):
             raise TypeError("values can only be retrieved by integer index")
         return self.data_points[index]
@@ -816,7 +817,7 @@ class OpsaniRepr(Protocol):
     requests.
     """
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         """Return a representation of the object serialized for use in Opsani
         API requests.
         """

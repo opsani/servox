@@ -60,9 +60,12 @@ CheckHandler = TypeVar(
 )
 CHECK_HANDLER_SIGNATURE = inspect.Signature(return_annotation=CheckHandlerResult)
 
-Tag = pydantic.constr(
-    strip_whitespace=True, min_length=1, max_length=32, regex="^([0-9a-z\\.-])*$"
-)
+# https://stackoverflow.com/a/67408276
+class Tag(pydantic.ConstrainedStr):
+    strip_whitespace = True
+    min_length = 1
+    max_length = 32
+    regex = re.compile("^([0-9a-z\\.-])*$")
 
 
 class CheckError(RuntimeError):
@@ -107,7 +110,7 @@ class Check(pydantic.BaseModel, servo.logging.Mixin):
     """The relative importance of the check determining failure handling.
     """
 
-    tags: Optional[Set[Tag]]
+    tags: Optional[set[Tag]]
     """
     An optional set of tags for filtering checks.
 

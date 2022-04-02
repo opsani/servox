@@ -6,7 +6,7 @@ import os
 import random
 import shutil
 import signal
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import backoff
 import colorama
@@ -66,7 +66,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return self.servo.config
 
     @property
-    def api_client_options(self) -> Dict[str, Any]:
+    def api_client_options(self) -> dict[str, Any]:
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
@@ -74,7 +74,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         self.logger.info("Describing...")
 
         aggregate_description = Description.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(
+        results: list[servo.EventResult] = await self.servo.dispatch_event(
             servo.Events.describe, control=control
         )
         for result in results:
@@ -84,7 +84,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
         return aggregate_description
 
-    async def measure(self, param: servo.MeasureParams) -> Measurement:
+    async def measure(self, param: servo.api.MeasureParams) -> Measurement:
         if isinstance(param, dict):
             # required parsing has failed in api.Mixin._post_event(), run parse_obj to surface the validation errors
             servo.api.MeasureParams.parse_obj(param)
@@ -92,7 +92,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         servo.logger.trace(devtools.pformat(param))
 
         aggregate_measurement = Measurement.construct()
-        results: List[servo.EventResult] = await self.servo.dispatch_event(
+        results: list[servo.EventResult] = await self.servo.dispatch_event(
             servo.Events.measure, metrics=param.metrics, control=param.control
         )
         for result in results:
@@ -103,7 +103,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
         return aggregate_measurement
 
     async def adjust(
-        self, adjustments: List[Adjustment], control: Control
+        self, adjustments: list[Adjustment], control: Control
     ) -> Description:
         summary = f"[{', '.join(list(map(str, adjustments)))}]"
         self.logger.info(f"Adjusting... {summary}")
@@ -279,7 +279,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
             f"Servo started with {len(self.servo.connectors)} active connectors [{self.optimizer.id} @ {self.optimizer.url or self.optimizer.base_url}]"
         )
 
-        async def giveup(details) -> None:
+        async def giveup() -> None:
             loop = asyncio.get_event_loop()
             self.logger.critical("retries exhausted, giving up")
             asyncio.create_task(self.shutdown(loop))
@@ -339,7 +339,7 @@ class ServoRunner(pydantic.BaseModel, servo.logging.Mixin, servo.api.Mixin):
 
 class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
     assembly: servo.Assembly
-    runners: List[ServoRunner] = []
+    runners: list[ServoRunner] = []
     progress_handler: Optional[servo.logging.ProgressHandler] = None
     progress_handler_id: Optional[int] = None
     _running: bool = pydantic.PrivateAttr(False)
@@ -392,7 +392,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
                 )
 
         async def handle_progress_exception(
-            progress: Dict[str, Any], error: Exception
+            progress: dict[str, Any], error: Exception
         ) -> None:
             # FIXME: This needs to be made multi-servo aware
             # Restart the main event loop if we get out of sync with the server
@@ -563,7 +563,7 @@ class AssemblyRunner(pydantic.BaseModel, servo.logging.Mixin):
 
         secho(reset=True)
 
-    async def _shutdown(self, loop, signal=None):
+    async def _shutdown(self, loop: asyncio.AbstractEventLoop, signal=None) -> None:
         if not self.running:
             raise RuntimeError("Cannot shutdown an assembly that is not running")
 

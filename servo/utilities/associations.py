@@ -7,9 +7,9 @@ logic.
 """
 
 import weakref
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-_associations = weakref.WeakKeyDictionary()
+_associations: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 class Mixin:
@@ -49,7 +49,7 @@ class Mixin:
             return _associations[self].get(name, default)
 
     @property
-    def _associations(self) -> Dict[str, Any]:
+    def _associations(self) -> dict[str, Any]:
         """Return all associated objects as a dictionary.
 
         Returns:
@@ -68,5 +68,5 @@ class Associative(Protocol):  # pragma: no cover
     def _get_association(self, name: str, default: Any = ...) -> Any:
         ...
 
-    def _associations(self) -> Dict[str, Any]:
+    def _associations(self) -> dict[str, Any]:
         ...

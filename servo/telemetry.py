@@ -84,7 +84,7 @@ class DiagnosticsHandler(servo.logging.Mixin, servo.api.Mixin):
         # Adopt the servo config for driving the API mixin
         return self.servo.api_client_options
 
-    async def diagnostics_check(self):
+    async def diagnostics_check(self) -> None:
 
         self._running = True
 

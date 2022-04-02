@@ -70,7 +70,7 @@ class Setting(BaseModel, abc.ABC):
         return repr(self)
 
     @abc.abstractmethod
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, Any]:
         """Return a representation of the setting serialized for use in Opsani
         API requests.
         """
@@ -159,7 +159,7 @@ class EnumSetting(Setting):
 
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
-    def _validate_value_in_values(cls, values: dict) -> dict[str, Any]:
+    def _validate_value_in_values(cls, values: dict[str, Any]) -> dict[str, Any]:
         value, options = values["value"], values["values"]
         if value is not None and value not in options:
             raise ValueError(
@@ -173,7 +173,7 @@ class EnumSetting(Setting):
             f"{self.__class__.__name__}(values={repr(self.values)}, unit={self.unit})"
         )
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         return {
             self.name: self.dict(
                 include={"type", "unit", "values", "pinned", "value"}, exclude_none=True
@@ -221,7 +221,7 @@ class RangeSetting(Setting):
     @pydantic.root_validator(skip_on_failure=True)
     @classmethod
     def _attributes_must_be_of_same_type(cls, values: dict[str, Any]) -> dict[str, Any]:
-        range_types: dict[TypeVar[int, float], list[str]] = {}
+        range_types: dict[TypeVar, list[str]] = {}
         for attr in ("min", "max", "step"):
             value = values[attr] if attr in values else cls.__fields__[attr].default
             attr_cls = value.__class__
@@ -337,7 +337,7 @@ class RangeSetting(Setting):
     def __str__(self) -> str:
         return f"{self.name} ({self.type} {self.human_readable(self.min)}-{self.human_readable(self.max)}, {self.human_readable(self.step)})"
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         return {
             self.name: self.dict(
                 include={"type", "unit", "min", "max", "step", "pinned", "value"},
@@ -367,7 +367,7 @@ class CPU(RangeSetting):
             return super().__init__(*args, **kwargs)
         return super().__init__(unit=Unit.cores, *args, **kwargs)
 
-    name = pydantic.Field(
+    name: str = pydantic.Field(
         "cpu", const=True, description="Identifies the setting as a CPU setting."
     )
     min: float = pydantic.Field(
@@ -401,7 +401,7 @@ class Memory(RangeSetting):
             return super().__init__(*args, **kwargs)
         return super().__init__(unit=Unit.gibibytes, *args, **kwargs)
 
-    name = pydantic.Field(
+    name: str = pydantic.Field(
         "mem", const=True, description="Identifies the setting as a Memory setting."
     )
 
@@ -424,7 +424,7 @@ class Replicas(RangeSetting):
     type derived thereof.
     """
 
-    name = pydantic.Field(
+    name: str = pydantic.Field(
         "replicas",
         const=True,
         description="Identifies the setting as a replicas setting.",
@@ -463,7 +463,7 @@ class InstanceType(EnumSetting):
     type derived thereof.
     """
 
-    name = pydantic.Field(
+    name: str = pydantic.Field(
         "inst_type",
         const=True,
         description="Identifies the setting as an instance type enum setting.",
@@ -475,7 +475,10 @@ class InstanceType(EnumSetting):
 
 
 def _suggest_step_aligned_values(
-    value: Numeric, step: Numeric, *, in_repr: Optional[Callable[[Numeric], str]] = None
+    value: Numeric,
+    step: Numeric,
+    *,
+    in_repr: Optional[Callable[[Numeric], Union[str, float, int]]] = None,
 ) -> tuple[str, str]:
     if in_repr is None:
         # return raw data for further processing
@@ -548,7 +551,7 @@ class EnvironmentSetting(Setting):
         return self.literal or self.name
 
 
-class NumericType(Type):
+class NumericType(Setting):
     @classmethod
     def __get_validators__(cls) -> Generator[Callable[..., Any], None, None]:
         yield cls.validate
@@ -590,7 +593,7 @@ class EnvironmentRangeSetting(RangeSetting, EnvironmentSetting):
         return value
 
     @pydantic.root_validator
-    def _cast_value_to_value_type(cls, values: dict) -> dict:
+    def _cast_value_to_value_type(cls, values: dict[Any, Any]) -> dict[Any, Any]:
         if (value := values.get("value")) is not None and (
             value_type := values.get("value_type")
         ) is not None:

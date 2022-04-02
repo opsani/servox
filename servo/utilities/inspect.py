@@ -7,8 +7,7 @@ import warnings
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
+    ChainMap,
     Optional,
     Sequence,
     Tuple,
@@ -32,8 +31,8 @@ __all__ = [
 
 
 def get_instance_methods(
-    obj, *, stop_at_parent: Optional[Type[Any]] = None
-) -> Dict[str, Callable]:
+    obj: Any, *, stop_at_parent: Optional[Type[Any]] = None
+) -> dict[str, Callable]:
     """Return a mapping of method names to method callables in method definition order.
 
     Note that the semantics of the values in the dictionary returned are dependent on the input object.
@@ -53,8 +52,8 @@ def get_instance_methods(
         A dictionary of methods in definition order.
     """
     cls = obj if inspect.isclass(obj) else obj.__class__
-    methods = collections.ChainMap()
-    stopped = False
+    methods: ChainMap = collections.ChainMap()
+    stopped: bool = False
 
     # search for instance specific methods before traversing the class hierarchy
     if not inspect.isclass(obj):
@@ -82,7 +81,7 @@ def get_instance_methods(
         return cast(dict, methods)
 
 
-def get_methods(cls: Type[Any]) -> List[Tuple[str, Any]]:
+def get_methods(cls: Type[Any]) -> list[Tuple[str, Any]]:
     """Return a list of tuples of methods for the given class in alphabetical order.
 
     Args:
@@ -123,10 +122,10 @@ def get_defining_class(method: Callable) -> Optional[Type[Any]]:
 
 
 def resolve_type_annotations(
-    *annotations: List[Union[TypeVar, str]],
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-) -> List[Type]:
+    *annotations: list[Union[TypeVar, str]],
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+) -> list[Type[Any]]:
     """Resolve a sequence of type annotations and return the canonical types.
 
     Args:
@@ -156,10 +155,10 @@ def resolve_type_annotations(
 class CallableDescriptor:
     """A data class that describes the runtime context of a callable."""
 
-    signature: inspect.signature
+    signature: inspect.Signature
     module: Optional[str] = None
-    globalns: Optional[Dict[str, Any]] = None
-    localns: Optional[Dict[str, Any]] = None
+    globalns: Optional[dict[str, Any]] = None
+    localns: Optional[dict[str, Any]] = None
 
 
 def assert_equal_callable_descriptors(
@@ -389,7 +388,7 @@ def assert_equal_callable_descriptors(
                 ) from e
 
 
-def assert_equal_types(*types_: List[Type]) -> None:
+def assert_equal_types(*types_: list[Type[Any]]) -> None:
     """Verify that all of the given types are equivalent or raise a TypeError.
 
     Raises:

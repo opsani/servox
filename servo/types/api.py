@@ -41,7 +41,7 @@ component.
         """
         return next(filter(lambda m: m.name == name, self.settings), None)
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         settings_dict = {"settings": {}}
         for setting in self.settings:
             settings_dict["settings"].update(setting.__opsani_repr__())
@@ -175,7 +175,7 @@ class Description(BaseModel):
         """
         return next(filter(lambda m: m.name == name, self.metrics), None)
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[Any, Any]]:
         dict = {"application": {"components": {}}, "measurement": {"metrics": {}}}
         for component in self.components:
             dict["application"]["components"].update(component.__opsani_repr__())
@@ -240,12 +240,12 @@ class Measurement(BaseModel):
     def __iter__(self):
         return iter(self.readings)
 
-    def __getitem__(self, index: int) -> Union[datetime.datetime, float]:
+    def __getitem__(self, index: int) -> Union[DataPoint, TimeSeries]:
         if not isinstance(index, int):
             raise TypeError("readings can only be retrieved by integer index")
         return self.readings[index]
 
-    def __opsani_repr__(self) -> dict:
+    def __opsani_repr__(self) -> dict[str, dict[str, Any]]:
         readings = {}
 
         for reading in self.readings:

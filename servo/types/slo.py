@@ -4,9 +4,14 @@ import collections
 import decimal
 import enum
 import pydantic
-from typing import Optional
+from typing import cast, Optional
 
 from .core import BaseModel, Numeric
+
+
+class TriggerConstraints(pydantic.ConstrainedInt):
+    ge = 1
+    multiple_of = 1
 
 
 class SloKeep(str, enum.Enum):
@@ -19,8 +24,8 @@ class SloCondition(BaseModel):
     metric: str
     threshold_multiplier: decimal.Decimal = decimal.Decimal(1)
     keep: SloKeep = SloKeep.below
-    trigger_count: pydantic.conint(ge=1, multiple_of=1) = 1
-    trigger_window: pydantic.conint(ge=1, multiple_of=1) = None
+    trigger_count: TriggerConstraints = cast(TriggerConstraints, 1)
+    trigger_window: TriggerConstraints = cast(TriggerConstraints, None)
     threshold: Optional[decimal.Decimal]
     threshold_metric: Optional[str]
 
