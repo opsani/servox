@@ -586,7 +586,7 @@ class FastFailConfiguration(pydantic.BaseSettings):
     skip: servo.types.Duration = 0
     """How long to wait before querying SLO metrics for potential violations"""
 
-    zero_handling: bool = False
+    treat_zero_as_missing: bool = False
     """Whether or not to treat zero values as missing per certain metric systems"""
 
     class Config:

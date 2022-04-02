@@ -21,8 +21,8 @@ from servo.types import (
 
 def test_non_unique_conditions() -> None:
     conditions = [
-        SloCondition(metric="same", threshold=6000, slo_threshold_minimum=None),
-        SloCondition(metric="same", threshold=6000, slo_threshold_minimum=None),
+        SloCondition(metric="same", threshold=6000),
+        SloCondition(metric="same", threshold=6000),
         SloCondition(
             metric="same2",
             threshold_metric="same3",
@@ -31,12 +31,11 @@ def test_non_unique_conditions() -> None:
             metric="same2",
             threshold_metric="same3",
         ),
-        SloCondition(metric="not_same", threshold=6000, slo_threshold_minimum=None),
+        SloCondition(metric="not_same", threshold=6000),
         SloCondition(
             metric="not_same",
             keep=SloKeep.above,
             threshold=6000,
-            slo_threshold_minimum=None,
         ),
     ]
     with pytest.raises(pydantic.ValidationError) as err_info:
@@ -56,7 +55,6 @@ def test_trigger_count_greater_than_window() -> None:
             threshold=1,
             trigger_count=2,
             trigger_window=1,
-            slo_threshold_minimum=None,
         )
     assert str(err_info.value) == (
         "1 validation error for SloCondition\n"
@@ -88,7 +86,6 @@ def slo_input(metric: Metric, tuning_metric: Metric) -> SloInput:
                 metric=metric.name,
                 threshold=6000,
                 trigger_window=2,
-                slo_threshold_minimum=None,
             ),
             SloCondition(
                 metric=metric.name,

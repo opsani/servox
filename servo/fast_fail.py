@@ -15,7 +15,6 @@ import servo.configuration
 import servo.types
 
 SLO_FAILED_REASON = "slo-violation"
-SLO_MINIMUM_VALUE = 0.25
 
 
 class SloOutcomeStatus(str, enum.Enum):
@@ -94,7 +93,7 @@ class FastFailObserver(pydantic.BaseModel):
                 metric_value=metric_value, metric_readings=metric_readings
             )
 
-            if self.config.zero_handling and float(metric_value) == 0:
+            if self.config.treat_zero_as_missing and float(metric_value) == 0:
                 self._results[condition].append(
                     SloOutcome(**result_args, status=SloOutcomeStatus.missing_metric)
                 )
@@ -117,7 +116,7 @@ class FastFailObserver(pydantic.BaseModel):
                 threshold_scalar = _get_scalar_from_readings(threshold_readings)
                 threshold_value = threshold_scalar * condition.threshold_multiplier
 
-                if self.config.zero_handling and float(threshold_value) == 0:
+                if self.config.treat_zero_as_missing and float(threshold_value) == 0:
                     self._results[condition].append(
                         SloOutcome(
                             **result_args, status=SloOutcomeStatus.missing_threshold

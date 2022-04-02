@@ -24,7 +24,7 @@ class SloCondition(BaseModel):
     trigger_window: pydantic.conint(ge=1, multiple_of=1) = None
     threshold: Optional[decimal.Decimal]
     threshold_metric: Optional[str]
-    slo_threshold_minimum: Optional[float] = 0.25
+    slo_threshold_minimum: float = 0.25
 
     @pydantic.root_validator
     @classmethod
@@ -44,15 +44,19 @@ class SloCondition(BaseModel):
 
         return values
 
-    @pydantic.root_validator
+    @pydantic.root_validator(pre=True)
     @classmethod
     def _check_duplicated_minimum(cls, values):
         if (
             values.get("threshold") is not None
             and values.get("slo_threshold_minimum") is not None
         ):
-            raise ValueError(
-                "SLO Condition cannot specify both static threshold and metric based threshold minimum"
+            # Use run time import to prevent circular imports
+            import servo.logging
+
+            servo.logging.logger.warning(
+                "SLO Condition should not specify both static threshold and metric based threshold minimum."
+                " Please double check the Slo Conditions of the User Config"
             )
 
         return values
