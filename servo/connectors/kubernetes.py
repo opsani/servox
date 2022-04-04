@@ -1941,15 +1941,29 @@ class Deployment(KubernetesModel):
         self.obj.spec.replicas = replicas
 
     @property
+    def field_selector(self) -> str:
+        """
+        Return a string for matching the Deployment fields in Kubernetes API calls.
+        """
+        return selector_string(
+            {
+                "metadata.name": self.name,
+            }
+        )
+
+    @property
     def match_labels(self) -> Dict[str, str]:
         """Return the matchLabels dict of the selector field"""
         return self.obj.spec.selector.match_labels
 
     @property
-    def label_selector(self) -> str:
+    def label_selector(self) -> Optional[str]:
         """
         Return a string for matching the Deployment in Kubernetes API calls.
         """
+        if not self.obj.metadata.labels:
+            return None
+
         return selector_string(self.obj.metadata.labels)
 
     # TODO: I need to model these two and add label/annotation helpers
@@ -2187,7 +2201,8 @@ class Deployment(KubernetesModel):
             v1 = kubernetes_asyncio.client.AppsV1Api(api)
             async with kubernetes_asyncio.watch.Watch().stream(
                 v1.list_namespaced_deployment,
-                self.namespace,
+                namespace=self.namespace,
+                field_selector=self.field_selector,
                 label_selector=self.label_selector,
                 timeout_seconds=timeout_seconds,
             ) as stream:
@@ -3330,8 +3345,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-MiB = 2**20
-GiB = 2**30
+MiB = 2 ** 20
+GiB = 2 ** 30
 
 
 class ShortByteSize(pydantic.ByteSize):
