@@ -3345,8 +3345,8 @@ class CPU(servo.CPU):
 
 
 # Gibibyte is the base unit of Kubernetes memory
-MiB = 2 ** 20
-GiB = 2 ** 30
+MiB = 2**20
+GiB = 2**30
 
 
 class ShortByteSize(pydantic.ByteSize):
