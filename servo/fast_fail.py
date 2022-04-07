@@ -44,9 +44,9 @@ class SloOutcome(pydantic.BaseModel):
         elif self.status == SloOutcomeStatus.failed:
             message = f"SLO failed metric value {self.metric_value} was not {condition.keep} threshold value {self.threshold_value}"
         elif self.status == SloOutcomeStatus.zero_metric:
-            message = f"Skipping SLO {condition.metric} due to near-zero threshold value of {self.threshold_value} with zero value {self.metric_value}"
+            message = f"Skipping SLO {condition.metric} due to near-zero metric value of {self.metric_value}"
         elif self.status == SloOutcomeStatus.zero_threshold:
-            message = f"Skipping SLO {condition.metric} due to near-zero metric value of {self.metric_value} with zero value {self.threshold_value}"
+            message = f"Skipping SLO {condition.metric} due to near-zero threshold value of {self.threshold_value}"
         else:
             message = f"Uncrecognized outcome status {self.status}"
         return f"{self.checked_at} {message}"
@@ -103,6 +103,11 @@ class FastFailObserver(pydantic.BaseModel):
             threshold_readings = None
             if condition.threshold is not None:
                 threshold_value = condition.threshold * condition.threshold_multiplier
+
+                result_args.update(
+                    threshold_value=threshold_value,
+                    threshold_readings=threshold_readings,
+                )
             elif condition.threshold_metric is not None:
                 threshold_readings = metrics.get(condition.threshold_metric)
                 if not threshold_readings:
@@ -116,6 +121,11 @@ class FastFailObserver(pydantic.BaseModel):
                 threshold_scalar = _get_scalar_from_readings(threshold_readings)
                 threshold_value = threshold_scalar * condition.threshold_multiplier
 
+                result_args.update(
+                    threshold_value=threshold_value,
+                    threshold_readings=threshold_readings,
+                )
+
                 if self.config.treat_zero_as_missing and float(threshold_value) == 0:
                     self._results[condition].append(
                         SloOutcome(
@@ -124,27 +134,19 @@ class FastFailObserver(pydantic.BaseModel):
                     )
                     continue
 
-                elif (float(threshold_value) == 0) and (
-                    0 < metric_value <= condition.slo_metric_minimum
-                ):
+                elif 0 < metric_value <= condition.slo_metric_minimum:
+                    self._results[condition].append(
+                        SloOutcome(**result_args, status=SloOutcomeStatus.zero_metric)
+                    )
+                    continue
+
+                elif 0 < threshold_value <= condition.slo_threshold_minimum:
                     self._results[condition].append(
                         SloOutcome(
                             **result_args, status=SloOutcomeStatus.zero_threshold
                         )
                     )
                     continue
-
-                elif (float(metric_value) == 0) and (
-                    0 < threshold_value <= condition.slo_threshold_minimum
-                ):
-                    self._results[condition].append(
-                        SloOutcome(**result_args, status=SloOutcomeStatus.zero_metric)
-                    )
-                    continue
-
-            result_args.update(
-                threshold_value=threshold_value, threshold_readings=threshold_readings
-            )
 
             if metric_value.is_nan() or threshold_value.is_nan():
                 self._results[condition].append(
