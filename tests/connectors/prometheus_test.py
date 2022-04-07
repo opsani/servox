@@ -869,20 +869,7 @@ class TestPrometheusIntegration:
                             + date_matcher
                             + "SLO failed metric value "
                             + float_matcher
-                            + re.escape(" was not below threshold value 0.2], ")
-                            + re.escape("(tuning_p50_latency below main_p50_latency)[")
-                            + date_matcher
-                            + " SLO failed metric value "
-                            + float_matcher
-                            + " was not below threshold value "
-                            + float_matcher
-                            + ", "
-                            + date_matcher
-                            + " SLO failed metric value "
-                            + float_matcher
-                            + " was not below threshold value "
-                            + float_matcher
-                            + re.escape("]")
+                            + re.escape(" was not below threshold value 0.2]")
                         )
 
                         try:
