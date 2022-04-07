@@ -1,7 +1,8 @@
 import hashlib
+from typing import Any, Callable, Union
 
 
-def get_hash(data):
+def get_hash(data: Union[list[Any], dict[Any, Any]]) -> str:
     """md5 hash of Python data. This is limited to scalars that are convertible to string and container
     structures (list, dict) containing such scalars. Some data items are not distinguishable, if they have
     the same representation as a string, e.g., hash(b'None') == hash('None') == hash(None)"""
@@ -10,7 +11,9 @@ def get_hash(data):
     return hasher.hexdigest()
 
 
-def dump_container(c, func):
+def dump_container(
+    c: Union[str, bytes, list[Any], dict[Any, Any]], func: Callable[[Any], Any]
+) -> None:
     """stream the contents of a container as a string through a function
     in a repeatable order, suitable, e.g., for hashing
     """

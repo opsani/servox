@@ -1,8 +1,9 @@
 # Adapted from durationpy
 # https://github.com/icholy/durationpy/
 
-import re
 from datetime import timedelta
+import re
+from typing import Optional
 
 _nanosecond_size = 1
 _microsecond_size = 1000 * _nanosecond_size
@@ -43,7 +44,7 @@ def microseconds_from_duration_str(duration: str) -> float:
     if not len(matches):
         raise ValueError(f"Invalid duration '{duration}'")
 
-    total = 0
+    total: float = 0
     sign = -1 if duration[0] == "-" else 1
 
     for (value, unit) in matches:
@@ -111,7 +112,7 @@ def timedelta_to_duration_str(delta: timedelta, extended: bool = False) -> str:
     return f"{sign}{result_str}"
 
 
-def _to_str_small(nanoseconds, extended) -> str:
+def _to_str_small(nanoseconds: Optional[float], extended: bool = False) -> str:
 
     result_str = ""
 
@@ -134,7 +135,7 @@ def _to_str_small(nanoseconds, extended) -> str:
     return result_str
 
 
-def _to_str_large(nanoseconds, extended) -> str:
+def _to_str_large(nanoseconds: float, extended: bool = False) -> str:
 
     result_str = ""
 
