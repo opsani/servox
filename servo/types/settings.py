@@ -605,10 +605,19 @@ class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
     pass
 
 
-PydanticEnvironmentSettingAnnotation = Annotated[
-    Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
-    pydantic.Field(discriminator="type"),
-]
+# https://github.com/samuelcolvin/pydantic/issues/3714
+class EnvironmentSettingList(pydantic.BaseModel):
+    __root__: Annotated[
+        Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
+        pydantic.Field(discriminator="type"),
+    ]
+
+
+# TODO: revert to this annotation when the above is resolved
+# PydanticEnvironmentSettingAnnotation = Annotated[
+#     Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
+#     pydantic.Field(discriminator="type"),
+# ]
 
 # TODO unused references to this stub in test (TestCommandConfiguration)
 # class CommandConfiguration(servo.BaseConfiguration):
