@@ -1227,13 +1227,13 @@ class ServoCLI(CLI):
                 help="Connectors to check",
             ),
             name: Optional[list[str]] = typer.Option(
-                False, "--name", "-n", help="Filter by name"
+                [], "--name", "-n", help="Filter by name"
             ),
             id: Optional[list[str]] = typer.Option(
-                False, "--id", "-i", help="Filter by ID"
+                [], "--id", "-i", help="Filter by ID"
             ),
             tag: Optional[list[str]] = typer.Option(
-                False, "--tag", "-t", help="Filter by tag"
+                [], "--tag", "-t", help="Filter by tag"
             ),
             halt_on: Optional[servo.ErrorSeverity] = typer.Option(
                 servo.ErrorSeverity.critical,
