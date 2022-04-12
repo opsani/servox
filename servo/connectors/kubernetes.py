@@ -4928,7 +4928,7 @@ class ContainerConfiguration(servo.BaseConfiguration):
     command: Optional[str]  # TODO: create model...
     cpu: CPU
     memory: Memory
-    env: Optional[servo.EnvironmentSettingList] = None
+    env: Optional[servo.EnvironmentSettingList]
     static_environment_variables: Optional[Dict[str, str]]
 
 

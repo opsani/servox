@@ -607,9 +607,11 @@ class EnvironmentEnumSetting(EnumSetting, EnvironmentSetting):
 
 # https://github.com/samuelcolvin/pydantic/issues/3714
 class EnvironmentSettingList(pydantic.BaseModel):
-    __root__: Annotated[
-        Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
-        pydantic.Field(discriminator="type"),
+    __root__: list[
+        Annotated[
+            Union[EnvironmentRangeSetting, EnvironmentEnumSetting],
+            pydantic.Field(discriminator="type"),
+        ]
     ]
 
 
