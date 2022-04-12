@@ -22,12 +22,14 @@ class SloKeep(str, enum.Enum):
 class SloCondition(BaseModel):
     description: Optional[str] = None
     metric: str
+    slo_metric_minimum: float = 0.25
     threshold_multiplier: decimal.Decimal = decimal.Decimal(1)
     keep: SloKeep = SloKeep.below
     trigger_count: TriggerConstraints = cast(TriggerConstraints, 1)
     trigger_window: TriggerConstraints = cast(TriggerConstraints, None)
     threshold: Optional[decimal.Decimal]
     threshold_metric: Optional[str]
+    slo_threshold_minimum: float = 0.25
 
     @pydantic.root_validator
     @classmethod
@@ -43,6 +45,23 @@ class SloCondition(BaseModel):
         if values.get("threshold") is None and values.get("threshold_metric") is None:
             raise ValueError(
                 "SLO Condition must specify either threshold or threshold_metric"
+            )
+
+        return values
+
+    @pydantic.root_validator(pre=True)
+    @classmethod
+    def _check_duplicated_minimum(cls, values):
+        if (
+            values.get("threshold") is not None
+            and values.get("slo_threshold_minimum") is not None
+        ):
+            # Use run time import to prevent circular imports
+            import servo.logging
+
+            servo.logging.logger.warning(
+                "SLO Condition should not specify both static threshold and metric based threshold minimum."
+                " Please double check the Slo Conditions of the User Config"
             )
 
         return values
