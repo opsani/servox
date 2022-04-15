@@ -269,17 +269,23 @@ class BaseConfiguration(AbstractBaseConfiguration):
     __settings__: Optional[CommonConfiguration] = pydantic.PrivateAttr(
         default_factory=lambda: CommonConfiguration(),
     )
+    __checks__: Optional[ChecksConfiguration] = pydantic.PrivateAttr(
+        default_factory=lambda: ChecksConfiguration(),
+    )
 
     def __init__(
         self,
         __optimizer__: Optional[Optimizer] = None,
         __settings__: Optional[CommonConfiguration] = None,
+        __checks__: Optional[ChecksConfiguration] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.__optimizer__ = __optimizer__
         if __settings__:
             self.__settings__ = __settings__
+        if __checks__:
+            self.__checks__ = __checks__
 
     @property
     def optimizer(self) -> Optional[Optimizer]:
@@ -290,6 +296,11 @@ class BaseConfiguration(AbstractBaseConfiguration):
     def settings(self) -> Optional[Optimizer]:
         """Returns the Optimizer this configuration is bound to."""
         return self.__settings__
+
+    @property
+    def checks(self) -> Optional[ChecksConfiguration]:
+        """Returns the Optimizer this configuration is bound to."""
+        return self.__checks__
 
 
 # Uppercase handling for non-subclassed settings models. Should be pushed into Pydantic as a PR
@@ -465,6 +476,57 @@ class CommonConfiguration(AbstractBaseConfiguration):
         validate_assignment = True
 
 
+class ChecksConfiguration(AbstractBaseConfiguration):
+    """ChecksConfiguration models configuration for behavior of the checks flow, such as
+    whether to automatically apply remedies.
+    """
+
+    name: Optional[list[str]] = pydantic.Field(
+        description="Filter by name",
+    )
+    id: Optional[list[str]] = pydantic.Field(
+        description="Filter by ID",
+    )
+    tag: Optional[list[str]] = pydantic.Field(
+        description="Filter by tag",
+    )
+
+    quiet: bool = pydantic.Field(
+        default=False, description="Do not echo generated output to stdout"
+    )
+
+    verbose: bool = pydantic.Field(
+        default=False, description="Do not echo generated output to stdout"
+    )
+
+    progressive: bool = pydantic.Field(
+        default=True, description="Display verbose output"
+    )
+
+    wait: str = pydantic.Field(default="30m", description="Wait for checks to pass")
+
+    delay: str = pydantic.Field(
+        default="10s", description="Delay duration. Requires --wait"
+    )
+    halt_on: servo.types.ErrorSeverity = servo.types.ErrorSeverity.critical
+
+    remedy: bool = pydantic.Field(
+        default=True,
+        description="Automatically apply remedies to failed checks if detected",
+    )
+
+    check_halting: bool = pydantic.Field(
+        default=False, description="Halt to wait for each checks success"
+    )
+
+    @classmethod
+    def generate(cls, **kwargs) -> Optional["ChecksConfiguration"]:
+        return None
+
+    class Config(servo.types.BaseModelConfig):
+        validate_assignment = True
+
+
 class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
     """
     Abstract base class for Servo instances.
@@ -509,6 +571,11 @@ class BaseServoConfiguration(AbstractBaseConfiguration, abc.ABC):
 
     Servo settings are applied as defaults for other connectors whenever possible.
     """
+
+    checks: Optional[ChecksConfiguration] = pydantic.Field(
+        default_factory=lambda: ChecksConfiguration(),
+        description="Configuration of Checks behavior",
+    )
 
     @classmethod
     def generate(
