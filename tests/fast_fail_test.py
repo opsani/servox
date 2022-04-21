@@ -21,14 +21,8 @@ from servo.types import (
 
 def test_non_unique_conditions() -> None:
     conditions = [
-        SloCondition(
-            metric="same",
-            threshold=6000,
-        ),
-        SloCondition(
-            metric="same",
-            threshold=6000,
-        ),
+        SloCondition(metric="same", threshold=6000),
+        SloCondition(metric="same", threshold=6000),
         SloCondition(
             metric="same2",
             threshold_metric="same3",
@@ -37,10 +31,7 @@ def test_non_unique_conditions() -> None:
             metric="same2",
             threshold_metric="same3",
         ),
-        SloCondition(
-            metric="not_same",
-            threshold=6000,
-        ),
+        SloCondition(metric="not_same", threshold=6000),
         SloCondition(
             metric="not_same",
             keep=SloKeep.above,
@@ -57,7 +48,7 @@ def test_non_unique_conditions() -> None:
     )
 
 
-def test_trigget_count_greter_than_window() -> None:
+def test_trigger_count_greater_than_window() -> None:
     with pytest.raises(pydantic.ValidationError) as err_info:
         SloCondition(
             metric="test",
@@ -91,7 +82,11 @@ def config() -> servo.configuration.FastFailConfiguration:
 def slo_input(metric: Metric, tuning_metric: Metric) -> SloInput:
     return SloInput(
         conditions=[
-            SloCondition(metric=metric.name, threshold=6000, trigger_window=2),
+            SloCondition(
+                metric=metric.name,
+                threshold=6000,
+                trigger_window=2,
+            ),
             SloCondition(
                 metric=metric.name,
                 threshold_metric=tuning_metric.name,
@@ -163,6 +158,76 @@ def _make_time_series_list(
     ],
 )
 def test_timeseries_slos_pass(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[List[float]],
+    tuning_values: List[List[float]],
+) -> None:
+    slo_check_readings: Dict[str, List[TimeSeries]] = {
+        metric.name: _make_time_series_list(metric, values),
+        tuning_metric.name: _make_time_series_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [[0.05, 0.35, 0.01, 0.03]],
+            [[0.0, 0.0, 0.0, 0.0]],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [[0.05, 0.35, 0.01, 0.03], [0.05, 0.35, 0.01, 0.03]],
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+        ),
+    ],
+)
+def test_timeseries_slos_skip_zero_metric(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[List[float]],
+    tuning_values: List[List[float]],
+) -> None:
+    slo_check_readings: Dict[str, List[TimeSeries]] = {
+        metric.name: _make_time_series_list(metric, values),
+        tuning_metric.name: _make_time_series_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [[0.0, 0.0, 0.0, 0.0]],
+            [[0.05, 0.35, 0.01, 0.03]],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            [[0.05, 0.35, 0.01, 0.03], [0.05, 0.35, 0.01, 0.03]],
+        ),
+    ],
+)
+def test_timeseries_slos_skip_zero_threshold(
     observer: FastFailObserver,
     checked_at: datetime,
     metric: Metric,
@@ -260,6 +325,70 @@ def _make_data_point_list(metric: Metric, values: List[float]) -> List[DataPoint
     ],
 )
 def test_data_point_slos_pass(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[float],
+    tuning_values: List[float],
+) -> None:
+    slo_check_readings: Dict[str, List[DataPoint]] = {
+        metric.name: _make_data_point_list(metric, values),
+        tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [0.05, 0.35, 0.01, 0.03],
+            [0.0, 0.0, 0.0, 0.0],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [0.24],
+            [0.0],
+        ),
+    ],
+)
+def test_data_point_slos_skip_zero_metric(
+    observer: FastFailObserver,
+    checked_at: datetime,
+    metric: Metric,
+    tuning_metric: Metric,
+    values: List[float],
+    tuning_values: List[float],
+) -> None:
+    slo_check_readings: Dict[str, List[DataPoint]] = {
+        metric.name: _make_data_point_list(metric, values),
+        tuning_metric.name: _make_data_point_list(tuning_metric, tuning_values),
+    }
+
+    servo.logging.set_level("DEBUG")
+    observer.check_readings(slo_check_readings, checked_at)
+
+
+@pytest.mark.parametrize(
+    "checked_at, values, tuning_values",
+    [
+        (
+            datetime(2020, 1, 21, 12, 0, 1),
+            [0.0, 0.0, 0.0, 0.0],
+            [0.05, 0.35, 0.01, 0.03],
+        ),
+        (
+            datetime(2020, 1, 21, 12, 10, 1),
+            [0.0],
+            [0.24],
+        ),
+    ],
+)
+def test_data_point_slos_skip_zero_threshold(
     observer: FastFailObserver,
     checked_at: datetime,
     metric: Metric,

@@ -7,7 +7,7 @@ import contextvars
 import enum
 import functools
 import json
-from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, Union
+from typing import Any, Optional, Protocol, Sequence, Tuple, Union
 
 import httpx
 import pydantic
@@ -90,11 +90,11 @@ class _EventDefinitions(Protocol):
 
     # Informational events
     @servo.events.event(Events.metrics)
-    async def metrics(self) -> List[servo.types.Metric]:
+    async def metrics(self) -> list[servo.types.Metric]:
         ...
 
     @servo.events.event(Events.components)
-    async def components(self) -> List[servo.types.Component]:
+    async def components(self) -> list[servo.types.Component]:
         ...
 
     # Operational events
@@ -102,7 +102,7 @@ class _EventDefinitions(Protocol):
     async def measure(
         self,
         *,
-        metrics: List[str] = None,
+        metrics: list[str] = None,
         control: servo.types.Control = servo.types.Control(),
     ) -> servo.types.Measurement:
         if control.delay:
@@ -116,7 +116,7 @@ class _EventDefinitions(Protocol):
         halt_on: Optional[
             servo.types.ErrorSeverity
         ] = servo.types.ErrorSeverity.critical,
-    ) -> List[servo.checks.Check]:
+    ) -> list[servo.checks.Check]:
         ...
 
     @servo.events.event(Events.describe)
@@ -128,7 +128,7 @@ class _EventDefinitions(Protocol):
     @servo.events.event(Events.adjust)
     async def adjust(
         self,
-        adjustments: List[servo.types.Adjustment],
+        adjustments: list[servo.types.Adjustment],
         control: servo.types.Control = servo.types.Control(),
     ) -> servo.types.Description:
         ...
@@ -193,7 +193,7 @@ class Servo(servo.connector.BaseConnector):
     connector.
     """
 
-    connectors: List[servo.connector.BaseConnector]
+    connectors: list[servo.connector.BaseConnector]
     """The active connectors in the Servo.
     """
 
@@ -201,12 +201,12 @@ class Servo(servo.connector.BaseConnector):
 
     async def dispatch_event(
         self, *args, **kwargs
-    ) -> Union[Optional[servo.events.EventResult], List[servo.events.EventResult]]:
+    ) -> Union[Optional[servo.events.EventResult], list[servo.events.EventResult]]:
         with self.current():
             return await super().dispatch_event(*args, **kwargs)
 
     def __init__(
-        self, *args, connectors: List[servo.connector.BaseConnector], **kwargs
+        self, *args, connectors: list[servo.connector.BaseConnector], **kwargs
     ) -> None:  # noqa: D107
         super().__init__(*args, connectors=[], **kwargs)
 
@@ -218,7 +218,7 @@ class Servo(servo.connector.BaseConnector):
             connector._global_config = self.config.settings
 
     @pydantic.root_validator()
-    def _initialize_name(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    def _initialize_name(cls, values: dict[str, Any]) -> dict[str, Any]:
         if values["name"] == "servo" and values.get("config"):
             values["name"] = values["config"].name or getattr(
                 values["config"].optimizer, "id", "servo"
@@ -239,7 +239,7 @@ class Servo(servo.connector.BaseConnector):
         """Return True if the servo is running."""
         return self._running
 
-    async def startup(self):
+    async def startup(self) -> None:
         """Notify all active connectors that the servo is starting up."""
         if self.is_running:
             raise RuntimeError("Cannot start up a servo that is already running")
@@ -254,7 +254,7 @@ class Servo(servo.connector.BaseConnector):
         if not self.pubsub_exchange.running:
             self.pubsub_exchange.start()
 
-    async def shutdown(self):
+    async def shutdown(self) -> None:
         """Notify all active connectors that the servo is shutting down."""
         if not self.is_running:
             raise RuntimeError("Cannot shut down a servo that is not running")
@@ -269,7 +269,7 @@ class Servo(servo.connector.BaseConnector):
         self._running = False
 
     @property
-    def all_connectors(self) -> List[servo.connector.BaseConnector]:
+    def all_connectors(self) -> list[servo.connector.BaseConnector]:
         """Return a list of all active connectors including the Servo."""
         return [self, *self.connectors]
 
@@ -290,7 +290,7 @@ class Servo(servo.connector.BaseConnector):
     def get_connector(
         self, name: Union[str, Sequence[str]]
     ) -> Optional[
-        Union[servo.connector.BaseConnector, List[servo.connector.BaseConnector]]
+        Union[servo.connector.BaseConnector, list[servo.connector.BaseConnector]]
     ]:
         """Return one or more connectors by name.
 
@@ -404,7 +404,7 @@ class Servo(servo.connector.BaseConnector):
         with servo.utilities.pydantic.extra(self.config):
             delattr(self.config, connector_.name)
 
-    def top_level_schema(self, *, all: bool = False) -> Dict[str, Any]:
+    def top_level_schema(self, *, all: bool = False) -> dict[str, Any]:
         """Return a schema that only includes connector model definitions"""
         connectors = servo.Assembly.all_connector_types() if all else self.connectors
         config_models = list(map(lambda c: c.config_model(), connectors))
@@ -516,7 +516,7 @@ class Servo(servo.connector.BaseConnector):
         halt_on: Optional[
             servo.types.ErrorSeverity
         ] = servo.types.ErrorSeverity.critical,
-    ) -> List[servo.checks.Check]:
+    ) -> list[servo.checks.Check]:
         """Check that the servo is ready to perform optimization.
 
         Args:

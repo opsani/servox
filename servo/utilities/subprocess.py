@@ -12,8 +12,6 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
-    List,
     NamedTuple,
     Optional,
     TypeVar,
@@ -35,7 +33,7 @@ __all__ = (
 )
 
 
-_DEFAULT_LIMIT = 2 ** 16  # 64 KiB
+_DEFAULT_LIMIT = 2**16  # 64 KiB
 
 
 # Type definition for streaming output callbacks.
@@ -57,15 +55,15 @@ class SubprocessResult(NamedTuple):
     """
 
     return_code: int
-    stdout: Optional[List[str]]
-    stderr: Optional[List[str]]
+    stdout: Optional[list[str]]
+    stderr: Optional[list[str]]
 
 
 async def stream_subprocess_exec(
     program: str,
     *args,
     cwd: Union[pathlib.Path, Callable[[], pathlib.Path]] = pathlib.Path.cwd,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
     stderr_callback: Optional[OutputStreamCallback] = None,
@@ -116,7 +114,7 @@ async def run_subprocess_exec(
     program: str,
     *args,
     cwd: pathlib.Path = pathlib.Path.cwd(),
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
     stdout: Union[int, IO[Any], None] = asyncio.subprocess.PIPE,
@@ -145,8 +143,8 @@ async def run_subprocess_exec(
     :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
     :return: A named tuple value of the exit status and two string lists of standard output and standard error.
     """
-    stdout_list: List[str] = []
-    stderr_list: List[str] = []
+    stdout_list: list[str] = []
+    stderr_list: list[str] = []
     return SubprocessResult(
         await stream_subprocess_exec(
             program,
@@ -171,7 +169,7 @@ async def run_subprocess_shell(
     cmd: str,
     *,
     cwd: pathlib.Path = pathlib.Path.cwd(),
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Timeout = None,
     stdin: Union[int, IO[Any], None] = None,
     stdout: Union[int, IO[Any], None] = asyncio.subprocess.PIPE,
@@ -199,8 +197,8 @@ async def run_subprocess_shell(
     :raises asyncio.TimeoutError: Raised if the timeout expires before the subprocess exits.
     :return: A named tuple value of the exit status and two string lists of standard output and standard error.
     """
-    stdout_list: List[str] = []
-    stderr_list: List[str] = []
+    stdout_list: list[str] = []
+    stderr_list: list[str] = []
     return SubprocessResult(
         await stream_subprocess_shell(
             cmd,
@@ -224,7 +222,7 @@ async def stream_subprocess_shell(
     cmd: str,
     *,
     cwd: Union[pathlib.Path, Callable[[], pathlib.Path]] = pathlib.Path.cwd,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Timeout = None,
     stdout_callback: Optional[OutputStreamCallback] = None,
     stderr_callback: Optional[OutputStreamCallback] = None,

@@ -109,7 +109,7 @@ class Message(pydantic.BaseModel):
         yaml: Optional[Any] = None,
         metadata: Metadata = {},
         **kwargs,
-    ) -> Message:
+    ) -> None:
         if len(list(filter(None, [content, text, json, yaml]))) > 1:
             raise ValueError(
                 f"only one argument of content, text, json, or yaml can be given"
@@ -765,7 +765,7 @@ class _Iterator(pydantic.BaseModel):
     subscriber: Subscriber
     yield_channel: bool = True
     _queue: asyncio.Queue = pydantic.PrivateAttr(default_factory=asyncio.Queue)
-    _stopped: asyncio.Event = pydantic.PrivateAttr(False)
+    _stopped: bool = pydantic.PrivateAttr(False)
     _message_reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
     _iterator_reset_token: Optional[contextvars.Token] = pydantic.PrivateAttr(None)
 

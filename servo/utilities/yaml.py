@@ -9,7 +9,7 @@ class PreservedScalarString(str):
 
 
 def pss_representer(dumper, scalar_string: PreservedScalarString):
-    return dumper.represent_scalar(u"tag:yaml.org,2002:str", scalar_string, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", scalar_string, style="|")
 
 
 _yaml.add_representer(PreservedScalarString, pss_representer)

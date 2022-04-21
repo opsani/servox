@@ -16,9 +16,7 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Dict,
     Iterable,
-    List,
     Optional,
     Pattern,
     Set,
@@ -46,6 +44,7 @@ import servo
 import servo.runner
 import servo.utilities.yaml
 import servo.utilities.strings
+
 
 class Section(str, enum.Enum):
     assembly = "Assembly Commands"
@@ -220,7 +219,7 @@ class Group(click.Group, ContextMixin):
         Formats all commands into sections
         """
 
-        sections_of_commands: Dict[Section, List[Tuple[str, Command]]] = {}
+        sections_of_commands: dict[Section, list[Tuple[str, Command]]] = {}
         for section in Section:
             sections_of_commands[section] = []
 
@@ -334,7 +333,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
         *args,
         cls: Optional[Type[click.Command]] = None,
         section: Optional[Section] = None,
-        context_settings: Optional[Dict[Any, Any]] = None,
+        context_settings: Optional[dict[Any, Any]] = None,
         **kwargs,
     ) -> None:
         if not isinstance(cli, CLI):
@@ -467,7 +466,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                 raise typer.Exit(2)
 
     @staticmethod
-    def assemble_from_context(ctx: Context):
+    def assemble_from_context(ctx: Context) -> None:
         if ctx.config_file is None:
             raise typer.BadParameter("Config file must be specified")
 
@@ -570,9 +569,9 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
     @staticmethod
     def connectors_named(
-        names: List[str], servo_: servo.Servo
-    ) -> List[servo.BaseConnector]:
-        connectors: List[servo.BaseConnector] = []
+        names: list[str], servo_: servo.Servo
+    ) -> list[servo.BaseConnector]:
+        connectors: list[servo.BaseConnector] = []
         for name in names:
             size = len(connectors)
             for connector in servo_.all_connectors:
@@ -587,8 +586,8 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
     @staticmethod
     def connectors_type_callback(
-        context: typer.Context, value: Optional[Union[str, List[str]]]
-    ) -> Optional[Union[Type[servo.BaseConnector], List[Type[servo.BaseConnector]]]]:
+        context: typer.Context, value: Optional[Union[str, list[str]]]
+    ) -> Optional[Union[Type[servo.BaseConnector], list[Type[servo.BaseConnector]]]]:
         """
         Transforms a one or more connector key-paths into Connector types
         """
@@ -601,7 +600,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
                         f"no Connector type found for key '{value}'"
                     )
             else:
-                connectors: List[servo.BaseConnector] = []
+                connectors: list[Type[servo.BaseConnector]] = []
                 for key in value:
                     if connector := servo.connector._connector_class_from_string(key):
                         connectors.append(connector)
@@ -615,15 +614,15 @@ class CLI(typer.Typer, servo.logging.Mixin):
 
     @staticmethod
     def connector_routes_callback(
-        context: typer.Context, value: Optional[List[str]]
-    ) -> Optional[Dict[str, Type[servo.BaseConnector]]]:
+        context: typer.Context, value: Optional[list[str]]
+    ) -> Optional[dict[str, Type[servo.BaseConnector]]]:
         """
         Transforms a one or more connector descriptors into a dict of names to Connectors
         """
         if not value:
             return None
 
-        routes: Dict[str, Type[servo.BaseConnector]] = {}
+        routes: dict[str, Type[servo.BaseConnector]] = {}
         for key in value:
             if ":" in key:
                 # We have an alias descriptor
@@ -649,7 +648,7 @@ class CLI(typer.Typer, servo.logging.Mixin):
     @staticmethod
     def duration_callback(
         context: typer.Context, value: Optional[str]
-    ) -> Optional[Union[servo.BaseConnector, List[servo.BaseConnector]]]:
+    ) -> Optional[servo.Duration]:
         """
         Transform a string into a Duration object.
 
@@ -974,7 +973,7 @@ class ServoCLI(CLI):
                 if context.servo and context.servo != servo_:
                     continue
 
-                event_handlers: List[servo.EventHandler] = []
+                event_handlers: list[servo.EventHandler] = []
                 connectors = (
                     context.assembly.all_connector_types()
                     if all
@@ -1100,7 +1099,7 @@ class ServoCLI(CLI):
                 if context.servo and context.servo != servo_:
                     continue
 
-                metrics_to_connectors: Dict[str, Tuple[str, Set[str]]] = {}
+                metrics_to_connectors: dict[str, Tuple[str, Set[str]]] = {}
                 results = run_async(servo_.dispatch_event("metrics"))
                 for result in results:
                     for metric in result.value:
@@ -1215,7 +1214,7 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def check(
             context: Context,
-            connectors: Optional[List[str]] = typer.Argument(
+            connectors: Optional[list[str]] = typer.Argument(
                 None,
                 help="Connectors to check",
             ),
@@ -1270,7 +1269,7 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def describe(
             context: Context,
-            connectors: Optional[List[str]] = typer.Argument(
+            connectors: Optional[list[str]] = typer.Argument(
                 None, help="The connectors to describe"
             ),
         ) -> None:
@@ -1289,7 +1288,7 @@ class ServoCLI(CLI):
                     else servo_.all_connectors
                 )
 
-                results: List[servo.EventResult] = run_async(
+                results: list[servo.EventResult] = run_async(
                     servo_.dispatch_event(servo.Events.describe, include=connectors_)
                 )
                 headers = ["CONNECTOR", "COMPONENTS", "METRICS"]
@@ -1320,18 +1319,18 @@ class ServoCLI(CLI):
                 typer.echo(tabulate(table, headers, tablefmt="plain"))
 
         def metrics_callback(
-            context: typer.Context, value: Optional[List[str]]
-        ) -> Optional[List[servo.Metric]]:
+            context: typer.Context, value: Optional[list[str]]
+        ) -> Optional[list[servo.Metric]]:
             if not value:
                 return value
 
-            all_metrics_by_name: Dict[str, servo.Metric] = {}
+            all_metrics_by_name: dict[str, servo.Metric] = {}
             results = run_async(context.servo.dispatch_event("metrics"))
             for result in results:
                 for metric in result.value:
                     all_metrics_by_name[metric.name] = metric
 
-            metrics: List[servo.Metric] = []
+            metrics: list[servo.Metric] = []
             for metric_name in value:
                 if metric := all_metrics_by_name.get(metric_name, None):
                     metrics.append(metric)
@@ -1343,10 +1342,10 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def measure(
             context: Context,
-            metrics: Optional[List[str]] = typer.Argument(
+            metrics: Optional[list[str]] = typer.Argument(
                 None, help="Metrics to measure", callback=metrics_callback
             ),
-            connectors: Optional[List[str]] = typer.Option(
+            connectors: Optional[list[str]] = typer.Option(
                 None,
                 "--connectors",
                 "-c",
@@ -1392,11 +1391,11 @@ class ServoCLI(CLI):
 
                 if metrics:
                     # Filter target connectors by metrics
-                    results: List[servo.EventResult] = run_async(
+                    results: list[servo.EventResult] = run_async(
                         servo_.dispatch_event(servo.Events.metrics, include=connectors_)
                     )
                     for result in results:
-                        result_metrics: List[servo.Metric] = result.value
+                        result_metrics: list[servo.Metric] = result.value
                         metric_names: Set[str] = set(
                             map(lambda m: m.name, result_metrics)
                         )
@@ -1404,7 +1403,7 @@ class ServoCLI(CLI):
                             connectors.remove(result.connector)
 
                 # Capture the measurements
-                results: List[servo.EventResult] = run_async(
+                results: list[servo.EventResult] = run_async(
                     servo_.dispatch_event(
                         servo.Events.measure,
                         metrics=metrics,
@@ -1414,13 +1413,13 @@ class ServoCLI(CLI):
                 )
 
                 # FIXME: The data that is crossing connector boundaries needs to be validated
-                aggregated_by_metric: Dict[
+                aggregated_by_metric: dict[
                     servo.Metric,
-                    Dict[
+                    dict[
                         str,
-                        Dict[
+                        dict[
                             servo.BaseConnector,
-                            List[Tuple[servo.Numeric, servo.Reading]],
+                            list[Tuple[servo.Numeric, servo.Reading]],
                         ],
                     ],
                 ] = {}
@@ -1484,7 +1483,7 @@ class ServoCLI(CLI):
                     for timestamp in sorted(timestamp_to_connectors.keys()):
                         for connector, values in timestamp_to_connectors[
                             timestamp
-                        ].items():  # Dict[BaseConnector, Tuple[Numeric, Reading]]
+                        ].items():  # dict[BaseConnector, Tuple[Numeric, Reading]]
                             readings_column.extend(
                                 list(
                                     map(
@@ -1651,7 +1650,7 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def adjust(
             context: Context,
-            settings: Optional[List[str]] = typer.Argument(
+            settings: Optional[list[str]] = typer.Argument(
                 None,
                 help="The settings to adjust (format is [COMPONENT].[SETTING=[VALUE])",
             ),
@@ -1664,7 +1663,7 @@ class ServoCLI(CLI):
                 if context.servo_ and context.servo_ != servo_:
                     continue
 
-                adjustments: List[servo.Adjustment] = []
+                adjustments: list[servo.Adjustment] = []
                 for descriptor in settings:
                     try:
                         component_name, setting_descriptor = descriptor.split(".", 1)
@@ -1681,7 +1680,7 @@ class ServoCLI(CLI):
                     )
                     adjustments.append(adjustment)
 
-                results: List[servo.EventResult] = run_async(
+                results: list[servo.EventResult] = run_async(
                     servo_.dispatch_event(servo.Events.adjust, adjustments)
                 )
                 if not results:
@@ -1728,7 +1727,7 @@ class ServoCLI(CLI):
             output: typer.FileTextWrite = typer.Option(
                 None, "--output", "-o", help="Output configuration to [FILE]"
             ),
-            keys: Optional[List[str]] = typer.Argument(
+            keys: Optional[list[str]] = typer.Argument(
                 None, help="Display settings for specific keys"
             ),
         ) -> None:
@@ -1912,7 +1911,7 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def validate(
             context: Context,
-            connectors: Optional[List[str]] = typer.Argument(
+            connectors: Optional[list[str]] = typer.Argument(
                 None,
                 help="Connectors to validate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
@@ -1968,7 +1967,7 @@ class ServoCLI(CLI):
         @self.command(section=section)
         def generate(
             context: Context,
-            connectors: Optional[List[str]] = typer.Argument(
+            connectors: Optional[list[str]] = typer.Argument(
                 None,
                 help="Connectors to generate configuration for. \nFormats: `connector`, `ConnectorClass`, `alias:connector`, `alias:ConnectorClass`",
             ),
@@ -2034,7 +2033,7 @@ class ServoCLI(CLI):
 
             if connectors and len(connectors):
                 # Check is we have any aliases and assign dictionary
-                connectors_dict: Dict[str, str] = {}
+                connectors_dict: dict[str, str] = {}
                 aliased = False
                 for identifier in connectors:
                     if ":" in identifier:
@@ -2149,7 +2148,7 @@ class ServoCLI(CLI):
             raise typer.Exit(0)
 
 
-def _run(args: Union[str, List[str]], **kwargs) -> None:
+def _run(args: Union[str, list[str]], **kwargs) -> None:
     args = shlex.split(args) if isinstance(args, str) else args
     process = subprocess.run(args, **kwargs)
     if process.returncode != 0:
@@ -2175,5 +2174,3 @@ def run_async(future: Union[asyncio.Future, asyncio.Task, Awaitable]) -> Any:
 
 def print_table(table, headers) -> None:
     typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
-
-
