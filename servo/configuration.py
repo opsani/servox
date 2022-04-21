@@ -481,12 +481,17 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     whether to automatically apply remedies.
     """
 
+    connectors: Optional[list[str]] = pydantic.Field(
+        description="Connectors to check",
+    )
     name: Optional[list[str]] = pydantic.Field(
         description="Filter by name",
     )
+
     id: Optional[list[str]] = pydantic.Field(
         description="Filter by ID",
     )
+
     tag: Optional[list[str]] = pydantic.Field(
         description="Filter by tag",
     )
@@ -496,11 +501,11 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     )
 
     verbose: bool = pydantic.Field(
-        default=False, description="Do not echo generated output to stdout"
+        default=False, description="Display verbose output"
     )
 
     progressive: bool = pydantic.Field(
-        default=True, description="Display verbose output"
+        default=True, description="Execute checks and emit output progressively"
     )
 
     wait: str = pydantic.Field(default="30m", description="Wait for checks to pass")
@@ -508,7 +513,11 @@ class ChecksConfiguration(AbstractBaseConfiguration):
     delay: str = pydantic.Field(
         default="10s", description="Delay duration. Requires --wait"
     )
-    halt_on: servo.types.ErrorSeverity = servo.types.ErrorSeverity.critical
+
+    halt_on: servo.types.ErrorSeverity = pydantic.Field(
+        default=servo.types.ErrorSeverity.critical,
+        description="Halt running on failure severity",
+    )
 
     remedy: bool = pydantic.Field(
         default=True,

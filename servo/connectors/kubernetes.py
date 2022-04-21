@@ -5481,6 +5481,8 @@ class KubernetesConnector(servo.BaseConnector):
         matching: Optional[servo.CheckFilter],
         halt_on: Optional[servo.ErrorSeverity] = servo.ErrorSeverity.critical,
     ) -> List[servo.Check]:
+        await self.config.load_kubeconfig()
+
         return await KubernetesChecks.run(
             self.config, matching=matching, halt_on=halt_on
         )

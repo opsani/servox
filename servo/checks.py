@@ -729,206 +729,162 @@ class BaseChecks(pydantic.BaseModel, servo.logging.Mixin):
 
         return checks
 
-    async def _apply_checks(
-        self,
-        servo_,
-    ):
-        name = self.config.checks.name
-        id = self.config.checks.id
-        tag = self.config.checks.tag
-        quiet = self.config.checks.quiet
-        verbose = self.config.checks.verbose
-        progressive = self.config.checks.progressive
-        wait = self.config.checks.wait
-        delay = self.config.checks.delay
-        halt_on = self.config.checks.halt_on
-        remedy = self.config.checks.remedy
-        check_halting = self.config.checks.check_halting
-
-        if wait:
-            summary = "Running checks"
-            summary += " progressively" if progressive else ""
-            summary += f" for up to {wait} with a delay of {delay} between iterations"
-            servo.logger.info(summary)
-
-        passing = set()
-        progress = servo.DurationProgress(servo.Duration(wait or 0))
-        ready = False
-
-        while not progress.finished:
-            if not progress.started:
-                # run at least one time
-                progress.start()
-
-            args = dict(
-                name=servo.utilities.parse_re(name),
-                id=servo.utilities.parse_id(id),
-                tags=servo.utilities.parse_csv(tag),
-            )
-            constraints = dict(filter(lambda i: bool(i[1]), args.items()))
-
-            results: List[servo.EventResult] = (
-                await servo_.dispatch_event(
-                    servo.Events.check,
-                    servo.CheckFilter(**constraints),
-                    include=servo_.all_connectors,
-                    halt_on=halt_on,
-                )
-                or []
-            )
-
-            checks: List[servo.Check] = functools.reduce(
-                lambda a, b: a + b.value, results, []
-            )
-
-            failure = None
-
-            if progressive:
-                for check in checks:
-                    if check.success:
-                        # FIXME: This should hold Check objects but hashing isn't matching
-                        if check.id not in passing:
-                            # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
-                            servo.logger.success(
-                                f"✅ Check '{check.escaped_name}' passed",
-                                component=check.id,
-                            )
-                            passing.add(check.id)
-                    else:
-                        failure = check
-                        servo.logger.warning(
-                            f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
-                        )
-                        if failure.hint:
-                            servo.logger.info(f"Hint: {failure.hint}")
-
-                        if failure.remedy:
-                            if asyncio.iscoroutinefunction(failure.remedy):
-                                task = asyncio.create_task(failure.remedy())
-                            elif asyncio.iscoroutine(failure.remedy):
-                                task = asyncio.create_task(failure.remedy)
-                            else:
-
-                                async def fn() -> None:
-                                    result = failure.remedy()
-                                    if asyncio.iscoroutine(result):
-                                        await result
-
-                                task = asyncio.create_task(fn())
-
-                            if remedy:
-                                servo.logger.info("💡 Attempting to apply remedy...")
-                                try:
-                                    await asyncio.wait_for(task, 10.0)
-                                except asyncio.TimeoutError as error:
-                                    servo.logger.warning(
-                                        "💡 Remedy attempt timed out after 10s"
-                                    )
-                            else:
-                                task.cancel()
-                        if check_halting:
-                            break
-
-                if not failure:
-                    servo.logger.info("🔥 All checks passed.")
-                    ready = True
-            else:
-                table = []
-                # Don't return ready if no checks ran but initial value for this var must be true for subsequent "&=" ops to work
-                and_checks_passed = bool(results)
-                if verbose:
-                    headers = [
-                        "CONNECTOR",
-                        "CHECK",
-                        "ID",
-                        "TAGS",
-                        "STATUS",
-                        "MESSAGE",
-                    ]
-                    for result in results:
-                        checks: List[servo.Check] = result.value
-                        names, ids, tags, statuses, comments = (
-                            [],
-                            [],
-                            [],
-                            [],
-                            [],
-                        )
-                        and_checks_passed &= bool(
-                            checks
-                        )  # set ready False if connector responds with empty list
-                        for check in checks:
-                            names.append(check.name)
-                            ids.append(check.id)
-                            tags.append(", ".join(check.tags) if check.tags else "-")
-                            statuses.append(_check_status_to_str(check))
-                            comments.append(textwrap.shorten(check.message or "-", 70))
-                            and_checks_passed &= check.success
-
-                        if not names:
-                            continue
-
-                        row = [
-                            result.connector.name,
-                            "\n".join(names),
-                            "\n".join(ids),
-                            "\n".join(tags),
-                            "\n".join(statuses),
-                            "\n".join(comments),
-                        ]
-                        table.append(row)
-                else:
-                    headers = ["CONNECTOR", "STATUS", "ERRORS"]
-                    for result in results:
-                        checks: List[servo.Check] = result.value
-                        if not checks:
-                            continue
-
-                        success = bool(
-                            checks
-                        )  # Don't return ready on empty lists of checks
-                        errors = []
-                        for check in checks:
-                            success &= check.passed
-                            check.success or errors.append(
-                                f"{check.name}: {textwrap.wrap(check.message or '-')}"
-                            )
-                        and_checks_passed &= success
-                        status = "√ PASSED" if success else "X FAILED"
-                        message = functools.reduce(
-                            lambda m, e: m
-                            + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
-                            errors,
-                            "",
-                        )
-                        row = [result.connector.name, status, message]
-                        table.append(row)
-
-                ready = and_checks_passed
-                # Output table
-                if not quiet:
-                    servo.logger.info(tabulate(table, headers, tablefmt="plain"))
-
-            if ready:
-                return True
-            else:
-                if wait and delay is not None:
-                    servo.logger.info(
-                        f"waiting for {delay} before rerunning failing checks"
-                    )
-                    await asyncio.sleep(servo.Duration(delay).total_seconds())
-
-                if progress.finished:
-                    # Don't log a timeout if we aren't running in wait mode
-                    if progress.duration:
-                        servo.logger.error(
-                            f"timed out waiting for checks to pass {progress.duration}"
-                        )
-                    return False
-
     class Config:
         arbitrary_types_allowed = True
         extra = pydantic.Extra.allow
+
+
+class CheckHelpers(pydantic.BaseModel, servo.logging.Mixin):
+    @classmethod
+    async def process_checks(
+        cls,
+        checks_config: servo.configuration.ChecksConfiguration,
+        results: list,
+        passing: set,
+    ):
+
+        remedy = checks_config.remedy
+        check_halting = checks_config.check_halting
+
+        ready = False
+        failure = None
+
+        checks: List[servo.Check] = functools.reduce(
+            lambda a, b: a + b.value, results, []
+        )
+
+        for check in checks:
+            if check.success:
+                # FIXME: This should hold Check objects but hashing isn't matching
+                if check.id not in passing:
+                    # calling loguru with kwargs (component) triggers a str.format call which trips up on names with single curly braces
+                    servo.logger.success(
+                        f"✅ Check '{check.escaped_name}' passed",
+                        component=check.id,
+                    )
+                    passing.add(check.id)
+            else:
+                failure = check
+                servo.logger.warning(
+                    f"❌ Check '{failure.name}' failed ({len(passing)} passed): {failure.message}"
+                )
+                if failure.hint:
+                    servo.logger.info(f"Hint: {failure.hint}")
+
+                if failure.remedy:
+                    if asyncio.iscoroutinefunction(failure.remedy):
+                        task = asyncio.create_task(failure.remedy())
+                    elif asyncio.iscoroutine(failure.remedy):
+                        task = asyncio.create_task(failure.remedy)
+                    else:
+
+                        async def fn() -> None:
+                            result = failure.remedy()
+                            if asyncio.iscoroutine(result):
+                                await result
+
+                        task = asyncio.create_task(fn())
+
+                    if remedy:
+                        servo.logger.info("💡 Attempting to apply remedy...")
+                        try:
+                            await asyncio.wait_for(task, 10.0)
+                        except asyncio.TimeoutError as error:
+                            servo.logger.warning("💡 Remedy attempt timed out after 10s")
+                    else:
+                        task.cancel()
+                if check_halting:
+                    break
+
+        if not failure:
+            servo.logger.info("🔥 All checks passed.")
+            ready = True
+
+        return ready
+
+    @classmethod
+    async def checks_to_table(cls, checks_config, results):
+
+        quiet = checks_config.quiet
+        verbose = checks_config.verbose
+
+        ready = False
+        output = None
+        table = []
+        # Don't return ready if no checks ran but initial value for this var must be true for subsequent "&=" ops to work
+        and_checks_passed = bool(results)
+        if verbose:
+            headers = [
+                "CONNECTOR",
+                "CHECK",
+                "ID",
+                "TAGS",
+                "STATUS",
+                "MESSAGE",
+            ]
+            for result in results:
+                checks: List[servo.Check] = result.value
+                names, ids, tags, statuses, comments = (
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                )
+                and_checks_passed &= bool(
+                    checks
+                )  # set ready False if connector responds with empty list
+                for check in checks:
+                    names.append(check.name)
+                    ids.append(check.id)
+                    tags.append(", ".join(check.tags) if check.tags else "-")
+                    statuses.append(_check_status_to_str(check))
+                    comments.append(textwrap.shorten(check.message or "-", 70))
+                    and_checks_passed &= check.success
+
+                if not names:
+                    continue
+
+                row = [
+                    result.connector.name,
+                    "\n".join(names),
+                    "\n".join(ids),
+                    "\n".join(tags),
+                    "\n".join(statuses),
+                    "\n".join(comments),
+                ]
+                table.append(row)
+        else:
+            headers = ["CONNECTOR", "STATUS", "ERRORS"]
+            for result in results:
+                checks: List[servo.Check] = result.value
+                if not checks:
+                    continue
+
+                success = bool(checks)  # Don't return ready on empty lists of checks
+                errors = []
+                for check in checks:
+                    success &= check.passed
+                    check.success or errors.append(
+                        f"{check.name}: {textwrap.wrap(check.message or '-')}"
+                    )
+                and_checks_passed &= success
+                status = "√ PASSED" if success else "X FAILED"
+                message = functools.reduce(
+                    lambda m, e: m + f"({errors.index(e) + 1}/{len(errors)}) {e}\n",
+                    errors,
+                    "",
+                )
+                row = [result.connector.name, status, message]
+                table.append(row)
+
+        ready = and_checks_passed
+        # Output table
+        if not quiet:
+            output = tabulate(table, headers, tablefmt="plain")
+            servo.logger.info(output)
+
+        return ready, output
 
 
 def _validate_check_handler(fn: CheckHandler) -> None:

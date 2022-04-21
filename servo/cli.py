@@ -1173,15 +1173,6 @@ class ServoCLI(CLI):
             typer.echo(tabulate(table, headers, tablefmt="plain") + "\n")
 
     def add_ops_commands(self, section=Section.ops) -> None:
-        def validate_connectors_respond_to_event(
-            connectors: Iterable[servo.BaseConnector], event: str
-        ) -> None:
-            for connector in connectors:
-                if not connector.responds_to_event(event):
-                    raise typer.BadParameter(
-                        f"connectors of type '{connector.__class__.__name__}' do not respond to the event \"{event}\" (name='{connector.name}')"
-                    )
-
         @self.command(section=section)
         def run(
             context: Context,
@@ -1248,57 +1239,15 @@ class ServoCLI(CLI):
             if isinstance(context, click.core.Context):
                 context = context.parent
 
-            async def check_servo(servo_: servo.Servo) -> bool:
-                # Validate that explicit args support check events
-                connector_objs = (
-                    self.connectors_named(connectors, servo_)
-                    if connectors
-                    else list(
-                        filter(
-                            lambda c: c.responds_to_event(servo.Events.check),
-                            servo_.all_connectors,
-                        )
-                    )
-                )
-                validate_connectors_respond_to_event(connector_objs, servo.Events.check)
-
-                if os.getenv("KUBERNETES_SERVICE_HOST"):
-                    kubernetes_asyncio.config.load_incluster_config()
-                else:
-                    kubeconfig = (
-                        os.getenv("KUBECONFIG")
-                        or kubernetes_asyncio.config.kube_config.KUBE_CONFIG_DEFAULT_LOCATION
-                    )
-                    kubeconfig_path = pathlib.Path(os.path.expanduser(kubeconfig))
-                    if kubeconfig_path.exists():
-                        await kubernetes_asyncio.config.load_kube_config(
-                            config_file=os.path.expandvars(kubeconfig_path),
-                        )
-
-                complete_config = servo_.config
-                config = servo.configuration.BaseConfiguration(
-                    description=complete_config.description,
-                    __optimizer__=complete_config.optimizer,
-                    __settings__=complete_config.settings,
-                    __checks__=complete_config.checks,
-                )
-                base_checks = servo.checks.BaseChecks(config=config)
-                ready = await base_checks._apply_checks(
-                    servo_=servo_,
-                )
-
-                if ready:
-                    return True
-                else:
-                    return False
-
             # Check all targeted servos
             if context.servo:
-                ready = run_async(check_servo(context.servo))
+                ready, output = run_async(context.servo.check_servo())
+                if output:
+                    typer.echo(output)
             else:
                 results = run_async(
                     asyncio.gather(
-                        *list(map(lambda s: check_servo(s), context.assembly.servos)),
+                        *list(map(lambda s: s.check_servo(), context.assembly.servos)),
                         return_exceptions=True,
                     )
                 )
