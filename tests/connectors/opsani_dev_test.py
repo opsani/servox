@@ -1322,10 +1322,6 @@ class TestCheckHalting:
     ) -> None:
         servo.logging.set_level("INFO")
 
-        import time
-
-        a = time.time()
-
         async with kube_port_forward("deploy/servo", 9090) as prometheus_base_url:
             # Connect the checks to our port forward interface
             checks.config.prometheus_base_url = prometheus_base_url
@@ -1725,12 +1721,10 @@ async def _remedy_check(
     kube_port_forward,
     load_generator,
     checks,
-    delay=None,
 ) -> None:
     envoy_proxy_port = servo.connectors.opsani_dev.ENVOY_SIDECAR_DEFAULT_PORT
     servo.logger.warning(f"Remedying failing check '{id}'...")
-    if delay:
-        asyncio.sleep(delay)
+
     if id == "check_controller_annotations":
         ## Step 1
         servo.logger.critical("Step 1 - Annotate the Deployment PodSpec")
