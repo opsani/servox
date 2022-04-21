@@ -225,7 +225,6 @@ def test_check_verbose(
         os.environ.pop("CHECKS_VERBOSE", None)
 
 
-
 @pytest.mark.usefixtures("optimizer_env")
 class TestShow:
     def test_help_does_not_require_optimizer_and_token(

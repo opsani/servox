@@ -63,7 +63,7 @@ class FirstTestServoConnector(BaseConnector):
 
     @before_event(Events.measure)
     def do_something_before_measuring(
-            self, metrics: List[str] = [], control: Control = Control()
+        self, metrics: List[str] = [], control: Control = Control()
     ) -> None:
         return "measuring!"
 
@@ -278,8 +278,8 @@ async def test_cancellation_of_event_from_before_handler(mocker, servo: servo):
     assert len(results) == 0
     assert messages[0].record["level"].name == "WARNING"
     assert (
-            messages[0].record["message"]
-            == 'event cancelled by before event handler on connector "first_test_servo": it burns when I pee'
+        messages[0].record["message"]
+        == 'event cancelled by before event handler on connector "first_test_servo": it burns when I pee'
     )
 
 
@@ -295,8 +295,8 @@ async def test_cannot_cancel_from_on_handlers_warning(mocker, servo: servo):
     await servo.dispatch_event("promote", return_exceptions=True)
     assert messages[0].record["level"].name == "WARNING"
     assert (
-            messages[0].record["message"]
-            == "Cannot cancel an event from an on handler: event dispatched"
+        messages[0].record["message"]
+        == "Cannot cancel an event from an on handler: event dispatched"
     )
 
 
@@ -457,6 +457,7 @@ def test_creating_event_programmatically_from_callable(random_string: str) -> No
 
 def test_redeclaring_an_existing_event_fails() -> None:
     with pytest.raises(ValueError) as error:
+
         class InvalidConnector:
             @event("adjust")
             def invalid_adjust(self) -> None:
@@ -468,6 +469,7 @@ def test_redeclaring_an_existing_event_fails() -> None:
 
 def test_registering_event_with_wrong_handler_fails() -> None:
     with pytest.raises(TypeError) as error:
+
         class InvalidConnector:
             @on_event("adjust")
             def invalid_adjust(self, *args, **kwargs) -> dict:
@@ -475,13 +477,14 @@ def test_registering_event_with_wrong_handler_fails() -> None:
 
     assert error
     assert (
-            str(error.value)
-            == """invalid event handler "adjust": incompatible return type annotation "<class 'dict'>" in callable signature "(self, *args, **kwargs) -> dict", expected "servo.types.Description\""""
+        str(error.value)
+        == """invalid event handler "adjust": incompatible return type annotation "<class 'dict'>" in callable signature "(self, *args, **kwargs) -> dict", expected "servo.types.Description\""""
     )
 
 
 def test_event_decorator_disallows_var_positional_args() -> None:
     with pytest.raises(TypeError) as error:
+
         class InvalidConnector:
             @event("failio")
             async def invalid_event(self, *args) -> None:
@@ -489,13 +492,14 @@ def test_event_decorator_disallows_var_positional_args() -> None:
 
     assert error
     assert (
-            str(error.value)
-            == "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
+        str(error.value)
+        == "Invalid signature: events cannot declare variable positional arguments (e.g. *args)"
     )
 
 
 def test_registering_event_handler_with_missing_positional_param_fails() -> None:
     with pytest.raises(TypeError) as error:
+
         @on_event("adjust")
         def invalid_adjust(self) -> Description:
             pass
@@ -511,6 +515,7 @@ def test_registering_event_handler_with_missing_positional_param_fails() -> None
 
 def test_registering_event_handler_with_missing_keyword_param_fails() -> None:
     with pytest.raises(TypeError) as error:
+
         @on_event("measure")
         def invalid_measure(self, *, control: Control = Control()) -> Measurement:
             pass
@@ -532,34 +537,36 @@ def test_registering_event_handler_with_missing_keyword_param_succeeds_with_var_
 
 def test_registering_event_handler_with_too_many_positional_params_fails() -> None:
     with pytest.raises(TypeError) as error:
+
         @on_event("startup")
         def invalid_measure(self, invalid, /) -> None:
             pass
 
     assert error
     assert (
-            str(error.value)
-            == 'invalid event handler "startup": encountered unexpected parameter "invalid" in callable signature "(self, invalid, /) -> None", expected "(self) -> \'None\'"'
+        str(error.value)
+        == 'invalid event handler "startup": encountered unexpected parameter "invalid" in callable signature "(self, invalid, /) -> None", expected "(self) -> \'None\'"'
     )
 
 
 def test_registering_event_handler_with_too_many_keyword_params_fails() -> None:
     with pytest.raises(TypeError) as error:
+
         @on_event("startup")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
 
     assert error
     assert (
-            str(error.value)
-            == """invalid event handler "startup": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
+        str(error.value)
+        == """invalid event handler "startup": encountered unexpected parameters "another and invalid" in callable signature "(self, invalid: str, another: int) -> None", expected "(self) -> 'None'\""""
     )
 
 
 def test_registering_before_handlers() -> None:
     @before_event("measure")
     def before_measure(
-            self, metrics: List[str] = [], control: Control = Control()
+        self, metrics: List[str] = [], control: Control = Control()
     ) -> None:
         pass
 
@@ -569,6 +576,7 @@ def test_registering_before_handlers() -> None:
 
 def test_registering_before_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
+
         @before_event("measure")
         def invalid_measure(self, invalid: str, another: int) -> None:
             pass
@@ -602,16 +610,17 @@ def test_validation_of_after_handlers() -> None:
 
 def test_registering_after_handler_fails_with_extra_args() -> None:
     with pytest.raises(TypeError) as error:
+
         @after_event("measure")
         def invalid_measure(
-                self, results: List[EventResult], invalid: str, another: int
+            self, results: List[EventResult], invalid: str, another: int
         ) -> None:
             pass
 
     assert error
     assert (
-            str(error.value)
-            == 'invalid after event handler "after:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, results: List[servo.events.EventResult], invalid: str, another: int) -> None", expected "(self, results: \'List[EventResult]\') -> \'None\'"'
+        str(error.value)
+        == 'invalid after event handler "after:measure": encountered unexpected parameters "another and invalid" in callable signature "(self, results: List[servo.events.EventResult], invalid: str, another: int) -> None", expected "(self, results: \'List[EventResult]\') -> \'None\'"'
     )
 
 
@@ -646,7 +655,7 @@ class TestAssembly:
         assert connector.config.optimizer == optimizer
 
     async def test_aliased_connectors_produce_schema(
-            self, servo_yaml: Path, mocker
+        self, servo_yaml: Path, mocker
     ) -> None:
         mocker.patch.object(Servo, "version", "100.0.0")
         mocker.patch.object(VegetaConnector, "version", "100.0.0")
@@ -1470,7 +1479,7 @@ class TestAssembly:
         }
 
     async def test_aliased_connectors_get_distinct_env_configuration(
-            self, servo_yaml: Path
+        self, servo_yaml: Path
     ) -> None:
         config = {
             "connectors": {"vegeta": "vegeta", "other": "vegeta"},
@@ -1511,10 +1520,10 @@ class TestAssembly:
 
         # Try setting values via env
         with environment_overrides(
-                {
-                    "SERVO_OTHER_RATE": "100/1s",
-                    "SERVO_OTHER_TARGET": "https://opsani.com/servox",
-                }
+            {
+                "SERVO_OTHER_RATE": "100/1s",
+                "SERVO_OTHER_TARGET": "https://opsani.com/servox",
+            }
         ):
             s = other_settings_type()
             assert s.rate == "100/1s"
@@ -1522,7 +1531,7 @@ class TestAssembly:
 
 
 async def test_generating_schema_with_test_connectors(
-        optimizer_env: None, servo_yaml: Path
+    optimizer_env: None, servo_yaml: Path
 ) -> None:
     optimizer = Optimizer(id="dev.opsani.com/servox", token="1234556789")
 
@@ -1583,8 +1592,8 @@ class TestServoSettings:
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
-                e.value.errors()[0]["msg"]
-                == "Invalid connectors value: <class 'servo.configuration.BaseServoConfiguration'>"
+            e.value.errors()[0]["msg"]
+            == "Invalid connectors value: <class 'servo.configuration.BaseServoConfiguration'>"
         )
 
     def test_connectors_allows_set_of_class_names(self):
@@ -1601,8 +1610,8 @@ class TestServoSettings:
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
-                e.value.errors()[0]["msg"]
-                == "BaseServoConfiguration is not a Connector subclass"
+            e.value.errors()[0]["msg"]
+            == "BaseServoConfiguration is not a Connector subclass"
         )
 
     def test_connectors_allows_set_of_keys(self):
@@ -1643,8 +1652,8 @@ class TestServoSettings:
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
-                e.value.errors()[0]["msg"]
-                == 'Name "vegeta" is reserved by `VegetaConnector`'
+            e.value.errors()[0]["msg"]
+            == 'Name "vegeta" is reserved by `VegetaConnector`'
         )
 
     @pytest.fixture(autouse=True, scope="session")
@@ -1672,8 +1681,8 @@ class TestServoSettings:
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
-                e.value.errors()[0]["msg"]
-                == '"This Is Not Valid" is not a valid connector name: names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
+            e.value.errors()[0]["msg"]
+            == '"This Is Not Valid" is not a valid connector name: names may only contain alphanumeric characters, hyphens, slashes, periods, and underscores'
         )
 
     def test_connectors_rejects_invalid_connector_dict_values(self):
@@ -1684,8 +1693,8 @@ class TestServoSettings:
         assert "1 validation error for BaseServoConfiguration" in str(e.value)
         assert e.value.errors()[0]["loc"] == ("connectors",)
         assert (
-                e.value.errors()[0]["msg"]
-                == "Invalid connectors value: Not a Real Connector"
+            e.value.errors()[0]["msg"]
+            == "Invalid connectors value: Not a Real Connector"
         )
 
 
@@ -1822,10 +1831,10 @@ def test_api_client_options() -> None:
     assert servo.api_client_options["proxies"]
 
     assert {
-               "proxies": "http://localhost:1234",
-               "timeout": None,
-               "verify": False,
-           }.items() <= servo.api_client_options.items()
+        "proxies": "http://localhost:1234",
+        "timeout": None,
+        "verify": False,
+    }.items() <= servo.api_client_options.items()
 
 
 async def test_models() -> None:
@@ -1970,8 +1979,8 @@ async def test_add_connector_raises_if_name_exists(servo: Servo) -> None:
         await servo.add_connector("whatever", connector_2)
 
     assert (
-            str(error.value)
-            == "invalid name: a connector named 'whatever' already exists in the servo"
+        str(error.value)
+        == "invalid name: a connector named 'whatever' already exists in the servo"
     )
 
 
@@ -2011,8 +2020,8 @@ async def test_remove_connector_raises_if_name_does_not_exists(servo: Servo) -> 
         await servo.remove_connector("whatever")
 
     assert (
-            str(error.value)
-            == "invalid connector: a connector named 'whatever' does not exist in the servo"
+        str(error.value)
+        == "invalid connector: a connector named 'whatever' does not exist in the servo"
     )
 
 
@@ -2022,8 +2031,8 @@ async def test_remove_connector_raises_if_obj_does_not_exists(servo: Servo) -> N
         await servo.remove_connector(connector)
 
     assert (
-            str(error.value)
-            == "invalid connector: a connector named 'first_test_servo' does not exist in the servo"
+        str(error.value)
+        == "invalid connector: a connector named 'first_test_servo' does not exist in the servo"
     )
 
 
